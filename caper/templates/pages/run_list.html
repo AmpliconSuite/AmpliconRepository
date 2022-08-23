@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block extra_js %}
+<script>
+    $(document).ready( function () {
+        $('#myTable').DataTable(
+            {select: true}
+        );
+    } );
+</script>
+{% endblock %}
+
+{% block main %}
+<h1>{{ project }}</h1>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="text" name="project-name">
+    <button type="submit" class="btn btn-primary">View Runs</button>
+</form>
+<div class="table-responsive">
+    <table id='myTable' class="table table-hover table-sm">
+        <thead>
+            <tr>
+                <th>Feature ID</th>
+                <th>Sample name</th>
+                <th>AA_amplicon_number</th>
+                <th>Location</th>
+                <th>Oncogenes</th>
+                <th>Captured interval length</th>
+                <th>Classification</th>
+                <th>Complexity_score</th>
+                <th>Feature_maximum_copy_number</th>
+                <th>Feature_median_copy_number</th>
+                <th>Reference_version</th>
+                <th>Run_metadata_JSON</th>
+                <th>AA_PDF_file</th>
+                <th>AA_PNG_file</th>
+                <th>Feature_BED_file</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in runs %}
+            <tr>
+                <td>{{ run.Feature_ID }}</td>
+                <td>{{ run.Sample_name }}</td>
+                <td>{{ run.AA_amplicon_number }}</td>
+                <td>{{ run.Location }}</td>
+                <td>{{ run.Oncogenes }}</td>
+                <td>{{ run.Captured_interval_length }}</td>
+                <td>{{ run.Classification }}</td>
+                <td>{{ run.Complexity_score }}</td>
+                <td>{{ run.Feature_maximum_copy_number }}</td>
+                <td>{{ run.Feature_median_copy_number }}</td>
+                <td>{{ run.Reference_version }}</td>
+                <td>{{ run.Run_metadata_JSON }}</td>
+                <td>{{ run.AA_PDF_file }}</td>
+                <td>{{ run.AA_PNG_file }}</td>
+                <td>{{ run.Feature_BED_file }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}
