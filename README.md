@@ -3,9 +3,9 @@
 #### Authors: Forrest Kim, Jens Luebeck, Ted Liefeld, Edwin Huang, Thorin Tabor, Vineet Bafna
 ---
 
-This is the main development 
+This is the main repository for the AmpliconRepository. Currently in development. 
 
-# How to set up the Development Server for AmpliconRepository
+# How to set up the development server for AmpliconRepository
 
 ## Requirements
 - Anaconda (https://www.anaconda.com/products/distribution)
