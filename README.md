@@ -23,17 +23,24 @@ This is the main development
 
 ## 3. Set up MongoDB locally (for development)
 - If you don't have a database location set up, set up a location:
-> `cd ~`
-> `mkdir data/db/`
+> `mkdir ~/data/db/`
 - In a terminal window or tab with the `caperenv` environment active, run MongoDB locally:
-> `mongod`
+>  `mongod --dbpath ~/data/db` or `mongod --dbpath <DB_PATH>`
 
 ## 3a. View MongoDB data in MongoDB Compass (Optional)
 - Download MongoDB Compass: https://www.mongodb.com/docs/compass/current/install/#download-and-install-compass
 - Open the MongoDB Compass app after starting MongoDB locally
-- 
+- Connect to your local instance of MongoDB:
+> URI: `mongodb://localhost:27017`
+- Relevant data will be located in `/caper/projects/`
 
-## 4. Run development server (Django)
+## 4. Set up secret keys for OAuth2
+- Open a terminal window or tab with the `caperenv` environment active
+- Make sure you have the `config.sh` file from another developer (this contains secret key information)
+- Run the command to initialize variables:
+`source config.sh`
+
+## 5. Run development server (Django)
 - Open a terminal window or tab with the `caperenv` environment active
 - Move to the caper App folder (should see `manage.py`)
 - Run the server locally:
