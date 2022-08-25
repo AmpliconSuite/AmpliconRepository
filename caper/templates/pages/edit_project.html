@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% load crispy_forms_tags%}
+{% load mezzanine_tags %}
+{% block main %}
+
+<div>
+    {% if user.is_authenticated %}
+    <h2>Edit {{ project.project_name }}</h2>
+    <hr>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {{ run|crispy }}
+        <button type="submit" class="btn btn-primary">Update Project</button>
+    </form>
+    {% endif %}
+</div>
+
+    {% if not user.is_authenticated %}
+    <h1>Please sign in to edit projects</h1>
+    {% endif %}
+{% endblock %}

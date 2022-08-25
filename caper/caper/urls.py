@@ -31,9 +31,16 @@ if settings.USE_MODELTRANSLATION:
 urlpatterns += [
     # path('single-run/', views.single_run, name='single-run'),
     path('', views.index, name='index'),
-    path('runs/', views.run_list, name='run_list'),
-    path('runs/upload/', views.run_upload, name='run_upload'),
-    path("accounts/profile/", views.profile, name="profile")
+    # path('runs/', views.run_list, name='run_list'),
+    path('create-project/', views.create_project, name='create_project'),
+    path("accounts/profile/", views.profile, name="profile"),
+    # path("accounts/login/", views.login, name="login"),
+    # path("accounts/login/", views.login, name="login"),
+    # path("accounts/login/", views.login, name="login"),
+    path("project/<project_name>", views.project_page, name="project_page"),
+    path("project/<project_name>/sample/<sample_name>", views.sample_page, name="sample_page"),
+    path("project/<project_name>/edit", views.edit_project_page, name="edit_project_page")
+
 ]
 
 # urlpatterns += [

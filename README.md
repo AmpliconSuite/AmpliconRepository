@@ -45,5 +45,5 @@ This is the main repository for the AmpliconRepository. Currently in development
 - Move to the caper App folder (should see `manage.py`)
 - Run the server locally:
 > `python manage.py runserver`
-- Open the application on a web browser:
+- Open the application on a web browser (recommend using a private/incognito window for faster development):
 > https://localhost:8000

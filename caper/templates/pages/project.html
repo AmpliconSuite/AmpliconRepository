@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+
+{% block extra_js %}
+<script>
+    $(document).ready( function () {
+        $('#myTable1').DataTable({
+            select: {
+                style: 'multi'
+            }
+        }
+        );
+    } );
+    $(document).ready( function () {
+        $('#myTable2').DataTable({
+            select: {
+                style: 'multi'
+            }
+        }
+        );
+    } );
+</script>
+{% endblock %}
+
+{% block main %}
+<div class="container row" style="margin:auto; padding-top: 50px;">
+    <div class="col-md-9">
+        <h2>{{ project.project_name }} <a href="{% url 'edit_project_page' project_name=project.project_name %}"><i class="fas fa-edit"></i></a> </h2>
+        <br>
+        <h4>{{ project.description }}</h4>
+        
+    </div>
+    <div class="col-md-3">
+        <p><b>Last Updated:</b> {{ project.date }}</p>
+        <p><b>Private:</b> {{ project.private }}</p>
+        <p><b>Project Members:</b> {{ project.project_members }}</p>
+    </div>
+    
+    
+</div>
+
+<div class="container">
+<h4>Samples Table</h4>
+<div class="table-responsive">
+    <table id='myTable1' class="table table-hover table-sm">
+        <thead>
+            <tr>
+                <th>Sample Name</th>
+                <th>Feature Count</th>
+                <th>Sample Page</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sample in sample_data %}
+            <tr>
+                <td>{{ sample.Sample_name }}</td>
+                <td>{{ sample.Features }}</td>
+                <td><a target="_blank" href="/project/{{project.project_name}}/sample/{{sample.Sample_name}}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+</div>
+
+
+{% endblock %}

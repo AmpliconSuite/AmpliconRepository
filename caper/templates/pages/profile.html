@@ -2,14 +2,58 @@
 
 {% load mezzanine_tags %}
 {% block main %}
+
+{% block extra_js %}
+<script>
+    $(document).ready( function () {
+        $('#projectTable').DataTable(
+        );
+    } );
+</script>
+{% endblock %}
+
+
 <head>
     <title>
         CAPER
     </title>
 </head>
+    {% if user.is_authenticated %}
     <h1>
-        Hello {% if user.is_authenticated %}, {{ user.username }}.{% endif %}
+        Hello, {{ user.username }}!
     </h1>
     <hr>
     <h3>Projects </h3>
+    <div class="table-responsive">
+        <table id='projectTable' class="table table-hover table-sm">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Date</th>
+                    <th>Private</th>
+                    <th>Project Members</th>
+                    <th>Project Page</th>
+                    <th>Edit Project</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for project in projects %}
+                <tr>
+                    <td>{{ project.project_name }}</td>
+                    <td>{{ project.description }}</td>
+                    <td>{{ project.date }}</td>
+                    <td>{{ project.private }}</td>
+                    <td>{{ project.project_members }}</td>
+                    <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td>
+                    <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.project_name %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    {% if not user.is_authenticated %}
+    <h1>Please sign in to view your profile</h1>
+    {% endif %}
 {% endblock %}

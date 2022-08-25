@@ -1,16 +1,127 @@
 {% extends 'base.html' %}
 
 {% load mezzanine_tags %}
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+        });
+     
+        $('table.table').DataTable({
+            select: {
+                style: 'multi'
+            }
+        });
+    });
+</script>
+{% endblock %}
+
 {% block main %}
 <head>
     <title>
-        CAPER
+        AmpliconRepository
     </title>
 </head>
-    <h1>
-        
-    </h1>
-    <hr>
-    <h3>Projects </h3>
+
+<div class="row">
+    <div class="col-md-8">
+        <div>
+            <h1 style="padding-top: 50px">Welcome to the AmpliconRepository</h1>
+            <hr>
+            <p>Focal oncogene amplification and rearrangements drive tumor growth and evolution in multiple cancer types. Proposed mechanisms for focal amplification include extrachromosomal DNA (ecDNA) formation, breakage-fusion-bridge (BFB) mechanism, tandem duplications, chromothripsis and others. Focally amplified regions are often hotspots for genomic rearrangements. As a result, the focally amplified region may undergo rapid copy number changes and the structure of the focally amplified region may evolve over time contributing to tumor progression. Furthermore, ecDNA elements may reintegrate back into the genome to form HSRs. The inter-cell heterogeneity in copy number of ecDNA as well as the interchangeability between ecDNA and HSR may allow the tumor to adapt to changing environment, e.g. targetted drug application. As a result, understanding the architecture of the focal amplifications is important to gain insights into cancer biology. AmpliconArchitect (AA) is a tool which can reconstruct the structure of focally amplified regions in a cancer sample using whole genome sequence short paired-end data.
+
+            A full description of the methods and detailed characterization of copy number amplifications and ecDNA in cancer can be found in the following manuscript. Please cite the following reference if using AmpliconArchitect in your work:
+                
+            Deshpande, V. et al. Exploring the landscape of focal amplifications in cancer using AmpliconArchitect. Nat. Commun. 10, 392 (2019). <a href="https://www.nature.com/articles/s41467-018-08200-y">(Article)</a></p>
+        </div>
+        <div>
+            <ul class="nav nav-tabs" role="tablist" >
+                <li class="nav-item">
+                    <a class="nav-link active" href="#tab-table1" data-toggle="tab">Public Projects</a>
+                </li>
+                {% if user.is_authenticated %}
+                <li class="nav-item"> 
+                    <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
+                </li>
+                {% endif %}
+            </ul>
+            <div class="tab-content" style="padding-top: 30px;">
+                <div class="tab-pane active" id="tab-table1">
+                    <table id='projectTable1' class="table" style="padding-top: 20px; width:100%">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Last Updated</th>
+                                <th>Project Members</th>
+                                <th>Project Page</th>
+                                <th>Edit Project</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in public_projects %}
+                            <tr>
+                                <td>{{ project.project_name }}</td>
+                                <td>{{ project.description }}</td>
+                                <td>{{ project.date }}</td>
+                                <td>{{ project.project_members }}</td>
+                                <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td>
+                                <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.project_name %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if user.is_authenticated %}
+                <div class="tab-pane" id="tab-table2">
+                    <table id='projectTable2' class="table" style="padding-top: 20px; width:100%">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Last Updated</th>
+                                <th>Project Members</th>
+                                <th>Project Page</th>
+                                <th>Edit Project</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in private_projects %}
+                            <tr>
+                                <td>{{ project.project_name }}</td>
+                                <td>{{ project.description }}</td>
+                                <td>{{ project.date }}</td>
+                                <td>{{ project.project_members }}</td>
+                                <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td>
+                                <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.project_name %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div> 
+        </div>
+    </div>
+    <div class="col-md-4">
+        <figure class="figure">
+            <img src="/static/img/ff11_amplicon1.png" alt="" width="100%">
+            <figcaption class="figure-caption">AmpliconArchitect Caption</figcaption>
+        </figure>
+        <br>
+        <figure class="figure">
+            <img src="/static/img/exampleAR.png" alt="" width="100%">
+            <figcaption class="figure-caption">CycleViz caption</figcaption>
+        </figure>
+        <h4 style="margin-top: 50px">News & Updates</h4>
+        <ul>
+            <li>
+                <a href="https://www.genengnews.com/news/extrachromosal-dna-found-to-play-a-critical-role-in-cancer/" target="_blank">Extrachromosal DNA Found to Play a Critical Role in Cancer <i class="fas fa-external-link-alt"></i></a>
+            </li>
+        </ul>
+    </div>
+</div>
+
 
 {% endblock %}
