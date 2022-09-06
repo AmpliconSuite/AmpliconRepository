@@ -28,10 +28,21 @@
             </ul>
         </div>
 
-       
-        <!-- <form class="form-inline my-2 my-lg-0">
-            <input class="form-control mr-sm-2" type="search" placeholder="Search" aria-label="Search">
-            <button class="btn btn-outline-success my-2 my-sm-0" type="submit">Search</button>
+<!--        
+        <form class="form-inline">
+            <input class="form-control" type="search" placeholder="Search" aria-label="Search">
+            <button class="btn btn-outline-success" type="submit">Search</button>
         </form> -->
+
+        <form class="input-group" method=POST action="{% url 'search_page' %}">
+            {% csrf_token %}
+            <input type="search" list="data" class="form-control rounded" placeholder="Search" aria-label="Search" aria-describedby="search-addon" />
+            <datalist id="data">
+                {% for i in data %}
+                <option value="{{ i }}">
+                {% endfor %}
+            </datalist>
+            <button type="submit" class="btn btn-outline-primary">Search</button>
+        </form>
     <!-- </div> -->
 </nav>

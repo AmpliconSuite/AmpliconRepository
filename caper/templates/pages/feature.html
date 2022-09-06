@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+
+{% block main %}
+<div class="container row" style="margin:auto; padding-top: 50px;">
+    <div class="col-md-9">
+        <h2>{{ feature_name }} from {{ sample_name }} <a target="_blank" href="{% url 'project_page' project_name=project.project_name %}"><i class="fa fa-link" aria-hidden="true"></i></a> </h2>
+        <br>        
+    </div>
+    <div class="col-md-3">
+        <p><b>Last Updated:</b> {{ project.date }}</p>
+        <p><b>Private:</b> {{ project.private }}</p>
+        <p><b>Project Members:</b> {{ project.project_members }}</p>
+    </div>
+    
+    {% for i in feature %}
+        <p>Feature ID: {{i.Feature_ID}}</p>
+    {% endfor %}
+
+    
+</div>
+
+
+{% endblock %}

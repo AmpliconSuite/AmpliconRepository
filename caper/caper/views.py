@@ -26,7 +26,15 @@ def get_one_project(project_name):
     return collection_handle.find_one({'project_name': project_name})
 
 def get_one_sample(project_name,sample_name):
-    return collection_handle.find_one({'project_name': project_name, 'runs':sample_name})
+    project = get_one_project(project_name)
+    runs = project['runs']
+    sample = runs[sample_name]
+    return project, sample
+
+def get_one_feature(project_name,sample_name, feature_name):
+    project, sample = get_one_sample(project_name,sample_name)
+    feature = list(filter(lambda sample: sample['Feature ID'] == feature_name, sample))
+    return project, sample, feature
 
 def check_project_exists(project_name):
     return collection_handle.count_documents({ 'project_name': project_name }, limit = 1)
@@ -56,14 +64,23 @@ def sample_data_from_feature_list(features_list):
     return sample_data
 
 def replace_space_to_underscore(runs):
-    run_list = []
-    for run in runs:
-        for sample in runs[run]:
+    if type(runs) == dict:
+        run_list = []
+        for run in runs:
+            for sample in runs[run]:
+                for key in list(sample.keys()):
+                    newkey = key.replace(" ", "_")
+                    sample[newkey] = sample.pop(key)
+                run_list.append(sample)
+        return run_list
+    else:
+        run_list = []
+        for sample in runs:
             for key in list(sample.keys()):
                 newkey = key.replace(" ", "_")
                 sample[newkey] = sample.pop(key)
             run_list.append(sample)
-    return run_list
+        return run_list
 
 def index(request):
     user = request.user.id
@@ -87,11 +104,17 @@ def project_page(request, project_name):
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data})
 
 def sample_page(request, project_name, sample_name):
-    project = get_one_project(project_name)
-    sample_data = get_one_sample(project_name, sample_name)
-    features = project['runs']
-    features_list = replace_space_to_underscore(features)
-    return render(request, "pages/sample.html", {'project': project, 'sample_data': sample_data, 'sample_name': sample_name, 'features' : features_list})
+    project, sample_data = get_one_sample(project_name, sample_name)
+    sample_data = replace_space_to_underscore(sample_data)
+    return render(request, "pages/sample.html", {'project': project, 'sample_data': sample_data, 'sample_name': sample_name})
+
+def feature_page(request, project_name, sample_name, feature_name):
+    project, sample_data, feature  = get_one_feature(project_name,sample_name, feature_name)
+    feature_data = replace_space_to_underscore(feature)
+    return render(request, "pages/feature.html", {'project': project, 'sample_name': sample_name, 'feature_name': feature_name, 'feature' : feature_data})
+
+def search_page(request):
+    return render(request, "pages/search.html", {})
 
 def edit_project_page(request, project_name):
     if request.method == "POST":
@@ -141,9 +164,10 @@ def create_project(request):
             return HttpResponse("Project already exists")
         else:
             current_user = request.user.email
-            project['user'] = current_user
+            project['creator'] = current_user
             project['project_name'] = form_dict['project_name']
             project['description'] = form_dict['description']
+            project['date_created'] = get_date()
             project['date'] = get_date()
             # project['sample_count'] = sample_count
             project['private'] = form_dict['private']
@@ -152,6 +176,7 @@ def create_project(request):
             project['runs'] = runs
             # print(project)
             if form.is_valid():
+                print(project)
                 collection_handle.insert_one(project)
                 return redirect('project_page', project_name=project_name)
             else:

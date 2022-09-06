@@ -39,7 +39,10 @@ urlpatterns += [
     # path("accounts/login/", views.login, name="login"),
     path("project/<project_name>", views.project_page, name="project_page"),
     path("project/<project_name>/sample/<sample_name>", views.sample_page, name="sample_page"),
-    path("project/<project_name>/edit", views.edit_project_page, name="edit_project_page")
+    path("project/<project_name>/sample/<sample_name>/feature/<feature_name>", views.feature_page, name="feature_page"),
+    path("project/<project_name>/edit", views.edit_project_page, name="edit_project_page"),
+    path('search/', views.search_page, name='search_page'),
+
 
 ]
 

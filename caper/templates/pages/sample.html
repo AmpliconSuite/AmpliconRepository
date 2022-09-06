@@ -6,7 +6,7 @@
         $('#myTable1').DataTable({
             select: {
                 style: 'multi'
-            }
+            },
         }
         );
     } );
@@ -60,7 +60,7 @@
                 </tr>
             </thead>
             <tbody>
-                {% for feature in features %}
+                {% for feature in sample_data %}
                 <tr>
                     <td>{{ feature.Feature_ID }}</td>
                     <td>{{ feature.AA_amplicon_number }}</td>
