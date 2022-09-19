@@ -36,6 +36,11 @@
     
 </div>
 
+{% if graph %}
+    <div>
+        {{ graph|safe }}
+    </div>
+{% endif %}
 
 <div class="container" style="margin-top:50px;">
     <h4>Features Table</h4>
