@@ -6,6 +6,7 @@ from django.views.i18n import set_language
 import mezzanine
 from mezzanine.conf import settings
 from . import views
+from django.conf.urls.static import static
 
 # Uncomment to use blog as home page. See also urlpatterns section below.
 # from mezzanine.blog import views as blog_views
@@ -46,9 +47,7 @@ urlpatterns += [
 
 ]
 
-# urlpatterns += [
-#     path('runs/', include('runs.urls')),
-# ]
+urlpatterns += static(settings.PROJECT_DATA_URL, document_root=settings.PROJECT_DATA_ROOT)
 
 urlpatterns += [
     path('accounts/', include('allauth.urls')),

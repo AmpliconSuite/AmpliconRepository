@@ -51,19 +51,26 @@ def samples_to_dict(form_file):
         if run:
             sample = run[0]
             sample_name = sample['Sample name']
+
+            for feature in run:
+                for attr in ("Feature BED file", "CNV BED file", "AA PNG file", "AA PDF file", "Run metadata JSON"):
+                    assert 'AA_outputs' in feature[attr]
+                    index = feature[attr].index('AA_outputs')
+                    feature[attr] = feature[attr][index:]
             runs[sample_name] = run
     return runs
 
 def download_file(project_name, form_file):
     project_data_path = f"project_data/{project_name}"
-    fs = FileSystemStorage(location=project_data_path)
-    fs.save(form_file.name, form_file)
-    if form_file.name.endswith('.zip'):
-        sp.run(f"cd '{os.getcwd()}/{project_data_path}'; unzip '{form_file.name}' > /dev/null", shell=True)
-        files = os.listdir(project_data_path)
-        for file in files:
-            if file.endswith(".tar.gz"):
-                sp.run(f"cd '{os.getcwd()}/{project_data_path}'; tar -xf '{file}'", shell=True)
+    if not os.path.exists(project_data_path):
+        fs = FileSystemStorage(location=project_data_path)
+        fs.save(form_file.name, form_file)
+        if form_file.name.endswith('.zip'):
+            sp.run(f"cd '{os.getcwd()}/{project_data_path}'; unzip '{form_file.name}' > /dev/null", shell=True)
+            files = os.listdir(project_data_path)
+            for file in files:
+                if file.endswith(".tar.gz"):
+                    sp.run(f"cd '{os.getcwd()}/{project_data_path}'; tar -xf '{file}'", shell=True)
     return open(f"{project_data_path}/run.json")
 
 def form_to_dict(form):
@@ -125,8 +132,8 @@ def project_page(request, project_name):
 def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_underscore = replace_space_to_underscore(sample_data)
-    plot = sample_plot.plot(sample_data, project_name)
-    return render(request, "pages/sample.html", {'project': project, 'sample_data': sample_data_underscore, 'sample_name': sample_name, 'graph': plot})
+    plot = sample_plot.plot(sample_data, sample_name, project_name)
+    return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_underscore, 'sample_name': sample_name, 'graph': plot})
 
 def feature_page(request, project_name, sample_name, feature_name):
     project, sample_data, feature  = get_one_feature(project_name,sample_name, feature_name)

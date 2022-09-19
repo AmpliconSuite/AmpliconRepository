@@ -359,6 +359,10 @@ if os.path.exists(f):
     exec(open(f, "rb").read())
 
 
+PROJECT_DATA_URL='/project_data/'
+PROJECT_DATA_ROOT=os.path.join(BASE_DIR,'project_data')
+
+
 ####################
 # DYNAMIC SETTINGS #
 ####################

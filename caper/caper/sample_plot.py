@@ -15,7 +15,7 @@ CENTROMERE_FILE = 'bed_files/GRCh38_centromere.bed'
 warnings.filterwarnings("ignore")
 
 
-def plot(sample, project_name):
+def plot(sample, sample_name, project_name):
     project_data_dir = f'project_data/{project_name}/extracted'
 
     if not os.path.exists(project_data_dir):
@@ -165,8 +165,8 @@ def plot(sample, project_name):
             colind += 1
 
     fig.update_layout(title_font_size=30,  
-    xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified', title_text="ESO51 Copy Number Plots",
-    height = 800, width = 1300, margin = dict(t = 70, r = 70, b = 70, l = 70))
+    xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified', title_text=f"{sample_name} Copy Number Plots",
+    height = 800, width = 1100, margin = dict(t = 70, r = 70, b = 70, l = 70))
 
     return fig.to_html(full_html=False, default_height=500, default_width=800)
 
