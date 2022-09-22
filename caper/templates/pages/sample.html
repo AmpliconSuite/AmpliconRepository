@@ -37,13 +37,16 @@
 </div>
 
 
+{% if graph %}
+    <div>
+        <br>
+        {{ graph|safe }}
+        <br>
+    </div>
+{% endif %}
+
 <div class="container" style="margin-top:50px;">
-    {% if graph %}
-        <div>
-            {{ graph|safe }}
-            <br>
-        </div>
-    {% endif %}
+
     <h4>Features Table</h4>
     <div class="table-responsive">
         <table id='myTable2' class="table table-hover table-sm">
