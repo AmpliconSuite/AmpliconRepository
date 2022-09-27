@@ -33,15 +33,18 @@
             <input class="form-control" type="search" placeholder="Search" aria-label="Search">
             <button class="btn btn-outline-success" type="submit">Search</button>
         </form> -->
+        <script>
+            $( "#searchform" ).submit( function( e ) {
+                e.preventDefault();
+            
+                document.location = $( "#searchinput" ).val();
+            
+              } );
+        </script>
 
-        <form class="input-group" method=POST action="{% url 'search_page' %}">
+        <form id="searchform" class="input-group" method=GET action="{% url 'search_page' %}">
             {% csrf_token %}
-            <input type="search" list="data" class="form-control rounded" placeholder="Search" aria-label="Search" aria-describedby="search-addon" />
-            <datalist id="data">
-                {% for i in data %}
-                <option value="{{ i }}">
-                {% endfor %}
-            </datalist>
+            <input type="query" class="form-control rounded" placeholder="Search" aria-label="Search" aria-describedby="search-addon" name="query" id="query"/>
             <button type="submit" class="btn btn-outline-primary">Search</button>
         </form>
     <!-- </div> -->

@@ -2,67 +2,90 @@
 
 {% block extra_js %}
 <script>
-    $(document).ready( function () {
-        $('#myTable1').DataTable({
+    $(document).ready(function () {
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+        });
+     
+        $('table.table').DataTable({
             select: {
                 style: 'multi'
             }
-        }
-        );
-    } );
-    $(document).ready( function () {
-        $('#myTable2').DataTable({
-            select: {
-                style: 'multi'
-            }
-        }
-        );
-    } );
+        });
+    });
 </script>
 {% endblock %}
 
 {% block main %}
 
-<h1>HELLO </h1>
-<div class="container row" style="margin:auto; padding-top: 50px;">
-    <div class="col-md-9">
-        <h2>{{ project.project_name }} <a href="{% url 'edit_project_page' project_name=project.project_name %}"><i class="fas fa-edit"></i></a> </h2>
-        <br>
-        <h4>{{ project.description }}</h4>
-        
-    </div>
-    <div class="col-md-3">
-        <p><b>Last Updated:</b> {{ project.date }}</p>
-        <p><b>Private:</b> {{ project.private }}</p>
-        <p><b>Project Members:</b> {{ project.project_members }}</p>
-    </div>
-    
-    
+<h3>Projects</h3>
+<div>
+    <ul class="nav nav-tabs" role="tablist" >
+        <li class="nav-item">
+            <a class="nav-link active" href="#tab-table1" data-toggle="tab">Public Projects</a>
+        </li>
+        {% if user.is_authenticated %}
+        <li class="nav-item"> 
+            <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
+        </li>
+        {% endif %}
+    </ul>
+    <div class="tab-content" style="padding-top: 30px;">
+        <div class="tab-pane active" id="tab-table1">
+            <table id='projectTable1' class="table" style="padding-top: 20px; width:100%">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Last Updated</th>
+                        <th>Project Members</th>
+                        <th>Project Page</th>
+                        <th>Edit Project</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project in public_projects %}
+                    <tr>
+                        <td>{{ project.project_name }}</td>
+                        <td>{{ project.description }}</td>
+                        <td>{{ project.date }}</td>
+                        <td>{{ project.project_members }}</td>
+                        <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td>
+                        <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.project_name %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if user.is_authenticated %}
+        <div class="tab-pane" id="tab-table2">
+            <table id='projectTable2' class="table" style="padding-top: 20px; width:100%">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Last Updated</th>
+                        <th>Project Members</th>
+                        <th>Project Page</th>
+                        <th>Edit Project</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project in private_projects %}
+                    <tr>
+                        <td>{{ project.project_name }}</td>
+                        <td>{{ project.description }}</td>
+                        <td>{{ project.date }}</td>
+                        <td>{{ project.project_members }}</td>
+                        <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td>
+                        <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.project_name %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div> 
 </div>
-
-<div class="container">
-<h4>Samples Table</h4>
-<div class="table-responsive">
-    <table id='myTable1' class="table table-hover table-sm">
-        <thead>
-            <tr>
-                <th>Sample Name</th>
-                <th>Feature Count</th>
-                <th>Sample Page</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for sample in sample_data %}
-            <tr>
-                <td>{{ sample.Sample_name }}</td>
-                <td>{{ sample.Features }}</td>
-                <td><a target="_blank" href="/project/{{project.project_name}}/sample/{{sample.Sample_name}}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-</div>
-
 
 {% endblock %}
