@@ -108,6 +108,19 @@ def replace_space_to_underscore(runs):
                 run_list[-1][newkey] = sample[key]
         return run_list
 
+def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
+    if copy:
+        sample_data = [feature.copy() for feature in sample_data]
+
+    for feature in sample_data:
+        for key, value in feature.items():
+            if type(value) == float:
+                feature[key] = round(value, 1)
+            elif type(value) == str and value.startswith('['):
+                feature[key] = ', \n'.join(value[2:-2].split("', '"))
+    return sample_data
+
+
 def index(request):
     user = request.user.id
     public_projects = list(collection_handle.find({'private' : False}))
@@ -131,9 +144,9 @@ def project_page(request, project_name):
 
 def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
-    sample_data_underscore = replace_space_to_underscore(sample_data)
+    sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     plot = sample_plot.plot(sample_data, sample_name, project_name)
-    return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_underscore, 'sample_name': sample_name, 'graph': plot})
+    return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name, 'graph': plot})
 
 def feature_page(request, project_name, sample_name, feature_name):
     project, sample_data, feature  = get_one_feature(project_name,sample_name, feature_name)

@@ -53,20 +53,18 @@
             <thead>
                 <tr>
                     <th>Feature ID</th>
-                    <th>AA_amplicon_number</th>
+                    <th> Amplicon # </th>
                     <th>Location</th>
                     <th>Oncogenes</th>
                     <th>Captured interval length</th>
                     <th>Classification</th>
-                    <th>Complexity_score</th>
-                    <th>Feature_maximum_copy_number</th>
-                    <th>Feature_median_copy_number</th>
+                    <th>Complexity score</th>
+                    <th>Feature maximum copy number</th>
+                    <th>Feature median copy number</th>
                     <!-- <th>Reference_version</th> -->
                     <!-- <th>Run_metadata_JSON</th> -->
                     {% if graph %}
-                        <th>AA_PDF_file</th>
-                        <th>AA_PNG_file</th>
-                        <th>Feature_BED_file</th>
+                        <th>Download</th>
                     {% endif %}
                 </tr>
             </thead>
@@ -86,10 +84,11 @@
                     <td>{{ run.Run_metadata_JSON }}</td> -->
                     {% if graph %}
 
-                        <td> <a href="/project_data/{{project_name}}/extracted/{{ feature.AA_PDF_file}}" download> <i class="fa fa-link" aria-hidden="true"></i> </a>
+                        <td> 
+                            <a href="/project_data/{{project_name}}/extracted/{{ feature.AA_PDF_file}}" download> AA_pdf </a> <br>
+                            <a href="/project_data/{{project_name}}/extracted/{{ feature.AA_PNG_file}}" download> AA_png </a> <br>
+                            <a href="/project_data/{{project_name}}/extracted/{{ feature.Feature_BED_file}}" download> Feature_Bed</a> 
                         </td>
-                        <td> <a href="/project_data/{{project_name}}/extracted/{{ feature.AA_PNG_file}}" download> <i class="fa fa-link" aria-hidden="true"></i> </a> </td>
-                        <td> <a href="/project_data/{{project_name}}/extracted/{{ feature.Feature_BED_file}}" download> <i class="fa fa-link" aria-hidden="true"></i> </a> </td>
                     {% endif %}
 
                 </tr>

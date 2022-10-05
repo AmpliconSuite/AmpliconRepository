@@ -9,10 +9,10 @@ from numpy import random
 import warnings
 from plotly.subplots import make_subplots
 import os
+import re
 
 cent_file = 'bed_files/GRCh38_centromere.bed'
 warnings.filterwarnings("ignore")
-
 
 def plot(sample, sample_name, project_name):
     project_data_dir = f'project_data/{project_name}/extracted'
@@ -22,10 +22,14 @@ def plot(sample, sample_name, project_name):
     CNV_file = CNV_file[CNV_file.index('AA_outputs'):]
     CNV_file = f"{project_data_dir}/{CNV_file}"
     amplicon = pd.DataFrame(sample)
-    
-    amplicon['Location'] = amplicon['Location'].str[1:]
-    amplicon['Location'] = amplicon['Location'].str[:-1]
-    #amplicon = pd.DataFrame(sample)
+
+    amplicon['Oncogenes'] = amplicon['Oncogenes'].str.replace('[', '')
+    amplicon['Oncogenes'] = amplicon['Oncogenes'].str.replace("'", "")
+    amplicon['Oncogenes'] = amplicon['Oncogenes'].str.replace(']', '')
+    amplicon['Location'] = amplicon['Location'].str.replace('[', '')
+    amplicon['Location'] = amplicon['Location'].str.replace("'", "")
+    amplicon['Location'] = amplicon['Location'].str.replace(']', '')
+
     amplicon_colors = []
     for num in amplicon['AA amplicon number'].unique():
         r = random.randint(255)
@@ -50,6 +54,8 @@ def plot(sample, sample_name, project_name):
 
     rowind = 1
     colind = 1
+
+    amplicon_numbers = []
     for key in dfs:
         log_scale = False
         copyNumberdf = pd.DataFrame()
@@ -66,7 +72,7 @@ def plot(sample, sample_name, project_name):
 
         x_array = [round(item, 2) for item in x_array]
         y_array = [round(item, 2) for item in y_array]
-        fig.add_trace(go.Scatter(x=x_array,y=y_array,mode = 'lines', name="Copy Number", showlegend = False), row = rowind, col = colind)
+        fig.add_trace(go.Scatter(x=x_array,y=y_array,mode = 'lines', name="Copy Number", showlegend = False, line = dict(color = 'green')), row = rowind, col = colind)
 
         amplicon_df = pd.DataFrame()
         for i in range(len(amplicon)):
@@ -75,27 +81,22 @@ def plot(sample, sample_name, project_name):
             splitloc = loc.split(',')
             for element in splitloc:
                 chrsplit = element.split(':')
-                chr = chrsplit[0][2:]
-                if chr == key:
-                    for j in range(0,4):
+                chr = chrsplit[0]
+                if chr == key or chr[1:] == key:
+                    for j in range(0,2):
                         row['Chromosome Number'] = chrsplit[0]
                         locsplit = chrsplit[1].split('-') 
                         row['Feature Start Position'] = locsplit[0]
-                        row['Feature End Position'] = locsplit[1][:-1]
+                        row['Feature End Position'] = locsplit[1]
                         if j == 0:
                             row['Feature Position'] = locsplit[0]
                             row['Y-axis'] = 95
                         elif j == 1:
-                            row['Feature Position'] = locsplit[0]
-                            row['Y-axis'] = 0
-                        elif j == 2:
-                            row['Feature Position'] = locsplit[1][:-1]
-                            row['Y-axis'] = 0
-                        elif j == 3:
-                            row['Feature Position'] = locsplit[1][:-1]
+                            row['Feature Position'] = locsplit[1]
                             row['Y-axis'] = 95
-                        amplicon_df = pd.concat([amplicon_df, row])
-
+                        amplicon_df = pd.concat([row, amplicon_df])
+        #display(amplicon_df)
+        
         if not amplicon_df.empty:
             #display(amplicon_df)
             amplicon_df['Feature Start Position'] = amplicon_df['Feature Start Position'].astype(float)
@@ -104,46 +105,57 @@ def plot(sample, sample_name, project_name):
             amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature maximum copy number'].astype(float)
             amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature median copy number'].astype(float)
             amplicon_df = amplicon_df.round(decimals=2)
+
             for i in range(len(amplicon_df['AA amplicon number'].unique())):
                 number = amplicon_df['AA amplicon number'].unique()[i]
                 per_amplicon = amplicon_df[amplicon_df['AA amplicon number'] == number]
-                fig.add_trace(go.Scatter(x = per_amplicon['Feature Position'], y = per_amplicon['Y-axis'], 
-                    customdata = amplicon_df, mode='lines',fill='tozeroy', hoveron='points', hovertemplate=
-                    '<br><i>Feature Classification:</i> %{customdata[3]}<br>' + 
-                    '<i>Feature Start Position:</i> %{customdata[17]}<br>' +
-                    '<i>Feature End Position:</b> %{customdata[18]}<br>' +
-                    '<i>Oncogenes:</i> %{customdata[5]}<br>'+
-                    '<i>Feature Maximum Copy Number:</i> %{customdata[9]}<br>'
-                    '<i>Feature Median Copy Number</i> %{customdata[8]}<br>'
-                    '<a href = "www.google.com">AA PNG File</a>',
-                    name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[number - 1], line = dict(color = amplicon_colors[number - 1])), row = rowind, col = colind)
+                if number not in amplicon_numbers:
+                    fig.add_trace(go.Scatter(x = per_amplicon['Feature Position'], y = per_amplicon['Y-axis'], 
+                        customdata = amplicon_df, mode='lines',fill='tozeroy', hoveron='points+fills', hovertemplate=
+                        '<br><i>Feature Classification:</i> %{customdata[3]}<br>' + 
+                        '<i>%{customdata[16]}:</i> %{customdata[17]} - %{customdata[18]}<br>' +
+                        '<i>Oncogenes:</i> %{customdata[5]}<br>'+
+                        '<i>Feature Maximum Copy Number:</i> %{customdata[9]}<br>'
+                        f'<b id="/{project_data_dir}/AA_outputs/{sample_name}/{sample_name}_AA_results/{sample_name}_amplicon{number}.png">Click to Download Amplicon {number} PNG</b>',
+                        name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[number - 1], 
+                        line = dict(color = amplicon_colors[number - 1])), row = rowind, col = colind)
+                    amplicon_numbers.append(number)
+                else:
+                    fig.add_trace(go.Scatter(x = per_amplicon['Feature Position'], y = per_amplicon['Y-axis'], 
+                        customdata = amplicon_df, mode='lines',fill='tozeroy', hoveron='points+fills', hovertemplate=
+                        '<br><i>Feature Classification:</i> %{customdata[3]}<br>' + 
+                        '<i>%{customdata[16]}:</i> %{customdata[17]} - %{customdata[18]}<br>' +
+                        '<i>Oncogenes:</i> %{customdata[5]}<br>'+
+                        '<i>Feature Maximum Copy Number:</i> %{customdata[9]}<br>'
+                        '<b href = "www.google.com">AA PNG File</a>',
+                        name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[number - 1], 
+                        line = dict(color = amplicon_colors[number - 1]), showlegend = False), row = rowind, col = colind)
 
         cent_df = pd.read_csv(cent_file, header = None, sep = '\t')
         #display(a_df)
-        chr_df = cent_df[cent_df[0] == key]
-        #for i in range(0, 2):
-        cent_pos_list = []
-        cent_pos_list.append(chr_df.iloc[0, 1])
-        cent_pos_list.append(chr_df.iloc[0, 2])
-        cent_pos_list.append(chr_df.iloc[1, 1])
-        cent_pos_list.append(chr_df.iloc[1, 2])
-
-        Y_axis = []
-        Y_axis.append(95)
-        Y_axis.append(95)
-        Y_axis.append(95)
-        Y_axis.append(95)
-
-        cent_pos_list = [round(item, 2) for item in cent_pos_list]
-        Y_axis = [round(item, 2) for item in Y_axis]
+        cent_df = cent_df[cent_df[0] == key]
+        #display(cent_df)
+        chr_df = pd.DataFrame()
+        for i in range(len(cent_df)):
+            row = cent_df.iloc[[i]]
+            #display(row)
+            for j in range(0, 2):
+                if j == 0:
+                    row['Centromere Position'] = row.iloc[0, 1]
+                    row['Y-axis'] = 95
+                elif j == 1:
+                    row['Centromere Position'] = row.iloc[0, 2]
+                    row['Y-axis'] = 95
+                chr_df = pd.concat([row, chr_df])
 
         if rowind == 1 and colind == 1:
-            fig.add_trace(go.Scatter(x = cent_pos_list, y = Y_axis, fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)', 
-                line_color = 'rgba(2, 6, 54, 0.3)', name = 'Centromere'), row = rowind, col = colind)
+            fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)', 
+                line_color = 'rgba(2, 6, 54, 0.3)', customdata = chr_df, hovertemplate = 
+                '<br>%{customdata[0]}: %{customdata[1]}-%{customdata[2]}', name = 'Centromere'), row = rowind, col = colind)
         else:
-            fig.add_trace(go.Scatter(x = cent_pos_list, y = Y_axis, fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)', 
-                line_color = 'rgba(2, 6, 54, 0.3)', name = 'Centromere', showlegend = False, hovertemplate = 
-                '<br>Centromere'
+            fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)', 
+                line_color = 'rgba(2, 6, 54, 0.3)', customdata = chr_df, name = 'Centromere', showlegend = False, hovertemplate = 
+                '<br>%{customdata[0]}: %{customdata[1]}-%{customdata[2]}'
                 ), row = rowind, col = colind)
 
         fig.update_xaxes(showline = True, linewidth = 1, title_font_size = 10,  ticksuffix = " ")
@@ -171,8 +183,49 @@ def plot(sample, sample_name, project_name):
             colind += 1
 
     fig.update_layout(title_font_size=30,  
-    xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified', title_text="ESO51 Copy Number Plots",
+    xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified', title_text=f"{sample_name} Copy Number Plots",
     height = 1000, width = 1300, margin = dict(t = 70, r = 70, b = 70, l = 70))
+    
+    plot_div = fig.to_html(full_html=False, default_height=500, default_width=800)
 
-    return fig.to_html(full_html=False, default_height=500, default_width=800)
+    # https://community.plotly.com/t/hyperlink-to-markers-on-map/17858/6
+    # Get id of html div element that looks like
+    # <div id="301d22ab-bfba-4621-8f5d-dc4fd855bb33" ... >
+    res = re.search('<div id="([^"]*)"', plot_div)
+    div_id = res.groups()[0]
+    # Build JavaScript callback for handling clicks
+    # and opening the URL in the trace's customdata 
+    js_callback = """
+    <script>
+    var plot_element = document.getElementById("{div_id}");
+    plot_element.on('plotly_click', function(data){{
+        console.log(data);
 
+        var link = '';
+        for (let i = 0; i < data['points'].length; i++) {{
+            var name = data['points'][i]['data']['name'];
+            if (name.includes('Amplicon')) {{
+                link = data['points'][i]['data']['hovertemplate'].split('"')[1];
+            }}
+        }}
+
+        if (link != '') {{
+            var link_elem = document.createElement("a");
+            console.log(link);
+            link_elem.setAttribute('download', 'download');
+            link_elem.href = link;
+            document.body.appendChild(link_elem);
+            link_elem.click();
+            link_elem.remove();
+        }}
+    }})
+    </script>
+    """.format(div_id=div_id)
+
+    # Build HTML string
+    html_str = """
+    {plot_div}
+    {js_callback}
+    """.format(plot_div=plot_div, js_callback=js_callback)
+
+    return html_str
