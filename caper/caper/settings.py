@@ -136,8 +136,9 @@ FILE_UPLOAD_PERMISSIONS = 0o644
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Provider specific settings
-GOOGLE_SECRET_KEY = os.environ['GOOGLE_SECRET_KEY']
-GLOBUS_SECRET_KEY = os.environ['GLOBUS_SECRET_KEY']
+with open('config.sh') as infile:
+    _, GOOGLE_SECRET_KEY, _, GLOBUS_SECRET_KEY, *_ = infile.read().split("'")
+
 SOCIALACCOUNT_EMAIL_REQUIRED=True
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
@@ -356,6 +357,10 @@ if os.path.exists(f):
     module.__file__ = f
     sys.modules[module_name] = module
     exec(open(f, "rb").read())
+
+
+PROJECT_DATA_URL='/project_data/'
+PROJECT_DATA_ROOT=os.path.join(BASE_DIR,'project_data')
 
 
 ####################

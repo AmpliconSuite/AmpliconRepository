@@ -37,26 +37,35 @@
 </div>
 
 
+{% if graph %}
+    <div>
+        <br>
+        {{ graph|safe }}
+        <br>
+    </div>
+{% endif %}
+
 <div class="container" style="margin-top:50px;">
+
     <h4>Features Table</h4>
     <div class="table-responsive">
         <table id='myTable2' class="table table-hover table-sm">
             <thead>
                 <tr>
                     <th>Feature ID</th>
-                    <th>AA_amplicon_number</th>
+                    <th> Amplicon # </th>
                     <th>Location</th>
                     <th>Oncogenes</th>
                     <th>Captured interval length</th>
                     <th>Classification</th>
-                    <th>Complexity_score</th>
-                    <th>Feature_maximum_copy_number</th>
-                    <th>Feature_median_copy_number</th>
+                    <th>Complexity score</th>
+                    <th>Feature maximum copy number</th>
+                    <th>Feature median copy number</th>
                     <!-- <th>Reference_version</th> -->
                     <!-- <th>Run_metadata_JSON</th> -->
-                    <!-- <th>AA_PDF_file</th>
-                    <th>AA_PNG_file</th>
-                    <th>Feature_BED_file</th> -->
+                    {% if graph %}
+                        <th>Download</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -71,11 +80,17 @@
                     <td>{{ feature.Complexity_score }}</td>
                     <td>{{ feature.Feature_maximum_copy_number }}</td>
                     <td>{{ feature.Feature_median_copy_number }}</td>
-                    <!-- <td>{{ run.Reference_version }}</td> -->
-                    <!-- <td>{{ run.Run_metadata_JSON }}</td> -->
-                    <!-- <td>{{ run.AA_PDF_file }}</td>
-                    <td>{{ run.AA_PNG_file }}</td>
-                    <td>{{ run.Feature_BED_file }}</td> -->
+<!--                     <td>{{ run.Reference_version }}</td>
+                    <td>{{ run.Run_metadata_JSON }}</td> -->
+                    {% if graph %}
+
+                        <td> 
+                            <a href="/project_data/{{project_name}}/extracted/{{ feature.AA_PDF_file}}" download> AA_pdf </a> <br>
+                            <a href="/project_data/{{project_name}}/extracted/{{ feature.AA_PNG_file}}" download> AA_png </a> <br>
+                            <a href="/project_data/{{project_name}}/extracted/{{ feature.Feature_BED_file}}" download> Feature_Bed</a> 
+                        </td>
+                    {% endif %}
+
                 </tr>
                 {% endfor %}
             </tbody>

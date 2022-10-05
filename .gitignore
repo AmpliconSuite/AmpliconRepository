@@ -1,1 +1,4 @@
 config.sh
+caper.sqlite3
+.DS_Store
+caper/project_data/*
