@@ -116,7 +116,7 @@ def plot(sample, sample_name, project_name):
                         '<i>%{customdata[16]}:</i> %{customdata[17]} - %{customdata[18]}<br>' +
                         '<i>Oncogenes:</i> %{customdata[5]}<br>'+
                         '<i>Feature Maximum Copy Number:</i> %{customdata[9]}<br>'
-                        f'<b id="/{project_data_dir}/AA_outputs/{sample_name}/{sample_name}_AA_results/{sample_name}_amplicon{number}.png">Click to Download Amplicon {number} PNG</b>',
+                        f'<b class="/{project_data_dir}/AA_outputs/{sample_name}/{sample_name}_AA_results/{sample_name}_amplicon{number}.png">Click to Download Amplicon {number} PNG</b>',
                         name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[number - 1], 
                         line = dict(color = amplicon_colors[number - 1])), row = rowind, col = colind)
                     amplicon_numbers.append(number)
@@ -199,31 +199,35 @@ def plot(sample, sample_name, project_name):
     <script>
     var plot_element = document.getElementById("{div_id}");
     plot_element.on('plotly_click', function(data){{
-        console.log(data);
-
         var link = '';
         for (let i = 0; i < data['points'].length; i++) {{
             var name = data['points'][i]['data']['name'];
             if (name.includes('Amplicon')) {{
                 link = data['points'][i]['data']['hovertemplate'].split('"')[1];
+                break;
             }}
         }}
 
         if (link != '') {{
-            var link_elem = document.createElement("a");
-            console.log(link);
-            link_elem.setAttribute('download', 'download');
+            var link_window = document.getElementById("figure_download_window");
+            var link_elem = link_window.firstChild;
             link_elem.href = link;
-            document.body.appendChild(link_elem);
-            link_elem.click();
-            link_elem.remove();
+            console.log(link_elem);
+            link_elem.innerHTML = '<b>Download ' + name.slice(3, -4) + ' PNG </b>';
+            link_window.setAttribute('style', 'display: flex; align-items: center;');
         }}
     }})
+
+    var closebtn = document.getElementById("close");
+    closebtn.addEventListener("click", function() {{
+        this.parentElement.style.display = 'none';
+    }});
     </script>
     """.format(div_id=div_id)
 
     # Build HTML string
     html_str = """
+    <div id="figure_download_window", style='display: none'><a href='' download="download" style='border-style: solid; padding: 0.1rem 0.5rem; border-width: 0.15rem'></a><span id='close' style='margin-left: 5px; color: grey'>&times</span></div>
     {plot_div}
     {js_callback}
     """.format(plot_div=plot_div, js_callback=js_callback)
