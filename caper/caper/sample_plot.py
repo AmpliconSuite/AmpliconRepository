@@ -8,6 +8,7 @@ import numpy as np
 from numpy import random
 import warnings
 from plotly.subplots import make_subplots
+from pylab import cm
 import os
 import re
 
@@ -18,6 +19,7 @@ def plot(sample, sample_name, project_name):
     project_data_dir = f'project_data/{project_name}/extracted'
     if not os.path.exists(project_data_dir):
         return ''
+
     CNV_file = sample[0]['CNV BED file']
     CNV_file = CNV_file[CNV_file.index('AA_outputs'):]
     CNV_file = f"{project_data_dir}/{CNV_file}"
@@ -30,13 +32,10 @@ def plot(sample, sample_name, project_name):
     amplicon['Location'] = amplicon['Location'].str.replace("'", "")
     amplicon['Location'] = amplicon['Location'].str.replace(']', '')
 
-    amplicon_colors = []
-    for num in amplicon['AA amplicon number'].unique():
-        r = random.randint(255)
-        g = random.randint(255)
-        b = random.randint(255)
-        amplicon_colors.append('rgba(' + str(r) + ',' + str(g) + ',' + str(b) + ',' + '0.3)')
 
+    cmap = cm.get_cmap('Spectral', len(amplicon['AA amplicon number'].unique()))
+    amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(cmap.N)]
+    
     fig = make_subplots(rows=6, cols=4
         ,subplot_titles=("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11",
         "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22",
@@ -67,8 +66,17 @@ def plot(sample, sample_name, project_name):
             y_array.append(dfs[key].iloc[i, 4])
             y_array.append(dfs[key].iloc[i, 4])
 
+            # if dfs[key].iloc[i, 2] - dfs[key].iloc[i, 1] > 1000000:
+            #    divisor = dfs[key].iloc[i, 2] - dfs[key].iloc[i, 1] // 50
+            #    x_array.append(dfs[key].iloc[i, 1] + divisor)
+            #    x_array.append(dfs[key].iloc[i, 2])
+            #    y_array.append(dfs[key].iloc[i, 4])
+            #    y_array.append(dfs[key].iloc[i, 4])
+
             x_array.append(dfs[key].iloc[i, 2])
             y_array.append(np.nan)
+
+
 
         x_array = [round(item, 2) for item in x_array]
         y_array = [round(item, 2) for item in y_array]
@@ -86,15 +94,24 @@ def plot(sample, sample_name, project_name):
                     for j in range(0,2):
                         row['Chromosome Number'] = chrsplit[0]
                         locsplit = chrsplit[1].split('-') 
-                        row['Feature Start Position'] = locsplit[0]
-                        row['Feature End Position'] = locsplit[1]
-                        if j == 0:
-                            row['Feature Position'] = locsplit[0]
-                            row['Y-axis'] = 95
-                        elif j == 1:
-                            row['Feature Position'] = locsplit[1]
-                            row['Y-axis'] = 95
-                        amplicon_df = pd.concat([row, amplicon_df])
+                        row['Feature Start Position'] = int(locsplit[0])
+                        row['Feature End Position'] = int(locsplit[1])
+                        if int(locsplit[1]) - int(locsplit[0]) < 5000000:
+                            if j == 0:
+                                row['Feature Position'] = locsplit[0]
+                                row['Y-axis'] = 95
+                            elif j == 1:
+                                row['Feature Position'] = int(locsplit[1]) + 3000000
+                                row['Y-axis'] = 95
+                            amplicon_df = pd.concat([row, amplicon_df])
+                        else:
+                            if j == 0:
+                                row['Feature Position'] = locsplit[0]
+                                row['Y-axis'] = 95
+                            elif j == 1:
+                                row['Feature Position'] = locsplit[1]
+                                row['Y-axis'] = 95
+                            amplicon_df = pd.concat([row, amplicon_df])
         #display(amplicon_df)
         
         if not amplicon_df.empty:
@@ -105,12 +122,10 @@ def plot(sample, sample_name, project_name):
             amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature maximum copy number'].astype(float)
             amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature median copy number'].astype(float)
             amplicon_df = amplicon_df.round(decimals=2)
-
             for i in range(len(amplicon_df['AA amplicon number'].unique())):
                 number = amplicon_df['AA amplicon number'].unique()[i]
                 per_amplicon = amplicon_df[amplicon_df['AA amplicon number'] == number]
-                if number not in amplicon_numbers:
-                    fig.add_trace(go.Scatter(x = per_amplicon['Feature Position'], y = per_amplicon['Y-axis'], 
+                fig.add_trace(go.Scatter(x = per_amplicon['Feature Position'], y = per_amplicon['Y-axis'], 
                         customdata = amplicon_df, mode='lines',fill='tozeroy', hoveron='points+fills', hovertemplate=
                         '<br><i>Feature Classification:</i> %{customdata[3]}<br>' + 
                         '<i>%{customdata[16]}:</i> %{customdata[17]} - %{customdata[18]}<br>' +
@@ -119,18 +134,8 @@ def plot(sample, sample_name, project_name):
                         f'<b class="/{project_data_dir}/AA_outputs/{sample_name}/{sample_name}_AA_results/{sample_name}_amplicon{number}.png">Click to Download Amplicon {number} PNG</b>',
                         name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[number - 1], 
                         line = dict(color = amplicon_colors[number - 1])), row = rowind, col = colind)
-                    amplicon_numbers.append(number)
-                else:
-                    fig.add_trace(go.Scatter(x = per_amplicon['Feature Position'], y = per_amplicon['Y-axis'], 
-                        customdata = amplicon_df, mode='lines',fill='tozeroy', hoveron='points+fills', hovertemplate=
-                        '<br><i>Feature Classification:</i> %{customdata[3]}<br>' + 
-                        '<i>%{customdata[16]}:</i> %{customdata[17]} - %{customdata[18]}<br>' +
-                        '<i>Oncogenes:</i> %{customdata[5]}<br>'+
-                        '<i>Feature Maximum Copy Number:</i> %{customdata[9]}<br>'
-                        '<b href = "www.google.com">AA PNG File</a>',
-                        name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[number - 1], 
-                        line = dict(color = amplicon_colors[number - 1]), showlegend = False), row = rowind, col = colind)
-
+                amplicon_numbers.append(number)
+                
         cent_df = pd.read_csv(cent_file, header = None, sep = '\t')
         #display(a_df)
         cent_df = cent_df[cent_df[0] == key]
@@ -139,14 +144,26 @@ def plot(sample, sample_name, project_name):
         for i in range(len(cent_df)):
             row = cent_df.iloc[[i]]
             #display(row)
-            for j in range(0, 2):
-                if j == 0:
-                    row['Centromere Position'] = row.iloc[0, 1]
-                    row['Y-axis'] = 95
-                elif j == 1:
-                    row['Centromere Position'] = row.iloc[0, 2]
-                    row['Y-axis'] = 95
-                chr_df = pd.concat([row, chr_df])
+            if row.iloc[0, 2] - row.iloc[0, 1] < 3000000:
+                for j in range(0, 2):
+                    if j == 0:
+                        row['Centromere Position'] = row.iloc[0, 1]
+                        row['Y-axis'] = 95
+                    elif j == 1:
+                        row['Centromere Position'] = row.iloc[0, 2] + 3000000
+                        row['Y-axis'] = 95
+                    chr_df = pd.concat([row, chr_df])
+            else:
+                for j in range(0, 2):
+                    if j == 0:
+                        row['Centromere Position'] = row.iloc[0, 1]
+                        row['Y-axis'] = 95
+                    elif j == 1:
+                        row['Centromere Position'] = row.iloc[0, 2]
+                        row['Y-axis'] = 95
+                    chr_df = pd.concat([row, chr_df])
+                    
+
 
         if rowind == 1 and colind == 1:
             fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)', 
@@ -185,7 +202,6 @@ def plot(sample, sample_name, project_name):
     fig.update_layout(title_font_size=30,  
     xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified', title_text=f"{sample_name} Copy Number Plots",
     height = 1000, width = 1300, margin = dict(t = 70, r = 70, b = 70, l = 70))
-    
     plot_div = fig.to_html(full_html=False, default_height=500, default_width=800)
 
     # https://community.plotly.com/t/hyperlink-to-markers-on-map/17858/6
@@ -212,9 +228,17 @@ def plot(sample, sample_name, project_name):
             var link_window = document.getElementById("figure_download_window");
             var link_elem = link_window.firstChild;
             link_elem.href = link;
-            console.log(link_elem);
-            link_elem.innerHTML = '<b>Download ' + name.slice(3, -4) + ' PNG </b>';
-            link_window.setAttribute('style', 'display: flex; align-items: center;');
+
+            var preview_elem = link_elem.lastChild;
+            preview_elem.setAttribute('src', link);
+
+            if (link_elem.firstChild.tagName != "B") {{
+                link_elem.innerHTML = '<b style="text-decoration: underline">Download ' + name.slice(3, -4) + ' PNG</b>' + link_elem.innerHTML;
+            }}
+            else {{
+                link_elem.firstChild.innerHTML = 'Download ' + name.slice(3, -4) + ' PNG';
+            }}
+            link_window.setAttribute('style', 'display: flex; align-items: center; margin-bottom: 2rem');
         }}
     }})
 
@@ -227,7 +251,7 @@ def plot(sample, sample_name, project_name):
 
     # Build HTML string
     html_str = """
-    <div id="figure_download_window", style='display: none'><a href='' download="download" style='border-style: solid; padding: 0.1rem 0.5rem; border-width: 0.15rem'></a><span id='close' style='margin-left: 5px; color: grey'>&times</span></div>
+    <div id="figure_download_window", style='display: none'><a href='' target='_blank' download="download" style='border-style: solid; padding: 0.1rem 0.5rem; border-width: 0.15rem; border-color: black; display: flex; flex-flow: column'><br><img src='' style='width:30rem'></a><span id='close' style='margin-left: 5px; color: grey; font-size: 1.5rem'>&times</span></div>
     {plot_div}
     {js_callback}
     """.format(plot_div=plot_div, js_callback=js_callback)
