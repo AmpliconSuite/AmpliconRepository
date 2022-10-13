@@ -15,6 +15,7 @@ import re
 cent_file = 'bed_files/GRCh38_centromere.bed'
 warnings.filterwarnings("ignore")
 
+
 def plot(sample, sample_name, project_name, filter_plots=True):
     project_data_dir = f'project_data/{project_name}/extracted'
     if not os.path.exists(project_data_dir):
@@ -256,14 +257,36 @@ def plot(sample, sample_name, project_name, filter_plots=True):
     closebtn.addEventListener("click", function() {{
         this.parentElement.style.display = 'none';
     }});
+
+    $('#toggle-event').change(function() {{
+        const current_link = window.location.href.split('?');
+        if (current_link.length == 1) {{
+            window.location.href = current_link[0] + '?display_all_chr=T';
+        }}
+        else {{
+            window.location.href = current_link[0];
+        }}
+    }});
+    
     </script>
     """.format(div_id=div_id)
 
     # Build HTML string
     html_str = """
     <div id="figure_download_window", style='display: none'><a href='' target='_blank' download="download" style='border-style: solid; padding: 0.1rem 0.5rem; border-width: 0.15rem; border-color: black; display: flex; flex-flow: column'><br><img src='' style='width:30rem'></a><span id='close' style='margin-left: 5px; color: grey; font-size: 1.5rem'>&times</span></div>
+    
+    <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/js/bootstrap4-toggle.min.js"></script>
+    <input id="toggle-event" type="checkbox" class="form-check-input" data-toggle="toggle">
+    <span style='margin-left: 1rem'> Display All Chromosomes </span>
+    <script>
+    if (window.location.href.split('?').length != 1) {{
+        var toggle = document.getElementById("toggle-event");
+        toggle.setAttribute('checked', 'True');
+    }}
+    </script>
     {plot_div}
     {js_callback}
     """.format(plot_div=plot_div, js_callback=js_callback)
-
     return html_str
+
