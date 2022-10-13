@@ -33,33 +33,31 @@ def plot(sample, sample_name, project_name, filter_plots=True):
     amplicon['Location'] = amplicon['Location'].str.replace("'", "")
     amplicon['Location'] = amplicon['Location'].str.replace(']', '')
     
-    valid_range = lambda loc: int(loc[1]) - int(loc[0]) > 1000000
-    valid_amp = lambda x: any(valid_range(loc.split(':')[1].split('-')) for loc in x['Location'].split(', '))
-    valid_amp_df = lambda df: [valid_amp(row) for row in df.iloc]
-    amplicon = amplicon[valid_amp_df(amplicon)]
+    # valid_range = lambda loc: int(loc[1]) - int(loc[0]) > 1000000
+    # valid_amp = lambda x: any(valid_range(loc.split(':')[1].split('-')) for loc in x['Location'].split(', '))
+    # valid_amp_df = lambda df: [valid_amp(row) for row in df.iloc]
+    # amplicon = amplicon[valid_amp_df(amplicon)]
     amplicon_numbers = list(amplicon['AA amplicon number'].unique())
     seen = set()
     
     chr_order = lambda x: int(x) if x.isnumeric() else ord(x)
     if filter_plots:
-        chromosomes = list(sorted(set(loc.split(':')[0].lstrip('chr') for loc in (', '.join(amplicon['Location'])).split(', ') if valid_range(loc.split(':')[1].split('-'))), key=chr_order))
+        chromosomes = list(sorted(set(loc.split(':')[0].lstrip('chr') for loc in (', '.join(amplicon['Location'])).split(', ')), key=chr_order))
     else:
         chromosomes = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11",
         "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22",
         "X", "Y")
-    #amplicon = pd.DataFrame(sample)
     
     cmap = cm.get_cmap('Spectral', len(amplicon['AA amplicon number'].unique()))
     amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(cmap.N)]
 
     rows = (len(chromosomes) // 4) + 1 if len(chromosomes) % 4 else len(chromosomes) // 4
     fig = make_subplots(rows=rows, cols=4
-        ,subplot_titles=chromosomes, horizontal_spacing=0.05, vertical_spacing = 0.07)
+        ,subplot_titles=chromosomes, horizontal_spacing=0.05, vertical_spacing = 0.1 if rows < 4 else 0.05)
 
     df = pd.read_csv(CNV_file, sep = "\t", header = None)
     df.rename(columns = {0: 'Chromosome Number', 1: "Feature Start Position", 2: "Feature End Position", 3: 'CNV Gain', 4: 'Copy Number'}, inplace = True)
     dfs = {}
-    
     
     for chromosome in df['Chromosome Number'].unique():
         key = chromosome
@@ -91,6 +89,9 @@ def plot(sample, sample_name, project_name, filter_plots=True):
         y_array = [round(item, 2) for item in y_array]
         fig.add_trace(go.Scatter(x=x_array,y=y_array,mode = 'lines', name="Copy Number", showlegend = False, line = dict(color = 'green')), row = rowind, col = colind)
 
+        x_range = max(x_array) - min(x_array)
+        min_width = 0.03
+
         amplicon_df = pd.DataFrame()
         for i in range(len(amplicon)):
             row = amplicon.iloc[[i]]
@@ -105,22 +106,19 @@ def plot(sample, sample_name, project_name, filter_plots=True):
                         locsplit = chrsplit[1].split('-') 
                         row['Feature Start Position'] = int(locsplit[0])
                         row['Feature End Position'] = int(locsplit[1])
-                        if int(locsplit[1]) - int(locsplit[0]) < 5000000:
-                            if j == 0:
-                                row['Feature Position'] = locsplit[0]
-                                row['Y-axis'] = 95
-                            elif j == 1:
-                                row['Feature Position'] = int(locsplit[1]) + 3000000
-                                row['Y-axis'] = 95
-                            amplicon_df = pd.concat([row, amplicon_df])
+
+                        if (int(locsplit[1]) - int(locsplit[0])) / x_range < min_width:
+                            offset = (x_range * min_width) - (int(locsplit[1]) - int(locsplit[0]))
                         else:
-                            if j == 0:
-                                row['Feature Position'] = locsplit[0]
-                                row['Y-axis'] = 95
-                            elif j == 1:
-                                row['Feature Position'] = locsplit[1]
-                                row['Y-axis'] = 95
-                            amplicon_df = pd.concat([row, amplicon_df])
+                            offset = 0
+
+                        if j == 0:
+                            row['Feature Position'] = locsplit[0]
+                            row['Y-axis'] = 95
+                        elif j == 1:
+                            row['Feature Position'] = int(locsplit[1]) + offset
+                            row['Y-axis'] = 95
+                        amplicon_df = pd.concat([row, amplicon_df])
 
                             
         if not amplicon_df.empty:
@@ -154,12 +152,17 @@ def plot(sample, sample_name, project_name, filter_plots=True):
         chr_df = pd.DataFrame()
         for i in range(len(cent_df)):
             row = cent_df.iloc[[i]]
+            if (row.iloc[0, 2] - row.iloc[0, 1]) / x_range < min_width:
+                offset = (x_range * min_width) - (row.iloc[0, 2] - row.iloc[0, 1])
+            else:
+                offset = 0
+
             for j in range(0, 2):
                 if j == 0:
                     row['Centromere Position'] = row.iloc[0, 1]
                     row['Y-axis'] = 95
                 elif j == 1:
-                    row['Centromere Position'] = row.iloc[0, 2]
+                    row['Centromere Position'] = row.iloc[0, 2] + offset
                     row['Y-axis'] = 95
                 chr_df = pd.concat([row, chr_df])
                     
@@ -202,8 +205,8 @@ def plot(sample, sample_name, project_name, filter_plots=True):
 
     height = {
         1: 250,
-        2: 500,
-        3: 600,
+        2: 520,
+        3: 700,
         4: 750,
         5: 900,
         6: 1000
