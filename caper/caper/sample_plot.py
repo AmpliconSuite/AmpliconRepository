@@ -87,7 +87,6 @@ def plot(sample, sample_name, project_name, filter_plots=True):
 
         x_array = [round(item, 2) for item in x_array]
         y_array = [round(item, 2) for item in y_array]
-        fig.add_trace(go.Scatter(x=x_array,y=y_array,mode = 'lines', name="Copy Number", showlegend = False, line = dict(color = 'green')), row = rowind, col = colind)
 
         x_range = max(x_array) - min(x_array)
         min_width = 0.03
@@ -142,9 +141,9 @@ def plot(sample, sample_name, project_name, filter_plots=True):
                         '<i>Oncogenes:</i> %{customdata[5]}<br>'+
                         '<i>Feature Maximum Copy Number:</i> %{customdata[9]}<br>'
                         f'<b class="/{project_data_dir}/AA_outputs/{sample_name}/{sample_name}_AA_results/{sample_name}_amplicon{number}.png">Click to Download Amplicon {number} PNG</b>',
-                        name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)], 
-                        line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=number), row = rowind, col = colind)
-
+                        name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
+                        line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=number, text='hallo'), row = rowind, col = colind)
+                fig.update_traces(textposition="bottom right")
         cent_df = pd.read_csv(cent_file, header = None, sep = '\t')
         #display(a_df)
         cent_df = cent_df[cent_df[0] == key]
@@ -178,6 +177,7 @@ def plot(sample, sample_name, project_name, filter_plots=True):
                 '<br>%{customdata[0]}: %{customdata[1]}-%{customdata[2]}'
                 ), row = rowind, col = colind)
 
+        fig.add_trace(go.Scatter(x=x_array,y=y_array,mode = 'lines', name="Copy Number", showlegend = False, line = dict(color = 'black')), row = rowind, col = colind)
         fig.update_xaxes(showline = True, linewidth = 1, title_font_size = 10,  ticksuffix = " ")
 
         #print(y_array)
