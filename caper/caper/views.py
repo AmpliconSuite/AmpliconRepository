@@ -17,6 +17,7 @@ import caper.sample_plot as sample_plot
 from django.core.files.storage import FileSystemStorage
 import subprocess as sp
 import os
+from django.views.decorators.cache import cache_page
 
 
 db_handle, mongo_client = get_db_handle('caper', 'localhost', '27017')
@@ -142,10 +143,12 @@ def project_page(request, project_name):
     sample_data = sample_data_from_feature_list(features_list)
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data})
 
+@cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
-    plot = sample_plot.plot(sample_data, sample_name, project_name)
+    filter_plots = not request.GET.get('display_all_chr')
+    plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
     return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name, 'graph': plot})
 
 def feature_page(request, project_name, sample_name, feature_name):

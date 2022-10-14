@@ -136,8 +136,11 @@ FILE_UPLOAD_PERMISSIONS = 0o644
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Provider specific settings
-with open('config.sh') as infile:
-    _, GOOGLE_SECRET_KEY, _, GLOBUS_SECRET_KEY, *_ = infile.read().split("'")
+if os.path.exists('config.sh'):
+    with open('config.sh') as infile:
+        _, GOOGLE_SECRET_KEY, _, GLOBUS_SECRET_KEY, *_ = infile.read().split("'")
+else:
+    GOOGLE_SECRET_KEY = GLOBUS_SECRET_KEY = ''
 
 SOCIALACCOUNT_EMAIL_REQUIRED=True
 SOCIALACCOUNT_PROVIDERS = {
