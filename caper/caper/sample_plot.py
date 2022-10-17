@@ -9,6 +9,8 @@ from numpy import random
 import warnings
 from plotly.subplots import make_subplots
 from pylab import cm
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 import os
 import re
 
@@ -47,8 +49,13 @@ def plot(sample, sample_name, project_name, filter_plots=True):
         chromosomes = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11",
         "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22",
         "X", "Y")
-    
+
+    a = 0.8
     cmap = cm.get_cmap('Spectral', len(amplicon['AA amplicon number'].unique()))
+    # amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(cmap.N)]
+    cmap = cmap(np.arange(len(amplicon['AA amplicon number'].unique())))
+    cmap[:,0:3] *= a 
+    cmap = ListedColormap(cmap)
     amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(cmap.N)]
 
     rows = (len(chromosomes) // 4) + 1 if len(chromosomes) % 4 else len(chromosomes) // 4
@@ -168,11 +175,11 @@ def plot(sample, sample_name, project_name, filter_plots=True):
 
 
         if rowind == 1 and colind == 1:
-            fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)', 
+            fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.15)', 
                 line_color = 'rgba(2, 6, 54, 0.3)', customdata = chr_df, hovertemplate = 
                 '<br>%{customdata[0]}: %{customdata[1]}-%{customdata[2]}', name = 'Centromere', legendrank=0), row = rowind, col = colind)
         else:
-            fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)', 
+            fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.15)', 
                 line_color = 'rgba(2, 6, 54, 0.3)', customdata = chr_df, name = 'Centromere', showlegend = False, hovertemplate = 
                 '<br>%{customdata[0]}: %{customdata[1]}-%{customdata[2]}'
                 ), row = rowind, col = colind)
