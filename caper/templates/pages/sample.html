@@ -40,8 +40,75 @@
 {% if graph %}
     <div>
         <br>
+        <div id="figure_download_window", style='display: none'>
+            <a href='' target='_blank' download="download" style='border-style: solid; padding: 0.1rem 0.5rem; border-width: 0.15rem; border-color: black; display: flex; flex-flow: column'>
+                <br>
+                <img src='' style='width:30rem'>
+            </a>
+            <span id='close' style='margin-left: 5px; color: grey; font-size: 1.5rem'>&times
+            </span>
+        </div>
+        <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
+        <input id="toggle-event" type="checkbox" class="form-check-input" data-toggle="toggle">
+        <span style='margin-left: 1rem'> Display All Chromosomes </span>
         {{ graph|safe }}
         <br>
+        
+        {% block plotly_js %}
+        <script src="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/js/bootstrap4-toggle.min.js"></script>
+        <script>
+            if (window.location.href.split('?').length != 1) {
+                var toggle = document.getElementById("toggle-event");
+                toggle.setAttribute('checked', 'True');
+            }
+
+            var closebtn = document.getElementById("close");
+            closebtn.addEventListener("click", function() {{
+                this.parentElement.style.display = 'none';
+            }});
+
+            $('#toggle-event').change(function() {{
+                const current_link = window.location.href.split('?');
+                if (current_link.length == 1) {{
+                    window.location.href = current_link[0] + '?display_all_chr=T';
+                }}
+                else {{
+                    window.location.href = current_link[0];
+                }}
+            }});
+
+            var plot_element = document.getElementById("plotly_div");
+            plot_element.on('plotly_click', function(data){{
+                console.log('click');
+                console.log(plot_element);
+                var link = '';
+                for (let i = 0; i < data['points'].length; i++) {{
+                    var name = data['points'][i]['data']['name'];
+                    if (name.includes('Amplicon')) {{
+                        link = data['points'][i]['data']['hovertemplate'].split('"')[1];
+                        break;
+                    }}
+                }}
+
+                if (link != '') {{
+                    var link_window = document.getElementById("figure_download_window");
+                    var link_elem = link_window.firstElementChild;
+                    link_elem.href = link;
+
+                    var preview_elem = link_elem.lastElementChild;
+                    preview_elem.setAttribute('src', link);
+
+                    if (link_elem.firstElementChild.tagName != "B") {{
+                        link_elem.innerHTML = '<b style="text-decoration: underline">Download ' + name.slice(3, -4) + ' PNG</b>' + link_elem.innerHTML;
+                    }}
+                    else {{
+                        link_elem.firstElementChild.innerHTML = 'Download ' + name.slice(3, -4) + ' PNG';
+                    }}
+                    link_window.setAttribute('style', 'display: flex; align-items: center; margin-bottom: 2rem');
+                }}
+            }})
+        </script>
+        {% endblock %}
     </div>
 {% endif %}
 
@@ -83,7 +150,6 @@
 <!--                     <td>{{ run.Reference_version }}</td>
                     <td>{{ run.Run_metadata_JSON }}</td> -->
                     {% if graph %}
-
                         <td> 
                             <a href="/project_data/{{project_name}}/extracted/{{ feature.AA_PDF_file}}" download> AA_pdf </a> <br>
                             <a href="/project_data/{{project_name}}/extracted/{{ feature.AA_PNG_file}}" download> AA_png </a> <br>

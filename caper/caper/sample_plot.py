@@ -50,9 +50,8 @@ def plot(sample, sample_name, project_name, filter_plots=True):
         "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22",
         "X", "Y")
 
-    a = 0.8
+    a = 1
     cmap = cm.get_cmap('Spectral', len(amplicon['AA amplicon number'].unique()))
-    # amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(cmap.N)]
     cmap = cmap(np.arange(len(amplicon['AA amplicon number'].unique())))
     cmap[:,0:3] *= a 
     cmap = ListedColormap(cmap)
@@ -223,80 +222,5 @@ def plot(sample, sample_name, project_name, filter_plots=True):
     xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified', title_text=f"{sample_name} Copy Number Plots",
     height = height[rows], width = 1300, margin = dict(t = 70, r = 70, b = 70, l = 70))
 
-    plot_div = fig.to_html(full_html=False)
-
-    # https://community.plotly.com/t/hyperlink-to-markers-on-map/17858/6
-    # Get id of html div element that looks like
-    # <div id="301d22ab-bfba-4621-8f5d-dc4fd855bb33" ... >
-    res = re.search('<div id="([^"]*)"', plot_div)
-    div_id = res.groups()[0]
-    # Build JavaScript callback for handling clicks
-    # and opening the URL in the trace's customdata 
-    js_callback = """
-    <script>
-    var plot_element = document.getElementById("{div_id}");
-    plot_element.on('plotly_click', function(data){{
-        var link = '';
-        for (let i = 0; i < data['points'].length; i++) {{
-            var name = data['points'][i]['data']['name'];
-            if (name.includes('Amplicon')) {{
-                link = data['points'][i]['data']['hovertemplate'].split('"')[1];
-                break;
-            }}
-        }}
-
-        if (link != '') {{
-            var link_window = document.getElementById("figure_download_window");
-            var link_elem = link_window.firstChild;
-            link_elem.href = link;
-
-            var preview_elem = link_elem.lastChild;
-            preview_elem.setAttribute('src', link);
-
-            if (link_elem.firstChild.tagName != "B") {{
-                link_elem.innerHTML = '<b style="text-decoration: underline">Download ' + name.slice(3, -4) + ' PNG</b>' + link_elem.innerHTML;
-            }}
-            else {{
-                link_elem.firstChild.innerHTML = 'Download ' + name.slice(3, -4) + ' PNG';
-            }}
-            link_window.setAttribute('style', 'display: flex; align-items: center; margin-bottom: 2rem');
-        }}
-    }})
-
-    var closebtn = document.getElementById("close");
-    closebtn.addEventListener("click", function() {{
-        this.parentElement.style.display = 'none';
-    }});
-
-    $('#toggle-event').change(function() {{
-        const current_link = window.location.href.split('?');
-        if (current_link.length == 1) {{
-            window.location.href = current_link[0] + '?display_all_chr=T';
-        }}
-        else {{
-            window.location.href = current_link[0];
-        }}
-    }});
-    
-    </script>
-    """.format(div_id=div_id)
-
-    # Build HTML string
-    html_str = """
-    <div id="figure_download_window", style='display: none'><a href='' target='_blank' download="download" style='border-style: solid; padding: 0.1rem 0.5rem; border-width: 0.15rem; border-color: black; display: flex; flex-flow: column'><br><img src='' style='width:30rem'></a><span id='close' style='margin-left: 5px; color: grey; font-size: 1.5rem'>&times</span></div>
-    
-    <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/js/bootstrap4-toggle.min.js"></script>
-    <input id="toggle-event" type="checkbox" class="form-check-input" data-toggle="toggle">
-    <span style='margin-left: 1rem'> Display All Chromosomes </span>
-    <script>
-    if (window.location.href.split('?').length != 1) {{
-        var toggle = document.getElementById("toggle-event");
-        toggle.setAttribute('checked', 'True');
-    }}
-    </script>
-    {plot_div}
-    {js_callback}
-    """.format(plot_div=plot_div, js_callback=js_callback)
-    return html_str
+    return fig.to_html(full_html=False, div_id='plotly_div')
 
