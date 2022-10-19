@@ -210,7 +210,7 @@ def plot(sample, sample_name, project_name, filter_plots=True):
 
 
     height = {
-        1: 250,
+        1: 300,
         2: 520,
         3: 700,
         4: 750,

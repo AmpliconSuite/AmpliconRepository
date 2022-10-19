@@ -15,9 +15,10 @@ import datetime
 import pandas as pd
 import caper.sample_plot as sample_plot
 from django.core.files.storage import FileSystemStorage
-import subprocess as sp
-import os
 from django.views.decorators.cache import cache_page
+from zipfile import ZipFile
+import tarfile
+import os
 
 
 db_handle, mongo_client = get_db_handle('caper', 'localhost', '27017')
@@ -62,17 +63,26 @@ def samples_to_dict(form_file):
     return runs
 
 def download_file(project_name, form_file):
-    project_data_path = f"project_data/{project_name}"
-    if not os.path.exists(project_data_path):
+    if form_file.name.endswith('.zip'):
+        project_data_path = f"project_data/{project_name}"
         fs = FileSystemStorage(location=project_data_path)
-        fs.save(form_file.name, form_file)
-        if form_file.name.endswith('.zip'):
-            sp.run(f"cd '{os.getcwd()}/{project_data_path}'; unzip '{form_file.name}' > /dev/null", shell=True)
-            files = os.listdir(project_data_path)
-            for file in files:
-                if file.endswith(".tar.gz"):
-                    sp.run(f"cd '{os.getcwd()}/{project_data_path}'; tar -xf '{file}'", shell=True)
-    return open(f"{project_data_path}/run.json")
+
+        with ZipFile(form_file) as zip_file:
+            namelist = zip_file.namelist()
+
+            assert 'run.json' in namelist
+            form_file =  zip_file.open('run.json')
+
+            tar_names = [name for name in namelist if name.endswith(".tar.gz") and not name.startswith('__MACOSX')]
+            assert len(tar_names) == 1
+
+            if not os.path.exists(project_data_path):
+                with zip_file.open(tar_names[0]) as tar_file:
+                    fs.save(tar_names[0], tar_file)
+                    with tarfile.open(f"{project_data_path}/{tar_names[0]}") as tar:
+                        tar.extractall(path=project_data_path)
+                    os.remove(f"{project_data_path}/{tar_names[0]}")
+    return form_file
 
 def form_to_dict(form):
     run = form.save(commit=False)
