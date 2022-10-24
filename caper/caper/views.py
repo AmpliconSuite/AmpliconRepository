@@ -13,6 +13,13 @@ from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
 import datetime
 import pandas as pd
+import caper.sample_plot as sample_plot
+from django.core.files.storage import FileSystemStorage
+from django.views.decorators.cache import cache_page
+from zipfile import ZipFile
+import tarfile
+import os
+
 
 db_handle, mongo_client = get_db_handle('caper', 'localhost', '27017')
 collection_handle = get_collection_handle(db_handle,'projects')
@@ -42,10 +49,40 @@ def check_project_exists(project_name):
 def samples_to_dict(form_file):
     file_json = json.load(form_file)
     runs = dict()
-    sample = file_json[0]
-    sample_name = sample['Sample name']
-    runs[sample_name] = file_json
+    for run in file_json['runs'].values():
+        if run:
+            sample = run[0]
+            sample_name = sample['Sample name']
+
+            for feature in run:
+                for attr in ("Feature BED file", "CNV BED file", "AA PNG file", "AA PDF file", "Run metadata JSON"):
+                    assert 'AA_outputs' in feature[attr]
+                    index = feature[attr].index('AA_outputs')
+                    feature[attr] = feature[attr][index:]
+            runs[sample_name] = run
     return runs
+
+def download_file(project_name, form_file):
+    if form_file.name.endswith('.zip'):
+        project_data_path = f"project_data/{project_name}"
+        fs = FileSystemStorage(location=project_data_path)
+
+        with ZipFile(form_file) as zip_file:
+            namelist = zip_file.namelist()
+
+            assert 'run.json' in namelist
+            form_file =  zip_file.open('run.json')
+
+            tar_names = [name for name in namelist if name.endswith(".tar.gz") and not name.startswith('__MACOSX')]
+            assert len(tar_names) == 1
+
+            if not os.path.exists(project_data_path):
+                with zip_file.open(tar_names[0]) as tar_file:
+                    fs.save(tar_names[0], tar_file)
+                    with tarfile.open(f"{project_data_path}/{tar_names[0]}") as tar:
+                        tar.extractall(path=project_data_path)
+                    os.remove(f"{project_data_path}/{tar_names[0]}")
+    return form_file
 
 def form_to_dict(form):
     run = form.save(commit=False)
@@ -76,11 +113,24 @@ def replace_space_to_underscore(runs):
     else:
         run_list = []
         for sample in runs:
+            run_list.append({})
             for key in list(sample.keys()):
                 newkey = key.replace(" ", "_")
-                sample[newkey] = sample.pop(key)
-            run_list.append(sample)
+                run_list[-1][newkey] = sample[key]
         return run_list
+
+def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
+    if copy:
+        sample_data = [feature.copy() for feature in sample_data]
+
+    for feature in sample_data:
+        for key, value in feature.items():
+            if type(value) == float:
+                feature[key] = round(value, 1)
+            elif type(value) == str and value.startswith('['):
+                feature[key] = ', \n'.join(value[2:-2].split("', '"))
+    return sample_data
+
 
 def index(request):
     user = request.user.id
@@ -103,10 +153,13 @@ def project_page(request, project_name):
     sample_data = sample_data_from_feature_list(features_list)
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data})
 
+@cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
-    sample_data = replace_space_to_underscore(sample_data)
-    return render(request, "pages/sample.html", {'project': project, 'sample_data': sample_data, 'sample_name': sample_name})
+    sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
+    filter_plots = not request.GET.get('display_all_chr')
+    plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
+    return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name, 'graph': plot})
 
 def feature_page(request, project_name, sample_name, feature_name):
     project, sample_data, feature  = get_one_feature(project_name,sample_name, feature_name)
@@ -159,7 +212,8 @@ def create_project(request):
         form_dict = form_to_dict(form)
         project_name = form_dict['project_name']
         project = dict()
-        runs = samples_to_dict(form_dict['file'])
+        form_file = download_file(project_name, form_dict['file'])
+        runs = samples_to_dict(form_file)
         if check_project_exists(project_name):
             return HttpResponse("Project already exists")
         else:
@@ -176,7 +230,6 @@ def create_project(request):
             project['runs'] = runs
             # print(project)
             if form.is_valid():
-                print(project)
                 collection_handle.insert_one(project)
                 return redirect('project_page', project_name=project_name)
             else:
