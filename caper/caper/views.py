@@ -15,7 +15,11 @@ from django.forms.models import model_to_dict
 import datetime
 import pandas as pd
 
-db_handle, mongo_client = get_db_handle('caper', 'localhost', '27017')
+# db_handle, mongo_client = get_db_handle('caper', 'localhost', '27017')
+# db_handle, mongo_client = get_db_handle('caper', 'mongodb://f1kim:Bodeee1394!@docdb-2022-07-19-05-55-46.coentzieun2f.us-east-1.docdb.amazonaws.com', '27017')
+
+db_handle, mongo_client = get_db_handle('caper', 'mongodb://fkim:m3s1r0vl4b@amplicondb.cluster-c54rwms1jlog.us-east-1.docdb.amazonaws.com:27017/?ssl=true&ssl_ca_certs=rds-combined-ca-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false')
+
 collection_handle = get_collection_handle(db_handle,'projects')
 
 def get_date():
@@ -130,8 +134,8 @@ def feature_page(request, project_name, sample_name, feature_name):
 def search_page(request):
     
     query = request.GET.get("query") 
-    # fstr = f'/.*{query}.*/'
-    # gen_query = {'$regex': fstr}
+    fstr = f'/.*{query}.*/'
+    gen_query = {'$regex': fstr}
     
     all_projects = list(collection_handle.find({ "$text": { "$search": query } } ))
 
