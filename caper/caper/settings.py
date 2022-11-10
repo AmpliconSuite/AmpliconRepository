@@ -275,6 +275,8 @@ INSTALLED_APPS = [
     "django.contrib.sites",
     "django.contrib.sitemaps",
     "django.contrib.messages",
+    "django_extensions",
+    "sslserver",
     "django.contrib.staticfiles",
     'crispy_forms',
     'bootstrap4',
