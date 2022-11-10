@@ -15,11 +15,15 @@ from django.forms.models import model_to_dict
 import datetime
 import pandas as pd
 import os
+import caper.sample_plot as sample_plot
+from django.core.files.storage import FileSystemStorage
 from django.views.decorators.cache import cache_page
-from .sample_plot import plot
+from zipfile import ZipFile
+import tarfile
 
-# Use for local hosting 
-db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
+
+# db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
+db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 
 # db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
