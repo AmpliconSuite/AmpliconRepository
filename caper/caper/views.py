@@ -1,4 +1,5 @@
 from asyncore import file_wrapper
+from tkinter import E
 from django.http import HttpResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
@@ -13,6 +14,9 @@ from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
 import datetime
 import pandas as pd
+<<<<<<< HEAD
+import os
+=======
 import caper.sample_plot as sample_plot
 from django.core.files.storage import FileSystemStorage
 from django.views.decorators.cache import cache_page
@@ -20,8 +24,13 @@ from zipfile import ZipFile
 import tarfile
 import os
 
+>>>>>>> main
 
-db_handle, mongo_client = get_db_handle('caper', 'localhost', '27017')
+# db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
+db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'], '27017')
+
+# mongo_client = MongoClient('mongodb://fkim:m3s1r0vl4b@amplicondb.cluster-c54rwms1jlog.us-east-1.docdb.amazonaws.com:27017/?ssl=true&ssl_ca_certs=rds-combined-ca-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false')
+# db_handle = mongo_client['caper']
 collection_handle = get_collection_handle(db_handle,'projects')
 
 def get_date():
@@ -37,6 +46,16 @@ def get_one_sample(project_name,sample_name):
     runs = project['runs']
     sample = runs[sample_name]
     return project, sample
+
+def get_one_feature(project_name,sample_name, feature_name):
+    project, sample = get_one_sample(project_name,sample_name)
+    feature = list(filter(lambda sample: sample['Feature ID'] == feature_name, sample))
+    return project, sample, feature
+
+# def get_all_projects(project_name, user):
+#     public_projects = list(collection_handle.find({'private' : False, 'project_name' : project_name}))
+#     private_projects = list(collection_handle.find({'private' : True, 'user' : user , 'project_name' : project_name}))
+#     return public_projects, private_projects
 
 def get_one_feature(project_name,sample_name, feature_name):
     project, sample = get_one_sample(project_name,sample_name)
@@ -133,9 +152,12 @@ def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
 
 
 def index(request):
-    user = request.user.id
+    if request.user.is_authenticated:
+        user = request.user.email
+        private_projects = list(collection_handle.find({ 'private' : True, 'user' : user }))
+    else:
+        private_projects = []
     public_projects = list(collection_handle.find({'private' : False}))
-    private_projects = list(collection_handle.find({ 'private' : True, 'user' : user }))
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects})
 
 def profile(request):
@@ -162,12 +184,30 @@ def sample_page(request, project_name, sample_name):
     return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name, 'graph': plot})
 
 def feature_page(request, project_name, sample_name, feature_name):
-    project, sample_data, feature  = get_one_feature(project_name,sample_name, feature_name)
+    project, sample_data, feature = get_one_feature(project_name,sample_name, feature_name)
     feature_data = replace_space_to_underscore(feature)
     return render(request, "pages/feature.html", {'project': project, 'sample_name': sample_name, 'feature_name': feature_name, 'feature' : feature_data})
 
 def search_page(request):
-    return render(request, "pages/search.html", {})
+    
+    query = request.GET.get("query") 
+    fstr = f'/.*{query}.*/'
+    gen_query = {'$regex': fstr}
+    
+    all_projects = list(collection_handle.find({ "$text": { "$search": query } } ))
+
+    if request.user.is_authenticated:
+        user = request.user.email
+        private_projects = list(collection_handle.find({'private' : True, 'user' : user , 'project_name' : gen_query}))
+    else:
+        private_projects = []
+    
+    public_projects = list(collection_handle.find({'private' : False, 'project_name' : gen_query}))    
+    
+    print(all_projects)
+    print(private_projects)
+    return render(request, "pages/search.html", {'public_projects': public_projects, 'private_projects' : private_projects})
+
 
 def edit_project_page(request, project_name):
     if request.method == "POST":
@@ -231,6 +271,7 @@ def create_project(request):
             # print(project)
             if form.is_valid():
                 collection_handle.insert_one(project)
+                collection_handle.createIndex( { "$**": "text" } )
                 return redirect('project_page', project_name=project_name)
             else:
                 raise Http404()
