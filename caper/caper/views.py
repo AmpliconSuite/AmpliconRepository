@@ -14,23 +14,14 @@ from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
 import datetime
 import pandas as pd
-<<<<<<< HEAD
 import os
-=======
-import caper.sample_plot as sample_plot
-from django.core.files.storage import FileSystemStorage
 from django.views.decorators.cache import cache_page
-from zipfile import ZipFile
-import tarfile
-import os
+from .sample_plot import plot
 
->>>>>>> main
+# Use for local hosting 
+db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
 
-# db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
-db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'], '27017')
-
-# mongo_client = MongoClient('mongodb://fkim:m3s1r0vl4b@amplicondb.cluster-c54rwms1jlog.us-east-1.docdb.amazonaws.com:27017/?ssl=true&ssl_ca_certs=rds-combined-ca-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false')
-# db_handle = mongo_client['caper']
+# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
 
 def get_date():
@@ -180,7 +171,7 @@ def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     filter_plots = not request.GET.get('display_all_chr')
-    plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
+    plot = plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
     return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name, 'graph': plot})
 
 def feature_page(request, project_name, sample_name, feature_name):
