@@ -247,8 +247,8 @@ def create_project(request):
         form_dict = form_to_dict(form)
         project_name = form_dict['project_name']
         project = dict()
-        form_file = download_file(project_name, form_dict['file'])
-        runs = samples_to_dict(form_file)
+        # form_file = download_file(project_name, form_dict['file'])
+        runs = samples_to_dict(form_dict['runs'])
         if check_project_exists(project_name):
             return HttpResponse("Project already exists")
         else:
