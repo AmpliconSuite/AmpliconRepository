@@ -1,14 +1,14 @@
 from statistics import mode
 from dash import Dash, html, dcc
 import plotly.express as px
-import dash_bio as dashbio
+#import dash_bio as dashbio
 import pandas as pd
 import plotly.graph_objs as go
 import numpy as np
 from numpy import random
 import warnings
 from plotly.subplots import make_subplots
-from pylab import cm
+#from pylab import cm
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import os

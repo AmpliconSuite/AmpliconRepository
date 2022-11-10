@@ -14,20 +14,16 @@ from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
 import datetime
 import pandas as pd
-<<<<<<< HEAD
 import os
-=======
 import caper.sample_plot as sample_plot
 from django.core.files.storage import FileSystemStorage
 from django.views.decorators.cache import cache_page
 from zipfile import ZipFile
 import tarfile
-import os
 
->>>>>>> main
 
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
-db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'], '27017')
+db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 
 # mongo_client = MongoClient('mongodb://fkim:m3s1r0vl4b@amplicondb.cluster-c54rwms1jlog.us-east-1.docdb.amazonaws.com:27017/?ssl=true&ssl_ca_certs=rds-combined-ca-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false')
 # db_handle = mongo_client['caper']
