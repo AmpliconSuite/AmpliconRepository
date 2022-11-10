@@ -1,0 +1,40 @@
+
+body {
+    padding-top: 0px;
+}
+
+container {
+    width: 95%;
+    max-width: none;
+}
+
+p {
+    font-size: 14px;
+}
+
+table th {
+    font-size: 14px;
+}
+table td {
+    font-size: 12px;
+}
+
+h3 {
+    padding-bottom: 50px;
+}
+
+.hide {
+    opacity: 0;
+}
+
+.hide:hover {
+    opacity: 1;
+}
+
+table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.select-checkbox::after, table.dataTable tbody th.select-checkbox::before, table.dataTable tbody th.select-checkbox::after {
+    position: none !important;
+}
+
+.footer {
+    margin-top: 100px;
+}

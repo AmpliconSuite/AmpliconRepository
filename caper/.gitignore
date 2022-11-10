@@ -4,5 +4,10 @@
 .DS_Store
 .coverage
 local_settings.py
-/static
-/media
+# /static
+# /media
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
