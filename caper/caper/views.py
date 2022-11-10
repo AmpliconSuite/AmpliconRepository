@@ -15,11 +15,11 @@ from django.forms.models import model_to_dict
 import datetime
 import pandas as pd
 
-# db_handle, mongo_client = get_db_handle('caper', 'localhost', '27017')
-# db_handle, mongo_client = get_db_handle('caper', 'mongodb://f1kim:Bodeee1394!@docdb-2022-07-19-05-55-46.coentzieun2f.us-east-1.docdb.amazonaws.com', '27017')
+# db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
+db_handle, mongo_client = get_db_handle('caper', 'mongodb://f1kim:Bodeee1394!@docdb-2022-07-19-05-55-46.coentzieun2f.us-east-1.docdb.amazonaws.com', '27017')
 
-mongo_client = MongoClient('mongodb://fkim:m3s1r0vl4b@amplicondb.cluster-c54rwms1jlog.us-east-1.docdb.amazonaws.com:27017/?ssl=true&ssl_ca_certs=rds-combined-ca-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false')
-db_handle = mongo_client['caper']
+# mongo_client = MongoClient('mongodb://fkim:m3s1r0vl4b@amplicondb.cluster-c54rwms1jlog.us-east-1.docdb.amazonaws.com:27017/?ssl=true&ssl_ca_certs=rds-combined-ca-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false')
+# db_handle = mongo_client['caper']
 collection_handle = get_collection_handle(db_handle,'projects')
 
 def get_date():
