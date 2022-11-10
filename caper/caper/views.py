@@ -145,7 +145,6 @@ def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
                 feature[key] = ', \n'.join(value[2:-2].split("', '"))
     return sample_data
 
-
 def index(request):
     if request.user.is_authenticated:
         user = request.user.email
@@ -184,7 +183,6 @@ def feature_page(request, project_name, sample_name, feature_name):
     return render(request, "pages/feature.html", {'project': project, 'sample_name': sample_name, 'feature_name': feature_name, 'feature' : feature_data})
 
 def search_page(request):
-    
     query = request.GET.get("query") 
     fstr = f'/.*{query}.*/'
     gen_query = {'$regex': fstr}
@@ -247,8 +245,8 @@ def create_project(request):
         form_dict = form_to_dict(form)
         project_name = form_dict['project_name']
         project = dict()
-        # form_file = download_file(project_name, form_dict['file'])
-        runs = samples_to_dict(form_dict['file'])
+        form_file = download_file(project_name, form_dict['file'])
+        runs = samples_to_dict(form_file)
         if check_project_exists(project_name):
             return HttpResponse("Project already exists")
         else:
