@@ -1,6 +1,6 @@
 from asyncore import file_wrapper
 from tkinter import E
-from django.http import HttpResponse
+from django.http import HttpResponse, FileResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
 from django.views.generic import TemplateView 
@@ -13,20 +13,27 @@ from .forms import RunForm, UpdateForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
 import datetime
-import pandas as pd
 import os
+import shutil
 import caper.sample_plot as sample_plot
 from django.core.files.storage import FileSystemStorage
 from django.views.decorators.cache import cache_page
 from zipfile import ZipFile
 import tarfile
+import pandas as pd
+import numpy as np
+import cv2
+import gridfs
+import caper
+from bson.objectid import ObjectId
+from django.utils.text import slugify
 
-
-# db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
-db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
+# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 
 # db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
+fs_handle = gridfs.GridFS(db_handle)
 
 def get_date():
     today = datetime.datetime.now()
@@ -39,8 +46,12 @@ def get_one_project(project_name):
 def get_one_sample(project_name,sample_name):
     project = get_one_project(project_name)
     runs = project['runs']
-    sample = runs[sample_name]
-    return project, sample
+    for sample in runs.keys():
+        current = runs[sample]
+        if len(current) > 0:
+            if current[0]['Sample name'] == sample_name:
+                sample_out = current
+    return project, sample_out
 
 def get_one_feature(project_name,sample_name, feature_name):
     project, sample = get_one_sample(project_name,sample_name)
@@ -63,40 +74,11 @@ def check_project_exists(project_name):
 def samples_to_dict(form_file):
     file_json = json.load(form_file)
     runs = dict()
-    for run in file_json['runs'].values():
-        if run:
-            sample = run[0]
-            sample_name = sample['Sample name']
-
-            for feature in run:
-                for attr in ("Feature BED file", "CNV BED file", "AA PNG file", "AA PDF file", "Run metadata JSON"):
-                    assert 'AA_outputs' in feature[attr]
-                    index = feature[attr].index('AA_outputs')
-                    feature[attr] = feature[attr][index:]
-            runs[sample_name] = run
+    all_samples = file_json['runs']
+    for key, value in all_samples.items():
+        sample_name = key
+        runs[sample_name] = value
     return runs
-
-def download_file(project_name, form_file):
-    if form_file.name.endswith('.zip'):
-        project_data_path = f"project_data/{project_name}"
-        fs = FileSystemStorage(location=project_data_path)
-
-        with ZipFile(form_file) as zip_file:
-            namelist = zip_file.namelist()
-
-            assert 'run.json' in namelist
-            form_file =  zip_file.open('run.json')
-
-            tar_names = [name for name in namelist if name.endswith(".tar.gz") and not name.startswith('__MACOSX')]
-            assert len(tar_names) == 1
-
-            if not os.path.exists(project_data_path):
-                with zip_file.open(tar_names[0]) as tar_file:
-                    fs.save(tar_names[0], tar_file)
-                    with tarfile.open(f"{project_data_path}/{tar_names[0]}") as tar:
-                        tar.extractall(path=project_data_path)
-                    os.remove(f"{project_data_path}/{tar_names[0]}")
-    return form_file
 
 def form_to_dict(form):
     run = form.save(commit=False)
@@ -111,6 +93,8 @@ def sample_data_from_feature_list(features_list):
         sample_dict = dict()
         sample_dict['Sample_name'] = row['Sample_name']
         sample_dict['Features'] = row['Features']
+        sample_dict['Oncogenes'] = get_sample_oncogenes(features_list, row['Sample_name'])
+        sample_dict['Classifications'] = get_sample_classifications(features_list, row['Sample_name'])
         sample_data.append(sample_dict)
     return sample_data
 
@@ -145,18 +129,62 @@ def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
                 feature[key] = ', \n'.join(value[2:-2].split("', '"))
     return sample_data
 
+def get_project_oncogenes(runs):
+    oncogenes = set()
+    for sample in runs:
+        for feature in runs[sample]:
+            if feature['Oncogenes']:
+                for gene in feature['Oncogenes']:
+                    if len(gene) != 0:
+                        oncogene = gene.strip().replace("'",'')
+                        sample_name = feature['Sample name']
+                        oncogenes.add(oncogene)
+    return list(oncogenes)
+
+def get_project_classifications(runs):
+    classes = set()
+    for sample in runs:
+        for feature in runs[sample]:
+            if feature['Classification']:
+                classes.add(feature['Classification'])
+    return list(classes)
+
+def get_sample_oncogenes(feature_list, sample_name):
+    oncogenes = set()
+    for feature in feature_list:
+        if feature['Sample_name'] == sample_name:
+            if feature['Oncogenes']:
+                for gene in feature['Oncogenes']:
+                    if len(gene) != 0:
+                        oncogenes.add(gene.strip().replace("'",''))
+    return list(oncogenes)
+
+def get_sample_classifications(feature_list, sample_name):
+    classes = set()
+    for feature in feature_list:
+        if feature['Sample_name'] == sample_name:
+            if feature['Classification']:
+                classes.add(feature['Classification'])
+    return list(classes)
+
+# @caper.context_processor
+def get_files(fs_id):
+    wrapper = fs_handle.get(fs_id)
+    # response =  StreamingHttpResponse(FileWrapper(wrapper),content_type=file_['contentType'])
+    return wrapper
+
 def index(request):
     if request.user.is_authenticated:
         user = request.user.email
-        private_projects = list(collection_handle.find({ 'private' : True, 'user' : user }))
+        private_projects = list(collection_handle.find({ 'private' : True, 'project_members' : user }))
     else:
         private_projects = []
     public_projects = list(collection_handle.find({'private' : False}))
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects})
 
 def profile(request):
-    username = request.user.id
-    projects = list(collection_handle.find({ 'user' : username}))
+    user = request.user.email
+    projects = list(collection_handle.find({ 'project_members' : user }))
     return render(request, "pages/profile.html", {'projects': projects})
 
 def login(request):
@@ -167,6 +195,7 @@ def project_page(request, project_name):
     features = project['runs']
     features_list = replace_space_to_underscore(features)
     sample_data = sample_data_from_feature_list(features_list)
+    # oncogenes = get_sample_oncogenes(features_list)
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data})
 
 @cache_page(600) # 10 minutes
@@ -174,32 +203,90 @@ def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     filter_plots = not request.GET.get('display_all_chr')
-    plot = plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
+    plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
     return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name, 'graph': plot})
+    # return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name})
 
 def feature_page(request, project_name, sample_name, feature_name):
     project, sample_data, feature = get_one_feature(project_name,sample_name, feature_name)
     feature_data = replace_space_to_underscore(feature)
     return render(request, "pages/feature.html", {'project': project, 'sample_name': sample_name, 'feature_name': feature_name, 'feature' : feature_data})
 
-def search_page(request):
-    query = request.GET.get("query") 
-    fstr = f'/.*{query}.*/'
-    gen_query = {'$regex': fstr}
-    
-    all_projects = list(collection_handle.find({ "$text": { "$search": query } } ))
+def feature_download(request, project_name, sample_name, feature_name, feature_id):
+    bed_file = fs_handle.get(ObjectId(feature_id)).read()
+    response = HttpResponse(bed_file, content_type='application/caper.bed+csv')
+    response['Content-Disposition'] = f'attachment; filename="{feature_name}.bed"'
+    return(response)
 
+def pdf_download(request, project_name, sample_name, feature_name, feature_id):
+    img_file = fs_handle.get(ObjectId(feature_id)).read()
+    response = HttpResponse(img_file, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="{feature_name}.pdf"'
+    # response = FileResponse(img_file)
+    return(response)
+
+def png_download(request, project_name, sample_name, feature_name, feature_id):
+    img_file = fs_handle.get(ObjectId(feature_id)).read()
+    response = HttpResponse(img_file, content_type='image/png')
+    response['Content-Disposition'] = f'inline; filename="{feature_name}.png"'
+    return(response)
+
+def gene_search_page(request):
+    query = request.GET.get("query") 
+    query = query.upper()
+    gen_query = {'$regex': query }
+    
+    # Gene Search
     if request.user.is_authenticated:
         user = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, 'user' : user , 'project_name' : gen_query}))
+        private_projects = list(collection_handle.find({'private' : True, 'project_members' : user , 'Oncogenes' : gen_query}))
     else:
         private_projects = []
     
-    public_projects = list(collection_handle.find({'private' : False, 'project_name' : gen_query}))    
+    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query}))
     
-    print(all_projects)
-    print(private_projects)
-    return render(request, "pages/search.html", {'public_projects': public_projects, 'private_projects' : private_projects})
+    sample_data = []
+    for project in public_projects:
+        project_name = project['project_name']
+        features = project['runs']
+        features_list = replace_space_to_underscore(features)
+        data = sample_data_from_feature_list(features_list)
+        for sample in data:
+            sample['project_name'] = project_name
+            if query in sample['Oncogenes']:
+                sample_data.append(sample)
+    return render(request, "pages/gene_search.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'sample_data': sample_data, 'query': query})
+
+def class_search_page(request):
+    query = request.GET.get("query") 
+    gen_query = {'$regex': query }
+    
+    # Gene Search
+    if request.user.is_authenticated:
+        user = request.user.email
+        private_projects = list(collection_handle.find({'private' : True, 'project_members' : user , 'Classification' : gen_query}))
+    else:
+        private_projects = []
+    
+    public_projects = list(collection_handle.find({'private' : False, 'Classification' : gen_query}))
+    
+    def collect_class_data(projects):
+        sample_data = []
+        for project in projects:
+            project_name = project['project_name']
+            features = project['runs']
+            features_list = replace_space_to_underscore(features)
+            data = sample_data_from_feature_list(features_list)
+            for sample in data:
+                sample['project_name'] = project_name
+                if query in sample['Classifications']:
+                    sample_data.append(sample)
+        return sample_data
+    
+    public_sample_data = collect_class_data(public_projects)
+    private_sample_data = collect_class_data(private_projects)
+    
+    return render(request, "pages/class_search.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data, 'query': query})
 
 
 def edit_project_page(request, project_name):
@@ -211,13 +298,12 @@ def edit_project_page(request, project_name):
             runs = samples_to_dict(form_dict['file'])
         else:
             runs = 0
-            
         if check_project_exists(project_name):
             current_runs = project['runs']
             if runs != 0:
                 current_runs.update(runs)
             query = {'project_name': project_name}
-            new_val = { "$set": {'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(), 'private': form_dict['private'], 'project_members': form_dict['project_members']} }
+            new_val = { "$set": {'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(), 'private': form_dict['private'], 'project_members': form_dict['project_members'], 'Oncogenes': get_project_oncogenes(current_runs)} }
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
                 print(f'in valid form')
@@ -233,21 +319,89 @@ def edit_project_page(request, project_name):
 
 def create_user_list(str, current_user):
     user_list = str.split(',')
+    user_list = [x.strip() for x in user_list]
     if current_user in user_list:
         return user_list
     else:
         user_list.append(current_user)
         return user_list
 
+def clear_tmp():
+    folder = 'tmp/'
+    for filename in os.listdir(folder):
+        file_path = os.path.join(folder, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        except Exception as e:
+            print('Failed to delete %s. Reason: %s' % (file_path, e))
+
 def create_project(request):
     if request.method == "POST":
-        form = RunForm(request.POST, request.FILES)
+        form = RunForm(request.POST)
+        
+        # 
         form_dict = form_to_dict(form)
         project_name = form_dict['project_name']
-        project = dict()
-        form_file = download_file(project_name, form_dict['file'])
-        runs = samples_to_dict(form_file)
+        project = dict()        
+        # download_file(project_name, form_dict['file'])
+        # runs = samples_to_dict(form_dict['file'])
+        
+        # file download
+        request_file = request.FILES['document'] if 'document' in request.FILES else None
+        if request_file:
+            project_data_path = f"tmp/{project_name}"
+            # create a new instance of FileSystemStorage
+            fs = FileSystemStorage(location=project_data_path)
+            file = fs.save(request_file.name, request_file)
+            
+        # extract contents of file
+        file_location = f'{project_data_path}/{request_file.name}'
+        with tarfile.open(file_location, "r:gz") as tar_file:
+            tar_file.extractall(path=project_data_path)
+            
+        #get run.json 
+        run_path = f'{project_data_path}/run.json'   
+        with open(run_path, 'r') as run_json:
+            runs = samples_to_dict(run_json)
+        # for filename in os.listdir(project_data_path):
+        #     if os.path.isdir(f'{project_data_path}/{filename}'):
+                
+        
+        # get cnv, image, bed files
+        for sample, features in runs.items():
+            # sample_name = features[0]['Sample name']
+            for feature in features:
+                if len(feature) > 0:
+                    # get paths
+                    bed_path = feature['Feature BED file'] 
+                    cnv_path = feature['CNV BED file']
+                    pdf_path = feature['AA PDF file']
+                    png_path = feature['AA PNG file']
+                    
+                    # convert tab files to python format
+                    with open(f'{project_data_path}/{bed_path}', "rb") as bed_file:
+                        bed_file_id = fs_handle.put(bed_file)
+
+                    with open(f'{project_data_path}/{cnv_path}', "rb") as cnv_file:
+                        cnv_file_id = fs_handle.put(cnv_file)
+                    
+                    # convert image files to python format
+                    with open(f'{project_data_path}/{pdf_path}', "rb") as pdf:
+                        pdf_id = fs_handle.put(pdf)
+
+                    with open(f'{project_data_path}/{png_path}', "rb") as png:
+                        png_id = fs_handle.put(png)
+                    
+                    # add files to runs dict
+                    feature['Feature BED file'] = bed_file_id
+                    feature['CNV BED file'] = cnv_file_id
+                    feature['AA PDF file'] = pdf_id
+                    feature['AA PNG file'] = png_id
         if check_project_exists(project_name):
+            clear_tmp()
             return HttpResponse("Project already exists")
         else:
             current_user = request.user.email
@@ -261,12 +415,16 @@ def create_project(request):
             user_list = create_user_list(form_dict['project_members'], current_user)
             project['project_members'] = user_list
             project['runs'] = runs
+            project['Oncogenes'] = get_project_oncogenes(runs)
+            project['Classification'] = get_project_classifications(runs)
             # print(project)
             if form.is_valid():
                 collection_handle.insert_one(project)
-                collection_handle.createIndex( { "$**": "text" } )
+                
+                clear_tmp()
                 return redirect('project_page', project_name=project_name)
             else:
+                clear_tmp()
                 raise Http404()
     else:
         form = RunForm()

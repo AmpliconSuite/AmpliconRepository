@@ -8,32 +8,44 @@ import numpy as np
 from numpy import random
 import warnings
 from plotly.subplots import make_subplots
-#from pylab import cm
+from pylab import cm
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import os
 import re
+from .utils import get_db_handle, get_collection_handle, create_run_display
+import gridfs
+from bson.objectid import ObjectId
+from io import StringIO
+
 
 cent_file = 'bed_files/GRCh38_centromere.bed'
 warnings.filterwarnings("ignore")
 
+db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
+# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+
+# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+collection_handle = get_collection_handle(db_handle,'projects')
+fs_handle = gridfs.GridFS(db_handle)
 
 def plot(sample, sample_name, project_name, filter_plots=True):
-    project_data_dir = f'project_data/{project_name}/extracted'
-    if not os.path.exists(project_data_dir):
-        return ''
+    # project_data_dir = f'project_data/{project_name}/extracted'
+    # if not os.path.exists(project_data_dir):
+    #     return ''
 
-    CNV_file = sample[0]['CNV BED file']
-    CNV_file = CNV_file[CNV_file.index('AA_outputs'):]
-    CNV_file = f"{project_data_dir}/{CNV_file}"
+    cnv_file_id = sample[0]['CNV BED file']
+    # CNV_file = CNV_file[CNV_file.index('AA_outputs'):]
+    
+    cnv_file = fs_handle.get(ObjectId(cnv_file_id)).read()
     amplicon = pd.DataFrame(sample)
 
-    amplicon['Oncogenes'] = amplicon['Oncogenes'].str.replace('[', '')
-    amplicon['Oncogenes'] = amplicon['Oncogenes'].str.replace("'", "")
-    amplicon['Oncogenes'] = amplicon['Oncogenes'].str.replace(']', '')
-    amplicon['Location'] = amplicon['Location'].str.replace('[', '')
-    amplicon['Location'] = amplicon['Location'].str.replace("'", "")
-    amplicon['Location'] = amplicon['Location'].str.replace(']', '')
+    # amplicon['Oncogenes'] = amplicon['Oncogenes'].str.replace('[', '')
+    # amplicon['Oncogenes'] = amplicon['Oncogenes'].str.replace("'", "")
+    # amplicon['Oncogenes'] = amplicon['Oncogenes'].str.replace(']', '')
+    # amplicon['Location'] = amplicon['Location'].str.replace('[', '')
+    # amplicon['Location'] = amplicon['Location'].str.replace("'", "")
+    # amplicon['Location'] = amplicon['Location'].str.replace(']', '')
     
     # valid_range = lambda loc: int(loc[1]) - int(loc[0]) > 1000000
     # valid_amp = lambda x: any(valid_range(loc.split(':')[1].split('-')) for loc in x['Location'].split(', '))
@@ -43,12 +55,27 @@ def plot(sample, sample_name, project_name, filter_plots=True):
     seen = set()
     
     chr_order = lambda x: int(x) if x.isnumeric() else ord(x)
+    def get_chrom_num(location):
+        location = location[location.find('chr'):]
+        location = location.split(':')
+        chr_num = location[0].lstrip('chr')
+        return chr_num
+    
     if filter_plots:
-        chromosomes = list(sorted(set(loc.split(':')[0].lstrip('chr') for loc in (', '.join(amplicon['Location'])).split(', ')), key=chr_order))
+        chromosomes = set()
+        for x in amplicon['Location']:
+            if len(x) > 1:
+                for loc in x:
+                    chr_num = get_chrom_num(loc)
+                    chromosomes.add(chr_num)
+            else:
+                chr_num = get_chrom_num(x[0])
+                chromosomes.add(chr_num)
+        chromosomes = sorted(list(chromosomes), key=chr_order)
+        # print(chromosomes)
+        # list(set(loc.split(':')[0].lstrip('chr') for loc in (', '.join(amplicon['Location'])).split(', ')))
     else:
-        chromosomes = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11",
-        "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22",
-        "X", "Y")
+        chromosomes = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X", "Y")
     
     cmap = cm.get_cmap('Spectral', len(amplicon['AA amplicon number'].unique()))
     amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(cmap.N)]
@@ -57,8 +84,13 @@ def plot(sample, sample_name, project_name, filter_plots=True):
     fig = make_subplots(rows=rows, cols=4
         ,subplot_titles=chromosomes, horizontal_spacing=0.05, vertical_spacing = 0.1 if rows < 4 else 0.05)
 
-    df = pd.read_csv(CNV_file, sep = "\t", header = None)
+    # df = pd.read_csv(CNV_file, sep = "\t", header = None)
+    # with open(cnv_file, 'rb') as cnv:
+    cnv_decode = str(cnv_file,'utf-8')
+    cnv_string = StringIO(cnv_decode) 
+    df = pd.read_csv(cnv_string, sep="\t", header = None)
     df.rename(columns = {0: 'Chromosome Number', 1: "Feature Start Position", 2: "Feature End Position", 3: 'CNV Gain', 4: 'Copy Number'}, inplace = True)
+    # print(df.head())
     dfs = {}
     
     for chromosome in df['Chromosome Number'].unique():
@@ -107,19 +139,20 @@ def plot(sample, sample_name, project_name, filter_plots=True):
         for i in range(len(amplicon)):
             row = amplicon.iloc[[i]]
             loc = row.iloc[0, 4]
-            splitloc = loc.split(',')
-            for element in splitloc:
+            # splitloc = loc.split(',')
+            for element in loc:
+                element = element[1:-1]
                 chrsplit = element.split(':')
                 chr = chrsplit[0]
                 if chr == key or chr[1:] == key:
                     for j in range(0,2):
                         row['Chromosome Number'] = chrsplit[0]
                         locsplit = chrsplit[1].split('-') 
-                        row['Feature Start Position'] = int(locsplit[0])
-                        row['Feature End Position'] = int(locsplit[1])
+                        row['Feature Start Position'] = int(float(locsplit[0]))
+                        row['Feature End Position'] = int(float(locsplit[1].strip()))
 
-                        if (int(locsplit[1]) - int(locsplit[0])) / x_range < min_width:
-                            offset = (x_range * min_width) - (int(locsplit[1]) - int(locsplit[0]))
+                        if (int(float(locsplit[1])) - int(float(locsplit[0]))) / x_range < min_width:
+                            offset = (x_range * min_width) - (int(float(locsplit[1])) - int(float(locsplit[0])))
                         else:
                             offset = 0
 
@@ -127,7 +160,7 @@ def plot(sample, sample_name, project_name, filter_plots=True):
                             row['Feature Position'] = locsplit[0]
                             row['Y-axis'] = 95
                         elif j == 1:
-                            row['Feature Position'] = int(locsplit[1]) + offset
+                            row['Feature Position'] = int(float(locsplit[1])) + offset
                             row['Y-axis'] = 95
                         amplicon_df = pd.concat([row, amplicon_df])
                     amplicon_df['Feature Start Position'] = amplicon_df['Feature Start Position'].astype(float)
@@ -143,18 +176,33 @@ def plot(sample, sample_name, project_name, filter_plots=True):
                         show_legend = number not in seen
                         seen.add(number)
                         
+                        # feature_name = amplicon_df['Feature ID'][i]
+                        # png_id = amplicon_df['AA PNG file'][i]
+                        
+                        # fig.add_trace(go.Scatter(x = per_amplicon['Feature Position'], y = per_amplicon['Y-axis'], 
+                        #         customdata = amplicon_df, mode='lines',fill='tozeroy', hoveron='points+fills', hovertemplate=
+                        #         '<br><i>Feature Classification:</i> %{customdata[3]}<br>' + 
+                        #         '<i>%{customdata[16]}:</i> %{customdata[17]} - %{customdata[18]}<br>' +
+                        #         '<i>Oncogenes:</i> %{customdata[5]}<br>'+
+                        #         '<i>Feature Maximum Copy Number:</i> %{customdata[9]}<br>'
+                        #         f'<b class="/{project_data_dir}/AA_outputs/{sample_name}/{sample_name}_AA_results/{sample_name}_amplicon{number}.png">Click to Download Amplicon {number} PNG</b>',
+                        #         name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
+                        #         line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=number, text='hallo'), row = rowind, col = colind)
+                        amplicon_df2 = amplicon_df[['Classification','Chromosome Number', 'Feature Start Position', 'Feature End Position','Oncogenes','Feature Maximum Copy Number','AA amplicon number', 'Feature Position','Y-axis']]
+                        # amplicon_df2 = amplicon_df2.astype({'AA PNG file':'string'})
+                        # print(amplicon_df.head())
                         fig.add_trace(go.Scatter(x = per_amplicon['Feature Position'], y = per_amplicon['Y-axis'], 
-                                customdata = amplicon_df, mode='lines',fill='tozeroy', hoveron='points+fills', hovertemplate=
-                                '<br><i>Feature Classification:</i> %{customdata[3]}<br>' + 
-                                '<i>%{customdata[16]}:</i> %{customdata[17]} - %{customdata[18]}<br>' +
-                                '<i>Oncogenes:</i> %{customdata[5]}<br>'+
-                                '<i>Feature Maximum Copy Number:</i> %{customdata[9]}<br>'
-                                f'<b class="/{project_data_dir}/AA_outputs/{sample_name}/{sample_name}_AA_results/{sample_name}_amplicon{number}.png">Click to Download Amplicon {number} PNG</b>',
-                                name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
-                                line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=number, text='hallo'), row = rowind, col = colind)
+                                customdata = amplicon_df2, mode='lines',fill='tozeroy', hoveron='points+fills', hovertemplate=
+                                '<br><i>Feature Classification:</i> %{customdata[0]}<br>' + 
+                                '<i>%{customdata[1]}:</i> %{customdata[2]} - %{customdata[3]}<br>' +
+                                '<i>Oncogenes:</i> %{customdata[4]}<br>'+
+                                '<i>Feature Maximum Copy Number:</i> %{customdata[5]}<br>' 
+                                # '<b href="/sample/%{customdata[12]}/feature/%{customdata[10]}/download/png/%{customdata[11]}">Click to Download Amplicon PNG</b>' 
+                                ,name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
+                                line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=number), row = rowind, col = colind)
                         fig.update_traces(textposition="bottom right")
 
-                    amplicon_df = pd.DataFrame()
+                    # amplicon_df = pd.DataFrame()
 
         cent_df = pd.read_csv(cent_file, header = None, sep = '\t')
         #display(a_df)
