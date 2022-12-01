@@ -35,15 +35,18 @@ urlpatterns += [
     # path('runs/', views.run_list, name='run_list'),
     path('create-project/', views.create_project, name='create_project'),
     path("accounts/profile/", views.profile, name="profile"),
-    # path("accounts/login/", views.login, name="login"),
+    path("accounts/login/", views.login, name="login"),
     # path("accounts/login/", views.login, name="login"),
     # path("accounts/login/", views.login, name="login"),
     path("project/<project_name>", views.project_page, name="project_page"),
     path("project/<project_name>/sample/<sample_name>", views.sample_page, name="sample_page"),
     path("project/<project_name>/sample/<sample_name>/feature/<feature_name>", views.feature_page, name="feature_page"),
+    path("project/<project_name>/sample/<sample_name>/feature/<feature_name>/download/<feature_id>", views.feature_download, name="feature_download"),
+    path("project/<project_name>/sample/<sample_name>/feature/<feature_name>/download/png/<feature_id>", views.png_download, name="pdf_download"),
+    path("project/<project_name>/sample/<sample_name>/feature/<feature_name>/download/pdf/<feature_id>", views.pdf_download, name="pdf_download"),
     path("project/<project_name>/edit", views.edit_project_page, name="edit_project_page"),
-    path('search/', views.search_page, name='search_page'),
-
+    path('gene-search/', views.gene_search_page, name='gene_search_page'),
+    path('class-search/', views.class_search_page, name='class_search_page')
 
 ]
 

@@ -20,7 +20,7 @@ table td {
 }
 
 h3 {
-    padding-bottom: 50px;
+    padding-bottom: 20px;
 }
 
 .hide {
@@ -37,4 +37,8 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
 
 .footer {
     margin-top: 100px;
+}
+
+.sample-link {
+    font-size: 10px;
 }

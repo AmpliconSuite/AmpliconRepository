@@ -52,6 +52,11 @@
     {% endblock %}
 
     {% block extra_js %}
+    <script>
+        $(function () {
+            $('[data-toggle="tooltip"]').tooltip()
+          })
+    </script>
     {% endblock %}
 
 

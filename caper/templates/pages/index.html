@@ -17,6 +17,9 @@
 </script>
 {% endblock %}
 
+{% block meta_title %} Home
+{% endblock %}
+
 {% block main %}
 <head>
     <title>
@@ -29,12 +32,69 @@
         <div>
             <h1 style="padding-top: 50px">Welcome to the AmpliconRepository</h1>
             <hr>
-            <p>Focal oncogene amplification and rearrangements drive tumor growth and evolution in multiple cancer types. Proposed mechanisms for focal amplification include extrachromosomal DNA (ecDNA) formation, breakage-fusion-bridge (BFB) mechanism, tandem duplications, chromothripsis and others. Focally amplified regions are often hotspots for genomic rearrangements. As a result, the focally amplified region may undergo rapid copy number changes and the structure of the focally amplified region may evolve over time contributing to tumor progression. Furthermore, ecDNA elements may reintegrate back into the genome to form HSRs. The inter-cell heterogeneity in copy number of ecDNA as well as the interchangeability between ecDNA and HSR may allow the tumor to adapt to changing environment, e.g. targetted drug application. As a result, understanding the architecture of the focal amplifications is important to gain insights into cancer biology. AmpliconArchitect (AA) is a tool which can reconstruct the structure of focally amplified regions in a cancer sample using whole genome sequence short paired-end data.
-
-            A full description of the methods and detailed characterization of copy number amplifications and ecDNA in cancer can be found in the following manuscript. Please cite the following reference if using AmpliconArchitect in your work:
-                
-            Deshpande, V. et al. Exploring the landscape of focal amplifications in cancer using AmpliconArchitect. Nat. Commun. 10, 392 (2019). <a href="https://www.nature.com/articles/s41467-018-08200-y">(Article)</a></p>
+            <div stlye="margin-top: 30px">
+                <p>Focal oncogene amplification and rearrangements drive tumor growth and evolution in multiple cancer types. Proposed mechanisms for focal amplification include extrachromosomal DNA (ecDNA) formation, breakage-fusion-bridge (BFB) mechanism, tandem duplications, chromothripsis and others. Focally amplified regions are often hotspots for genomic rearrangements. As a result, the focally amplified region may undergo rapid copy number changes and the structure of the focally amplified region may evolve over time contributing to tumor progression. Furthermore, ecDNA elements may reintegrate back into the genome to form HSRs. The inter-cell heterogeneity in copy number of ecDNA as well as the interchangeability between ecDNA and HSR may allow the tumor to adapt to changing environment, e.g. targetted drug application. As a result, understanding the architecture of the focal amplifications is important to gain insights into cancer biology. AmpliconArchitect (AA) is a tool which can reconstruct the structure of focally amplified regions in a cancer sample using whole genome sequence short paired-end data.
+    
+                A full description of the methods and detailed characterization of copy number amplifications and ecDNA in cancer can be found in the following manuscript. Please cite the following reference if using AmpliconArchitect in your work:
+                        
+                Deshpande, V. et al. Exploring the landscape of focal amplifications in cancer using AmpliconArchitect. Nat. Commun. 10, 392 (2019). <a href="https://www.nature.com/articles/s41467-018-08200-y" target="_blank">Link to Paper</a></p>
+            </div>
         </div>
+        
+        <script>
+            $( "#searchform" ).submit( function( e ) {
+                e.preventDefault();
+            
+                document.location = $( "#searchinput" ).val();
+            
+              } );
+        </script>
+        <style>
+            .nav-tabs .nav-link {
+                color: gray;
+                border: 0;
+                border-bottom: 1px solid grey;
+            }
+            
+            .nav-tabs .nav-link:hover {
+                border: 0;
+                border-bottom: 1px solid grey;
+            }
+            
+            .nav-tabs .nav-link.active {
+                color: #000000;
+                border: 0;
+                border-radius: 0;
+                border-bottom: 2px solid  #0275d8 ;
+            }
+            </style>
+        <div style="margin-bottom: 20px; border: 0.5px solid grey; padding: 20px; border-radius: 10px;">
+            <ul class="nav nav-tabs" role="tablist">
+                <li class="nav-item">
+                    <a class="nav-link active" href="#search1" data-toggle="tab">Search by Gene</a>
+                </li>
+                <li class="nav-item"> 
+                    <a class='nav-link' href="#search2" data-toggle="tab">Search by Classification</a>
+                </li>
+            </ul>
+            <div class="tab-content" style="padding-top: 30px;">
+                <div class="tab-pane active" id="search1">
+                    <form id="searchform" class="input-group" method=GET action="{% url 'gene_search_page' %}">
+                        {% csrf_token %}
+                        <input type="query" class="form-control rounded" placeholder="Gene Name" aria-label="Search by gene" aria-describedby="search-addon" name="query" id="query"/>
+                        <button type="submit" class="btn btn-outline-primary">Search</button>
+                    </form>
+                </div>
+                <div class="tab-pane" id="search2">
+                    <form id="searchform" class="input-group" method=GET action="{% url 'class_search_page' %}">
+                        {% csrf_token %}
+                        <input type="query" class="form-control rounded" placeholder="Classification type (ecDNA, Linear amplification, etc.)" aria-label="Search by classification" aria-describedby="search-addon" name="query" id="query"/>
+                        <button type="submit" class="btn btn-outline-primary">Search</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
         <div>
             <ul class="nav nav-tabs" role="tablist" >
                 <li class="nav-item">
@@ -55,19 +115,17 @@
                                 <th>Description</th>
                                 <th>Last Updated</th>
                                 <th>Project Members</th>
-                                <th>Project Page</th>
-                                <th>Edit Project</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for project in public_projects %}
                             <tr>
-                                <td>{{ project.project_name }}</td>
+                                <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}">{{ project.project_name }}</a></td>
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
-                                <td>{{ project.project_members }}</td>
-                                <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td>
-                                <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.project_name %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
+                                <td>{% for person in project.project_members %}
+                                    {{ person }}<br>
+                                {% endfor%}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -82,18 +140,18 @@
                                 <th>Description</th>
                                 <th>Last Updated</th>
                                 <th>Project Members</th>
-                                <th>Project Page</th>
                                 <th>Edit Project</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for project in private_projects %}
                             <tr>
-                                <td>{{ project.project_name }}</td>
+                                <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}">{{ project.project_name }}</a></td>
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
-                                <td>{{ project.project_members }}</td>
-                                <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td>
+                                <td>{% for person in project.project_members %}
+                                    {{ person }}<br>
+                                {% endfor%}</td>
                                 <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.project_name %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
                             </tr>
                             {% endfor %}
@@ -114,12 +172,19 @@
             <img src="/static/img/exampleAR.png" alt="" width="100%">
             <figcaption class="figure-caption">CycleViz caption</figcaption>
         </figure>
-        <h4 style="margin-top: 50px">News & Updates</h4>
+        <h4 style="margin-top: 20px">News & Updates</h4>
         <ul>
             <li>
                 <a href="https://www.genengnews.com/news/extrachromosal-dna-found-to-play-a-critical-role-in-cancer/" target="_blank">Extrachromosal DNA Found to Play a Critical Role in Cancer <i class="fas fa-external-link-alt"></i></a>
             </li>
         </ul>
+        <h4 style="margin-top: 20px">How to Cite</h4>
+        <ul>
+            <li>
+                Deshpande, V., Luebeck, J., Nguyen, NP.D. et al. Exploring the landscape of focal amplifications in cancer using AmpliconArchitect. Nat Commun 10, 392 (2019). <a href="https://doi.org/10.1038/s41467-018-08200-y" target="_blank">https://doi.org/10.1038/s41467-018-08200-y</a>
+            </li>
+        </ul>
+
     </div>
 </div>
 

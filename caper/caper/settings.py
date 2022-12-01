@@ -117,6 +117,7 @@ DEBUG = True
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 
 SITE_ID = 1
+SITE_TITLE = 'AmpliconRepo'
 
 # If you set this to False, Django will make some optimizations so as not
 # to load the internationalization machinery.
@@ -145,9 +146,10 @@ SOCIALACCOUNT_PROVIDERS = {
         # (``socialaccount`` app) containing the required client
         # credentials, or list them here:
         'SCOPE': [
-            'profile',
-            'email'
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'https://www.googleapis.com/auth/userinfo.email'
         ],
+        'AUTH_PARAMS': {'access_type': 'online'},
         'APP': {
             'client_id': '789453891819-hk9q466oq5ba8i2ur4pk8d0of2f056sc.apps.googleusercontent.com',
             'secret': GOOGLE_SECRET_KEY,
@@ -251,6 +253,7 @@ TEMPLATES = [
                 "django.template.context_processors.tz",
                 "mezzanine.conf.context_processors.settings",
                 "mezzanine.pages.context_processors.page",
+                # 'caper.context_processors.get_files'
             ],
             "loaders": [
                 "mezzanine.template.loaders.host_themes.Loader",
@@ -275,8 +278,8 @@ INSTALLED_APPS = [
     "django.contrib.sites",
     "django.contrib.sitemaps",
     "django.contrib.messages",
-    "django_extensions",
-    "sslserver",
+    # "django_extensions",
+    # "sslserver",
     "django.contrib.staticfiles",
     'crispy_forms',
     'bootstrap4',
@@ -294,7 +297,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'allauth.socialaccount.providers.globus',
     'allauth.socialaccount.providers.google'
-]
+    ]
 
 CRISPY_TEMPLATE_PACK = 'bootstrap4'
 # List of middleware classes to use. Order is important; in the request phase,
