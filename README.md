@@ -20,6 +20,7 @@ This is the main repository for the AmpliconRepository. Currently in development
 > `conda env create -f environment.yml`
 - Activate the new environment (you need to do this everytime before running the server):
 > `conda activate caperenv` 
+- also need to "pip install opencv-python"
 
 ## 3. Set up MongoDB locally (for development)
 - If you don't have a database location set up, set up a location:
