@@ -27,6 +27,11 @@ import gridfs
 import caper
 from bson.objectid import ObjectId
 from django.utils.text import slugify
+from bson.json_util import dumps
+
+
+
+
 
 db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
 # db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
@@ -45,13 +50,17 @@ def get_one_project(project_name):
 
 def get_one_sample(project_name,sample_name):
     project = get_one_project(project_name)
+    print(f'project_name: {project_name}')
+    print(f'sample_name: {sample_name}')
     runs = project['runs']
     for sample in runs.keys():
         current = runs[sample]
         if len(current) > 0:
             if current[0]['Sample name'] == sample_name:
                 sample_out = current
+            
     return project, sample_out
+
 
 def get_one_feature(project_name,sample_name, feature_name):
     project, sample = get_one_sample(project_name,sample_name)
@@ -204,7 +213,36 @@ def sample_page(request, project_name, sample_name):
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     filter_plots = not request.GET.get('display_all_chr')
     plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
-    return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name, 'graph': plot})
+    igv_tracks = []
+    ## fs_handle.get(ObjectId(feature_id)).read()
+    for feature in sample_data_processed:
+        bed_file = feature_download(request,project_name, 
+        sample_name, feature['Sample_name'], 
+        feature['Feature_BED_file'])
+
+        track = {
+            'name':feature['Feature_ID'],
+            # 'type': "seg",
+            'url' : f"http://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/{feature['Feature_BED_file']}".replace(" ", "%"),
+            'indexed':False,
+            'color': "rgba(94,255,1,0.25)"
+                }
+        # print(feature['Feature_BED_file'])
+        igv_tracks.append(track)
+        
+        ## use safe encoding
+        ## when we embed the django template, we can separate filters, and there's one that's "safe", and will
+        ## have the IGV button in the features table 
+        ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
+
+    igv_json = {'genome':'hg38', 'tracks':igv_tracks}
+    # print(sample_data_processed)
+    return render(request, "pages/sample.html", 
+    {'project': project, 
+    'project_name': project_name, 
+    'sample_data': sample_data_processed,
+    'sample_name': sample_name, 'graph': plot, 
+    'igv_tracks': json.dumps(igv_tracks)})
     # return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name})
 
 def feature_page(request, project_name, sample_name, feature_name):
@@ -230,6 +268,7 @@ def png_download(request, project_name, sample_name, feature_name, feature_id):
     response = HttpResponse(img_file, content_type='image/png')
     response['Content-Disposition'] = f'inline; filename="{feature_name}.png"'
     return(response)
+
 
 def gene_search_page(request):
     query = request.GET.get("query") 
@@ -363,7 +402,7 @@ def create_project(request):
             tar_file.extractall(path=project_data_path)
             
         #get run.json 
-        run_path = f'{project_data_path}/run.json'   
+        run_path = f'{project_data_path}/results/run.json'   
         with open(run_path, 'r') as run_json:
             runs = samples_to_dict(run_json)
         # for filename in os.listdir(project_data_path):
@@ -382,18 +421,30 @@ def create_project(request):
                     png_path = feature['AA PNG file']
                     
                     # convert tab files to python format
-                    with open(f'{project_data_path}/{bed_path}', "rb") as bed_file:
-                        bed_file_id = fs_handle.put(bed_file)
-
-                    with open(f'{project_data_path}/{cnv_path}', "rb") as cnv_file:
-                        cnv_file_id = fs_handle.put(cnv_file)
+                    try:
+                        with open(f'{project_data_path}/results/{bed_path}', "rb") as bed_file:
+                            bed_file_id = fs_handle.put(bed_file)
+                    except:
+                        bed_file_id = "Not Provided"
                     
-                    # convert image files to python format
-                    with open(f'{project_data_path}/{pdf_path}', "rb") as pdf:
-                        pdf_id = fs_handle.put(pdf)
+                    try:
+                        with open(f'{project_data_path}/results/{cnv_path}', "rb") as cnv_file:
+                            cnv_file_id = fs_handle.put(cnv_file)
+                    except:
+                        bed_file_id = "Not Provided"
+                    
+                    try:
+                        # convert image files to python format
+                        with open(f'{project_data_path}/results/{pdf_path}', "rb") as pdf:
+                            pdf_id = fs_handle.put(pdf)
+                    except:
+                        bed_file_id = "Not Provided"
 
-                    with open(f'{project_data_path}/{png_path}', "rb") as png:
-                        png_id = fs_handle.put(png)
+                    try:
+                        with open(f'{project_data_path}/results/{png_path}', "rb") as png:
+                            png_id = fs_handle.put(png)
+                    except:
+                        bed_file_id = "Not Provided"
                     
                     # add files to runs dict
                     feature['Feature BED file'] = bed_file_id
