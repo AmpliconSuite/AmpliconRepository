@@ -137,44 +137,44 @@ FILE_UPLOAD_PERMISSIONS = 0o644
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Provider specific settings
-# GOOGLE_SECRET_KEY = os.environ['GOOGLE_SECRET_KEY']
-# GLOBUS_SECRET_KEY = os.environ['GLOBUS_SECRET_KEY']
-# SOCIALACCOUNT_EMAIL_REQUIRED=True
-# SOCIALACCOUNT_PROVIDERS = {
-#     'google': {
-#         # For each OAuth based provider, either add a ``SocialApp``
-#         # (``socialaccount`` app) containing the required client
-#         # credentials, or list them here:
-#         'SCOPE': [
-#             'https://www.googleapis.com/auth/userinfo.profile',
-#             'https://www.googleapis.com/auth/userinfo.email'
-#         ],
-#         'AUTH_PARAMS': {'access_type': 'online'},
-#         'APP': {
-#             'client_id': '789453891819-hk9q466oq5ba8i2ur4pk8d0of2f056sc.apps.googleusercontent.com',
-#             'secret': GOOGLE_SECRET_KEY,
-#         }
-#     },
-#     'globus': {
-#         # For each OAuth based provider, either add a ``SocialApp``
-#         # (``socialaccount`` app) containing the required client
-#         # credentials, or list them here:
-#         'SCOPE': [
-#             'openid',
-#             'profile',
-#             'email',
-#             'urn:globus:auth:scope:transfer.api.globus.org:all'
-#         ],
-#         'APP': {
-#             'client_id': '6524a9d1-a235-4c4f-9e20-c70e77f6e34b',
-#             'secret': GLOBUS_SECRET_KEY,
-#         }
-#     }
-# }
-# SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
-#     'https://www.googleapis.com/auth/userinfo.email',
-#     'https://www.googleapis.com/auth/userinfo.profile'
-# ]
+GOOGLE_SECRET_KEY = os.environ['GOOGLE_SECRET_KEY']
+GLOBUS_SECRET_KEY = os.environ['GLOBUS_SECRET_KEY']
+SOCIALACCOUNT_EMAIL_REQUIRED=True
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        # For each OAuth based provider, either add a ``SocialApp``
+        # (``socialaccount`` app) containing the required client
+        # credentials, or list them here:
+        'SCOPE': [
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'https://www.googleapis.com/auth/userinfo.email'
+        ],
+        'AUTH_PARAMS': {'access_type': 'online'},
+        'APP': {
+            'client_id': '789453891819-hk9q466oq5ba8i2ur4pk8d0of2f056sc.apps.googleusercontent.com',
+            'secret': GOOGLE_SECRET_KEY,
+        }
+    },
+    'globus': {
+        # For each OAuth based provider, either add a ``SocialApp``
+        # (``socialaccount`` app) containing the required client
+        # credentials, or list them here:
+        'SCOPE': [
+            'openid',
+            'profile',
+            'email',
+            'urn:globus:auth:scope:transfer.api.globus.org:all'
+        ],
+        'APP': {
+            'client_id': '6524a9d1-a235-4c4f-9e20-c70e77f6e34b',
+            'secret': GLOBUS_SECRET_KEY,
+        }
+    }
+}
+SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile'
+]
 
 
 
