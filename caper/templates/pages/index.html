@@ -88,7 +88,15 @@
                 <div class="tab-pane" id="search2">
                     <form id="searchform" class="input-group" method=GET action="{% url 'class_search_page' %}">
                         {% csrf_token %}
-                        <input type="query" class="form-control rounded" placeholder="Classification type (ecDNA, Linear amplification, etc.)" aria-label="Search by classification" aria-describedby="search-addon" name="query" id="query"/>
+                        <input type="text" autocomplete="off" list="ecDNAclassificationDefaults" class="form-control rounded" placeholder="Classification type (ecDNA, Linear amplification, etc.)" aria-label="Search by classification" aria-describedby="search-addon" name="query" id="query"/>
+                        <datalist id="ecDNAclassificationDefaults">
+                            <option value="ecDNA">ecDNA</option>
+                            <option value="Linear amplification">Linear amplification</option>
+                            <option value="breakage-fusion-bridge (BFB)">breakage-fusion-bridge (BFB) </option>
+                            <option value="tandem duplications">tandem duplications </option>
+                            <option value="chromothripsis">chromothripsis </option>
+
+                        </datalist> 
                         <button type="submit" class="btn btn-outline-primary">Search</button>
                     </form>
                 </div>
