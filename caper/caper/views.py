@@ -341,6 +341,14 @@ def gene_search_page(request):
                     upperclass =  map(str.upper, sample['Classifications'])
                     classmatch =(classquery in upperclass)
                     classempty = (len(classquery) == 0)
+                    # keep the sample if we have matched on both oncogene and classification or oncogene and classification is empty
+                    if classmatch or classempty:
+                        sample_data.append(sample)
+                elif len(genequery) == 0:
+                    upperclass = map(str.upper, sample['Classifications'])
+                    classmatch = (classquery in upperclass)
+                    classempty = (len(classquery) == 0)
+                    # keep the sample if we have matched on classification and oncogene is empty
                     if classmatch or classempty:
                         sample_data.append(sample)
 
