@@ -270,19 +270,26 @@ def png_download(request, project_name, sample_name, feature_name, feature_id):
     return(response)
 
 
-def gene_search_page(request):
-    query = request.GET.get("query") 
-    query = query.upper()
-    gen_query = {'$regex': query }
-    
+#
+# actually the old gene search page function, deprecated and replaced
+#
+def class_search_page(request):
+    genequery = request.GET.get("genequery")
+    genequery = genequery.upper()
+    gen_query = {'$regex': genequery }
+
+    classquery = request.GET.get("classquery")
+    classquery = classquery.upper()
+    class_query = {'$regex': classquery}
+
     # Gene Search
     if request.user.is_authenticated:
         user = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, 'project_members' : user , 'Oncogenes' : gen_query}))
+        private_projects = list(collection_handle.find({'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'Classification' : class_query}))
     else:
         private_projects = []
     
-    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query}))
+    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'Classification' : class_query}))
     
     sample_data = []
     for project in public_projects:
@@ -292,40 +299,63 @@ def gene_search_page(request):
         data = sample_data_from_feature_list(features_list)
         for sample in data:
             sample['project_name'] = project_name
-            if query in sample['Oncogenes']:
+            if genequery in sample['Oncogenes']:
                 sample_data.append(sample)
+
+
     return render(request, "pages/gene_search.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'sample_data': sample_data, 'query': query})
 
-def class_search_page(request):
-    query = request.GET.get("query") 
-    gen_query = {'$regex': query }
-    
+def gene_search_page(request):
+    genequery = request.GET.get("genequery")
+    genequery = genequery.upper()
+    gen_query = {'$regex': genequery }
+
+    classquery = request.GET.get("classquery")
+    classquery = classquery.upper()
+    class_query = {'$regex': classquery}
+
     # Gene Search
     if request.user.is_authenticated:
         user = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, 'project_members' : user , 'Classification' : gen_query}))
+        query_obj = {'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'Classification': class_query}
+
+        private_projects = list(collection_handle.find())
     else:
         private_projects = []
     
-    public_projects = list(collection_handle.find({'private' : False, 'Classification' : gen_query}))
+    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'Classification' : class_query}))
     
     def collect_class_data(projects):
         sample_data = []
         for project in projects:
+
             project_name = project['project_name']
+            print(project_name)
             features = project['runs']
             features_list = replace_space_to_underscore(features)
             data = sample_data_from_feature_list(features_list)
             for sample in data:
                 sample['project_name'] = project_name
-                if query in sample['Classifications']:
-                    sample_data.append(sample)
+
+                if genequery in sample['Oncogenes']:
+                    upperclass =  map(str.upper, sample['Classifications'])
+                    classmatch =(classquery in upperclass)
+                    classempty = (len(classquery) == 0)
+                    if classmatch or classempty:
+                        sample_data.append(sample)
+
         return sample_data
     
     public_sample_data = collect_class_data(public_projects)
     private_sample_data = collect_class_data(private_projects)
-    
-    return render(request, "pages/class_search.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data, 'query': query})
+
+    # for display on the results page
+    if len(classquery) == 0:
+        classquery = "all amplicon types"
+    return render(request, "pages/gene_search.html",
+                  {'public_projects': public_projects, 'private_projects' : private_projects,
+                   'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data,
+                   'gene_query': genequery, 'class_query': classquery})
 
 
 def edit_project_page(request, project_name):
