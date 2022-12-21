@@ -53,10 +53,12 @@ def get_one_sample(project_name,sample_name):
     print(f'project_name: {project_name}')
     print(f'sample_name: {sample_name}')
     runs = project['runs']
-    for sample in runs.keys():
-        current = runs[sample]
+    for sample_num in runs.keys():
+        current = runs[sample_num]
         if len(current) > 0:
             if current[0]['Sample name'] == sample_name:
+                sample_out = current
+            else:
                 sample_out = current
             
     return project, sample_out
@@ -207,6 +209,33 @@ def project_page(request, project_name):
     # oncogenes = get_sample_oncogenes(features_list)
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data})
 
+def igv_features_creation(locations):
+    """
+    Locations should look like: ["'chr11:56595156-58875237'", " 'chr11:66684707-68055335'", " 'chr11:69975662-70290667'"]
+
+    """
+    features = []
+    for location in locations:
+        parsed = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")
+        features.append({
+            'chr':parsed[0],
+            'start':int(parsed[1]),
+            'end':int(parsed[2])
+        })
+
+    chr_num = locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
+    chr_min = int(locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[1])
+    chr_max = int(locations[-1].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[-1])
+    if chr_min > chr_max:
+        locus = f"{chr_num}:{(int(chr_max)):,}-{(int(chr_min)):,}"
+    else:
+        locus = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
+
+    print(locus)
+    return features, locus
+
+
+
 @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
@@ -214,35 +243,47 @@ def sample_page(request, project_name, sample_name):
     filter_plots = not request.GET.get('display_all_chr')
     plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
     igv_tracks = []
-    ## fs_handle.get(ObjectId(feature_id)).read()
+    locus_lst = []
     for feature in sample_data_processed:
         bed_file = feature_download(request,project_name, 
         sample_name, feature['Sample_name'], 
         feature['Feature_BED_file'])
 
+        roi_features, locus = igv_features_creation(feature['Location'])
+        if locus != "":
+            locus_lst.append(locus)
+        else:
+            locus_lst.append("")
+
         track = {
             'name':feature['Feature_ID'],
             # 'type': "seg",
-            'url' : f"http://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/{feature['Feature_BED_file']}".replace(" ", "%"),
-            'indexed':False,
-            'color': "rgba(94,255,1,0.25)"
-                }
-        # print(feature['Feature_BED_file'])
+            # 'url' : f"http://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/{feature['Feature_BED_file']}".replace(" ", "%"),
+            # 'indexed':False,
+            'color': "rgba(94,255,1,0.25)",
+            'features': roi_features,
+            }
+
         igv_tracks.append(track)
+
+        
         
         ## use safe encoding
         ## when we embed the django template, we can separate filters, and there's one that's "safe", and will
         ## have the IGV button in the features table 
         ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
-
     igv_json = {'genome':'hg38', 'tracks':igv_tracks}
     # print(sample_data_processed)
+    print(locus_lst)
     return render(request, "pages/sample.html", 
     {'project': project, 
     'project_name': project_name, 
     'sample_data': sample_data_processed,
     'sample_name': sample_name, 'graph': plot, 
-    'igv_tracks': json.dumps(igv_tracks)})
+    'igv_tracks': json.dumps(igv_tracks),
+    'locuses': json.dumps(locus_lst)
+    }
+    )
     # return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name})
 
 def feature_page(request, project_name, sample_name, feature_name):

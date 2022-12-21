@@ -24,6 +24,33 @@
     }
     }
 
+    function create_igv(track, locus_selection){
+        // a function to create IGV.js tracks
+        
+        console.log("I'm inside create_igv function")
+
+        const version = igv.version()
+        console.log("Using IGV version: " + version)
+
+        const igvDiv = document.getElementById("igv-div")
+        const options =
+            { 
+                locus: locus_selection,
+                genome: "hg19",
+                roi: track
+            }
+
+        if (igvDiv.innerHTML != ""){
+            igvDiv.innerHTML = "";
+        }
+
+
+        igv.createBrowser(igvDiv, options)
+            .then(function (browser) {
+                console.log("Created IGV browser")
+            })
+    }
+
 </script>
 
 {% endblock %}
@@ -56,7 +83,7 @@
 
 {% if graph %}
 
-    <div class="container" style="display:flex;height:600px;">
+    <div id = "big_container" class="container" style="display:none;height:600px;overflow: hidden;">
         <div id="figure_download_window", style='display:none; width: 50%; background: green;'>
             <a href='' target='_blank' download="download" style='border-style: solid; padding: 0.1rem 0.5rem; border-width: 0.15rem; border-color: black; display: flex; flex-flow: column'>
                 <br>
@@ -68,26 +95,6 @@
 
         <!-- <button onclick="myFunction()" style="height:100px;">SHOW IGV VIEWER</button> -->
         <div id = "igv-div" style = "display:none; flex-grow:1;">
-            <!-- <script type="text/javascript">
-                document.addEventListener("DOMContentLoaded", function () {
-            
-                    const version = igv.version()
-                    console.log('Using IGV version: ' + version)
-                    const igvDiv = document.getElementById("igv-div")
-                    const map1 = JSON.parse('{{ igv_tracks|safe }}')
-                    console.log(map1)
-                    var options = {
-                                genome: "hg38",
-                                roi: map1
-                                    };
-                    igv.createBrowser(igvDiv, options)
-                        .then(function (browser) {
-                            console.log("Created IGV browser")
-                        })
-                })
-
-            </script> -->
-
             
         </div>
 
@@ -104,7 +111,7 @@
         
         {% block plotly_js %}
         <script src="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/js/bootstrap4-toggle.min.js"></script>
-        <script>
+        <script type="text/javascript">
             if (window.location.href.split('?').length != 1) {
                 var toggle = document.getElementById("toggle-event");
                 toggle.setAttribute('checked', 'True');
@@ -114,6 +121,10 @@
             closebtn.addEventListener("click", function() {{
                 this.parentElement.style.display = 'none';
                 toggle_igv();
+
+                var container = document.getElementById("big_container");
+                container.style.display = "none";
+
             }});
 
 
@@ -140,31 +151,13 @@
 
                         for (let i = 0; i < JSON.parse('{{ igv_tracks|safe }}').length; i++){
                             var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[i]
+                            var locus_selection = JSON.parse('{{ locuses|safe }}')[i]
                             if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
-                                
-                                console.log("I FOUND THE RIGHT AMPLICON!")
-                                
                                 const tracks = [amplicon_selection];
-                                console.log(tracks)
-
+                                const locus = locus_selection;
                                 // call function to create JS in THE IGV DIV
-                                document.addEventListener("DOMContentLoaded", function () {
-            
-                                    const version = igv.version()
-                                    console.log('Using IGV version: ' + version)
-                                    const igvDiv = document.getElementById("igv-div")
-                                    console.log([amplicon_selection])
-                                    var options = {
-                                                genome: "hg38",
-                                                roi: tracks
-                                                    };
-                                    igv.createBrowser(igvDiv, options)
-                                        .then(function (browser) {
-                                            console.log("Created IGV browser")
-                                        });
-                                    igvDiv.style.display = "flex";
-                                })
-                                
+                                console.log(tracks)
+                                create_igv(tracks, locus_selection);
                             }
                         }
                         break;
@@ -188,7 +181,11 @@
                         link_elem.firstElementChild.innerHTML = 'Download ' + name.slice(3, -4) + ' PNG';
                     }}
                     link_window.setAttribute('style', 'display: flex; align-items: center; margin-bottom: 2rem');
-                    
+                    var x = document.getElementById("igv-div");
+                    x.style.display = "flex";
+
+                    var container = document.getElementById("big_container");
+                    container.style.display = "flex";
                 }}
             }})
         </script>
