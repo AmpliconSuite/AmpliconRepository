@@ -50,8 +50,6 @@ def get_one_project(project_name):
 
 def get_one_sample(project_name,sample_name):
     project = get_one_project(project_name)
-    print(f'project_name: {project_name}')
-    print(f'sample_name: {sample_name}')
     runs = project['runs']
     for sample_num in runs.keys():
         current = runs[sample_num]
@@ -231,7 +229,6 @@ def igv_features_creation(locations):
     else:
         locus = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
 
-    print(locus)
     return features, locus
 
 
@@ -272,9 +269,6 @@ def sample_page(request, project_name, sample_name):
         ## when we embed the django template, we can separate filters, and there's one that's "safe", and will
         ## have the IGV button in the features table 
         ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
-    igv_json = {'genome':'hg38', 'tracks':igv_tracks}
-    # print(sample_data_processed)
-    print(locus_lst)
     return render(request, "pages/sample.html", 
     {'project': project, 
     'project_name': project_name, 
