@@ -13,6 +13,46 @@
         );
     } );
 </script>
+<script src="https://cdn.jsdelivr.net/npm/igv@2.13.7/dist/igv.min.js"></script>
+<script type="text/javascript">
+    function toggle_igv() {
+    var x = document.getElementById("igv-div");
+    if (x.style.display === "none") {
+        x.style.display = "flex";
+    } else {
+        x.style.display = "none";
+    }
+    }
+
+    function create_igv(track, locus_selection){
+        // a function to create IGV.js tracks
+        
+
+
+        const version = igv.version()
+
+
+        const igvDiv = document.getElementById("igv-div")
+        const options =
+            { 
+                locus: locus_selection,
+                genome: "hg38",
+                roi: track
+            }
+
+        if (igvDiv.innerHTML != ""){
+            igvDiv.innerHTML = "";
+        }
+
+
+        igv.createBrowser(igvDiv, options)
+            .then(function (browser) {
+                console.log("Created IGV browser")
+            })
+    }
+
+</script>
+
 {% endblock %}
 
 {% block meta_title %} {{ sample_name }}
@@ -23,7 +63,7 @@
 <div class="container row" style="margin:auto; padding-top: 50px;">
     <div class="col-md-9">
         <h2>Sample Name: {{ sample_name }}</h2>
-        <br>        
+        <br>        ytghr56
     </div>
     <div class="col-md-3">
         <p><b>Project Name:</b>  <a target="_blank" href="{% url 'project_page' project_name=project.project_name %}">{{ project.project_name }}</a></p>
@@ -34,31 +74,51 @@
         {% endfor%}
         </p>
     </div>
+
+    
     
     
 </div>
 
 
 {% if graph %}
+
+    <div id="figure_download_window", style='display:none; width: 50%; background: green;'>
+        <a href='' target='_blank' download="download" style='border-style: solid; padding: 0.1rem 0.5rem; border-width: 0.15rem; border-color: black; display: flex; flex-flow: column'>
+            <br>
+            <img src='' style='width:30rem'>
+        </a>
+        <span id='close' style='margin-left: 5px; color: grey; font-size: 1.5rem'>&times
+        </span>
+
+      
+
+    </div>
+
+    
+    <!-- <button onclick="toggle_igv()" style="height:100px;display:none" id="show_igv">SHOW IGV VIEWER</button> -->
+    <div id = "igv-div" style = "display:none;">
+    
+    </div>
+
+
+
+
     <div>
-        <br>
-        <div id="figure_download_window", style='display: none'>
-            <a href='' target='_blank' download="download" style='border-style: solid; padding: 0.1rem 0.5rem; border-width: 0.15rem; border-color: black; display: flex; flex-flow: column'>
-                <br>
-                <img src='' style='width:30rem'>
-            </a>
-            <span id='close' style='margin-left: 5px; color: grey; font-size: 1.5rem'>&times
-            </span>
-        </div>
         <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
         <input id="toggle-event" type="checkbox" class="form-check-input" data-toggle="toggle">
         <span style='margin-left: 1rem'> Display All Chromosomes </span>
+
+        <input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle">
+        <span style='margin-left: 1rem'> Display IGV Viewer </span>
+
+
         {{ graph|safe }}
         <br>
         
         {% block plotly_js %}
         <script src="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/js/bootstrap4-toggle.min.js"></script>
-        <script>
+        <script type="text/javascript">
             if (window.location.href.split('?').length != 1) {
                 var toggle = document.getElementById("toggle-event");
                 toggle.setAttribute('checked', 'True');
@@ -67,7 +127,14 @@
             var closebtn = document.getElementById("close");
             closebtn.addEventListener("click", function() {{
                 this.parentElement.style.display = 'none';
+                var igv = document.getElementById("igv-div");
+                igv.style.display = "none";
+
+                var container = document.getElementById("big_container");
+                container.style.display = "none";
             }});
+
+
 
             $('#toggle-event').change(function() {{
                 const current_link = window.location.href.split('?');
@@ -79,18 +146,60 @@
                 }}
             }});
 
+            var igv_toggle = false;
+            $("#toggle-igv").on('change', function() {
+                if ($(this).is(':checked')) {
+                    igv_toggle = $(this).is(':checked');
+                    var x = document.getElementById("igv-div");
+                    x.style.display = "flex";
+                }
+                else {
+                    igv_toggle = $(this).is(':checked');
+                    var x = document.getElementById("igv-div");
+                    x.style.display = "none";
+                    
+                }
+            });
+                        
+
             var plot_element = document.getElementById("plotly_div");
             plot_element.on('plotly_click', function(data){{
                 console.log('click');
-                console.log(plot_element);
+                // console.log(plot_element);
                 var link = '';
                 for (let i = 0; i < data['points'].length; i++) {{
                     var name = data['points'][i]['data']['name'];
+
                     if (name.includes('Amplicon')) {{
                         link = data['points'][i]['data']['hovertemplate'].split('"')[1];
+                        var amplicon_num = name.replace("<b>", "").replace("</b>", "").split(" ")[1];
+
+                        for (let j = 0; i < JSON.parse('{{ download_links|safe }}').length; i++){
+                            var png = JSON.parse('{{ download_links|safe }}')[i];
+                            if (png.aa_amplicon_number == amplicon_num){
+                                link = png.download_link;
+                            }
+                        }
+                        // if display IGV Viewer toggle is on:
+                        if (igv_toggle) {
+                        for (let i = 0; i < JSON.parse('{{ igv_tracks|safe }}').length; i++){
+                            var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[i]
+                            var locus_selection = JSON.parse('{{ locuses|safe }}')[i]
+                            if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
+                                const tracks = [amplicon_selection];
+                                const locus = locus_selection;
+                                // call function to create JS in THE IGV DIV
+                                create_igv(tracks, locus_selection);
+                            }
+                        }
+                    }
                         break;
+
+
                     }}
                 }}
+
+                console.log(link == undefined);
 
                 if (link != '') {{
                     var link_window = document.getElementById("figure_download_window");
@@ -107,12 +216,24 @@
                         link_elem.firstElementChild.innerHTML = 'Download ' + name.slice(3, -4) + ' PNG';
                     }}
                     link_window.setAttribute('style', 'display: flex; align-items: center; margin-bottom: 2rem');
-                }}
+                    if (igv_toggle){
+                        var x = document.getElementById("igv-div");
+                        x.style.display = "flex";
+                    }
+                    
+
+                    
+                }} else if (link == undefined){
+                    
+                }
             }})
         </script>
         {% endblock %}
     </div>
 {% endif %}
+
+
+
 
 <div class="container" style="margin-top:50px;">
 

@@ -27,6 +27,11 @@ import gridfs
 import caper
 from bson.objectid import ObjectId
 from django.utils.text import slugify
+from bson.json_util import dumps
+
+
+
+
 
 db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
 # db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
@@ -46,12 +51,16 @@ def get_one_project(project_name):
 def get_one_sample(project_name,sample_name):
     project = get_one_project(project_name)
     runs = project['runs']
-    for sample in runs.keys():
-        current = runs[sample]
+    for sample_num in runs.keys():
+        current = runs[sample_num]
         if len(current) > 0:
             if current[0]['Sample name'] == sample_name:
                 sample_out = current
+            else:
+                sample_out = current
+            
     return project, sample_out
+
 
 def get_one_feature(project_name,sample_name, feature_name):
     project, sample = get_one_sample(project_name,sample_name)
@@ -198,13 +207,81 @@ def project_page(request, project_name):
     # oncogenes = get_sample_oncogenes(features_list)
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data})
 
+def igv_features_creation(locations):
+    """
+    Locations should look like: ["'chr11:56595156-58875237'", " 'chr11:66684707-68055335'", " 'chr11:69975662-70290667'"]
+
+    """
+    features = []
+    for location in locations:
+        parsed = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")
+        features.append({
+            'chr':parsed[0],
+            'start':int(parsed[1]),
+            'end':int(parsed[2])
+        })
+
+    chr_num = locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
+    chr_min = int(locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[1])
+    chr_max = int(locations[-1].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[-1])
+    if chr_min > chr_max:
+        locus = f"{chr_num}:{(int(chr_max)):,}-{(int(chr_min)):,}"
+    else:
+        locus = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
+
+    return features, locus
+
+
+
 @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     filter_plots = not request.GET.get('display_all_chr')
     plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
-    return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name, 'graph': plot})
+    igv_tracks = []
+    locus_lst = []
+    download_png = []
+    for feature in sample_data_processed:
+        download_png.append({
+            'aa_amplicon_number':feature['AA_amplicon_number'],
+            'download_link':f"http://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "%")
+        })
+
+
+        roi_features, locus = igv_features_creation(feature['Location'])
+        if locus != "":
+            locus_lst.append(locus)
+        else:
+            locus_lst.append("")
+
+        track = {
+            'name':feature['Feature_ID'],
+            # 'type': "seg",
+            # 'url' : f"http://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/{feature['Feature_BED_file']}".replace(" ", "%"),
+            # 'indexed':False,
+            'color': "rgba(94,255,1,0.25)",
+            'features': roi_features,
+            }
+
+        igv_tracks.append(track)
+
+        
+        
+        ## use safe encoding
+        ## when we embed the django template, we can separate filters, and there's one that's "safe", and will
+        ## have the IGV button in the features table 
+        ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
+    return render(request, "pages/sample.html", 
+    {'project': project, 
+    'project_name': project_name, 
+    'sample_data': sample_data_processed,
+    'sample_name': sample_name, 'graph': plot, 
+    'igv_tracks': json.dumps(igv_tracks),
+    'locuses': json.dumps(locus_lst),
+    'download_links': json.dumps(download_png)
+    }
+    )
     # return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name})
 
 def feature_page(request, project_name, sample_name, feature_name):
@@ -231,19 +308,27 @@ def png_download(request, project_name, sample_name, feature_name, feature_id):
     response['Content-Disposition'] = f'inline; filename="{feature_name}.png"'
     return(response)
 
-def gene_search_page(request):
-    query = request.GET.get("query") 
-    query = query.upper()
-    gen_query = {'$regex': query }
-    
+
+#
+# actually the old gene search page function, deprecated and replaced
+#
+def class_search_page(request):
+    genequery = request.GET.get("genequery")
+    genequery = genequery.upper()
+    gen_query = {'$regex': genequery }
+
+    classquery = request.GET.get("classquery")
+    classquery = classquery.upper()
+    class_query = {'$regex': classquery}
+
     # Gene Search
     if request.user.is_authenticated:
         user = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, 'project_members' : user , 'Oncogenes' : gen_query}))
+        private_projects = list(collection_handle.find({'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'Classification' : class_query}))
     else:
         private_projects = []
     
-    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query}))
+    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'Classification' : class_query}))
     
     sample_data = []
     for project in public_projects:
@@ -253,40 +338,71 @@ def gene_search_page(request):
         data = sample_data_from_feature_list(features_list)
         for sample in data:
             sample['project_name'] = project_name
-            if query in sample['Oncogenes']:
+            if genequery in sample['Oncogenes']:
                 sample_data.append(sample)
+
+
     return render(request, "pages/gene_search.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'sample_data': sample_data, 'query': query})
 
-def class_search_page(request):
-    query = request.GET.get("query") 
-    gen_query = {'$regex': query }
-    
+def gene_search_page(request):
+    genequery = request.GET.get("genequery")
+    genequery = genequery.upper()
+    gen_query = {'$regex': genequery }
+
+    classquery = request.GET.get("classquery")
+    classquery = classquery.upper()
+    class_query = {'$regex': classquery}
+
     # Gene Search
     if request.user.is_authenticated:
         user = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, 'project_members' : user , 'Classification' : gen_query}))
+        query_obj = {'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'Classification': class_query}
+
+        private_projects = list(collection_handle.find())
     else:
         private_projects = []
     
-    public_projects = list(collection_handle.find({'private' : False, 'Classification' : gen_query}))
+    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'Classification' : class_query}))
     
     def collect_class_data(projects):
         sample_data = []
         for project in projects:
+
             project_name = project['project_name']
+            print(project_name)
             features = project['runs']
             features_list = replace_space_to_underscore(features)
             data = sample_data_from_feature_list(features_list)
             for sample in data:
                 sample['project_name'] = project_name
-                if query in sample['Classifications']:
-                    sample_data.append(sample)
+
+                if genequery in sample['Oncogenes']:
+                    upperclass =  map(str.upper, sample['Classifications'])
+                    classmatch =(classquery in upperclass)
+                    classempty = (len(classquery) == 0)
+                    # keep the sample if we have matched on both oncogene and classification or oncogene and classification is empty
+                    if classmatch or classempty:
+                        sample_data.append(sample)
+                elif len(genequery) == 0:
+                    upperclass = map(str.upper, sample['Classifications'])
+                    classmatch = (classquery in upperclass)
+                    classempty = (len(classquery) == 0)
+                    # keep the sample if we have matched on classification and oncogene is empty
+                    if classmatch or classempty:
+                        sample_data.append(sample)
+
         return sample_data
     
     public_sample_data = collect_class_data(public_projects)
     private_sample_data = collect_class_data(private_projects)
-    
-    return render(request, "pages/class_search.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data, 'query': query})
+
+    # for display on the results page
+    if len(classquery) == 0:
+        classquery = "all amplicon types"
+    return render(request, "pages/gene_search.html",
+                  {'public_projects': public_projects, 'private_projects' : private_projects,
+                   'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data,
+                   'gene_query': genequery, 'class_query': classquery})
 
 
 def edit_project_page(request, project_name):
@@ -363,7 +479,7 @@ def create_project(request):
             tar_file.extractall(path=project_data_path)
             
         #get run.json 
-        run_path = f'{project_data_path}/run.json'   
+        run_path = f'{project_data_path}/results/run.json'   
         with open(run_path, 'r') as run_json:
             runs = samples_to_dict(run_json)
         # for filename in os.listdir(project_data_path):
@@ -382,18 +498,30 @@ def create_project(request):
                     png_path = feature['AA PNG file']
                     
                     # convert tab files to python format
-                    with open(f'{project_data_path}/{bed_path}', "rb") as bed_file:
-                        bed_file_id = fs_handle.put(bed_file)
-
-                    with open(f'{project_data_path}/{cnv_path}', "rb") as cnv_file:
-                        cnv_file_id = fs_handle.put(cnv_file)
+                    try:
+                        with open(f'{project_data_path}/results/{bed_path}', "rb") as bed_file:
+                            bed_file_id = fs_handle.put(bed_file)
+                    except:
+                        bed_file_id = "Not Provided"
                     
-                    # convert image files to python format
-                    with open(f'{project_data_path}/{pdf_path}', "rb") as pdf:
-                        pdf_id = fs_handle.put(pdf)
+                    try:
+                        with open(f'{project_data_path}/results/{cnv_path}', "rb") as cnv_file:
+                            cnv_file_id = fs_handle.put(cnv_file)
+                    except:
+                        bed_file_id = "Not Provided"
+                    
+                    try:
+                        # convert image files to python format
+                        with open(f'{project_data_path}/results/{pdf_path}', "rb") as pdf:
+                            pdf_id = fs_handle.put(pdf)
+                    except:
+                        bed_file_id = "Not Provided"
 
-                    with open(f'{project_data_path}/{png_path}', "rb") as png:
-                        png_id = fs_handle.put(png)
+                    try:
+                        with open(f'{project_data_path}/results/{png_path}', "rb") as png:
+                            png_id = fs_handle.put(png)
+                    except:
+                        bed_file_id = "Not Provided"
                     
                     # add files to runs dict
                     feature['Feature BED file'] = bed_file_id
