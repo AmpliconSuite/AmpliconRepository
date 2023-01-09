@@ -241,10 +241,13 @@ def sample_page(request, project_name, sample_name):
     plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
     igv_tracks = []
     locus_lst = []
+    download_png = []
     for feature in sample_data_processed:
-        bed_file = feature_download(request,project_name, 
-        sample_name, feature['Sample_name'], 
-        feature['Feature_BED_file'])
+        download_png.append({
+            'aa_amplicon_number':feature['AA_amplicon_number'],
+            'download_link':f"http://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "%")
+        })
+
 
         roi_features, locus = igv_features_creation(feature['Location'])
         if locus != "":
@@ -275,7 +278,8 @@ def sample_page(request, project_name, sample_name):
     'sample_data': sample_data_processed,
     'sample_name': sample_name, 'graph': plot, 
     'igv_tracks': json.dumps(igv_tracks),
-    'locuses': json.dumps(locus_lst)
+    'locuses': json.dumps(locus_lst),
+    'download_links': json.dumps(download_png)
     }
     )
     # return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name})
