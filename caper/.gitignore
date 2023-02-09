@@ -6,6 +6,7 @@
 local_settings.py
 # /static
 # /media
+Dockerfile
 
 # Elastic Beanstalk Files
 .elasticbeanstalk/*

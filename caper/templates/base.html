@@ -78,11 +78,7 @@
     <!-- Display the main content -->
     {% block main-container %}
     <div class="container main-container" style="max-width:1400px; width:90%; margin:auto;">
-        <div class="row">
-            <div class="col-sm-12">
-                {% block main %}{% endblock %}
-            </div>
-        </div>
+        {% block main %}{% endblock %}
     </div>
     {% endblock main-container %}
     </div>

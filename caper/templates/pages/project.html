@@ -19,16 +19,29 @@
 {% endblock %}
 
 {% block main %}
-<div class="container row" style="margin:auto; padding-top: 50px;">
+
+<div class="container">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/">Home</a></li>
+          <li class="breadcrumb-item active" aria-current="page">{{ project.project_name }}</li>
+        </ol>
+    </nav>
+</div>
+
+<div class="container row" style="margin:auto; padding:0px; padding-top: 20px;">
+    
     <div class="col-md-9">
-        <h2>Name: <span style="font-weight: 200">{{ project.project_name }}</span> <a href="{% url 'edit_project_page' project_name=project.project_name %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 14px"></i></a></h2>
+        <h2>Name: <span style="font-weight: 200">{{ project.project_name }}</span></h2>
+        <!-- <h2>Name: <span style="font-weight: 200">{{ project.project_name }}</span> <a href="{% url 'edit_project_page' project_name=project.project_name %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 14px"></i></a></h2> -->
         <br>
         <h4>Description: <span style="font-weight: 200">{{ project.description }}</span></h4>
         
     </div>
     <div class="col-md-3">
-        <p><b>Last Updated:</b> {{ project.date }}</p>
-        <p><b>Private:</b> {{ project.private }}</p>
+        <button class="btn btn-primary"><a href="/project/{{ project.project_name }}/download" style="color: white">Download All Project Data</a></button>
+        <!-- <p><b>Last Updated:</b> {{ project.date }}</p> -->
+        <!-- <p><b>Private:</b> {{ project.private }}</p> -->
         <p><b>Project Members:</b> {% for person in project.project_members %}
             {{ person }}
         {% endfor %}
@@ -53,7 +66,7 @@
         <tbody>
             {% for sample in sample_data %}
             <tr>
-                <td><a target="_blank" href="/project/{{project.project_name}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
+                <td><a href="/project/{{project.project_name}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
                 <td>{{ sample.Features }}</td>
                 <td>{{ sample.Oncogenes|join:", " }}</td>
                 <!-- <td>{% for gene in sample.Oncogenes %}

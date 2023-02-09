@@ -87,7 +87,7 @@ USE_MODELTRANSLATION = False
 
 # Hosts/domain names that are valid for this site; required if DEBUG is False
 # See https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.forrest-kim.org','forrest-kim.org']
+ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.forrest-kim.org','forrest-kim.org','django-env.eba-a2saymrg.us-east-1.elasticbeanstalk.com','ampliconrepository.org', 'www.ampliconrepository.org']
 
 # Local time zone for this installation. Choices can be found here:
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name
@@ -147,7 +147,9 @@ SOCIALACCOUNT_PROVIDERS = {
         # credentials, or list them here:
         'SCOPE': [
             'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/userinfo.email'
+            'https://www.googleapis.com/auth/userinfo.email',
+            'profile',
+            'email'
         ],
         'AUTH_PARAMS': {'access_type': 'online'},
         'APP': {
