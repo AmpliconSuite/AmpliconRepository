@@ -51,8 +51,8 @@
             </span>
         </div>
         <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
-        <input id="toggle-event" type="checkbox" class="form-check-input" data-toggle="toggle">
         <span style='margin-left: 1rem'> Display All Chromosomes </span>
+        <input id="toggle-event" type="checkbox" class="form-check-input" data-toggle="toggle">
         {{ graph|safe }}
         <br>
         
@@ -150,8 +150,8 @@
 <!--                     <td>{{ run.Reference_version }}</td>
                     <td>{{ run.Run_metadata_JSON }}</td> -->
                     <td>
-                        <a class="btn btn-info sample-link" href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}" role='button' style="font-size: 12px; margin:2px" download>Feature BED File</a>
-                        <a class="btn btn-info sample" href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.CNV_BED_file }}"  role='button' style="font-size: 12px; margin: 2px" download>CNV BED File</a>
+                        <a class="btn btn-info sample-link" href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}" role='button' style="font-size: 12px; margin:2px" download>Feature File</a>
+                        <a class="btn btn-info sample" href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.CNV_BED_file }}"  role='button' style="font-size: 12px; margin: 2px" download>CNV File</a>
                         <a class="btn btn-info sample" href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file}}"  role='button' style="font-size: 12px; margin: 2px"> PDF </a>
                         <a class="btn btn-info sample" href='{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file}}' role='button' style="font-size: 12px; margin: 2px" target="_blank"> PNG </a>
                     </td>

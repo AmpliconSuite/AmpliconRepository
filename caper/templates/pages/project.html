@@ -47,6 +47,7 @@
                 <th>Sample Name</th>
                 <th>Feature Count</th>
                 <th>Oncogenes</th>
+                <th>Classifications</th>
                 <!-- <th>Sample Page</th> -->
             </tr>
         </thead>
@@ -56,6 +57,8 @@
                 <td><a target="_blank" href="/project/{{project.project_name}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
                 <td>{{ sample.Features }}</td>
                 <td>{{ sample.Oncogenes|join:", " }}</td>
+                <td>{{ sample.Classifications|join:", " }}</td>
+
                 <!-- <td>{% for gene in sample.Oncogenes %}
                     {{ gene|wordwrap:5 }}
                 {% endfor %} -->

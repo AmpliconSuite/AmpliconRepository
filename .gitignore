@@ -1,5 +1,12 @@
 config.sh
-caper.sqlite3
+caper/caper.sqlite3
 .DS_Store
+Dockerfile
 caper/project_data/*
 *.sqlite3
+*.pem
+caper/mkcert-v1.4.3-linux-amd64
+caperout.txt
+lib64
+pyvenv.cfg
+/bin*
