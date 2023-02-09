@@ -362,7 +362,7 @@ def sample_download(request, project_name, sample_name):
         response = HttpResponse(zip_file)
         response['Content-Type'] = 'application/x-zip-compressed'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.zip'
-    clear_tmp()
+    os.remove(f'{sample_name}.zip')
     return response
     
 
@@ -527,7 +527,7 @@ def gene_search_download(request, project_name):
         response = HttpResponse(zip_file)
         response['Content-Type'] = 'application/x-zip-compressed'
         response['Content-Disposition'] = f'attachment; filename={project_name}.zip'
-    clear_tmp()
+    os.remove(f'{project_name}.zip')
     return response
 
 
