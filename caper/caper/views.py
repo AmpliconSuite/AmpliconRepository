@@ -1,5 +1,5 @@
 from asyncore import file_wrapper
-from tkinter import E
+# from tkinter import E
 from django.http import HttpResponse, FileResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
@@ -22,7 +22,7 @@ from zipfile import ZipFile
 import tarfile
 import pandas as pd
 import numpy as np
-import cv2
+#import cv2
 import gridfs
 import caper
 from bson.objectid import ObjectId
@@ -33,8 +33,8 @@ from bson.json_util import dumps
 
 
 
-db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
-# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+# db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
+db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 
 # db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')

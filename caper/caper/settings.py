@@ -87,7 +87,10 @@ USE_MODELTRANSLATION = False
 
 # Hosts/domain names that are valid for this site; required if DEBUG is False
 # See https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.forrest-kim.org','forrest-kim.org','django-env.eba-a2saymrg.us-east-1.elasticbeanstalk.com','ampliconrepository.org', 'www.ampliconrepository.org']
+ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','172.31.29.144','50.19.227.137']
+
+# SSL Redirect
+SECURE_SSL_REDIRECT=True
 
 # Local time zone for this installation. Choices can be found here:
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name

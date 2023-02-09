@@ -22,8 +22,8 @@ from io import StringIO
 cent_file = 'bed_files/GRCh38_centromere.bed'
 warnings.filterwarnings("ignore")
 
-db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
-# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+# db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
+db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 
 # db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
