@@ -438,15 +438,16 @@ def gene_search_page(request):
     # Gene Search
     if request.user.is_authenticated:
         user = request.user.email
-        query_obj = {'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'Classification': class_query}
+        query_obj = {'private' : True, 'project_members' : user , 'Oncogenes' : gen_query}
+
 
         private_projects = list(collection_handle.find(query_obj))
     else:
         private_projects = []
     
-    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'Classification' : class_query}))
-    print(public_projects)
-    
+    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query}))
+
+
     def collect_class_data(projects):
         sample_data = []
         for project in projects:
