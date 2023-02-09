@@ -1,5 +1,5 @@
 #!/bin/bash
 
-./runit.sh >> ./caperout.txt 2>&1
+./runit.sh 2>> ./capererr.txt 1> ./caperout.txt
 
 

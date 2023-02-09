@@ -7,6 +7,7 @@ caper/project_data/*
 *.pem
 caper/mkcert-v1.4.3-linux-amd64
 caperout.txt
+capererr.txt
 lib64
 pyvenv.cfg
 /bin*
