@@ -56,9 +56,6 @@ def get_one_sample(project_name,sample_name):
         if len(current) > 0:
             if current[0]['Sample name'] == sample_name:
                 sample_out = current
-            else:
-                sample_out = current
-            
     return project, sample_out
 
 
@@ -155,7 +152,8 @@ def get_project_classifications(runs):
     for sample in runs:
         for feature in runs[sample]:
             if feature['Classification']:
-                classes.add(feature['Classification'])
+                uppercase = feature['Classification'].upper()
+                classes.add(uppercase)
     return list(classes)
 
 def get_sample_oncogenes(feature_list, sample_name):
@@ -173,7 +171,8 @@ def get_sample_classifications(feature_list, sample_name):
     for feature in feature_list:
         if feature['Sample_name'] == sample_name:
             if feature['Classification']:
-                classes.add(feature['Classification'])
+                uppercase = feature['Classification'].upper()
+                classes.add(uppercase)
     return list(classes)
 
 # @caper.context_processor
@@ -207,6 +206,49 @@ def project_page(request, project_name):
     # oncogenes = get_sample_oncogenes(features_list)
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data})
 
+def project_download(request, project_name):
+    project = get_one_project(project_name)
+    samples = project['runs']
+    
+    for sample in samples:
+        if len(samples[sample]) > 0:
+            for feature in samples[sample]:
+                # set up file system
+                feature_id = feature['Feature ID']
+                feature_data_path = f"tmp/{project_name}/{feature['Sample name']}/{feature_id}"
+                os.makedirs(feature_data_path, exist_ok=True)
+                # get object ids
+                bed_id = feature['Feature BED file'] 
+                cnv_id = feature['CNV BED file']
+                pdf_id = feature['AA PDF file']
+                png_id = feature['AA PNG file']
+                
+                # get files from gridfs
+                bed_file = fs_handle.get(ObjectId(bed_id)).read()
+                cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
+                pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
+                png_file = fs_handle.get(ObjectId(png_id)).read()
+                
+                # send files to tmp file system
+                with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
+                    bed_file_tmp.write(bed_file)
+                with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
+                    cnv_file_tmp.write(cnv_file)
+                with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
+                    pdf_file_tmp.write(pdf_file)
+                with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
+                    png_file_tmp.write(png_file)
+
+    project_data_path = f"tmp/{project_name}/"        
+    shutil.make_archive(f'{project_name}', 'zip', project_data_path)
+    zip_file_path = f"{project_name}.zip"
+    with open(zip_file_path, 'rb') as zip_file:
+        response = HttpResponse(zip_file)
+        response['Content-Type'] = 'application/x-zip-compressed'
+        response['Content-Disposition'] = f'attachment; filename={project_name}.zip'
+    clear_tmp()
+    return response
+
 def igv_features_creation(locations):
     """
     Locations should look like: ["'chr11:56595156-58875237'", " 'chr11:66684707-68055335'", " 'chr11:69975662-70290667'"]
@@ -237,6 +279,7 @@ def igv_features_creation(locations):
 def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
+    # print(sample_data_processed[0])
     filter_plots = not request.GET.get('display_all_chr')
     plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
     igv_tracks = []
@@ -265,13 +308,12 @@ def sample_page(request, project_name, sample_name):
             }
 
         igv_tracks.append(track)
-
-        
         
         ## use safe encoding
         ## when we embed the django template, we can separate filters, and there's one that's "safe", and will
         ## have the IGV button in the features table 
         ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
+    
     return render(request, "pages/sample.html", 
     {'project': project, 
     'project_name': project_name, 
@@ -282,7 +324,47 @@ def sample_page(request, project_name, sample_name):
     'download_links': json.dumps(download_png)
     }
     )
-    # return render(request, "pages/sample.html", {'project': project, 'project_name': project_name, 'sample_data': sample_data_processed, 'sample_name': sample_name})
+    
+def sample_download(request, project_name, sample_name):
+    project, sample_data = get_one_sample(project_name, sample_name)
+    
+    for feature in sample_data:
+        # set up file system
+        feature_id = feature['Feature ID']
+        feature_data_path = f"tmp/{project_name}/{sample_name}/{feature_id}"
+        os.makedirs(feature_data_path, exist_ok=True)
+        # get object ids
+        bed_id = feature['Feature BED file'] 
+        cnv_id = feature['CNV BED file']
+        pdf_id = feature['AA PDF file']
+        png_id = feature['AA PNG file']
+        
+        # get files from gridfs
+        bed_file = fs_handle.get(ObjectId(bed_id)).read()
+        cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
+        pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
+        png_file = fs_handle.get(ObjectId(png_id)).read()
+         
+        # send files to tmp file system
+        with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
+            bed_file_tmp.write(bed_file)
+        with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
+            cnv_file_tmp.write(cnv_file)
+        with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
+            pdf_file_tmp.write(pdf_file)
+        with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
+            png_file_tmp.write(png_file)
+
+    sample_data_path = f"tmp/{project_name}/{sample_name}"        
+    shutil.make_archive(f'{sample_name}', 'zip', sample_data_path)
+    zip_file_path = f"{sample_name}.zip"
+    with open(zip_file_path, 'rb') as zip_file:
+        response = HttpResponse(zip_file)
+        response['Content-Type'] = 'application/x-zip-compressed'
+        response['Content-Disposition'] = f'attachment; filename={sample_name}.zip'
+    clear_tmp()
+    return response
+    
 
 def feature_page(request, project_name, sample_name, feature_name):
     project, sample_data, feature = get_one_feature(project_name,sample_name, feature_name)
@@ -358,26 +440,27 @@ def gene_search_page(request):
         user = request.user.email
         query_obj = {'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'Classification': class_query}
 
-        private_projects = list(collection_handle.find())
+        private_projects = list(collection_handle.find(query_obj))
     else:
         private_projects = []
     
     public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'Classification' : class_query}))
+    print(public_projects)
     
     def collect_class_data(projects):
         sample_data = []
         for project in projects:
 
             project_name = project['project_name']
-            print(project_name)
             features = project['runs']
             features_list = replace_space_to_underscore(features)
             data = sample_data_from_feature_list(features_list)
             for sample in data:
                 sample['project_name'] = project_name
-
+                print(sample)
                 if genequery in sample['Oncogenes']:
                     upperclass =  map(str.upper, sample['Classifications'])
+                    print(upperclass)
                     classmatch =(classquery in upperclass)
                     classempty = (len(classquery) == 0)
                     # keep the sample if we have matched on both oncogene and classification or oncogene and classification is empty
@@ -403,6 +486,49 @@ def gene_search_page(request):
                   {'public_projects': public_projects, 'private_projects' : private_projects,
                    'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data,
                    'gene_query': genequery, 'class_query': classquery})
+
+def gene_search_download(request, project_name):
+    project = get_one_project(project_name)
+    samples = project['runs']
+    
+    for sample in samples:
+        if len(samples[sample]) > 0:
+            for feature in samples[sample]:
+                # set up file system
+                feature_id = feature['Feature ID']
+                feature_data_path = f"tmp/{project_name}/{feature['Sample name']}/{feature_id}"
+                os.makedirs(feature_data_path, exist_ok=True)
+                # get object ids
+                bed_id = feature['Feature BED file'] 
+                cnv_id = feature['CNV BED file']
+                pdf_id = feature['AA PDF file']
+                png_id = feature['AA PNG file']
+                
+                # get files from gridfs
+                bed_file = fs_handle.get(ObjectId(bed_id)).read()
+                cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
+                pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
+                png_file = fs_handle.get(ObjectId(png_id)).read()
+                
+                # send files to tmp file system
+                with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
+                    bed_file_tmp.write(bed_file)
+                with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
+                    cnv_file_tmp.write(cnv_file)
+                with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
+                    pdf_file_tmp.write(pdf_file)
+                with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
+                    png_file_tmp.write(png_file)
+
+    project_data_path = f"tmp/{project_name}/"        
+    shutil.make_archive(f'{project_name}', 'zip', project_data_path)
+    zip_file_path = f"{project_name}.zip"
+    with open(zip_file_path, 'rb') as zip_file:
+        response = HttpResponse(zip_file)
+        response['Content-Type'] = 'application/x-zip-compressed'
+        response['Content-Disposition'] = f'attachment; filename={project_name}.zip'
+    clear_tmp()
+    return response
 
 
 def edit_project_page(request, project_name):

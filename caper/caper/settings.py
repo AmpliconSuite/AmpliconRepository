@@ -154,7 +154,9 @@ SOCIALACCOUNT_PROVIDERS = {
         # credentials, or list them here:
         'SCOPE': [
             'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/userinfo.email'
+            'https://www.googleapis.com/auth/userinfo.email',
+            'profile',
+            'email'
         ],
         'AUTH_PARAMS': {'access_type': 'online'},
         'APP': {

@@ -19,6 +19,11 @@ class UpdateForm(forms.ModelForm):
         self.fields['project_members'].required = False
         # self.fields['file'].required = False
 
+# class RunForm(forms.ModelForm):
+#     class Meta:
+#         model = Run
+#         fields = ('project_name','description','private','project_members')
+
 # class ViewRunForm(forms.ModelForm):
 #     class Meta:
 #         model = Run

@@ -121,7 +121,7 @@
                         <tbody>
                             {% for project in public_projects %}
                             <tr>
-                                <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}">{{ project.project_name }}</a></td>
+                                <td><a href="{% url 'project_page' project_name=project.project_name %}">{{ project.project_name }}</a></td>
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
                                 <td>{% for person in project.project_members %}

@@ -2,16 +2,28 @@
 
 {% block extra_js %}
 <script>
-    $(document).ready( function () {
-        $('#myTable1').DataTable({
-        }
+    var oTable;
+    $(document).ready(function() {
+        var frm = $('#form');
+        var oTable = $('#myTable2').DataTable({
+            select: {
+                style: 'multi'
+            }        }
         );
-    } );
-    $(document).ready( function () {
-        $('#myTable2').DataTable({
-        }
-        );
-    } );
+        frm.submit(function () {
+            var sData = oTable.rows('.selected').$('td').serialize();
+            $.ajax({
+                type: "POST",
+                data: {
+                    'content': sData,
+                    'csrfmiddlewaretoken': '{{ csrf_token }}',
+                },
+                dataType: 'json',
+            });
+            return false;
+        } );
+        
+} );
 </script>
 <script src="https://cdn.jsdelivr.net/npm/igv@2.13.7/dist/igv.min.js"></script>
 <script type="text/javascript">
@@ -52,6 +64,12 @@
     }
 
 </script>
+<style>
+.igv-container {
+    margin: auto;
+    width: 100%
+}
+</style>
 
 {% endblock %}
 
@@ -60,51 +78,46 @@
 
 
 {% block main %}
-<div class="container row" style="margin:auto; padding-top: 50px;">
-    <div class="col-md-9">
-        <h2>Sample Name: {{ sample_name }}</h2>
-        <br>        ytghr56
-    </div>
-    <div class="col-md-3">
-        <p><b>Project Name:</b>  <a target="_blank" href="{% url 'project_page' project_name=project.project_name %}">{{ project.project_name }}</a></p>
-        <p><b>Last Updated:</b> {{ project.date }}</p>
-        <p><b>Private:</b> {{ project.private }}</p>
-        <p><b>Project Members:</b> {% for person in project.project_members %}
-            {{ person }}
-        {% endfor%}
-        </p>
-    </div>
-
-    
-    
-    
+<div>
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/">Home</a></li>
+            <li class="breadcrumb-item"><a href="/project/{{ project.project_name }}">{{ project.project_name }}</a></li>
+            <li class="breadcrumb-item active" aria-current="page">{{ sample_name }}</li>
+        </ol>
+    </nav>
 </div>
 
+<div class='row' style="margin:auto; padding-top: 20px; padding-bottom: 50px">
+    <div class="col-md-9">
+        <h2>Sample Name: <span style="font-weight: 200">{{ sample_name }}</span></h2>
+        <h4>Project Name:  <a href="{% url 'project_page' project_name=project.project_name %}" style="font-weight: 200">{{ project.project_name }}</a></h4>
+    </div>
+    <div class="col-md-3" style='text-align:right'>
+        <button class="btn btn-primary"><a href="/project/{{ project.project_name }}/sample/{{ sample_name }}/download" style="color: white">Download All Sample Data</a></button>
+    </div>
+
+</div>
 
 {% if graph %}
-
-    <div id="figure_download_window", style='display:none; width: 50%; background: green;'>
-        <a href='' target='_blank' download="download" style='border-style: solid; padding: 0.1rem 0.5rem; border-width: 0.15rem; border-color: black; display: flex; flex-flow: column'>
-            <br>
-            <img src='' style='width:30rem'>
-        </a>
-        <span id='close' style='margin-left: 5px; color: grey; font-size: 1.5rem'>&times
-        </span>
-
-      
-
+    <div class="row " style="margin: auto;">
+        <div class='col-lg-6' id="figure_download_window", style='display:none;'>
+            <a href='' target='_blank' download="download" style=' display: flex; flex-flow: column; margin:auto; text-align:center; text-decoration:none;'>
+                <br>
+                <img src='' style='width:100%'>
+            </a>
+            <span id='close' style='margin-left: 5px; color: grey; font-size: 1.5rem; display: none;'>&times
+            </span>            
+        </div>          
+        <!-- <button onclick="toggle_igv()" style="height:100px;display:none" id="show_igv">SHOW IGV VIEWER</button> -->
+        <div class='col-lg-6' id="igv-div" style = "display: none;">
+        </div>    
     </div>
-
     
-    <!-- <button onclick="toggle_igv()" style="height:100px;display:none" id="show_igv">SHOW IGV VIEWER</button> -->
-    <div id = "igv-div" style = "display:none;">
-    
-    </div>
 
 
 
-
-    <div>
+    <div  style="margin-top: 0px; border: 0.5px solid grey; padding: 25px">
         <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
         <span style='margin-left: 1rem'> Display All Chromosomes </span>
 
@@ -189,6 +202,7 @@
                                 const locus = locus_selection;
                                 // call function to create JS in THE IGV DIV
                                 create_igv(tracks, locus_selection);
+                                break
                             }
                         }
                     }
@@ -209,15 +223,16 @@
                     preview_elem.setAttribute('src', link);
 
                     if (link_elem.firstElementChild.tagName != "B") {{
-                        link_elem.innerHTML = '<b style="text-decoration: underline">Download ' + name.slice(3, -4) + ' PNG</b>' + link_elem.innerHTML;
+                        link_elem.innerHTML = '<b>Download ' + name.slice(3, -4) + ' PNG</b>' + link_elem.innerHTML;
                     }}
                     else {{
                         link_elem.firstElementChild.innerHTML = 'Download ' + name.slice(3, -4) + ' PNG';
                     }}
-                    link_window.setAttribute('style', 'display: flex; align-items: center; margin-bottom: 2rem');
+                    link_window.setAttribute('style', 'display: flex; align-items: center; margin: auto; text-align: center; min-height: 300px; border: 0.5px solid grey; border-bottom: none;padding-top:5px;');
                     if (igv_toggle){
                         var x = document.getElementById("igv-div");
                         x.style.display = "flex";
+                        x.setAttribute('style', 'display: flex; align-items: center; text-align: center; min-height: 300px; border: 0.5px solid grey; padding-top:5px; border-left:none; border-bottom:none;');
                     }
                     
 
@@ -234,25 +249,22 @@
 
 
 
-<div class="container" style="margin-top:50px;">
-
+<div style="margin-top:25px; padding: 25px; border: 0.5px solid grey">
     <h3>Features Table</h3>
+    <!-- <div style="text-align:right; padding-bottom:1em;">
+        <button type="submit">Download selected features</button>
+    </div> -->
     <div class="table-responsive">
         <table id='myTable2' class="table table-hover table-sm">
             <thead>
                 <tr>
                     <th>Feature ID</th>
-                    <th> Amplicon # </th>
+                    <th>Amplicon # </th>
                     <th>Location</th>
                     <th>Oncogenes</th>
-                    <!-- <th>Captured interval length</th> -->
                     <th>Classification</th>
-                    <!-- <th>Complexity score</th> -->
-                    <!-- <th>Feature maximum copy number</th> -->
-                    <!-- <th>Feature median copy number</th> -->
-                    <!-- <th>Reference_version</th> -->
-                    <!-- <th>Run_metadata_JSON</th> -->
-                    <th>Downloads</th>
+                    <th></th>
+                    <th style="display:none">Downloads</th>
                 </tr>
             </thead>
             <tbody>
@@ -262,18 +274,13 @@
                     <td>{{ feature.AA_amplicon_number }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
                     <td>{{ feature.Oncogenes|join:", " }}</td>
-                    <!-- <td>{{ feature.Captured_interval_length }}</td> -->
                     <td>{{ feature.Classification }}</td>
-                    <!-- <td>{{ feature.Complexity_score }}</td> -->
-                    <!-- <td>{{ feature.Feature_maximum_copy_number }}</td> -->
-                    <!-- <td>{{ feature.Feature_median_copy_number }}</td> -->
-<!--                     <td>{{ run.Reference_version }}</td>
-                    <td>{{ run.Run_metadata_JSON }}</td> -->
-                    <td>
-                        <a class="btn btn-info sample-link" href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}" role='button' style="font-size: 12px; margin:2px" download>Feature File</a>
-                        <a class="btn btn-info sample" href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.CNV_BED_file }}"  role='button' style="font-size: 12px; margin: 2px" download>CNV File</a>
-                        <a class="btn btn-info sample" href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file}}"  role='button' style="font-size: 12px; margin: 2px"> PDF </a>
-                        <a class="btn btn-info sample" href='{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file}}' role='button' style="font-size: 12px; margin: 2px" target="_blank"> PNG </a>
+                    <td>"/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}"</td>
+                    <td style="display:none">
+                        <input type="text" name="feature-file" title="feature-file" id="feature-file" value="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}" />
+                        <input type="text" name="cnv-file" title="cnv-file" id="cnv-file" value="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.CNV_BED_file }}" />
+                        <input type="text" name="pdf-file" title="pdf-file" id="pdf-file" value="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file}}" />
+                        <input type="text" name="png-file" title="png-file" id="png-file" value="{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file}}" />
                     </td>
 
                 </tr>

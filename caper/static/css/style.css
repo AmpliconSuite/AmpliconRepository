@@ -43,3 +43,6 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
     font-size: 10px;
 }
 
+.igv-container {
+    margin:auto;
+}
