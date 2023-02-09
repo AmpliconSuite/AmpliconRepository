@@ -13,8 +13,8 @@
                 style: 'multi'
             },
             language: {
-                        searchPlaceholder: "Search projects"
-                    }
+                    searchPlaceholder: "Search projects"
+                    }
         });
     });
 </script>
@@ -72,29 +72,27 @@
             }
             </style>
         <div style="margin-bottom: 20px; border: 0.5px solid grey; padding: 20px; border-radius: 10px;">
-            <ul class="nav nav-tabs" role="tablist">
-                <li class="nav-item">
-                    <a class="nav-link active" href="#search1" data-toggle="tab">Search by Gene</a>
-                </li>
-                <li class="nav-item"> 
-                    <a class='nav-link' href="#search2" data-toggle="tab">Search by Classification</a>
-                </li>
-            </ul>
-            <div class="tab-content" style="padding-top: 30px;">
+
+            <div  style="padding-top: 30px;">
                 <div class="tab-pane active" id="search1">
                     <form id="searchform" class="input-group" method=GET action="{% url 'gene_search_page' %}">
                         {% csrf_token %}
-                        <input type="query" class="form-control rounded" placeholder="Gene Name" aria-label="Search by gene" aria-describedby="search-addon" name="query" id="query" style='margin-right: 10px'/>
-                        <button type="submit" class="btn btn-primary">Search</button>
+                        <input type="query" class="form-control rounded" placeholder="Gene Name (e.g. MYC)" aria-label="Search by gene" aria-describedby="search-addon" name="genequery" id="genequery"/>
+                        <input type="text" autocomplete="off" list="ecDNAclassificationDefaults" class="form-control rounded" placeholder="Limit to classification type" aria-label="Search by classification" aria-describedby="search-addon" name="classquery" id="classquery"/>
+                        <datalist id="ecDNAclassificationDefaults">
+                            <option value="ecDNA">ecDNA</option>
+                            <option value="linear amplification">linear amplification</option>
+                            <option value="breakage-fusion-bridge (BFB)">breakage-fusion-bridge (BFB) </option>
+                            <option value="tandem duplications">tandem duplications </option>
+                            <option value="chromothripsis">chromothripsis </option>
+                            <option value="complex non-cyclic">complex non-cyclic </option>
+
+
+                        </datalist>
+                        <button type="submit" class="btn btn-outline-primary">Search</button>
                     </form>
                 </div>
-                <div class="tab-pane" id="search2">
-                    <form id="searchform" class="input-group" method=GET action="{% url 'class_search_page' %}">
-                        {% csrf_token %}
-                        <input type="query" class="form-control rounded" placeholder="Classification type (ecDNA, Linear amplification, etc.)" aria-label="Search by classification" aria-describedby="search-addon" name="query" id="query" style='margin-right: 10px'/>
-                        <button type="submit" class="btn btn-primary">Search</button>
-                    </form>
-                </div>
+
             </div>
         </div>
         
@@ -167,14 +165,13 @@
     </div>
     <div class="col-md-4">
         <figure class="figure">
-            {% load static %}
-            <img src="{% static '/img/ff11_amplicon1.png' %}" alt="" width="100%">
-            <figcaption class="figure-caption">AmpliconArchitect Caption</figcaption>
+            <img src="/static/img/ff11_amplicon1.png" alt="" width="100%">
+            <figcaption class="figure-caption">Structural Variation view: show discordant edges, copy number segments and genomic coverage.</figcaption>
         </figure>
         <br>
         <figure class="figure">
-            <img src="{% static '/img/exampleAR.png' %}" alt="" width="100%">
-            <figcaption class="figure-caption">CycleViz caption</figcaption>
+            <img src="/static/img/exampleAR.png" alt="" width="100%">
+            <figcaption class="figure-caption">CycleViz view: circular visualization of focal amplifications detected by AmpliconArchitect.</figcaption>
         </figure>
         <h4 style="margin-top: 20px">News & Updates</h4>
         <ul>

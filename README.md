@@ -20,6 +20,7 @@ This is the main repository for the AmpliconRepository. Currently in development
 > `conda env create -f environment.yml`
 - Activate the new environment (you need to do this everytime before running the server):
 > `conda activate caperenv` 
+- also need to "pip install opencv-python"
 
 ## 3. Set up MongoDB locally (for development)
 - If you don't have a database location set up, set up a location:
@@ -33,6 +34,7 @@ This is the main repository for the AmpliconRepository. Currently in development
 - Connect to your local instance of MongoDB:
 > URI: `mongodb://localhost:27017`
 - Relevant data will be located in `/caper/projects/`
+- Note that the latest version of Compass (1.34.2) won't work with our older DB version.  You can get an old compass for mac at https://downloads.mongodb.com/compass/mongodb-compass-1.28.4-darwin-x64.dmg
 
 ## 4. Set up secret keys for OAuth2
 - Open a terminal window or tab with the `caperenv` environment active
