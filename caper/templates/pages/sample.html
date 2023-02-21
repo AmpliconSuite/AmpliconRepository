@@ -255,20 +255,13 @@
                     <td><b>{{ feature.Feature_ID }}</b></td>
                     <td>{{ feature.AA_amplicon_number }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
-		    <td>{{ feature.Oncogenes|join:", " }}</td>
+		            <td>{{ feature.Oncogenes|join:", " }}</td>
                     <td>{{ feature.Classification }}</td>
                     <td>
-			<a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED file</a><br>
-			<a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF file</a><br>
-			<a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG file</a><br>
-		    </td>
-		    <td style="display:none">
-                        <input type="text" name="feature-file" title="feature-file" id="feature-file" value="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}" />
-                        <input type="text" name="cnv-file" title="cnv-file" id="cnv-file" value="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.CNV_BED_file }}" />
-                        <input type="text" name="pdf-file" title="pdf-file" id="pdf-file" value="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file}}" />
-                        <input type="text" name="png-file" title="png-file" id="png-file" value="{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file}}" />
+                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED file</a><br>
+                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF file</a><br>
+                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG file</a><br>
                     </td>
-
                 </tr>
                 {% endfor %}
             </tbody>
