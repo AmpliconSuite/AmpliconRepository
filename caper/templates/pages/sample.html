@@ -2,28 +2,11 @@
 
 {% block extra_js %}
 <script>
-    var oTable;
-    $(document).ready(function() {
-        var frm = $('#form');
-        var oTable = $('#myTable2').DataTable({
-            select: {
-                style: 'multi'
-            }        }
+    $(document).ready( function () {
+        $('#myTable2').DataTable({
+        }
         );
-        frm.submit(function () {
-            var sData = oTable.rows('.selected').$('td').serialize();
-            $.ajax({
-                type: "POST",
-                data: {
-                    'content': sData,
-                    'csrfmiddlewaretoken': '{{ csrf_token }}',
-                },
-                dataType: 'json',
-            });
-            return false;
-        } );
-        
-} );
+    } );
 </script>
 <script src="https://cdn.jsdelivr.net/npm/igv@2.13.7/dist/igv.min.js"></script>
 <script type="text/javascript">
