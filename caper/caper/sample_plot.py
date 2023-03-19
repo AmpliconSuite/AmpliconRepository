@@ -29,7 +29,7 @@ db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
 fs_handle = gridfs.GridFS(db_handle)
 
-def plot(sample, sample_name, project_name, filter_plots=True):
+def plot(sample, sample_name, project_name, filter_plots=False):
     # project_data_dir = f'project_data/{project_name}/extracted'
     # if not os.path.exists(project_data_dir):
     #     return ''
@@ -169,6 +169,7 @@ def plot(sample, sample_name, project_name, filter_plots=True):
                     amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature maximum copy number'].astype(float)
                     amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature median copy number'].astype(float)
                     amplicon_df = amplicon_df.round(decimals=2)
+                    #print(amplicon_df)
                     for i in range(len(amplicon_df['AA amplicon number'].unique())):
                         number = amplicon_df['AA amplicon number'].unique()[i]
                         per_amplicon = amplicon_df[amplicon_df['AA amplicon number'] == number]
@@ -196,13 +197,13 @@ def plot(sample, sample_name, project_name, filter_plots=True):
                                 '<br><i>Feature Classification:</i> %{customdata[0]}<br>' + 
                                 '<i>%{customdata[1]}:</i> %{customdata[2]} - %{customdata[3]}<br>' +
                                 '<i>Oncogenes:</i> %{customdata[4]}<br>'+
-                                '<i>Feature Maximum Copy Number:</i> %{customdata[5]}<br>' 
-                                # '<b href="/sample/%{customdata[12]}/feature/%{customdata[10]}/download/png/%{customdata[11]}">Click to Download Amplicon PNG</b>' 
+                                '<i>Feature Maximum Copy Number:</i> %{customdata[5]}<br>' +
+                                '<b>Click to Download Amplicon PNG</b>' 
                                 ,name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
                                 line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=number), row = rowind, col = colind)
                         fig.update_traces(textposition="bottom right")
 
-                    # amplicon_df = pd.DataFrame()
+                    amplicon_df = pd.DataFrame()
 
         cent_df = pd.read_csv(cent_file, header = None, sep = '\t')
         #display(a_df)
@@ -277,4 +278,3 @@ def plot(sample, sample_name, project_name, filter_plots=True):
     height = height[rows], width = 1300, margin = dict(t = 70, r = 70, b = 70, l = 70))
 
     return fig.to_html(full_html=False, div_id='plotly_div')
-
