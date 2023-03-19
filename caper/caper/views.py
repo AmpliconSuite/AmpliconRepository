@@ -16,6 +16,8 @@ import datetime
 import os
 import shutil
 import caper.sample_plot as sample_plot
+import caper.StackedBarChart as stacked_bar
+import caper.classification as piechart
 from django.core.files.storage import FileSystemStorage
 from django.views.decorators.cache import cache_page
 from zipfile import ZipFile
@@ -204,7 +206,9 @@ def project_page(request, project_name):
     features_list = replace_space_to_underscore(features)
     sample_data = sample_data_from_feature_list(features_list)
     # oncogenes = get_sample_oncogenes(features_list)
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data})
+    stackedbar_plot = stacked_bar.StackedBarChart(file='/mnt/c/Users/ahuja/Desktop/data/aggregated_results.csv')
+    pie_chart = piechart.pie_chart(directory = '/mnt/c/Users/ahuja/Desktop/bafna_lab/AABeautification/AA_outputs/')
+    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
