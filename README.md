@@ -35,6 +35,7 @@ This is the main repository for the AmpliconRepository.
 - Connect to your local instance of MongoDB:
 > URI: `mongodb://localhost:27017`
 - Relevant data will be located in `/caper/projects/`
+- Run `export DB_URI='mongodb://localhost:27017'` in your terminal to set the environment variable for your local database.
 - Note that the latest version of Compass (1.34.2) won't work with our older DB version.  You can get an old compass for mac at https://downloads.mongodb.com/compass/mongodb-compass-1.28.4-darwin-x64.dmg
 
 ## 4. Set up secret keys for OAuth2
