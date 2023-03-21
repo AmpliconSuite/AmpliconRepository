@@ -135,6 +135,12 @@ AUTHENTICATION_BACKENDS = [
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
 
+# turn off email authentication when a user registers an account
+ACCOUNT_EMAIL_VERIFICATION = 'none'
+ACCOUNT_EMAIL_REQUIRED = False
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = True
+
 SECRET_KEY = 'c4nc3r'
 
 # The numeric mode to set newly-uploaded files to. The value should be
