@@ -24,7 +24,11 @@
 </head>
     {% if user.is_authenticated %}
     <h1>
+        {% if user.email is None %}
         Hello, {{ user.email }}!
+        {% else %}
+        Hello, {{ user.username }}!
+        {% endif %}
     </h1>
     <hr>
     <h3>Projects</h3>
