@@ -57,7 +57,7 @@ urlpatterns += [
 urlpatterns += static(settings.PROJECT_DATA_URL, document_root=settings.PROJECT_DATA_ROOT)
 
 urlpatterns += [
-    path(r'^accounts/', include('allauth.urls')),
+    #path(r'^accounts/', include('allauth.urls')),
 
     # We don't want to presume how your homepage works, so here are a
     # few patterns you can use to set it up.
