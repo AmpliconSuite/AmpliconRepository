@@ -47,11 +47,27 @@ def get_date():
     date = today.isoformat()
     return date
 
-def get_one_project(project_name):
-    return collection_handle.find_one({'project_name': project_name})
+def prepare_project_linkid(project):
+    project['linkid'] = project['_id']
+
+def get_one_project(project_name_or_uuid):
+    try:
+        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid)})[0]
+        prepare_project_linkid(project)
+        return project
+    except:
+        project = None    
+
+    # backstop using the name the old way
+    if project is None:
+        project =  collection_handle.find_one({'project_name': project_name_or_uuid})
+        prepare_project_linkid(project)
+    return project
+
 
 def get_one_sample(project_name,sample_name):
     project = get_one_project(project_name)
+    print("ID --- ", project['_id'])
     runs = project['runs']
     for sample_num in runs.keys():
         current = runs[sample_num]
@@ -187,14 +203,21 @@ def index(request):
     if request.user.is_authenticated:
         user = request.user.email
         private_projects = list(collection_handle.find({ 'private' : True, 'project_members' : user }))
+        for proj in private_projects:
+            prepare_project_linkid(proj)
     else:
         private_projects = []
     public_projects = list(collection_handle.find({'private' : False}))
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects})
 
 def profile(request):
     user = request.user.email
     projects = list(collection_handle.find({ 'project_members' : user }))
+    for proj in private_projects:
+        prepare_project_linkid(proj)
     return render(request, "pages/profile.html", {'projects': projects})
 
 def login(request):
@@ -284,6 +307,8 @@ def igv_features_creation(locations):
 @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
+    project_linkid = project['_id']
+
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     # print(sample_data_processed[0])
 
@@ -310,7 +335,7 @@ def sample_page(request, project_name, sample_name):
         for feature in sample_data_processed:
             download_png.append({
                 'aa_amplicon_number':feature['AA_amplicon_number'],
-                'download_link':f"https://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "_")
+                'download_link':f"https://{request.get_host()}/project/{project_linkid}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "_")
             })
 
             roi_features, locus = igv_features_creation(feature['Location'])
@@ -322,7 +347,7 @@ def sample_page(request, project_name, sample_name):
             track = {
                 'name':feature['Feature_ID'],
                 # 'type': "seg",
-                # 'url' : f"http://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/{feature['Feature_BED_file']}".replace(" ", "%"),
+                # 'url' : f"http://{request.get_host()}/project/{project_linkid}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/{feature['Feature_BED_file']}".replace(" ", "%"),
                 # 'indexed':False,
                 'color': "rgba(94,255,1,0.25)",
                 'features': roi_features,
@@ -338,6 +363,7 @@ def sample_page(request, project_name, sample_name):
     return render(request, "pages/sample.html", 
     {'project': project, 
     'project_name': project_name, 
+    'project_linkid': project_linkid,
     'sample_data': sample_data_processed,
     'sample_name': sample_name, 'graph': plot, 
     'igv_tracks': json.dumps(igv_tracks),
@@ -433,6 +459,11 @@ def class_search_page(request):
     
     public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'Classification' : class_query}))
     
+    for proj in private_projects:
+        prepare_project_linkid(proj)   
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+ 
     sample_data = []
     for project in public_projects:
         project_name = project['project_name']
@@ -468,17 +499,23 @@ def gene_search_page(request):
     
     public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query}))
 
+    for proj in private_projects:
+        prepare_project_linkid(proj)    
+    for proj in public_projects:
+        prepare_project_linkid(proj)
 
     def collect_class_data(projects):
         sample_data = []
         for project in projects:
 
             project_name = project['project_name']
+            project_linkid = project['_id']
             features = project['runs']
             features_list = replace_space_to_underscore(features)
             data = sample_data_from_feature_list(features_list)
             for sample in data:
                 sample['project_name'] = project_name
+                sample['project_linkid'] = project_linkid
                 print(sample)
                 if genequery in sample['Oncogenes']:
                     upperclass =  map(str.upper, sample['Classifications'])
