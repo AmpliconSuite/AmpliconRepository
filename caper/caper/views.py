@@ -310,7 +310,7 @@ def sample_page(request, project_name, sample_name):
         for feature in sample_data_processed:
             download_png.append({
                 'aa_amplicon_number':feature['AA_amplicon_number'],
-                'download_link':f"https://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "_")
+                'download_link':f"//{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "_")
             })
 
             roi_features, locus = igv_features_creation(feature['Location'])
