@@ -31,7 +31,7 @@ from bson.objectid import ObjectId
 from django.utils.text import slugify
 from bson.json_util import dumps
 import re
-
+import plotly.graph_objs as go
 
 
 
@@ -286,39 +286,54 @@ def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     # print(sample_data_processed[0])
+
+    print(f'sample name is: ', sample_name)
     filter_plots = not request.GET.get('display_all_chr')
-    plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
-    igv_tracks = []
-    locus_lst = []
-    download_png = []
-    for feature in sample_data_processed:
-        download_png.append({
-            'aa_amplicon_number':feature['AA_amplicon_number'],
-            'download_link':f"https://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "_")
-        })
+    if sample_data[0]['AA amplicon number'] == None:
+        plot = go.Figure(go.Scatter(x=[2], y = [2],
+                                     mode="markers+text",
+                                       text=['No Amplicons Detected'], 
+                                       textposition='middle center',
+                                       textfont = dict(
+                                            family = 'sans serif', 
+                                            size = 50,
+                                            color = "crimson"
+                                       ))).to_html(full_html=False, div_id='plotly_div')
+        igv_tracks = []
+        locus_lst = []
+        download_png = []
+    else:
+        plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
+        igv_tracks = []
+        locus_lst = []
+        download_png = []
+        for feature in sample_data_processed:
+            download_png.append({
+                'aa_amplicon_number':feature['AA_amplicon_number'],
+                'download_link':f"https://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "_")
+            })
 
+            roi_features, locus = igv_features_creation(feature['Location'])
+            if locus != "":
+                locus_lst.append(locus)
+            else:
+                locus_lst.append("")
 
-        roi_features, locus = igv_features_creation(feature['Location'])
-        if locus != "":
-            locus_lst.append(locus)
-        else:
-            locus_lst.append("")
+            track = {
+                'name':feature['Feature_ID'],
+                # 'type': "seg",
+                # 'url' : f"http://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/{feature['Feature_BED_file']}".replace(" ", "%"),
+                # 'indexed':False,
+                'color': "rgba(94,255,1,0.25)",
+                'features': roi_features,
+                }
 
-        track = {
-            'name':feature['Feature_ID'],
-            # 'type': "seg",
-            # 'url' : f"http://{request.get_host()}/project/{project_name}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/{feature['Feature_BED_file']}".replace(" ", "%"),
-            # 'indexed':False,
-            'color': "rgba(94,255,1,0.25)",
-            'features': roi_features,
-            }
-
-        igv_tracks.append(track)
-        
-        ## use safe encoding
-        ## when we embed the django template, we can separate filters, and there's one that's "safe", and will
-        ## have the IGV button in the features table 
-        ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
+            igv_tracks.append(track)
+            
+            ## use safe encoding
+            ## when we embed the django template, we can separate filters, and there's one that's "safe", and will
+            ## have the IGV button in the features table 
+            ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
     
     return render(request, "pages/sample.html", 
     {'project': project, 
