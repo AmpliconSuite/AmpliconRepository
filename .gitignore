@@ -11,3 +11,4 @@ capererr.txt
 lib64
 pyvenv.cfg
 /bin*
+.idea/
