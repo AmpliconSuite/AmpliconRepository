@@ -21,12 +21,7 @@
 
     function create_igv(track, locus_selection){
         // a function to create IGV.js tracks
-        
-
-
         const version = igv.version()
-
-
         const igvDiv = document.getElementById("igv-div")
         const options =
             { 
@@ -34,12 +29,9 @@
                 genome: "hg38",
                 roi: track
             }
-
         if (igvDiv.innerHTML != ""){
             igvDiv.innerHTML = "";
         }
-
-
         igv.createBrowser(igvDiv, options)
             .then(function (browser) {
                 console.log("Created IGV browser")
@@ -102,8 +94,8 @@
 
     <div  style="margin-top: 0px; border: 0.5px solid grey; padding: 25px">
         <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
-        <!-- <span style='margin-left: 1rem'> Display All Chromosomes </span>
-	<input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle"> -->
+        {% comment %} <span style='margin-left: 1rem'> Display All Chromosomes </span>
+	    <input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle"> {% endcomment %}
         <span style='margin-left: 1rem'> Display IGV Viewer </span>
         <input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle">
 
