@@ -11,4 +11,5 @@ capererr.txt
 lib64
 pyvenv.cfg
 /bin*
+# pycharm IDE files
 .idea/
