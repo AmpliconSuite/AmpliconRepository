@@ -250,7 +250,8 @@
                 </tr>
             </thead>
             <tbody>
-                {% if sample_data|length == 1  and sample_data[0].Feature_ID|slice:"-3:" == "_NA" %}
+                {% if  sample_data|length == 1 and sample_data.0.Feature_ID|slice:"-3:" == "_NA"   %}
+
 
                        <!-- placeholder in case we want something other than the default 'no data available in table' message -->
                 {% else %}
