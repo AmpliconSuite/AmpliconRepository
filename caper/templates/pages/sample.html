@@ -250,9 +250,13 @@
                 </tr>
             </thead>
             <tbody>
+                {% if sample_data|length == 1  and sample_data[0].Feature_ID|slice:"-3:" == "_NA" %}
+
+                       <!-- placeholder in case we want something other than the default 'no data available in table' message -->
+                {% else %}
                 {% for feature in sample_data %}
                 <tr>
-                    <td><b>{{ feature.Feature_ID }}</b></td>
+                    <td><b>{{ feature.Feature_ID }} </b></td>
                     <td>{{ feature.AA_amplicon_number }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
 		            <td>{{ feature.Oncogenes|join:", " }}</td>
@@ -264,6 +268,7 @@
                     </td>
                 </tr>
                 {% endfor %}
+                {% endif %}
             </tbody>
         </table>
     </div>
