@@ -29,11 +29,12 @@ db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
 fs_handle = gridfs.GridFS(db_handle)
 
+
+
 def plot(sample, sample_name, project_name, filter_plots=False):
     # project_data_dir = f'project_data/{project_name}/extracted'
     # if not os.path.exists(project_data_dir):
     #     return ''
-
     cnv_file_id = sample[0]['CNV BED file']
     # CNV_file = CNV_file[CNV_file.index('AA_outputs'):]
     
