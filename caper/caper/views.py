@@ -30,7 +30,7 @@ import caper
 from bson.objectid import ObjectId
 from django.utils.text import slugify
 from bson.json_util import dumps
-
+import re
 
 
 
@@ -538,11 +538,20 @@ def gene_search_download(request, project_name):
     return response
 
 
+def get_current_user(request):
+    current_user = request.user.email
+    if not current_user:
+        current_user = request.user.username
+    return current_user
+
 def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
         form = UpdateForm(request.POST, request.FILES)
         form_dict = form_to_dict(form)
+
+        form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
+
         if 'file' in form_dict:
             runs = samples_to_dict(form_dict['file'])
         else:
@@ -563,11 +572,22 @@ def edit_project_page(request, project_name):
             return HttpResponse("Project does not exist")
     else:
         project = get_one_project(project_name)
-        form = UpdateForm(initial={"description": project['description'],"private":project['private'],"project_members":project['project_members']})
+        # split up the project members and remove the empties
+        members = project['project_members']
+        members = [i for i in members if i]
+        memberString = ', '.join(members)
+        form = UpdateForm(initial={"description": project['description'],"private":project['private'],"project_members": memberString})
     return render(request, "pages/edit_project.html", {'project': project, 'run': form})
 
 def create_user_list(str, current_user):
-    user_list = str.split(',')
+    # user_list = str.split(',')
+    # issue 21
+    user_list = re.split(' |;|,|\t', str)
+    # drop empty strings
+    user_list =  [i for i in user_list if i]
+    # but leave one at the end
+    user_list.append("")
+
     user_list = [x.strip() for x in user_list]
     if current_user in user_list:
         return user_list
@@ -665,7 +685,7 @@ def create_project(request):
             clear_tmp()
             return HttpResponse("Project already exists")
         else:
-            current_user = request.user.email
+            current_user = get_current_user(request)
             project['creator'] = current_user
             project['project_name'] = form_dict['project_name']
             project['description'] = form_dict['description']
