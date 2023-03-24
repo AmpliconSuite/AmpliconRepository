@@ -21,12 +21,7 @@
 
     function create_igv(track, locus_selection){
         // a function to create IGV.js tracks
-        
-
-
         const version = igv.version()
-
-
         const igvDiv = document.getElementById("igv-div")
         const options =
             { 
@@ -34,12 +29,9 @@
                 genome: "hg38",
                 roi: track
             }
-
         if (igvDiv.innerHTML != ""){
             igvDiv.innerHTML = "";
         }
-
-
         igv.createBrowser(igvDiv, options)
             .then(function (browser) {
                 console.log("Created IGV browser")
@@ -102,8 +94,9 @@
 
     <div  style="margin-top: 0px; border: 0.5px solid grey; padding: 25px">
         <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
-        <!-- <span style='margin-left: 1rem'> Display All Chromosomes </span>
-	<input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle"> -->
+        <span style='margin-left: 1rem'> Display All Chromosomes </span>
+	    <input id="toggle-event" type="checkbox" class="form-check-input" data-toggle="toggle">
+        
         <span style='margin-left: 1rem'> Display IGV Viewer </span>
         <input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle">
 
@@ -164,34 +157,32 @@
                 var link = '';
                 for (let i = 0; i < data['points'].length; i++) {{
                     var name = data['points'][i]['data']['name'];
-
                     if (name.includes('Amplicon')) {{
                         link = data['points'][i]['data']['hovertemplate'].split('"')[1];
                         var amplicon_num = name.replace("<b>", "").replace("</b>", "").split(" ")[1];
 
-                        for (let j = 0; i < JSON.parse('{{ download_links|safe }}').length; i++){
-                            var png = JSON.parse('{{ download_links|safe }}')[i];
+                        for (let j = 0; j < JSON.parse('{{ download_links|safe }}').length; j++){
+                            var png = JSON.parse('{{ download_links|safe }}')[j];
                             if (png.aa_amplicon_number == amplicon_num){
                                 link = png.download_link;
                             }
                         }
+
                         // if display IGV Viewer toggle is on:
                         if (igv_toggle) {
-                        for (let i = 0; i < JSON.parse('{{ igv_tracks|safe }}').length; i++){
-                            var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[i]
-                            var locus_selection = JSON.parse('{{ locuses|safe }}')[i]
-                            if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
-                                const tracks = [amplicon_selection];
-                                const locus = locus_selection;
-                                // call function to create JS in THE IGV DIV
-                                create_igv(tracks, locus_selection);
-                                break
+                            for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
+                                var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k]
+                                var locus_selection = JSON.parse('{{ locuses|safe }}')[k]
+                                if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
+                                    const tracks = [amplicon_selection];
+                                    const locus = locus_selection;
+                                    // call function to create JS in THE IGV DIV
+                                    create_igv(tracks, locus_selection);
+                                    break
+                                }
                             }
                         }
-                    }
                         break;
-
-
                     }}
                 }}
 
@@ -250,9 +241,14 @@
                 </tr>
             </thead>
             <tbody>
+                {% if  sample_data|length == 1 and sample_data.0.Feature_ID|slice:"-3:" == "_NA"   %}
+
+
+                       <!-- placeholder in case we want something other than the default 'no data available in table' message -->
+                {% else %}
                 {% for feature in sample_data %}
                 <tr>
-                    <td><b>{{ feature.Feature_ID }}</b></td>
+                    <td><b>{{ feature.Feature_ID }} </b></td>
                     <td>{{ feature.AA_amplicon_number }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
 		            <td>{{ feature.Oncogenes|join:", " }}</td>
@@ -264,6 +260,7 @@
                     </td>
                 </tr>
                 {% endfor %}
+                {% endif %}
             </tbody>
         </table>
     </div>

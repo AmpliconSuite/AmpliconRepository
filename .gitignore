@@ -11,3 +11,6 @@ capererr.txt
 lib64
 pyvenv.cfg
 /bin*
+caper.sqlite3
+# pycharm IDE
+.idea/

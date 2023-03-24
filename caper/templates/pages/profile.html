@@ -23,11 +23,11 @@
     </title>
 </head>
     {% if user.is_authenticated %}
-    <h1>
-        {% if user.email is None %}
-        Hello, {{ user.email }}!
+    <h2>
+        {% if user.email  %}
+         {{ user.email }}:
         {% else %}
-        Hello, {{ user.username }}!
+         {{ user.username    }}:   
         {% endif %}
     </h1>
     <hr>
