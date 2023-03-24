@@ -57,7 +57,7 @@
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
             <li class="breadcrumb-item"><a href="/">Home</a></li>
-            <li class="breadcrumb-item"><a href="/project/{{ project.project_name }}">{{ project.project_name }}</a></li>
+            <li class="breadcrumb-item"><a href="/project/{{ project.linkid }}">{{ project.project_name }}</a></li>
             <li class="breadcrumb-item active" aria-current="page">{{ sample_name }}</li>
         </ol>
     </nav>
@@ -66,10 +66,10 @@
 <div class='row' style="margin:auto; padding-top: 20px; padding-bottom: 50px">
     <div class="col-md-9">
         <h2>Sample Name: <span style="font-weight: 200">{{ sample_name }}</span></h2>
-        <h4>Project Name:  <a href="{% url 'project_page' project_name=project.project_name %}" style="font-weight: 200">{{ project.project_name }}</a></h4>
+        <h4>Project Name:  <a href="{% url 'project_page' project_name=project.linkid %}" style="font-weight: 200">{{ project.project_name }}</a></h4>
     </div>
     <div class="col-md-3" style='text-align:right'>
-        <button class="btn btn-primary"><a href="/project/{{ project.project_name }}/sample/{{ sample_name }}/download" style="color: white">Download All Sample Data</a></button>
+        <button class="btn btn-primary"><a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download" style="color: white">Download All Sample Data</a></button>
     </div>
 
 </div>
