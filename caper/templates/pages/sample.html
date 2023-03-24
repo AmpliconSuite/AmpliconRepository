@@ -157,34 +157,32 @@
                 var link = '';
                 for (let i = 0; i < data['points'].length; i++) {{
                     var name = data['points'][i]['data']['name'];
-
                     if (name.includes('Amplicon')) {{
                         link = data['points'][i]['data']['hovertemplate'].split('"')[1];
                         var amplicon_num = name.replace("<b>", "").replace("</b>", "").split(" ")[1];
 
-                        for (let j = 0; i < JSON.parse('{{ download_links|safe }}').length; i++){
-                            var png = JSON.parse('{{ download_links|safe }}')[i];
+                        for (let j = 0; j < JSON.parse('{{ download_links|safe }}').length; j++){
+                            var png = JSON.parse('{{ download_links|safe }}')[j];
                             if (png.aa_amplicon_number == amplicon_num){
                                 link = png.download_link;
                             }
                         }
+
                         // if display IGV Viewer toggle is on:
                         if (igv_toggle) {
-                        for (let i = 0; i < JSON.parse('{{ igv_tracks|safe }}').length; i++){
-                            var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[i]
-                            var locus_selection = JSON.parse('{{ locuses|safe }}')[i]
-                            if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
-                                const tracks = [amplicon_selection];
-                                const locus = locus_selection;
-                                // call function to create JS in THE IGV DIV
-                                create_igv(tracks, locus_selection);
-                                break
+                            for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
+                                var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k]
+                                var locus_selection = JSON.parse('{{ locuses|safe }}')[k]
+                                if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
+                                    const tracks = [amplicon_selection];
+                                    const locus = locus_selection;
+                                    // call function to create JS in THE IGV DIV
+                                    create_igv(tracks, locus_selection);
+                                    break
+                                }
                             }
                         }
-                    }
                         break;
-
-
                     }}
                 }}
 

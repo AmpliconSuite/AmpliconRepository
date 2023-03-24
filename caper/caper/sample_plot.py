@@ -17,6 +17,7 @@ from .utils import get_db_handle, get_collection_handle, create_run_display
 import gridfs
 from bson.objectid import ObjectId
 from io import StringIO
+from collections import defaultdict
 
 
 cent_file = 'bed_files/GRCh38_centromere.bed'
@@ -35,6 +36,8 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     # project_data_dir = f'project_data/{project_name}/extracted'
     # if not os.path.exists(project_data_dir):
     #     return ''
+    updated_loc_dict = defaultdict(list)  # stores the locations following the plotting adjustments
+
     cnv_file_id = sample[0]['CNV BED file']
     # CNV_file = CNV_file[CNV_file.index('AA_outputs'):]
     
@@ -138,15 +141,20 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
         amplicon_df = pd.DataFrame()
         for i in range(len(amplicon)):
+        # print(amplicon.columns)
+        # for rind, row in amplicon.iterrows():
             row = amplicon.iloc[[i]]
             loc = row.iloc[0, 4]
+            feat_id = row.iloc[0, 2]
             # splitloc = loc.split(',')
             for element in loc:
                 element = element[1:-1]
                 chrsplit = element.split(':')
                 chr = chrsplit[0]
                 if chr == key or chr[1:] == key:
+                    curr_updated_loc = chr + ":"
                     for j in range(0,2):
+
                         row['Chromosome Number'] = chrsplit[0]
                         locsplit = chrsplit[1].split('-') 
                         row['Feature Start Position'] = int(float(locsplit[0]))
@@ -160,9 +168,13 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                         if j == 0:
                             row['Feature Position'] = locsplit[0]
                             row['Y-axis'] = 95
+                            curr_updated_loc += str(locsplit[0]) + "-"
                         elif j == 1:
                             row['Feature Position'] = int(float(locsplit[1])) + offset
                             row['Y-axis'] = 95
+                            curr_updated_loc += str(int(row['Feature Position']))
+                            updated_loc_dict[feat_id].append(curr_updated_loc)
+
                         amplicon_df = pd.concat([row, amplicon_df])
                     amplicon_df['Feature Start Position'] = amplicon_df['Feature Start Position'].astype(float)
                     amplicon_df['Feature End Position'] = amplicon_df['Feature End Position'].astype(float)
@@ -215,6 +227,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             row = cent_df.iloc[[i]]
             if (row.iloc[0, 2] - row.iloc[0, 1]) / x_range < min_width:
                 offset = (x_range * min_width) - (row.iloc[0, 2] - row.iloc[0, 1])
+                # offset = 0
             else:
                 offset = 0
 
@@ -241,6 +254,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
         fig.add_trace(go.Scatter(x=x_array,y=y_array,mode = 'lines', name="Copy Number", showlegend = False, line = dict(color = 'black')), row = rowind, col = colind)
         fig.update_xaxes(showline = True, linewidth = 1, title_font_size = 10,  ticksuffix = " ")
+        # fig.update_traces(textposition="bottom right")  # Jens: I added this and then commented out since it seems to have no effect. Guess it wasn't needed.
 
         #print(y_array)
         for element in y_array:

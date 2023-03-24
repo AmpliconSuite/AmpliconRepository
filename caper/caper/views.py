@@ -50,7 +50,7 @@ def get_date():
 def get_one_project(project_name):
     return collection_handle.find_one({'project_name': project_name})
 
-def get_one_sample(project_name,sample_name):
+def get_one_sample(project_name, sample_name):
     project = get_one_project(project_name)
     runs = project['runs']
     for sample_num in runs.keys():
@@ -61,8 +61,8 @@ def get_one_sample(project_name,sample_name):
     return project, sample_out
 
 
-def get_one_feature(project_name,sample_name, feature_name):
-    project, sample = get_one_sample(project_name,sample_name)
+def get_one_feature(project_name, sample_name, feature_name):
+    project, sample = get_one_sample(project_name, sample_name)
     feature = list(filter(lambda sample: sample['Feature ID'] == feature_name, sample))
     return project, sample, feature
 
@@ -71,10 +71,10 @@ def get_one_feature(project_name,sample_name, feature_name):
 #     private_projects = list(collection_handle.find({'private' : True, 'user' : user , 'project_name' : project_name}))
 #     return public_projects, private_projects
 
-def get_one_feature(project_name,sample_name, feature_name):
-    project, sample = get_one_sample(project_name,sample_name)
-    feature = list(filter(lambda sample: sample['Feature ID'] == feature_name, sample))
-    return project, sample, feature
+# def get_one_feature(project_name,sample_name, feature_name):
+#     project, sample = get_one_sample(project_name,sample_name)
+#     feature = list(filter(lambda sample: sample['Feature ID'] == feature_name, sample))
+#     return project, sample, feature
 
 def check_project_exists(project_name):
     return collection_handle.count_documents({ 'project_name': project_name }, limit = 1)
@@ -283,11 +283,10 @@ def igv_features_creation(locations):
 
 @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
+    print(f'sample name is: ', sample_name)
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     # print(sample_data_processed[0])
-
-    print(f'sample name is: ', sample_name)
     filter_plots = not request.GET.get('display_all_chr')
     if sample_data[0]['AA amplicon number'] == None:
         plot = go.Figure(go.Scatter(x=[2], y = [2],
@@ -304,6 +303,7 @@ def sample_page(request, project_name, sample_name):
         download_png = []
     else:
         plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
+        #plot, featid_to_updated_locations = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
         igv_tracks = []
         locus_lst = []
         download_png = []
@@ -314,6 +314,8 @@ def sample_page(request, project_name, sample_name):
             })
 
             roi_features, locus = igv_features_creation(feature['Location'])
+            # print("Converted location list {} to IGV formatted string {}".format(str(feature['Location']), locus))
+
             if locus != "":
                 locus_lst.append(locus)
             else:
