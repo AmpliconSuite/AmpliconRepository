@@ -35,10 +35,11 @@ import plotly.graph_objs as go
 
 
 
-db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
-# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+# FOR LOCAL DEVELOPMENT
+# db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
 
-# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+
+db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
 fs_handle = gridfs.GridFS(db_handle)
 
