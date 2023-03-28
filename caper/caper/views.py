@@ -35,8 +35,8 @@ import plotly.graph_objs as go
 
 
 
-# db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
-db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
+# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 
 # db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
@@ -52,7 +52,7 @@ def prepare_project_linkid(project):
 
 def get_one_project(project_name_or_uuid):
     try:
-        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid)})[0]
+        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': False})[0]
         prepare_project_linkid(project)
         return project
     except:
@@ -60,14 +60,14 @@ def get_one_project(project_name_or_uuid):
 
     # backstop using the name the old way
     if project is None:
-        project =  collection_handle.find_one({'project_name': project_name_or_uuid})
+        project =  collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
         prepare_project_linkid(project)
     return project
 
 
 def get_one_sample(project_name, sample_name):
     project = get_one_project(project_name)
-    print("ID --- ", project['_id'])
+    # print("ID --- ", project['_id'])
     runs = project['runs']
     for sample_num in runs.keys():
         current = runs[sample_num]
@@ -151,6 +151,13 @@ def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
                 feature[key] = round(value, 1)
             elif type(value) == str and value.startswith('['):
                 feature[key] = ', \n'.join(value[2:-2].split("', '"))
+
+        locations = [i.replace("'","").strip() for i in feature['Location']]
+        feature['Location'] = locations
+        oncogenes = [i.replace("'","").strip() for i in feature['Oncogenes']]
+        feature['Oncogenes'] = oncogenes
+        
+    # print(sample_data[0])
     return sample_data
 
 def get_project_oncogenes(runs):
@@ -202,21 +209,21 @@ def get_files(fs_id):
 def index(request):
     if request.user.is_authenticated:
         user = request.user.email
-        private_projects = list(collection_handle.find({ 'private' : True, 'project_members' : user }))
+        private_projects = list(collection_handle.find({ 'private' : True, 'project_members' : user , 'delete': False}))
         for proj in private_projects:
             prepare_project_linkid(proj)
     else:
         private_projects = []
-    public_projects = list(collection_handle.find({'private' : False}))
+    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
 
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects})
 
 def profile(request):
-    user = request.user.email
-    projects = list(collection_handle.find({ 'project_members' : user }))
-    for proj in private_projects:
+    user = get_current_user(request)
+    projects = list(collection_handle.find({ 'project_members' : user , 'delete': False}))
+    for proj in projects:
         prepare_project_linkid(proj)
     return render(request, "pages/profile.html", {'projects': projects})
 
@@ -304,9 +311,9 @@ def igv_features_creation(locations):
 
 
 
-@cache_page(600) # 10 minutes
+# @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
-    print(f'sample name is: ', sample_name)
+    # print(f'sample name is: ', sample_name)
     project, sample_data = get_one_sample(project_name, sample_name)
     project_linkid = project['_id']
 
@@ -493,14 +500,14 @@ def gene_search_page(request):
     # Gene Search
     if request.user.is_authenticated:
         user = request.user.email
-        query_obj = {'private' : True, 'project_members' : user , 'Oncogenes' : gen_query}
+        query_obj = {'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'delete': False}
 
 
         private_projects = list(collection_handle.find(query_obj))
     else:
         private_projects = []
     
-    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query}))
+    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False}))
 
     for proj in private_projects:
         prepare_project_linkid(proj)    
@@ -519,10 +526,10 @@ def gene_search_page(request):
             for sample in data:
                 sample['project_name'] = project_name
                 sample['project_linkid'] = project_linkid
-                print(sample)
+                # print(sample)
                 if genequery in sample['Oncogenes']:
                     upperclass =  map(str.upper, sample['Classifications'])
-                    print(upperclass)
+                    # print(upperclass)
                     classmatch =(classquery in upperclass)
                     classempty = (len(classquery) == 0)
                     # keep the sample if we have matched on both oncogene and classification or oncogene and classification is empty
@@ -599,6 +606,18 @@ def get_current_user(request):
         current_user = request.user.username
     return current_user
 
+def project_delete(request, project_name):
+    project = get_one_project(project_name)
+    if check_project_exists(project_name):
+        current_runs = project['runs']
+        query = {'project_name': project_name}
+        new_val = { "$set": {'delete' : True} }
+        collection_handle.update_one(query, new_val)
+        return redirect('profile')
+    else:
+        return HttpResponse("Project does not exist")
+    return redirect('profile')
+
 def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
@@ -619,7 +638,7 @@ def edit_project_page(request, project_name):
             new_val = { "$set": {'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(), 'private': form_dict['private'], 'project_members': form_dict['project_members'], 'Oncogenes': get_project_oncogenes(current_runs)} }
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
-                print(f'in valid form')
+                # print(f'in valid form')
                 return redirect('project_page', project_name=project_name)
             else:
                 raise Http404()
@@ -748,6 +767,7 @@ def create_project(request):
             project['date'] = get_date()
             # project['sample_count'] = sample_count
             project['private'] = form_dict['private']
+            project['delete'] = False
             user_list = create_user_list(form_dict['project_members'], current_user)
             project['project_members'] = user_list
             project['runs'] = runs

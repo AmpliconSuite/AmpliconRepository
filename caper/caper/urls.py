@@ -41,6 +41,7 @@ urlpatterns += [
     # path("accounts/login/", views.login, name="login"),
     path("project/<project_name>", views.project_page, name="project_page"),
     path("project/<project_name>/download", views.project_download, name="project_download"),
+    path("project/<project_name>/delete", views.project_delete, name="project_delete"),
     path("project/<project_name>/sample/<sample_name>", views.sample_page, name="sample_page"),
     path("project/<project_name>/sample/<sample_name>/download", views.sample_download, name="sample_download"),
     path("project/<project_name>/sample/<sample_name>/feature/<feature_name>", views.feature_page, name="feature_page"),
