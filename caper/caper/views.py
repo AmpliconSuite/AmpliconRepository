@@ -33,11 +33,8 @@ from bson.json_util import dumps
 import re
 import plotly.graph_objs as go
 
-
-
 # FOR LOCAL DEVELOPMENT
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
-
 
 db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
@@ -243,46 +240,56 @@ def project_page(request, project_name):
     pie_chart = None 
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
 
+# def project_download(request, project_name):
+#     project = get_one_project(project_name)
+#     samples = project['runs']
+    
+#     for sample in samples:
+#         if len(samples[sample]) > 0:
+#             for feature in samples[sample]:
+#                 # set up file system
+#                 feature_id = feature['Feature ID']
+#                 feature_data_path = f"tmp/{project_name}/{feature['Sample name']}/{feature_id}"
+#                 os.makedirs(feature_data_path, exist_ok=True)
+#                 # get object ids
+#                 bed_id = feature['Feature BED file'] 
+#                 cnv_id = feature['CNV BED file']
+#                 pdf_id = feature['AA PDF file']
+#                 png_id = feature['AA PNG file']
+                
+#                 # get files from gridfs
+#                 bed_file = fs_handle.get(ObjectId(bed_id)).read()
+#                 cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
+#                 pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
+#                 png_file = fs_handle.get(ObjectId(png_id)).read()
+                
+#                 # send files to tmp file system
+#                 with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
+#                     bed_file_tmp.write(bed_file)
+#                 with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
+#                     cnv_file_tmp.write(cnv_file)
+#                 with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
+#                     pdf_file_tmp.write(pdf_file)
+#                 with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
+#                     png_file_tmp.write(png_file)
+
+#     project_data_path = f"tmp/{project_name}/"        
+#     shutil.make_archive(f'{project_name}', 'zip', project_data_path)
+#     zip_file_path = f"{project_name}.zip"
+#     with open(zip_file_path, 'rb') as zip_file:
+#         response = HttpResponse(zip_file)
+#         response['Content-Type'] = 'application/x-zip-compressed'
+#         response['Content-Disposition'] = f'attachment; filename={project_name}.zip'
+#     clear_tmp()
+#     return response
+
 def project_download(request, project_name):
     project = get_one_project(project_name)
-    samples = project['runs']
-    
-    for sample in samples:
-        if len(samples[sample]) > 0:
-            for feature in samples[sample]:
-                # set up file system
-                feature_id = feature['Feature ID']
-                feature_data_path = f"tmp/{project_name}/{feature['Sample name']}/{feature_id}"
-                os.makedirs(feature_data_path, exist_ok=True)
-                # get object ids
-                bed_id = feature['Feature BED file'] 
-                cnv_id = feature['CNV BED file']
-                pdf_id = feature['AA PDF file']
-                png_id = feature['AA PNG file']
-                
-                # get files from gridfs
-                bed_file = fs_handle.get(ObjectId(bed_id)).read()
-                cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
-                pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
-                png_file = fs_handle.get(ObjectId(png_id)).read()
-                
-                # send files to tmp file system
-                with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
-                    bed_file_tmp.write(bed_file)
-                with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
-                    cnv_file_tmp.write(cnv_file)
-                with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
-                    pdf_file_tmp.write(pdf_file)
-                with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
-                    png_file_tmp.write(png_file)
-
-    project_data_path = f"tmp/{project_name}/"        
-    shutil.make_archive(f'{project_name}', 'zip', project_data_path)
-    zip_file_path = f"{project_name}.zip"
-    with open(zip_file_path, 'rb') as zip_file:
-        response = HttpResponse(zip_file)
-        response['Content-Type'] = 'application/x-zip-compressed'
-        response['Content-Disposition'] = f'attachment; filename={project_name}.zip'
+    tar_id = project['tarfile']
+    tarfile = fs_handle.get(ObjectId(tar_id)).read()
+    response = HttpResponse(tarfile)
+    response['Content-Type'] = 'application/x-zip-compressed'
+    response['Content-Disposition'] = f'attachment; filename={project_name}.tar.gz'
     clear_tmp()
     return response
 
@@ -420,7 +427,7 @@ def sample_download(request, project_name, sample_name):
         response = HttpResponse(zip_file)
         response['Content-Type'] = 'application/x-zip-compressed'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.zip'
-    os.remove(f'{sample_name}.zip')
+    os.remove(f'/{sample_name}.zip')
     return response
     
 
@@ -703,11 +710,13 @@ def create_project(request):
             
         # extract contents of file
         file_location = f'{project_data_path}/{request_file.name}'
+        with open(file_location, "rb") as tar_file:
+            project_tar_id = fs_handle.put(tar_file)
         with tarfile.open(file_location, "r:gz") as tar_file:
             tar_file.extractall(path=project_data_path)
             
         #get run.json 
-        run_path = f'{project_data_path}/results/run.json'   
+        run_path =  f'{project_data_path}/results/run.json'   
         with open(run_path, 'r') as run_json:
             runs = samples_to_dict(run_json)
         # for filename in os.listdir(project_data_path):
@@ -764,6 +773,7 @@ def create_project(request):
             project['creator'] = current_user
             project['project_name'] = form_dict['project_name']
             project['description'] = form_dict['description']
+            project['tarfile'] = project_tar_id
             project['date_created'] = get_date()
             project['date'] = get_date()
             # project['sample_count'] = sample_count
