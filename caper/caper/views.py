@@ -408,13 +408,23 @@ def sample_download(request, project_name, sample_name):
         
         # get files from gridfs
         bed_file = fs_handle.get(ObjectId(bed_id)).read()
+        if bed_id is not None:
+            if not ObjectId.is_valid(bed_id):
+                 print("Sample: ", sample, "Feature: ", feature_id,"BED_ID is ->" ,bed_id, "<-")
+                 break
+
+            bed_file = fs_handle.get(ObjectId(bed_id)).read()
+            with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
+                bed_file_tmp.write(bed_file)
+  
+
         cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
         pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
         png_file = fs_handle.get(ObjectId(png_id)).read()
          
         # send files to tmp file system
-        with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
-            bed_file_tmp.write(bed_file)
+#        with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
+#            bed_file_tmp.write(bed_file)
         with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
             cnv_file_tmp.write(cnv_file)
         with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
@@ -429,7 +439,8 @@ def sample_download(request, project_name, sample_name):
         response = HttpResponse(zip_file)
         response['Content-Type'] = 'application/x-zip-compressed'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.zip'
-    os.remove(f'/{sample_name}.zip')
+
+    os.remove(f'{sample_name}.zip')
     return response
     
 
