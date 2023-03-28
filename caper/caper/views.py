@@ -285,11 +285,13 @@ def project_page(request, project_name):
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
+    # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
+    real_project_name = project['project_name']
     tar_id = project['tarfile']
     tarfile = fs_handle.get(ObjectId(tar_id)).read()
     response = HttpResponse(tarfile)
     response['Content-Type'] = 'application/x-zip-compressed'
-    response['Content-Disposition'] = f'attachment; filename={project_name}.tar.gz'
+    response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
     clear_tmp()
     return response
 
