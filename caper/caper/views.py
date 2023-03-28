@@ -786,10 +786,9 @@ def create_project(request):
             project['Classification'] = get_project_classifications(runs)
             # print(project)
             if form.is_valid():
-                collection_handle.insert_one(project)
-                
+                new_id = collection_handle.insert_one(project)
                 clear_tmp()
-                return redirect('project_page', project_name=project_name)
+                return redirect('project_page', project_name=new_id.inserted_id)
             else:
                 clear_tmp()
                 raise Http404()
