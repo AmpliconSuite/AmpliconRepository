@@ -23,8 +23,12 @@
     </title>
 </head>
     {% if user.is_authenticated %}
-    <h1>
-        Hello, {{ user.email }}!
+    <h2>
+        {% if user.email  %}
+         {{ user.email }}:
+        {% else %}
+         {{ user.username }}:   
+        {% endif %}
     </h1>
     <hr>
     <h3>Projects</h3>
@@ -39,6 +43,7 @@
                     <th>Project Members</th>
                     <th>Project Page</th>
                     <th>Edit Project</th>
+                    <th>Delete Project</th>
                 </tr>
             </thead>
             <tbody>
@@ -53,6 +58,8 @@
                     {% endfor%}</td>
                     <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td>
                     <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.project_name %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
+                    <td><a href="{% url 'project_delete' project_name=project.project_name %}"  onclick="return confirm('Are you sure?')"><i class="fas fa-trash" style="font-size:15px"></i></a></td>
+
                 </tr>
                 {% endfor %}
             </tbody>

@@ -1,5 +1,5 @@
 config.sh
-caper/caper.sqlite3
+/caper/caper.sqlite3
 .DS_Store
 Dockerfile
 caper/project_data/*
@@ -11,3 +11,7 @@ capererr.txt
 lib64
 pyvenv.cfg
 /bin*
+*caper.sqlite3
+/ampliconenv
+# pycharm IDE
+.idea/

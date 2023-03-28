@@ -17,22 +17,26 @@ from .utils import get_db_handle, get_collection_handle, create_run_display
 import gridfs
 from bson.objectid import ObjectId
 from io import StringIO
+from collections import defaultdict
 
 
 cent_file = 'bed_files/GRCh38_centromere.bed'
 warnings.filterwarnings("ignore")
 
+# FOR LOCAL DEVELOPMENT
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
-db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 
-# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
 fs_handle = gridfs.GridFS(db_handle)
 
-def plot(sample, sample_name, project_name, filter_plots=True):
+
+
+def plot(sample, sample_name, project_name, filter_plots=False):
     # project_data_dir = f'project_data/{project_name}/extracted'
     # if not os.path.exists(project_data_dir):
     #     return ''
+    updated_loc_dict = defaultdict(list)  # stores the locations following the plotting adjustments
 
     cnv_file_id = sample[0]['CNV BED file']
     # CNV_file = CNV_file[CNV_file.index('AA_outputs'):]
@@ -137,15 +141,20 @@ def plot(sample, sample_name, project_name, filter_plots=True):
 
         amplicon_df = pd.DataFrame()
         for i in range(len(amplicon)):
+        # print(amplicon.columns)
+        # for rind, row in amplicon.iterrows():
             row = amplicon.iloc[[i]]
             loc = row.iloc[0, 4]
+            feat_id = row.iloc[0, 2]
             # splitloc = loc.split(',')
             for element in loc:
                 element = element[1:-1]
                 chrsplit = element.split(':')
                 chr = chrsplit[0]
                 if chr == key or chr[1:] == key:
+                    curr_updated_loc = chr + ":"
                     for j in range(0,2):
+
                         row['Chromosome Number'] = chrsplit[0]
                         locsplit = chrsplit[1].split('-') 
                         row['Feature Start Position'] = int(float(locsplit[0]))
@@ -159,9 +168,13 @@ def plot(sample, sample_name, project_name, filter_plots=True):
                         if j == 0:
                             row['Feature Position'] = locsplit[0]
                             row['Y-axis'] = 95
+                            curr_updated_loc += str(locsplit[0]) + "-"
                         elif j == 1:
                             row['Feature Position'] = int(float(locsplit[1])) + offset
                             row['Y-axis'] = 95
+                            curr_updated_loc += str(int(row['Feature Position']))
+                            updated_loc_dict[feat_id].append(curr_updated_loc)
+
                         amplicon_df = pd.concat([row, amplicon_df])
                     amplicon_df['Feature Start Position'] = amplicon_df['Feature Start Position'].astype(float)
                     amplicon_df['Feature End Position'] = amplicon_df['Feature End Position'].astype(float)
@@ -169,6 +182,7 @@ def plot(sample, sample_name, project_name, filter_plots=True):
                     amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature maximum copy number'].astype(float)
                     amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature median copy number'].astype(float)
                     amplicon_df = amplicon_df.round(decimals=2)
+                    #print(amplicon_df)
                     for i in range(len(amplicon_df['AA amplicon number'].unique())):
                         number = amplicon_df['AA amplicon number'].unique()[i]
                         per_amplicon = amplicon_df[amplicon_df['AA amplicon number'] == number]
@@ -196,13 +210,13 @@ def plot(sample, sample_name, project_name, filter_plots=True):
                                 '<br><i>Feature Classification:</i> %{customdata[0]}<br>' + 
                                 '<i>%{customdata[1]}:</i> %{customdata[2]} - %{customdata[3]}<br>' +
                                 '<i>Oncogenes:</i> %{customdata[4]}<br>'+
-                                '<i>Feature Maximum Copy Number:</i> %{customdata[5]}<br>' 
-                                # '<b href="/sample/%{customdata[12]}/feature/%{customdata[10]}/download/png/%{customdata[11]}">Click to Download Amplicon PNG</b>' 
+                                '<i>Feature Maximum Copy Number:</i> %{customdata[5]}<br>' +
+                                '<b>Click to Download Amplicon PNG</b>' 
                                 ,name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
                                 line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=number), row = rowind, col = colind)
                         fig.update_traces(textposition="bottom right")
 
-                    # amplicon_df = pd.DataFrame()
+                    amplicon_df = pd.DataFrame()
 
         cent_df = pd.read_csv(cent_file, header = None, sep = '\t')
         #display(a_df)
@@ -213,6 +227,7 @@ def plot(sample, sample_name, project_name, filter_plots=True):
             row = cent_df.iloc[[i]]
             if (row.iloc[0, 2] - row.iloc[0, 1]) / x_range < min_width:
                 offset = (x_range * min_width) - (row.iloc[0, 2] - row.iloc[0, 1])
+                # offset = 0
             else:
                 offset = 0
 
@@ -239,6 +254,7 @@ def plot(sample, sample_name, project_name, filter_plots=True):
 
         fig.add_trace(go.Scatter(x=x_array,y=y_array,mode = 'lines', name="Copy Number", showlegend = False, line = dict(color = 'black')), row = rowind, col = colind)
         fig.update_xaxes(showline = True, linewidth = 1, title_font_size = 10,  ticksuffix = " ")
+        # fig.update_traces(textposition="bottom right")  # Jens: I added this and then commented out since it seems to have no effect. Guess it wasn't needed.
 
         #print(y_array)
         for element in y_array:
@@ -277,4 +293,3 @@ def plot(sample, sample_name, project_name, filter_plots=True):
     height = height[rows], width = 1300, margin = dict(t = 70, r = 70, b = 70, l = 70))
 
     return fig.to_html(full_html=False, div_id='plotly_div')
-
