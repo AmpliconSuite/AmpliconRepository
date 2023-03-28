@@ -121,7 +121,7 @@
                         <tbody>
                             {% for project in public_projects %}
                             <tr>
-                                <td><a href="{% url 'project_page' project_name=project.project_name %}">{{ project.project_name }}</a></td>
+                                <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
                                 <td>{% for person in project.project_members %}
@@ -147,13 +147,13 @@
                         <tbody>
                             {% for project in private_projects %}
                             <tr>
-                                <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}">{{ project.project_name }}</a></td>
+                                <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor%}</td>
-                                <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.project_name %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
+                                <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.linkid %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
                             </tr>
                             {% endfor %}
                         </tbody>

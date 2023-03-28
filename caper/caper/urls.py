@@ -34,12 +34,14 @@ urlpatterns += [
     path('', views.index, name='index'),
     # path('runs/', views.run_list, name='run_list'),
     path('create-project/', views.create_project, name='create_project'),
+    path('accounts/', include('allauth.urls')),
     path("accounts/profile/", views.profile, name="profile"),
-    path("accounts/login/", views.login, name="login"),
+    #path("accounts/login/", views.login, name="login"),
     # path("accounts/login/", views.login, name="login"),
     # path("accounts/login/", views.login, name="login"),
     path("project/<project_name>", views.project_page, name="project_page"),
     path("project/<project_name>/download", views.project_download, name="project_download"),
+    path("project/<project_name>/delete", views.project_delete, name="project_delete"),
     path("project/<project_name>/sample/<sample_name>", views.sample_page, name="sample_page"),
     path("project/<project_name>/sample/<sample_name>/download", views.sample_download, name="sample_download"),
     path("project/<project_name>/sample/<sample_name>/feature/<feature_name>", views.feature_page, name="feature_page"),
@@ -56,7 +58,8 @@ urlpatterns += [
 urlpatterns += static(settings.PROJECT_DATA_URL, document_root=settings.PROJECT_DATA_ROOT)
 
 urlpatterns += [
-    path('accounts/', include('allauth.urls')),
+    #path(r'^accounts/', include('allauth.urls')),
+
     # We don't want to presume how your homepage works, so here are a
     # few patterns you can use to set it up.
     # HOMEPAGE AS STATIC TEMPLATE
