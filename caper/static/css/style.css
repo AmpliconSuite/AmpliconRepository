@@ -46,3 +46,28 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
 .igv-container {
     margin:auto;
 }
+
+.dropdown-toggle:before {
+    content: " ";
+    display: block;
+    position: absolute;
+    height: 50px;
+    top: -30px;
+    left: 0;
+    right: 0;
+}
+
+@media {
+     #custom-bootstrap-menu >a {
+        color: rgba(0,0,0,.5) !important;
+        
+    }
+    .custom-bootstrap-menu  .dropdown-item >a {
+        color: rgba(0,0,0,.5) !important;
+        font-size: .9rem;
+    }
+    .custom-bootstrap-menu li {
+        padding-top: 0px;
+        padding-bottom: 0px;
+    }
+}
