@@ -321,12 +321,9 @@ def igv_features_creation(locations):
 
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
-    # print(f'sample name is: ', sample_name)
     project, sample_data = get_one_sample(project_name, sample_name)
     project_linkid = project['_id']
-
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
-    # print(sample_data_processed[0])
     filter_plots = not request.GET.get('display_all_chr')
     if sample_data[0]['AA amplicon number'] == None:
         plot = go.Figure(go.Scatter(x=[2], y = [2],
@@ -347,7 +344,9 @@ def sample_page(request, project_name, sample_name):
         igv_tracks = []
         locus_lst = []
         download_png = []
+        reference_version = []
         for feature in sample_data_processed:
+            reference_version.append(feature['Reference_version'])
             download_png.append({
                 'aa_amplicon_number':feature['AA_amplicon_number'],
                 'download_link':f"//{request.get_host()}/project/{project_linkid}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "_")
@@ -386,7 +385,8 @@ def sample_page(request, project_name, sample_name):
     'sample_name': sample_name, 'graph': plot, 
     'igv_tracks': json.dumps(igv_tracks),
     'locuses': json.dumps(locus_lst),
-    'download_links': json.dumps(download_png)
+    'download_links': json.dumps(download_png),
+    'reference_versions': json.dumps(reference_version),
     }
     )
     
@@ -597,7 +597,7 @@ def gene_search_download(request, project_name):
                 with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
                     png_file_tmp.write(png_file)
 
-    project_data_path = f"tmp/{project_name}/"        
+    project_data_path = f"tmp/{project_name}/"
     shutil.make_archive(f'{project_name}', 'zip', project_data_path)
     zip_file_path = f"{project_name}.zip"
     with open(zip_file_path, 'rb') as zip_file:

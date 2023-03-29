@@ -20,7 +20,8 @@ from io import StringIO
 from collections import defaultdict
 
 
-cent_file = 'bed_files/GRCh38_centromere.bed'
+
+
 warnings.filterwarnings("ignore")
 
 # FOR LOCAL DEVELOPMENT
@@ -36,6 +37,21 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     # project_data_dir = f'project_data/{project_name}/extracted'
     # if not os.path.exists(project_data_dir):
     #     return ''
+    potential_ref_genomes = set()
+    for item in sample:
+        ## look for what reference genome is used
+        ref_version = item['Reference version']
+        potential_ref_genomes.add(ref_version)
+    USE_GRCH37=False
+    ref_ver_to_use = potential_ref_genomes.pop()
+    if ref_ver_to_use == "GRCh38":
+        cent_file = 'bed_files/GRCh38_centromere.bed'
+    elif ref_ver_to_use == "GRCh37":
+        cent_file = 'bed_files/GRCh37_centromere.bed'
+        USE_GRCH37 = True
+    elif ref_ver_to_use == "hg19":
+        cent_file = 'bed_files/hg19_centromere.bed'
+
     updated_loc_dict = defaultdict(list)  # stores the locations following the plotting adjustments
 
     cnv_file_id = sample[0]['CNV BED file']
@@ -57,12 +73,17 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     # amplicon = amplicon[valid_amp_df(amplicon)]
     amplicon_numbers = list(amplicon['AA amplicon number'].unique())
     seen = set()
-    
+
     chr_order = lambda x: int(x) if x.isnumeric() else ord(x)
     def get_chrom_num(location):
-        location = location[location.find('chr'):]
-        location = location.split(':')
-        chr_num = location[0].lstrip('chr')
+        location = location.replace("'", "")
+        if 'chr' in location:
+            location = location[location.find('chr'):]
+            location = location.split(':')
+            chr_num = location[0].lstrip('chr')
+        else: ## processing for GRCh37
+            location = location.split(':')
+            chr_num = location[0]
         return chr_num
     
     if filter_plots:
@@ -76,7 +97,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                 chr_num = get_chrom_num(x[0])
                 chromosomes.add(chr_num)
         chromosomes = sorted(list(chromosomes), key=chr_order)
-        # print(chromosomes)
+        print(f'chr_num = {chr_num}')
         # list(set(loc.split(':')[0].lstrip('chr') for loc in (', '.join(amplicon['Location'])).split(', ')))
     else:
         chromosomes = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X", "Y")
@@ -106,9 +127,8 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
     rowind = 1
     colind = 1
-
     for key in (chromosomes if filter_plots else dfs):
-        if filter_plots:
+        if filter_plots and USE_GRCH37 == False:
             key = 'chr' + key
         log_scale = False
         copyNumberdf = pd.DataFrame()

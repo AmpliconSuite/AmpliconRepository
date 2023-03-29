@@ -19,14 +19,25 @@
     }
     }
 
-    function create_igv(track, locus_selection){
+    function create_igv(track, locus_selection,reference_genome){
         // a function to create IGV.js tracks
+
+        // reference genome parsing
+        
         const version = igv.version()
         const igvDiv = document.getElementById("igv-div")
+        var genome = "";
+        if (reference_genome === 'GRCh38'){
+            genome = 'hg38';
+        } else if (reference_genome === 'hg19'){
+            genome = 'hg19';
+        } else if (reference_genome === 'GRCh37'){
+            genome = 'b37';
+        };
         const options =
             { 
                 locus: locus_selection,
-                genome: "hg38",
+                genome: genome,
                 roi: track
             }
         if (igvDiv.innerHTML != ""){
@@ -173,11 +184,13 @@
                             for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
                                 var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k]
                                 var locus_selection = JSON.parse('{{ locuses|safe }}')[k]
+                                var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k]
+                                console.log(reference_genome);
                                 if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
                                     const tracks = [amplicon_selection];
                                     const locus = locus_selection;
                                     // call function to create JS in THE IGV DIV
-                                    create_igv(tracks, locus_selection);
+                                    create_igv(tracks, locus_selection, reference_genome);
                                     break
                                 }
                             }
