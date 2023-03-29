@@ -744,8 +744,8 @@ def create_project(request):
                     # get paths
                     key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file']
                     for k in key_names:
-                        path_var = feature[k]
                         try:
+                            path_var = feature[k]
                             with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
                                 id_var = fs_handle.put(file_var)
 
