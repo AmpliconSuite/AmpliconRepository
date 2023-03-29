@@ -742,42 +742,18 @@ def create_project(request):
             for feature in features:
                 if len(feature) > 0:
                     # get paths
-                    bed_path = feature['Feature BED file'] 
-                    cnv_path = feature['CNV BED file']
-                    pdf_path = feature['AA PDF file']
-                    png_path = feature['AA PNG file']
-                    
-                    # convert tab files to python format
-                    try:
-                        with open(f'{project_data_path}/results/{bed_path}', "rb") as bed_file:
-                            bed_file_id = fs_handle.put(bed_file)
-                    except:
-                        bed_file_id = "Not Provided"
-                    
-                    try:
-                        with open(f'{project_data_path}/results/{cnv_path}', "rb") as cnv_file:
-                            cnv_file_id = fs_handle.put(cnv_file)
-                    except:
-                        bed_file_id = "Not Provided"
-                    
-                    try:
-                        # convert image files to python format
-                        with open(f'{project_data_path}/results/{pdf_path}', "rb") as pdf:
-                            pdf_id = fs_handle.put(pdf)
-                    except:
-                        bed_file_id = "Not Provided"
+                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file']
+                    for k in key_names:
+                        path_var = feature[k]
+                        try:
+                            with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
+                                id_var = fs_handle.put(file_var)
 
-                    try:
-                        with open(f'{project_data_path}/results/{png_path}', "rb") as png:
-                            png_id = fs_handle.put(png)
-                    except:
-                        bed_file_id = "Not Provided"
-                    
-                    # add files to runs dict
-                    feature['Feature BED file'] = bed_file_id
-                    feature['CNV BED file'] = cnv_file_id
-                    feature['AA PDF file'] = pdf_id
-                    feature['AA PNG file'] = png_id
+                        except:
+                            id_var = "Not Provided"
+
+                        feature[k] = id_var
+
         if check_project_exists(project_name):
             clear_tmp()
             return HttpResponse("Project already exists")
