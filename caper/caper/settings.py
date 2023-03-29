@@ -95,7 +95,7 @@ CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconre
 # skip intermediate sign-out page
 ACCOUNT_LOGOUT_ON_GET = True
 # SSL Redirect
-#SECURE_SSL_REDIRECT=True
+SECURE_SSL_REDIRECT=True
 
 # Local time zone for this installation. Choices can be found here:
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name
@@ -153,7 +153,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Provider specific settings
 GOOGLE_SECRET_KEY = os.environ['GOOGLE_SECRET_KEY']
 GLOBUS_SECRET_KEY = os.environ['GLOBUS_SECRET_KEY']
-#ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'https'
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'https'
 SOCIALACCOUNT_EMAIL_REQUIRED=True
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
