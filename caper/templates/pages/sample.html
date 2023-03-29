@@ -32,7 +32,7 @@
         } else if (reference_genome === 'hg19'){
             genome = 'hg19';
         } else if (reference_genome === 'GRCh37'){
-            genome = 'b37';
+            genome = 'hg19';
         };
         const options =
             { 
@@ -168,6 +168,7 @@
                 var link = '';
                 for (let i = 0; i < data['points'].length; i++) {{
                     var name = data['points'][i]['data']['name'];
+                    var chromosome_num = data['points'][i]['customdata'][1];
                     if (name.includes('Amplicon')) {{
                         link = data['points'][i]['data']['hovertemplate'].split('"')[1];
                         var amplicon_num = name.replace("<b>", "").replace("</b>", "").split(" ")[1];
@@ -179,13 +180,15 @@
                             }
                         }
 
+
                         // if display IGV Viewer toggle is on:
                         if (igv_toggle) {
                             for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
-                                var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k]
-                                var locus_selection = JSON.parse('{{ locuses|safe }}')[k]
-                                var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k]
-                                console.log(reference_genome);
+                                var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
+                                var locus_selection = JSON.parse('{{ locuses|safe }}')[k][chromosome_num];
+                                var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k];
+                                console.log('i am here')
+
                                 if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
                                     const tracks = [amplicon_selection];
                                     const locus = locus_selection;

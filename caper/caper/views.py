@@ -299,23 +299,52 @@ def igv_features_creation(locations):
 
     """
     features = []
+
+    ## for locuses, the structure should be like this:
+        ## each key is a chromosome
+        ## each value is a constructed focal range, including chr_num, chr_min, chr_max
+    locuses = {}
+    
     for location in locations:
         parsed = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")
+        chr = parsed[0]
+        start = int(parsed[1])
+        end = int(parsed[2])
         features.append({
-            'chr':parsed[0],
-            'start':int(parsed[1]),
-            'end':int(parsed[2])
+            'chr':chr,
+            'start':start,
+            'end':end,
         })
+        if chr in locuses:
+            if start < locuses[chr]['min']:
+                locuses[chr]['min'] = start
+            if end > locuses[chr]['max']:
+                locuses[chr]['max'] = end
+        else:
+            locuses[chr] = {
+                'min':start,
+                'max':end,
+                
+                }
+        # chr_num = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
 
-    chr_num = locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
-    chr_min = int(locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[1])
-    chr_max = int(locations[-1].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[-1])
-    if chr_min > chr_max:
-        locus = f"{chr_num}:{(int(chr_max)):,}-{(int(chr_min)):,}"
-    else:
-        locus = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
+    
 
-    return features, locus
+
+    ## reconstruct locuses
+    for key in locuses.keys():
+        chr_min = int(locuses[key]['min'])
+        chr_max = int(locuses[key]['max'])
+        chr_num = key.replace('chr', '')
+        locuses[key] = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
+    # chr_num = locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
+    # chr_min = int(locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[1])
+    # chr_max = int(locations[-1].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[-1])
+    # if chr_min > chr_max:
+    #     locus = f"{chr_num}:{(int(chr_max)):,}-{(int(chr_min)):,}"
+    # else:
+    #     locus = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
+    return features, locuses
 
 
 
@@ -342,25 +371,19 @@ def sample_page(request, project_name, sample_name):
         plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
         #plot, featid_to_updated_locations = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
         igv_tracks = []
-        locus_lst = []
         download_png = []
+        all_locuses = []
         reference_version = []
         for feature in sample_data_processed:
             reference_version.append(feature['Reference_version'])
             download_png.append({
                 'aa_amplicon_number':feature['AA_amplicon_number'],
                 'download_link':f"//{request.get_host()}/project/{project_linkid}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "_")
-
             })
 
             roi_features, locus = igv_features_creation(feature['Location'])
+            all_locuses.append(locus)
             # print("Converted location list {} to IGV formatted string {}".format(str(feature['Location']), locus))
-
-            if locus != "":
-                locus_lst.append(locus)
-            else:
-                locus_lst.append("")
-
             track = {
                 'name':feature['Feature_ID'],
                 # 'type': "seg",
@@ -376,7 +399,6 @@ def sample_page(request, project_name, sample_name):
             ## when we embed the django template, we can separate filters, and there's one that's "safe", and will
             ## have the IGV button in the features table 
             ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
-    
     return render(request, "pages/sample.html", 
     {'project': project, 
     'project_name': project_name, 
@@ -384,7 +406,7 @@ def sample_page(request, project_name, sample_name):
     'sample_data': sample_data_processed,
     'sample_name': sample_name, 'graph': plot, 
     'igv_tracks': json.dumps(igv_tracks),
-    'locuses': json.dumps(locus_lst),
+    'locuses': json.dumps(all_locuses),
     'download_links': json.dumps(download_png),
     'reference_versions': json.dumps(reference_version),
     }
