@@ -92,7 +92,8 @@ ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'amplico
 # Add CSRF trusted origins
 CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconrepository.org']
 
-
+# skip intermediate sign-out page
+ACCOUNT_LOGOUT_ON_GET = True
 # SSL Redirect
 SECURE_SSL_REDIRECT=True
 
@@ -134,6 +135,12 @@ AUTHENTICATION_BACKENDS = [
     "mezzanine.core.auth_backends.MezzanineBackend",
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
+
+# turn off email authentication when a user registers an account
+ACCOUNT_EMAIL_VERIFICATION = 'none'
+ACCOUNT_EMAIL_REQUIRED = False
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = True
 
 SECRET_KEY = 'c4nc3r'
 

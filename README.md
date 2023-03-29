@@ -8,7 +8,7 @@ This is the main repository for the AmpliconRepository.
 # How to set up a development server for AmpliconRepository
 
 ## Requirements
-- Python Virtual Environment
+- Python Virtual Environment (3.8 or higher)
 
 ## 1. Clone the repository from GitHub
 - Clone repo using https, ssh, or GitHub Desktop to your local machine
@@ -16,16 +16,28 @@ This is the main repository for the AmpliconRepository.
 ## 2. Set up the virtual environment and install packages:
 - In a terminal window, move to the cloned Github repo
 - Go to the caper top level directory (should see `requirements.txt`)
+#### Option A: Using python's environment manager
 - Create a new Python virtual environment:
 > `python -m venv ampliconenv`
 - Activate the new environment (you need to do this everytime before running the server):
 > `source ampliconenv/bin/activate`
 - Install required packages
 > `pip install -r requirements.txt`
+#### Option B: Using conda's environment manager
+- Create a new Conda environment
+> `conda create -n "ampliconenv" python=3.8.0`
+- To activate
+> `conda activate ampliconenv`
+- Install required packages
+> `pip install -r requirements.txt`
+
+
 
 ## 3. Set up MongoDB locally (for development)
+- Install MongoDB
+  - In Ubuntu this can be done with `sudo apt install mongodb-server-core`
 - If you don't have a database location set up, set up a location:
-> `mkdir ~/data/db/`
+> `mkdir -p ~/data/db/`
 - In a terminal window or tab with the `caperenv` environment active, run MongoDB locally:
 >  `mongod --dbpath ~/data/db` or `mongod --dbpath <DB_PATH>`
 
@@ -35,6 +47,8 @@ This is the main repository for the AmpliconRepository.
 - Connect to your local instance of MongoDB:
 > URI: `mongodb://localhost:27017`
 - Relevant data will be located in `/caper/projects/`
+- Run `export DB_URI='mongodb://localhost:27017'` in your terminal to set the environment variable for your local database.
+  - So that this is active every time, you can add the command above to your `~/.bashrc` file
 - Note that the latest version of Compass (1.34.2) won't work with our older DB version.  You can get an old compass for mac at https://downloads.mongodb.com/compass/mongodb-compass-1.28.4-darwin-x64.dmg
 
 ## 4. Set up secret keys for OAuth2
