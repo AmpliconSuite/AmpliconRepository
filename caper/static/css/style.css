@@ -70,4 +70,9 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
         padding-top: 0px;
         padding-bottom: 0px;
     }
+
+    .custom-bootstrap-menu  a:hover {
+        color: rgba(0,0,0,.8) !important;
+        text-decoration: none;
+    }
 }
