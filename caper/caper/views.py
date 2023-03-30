@@ -348,18 +348,7 @@ def sample_page(request, project_name, sample_name):
     download_png = []
     reference_version = []
     if sample_data_processed[0]['AA_amplicon_number'] == None:
-        plot = go.Figure(go.Scatter(x=[2], y = [2],
-                                     mode="markers+text",
-                                       text=['No Amplicons Detected'], 
-                                       textposition='middle center',
-                                       textfont = dict(
-                                            family = 'sans serif', 
-                                            size = 50,
-                                            color = "crimson"
-                                       ))).to_html(full_html=False, div_id='plotly_div')
-        igv_tracks = []
-        # locus_lst = []
-        download_png = []
+        plot = sample_plot.plot(sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
 
     else:
         plot = sample_plot.plot(sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
