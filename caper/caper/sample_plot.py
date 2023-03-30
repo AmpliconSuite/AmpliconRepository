@@ -55,7 +55,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     potential_ref_genomes = set()
     for item in sample:
         ## look for what reference genome is used
-        ref_version = item['Reference version']
+        ref_version = item['Reference_version']
         potential_ref_genomes.add(ref_version)
 
     if len(potential_ref_genomes) > 1:
@@ -71,18 +71,18 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
     # updated_loc_dict = defaultdict(list)  # stores the locations following the plotting adjustments
 
-    cnv_file_id = sample[0]['CNV BED file']
+    cnv_file_id = sample[0]['CNV_BED_file']
     # CNV_file = CNV_file[CNV_file.index('AA_outputs'):]
     
     cnv_file = fs_handle.get(ObjectId(cnv_file_id)).read()
     amplicon = pd.DataFrame(sample)
-    amplicon['AA amplicon number'] = amplicon['AA amplicon number'].astype(int).astype(str)
+    # amplicon['AA amplicon number'] = amplicon['AA amplicon number'].astype(int).astype(str)
     
     # valid_range = lambda loc: int(loc[1]) - int(loc[0]) > 1000000
     # valid_amp = lambda x: any(valid_range(loc.split(':')[1].split('-')) for loc in x['Location'].split(', '))
     # valid_amp_df = lambda df: [valid_amp(row) for row in df.iloc]
     # amplicon = amplicon[valid_amp_df(amplicon)]
-    amplicon_numbers = list(amplicon['AA amplicon number'].unique())
+    amplicon_numbers = list(amplicon['AA_amplicon_number'].unique())
     seen = set()
 
     chr_order = lambda x: int(x) if x.isnumeric() else ord(x[0])
@@ -103,7 +103,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     else:
         chromosomes = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X", "Y")
     
-    cmap = cm.get_cmap('Spectral', len(amplicon['AA amplicon number'].unique()))
+    cmap = cm.get_cmap('Spectral', len(amplicon['AA_amplicon_number'].unique()))
     amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(cmap.N)]
 
     rows = (len(chromosomes) // 4) + 1 if len(chromosomes) % 4 else len(chromosomes) // 4
@@ -169,16 +169,14 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         # for rind, row in amplicon.iterrows():
             row = amplicon.iloc[[i]]
             loc = row.iloc[0, 4]
-            feat_id = row.iloc[0, 2]
+            # feat_id = row.iloc[0, 2]
             # splitloc = loc.split(',')
             for element in loc:
-                element = element[1:-1]
                 chrsplit = element.split(':')
                 chr = get_chrom_num(element)
-                if chr == key or chr[1:] == key:
+                if chr == key:
                     curr_updated_loc = chr + ":"
                     for j in range(0, 2):
-
                         row['Chromosome Number'] = chrsplit[0]
                         locsplit = chrsplit[1].split('-') 
                         row['Feature Start Position'] = int(float(locsplit[0]))
@@ -201,16 +199,15 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                         amplicon_df = pd.concat([row, amplicon_df])
 
                     # print(curr_updated_loc)
-                    amplicon_df['Feature Start Position'] = amplicon_df['Feature Start Position'].astype(int)
-                    amplicon_df['Feature End Position'] = amplicon_df['Feature End Position'].astype(int)
-                    amplicon_df['Feature Position'] = amplicon_df['Feature Position'].astype(int)
-                    amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature maximum copy number'].astype(float)
-                    amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature median copy number'].astype(float)
-                    amplicon_df = amplicon_df.round(decimals=2)
-                    #print(amplicon_df)
-                    for i in range(len(amplicon_df['AA amplicon number'].unique())):
-                        number = amplicon_df['AA amplicon number'].unique()[i]
-                        per_amplicon = amplicon_df[amplicon_df['AA amplicon number'] == number]
+                    # amplicon_df['Feature Start Position'] = amplicon_df['Feature Start Position']
+                    # amplicon_df['Feature End Position'] = amplicon_df['Feature End Position']
+                    # amplicon_df['Feature Position'] = amplicon_df['Feature Position']
+                    amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature_maximum_copy_number']
+                    amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature_median_copy_number']
+                    # amplicon_df = amplicon_df.round(decimals=2)
+                    for i in range(len(amplicon_df['AA_amplicon_number'].unique())):
+                        number = amplicon_df['AA_amplicon_number'].unique()[i]
+                        per_amplicon = amplicon_df[amplicon_df['AA_amplicon_number'] == number]
                         
                         show_legend = number not in seen
                         seen.add(number)
@@ -227,7 +224,9 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                         #         f'<b class="/{project_data_dir}/AA_outputs/{sample_name}/{sample_name}_AA_results/{sample_name}_amplicon{number}.png">Click to Download Amplicon {number} PNG</b>',
                         #         name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
                         #         line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=number, text='hallo'), row = rowind, col = colind)
-                        amplicon_df2 = amplicon_df[['Classification','Chromosome Number', 'Feature Start Position', 'Feature End Position','Oncogenes','Feature Maximum Copy Number','AA amplicon number', 'Feature Position','Y-axis']]
+                        amplicon_df2 = amplicon_df[['Classification','Chromosome Number', 'Feature Start Position',
+                                                    'Feature End Position','Oncogenes','Feature Maximum Copy Number',
+                                                    'AA_amplicon_number', 'Feature Position','Y-axis']]
                         # amplicon_df2 = amplicon_df2.astype({'AA PNG file':'string'})
                         # print(amplicon_df.head())
                         fig.add_trace(go.Scatter(x = per_amplicon['Feature Position'], y = per_amplicon['Y-axis'], 
@@ -238,7 +237,8 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                                 '<i>Feature Maximum Copy Number:</i> %{customdata[5]}<br>' +
                                 '<b>Click to Download Amplicon PNG</b>' 
                                 ,name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
-                                line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=int(number)), row = rowind, col = colind)
+                                line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=number),
+                                      row = rowind, col = colind)
                         fig.update_traces(textposition="bottom right")
 
                     amplicon_df = pd.DataFrame()
