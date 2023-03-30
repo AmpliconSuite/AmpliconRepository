@@ -113,6 +113,7 @@ def sample_data_from_feature_list(features_list):
     sample_data = []
     for index, row in df2.iterrows():
         sample_dict = dict()
+        sample_dict['AA amplicon number'] = str(int(row['AA amplicon number']))
         sample_dict['Sample_name'] = row['Sample_name']
         sample_dict['Features'] = row['Features']
         sample_dict['Oncogenes'] = get_sample_oncogenes(features_list, row['Sample_name'])
@@ -429,10 +430,10 @@ def sample_download(request, project_name, sample_name):
         png_id = feature['AA PNG file']
         
         # get files from gridfs
-        bed_file = fs_handle.get(ObjectId(bed_id)).read()
+        # bed_file = fs_handle.get(ObjectId(bed_id)).read()
         if bed_id is not None:
             if not ObjectId.is_valid(bed_id):
-                 print("Sample: ", sample, "Feature: ", feature_id,"BED_ID is ->" ,bed_id, "<-")
+                 print("Sample: ", sample_name, "Feature: ", feature_id,"BED_ID is ->" , bed_id, "<-")
                  break
 
             bed_file = fs_handle.get(ObjectId(bed_id)).read()

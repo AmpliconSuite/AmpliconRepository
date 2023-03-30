@@ -187,7 +187,6 @@
                                 var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
                                 var locus_selection = JSON.parse('{{ locuses|safe }}')[k][chromosome_num];
                                 var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k];
-                                console.log('i am here')
 
                                 if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
                                     const tracks = [amplicon_selection];
