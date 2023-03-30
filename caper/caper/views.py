@@ -285,11 +285,13 @@ def project_page(request, project_name):
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
+    # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
+    real_project_name = project['project_name']
     tar_id = project['tarfile']
     tarfile = fs_handle.get(ObjectId(tar_id)).read()
     response = HttpResponse(tarfile)
     response['Content-Type'] = 'application/x-zip-compressed'
-    response['Content-Disposition'] = f'attachment; filename={project_name}.tar.gz'
+    response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
     clear_tmp()
     return response
 
@@ -428,13 +430,23 @@ def sample_download(request, project_name, sample_name):
         
         # get files from gridfs
         bed_file = fs_handle.get(ObjectId(bed_id)).read()
+        if bed_id is not None:
+            if not ObjectId.is_valid(bed_id):
+                 print("Sample: ", sample, "Feature: ", feature_id,"BED_ID is ->" ,bed_id, "<-")
+                 break
+
+            bed_file = fs_handle.get(ObjectId(bed_id)).read()
+            with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
+                bed_file_tmp.write(bed_file)
+  
+
         cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
         pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
         png_file = fs_handle.get(ObjectId(png_id)).read()
          
         # send files to tmp file system
-        with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
-            bed_file_tmp.write(bed_file)
+#        with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
+#            bed_file_tmp.write(bed_file)
         with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
             cnv_file_tmp.write(cnv_file)
         with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
@@ -449,7 +461,8 @@ def sample_download(request, project_name, sample_name):
         response = HttpResponse(zip_file)
         response['Content-Type'] = 'application/x-zip-compressed'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.zip'
-    os.remove(f'/{sample_name}.zip')
+
+    os.remove(f'{sample_name}.zip')
     return response
     
 
@@ -751,42 +764,18 @@ def create_project(request):
             for feature in features:
                 if len(feature) > 0:
                     # get paths
-                    bed_path = feature['Feature BED file'] 
-                    cnv_path = feature['CNV BED file']
-                    pdf_path = feature['AA PDF file']
-                    png_path = feature['AA PNG file']
-                    
-                    # convert tab files to python format
-                    try:
-                        with open(f'{project_data_path}/results/{bed_path}', "rb") as bed_file:
-                            bed_file_id = fs_handle.put(bed_file)
-                    except:
-                        bed_file_id = "Not Provided"
-                    
-                    try:
-                        with open(f'{project_data_path}/results/{cnv_path}', "rb") as cnv_file:
-                            cnv_file_id = fs_handle.put(cnv_file)
-                    except:
-                        bed_file_id = "Not Provided"
-                    
-                    try:
-                        # convert image files to python format
-                        with open(f'{project_data_path}/results/{pdf_path}', "rb") as pdf:
-                            pdf_id = fs_handle.put(pdf)
-                    except:
-                        bed_file_id = "Not Provided"
+                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file']
+                    for k in key_names:
+                        try:
+                            path_var = feature[k]
+                            with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
+                                id_var = fs_handle.put(file_var)
 
-                    try:
-                        with open(f'{project_data_path}/results/{png_path}', "rb") as png:
-                            png_id = fs_handle.put(png)
-                    except:
-                        bed_file_id = "Not Provided"
-                    
-                    # add files to runs dict
-                    feature['Feature BED file'] = bed_file_id
-                    feature['CNV BED file'] = cnv_file_id
-                    feature['AA PDF file'] = pdf_id
-                    feature['AA PNG file'] = png_id
+                        except:
+                            id_var = "Not Provided"
+
+                        feature[k] = id_var
+
         if check_project_exists(project_name):
             clear_tmp()
             return HttpResponse("Project already exists")
@@ -808,10 +797,9 @@ def create_project(request):
             project['Classification'] = get_project_classifications(runs)
             # print(project)
             if form.is_valid():
-                collection_handle.insert_one(project)
-                
+                new_id = collection_handle.insert_one(project)
                 clear_tmp()
-                return redirect('project_page', project_name=project_name)
+                return redirect('project_page', project_name=new_id.inserted_id)
             else:
                 clear_tmp()
                 raise Http404()
