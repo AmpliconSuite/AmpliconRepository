@@ -1,6 +1,6 @@
 # AmpliconRepository
 
-#### Authors: Forrest Kim, Jens Luebeck, Ted Liefeld, Edwin Huang, Thorin Tabor, Vineet Bafna
+#### Authors: Forrest Kim, Jens Luebeck, Ted Liefeld, Edwin Huang, Gino Prasad, Rohil Ahuja, Thorin Tabor, Vineet Bafna
 ---
 
 This is the main repository for the AmpliconRepository.

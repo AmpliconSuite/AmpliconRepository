@@ -40,26 +40,31 @@ db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
 fs_handle = gridfs.GridFS(db_handle)
 
+
 def get_date():
     today = datetime.datetime.now()
     date = today.isoformat()
     return date
 
+
 def prepare_project_linkid(project):
     project['linkid'] = project['_id']
+
 
 def get_one_project(project_name_or_uuid):
     try:
         project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': False})[0]
         prepare_project_linkid(project)
         return project
+
     except:
         project = None    
 
     # backstop using the name the old way
     if project is None:
-        project =  collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+        project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
         prepare_project_linkid(project)
+
     return project
 
 
@@ -72,26 +77,19 @@ def get_one_sample(project_name, sample_name):
         if len(current) > 0:
             if current[0]['Sample name'] == sample_name:
                 sample_out = current
+
     return project, sample_out
 
 
 def get_one_feature(project_name, sample_name, feature_name):
     project, sample = get_one_sample(project_name, sample_name)
-    feature = list(filter(lambda sample: sample['Feature ID'] == feature_name, sample))
+    feature = list(filter(lambda s: s['Feature_ID'] == feature_name, sample))
     return project, sample, feature
 
-# def get_all_projects(project_name, user):
-#     public_projects = list(collection_handle.find({'private' : False, 'project_name' : project_name}))
-#     private_projects = list(collection_handle.find({'private' : True, 'user' : user , 'project_name' : project_name}))
-#     return public_projects, private_projects
-
-# def get_one_feature(project_name,sample_name, feature_name):
-#     project, sample = get_one_sample(project_name,sample_name)
-#     feature = list(filter(lambda sample: sample['Feature ID'] == feature_name, sample))
-#     return project, sample, feature
 
 def check_project_exists(project_name):
     return collection_handle.count_documents({ 'project_name': project_name }, limit = 1)
+
 
 def samples_to_dict(form_file):
     file_json = json.load(form_file)
@@ -100,12 +98,15 @@ def samples_to_dict(form_file):
     for key, value in all_samples.items():
         sample_name = key
         runs[sample_name] = value
+
     return runs
+
 
 def form_to_dict(form):
     run = form.save(commit=False)
     form_dict = model_to_dict(run)
     return form_dict
+
 
 def sample_data_from_feature_list(features_list):
     df = pd.DataFrame(features_list)
@@ -118,7 +119,9 @@ def sample_data_from_feature_list(features_list):
         sample_dict['Oncogenes'] = get_sample_oncogenes(features_list, row['Sample_name'])
         sample_dict['Classifications'] = get_sample_classifications(features_list, row['Sample_name'])
         sample_data.append(sample_dict)
+
     return sample_data
+
 
 def replace_space_to_underscore(runs):
     if type(runs) == dict:
@@ -128,8 +131,11 @@ def replace_space_to_underscore(runs):
                 for key in list(sample.keys()):
                     newkey = key.replace(" ", "_")
                     sample[newkey] = sample.pop(key)
+
                 run_list.append(sample)
+
         return run_list
+
     else:
         run_list = []
         for sample in runs:
@@ -137,18 +143,29 @@ def replace_space_to_underscore(runs):
             for key in list(sample.keys()):
                 newkey = key.replace(" ", "_")
                 run_list[-1][newkey] = sample[key]
+
         return run_list
+
 
 def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
     if copy:
         sample_data = [feature.copy() for feature in sample_data]
 
+    # sample_data.sort(key=lambda x: (int(x['AA_amplicon_number']), x['Feature_ID']))
     for feature in sample_data:
         for key, value in feature.items():
             if type(value) == float:
-                feature[key] = round(value, 1)
+                if key == 'AA_amplicon_number':
+                    feature[key] = int(value)
+
+                else:
+                    feature[key] = round(value, 1)
+
             elif type(value) == str and value.startswith('['):
                 feature[key] = ', \n'.join(value[2:-2].split("', '"))
+
+            else:
+                feature[key] = value
 
         locations = [i.replace("'","").strip() for i in feature['Location']]
         feature['Location'] = locations
@@ -158,6 +175,7 @@ def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
     # print(sample_data[0])
     return sample_data
 
+
 def get_project_oncogenes(runs):
     oncogenes = set()
     for sample in runs:
@@ -166,9 +184,10 @@ def get_project_oncogenes(runs):
                 for gene in feature['Oncogenes']:
                     if len(gene) != 0:
                         oncogene = gene.strip().replace("'",'')
-                        sample_name = feature['Sample name']
                         oncogenes.add(oncogene)
+
     return list(oncogenes)
+
 
 def get_project_classifications(runs):
     classes = set()
@@ -177,7 +196,9 @@ def get_project_classifications(runs):
             if feature['Classification']:
                 uppercase = feature['Classification'].upper()
                 classes.add(uppercase)
+
     return list(classes)
+
 
 def get_sample_oncogenes(feature_list, sample_name):
     oncogenes = set()
@@ -187,7 +208,9 @@ def get_sample_oncogenes(feature_list, sample_name):
                 for gene in feature['Oncogenes']:
                     if len(gene) != 0:
                         oncogenes.add(gene.strip().replace("'",''))
+
     return list(oncogenes)
+
 
 def get_sample_classifications(feature_list, sample_name):
     classes = set()
@@ -196,7 +219,9 @@ def get_sample_classifications(feature_list, sample_name):
             if feature['Classification']:
                 uppercase = feature['Classification'].upper()
                 classes.add(uppercase)
+
     return list(classes)
+
 
 # @caper.context_processor
 def get_files(fs_id):
@@ -204,29 +229,36 @@ def get_files(fs_id):
     # response =  StreamingHttpResponse(FileWrapper(wrapper),content_type=file_['contentType'])
     return wrapper
 
+
 def index(request):
     if request.user.is_authenticated:
         user = request.user.email
         private_projects = list(collection_handle.find({ 'private' : True, 'project_members' : user , 'delete': False}))
         for proj in private_projects:
             prepare_project_linkid(proj)
+
     else:
         private_projects = []
+
     public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
 
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects})
 
+
 def profile(request):
     user = get_current_user(request)
     projects = list(collection_handle.find({ 'project_members' : user , 'delete': False}))
     for proj in projects:
         prepare_project_linkid(proj)
+
     return render(request, "pages/profile.html", {'projects': projects})
+
 
 def login(request):
     return render(request, "pages/login.html")
+
 
 def project_page(request, project_name):
     project = get_one_project(project_name)
@@ -240,48 +272,6 @@ def project_page(request, project_name):
     pie_chart = None 
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
 
-# def project_download(request, project_name):
-#     project = get_one_project(project_name)
-#     samples = project['runs']
-    
-#     for sample in samples:
-#         if len(samples[sample]) > 0:
-#             for feature in samples[sample]:
-#                 # set up file system
-#                 feature_id = feature['Feature ID']
-#                 feature_data_path = f"tmp/{project_name}/{feature['Sample name']}/{feature_id}"
-#                 os.makedirs(feature_data_path, exist_ok=True)
-#                 # get object ids
-#                 bed_id = feature['Feature BED file'] 
-#                 cnv_id = feature['CNV BED file']
-#                 pdf_id = feature['AA PDF file']
-#                 png_id = feature['AA PNG file']
-                
-#                 # get files from gridfs
-#                 bed_file = fs_handle.get(ObjectId(bed_id)).read()
-#                 cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
-#                 pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
-#                 png_file = fs_handle.get(ObjectId(png_id)).read()
-                
-#                 # send files to tmp file system
-#                 with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
-#                     bed_file_tmp.write(bed_file)
-#                 with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
-#                     cnv_file_tmp.write(cnv_file)
-#                 with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
-#                     pdf_file_tmp.write(pdf_file)
-#                 with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
-#                     png_file_tmp.write(png_file)
-
-#     project_data_path = f"tmp/{project_name}/"        
-#     shutil.make_archive(f'{project_name}', 'zip', project_data_path)
-#     zip_file_path = f"{project_name}.zip"
-#     with open(zip_file_path, 'rb') as zip_file:
-#         response = HttpResponse(zip_file)
-#         response['Content-Type'] = 'application/x-zip-compressed'
-#         response['Content-Disposition'] = f'attachment; filename={project_name}.zip'
-#     clear_tmp()
-#     return response
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
@@ -295,75 +285,84 @@ def project_download(request, project_name):
     clear_tmp()
     return response
 
+
 def igv_features_creation(locations):
     """
     Locations should look like: ["'chr11:56595156-58875237'", " 'chr11:66684707-68055335'", " 'chr11:69975662-70290667'"]
 
     """
     features = []
+
+    ## for locuses, the structure should be like this:
+        ## each key is a chromosome
+        ## each value is a constructed focal range, including chr_num, chr_min, chr_max
+    locuses = {}
+    
     for location in locations:
         parsed = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")
+        chrom = parsed[0]
+        start = int(parsed[1])
+        end = int(parsed[2])
         features.append({
-            'chr':parsed[0],
-            'start':int(parsed[1]),
-            'end':int(parsed[2])
+            'chr':chrom,
+            'start':start,
+            'end':end,
         })
+        if chrom in locuses:
+            if start < locuses[chrom]['min']:
+                locuses[chrom]['min'] = start
+            if end > locuses[chrom]['max']:
+                locuses[chrom]['max'] = end
+        else:
+            locuses[chrom] = {
+                'min':start,
+                'max':end,
+                
+                }
+        # chr_num = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
 
-    chr_num = locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
-    chr_min = int(locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[1])
-    chr_max = int(locations[-1].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[-1])
-    if chr_min > chr_max:
-        locus = f"{chr_num}:{(int(chr_max)):,}-{(int(chr_min)):,}"
-    else:
-        locus = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
-
-    return features, locus
-
+    ## reconstruct locuses
+    for key in locuses.keys():
+        chr_min = int(locuses[key]['min'])
+        chr_max = int(locuses[key]['max'])
+        chr_num = key.replace('chr', '')
+        locuses[key] = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
+    # chr_num = locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
+    # chr_min = int(locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[1])
+    # chr_max = int(locations[-1].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[-1])
+    # if chr_min > chr_max:
+    #     locus = f"{chr_num}:{(int(chr_max)):,}-{(int(chr_min)):,}"
+    # else:
+    #     locus = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
+    return features, locuses
 
 
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
-    # print(f'sample name is: ', sample_name)
     project, sample_data = get_one_sample(project_name, sample_name)
     project_linkid = project['_id']
-
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
-    # print(sample_data_processed[0])
     filter_plots = not request.GET.get('display_all_chr')
-    if sample_data[0]['AA amplicon number'] == None:
-        plot = go.Figure(go.Scatter(x=[2], y = [2],
-                                     mode="markers+text",
-                                       text=['No Amplicons Detected'], 
-                                       textposition='middle center',
-                                       textfont = dict(
-                                            family = 'sans serif', 
-                                            size = 50,
-                                            color = "crimson"
-                                       ))).to_html(full_html=False, div_id='plotly_div')
-        igv_tracks = []
-        locus_lst = []
-        download_png = []
-    else:
-        plot = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
-        #plot, featid_to_updated_locations = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
-        igv_tracks = []
-        locus_lst = []
-        download_png = []
-        for feature in sample_data_processed:
-            download_png.append({
-                'aa_amplicon_number':feature['AA_amplicon_number'],
-                'download_link':f"//{request.get_host()}/project/{project_linkid}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "_")
+    all_locuses = []
+    igv_tracks = []
+    download_png = []
+    reference_version = []
+    if sample_data_processed[0]['AA_amplicon_number'] == None:
+        plot = sample_plot.plot(sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
 
+    else:
+        plot = sample_plot.plot(sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
+        #plot, featid_to_updated_locations = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
+        for feature in sample_data_processed:
+            reference_version.append(feature['Reference_version'])
+            download_png.append({
+                'aa_amplicon_number': feature['AA_amplicon_number'],
+                'download_link': f"//{request.get_host()}/project/{project_linkid}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/png/{feature['AA_PNG_file']}".replace(" ", "_")
             })
 
             roi_features, locus = igv_features_creation(feature['Location'])
+            all_locuses.append(locus)
             # print("Converted location list {} to IGV formatted string {}".format(str(feature['Location']), locus))
-
-            if locus != "":
-                locus_lst.append(locus)
-            else:
-                locus_lst.append("")
-
             track = {
                 'name':feature['Feature_ID'],
                 # 'type': "seg",
@@ -379,7 +378,6 @@ def sample_page(request, project_name, sample_name):
             ## when we embed the django template, we can separate filters, and there's one that's "safe", and will
             ## have the IGV button in the features table 
             ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
-    
     return render(request, "pages/sample.html", 
     {'project': project, 
     'project_name': project_name, 
@@ -387,30 +385,34 @@ def sample_page(request, project_name, sample_name):
     'sample_data': sample_data_processed,
     'sample_name': sample_name, 'graph': plot, 
     'igv_tracks': json.dumps(igv_tracks),
-    'locuses': json.dumps(locus_lst),
-    'download_links': json.dumps(download_png)
+    'locuses': json.dumps(all_locuses),
+    'download_links': json.dumps(download_png),
+    'reference_versions': json.dumps(reference_version),
     }
     )
-    
+
+
 def sample_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
-    
-    for feature in sample_data:
+    sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
+    for feature in sample_data_processed:
         # set up file system
-        feature_id = feature['Feature ID']
+        feature_id = feature['Feature_ID']
         feature_data_path = f"tmp/{project_name}/{sample_name}/{feature_id}"
         os.makedirs(feature_data_path, exist_ok=True)
         # get object ids
-        bed_id = feature['Feature BED file'] 
-        cnv_id = feature['CNV BED file']
-        pdf_id = feature['AA PDF file']
-        png_id = feature['AA PNG file']
+        bed_id = feature['Feature_BED_file']
+        cnv_id = feature['CNV_BED_file']
+        pdf_id = feature['AA_PDF_file']
+        png_id = feature['AA_PNG_file']
+        # TODO: Get all AA files, and package them with the download! The path of the AA files is stored in this variable
+        print(feature['AA_summary_file'])
         
         # get files from gridfs
-        bed_file = fs_handle.get(ObjectId(bed_id)).read()
+        # bed_file = fs_handle.get(ObjectId(bed_id)).read()
         if bed_id is not None:
             if not ObjectId.is_valid(bed_id):
-                 print("Sample: ", sample, "Feature: ", feature_id,"BED_ID is ->" ,bed_id, "<-")
+                 print("Sample: ", sample_name, "Feature: ", feature_id,"BED_ID is ->" , bed_id, "<-")
                  break
 
             bed_file = fs_handle.get(ObjectId(bed_id)).read()
@@ -589,10 +591,10 @@ def gene_search_download(request, project_name):
                 feature_data_path = f"tmp/{project_name}/{feature['Sample name']}/{feature_id}"
                 os.makedirs(feature_data_path, exist_ok=True)
                 # get object ids
-                bed_id = feature['Feature BED file'] 
-                cnv_id = feature['CNV BED file']
-                pdf_id = feature['AA PDF file']
-                png_id = feature['AA PNG file']
+                bed_id = feature['Feature_BED_file']
+                cnv_id = feature['CNV_BED_file']
+                pdf_id = feature['AA_PDF_file']
+                png_id = feature['AA_PNG_file']
                 
                 # get files from gridfs
                 bed_file = fs_handle.get(ObjectId(bed_id)).read()
@@ -610,7 +612,7 @@ def gene_search_download(request, project_name):
                 with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
                     png_file_tmp.write(png_file)
 
-    project_data_path = f"tmp/{project_name}/"        
+    project_data_path = f"tmp/{project_name}/"
     shutil.make_archive(f'{project_name}', 'zip', project_data_path)
     zip_file_path = f"{project_name}.zip"
     with open(zip_file_path, 'rb') as zip_file:
@@ -656,7 +658,9 @@ def edit_project_page(request, project_name):
             if runs != 0:
                 current_runs.update(runs)
             query = {'project_name': project_name}
-            new_val = { "$set": {'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(), 'private': form_dict['private'], 'project_members': form_dict['project_members'], 'Oncogenes': get_project_oncogenes(current_runs)} }
+            new_val = { "$set": {'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
+                                 'private': form_dict['private'], 'project_members': form_dict['project_members'],
+                                 'Oncogenes': get_project_oncogenes(current_runs)} }
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
                 # print(f'in valid form')
