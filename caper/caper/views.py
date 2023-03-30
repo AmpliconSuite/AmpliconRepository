@@ -151,7 +151,7 @@ def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
     if copy:
         sample_data = [feature.copy() for feature in sample_data]
 
-    sample_data.sort(key=lambda x: (int(x['AA_amplicon_number']), x['Feature_ID']))
+    # sample_data.sort(key=lambda x: (int(x['AA_amplicon_number']), x['Feature_ID']))
     for feature in sample_data:
         for key, value in feature.items():
             if type(value) == float:
@@ -343,6 +343,10 @@ def sample_page(request, project_name, sample_name):
     project_linkid = project['_id']
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     filter_plots = not request.GET.get('display_all_chr')
+    all_locuses = []
+    igv_tracks = []
+    download_png = []
+    reference_version = []
     if sample_data_processed[0]['AA_amplicon_number'] == None:
         plot = go.Figure(go.Scatter(x=[2], y = [2],
                                      mode="markers+text",
@@ -360,10 +364,6 @@ def sample_page(request, project_name, sample_name):
     else:
         plot = sample_plot.plot(sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
         #plot, featid_to_updated_locations = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
-        igv_tracks = []
-        download_png = []
-        all_locuses = []
-        reference_version = []
         for feature in sample_data_processed:
             reference_version.append(feature['Reference_version'])
             download_png.append({

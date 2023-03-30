@@ -173,9 +173,9 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             # splitloc = loc.split(',')
             for element in loc:
                 chrsplit = element.split(':')
-                chr = get_chrom_num(element)
-                if chr == key:
-                    curr_updated_loc = chr + ":"
+                chrom = get_chrom_num(element)
+                if chrom == key:
+                    curr_updated_loc = chrom + ":"
                     for j in range(0, 2):
                         row['Chromosome Number'] = chrsplit[0]
                         locsplit = chrsplit[1].split('-') 
