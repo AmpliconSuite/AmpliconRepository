@@ -164,12 +164,11 @@
             var plot_element = document.getElementById("plotly_div");
             plot_element.on('plotly_click', function(data){{
                 console.log('click');
-                // console.log(plot_element);
                 var link = '';
                 for (let i = 0; i < data['points'].length; i++) {{
                     var name = data['points'][i]['data']['name'];
-                    var chromosome_num = data['points'][i]['customdata'][1];
                     if (name.includes('Amplicon')) {{
+                        var chromosome_num = data['points'][i]['customdata'][1];
                         link = data['points'][i]['data']['hovertemplate'].split('"')[1];
                         var amplicon_num = name.replace("<b>", "").replace("</b>", "").split(" ")[1];
 

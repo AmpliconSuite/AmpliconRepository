@@ -177,7 +177,8 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                 if chrom == key:
                     curr_updated_loc = chrom + ":"
                     for j in range(0, 2):
-                        row['Chromosome Number'] = chrsplit[0]
+                        # row['Chromosome Number'] = chrsplit[0]
+                        row['Chromosome Number'] = chrom
                         locsplit = chrsplit[1].split('-') 
                         row['Feature Start Position'] = int(float(locsplit[0]))
                         row['Feature End Position'] = int(float(locsplit[1].strip()))
