@@ -300,21 +300,21 @@ def igv_features_creation(locations):
     
     for location in locations:
         parsed = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")
-        chr = parsed[0]
+        chrom = parsed[0]
         start = int(parsed[1])
         end = int(parsed[2])
         features.append({
-            'chr':chr,
+            'chr':chrom,
             'start':start,
             'end':end,
         })
-        if chr in locuses:
-            if start < locuses[chr]['min']:
-                locuses[chr]['min'] = start
-            if end > locuses[chr]['max']:
-                locuses[chr]['max'] = end
+        if chrom in locuses:
+            if start < locuses[chrom]['min']:
+                locuses[chrom]['min'] = start
+            if end > locuses[chrom]['max']:
+                locuses[chrom]['max'] = end
         else:
-            locuses[chr] = {
+            locuses[chrom] = {
                 'min':start,
                 'max':end,
                 
