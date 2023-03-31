@@ -47,6 +47,16 @@ def get_chrom_num(location: str):
     #     chr_num = location[0]
     # return chr_num
 
+def get_chrom_lens(ref):
+    chrom_len_dict = {}
+    with open(f'bed_files/{ref}_noAlt.fa.fai') as infile:
+        for line in infile:
+            fields = line.rstrip().rsplit()
+            if fields:
+                chrom_len_dict[fields[0].lstrip('chr')] = int(fields[1])
+
+    return chrom_len_dict
+
 
 def plot(sample, sample_name, project_name, filter_plots=False):
     # project_data_dir = f'project_data/{project_name}/extracted'
@@ -70,8 +80,9 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         full_cent_df.at[i, 0] = chr_num
 
     # updated_loc_dict = defaultdict(list)  # stores the locations following the plotting adjustments
-
+    chrom_lens = get_chrom_lens(ref)
     cnv_file_id = sample[0]['CNV_BED_file']
+
     # CNV_file = CNV_file[CNV_file.index('AA_outputs'):]
     
     cnv_file = fs_handle.get(ObjectId(cnv_file_id)).read()
@@ -82,7 +93,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     # valid_amp = lambda x: any(valid_range(loc.split(':')[1].split('-')) for loc in x['Location'].split(', '))
     # valid_amp_df = lambda df: [valid_amp(row) for row in df.iloc]
     # amplicon = amplicon[valid_amp_df(amplicon)]
-    amplicon_numbers = list(amplicon['AA_amplicon_number'].unique())
+    amplicon_numbers = sorted(list(amplicon['AA_amplicon_number'].unique()))
     seen = set()
 
     chr_order = lambda x: int(x) if x.isnumeric() else ord(x[0])
@@ -113,8 +124,8 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
     if chromosomes:
         rows = (len(chromosomes) // 4) + 1 if len(chromosomes) % 4 else len(chromosomes) // 4
-        fig = make_subplots(rows=rows, cols=4
-            ,subplot_titles=chromosomes, horizontal_spacing=0.05, vertical_spacing = 0.1 if rows < 4 else 0.05)
+        fig = make_subplots(rows=rows, cols=4,
+            subplot_titles=chromosomes, horizontal_spacing=0.05, vertical_spacing = 0.1 if rows < 4 else 0.05)
 
         # df = pd.read_csv(CNV_file, sep = "\t", header = None)
         # with open(cnv_file, 'rb') as cnv:
@@ -135,6 +146,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
         rowind = 1
         colind = 1
+        min_width = 0.03
         # for key in (chromosomes if filter_plots else dfs):
         for key in chromosomes:
             # print(key)
@@ -143,31 +155,33 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             log_scale = False
             x_array = []
             y_array = []
-            for i in range(len(dfs[key])):
-                #CN Start
-                x_array.append(dfs[key].iloc[i, 1])
-                y_array.append(dfs[key].iloc[i, 4])
-
-                if dfs[key].iloc[i, 2] - dfs[key].iloc[i, 1] > 10000000:
-                    divisor = (dfs[key].iloc[i, 2] - dfs[key].iloc[i, 1]) / 10
-                    for j in range(1, 11):
-                        x_array.append(dfs[key].iloc[i, 1] + divisor * j)
+            if key in dfs:
+                for i in range(len(dfs[key])):
+                    #CN Start
+                    if len(dfs[key].columns) >= 4:
+                        x_array.append(dfs[key].iloc[i, 1])
                         y_array.append(dfs[key].iloc[i, 4])
-                else:
-                    #CN End
-                    x_array.append(dfs[key].iloc[i, 2])
-                    y_array.append(dfs[key].iloc[i, 4])
 
-                #Drop off
-                x_array.append(dfs[key].iloc[i, 2])
-                y_array.append(np.nan)
+                        if dfs[key].iloc[i, 2] - dfs[key].iloc[i, 1] > 10000000:
+                            divisor = (dfs[key].iloc[i, 2] - dfs[key].iloc[i, 1]) / 10
+                            for j in range(1, 11):
+                                x_array.append(dfs[key].iloc[i, 1] + divisor * j)
+                                y_array.append(dfs[key].iloc[i, 4])
+                        else:
+                            #CN End
+                            x_array.append(dfs[key].iloc[i, 2])
+                            y_array.append(dfs[key].iloc[i, 4])
 
+                        #Drop off
+                        x_array.append(dfs[key].iloc[i, 2])
+                        y_array.append(np.nan)
 
-            x_array = [round(item, 2) for item in x_array]
-            y_array = [round(item, 2) for item in y_array]
+                x_range = chrom_lens[key]
+                if x_array and y_array:
+                    x_array = [round(item, 2) for item in x_array]
+                    y_array = [round(item, 2) for item in y_array]
 
-            x_range = max(x_array) - min(x_array)
-            min_width = 0.03
+                    # x_range = max(x_array) - min(x_array)
 
             amplicon_df = pd.DataFrame()
             for i in range(len(amplicon)):
@@ -219,18 +233,6 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                             show_legend = number not in seen
                             seen.add(number)
 
-                            # feature_name = amplicon_df['Feature ID'][i]
-                            # png_id = amplicon_df['AA PNG file'][i]
-
-                            # fig.add_trace(go.Scatter(x = per_amplicon['Feature Position'], y = per_amplicon['Y-axis'],
-                            #         customdata = amplicon_df, mode='lines',fill='tozeroy', hoveron='points+fills', hovertemplate=
-                            #         '<br><i>Feature Classification:</i> %{customdata[3]}<br>' +
-                            #         '<i>%{customdata[16]}:</i> %{customdata[17]} - %{customdata[18]}<br>' +
-                            #         '<i>Oncogenes:</i> %{customdata[5]}<br>'+
-                            #         '<i>Feature Maximum Copy Number:</i> %{customdata[9]}<br>'
-                            #         f'<b class="/{project_data_dir}/AA_outputs/{sample_name}/{sample_name}_AA_results/{sample_name}_amplicon{number}.png">Click to Download Amplicon {number} PNG</b>',
-                            #         name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
-                            #         line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=number, text='hallo'), row = rowind, col = colind)
                             amplicon_df2 = amplicon_df[['Classification','Chromosome Number', 'Feature Start Position',
                                                         'Feature End Position','Oncogenes','Feature Maximum Copy Number',
                                                         'AA_amplicon_number', 'Feature Position','Y-axis']]
@@ -244,9 +246,9 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                                     '<i>Feature Maximum Copy Number:</i> %{customdata[5]}<br>' +
                                     '<b>Click to Download Amplicon PNG</b>'
                                     ,name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
-                                    line = dict(color = amplicon_colors[amplicon_numbers.index(number)]), showlegend=show_legend, legendrank=number),
+                                    line = dict(color = amplicon_colors[amplicon_numbers.index(number)]),
+                                        showlegend=show_legend, legendrank=number),
                                           row = rowind, col = colind)
-                            fig.update_traces(textposition="bottom right")
 
                         amplicon_df = pd.DataFrame()
 
@@ -284,8 +286,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                     ), row = rowind, col = colind)
 
             fig.add_trace(go.Scatter(x=x_array,y=y_array,mode = 'lines', name="Copy Number", showlegend = False, line = dict(color = 'black')), row = rowind, col = colind)
-            fig.update_xaxes(showline = True, linewidth = 1, title_font_size = 10,  ticksuffix = " ")
-            # fig.update_traces(textposition="bottom right")  # Jens: I added this and then commented out since it seems to have no effect. Guess it wasn't needed.
+            fig.update_xaxes(row=rowind, col=colind, range=[0, x_range])
 
             #print(y_array)
             for element in y_array:
@@ -294,7 +295,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
             if log_scale:
                 fig.update_yaxes(autorange = False, type="log", ticks = 'outside', ticktext = ['0','1', '', '', '', '', '', '', '', '', '10', '100'],
-                    ticklen = 10, showline = True, linewidth = 1, showgrid = False, range = [0,2], tick0 = 0, dtick = 1, tickmode = 'array', tickvals = [0,1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 100],
+                    ticklen = 10, showline = True, linewidth = 1, showgrid = False, range = [0,2], tick0 = 0, dtick = 1, tickmode = 'array', tickvals = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 100],
                     ticksuffix = " ", row = rowind, col = colind)
             else:
                 fig.update_yaxes(autorange = False, ticks = 'outside', ticklen = 10, range = [0, 20], ticktext = ['0', '', '10', '', '20'], tickvals = [0, 5, 10, 15, 20], showline = True, linewidth = 1, showgrid = False,
@@ -309,7 +310,6 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             else:
                 colind += 1
 
-
         height = {
             1: 300,
             2: 520,
@@ -319,6 +319,8 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             6: 1000
         }
 
+        fig.update_xaxes(showline=True, linewidth=1, title_font_size=10, ticksuffix=" ")
+        fig.update_traces(textposition="bottom right")
         fig.update_layout(title_font_size=30,
         xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified', title_text=f"{sample_name} Copy Number Plots",
         height = height[rows], width = 1300, margin = dict(t = 70, r = 70, b = 70, l = 70))
