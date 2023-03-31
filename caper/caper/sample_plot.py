@@ -230,7 +230,6 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             chr_df = pd.DataFrame()
             for i in range(len(cent_df)):
                 row = cent_df.iloc[[i]]
-                print(row)
                 if (row.iloc[0, 2] - row.iloc[0, 1]) / x_range < min_width:
                     offset = (x_range * min_width) - (row.iloc[0, 2] - row.iloc[0, 1])
                     # offset = 0
