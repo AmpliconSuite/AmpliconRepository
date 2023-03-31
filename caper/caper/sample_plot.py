@@ -18,6 +18,7 @@ import gridfs
 from bson.objectid import ObjectId
 from io import StringIO
 from collections import defaultdict
+import time
 
 warnings.filterwarnings("ignore")
 
@@ -38,14 +39,6 @@ def get_chrom_num(location: str):
 
     return raw_contig_id
 
-    # if 'chr' in location:
-    #     location = location[location.find('chr'):]
-    #     location = location.split(':')
-    #     chr_num = location[0].lstrip('chr')
-    # else:  ## processing for GRCh37
-    #     location = location.split(':')
-    #     chr_num = location[0]
-    # return chr_num
 
 def get_chrom_lens(ref):
     chrom_len_dict = {}
@@ -62,6 +55,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     # project_data_dir = f'project_data/{project_name}/extracted'
     # if not os.path.exists(project_data_dir):
     #     return ''
+    start_time = time.time()
     potential_ref_genomes = set()
     for item in sample:
         ## look for what reference genome is used
@@ -88,11 +82,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     cnv_file = fs_handle.get(ObjectId(cnv_file_id)).read()
     amplicon = pd.DataFrame(sample)
     # amplicon['AA amplicon number'] = amplicon['AA amplicon number'].astype(int).astype(str)
-    
-    # valid_range = lambda loc: int(loc[1]) - int(loc[0]) > 1000000
-    # valid_amp = lambda x: any(valid_range(loc.split(':')[1].split('-')) for loc in x['Location'].split(', '))
-    # valid_amp_df = lambda df: [valid_amp(row) for row in df.iloc]
-    # amplicon = amplicon[valid_amp_df(amplicon)]
+
     amplicon_numbers = sorted(list(amplicon['AA_amplicon_number'].unique()))
     seen = set()
 
@@ -114,8 +104,6 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         else:
             chromosomes = []
 
-        # print(f'chr_num = {chr_num}')
-        # list(set(loc.split(':')[0].lstrip('chr') for loc in (', '.join(amplicon['Location'])).split(', ')))
     else:
         chromosomes = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X", "Y")
     
@@ -127,12 +115,12 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         fig = make_subplots(rows=rows, cols=4,
             subplot_titles=chromosomes, horizontal_spacing=0.05, vertical_spacing = 0.1 if rows < 4 else 0.05)
 
-        # df = pd.read_csv(CNV_file, sep = "\t", header = None)
-        # with open(cnv_file, 'rb') as cnv:
         cnv_decode = str(cnv_file,'utf-8')
         cnv_string = StringIO(cnv_decode)
         df = pd.read_csv(cnv_string, sep="\t", header = None)
-        df.rename(columns = {0: 'Chromosome Number', 1: "Feature Start Position", 2: "Feature End Position", 3: 'CNV Gain',
+
+        # Note, that a 4 column CNV file, instead of a 5 column CNV file may be given. We instruct users to place Copy Number in the last column.
+        df.rename(columns = {0: 'Chromosome Number', 1: "Feature Start Position", 2: "Feature End Position", 3: 'Source',
                              4: 'Copy Number'}, inplace = True)
         # print(df.head())
         dfs = {}
@@ -143,37 +131,34 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             dfs[key] = value
 
         ## CREATE ARRAY
-
         rowind = 1
         colind = 1
         min_width = 0.03
         # for key in (chromosomes if filter_plots else dfs):
         for key in chromosomes:
-            # print(key)
-            # if filter_plots and USE_GRCH37 == False:
-            #     key = 'chr' + key
             log_scale = False
             x_array = []
             y_array = []
             if key in dfs:
-                for i in range(len(dfs[key])):
-                    #CN Start
-                    if len(dfs[key].columns) >= 4:
-                        x_array.append(dfs[key].iloc[i, 1])
-                        y_array.append(dfs[key].iloc[i, 4])
+                if len(dfs[key].columns) >= 4:
+                    for ind, row in dfs[key].iterrows():
+                        # CN Start
+                        x_array.append(row[1])
+                        y_array.append(row[-1])
 
-                        if dfs[key].iloc[i, 2] - dfs[key].iloc[i, 1] > 10000000:
-                            divisor = (dfs[key].iloc[i, 2] - dfs[key].iloc[i, 1]) / 10
+                        if row[2] - row[1] > 10000000:
+                            divisor = (row[2] - row[1]) / 10
                             for j in range(1, 11):
-                                x_array.append(dfs[key].iloc[i, 1] + divisor * j)
-                                y_array.append(dfs[key].iloc[i, 4])
-                        else:
-                            #CN End
-                            x_array.append(dfs[key].iloc[i, 2])
-                            y_array.append(dfs[key].iloc[i, 4])
+                                x_array.append(row[1] + divisor * j)
+                                y_array.append(row[-1])
 
-                        #Drop off
-                        x_array.append(dfs[key].iloc[i, 2])
+                        else:
+                            # CN End
+                            x_array.append(row[2])
+                            y_array.append(row[-1])
+
+                        # Drop off
+                        x_array.append(row[2])
                         y_array.append(np.nan)
 
                 x_range = chrom_lens[key]
@@ -181,23 +166,15 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                     x_array = [round(item, 2) for item in x_array]
                     y_array = [round(item, 2) for item in y_array]
 
-                    # x_range = max(x_array) - min(x_array)
-
             amplicon_df = pd.DataFrame()
-            for i in range(len(amplicon)):
-            # print(amplicon.columns)
-            # for rind, row in amplicon.iterrows():
-                row = amplicon.iloc[[i]]
-                loc = row.iloc[0, 4]
-                # feat_id = row.iloc[0, 2]
-                # splitloc = loc.split(',')
-                for element in loc:
+            for ind, row in amplicon.iterrows():
+                locs = row["Location"]
+                for element in locs:
                     chrsplit = element.split(':')
                     chrom = get_chrom_num(element)
                     if chrom == key:
                         curr_updated_loc = chrom + ":"
                         for j in range(0, 2):
-                            # row['Chromosome Number'] = chrsplit[0]
                             row['Chromosome Number'] = chrom
                             locsplit = chrsplit[1].split('-')
                             row['Feature Start Position'] = int(float(locsplit[0]))
@@ -216,16 +193,11 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                                 row['Feature Position'] = int(float(locsplit[1])) + offset
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(int(row['Feature Position']))
-                                # updated_loc_dict[feat_id].append(curr_updated_loc)
-                            amplicon_df = pd.concat([row, amplicon_df])
 
-                        # print(curr_updated_loc)
-                        # amplicon_df['Feature Start Position'] = amplicon_df['Feature Start Position']
-                        # amplicon_df['Feature End Position'] = amplicon_df['Feature End Position']
-                        # amplicon_df['Feature Position'] = amplicon_df['Feature Position']
+                            amplicon_df = amplicon_df.append(row)
+
                         amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature_maximum_copy_number']
                         amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature_median_copy_number']
-                        # amplicon_df = amplicon_df.round(decimals=2)
                         for i in range(len(amplicon_df['AA_amplicon_number'].unique())):
                             number = amplicon_df['AA_amplicon_number'].unique()[i]
                             per_amplicon = amplicon_df[amplicon_df['AA_amplicon_number'] == number]
@@ -324,7 +296,9 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         fig.update_layout(title_font_size=30,
         xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified', title_text=f"{sample_name} Copy Number Plots",
         height = height[rows], width = 1300, margin = dict(t = 70, r = 70, b = 70, l = 70))
-
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"Created a sample plot in {elapsed_time} seconds")
         return fig.to_html(full_html=False, div_id='plotly_div')
 
     else:
