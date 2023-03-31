@@ -136,6 +136,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         min_width = 0.03
         # for key in (chromosomes if filter_plots else dfs):
         for key in chromosomes:
+            x_range = chrom_lens[key]
             log_scale = False
             x_array = []
             y_array = []
@@ -161,7 +162,6 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                         x_array.append(row[2])
                         y_array.append(np.nan)
 
-                x_range = chrom_lens[key]
                 if x_array and y_array:
                     x_array = [round(item, 2) for item in x_array]
                     y_array = [round(item, 2) for item in y_array]
@@ -230,6 +230,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             chr_df = pd.DataFrame()
             for i in range(len(cent_df)):
                 row = cent_df.iloc[[i]]
+                print(row)
                 if (row.iloc[0, 2] - row.iloc[0, 1]) / x_range < min_width:
                     offset = (x_range * min_width) - (row.iloc[0, 2] - row.iloc[0, 1])
                     # offset = 0
