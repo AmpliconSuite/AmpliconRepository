@@ -395,6 +395,7 @@ def sample_page(request, project_name, sample_name):
 def sample_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
+
     for feature in sample_data_processed:
         # set up file system
         feature_id = feature['Feature_ID']
@@ -405,9 +406,7 @@ def sample_download(request, project_name, sample_name):
         cnv_id = feature['CNV_BED_file']
         pdf_id = feature['AA_PDF_file']
         png_id = feature['AA_PNG_file']
-        # TODO: Get all AA files, and package them with the download! The path of the AA files is stored in this variable
-        print(feature['AA_summary_file'])
-        
+
         # get files from gridfs
         # bed_file = fs_handle.get(ObjectId(bed_id)).read()
         if bed_id is not None:

@@ -246,11 +246,11 @@
         <table id='myTable2' class="table table-hover table-sm">
             <thead>
                 <tr>
+                    <th>Amplicon</th>
                     <th>Feature ID</th>
-                    <th>Amplicon # </th>
-                    <th>Location</th>
-                    <th>Oncogenes</th>
                     <th>Classification</th>
+                    <th>Oncogenes</th>
+                    <th>Location</th>
                     <th>Downloads</th>
                 </tr>
             </thead>
@@ -262,14 +262,14 @@
                 {% else %}
                 {% for feature in sample_data %}
                 <tr>
-                    <td><b>{{ feature.Feature_ID }} </b></td>
                     <td>{{ feature.AA_amplicon_number }}</td>
-                    <td>{{ feature.Location|join:", " }}</td>
-		            <td>{{ feature.Oncogenes|join:", " }}</td>
+                    <td><b>{{ feature.Feature_ID }} </b></td>
                     <td>{{ feature.Classification }}</td>
+		            <td>{{ feature.Oncogenes|join:", " }}</td>
+                    <td>{{ feature.Location|join:", " }}</td>
                     <td>
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED file</a><br>
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a> /
+                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a> |
+                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a> |
                         <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a><br>
                     </td>
                 </tr>
