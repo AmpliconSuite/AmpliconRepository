@@ -19,14 +19,25 @@
     }
     }
 
-    function create_igv(track, locus_selection){
+    function create_igv(track, locus_selection,reference_genome){
         // a function to create IGV.js tracks
+
+        // reference genome parsing
+        
         const version = igv.version()
         const igvDiv = document.getElementById("igv-div")
+        var genome = "";
+        if (reference_genome === 'GRCh38'){
+            genome = 'hg38';
+        } else if (reference_genome === 'hg19'){
+            genome = 'hg19';
+        } else if (reference_genome === 'GRCh37'){
+            genome = 'hg19';
+        };
         const options =
             { 
                 locus: locus_selection,
-                genome: "hg38",
+                genome: genome,
                 roi: track
             }
         if (igvDiv.innerHTML != ""){
@@ -153,11 +164,11 @@
             var plot_element = document.getElementById("plotly_div");
             plot_element.on('plotly_click', function(data){{
                 console.log('click');
-                // console.log(plot_element);
                 var link = '';
                 for (let i = 0; i < data['points'].length; i++) {{
                     var name = data['points'][i]['data']['name'];
                     if (name.includes('Amplicon')) {{
+                        var chromosome_num = data['points'][i]['customdata'][1];
                         link = data['points'][i]['data']['hovertemplate'].split('"')[1];
                         var amplicon_num = name.replace("<b>", "").replace("</b>", "").split(" ")[1];
 
@@ -168,16 +179,19 @@
                             }
                         }
 
+
                         // if display IGV Viewer toggle is on:
                         if (igv_toggle) {
                             for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
-                                var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k]
-                                var locus_selection = JSON.parse('{{ locuses|safe }}')[k]
+                                var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
+                                var locus_selection = JSON.parse('{{ locuses|safe }}')[k][chromosome_num];
+                                var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k];
+
                                 if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
                                     const tracks = [amplicon_selection];
                                     const locus = locus_selection;
                                     // call function to create JS in THE IGV DIV
-                                    create_igv(tracks, locus_selection);
+                                    create_igv(tracks, locus_selection, reference_genome);
                                     break
                                 }
                             }
@@ -232,11 +246,11 @@
         <table id='myTable2' class="table table-hover table-sm">
             <thead>
                 <tr>
+                    <th>Amplicon</th>
                     <th>Feature ID</th>
-                    <th>Amplicon # </th>
-                    <th>Location</th>
-                    <th>Oncogenes</th>
                     <th>Classification</th>
+                    <th>Oncogenes</th>
+                    <th>Location</th>
                     <th>Downloads</th>
                 </tr>
             </thead>
@@ -248,14 +262,14 @@
                 {% else %}
                 {% for feature in sample_data %}
                 <tr>
-                    <td><b>{{ feature.Feature_ID }} </b></td>
                     <td>{{ feature.AA_amplicon_number }}</td>
-                    <td>{{ feature.Location|join:", " }}</td>
-		            <td>{{ feature.Oncogenes|join:", " }}</td>
+                    <td><b>{{ feature.Feature_ID }} </b></td>
                     <td>{{ feature.Classification }}</td>
+		            <td>{{ feature.Oncogenes|join:", " }}</td>
+                    <td>{{ feature.Location|join:", " }}</td>
                     <td>
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED file</a><br>
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a> /
+                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a> |
+                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a> |
                         <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a><br>
                     </td>
                 </tr>

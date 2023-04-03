@@ -1,6 +1,6 @@
 # AmpliconRepository
 
-#### Authors: Forrest Kim, Jens Luebeck, Ted Liefeld, Edwin Huang, Thorin Tabor, Vineet Bafna
+#### Authors: Forrest Kim, Jens Luebeck, Ted Liefeld, Edwin Huang, Gino Prasad, Rohil Ahuja, Thorin Tabor, Vineet Bafna
 ---
 
 This is the main repository for the AmpliconRepository.
@@ -15,7 +15,7 @@ This is the main repository for the AmpliconRepository.
 
 ## 2. Set up the virtual environment and install packages:
 - In a terminal window, move to the cloned Github repo
-- Go to the caper top level directory (should see `requirements.txt`)
+- Go to the AmpliconRepository top level directory (should see `requirements.txt`)
 #### Option A: Using python's environment manager
 - Create a new Python virtual environment:
 > `python -m venv ampliconenv`
@@ -36,17 +36,18 @@ This is the main repository for the AmpliconRepository.
 ## 3. Set up MongoDB locally (for development)
 - Install MongoDB
   - In Ubuntu this can be done with `sudo apt install mongodb-server-core`
+  - If the package is not found you may need to follow the directions [here](https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-ubuntu/).
 - If you don't have a database location set up, set up a location:
 > `mkdir -p ~/data/db/`
-- In a terminal window or tab with the `caperenv` environment active, run MongoDB locally:
+- In a terminal window or tab with the `ampliconenv` environment active, run MongoDB locally:
 >  `mongod --dbpath ~/data/db` or `mongod --dbpath <DB_PATH>`
 
-## 3a. View MongoDB data in MongoDB Compass (Optional)
+## 3a. View MongoDB data in MongoDB Compass
 - Download MongoDB Compass: https://www.mongodb.com/docs/compass/current/install/#download-and-install-compass
 - Open the MongoDB Compass app after starting MongoDB locally
 - Connect to your local instance of MongoDB:
 > URI: `mongodb://localhost:27017`
-- Relevant data will be located in `/caper/projects/`
+- Relevant data will be located in `/AmpliconRepository/projects/`
 - Run `export DB_URI='mongodb://localhost:27017'` in your terminal to set the environment variable for your local database.
   - So that this is active every time, you can add the command above to your `~/.bashrc` file
 - Note that the latest version of Compass (1.34.2) won't work with our older DB version.  You can get an old compass for mac at https://downloads.mongodb.com/compass/mongodb-compass-1.28.4-darwin-x64.dmg
@@ -57,8 +58,8 @@ This is the main repository for the AmpliconRepository.
 `source config.sh`
 
 ## 5. Run development server (Django)
-- Open a terminal window or tab with the `caperenv` environment active
-- Move to the caper App folder (should see `manage.py`)
+- Open a terminal window or tab with the `ampliconenv` environment active
+- Move to the `caper/` folder (should see `manage.py`)
 - Run the server locally:
 > `python manage.py runserver`
 - Open the application on a web browser (recommend using a private/incognito window for faster development):
