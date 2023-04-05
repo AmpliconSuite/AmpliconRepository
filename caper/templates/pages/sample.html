@@ -169,6 +169,7 @@
                     var name = data['points'][i]['data']['name'];
                     if (name.includes('Amplicon')) {{
                         var chromosome_num = data['points'][i]['customdata'][1];
+
                         link = data['points'][i]['data']['hovertemplate'].split('"')[1];
                         var amplicon_num = name.replace("<b>", "").replace("</b>", "").split(" ")[1];
 
@@ -183,9 +184,13 @@
                         // if display IGV Viewer toggle is on:
                         if (igv_toggle) {
                             for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
-                                var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
-                                var locus_selection = JSON.parse('{{ locuses|safe }}')[k][chromosome_num];
                                 var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k];
+                                var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
+                                if (reference_genome !== 'GRCh37'){
+                                    chromosome_num = 'chr'+chromosome_num;
+                                }
+                                var locus_selection = JSON.parse('{{ locuses|safe }}')[k][chromosome_num];
+                                
 
                                 if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
                                     const tracks = [amplicon_selection];
