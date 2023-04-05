@@ -1,14 +1,14 @@
-from asyncore import file_wrapper
+# from asyncore import file_wrapper
 # from tkinter import E
 from django.http import HttpResponse, FileResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
-from django.views.generic import TemplateView 
-from pymongo import MongoClient
-from django.conf import settings
-import pymongo
+# from django.views.generic import TemplateView
+# from pymongo import MongoClient
+# from django.conf import settings
+# import pymongo
 import json
-from .models import Run
+# from .models import Run
 from .forms import RunForm, UpdateForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
@@ -19,20 +19,21 @@ import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.classification as piechart
 from django.core.files.storage import FileSystemStorage
-from django.views.decorators.cache import cache_page
-from zipfile import ZipFile
+# from django.views.decorators.cache import cache_page
+# from zipfile import ZipFile
 import tarfile
 import pandas as pd
-import numpy as np
+# import numpy as np
 #import cv2
 import gridfs
-import caper
+# import caper
 from bson.objectid import ObjectId
-from django.utils.text import slugify
-from bson.json_util import dumps
+# from django.utils.text import slugify
+# from bson.json_util import dumps
 import re
-import plotly.graph_objs as go
-from tqdm import tqdm
+# from tqdm import tqdm
+from collections import defaultdict
+
 
 # FOR LOCAL DEVELOPMENT
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
@@ -371,20 +372,31 @@ def igv_features_creation(locations):
     return features, locuses
 
 def get_sample_metadata(sample_data):
-    sample_metadata_id = sample_data[0]['Sample metadata JSON']
-    sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
-    sample_metadata = json.loads(sample_metadata.decode())
+    try:
+        sample_metadata_id = sample_data[0]['Sample metadata JSON']
+        sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
+        sample_metadata = json.loads(sample_metadata.decode())
+
+    except Exception as e:
+        print(e)
+        sample_metadata = defaultdict(str)
+
     return sample_metadata
 
 def sample_metadata_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_metadata_id = sample_data[0]['Sample metadata JSON']
-    sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
-    response = HttpResponse(sample_metadata)
-    response['Content-Type'] = 'application/json'
-    response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
-    clear_tmp()
-    return response
+    try:
+        sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
+        response = HttpResponse(sample_metadata)
+        response['Content-Type'] = 'application/json'
+        response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
+        clear_tmp()
+        return response
+
+    except Exception as e:
+        print(e)
+        return HttpResponse()
 
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
