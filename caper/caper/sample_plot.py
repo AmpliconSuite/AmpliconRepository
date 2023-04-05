@@ -80,9 +80,22 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     chrom_lens = get_chrom_lens(ref)
     cnv_file_id = sample[0]['CNV_BED_file']
 
-    # CNV_file = CNV_file[CNV_file.index('AA_outputs'):]
-    
-    cnv_file = fs_handle.get(ObjectId(cnv_file_id)).read()
+    try:
+        cnv_file = fs_handle.get(ObjectId(cnv_file_id)).read()
+        cnv_decode = str(cnv_file, 'utf-8')
+        cnv_string = StringIO(cnv_decode)
+        df = pd.read_csv(cnv_string, sep="\t", header=None)
+        df.rename(columns={0: 'Chromosome Number', 1: "Feature Start Position", 2: "Feature End Position", 3: 'Source',
+                           4: 'Copy Number'}, inplace=True)
+
+    except Exception as e:
+        print(e)
+        df = pd.DataFrame(columns=["Chromosome Number", "Feature Start Position", "Feature End Position", "Source",
+                                   "Copy Number"])
+
+    # Note, that a 4 column CNV file, instead of a 5 column CNV file may be given. We instruct users to place Copy Number in the last column.
+
+
     amplicon = pd.DataFrame(sample)
     # amplicon['AA amplicon number'] = amplicon['AA amplicon number'].astype(int).astype(str)
 
@@ -118,16 +131,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         fig = make_subplots(rows=rows, cols=4,
             subplot_titles=chromosomes, horizontal_spacing=0.05, vertical_spacing = 0.1 if rows < 4 else 0.05)
 
-        cnv_decode = str(cnv_file,'utf-8')
-        cnv_string = StringIO(cnv_decode)
-        df = pd.read_csv(cnv_string, sep="\t", header = None)
-
-        # Note, that a 4 column CNV file, instead of a 5 column CNV file may be given. We instruct users to place Copy Number in the last column.
-        df.rename(columns = {0: 'Chromosome Number', 1: "Feature Start Position", 2: "Feature End Position", 3: 'Source',
-                             4: 'Copy Number'}, inplace = True)
-        # print(df.head())
         dfs = {}
-
         for chromosome in df['Chromosome Number'].unique():
             key = get_chrom_num(chromosome)
             value = df[df['Chromosome Number'] == chromosome]
