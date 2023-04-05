@@ -386,12 +386,17 @@ def get_sample_metadata(sample_data):
 def sample_metadata_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_metadata_id = sample_data[0]['Sample metadata JSON']
-    sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
-    response = HttpResponse(sample_metadata)
-    response['Content-Type'] = 'application/json'
-    response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
-    clear_tmp()
-    return response
+    try:
+        sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
+        response = HttpResponse(sample_metadata)
+        response['Content-Type'] = 'application/json'
+        response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
+        clear_tmp()
+        return response
+
+    except Exception as e:
+        print(e)
+        return HttpResponse()
 
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
