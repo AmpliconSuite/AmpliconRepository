@@ -25,7 +25,10 @@ warnings.filterwarnings("ignore")
 # FOR LOCAL DEVELOPMENT
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
 
+# FOR PRODUICTION
 db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+
+# SET UP HANDLE
 collection_handle = get_collection_handle(db_handle,'projects')
 fs_handle = gridfs.GridFS(db_handle)
 
