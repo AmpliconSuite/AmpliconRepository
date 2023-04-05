@@ -44,6 +44,7 @@ urlpatterns += [
     path("project/<project_name>/delete", views.project_delete, name="project_delete"),
     path("project/<project_name>/sample/<sample_name>", views.sample_page, name="sample_page"),
     path("project/<project_name>/sample/<sample_name>/download", views.sample_download, name="sample_download"),
+    path("project/<project_name>/sample/<sample_name>/download_metadata", views.sample_metadata_download, name="sample_metadata_download"),
     path("project/<project_name>/sample/<sample_name>/feature/<feature_name>", views.feature_page, name="feature_page"),
     path("project/<project_name>/sample/<sample_name>/feature/<feature_name>/download/<feature_id>", views.feature_download, name="feature_download"),
     path("project/<project_name>/sample/<sample_name>/feature/<feature_name>/download/png/<feature_id>", views.png_download, name="pdf_download"),

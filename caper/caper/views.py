@@ -32,18 +32,22 @@ from django.utils.text import slugify
 from bson.json_util import dumps
 import re
 import plotly.graph_objs as go
+from tqdm import tqdm
 
 # FOR LOCAL DEVELOPMENT
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
 
+# FOR PRODUICTION
 db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+
+# SET UP HANDLE
 collection_handle = get_collection_handle(db_handle,'projects')
 fs_handle = gridfs.GridFS(db_handle)
 
 
 def get_date():
     today = datetime.datetime.now()
-    date = today.isoformat()
+    date = today.strftime('%Y-%m-%d')
     return date
 
 
@@ -87,8 +91,8 @@ def get_one_feature(project_name, sample_name, feature_name):
     return project, sample, feature
 
 
-def check_project_exists(project_name):
-    return collection_handle.count_documents({ 'project_name': project_name }, limit = 1)
+def check_project_exists(project_id):
+    return collection_handle.count_documents({ '_id': project_id }, limit = 1)
 
 
 def samples_to_dict(form_file):
@@ -97,6 +101,7 @@ def samples_to_dict(form_file):
     all_samples = file_json['runs']
     for key, value in all_samples.items():
         sample_name = key
+        print(f'in samples_to_dict {sample_name}')
         runs[sample_name] = value
 
     return runs
@@ -115,9 +120,12 @@ def sample_data_from_feature_list(features_list):
     for index, row in df2.iterrows():
         sample_dict = dict()
         sample_dict['Sample_name'] = row['Sample_name']
-        sample_dict['Features'] = row['Features']
         sample_dict['Oncogenes'] = get_sample_oncogenes(features_list, row['Sample_name'])
         sample_dict['Classifications'] = get_sample_classifications(features_list, row['Sample_name'])
+        if len(sample_dict['Oncogenes']) == 0 and len(sample_dict['Classifications']) == 0:
+            sample_dict['Features'] = 0
+        else:
+            sample_dict['Features'] = row['Features']
         sample_data.append(sample_dict)
 
     return sample_data
@@ -259,18 +267,39 @@ def profile(request):
 def login(request):
     return render(request, "pages/login.html")
 
+def reference_genome_from_project(samples):
+    reference_genomes = list()
+    for sample, features in samples.items():
+        for feature in features:
+            reference_genomes.append(feature['Reference_version'])
+    if len(set(reference_genomes)) > 1:
+        reference_genome = 'Multiple'
+    else:
+        reference_genome = reference_genomes[0]
+    return reference_genome
+
+def reference_genome_from_sample(sample_data):
+    reference_genomes = list()
+    for feature in sample_data:
+        reference_genomes.append(feature['Reference version'])
+    if len(set(reference_genomes)) > 1:
+        reference_genome = 'Multiple'
+    else:
+        reference_genome = reference_genomes[0]
+    return reference_genome
 
 def project_page(request, project_name):
     project = get_one_project(project_name)
-    features = project['runs']
-    features_list = replace_space_to_underscore(features)
+    samples = project['runs']
+    features_list = replace_space_to_underscore(samples)
     sample_data = sample_data_from_feature_list(features_list)
+    reference_genome = reference_genome_from_project(samples)
     # oncogenes = get_sample_oncogenes(features_list)
     #stackedbar_plot = stacked_bar.StackedBarChart(file='/mnt/c/Users/ahuja/Desktop/data/aggregated_results.csv')
     #pie_chart = piechart.pie_chart(directory = '/mnt/c/Users/ahuja/Desktop/bafna_lab/AABeautification/AA_outputs/')
     stackedbar_plot = None
     pie_chart = None 
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
+    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
 
 
 def project_download(request, project_name):
@@ -336,11 +365,28 @@ def igv_features_creation(locations):
     #     locus = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
     return features, locuses
 
+def get_sample_metadata(sample_data):
+    sample_metadata_id = sample_data[0]['Sample metadata JSON']
+    sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
+    sample_metadata = json.loads(sample_metadata.decode())
+    return sample_metadata
+
+def sample_metadata_download(request, project_name, sample_name):
+    project, sample_data = get_one_sample(project_name, sample_name)
+    sample_metadata_id = sample_data[0]['Sample metadata JSON']
+    sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
+    response = HttpResponse(sample_metadata)
+    response['Content-Type'] = 'application/json'
+    response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
+    clear_tmp()
+    return response
 
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     project_linkid = project['_id']
+    sample_metadata = get_sample_metadata(sample_data)
+    reference_genome = reference_genome_from_sample(sample_data)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     filter_plots = not request.GET.get('display_all_chr')
     all_locuses = []
@@ -383,6 +429,8 @@ def sample_page(request, project_name, sample_name):
     'project_name': project_name, 
     'project_linkid': project_linkid,
     'sample_data': sample_data_processed,
+    'sample_metadata': sample_metadata,
+    'reference_genome': reference_genome,
     'sample_name': sample_name, 'graph': plot, 
     'igv_tracks': json.dumps(igv_tracks),
     'locuses': json.dumps(all_locuses),
@@ -677,21 +725,18 @@ def edit_project_page(request, project_name):
         form = UpdateForm(initial={"description": project['description'],"private":project['private'],"project_members": memberString})
     return render(request, "pages/edit_project.html", {'project': project, 'run': form})
 
-def create_user_list(str, current_user):
+def create_user_list(string, current_user):
     # user_list = str.split(',')
+    string = string + ',' + current_user
     # issue 21
-    user_list = re.split(' |;|,|\t', str)
+    user_list = re.split(' |;|,|\t', string)
     # drop empty strings
     user_list =  [i for i in user_list if i]
-    # but leave one at the end
-    user_list.append("")
-
+    # clean whitespace
     user_list = [x.strip() for x in user_list]
-    if current_user in user_list:
-        return user_list
-    else:
-        user_list.append(current_user)
-        return user_list
+    # remove duplicates
+    user_list = list(set(user_list))
+    return user_list
 
 def clear_tmp():
     folder = 'tmp/'
@@ -738,14 +783,13 @@ def create_project(request):
         # for filename in os.listdir(project_data_path):
         #     if os.path.isdir(f'{project_data_path}/{filename}'):
                 
-        
         # get cnv, image, bed files
         for sample, features in runs.items():
-            # sample_name = features[0]['Sample name']
             for feature in features:
+                print(feature['Sample name'])
                 if len(feature) > 0:
                     # get paths
-                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file']
+                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON']
                     for k in key_names:
                         try:
                             path_var = feature[k]
@@ -757,33 +801,27 @@ def create_project(request):
 
                         feature[k] = id_var
 
-        if check_project_exists(project_name):
+        current_user = get_current_user(request)
+        project['creator'] = current_user
+        project['project_name'] = form_dict['project_name']
+        project['description'] = form_dict['description']
+        project['tarfile'] = project_tar_id
+        project['date_created'] = get_date()
+        project['date'] = get_date()
+        project['private'] = form_dict['private']
+        project['delete'] = False
+        user_list = create_user_list(form_dict['project_members'], current_user)
+        project['project_members'] = user_list
+        project['runs'] = runs
+        project['Oncogenes'] = get_project_oncogenes(runs)
+        project['Classification'] = get_project_classifications(runs)
+        if form.is_valid():
+            new_id = collection_handle.insert_one(project)
             clear_tmp()
-            return HttpResponse("Project already exists")
+            return redirect('project_page', project_name=new_id.inserted_id)
         else:
-            current_user = get_current_user(request)
-            project['creator'] = current_user
-            project['project_name'] = form_dict['project_name']
-            project['description'] = form_dict['description']
-            project['tarfile'] = project_tar_id
-            project['date_created'] = get_date()
-            project['date'] = get_date()
-            # project['sample_count'] = sample_count
-            project['private'] = form_dict['private']
-            project['delete'] = False
-            user_list = create_user_list(form_dict['project_members'], current_user)
-            project['project_members'] = user_list
-            project['runs'] = runs
-            project['Oncogenes'] = get_project_oncogenes(runs)
-            project['Classification'] = get_project_classifications(runs)
-            # print(project)
-            if form.is_valid():
-                new_id = collection_handle.insert_one(project)
-                clear_tmp()
-                return redirect('project_page', project_name=new_id.inserted_id)
-            else:
-                clear_tmp()
-                raise Http404()
+            clear_tmp()
+            raise Http404()
     else:
         form = RunForm()
     return render(request, 'pages/create_project.html', {'run' : form}) 
