@@ -92,7 +92,12 @@ def get_one_feature(project_name, sample_name, feature_name):
 
 
 def check_project_exists(project_id):
-    return collection_handle.count_documents({ '_id': project_id }, limit = 1)
+    if collection_handle.count_documents({ '_id': project_id }, limit = 1):
+        return True
+    elif collection_handle.count_documents({ 'project_name': project_id }, limit = 1):
+        return True
+    else:
+        return False
 
 
 def samples_to_dict(form_file):
@@ -680,6 +685,7 @@ def project_delete(request, project_name):
     project = get_one_project(project_name)
     if check_project_exists(project_name):
         current_runs = project['runs']
+        query = {'project_name': project_name}
         query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True} }
         collection_handle.update_one(query, new_val)
