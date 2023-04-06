@@ -243,6 +243,20 @@ def get_files(fs_id):
     # response =  StreamingHttpResponse(FileWrapper(wrapper),content_type=file_['contentType'])
     return wrapper
 
+def modify_date(projects):
+    """
+    Modifies the date to this format: 
+
+    MM DD, YYYY HH:MM:SS AM/PM
+    
+    """
+
+    for project in projects:
+        dt = datetime.datetime.strptime(project['date'], f"%Y-%m-%dT%H:%M:%S.%f")
+        project['date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
+    return projects
+
+    
 
 def index(request):
     if request.user.is_authenticated:
@@ -257,6 +271,9 @@ def index(request):
     public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
+
+    public_projects = modify_date(public_projects)
+    private_projects = modify_date(private_projects)
 
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects})
 
