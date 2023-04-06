@@ -66,6 +66,11 @@ This is the main repository for the AmpliconRepository.
 > https://localhost:8000
 
 
+# Committing and pushing changes to GitHub
+- Work on branches and open pull requests to merge changes into main.
+- Please ensure that you do not commit `caper.sqlite3` along with your other changes. 
+- PR reviewers, please check that `caper.sqlite3` is not among the changed files in a PR.
+
 # How to deploy and update the server for AmpliconRepository
 The server is currently running on an EC2 instance through Docker. The ports active on HTTP and HTTPS through AWS Load Balancer. There are two main scripts to start and stop the server.
 

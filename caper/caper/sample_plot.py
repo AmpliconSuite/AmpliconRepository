@@ -193,11 +193,11 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                                 offset = 0
 
                             if j == 0:
-                                row['Feature Position'] = locsplit[0]
+                                row['Feature Position'] = int(float(locsplit[0])) - offset//2
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(locsplit[0]) + "-"
                             elif j == 1:
-                                row['Feature Position'] = int(float(locsplit[1])) + offset
+                                row['Feature Position'] = int(float(locsplit[1])) + offset//2
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(int(row['Feature Position']))
 
@@ -222,11 +222,10 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                                     '<br><i>Feature Classification:</i> %{customdata[0]}<br>' +
                                     '<i>%{customdata[1]}:</i> %{customdata[2]} - %{customdata[3]}<br>' +
                                     '<i>Oncogenes:</i> %{customdata[4]}<br>'+
-                                    '<i>Feature Maximum Copy Number:</i> %{customdata[5]}<br>' +
-                                    '<b>Click to Download Amplicon PNG</b>'
+                                    '<i>Feature Maximum Copy Number:</i> %{customdata[5]}<br>'
                                     ,name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
                                     line = dict(color = amplicon_colors[amplicon_numbers.index(number)]),
-                                        showlegend=show_legend, legendrank=number),
+                                        showlegend=show_legend, legendrank=number, legendgroup='<b>Amplicon ' + str(number) + '</b>'),
                                           row = rowind, col = colind)
 
                         amplicon_df = pd.DataFrame()
@@ -257,20 +256,20 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             if rowind == 1 and colind == 1:
                 fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)',
                     line_color = 'rgba(2, 6, 54, 0.2)', customdata = chr_df, hovertemplate =
-                    '<br>%{customdata[0]}: %{customdata[1]}-%{customdata[2]}', name = 'Centromere', legendrank=0), row = rowind, col = colind)
+                    '<br>%{customdata[0]}: %{customdata[1]}-%{customdata[2]}', name = 'Centromere', legendrank=0, legendgroup='Centromere'), row = rowind, col = colind)
             else:
                 fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)',
-                    line_color = 'rgba(2, 6, 54, 0.2)', customdata = chr_df, name = 'Centromere', showlegend = False, hovertemplate =
-                    '<br>%{customdata[0]}: %{customdata[1]}-%{customdata[2]}'
-                    ), row = rowind, col = colind)
+                    line_color = 'rgba(2, 6, 54, 0.2)', customdata = chr_df, name = 'Centromere', legendrank=0, showlegend = False, legendgroup='Centromere', hovertemplate =
+                    '<br>%{customdata[0]}: %{customdata[1]}-%{customdata[2]}'), row = rowind, col = colind)
 
-            fig.add_trace(go.Scatter(x=x_array,y=y_array,mode = 'lines', name="Copy Number", showlegend = False, line = dict(color = 'black')), row = rowind, col = colind)
+            fig.add_trace(go.Scatter(x=x_array,y=y_array,mode = 'lines', name="CN", showlegend = (rowind == 1 and colind == 1),
+                                     legendrank=0, legendgroup='CN', line = dict(color = 'black')), row = rowind, col = colind)
+
             fig.update_xaxes(row=rowind, col=colind, range=[0, x_range])
 
             #print(y_array)
-            for element in y_array:
-                if element > 20:
-                    log_scale = True
+            if any([element > 20 for element in y_array]):
+                log_scale = True
 
             if log_scale:
                 fig.update_yaxes(autorange = False, type="log", ticks = 'outside', ticktext = ['0','1', '', '', '', '', '', '', '', '', '10', '100'],
@@ -303,6 +302,35 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         fig.update_layout(title_font_size=30,
         xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified', title_text=f"{sample_name} Copy Number Plots",
         height = height[rows], width = 1300, margin = dict(t = 70, r = 70, b = 70, l = 70))
+
+        # add select and deselect all buttons
+        fig.update_layout(dict(updatemenus=[
+            dict(
+                type="buttons",
+                direction="left",
+                buttons=list([
+                    dict(
+                        args=["visible", "legendonly"],
+                        label="Deselect All",
+                        method="restyle"
+                    ),
+                    dict(
+                        args=["visible", True],
+                        label="Select All",
+                        method="restyle"
+                    )
+                ]),
+                pad={"r": 0, "t": 10},
+                showactive=False,
+                x=1.15,
+                xanchor="right",
+                y=1.1,
+                yanchor="bottom"
+            ),
+        ]
+        ))
+
+
         end_time = time.time()
         elapsed_time = end_time - start_time
         print(f"Created a sample plot in {elapsed_time} seconds")
