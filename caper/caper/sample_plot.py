@@ -324,8 +324,8 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                 showactive=False,
                 x=1.15,
                 xanchor="right",
-                y=1.11,
-                yanchor="top"
+                y=1.1,
+                yanchor="bottom"
             ),
         ]
         ))

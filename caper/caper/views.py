@@ -252,8 +252,12 @@ def modify_date(projects):
     """
 
     for project in projects:
-        dt = datetime.datetime.strptime(project['date'], f"%Y-%m-%dT%H:%M:%S.%f")
-        project['date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
+        try:
+            dt = datetime.datetime.strptime(project['date'], f"%Y-%m-%dT%H:%M:%S.%f")
+            project['date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
+        except Exception as e:
+            print(e)
+
     return projects
 
     
