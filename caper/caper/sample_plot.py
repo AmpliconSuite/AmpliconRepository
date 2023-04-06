@@ -193,11 +193,11 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                                 offset = 0
 
                             if j == 0:
-                                row['Feature Position'] = locsplit[0]
+                                row['Feature Position'] = int(float(locsplit[0])) - offset//2
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(locsplit[0]) + "-"
                             elif j == 1:
-                                row['Feature Position'] = int(float(locsplit[1])) + offset
+                                row['Feature Position'] = int(float(locsplit[1])) + offset//2
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(int(row['Feature Position']))
 
