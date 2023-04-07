@@ -197,15 +197,16 @@
                             for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
                                 var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k];
                                 var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
-                                if (reference_genome !== 'GRCh37'){
-                                    chromosome_num = 'chr'+chromosome_num;
-                                }
-                                var locus_selection = JSON.parse('{{ locuses|safe }}')[k][chromosome_num];
+                                
                                 
 
                                 if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
                                     const tracks = [amplicon_selection];
                                     const locus = locus_selection;
+                                    if (reference_genome !== 'GRCh37'){
+                                        chromosome_num = 'chr'+chromosome_num;
+                                    }
+                                    var locus_selection = JSON.parse('{{ locuses|safe }}')[k][chromosome_num];
                                     // call function to create JS in THE IGV DIV
                                     create_igv(tracks, locus_selection, reference_genome);
                                     break
