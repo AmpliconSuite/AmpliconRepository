@@ -48,7 +48,8 @@ fs_handle = gridfs.GridFS(db_handle)
 
 def get_date():
     today = datetime.datetime.now()
-    date = today.strftime('%Y-%m-%d')
+    # date = today.strftime('%Y-%m-%d')
+    date = today.isoformat()
     return date
 
 
