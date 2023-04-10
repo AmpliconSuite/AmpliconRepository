@@ -39,8 +39,11 @@ def StackedBarChart(sample):
                         'ecDNA' : "rgb(255, 0, 0)",
                         'BFB' : 'rgb(0, 70, 46)',
                         'Complex non-cyclic' : 'rgb(255, 190, 0)',
-                        'Linear amplification' : 'rgb(27, 111, 185)'}, title = 'Classification Stacked Bar Chart', hover_data = {'Sample':False})
+                        'Linear amplification' : 'rgb(27, 111, 185)'}, hover_data = {'Sample':False})
+    fig.update_xaxes(tickangle=90)
     fig.update_layout(showlegend=False)
     fig.update_layout(yaxis_title="Number of focal amps")
+    fig.update_layout(xaxis_title='')
 
-    return fig.to_html(full_html = False, div_id = "project_bar_plotly_div")
+    return fig.to_html(full_html=False, config={'modeBarButtonsToRemove': ['zoom'], 'displayModeBar':False},
+                       div_id="project_bar_plotly_div")
