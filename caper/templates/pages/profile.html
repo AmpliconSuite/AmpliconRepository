@@ -39,7 +39,7 @@
                     <th>Name</th>
                     <th>Description</th>
                     <th>Date</th>
-                    <th>Private</th>
+                    <th>Visibility</th>
                     <th>Project Members</th>
                     <th>Edit Project</th>
                     <th>Delete Project</th>
@@ -51,7 +51,7 @@
                     <td><a target="_blank" href="{% url 'project_page' project_name=project.project_name %}">{{ project.project_name }}</a></td>
                     <td>{{ project.description }}</td>
                     <td>{{ project.date }}</td>
-                    <td>{{ project.private }}</td>
+                    <td>{% if  project.private %}private{%  else  %}public{% endif %}</td>
                     <td>{% for person in project.project_members %}
                         {{ person }}<br>
                     {% endfor%}</td>
