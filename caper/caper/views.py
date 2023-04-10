@@ -319,15 +319,22 @@ def project_page(request, project_name):
     project = get_one_project(project_name)
     samples = project['runs']
     features_list = replace_space_to_underscore(samples)
-    sample_data = sample_data_from_feature_list(features_list)
     reference_genome = reference_genome_from_project(samples)
+    sample_data = sample_data_from_feature_list(features_list)
     # oncogenes = get_sample_oncogenes(features_list)
     #stackedbar_plot = stacked_bar.StackedBarChart(file='/mnt/c/Users/ahuja/Desktop/data/aggregated_results.csv')
-    #pie_chart = piechart.pie_chart(directory = '/mnt/c/Users/ahuja/Desktop/bafna_lab/AABeautification/AA_outputs/')
-    stackedbar_plot = None
-    pie_chart = None 
+    df = pd.DataFrame(sample_data)
+    aggregate = pd.DataFrame()
+    samples = df['Sample_name'].unique()
+    for sample in samples:
+        project, sample_info = get_one_sample(project_name, sample)
+        df1 = pd.DataFrame(sample_info)
+        aggregate = pd.concat([aggregate, df1])
+    #oncogenes = get_sample_oncogenes(features_list)
+    stackedbar_plot = stacked_bar.StackedBarChart(aggregate)
+    pie_chart = piechart.pie_chart(aggregate)
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
-
+    
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
