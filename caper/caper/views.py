@@ -94,11 +94,14 @@ def get_one_feature(project_name, sample_name, feature_name):
 
 
 def check_project_exists(project_id):
-    if collection_handle.count_documents({ '_id': project_id }, limit = 1):
+
+    if collection_handle.count_documents({ '_id': ObjectId(project_id) }, limit = 1):
+
         return True
     elif collection_handle.count_documents({ 'project_name': project_id }, limit = 1):
         return True
     else:
+
         return False
 
 
@@ -717,10 +720,12 @@ def get_current_user(request):
 
 def project_delete(request, project_name):
     project = get_one_project(project_name)
+
     if check_project_exists(project_name):
+        print('FOUND 2')
         current_runs = project['runs']
-        query = {'project_name': project_name}
-        query = {'project_name': project_name}
+        query = {'_id': project['_id']}
+        #query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True} }
         collection_handle.update_one(query, new_val)
         return redirect('profile')
@@ -736,15 +741,17 @@ def edit_project_page(request, project_name):
 
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
 
+
         if 'file' in form_dict:
             runs = samples_to_dict(form_dict['file'])
         else:
             runs = 0
         if check_project_exists(project_name):
+
             current_runs = project['runs']
             if runs != 0:
                 current_runs.update(runs)
-            query = {'project_name': project_name}
+            query = {'_id': ObjectId(project_name)}
             new_val = { "$set": {'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'],
                                  'Oncogenes': get_project_oncogenes(current_runs)} }

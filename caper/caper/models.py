@@ -6,7 +6,9 @@ class Run(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project_name = models.CharField(max_length=1000)
     description = models.CharField(max_length=1000)
-    private = models.BooleanField(default=False)
+    #private = models.BooleanField(default=True)
+    BOOL_CHOICES = ((True, 'Private'), (False, 'Public'))
+    private = models.BooleanField(choices=BOOL_CHOICES,default=True)
     project_members = models.CharField(max_length=1000, blank = True)
 
 # class Feature(models.Model):

@@ -44,6 +44,7 @@
         <button class="btn btn-primary"><a href="/project/{{ project.linkid }}/download" style="color: white">Download All Project Data</a></button>
         <!-- <p><b>Last Updated:</b> {{ project.date }}</p> -->
         <!-- <p><b>Private:</b> {{ project.private }}</p> -->
+        {% if  project.private %}Visibility: <b>Private</b>{% endif %}
         <p><b>Project Members:</b> {% for person in project.project_members %}
             {{ person }}
         {% endfor %}
