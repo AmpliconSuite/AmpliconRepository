@@ -1,0 +1,4 @@
+Interval	1	chr8	127253811	127308812
+List of cycle segments
+Segment	1	chr8	127253811	127308812
+Cycle=1;Copy_count=5.77890591796;Segments=0+,1-,0-

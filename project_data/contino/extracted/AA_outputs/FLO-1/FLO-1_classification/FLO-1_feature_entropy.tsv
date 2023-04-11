@@ -1,0 +1,5 @@
+sample	amplicon	feature	total_feature_entropy	decomp_entropy	Amp_nseg_entropy
+FLO-1	amplicon1	Complex non-cyclic_1	3.79576340792692	0.617709577578974	3.1780538303479458
+FLO-1	amplicon2	Linear amplification_1	1.686954163255013	0.3006598021351224	1.3862943611198906
+FLO-1	amplicon3	ecDNA_1	0.31640977765463535	0.31640977765463535	-0.0
+FLO-1	amplicon4	ecDNA_1	0.31853543669293	0.31853543669293	-0.0

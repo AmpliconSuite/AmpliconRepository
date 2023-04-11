@@ -1,0 +1,153 @@
+Tue Sep  6 21:33:20 PDT 2022
+genome-workhorse0.priv
+Global ref name is GRCh38
+[root:INFO]	Commandline: /home/jluebeck/dev/AmpliconArchitect/src/AmpliconArchitect.py --ref GRCh38 --downsample 10 --bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_AA_CNV_SEEDS.bed --bam /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414290/ERR1414290.cs.rmdup.bam --runmode FULL --extendmode EXPLORE --insert_sdevs 3.0 --out /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_AA_results//ESO26 
+[root:INFO]	AmpliconArchitect version 1.3.r1
+
+[root:INFO]	Python version 2.7.12 (default, Mar  1 2021, 11:38:31) 
+[GCC 5.4.0 20160609]
+
+[root:INFO]	#TIME 0.265	Loading libraries and reference annotations for: GRCh38
+Global ref name is GRCh38
+[root:INFO]	#TIME 3.023	Initiating bam_to_breakpoint object for: /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414290/ERR1414290.cs.rmdup.bam
+[root:INFO]	#TIME 3.026	Reusing cstats from /nucleus/libs/AmpliconArchitect/release/indexed/coverage.stats
+[root:INFO]	#TIME 3.027	Exploring interval: chr5	51400000	54459756
+[root:INFO]	#TIME 69.676	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 182.270	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 286.084	 Selecting neighbors
+[root:INFO]	#TIME 854.557	Exploring interval: chr10	60980382	62960386
+[root:INFO]	#TIME 940.446	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1024.315	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1071.985	 Selecting neighbors
+[root:INFO]	#TIME 1071.987	Exploring interval: chr10	77295401	79310404
+[root:INFO]	#TIME 1099.137	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1206.867	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1265.037	 Selecting neighbors
+[root:INFO]	#TIME 1265.060	 New neighbor: chr10	83275408	83880410	10 (weight=10)
+[root:INFO]	#TIME 1265.061	 New neighbor: chr10	84285409	84970411	20 (weight=20)
+[root:INFO]	#TIME 1265.065	Exploring interval: chr10	83275408	83880410
+[root:INFO]	#TIME 1270.480	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1280.752	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1312.457	 Selecting neighbors
+[root:INFO]	#TIME 1312.459	 New neighbor: chr10	77195401	79310404	9 (weight=9)
+[root:INFO]	#TIME 1312.459	 New neighbor: chr10	84285409	84970411	14 (weight=14)
+[root:INFO]	#TIME 1312.462	Exploring interval: chr10	84285409	84970411
+[root:INFO]	#TIME 1314.113	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1385.433	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1417.416	 Selecting neighbors
+[root:INFO]	#TIME 1604.341	 New neighbor: chr10	77195401	79310404	30 (weight=30)
+[root:INFO]	#TIME 1604.341	 New neighbor: chr10	83275408	83880410	14 (weight=14)
+[root:INFO]	#TIME 1604.342	 New neighbor: chr18	53065064	53075596	12 (weight=12)
+[root:INFO]	#TIME 1605.985	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1645.923	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1647.465	 Selecting neighbors
+[root:INFO]	#TIME 1647.467	Exploring interval: chr12	40480253	47985259
+[root:INFO]	#TIME 1746.042	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 2156.933	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 2585.035	 Selecting neighbors
+[root:INFO]	#TIME 2587.810	 New neighbor: chr16	27040387	27245362	61 (weight=61)
+[root:INFO]	#TIME 2588.584	Exploring interval: chr16	27040387	27245362
+[root:INFO]	#TIME 2655.863	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 2795.760	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 2830.920	 Selecting neighbors
+[root:INFO]	#TIME 2830.922	 New neighbor: chr12	40380253	48085259	61 (weight=61)
+[root:INFO]	#TIME 2830.924	Exploring interval: chr17	38421307	38976324
+[root:INFO]	#TIME 2951.189	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 3310.924	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 3604.764	 Selecting neighbors
+[root:INFO]	#TIME 3605.744	 New neighbor: chr17	39631341	39846348	197 (weight=197)
+[root:INFO]	#TIME 3605.744	 New neighbor: chr17	40156356	40236360	285 (weight=285)
+[root:INFO]	#TIME 3605.745	 New neighbor: chr17	41706319	41876852	433 (weight=433)
+[root:INFO]	#TIME 3605.955	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 3646.766	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 3764.619	 Selecting neighbors
+[root:INFO]	#TIME 3764.622	Exploring interval: chr17	39631341	39846348
+[root:INFO]	#TIME 3799.507	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 3836.210	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 4010.890	 Selecting neighbors
+[root:INFO]	#TIME 4010.891	 New neighbor: chr17	38321307	39076324	197 (weight=197)
+[root:INFO]	#TIME 4010.892	 New neighbor: chr17	40156356	40236360	285 (weight=285)
+[root:INFO]	#TIME 4010.908	Exploring interval: chr17	40156356	40236360
+[root:INFO]	#TIME 4018.183	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4024.154	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 4130.331	 Selecting neighbors
+[root:INFO]	#TIME 4130.332	 New neighbor: chr17	39531341	39946348	285 (weight=285)
+[root:INFO]	#TIME 4130.336	Interval sets for amplicons determined: 
+[root:INFO]	[amplicon1]	chr5:51400000-54459756
+[root:INFO]	[amplicon2]	chr10:60960382-62980386
+[root:INFO]	[amplicon3]	chr10:77195401-79310404,chr10:83265408-83880410,chr10:84185409-85070411,chr18:53065064-53075596
+[root:INFO]	[amplicon4]	chr12:40380253-48085259,chr16:26940387-27345362
+[root:INFO]	[amplicon5]	chr17:38321307-39076324,chr17:39531341-39946348,chr17:40116356-40356360,chr17:41706319-41876852
+[root:INFO]	#TIME 4130.344	Reconstructing amplicon1
+[root:INFO]	#TIME 4130.345	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4130.359	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 4130.381	 Building breakpoint graph
+[root:INFO]	#TIME 4130.847	 Optimizing graph copy number flow
+[root:INFO]	#TIME 4218.207	 Plotting SV View
+[root:INFO]	#TIME 4218.357	Plotting SV View for amplicon1
+/usr/local/lib/python2.7/dist-packages/matplotlib/font_manager.py:1331: UserWarning: findfont: Font family [u'sans-serif'] not found. Falling back to DejaVu Sans
+  (prop.get_family(), self.defaultFamily[fontext]))
+[root:INFO]	#TIME 4220.945	Reconstructing amplicon2
+[root:INFO]	#TIME 4220.947	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4220.949	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 4220.952	 Building breakpoint graph
+[root:INFO]	#TIME 4221.078	 Optimizing graph copy number flow
+[root:INFO]	#TIME 4282.763	 Plotting SV View
+[root:INFO]	#TIME 4282.774	Plotting SV View for amplicon2
+[root:INFO]	#TIME 4285.052	Reconstructing amplicon3
+[root:INFO]	#TIME 4285.054	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4285.082	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 4400.726	 Building breakpoint graph
+[root:INFO]	#TIME 4402.356	 Optimizing graph copy number flow
+[root:INFO]	#TIME 4515.756	 Plotting SV View
+[root:INFO]	#TIME 4516.722	Plotting SV View for amplicon3
+[root:INFO]	#TIME 4766.485	Reconstructing amplicon4
+[root:INFO]	#TIME 4766.488	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4766.491	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 5162.854	 Building breakpoint graph
+[root:INFO]	#TIME 5173.722	 Optimizing graph copy number flow
+[root:INFO]	#TIME 5508.973	 Plotting SV View
+[root:INFO]	#TIME 5515.188	Plotting SV View for amplicon4
+[root:INFO]	#TIME 5599.617	Reconstructing amplicon5
+[root:INFO]	#TIME 5599.629	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 5640.617	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 6236.029	 Building breakpoint graph
+[root:INFO]	#TIME 6251.141	 Optimizing graph copy number flow
+[root:INFO]	#TIME 6410.065	 Plotting SV View
+[root:INFO]	#TIME 6411.697	Plotting SV View for amplicon5
+[root:INFO]	#TIME 7062.799	Total Runtime
+AmpliconClassifier 0.4.11
+/home/jluebeck/ecDNA/AmpliconClassifier/amplicon_classifier.py -i /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_classification/ESO26.input --ref GRCh38 -o /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_classification/ESO26 --report_complexity
+reading /nucleus/libs/AmpliconArchitect/release/indexed//GRCh38/Genes_hg38.gff
+read 22998 genes
+
+ESO26 amplicon1
+ESO26 amplicon2
+ESO26 amplicon3
+ESO26 amplicon4
+ESO26 amplicon5
+Classification stage completed
+Writing outputs...
+done
+2022-09-06 21:33:20.740455
+PrepareAA version 0.1203.12
+
+Matched /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414290/ERR1414290.cs.rmdup.bam to reference genome GRCh38
+Running PrepareAA on sample: ESO26
+/nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414290/ERR1414290.cs.rmdup.bam: 1035439126 + 0 properly paired (93.39%:-nan%)
+WARNING: BAM FILE PROPERLY PAIRED RATE IS BELOW 95%.
+Quality of data may be insufficient for AA analysis. Poorly controlled insert size distribution during sample prep can cause high fractions of read pairs to be marked as discordant during alignment. Artifactual short SVs and long runtimes may occur!
+
+
+Running amplified_intervals
+python /home/jluebeck/dev/AmpliconArchitect/src/amplified_intervals.py --ref GRCh38 --bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26//ERR1414290.cs.rmdup_CNV_CALLS_pre_filtered.bed --bam /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414290/ERR1414290.cs.rmdup.bam --gain 4.5 --cnsize_min 50000 --out /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_AA_CNV_SEEDS
+python /home/jluebeck/dev/AmpliconArchitect/src/AmpliconArchitect.py --ref GRCh38 --downsample 10 --bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_AA_CNV_SEEDS.bed --bam /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414290/ERR1414290.cs.rmdup.bam --runmode FULL --extendmode EXPLORE --insert_sdevs 3.0 --out /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_AA_results//ESO26
+
+Running AC
+/home/jluebeck/ecDNA/AmpliconClassifier/make_input.sh /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_AA_results/ /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_classification/ESO26
+python3 /home/jluebeck/ecDNA/AmpliconClassifier/amplicon_classifier.py -i /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_classification/ESO26.input --ref GRCh38 -o /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_classification/ESO26 --report_complexity
+python3 /home/jluebeck/ecDNA/AmpliconClassifier/make_results_table.py -i /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_classification/ESO26.input --classification_file /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_classification/ESO26_amplicon_classification_profiles.tsv --cnv_bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ERR1414290.cs.rmdup_CNV_CALLS.bed --metadata_dict /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO26/ESO26_run_metadata.json
+Completed
+
+2022-09-07 00:26:56.196580
+Wed Sep  7 00:26:56 PDT 2022

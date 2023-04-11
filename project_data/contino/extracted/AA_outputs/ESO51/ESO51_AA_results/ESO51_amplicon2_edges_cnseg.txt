@@ -1,0 +1,4 @@
+chr3:37811524-->chr3:37814131-	6	None	None
+chr3:37814131-->chr3:37811524-	6	None	None
+chr3:39468678+->chr3:39469200-	10	None	None
+chr3:39469200-->chr3:39468678+	10	None	None

@@ -1,0 +1,36 @@
+List of cycle segments
+Segment	1	chr17	38419800	38798474
+Segment	2	chr17	38421001	38512799
+Segment	3	chr17	38421001	38597999
+Segment	4	chr17	38421001	38798474
+Segment	5	chr17	38584200	38798474
+Segment	6	chr17	38765700	38798474
+Segment	7	chr17	38772186	38798474
+Segment	8	chr17	38774696	38798474
+Segment	9	chr17	38800908	38871155
+Segment	10	chr17	38800908	38872151
+Segment	11	chr17	38800908	38977466
+Segment	12	chr17	38872611	38874899
+Segment	13	chr17	38972766	38977466
+Segment	14	chr17	39631095	39845694
+Segment	15	chr17	39631095	39849899
+Segment	16	chr17	39631095	39946348
+Segment	17	chr17	39638100	39845694
+Segment	18	chr17	40116356	40233778
+Segment	19	chr17	40156399	40233778
+Segment	20	chr17	40156399	40356360
+Segment	21	chr17	40157595	40233778
+Segment	22	chr17	41706319	41776852
+Segment	23	chr17	41746215	41776852
+Segment	24	chr17	41748205	41776852
+Segment	25	chr17	41754600	41776852
+Cycle=1;Copy_count=13.951169237;Length=109350;IsCyclicPath=True;CycleClass=BFB-like;Segments=23+,8-,7+,24-
+Cycle=2;Copy_count=5.41720625414;Length=1750106;IsCyclicPath=True;CycleClass=BFB-like;Segments=4+,23-,24+,4-,11-,14-,19-,21+,14+,11+
+Cycle=3;Copy_count=4.50524392105;Length=724250;IsCyclicPath=True;CycleClass=BFB-like;Segments=14+,10+,9-,14-,19-,21+
+Cycle=4;Copy_count=3.35919729005;Length=561150;IsCyclicPath=False;CycleClass=Rearranged;Segments=0+,3-,11-,17-,0+
+Cycle=5;Copy_count=3.00799706422;Length=98786;IsCyclicPath=False;CycleClass=Rearranged;Segments=0+,12-,13+,2+,0+
+Cycle=6;Copy_count=2.66069278726;Length=236526;IsCyclicPath=False;CycleClass=Rearranged;Segments=0+,5+,25-,0+
+Cycle=7;Copy_count=2.1181210499;Length=55026;IsCyclicPath=False;CycleClass=Rearranged;Segments=0+,25+,6-,0+
+Cycle=8;Copy_count=1.97215562954;Length=432675;IsCyclicPath=False;CycleClass=Rearranged;Segments=0+,16-,18-,0+
+Cycle=9;Copy_count=1.71105281143;Length=494948;IsCyclicPath=False;CycleClass=BFB-like;Segments=0+,15-,21-,20+,0+
+Cycle=10;Copy_count=1.46477579718;Length=449207;IsCyclicPath=False;CycleClass=Rearranged;Segments=0+,22+,1-,0+

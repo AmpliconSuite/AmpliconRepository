@@ -1,0 +1,11 @@
+include custom_oncoprint/custom_oncoprint.min.js
+include custom_oncoprint/custom_oncoprint.min.js.map
+include custom_oncoprint/async-*.js
+include custom_oncoprint/async-*.js.map
+include custom_oncoprint/*-shared.js
+include custom_oncoprint/*-shared.js.map
+include custom_oncoprint/metadata.json
+include custom_oncoprint/package-info.json
+include README.md
+include LICENSE
+include package.json

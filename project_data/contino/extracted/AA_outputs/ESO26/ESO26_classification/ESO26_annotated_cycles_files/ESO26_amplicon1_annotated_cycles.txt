@@ -1,0 +1,19 @@
+List of cycle segments
+Segment	1	chr5	51400000	51925490
+Segment	2	chr5	51400000	51925599
+Segment	3	chr5	51400000	54459756
+Segment	4	chr5	51925610	53826933
+Segment	5	chr5	51925610	53829471
+Segment	6	chr5	51927106	51927213
+Segment	7	chr5	51927215	53829471
+Segment	8	chr5	53826783	53826933
+Segment	9	chr5	53826783	54455705
+Segment	10	chr5	53829681	54458031
+Segment	11	chr5	53829681	54459756
+Cycle=1;Copy_count=2.31777473871;Length=525599;IsCyclicPath=False;CycleClass=Invalid;Segments=0+,2-,0+
+Cycle=2;Copy_count=1.68863073858;Length=1257272;IsCyclicPath=True;CycleClass=BFB-like;Segments=9+,10-
+Cycle=3;Copy_count=1.59201746911;Length=3805184;IsCyclicPath=False;CycleClass=BFB-like;Segments=0+,4+,5-,0+
+Cycle=4;Copy_count=1.25165034556;Length=525490;IsCyclicPath=False;CycleClass=Invalid;Segments=0+,1-,0+
+Cycle=5;Copy_count=1.14045075406;Length=107;IsCyclicPath=False;CycleClass=Invalid;Segments=0+,6-,0+
+Cycle=6;Copy_count=0.897881601319;Length=3059756;IsCyclicPath=False;CycleClass=Invalid;Segments=0+,3-,0+
+Cycle=7;Copy_count=0.425620807202;Length=2532481;IsCyclicPath=False;CycleClass=BFB-like_Invalid;Segments=0+,11-,8+,7-,0+

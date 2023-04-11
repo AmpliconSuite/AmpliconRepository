@@ -1,0 +1,6 @@
+chrom1	pos1	chrom2	pos2	sv_type	read_support	features	orientation	pos1_flanking_coordinate	pos2_flanking_coordinate
+chr8	127612231	chr8	127752125	duplication-like	34	ecDNA	-+	127612232	127752124
+chr8	126276246	chr8	128259748	inversion	16	ecDNA	--	126276247	128259749
+chr8	128253743	chr8	128270209	foldback	19	ecDNA	++	128253742	128270208
+chr8	128452921	chr8	128459020	deletion-like	57	None	+-	128452920	128459021
+chr8	115938039	chr8	128565943	deletion-like	10	unknown	+-	115938038	128565944

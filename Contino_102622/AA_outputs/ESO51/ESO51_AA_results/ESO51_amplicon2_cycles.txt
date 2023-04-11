@@ -1,0 +1,11 @@
+Interval	1	chr3	37811024	40841096
+List of cycle segments
+Segment	1	chr3	37811024	39468678
+Segment	2	chr3	37811524	39468678
+Segment	3	chr3	37811524	40841096
+Segment	4	chr3	37814131	39468678
+Segment	5	chr3	37814131	40841096
+Segment	6	chr3	39469200	40841096
+Cycle=1;Copy_count=2.55340971538;Segments=0+,6-,1-,0-
+Cycle=2;Copy_count=1.04707950479;Segments=0+,5-,3+,0-
+Cycle=3;Copy_count=0.389480088254;Segments=0+,6-,4-,2+,6+,0-

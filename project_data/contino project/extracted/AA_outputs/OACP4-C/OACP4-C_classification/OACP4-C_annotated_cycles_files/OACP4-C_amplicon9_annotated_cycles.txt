@@ -1,0 +1,9 @@
+List of cycle segments
+Segment	1	chr4	157987694	157994831
+Segment	2	chr4	157987694	158262699
+Segment	3	chr4	157994547	158262525
+Segment	4	chr4	157994836	158258829
+Cycle=1;Copy_count=2.53644645863;Length=275005;IsCyclicPath=False;CycleClass=Linear;Segments=0+,2-,0+
+Cycle=2;Copy_count=2.42476844227;Length=263993;IsCyclicPath=True;CycleClass=ecDNA-like;Segments=4+
+Cycle=3;Copy_count=0.980474146006;Length=7137;IsCyclicPath=False;CycleClass=Invalid;Segments=0+,1-,0+
+Cycle=4;Copy_count=0.783490973899;Length=267978;IsCyclicPath=True;CycleClass=ecDNA-like;Segments=3+

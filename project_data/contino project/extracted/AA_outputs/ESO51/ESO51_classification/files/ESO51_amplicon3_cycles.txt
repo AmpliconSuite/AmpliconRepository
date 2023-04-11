@@ -1,0 +1,47 @@
+Interval	1	chr3	195576042	196110837
+Interval	2	chr3	197540987	197751537
+Interval	3	chr5	261958	272509
+Interval	4	chr5	1295041	1685050
+List of cycle segments
+Segment	1	chr3	195576042	195779197
+Segment	2	chr3	195622059	195750507
+Segment	3	chr3	195689285	195783137
+Segment	4	chr3	195779060	195779197
+Segment	5	chr3	195779882	195781339
+Segment	6	chr3	195779882	195788410
+Segment	7	chr3	195780177	195780974
+Segment	8	chr3	195780177	195786848
+Segment	9	chr3	195784034	195786932
+Segment	10	chr3	195785392	195786848
+Segment	11	chr3	195785589	195786848
+Segment	12	chr3	195788129	195788410
+Segment	13	chr3	195788129	195941593
+Segment	14	chr3	195788129	196110837
+Segment	15	chr3	195940784	196000837
+Segment	16	chr3	195943919	195944671
+Segment	17	chr3	195944181	195945210
+Segment	18	chr3	195958638	196003199
+Segment	19	chr3	196001053	196003199
+Segment	20	chr3	197540987	197751537
+Segment	21	chr3	197641330	197641638
+Segment	22	chr5	261958	262509
+Segment	23	chr5	261958	272509
+Segment	24	chr5	1295041	1569770
+Segment	25	chr5	1295041	1581899
+Segment	26	chr5	1329994	1627023
+Segment	27	chr5	1628733	1685050
+Cycle=1;Copy_count=8.19266068809;Segments=9+
+Cycle=2;Copy_count=6.34131562879;Segments=6+
+Cycle=3;Copy_count=5.19690286161;Segments=16+,21+
+Cycle=4;Copy_count=4.76842721935;Segments=0+,20-,0-
+Cycle=5;Copy_count=4.13084361947;Segments=0+,25-,0-
+Cycle=6;Copy_count=3.36490800027;Segments=0+,14-,8-,1-,0-
+Cycle=7;Copy_count=3.28370975333;Segments=17+
+Cycle=8;Copy_count=3.02758032837;Segments=2+
+Cycle=9;Copy_count=2.36474366122;Segments=15+
+Cycle=10;Copy_count=2.28895804421;Segments=7+,4+
+Cycle=11;Copy_count=1.80702714261;Segments=0+,23-,0-
+Cycle=12;Copy_count=1.04390025986;Segments=0+,19-,13-,11-,3-,18+,0-
+Cycle=13;Copy_count=1.03155506617;Segments=0+,27-,26-,0-
+Cycle=14;Copy_count=1.02895941536;Segments=5+,10+,12+
+Cycle=15;Copy_count=0.853616538403;Segments=0+,24+,22-,0-

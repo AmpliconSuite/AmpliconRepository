@@ -1,0 +1,4 @@
+chrom1	pos1	chrom2	pos2	sv_type	read_support	features	orientation	pos1_flanking_coordinate	pos2_flanking_coordinate
+chr5	53826933	chr5	53829471	foldback	22	BFB	++	53826932	53829470
+chr5	53826783	chr5	53829681	foldback	17	BFB	--	53826784	53829682
+chr5	54455705	chr5	54458031	foldback	22	BFB	++	54455704	54458030

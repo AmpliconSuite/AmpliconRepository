@@ -1,0 +1,77 @@
+#Amplicons = 5
+-----------------------------------------------------------------------------------------
+[amplicon1] AmpliconID = 1
+[amplicon1] #Intervals = 3
+[amplicon1] Intervals = chr5:3234197-3254696,chr7:109746210-120586083,chr12:107808986-107819486
+[amplicon1] OncogenesAmplified = CAV1,
+[amplicon1] TotalIntervalSize = 10870875
+[amplicon1] AmplifiedIntervalSize = 10747198
+[amplicon1] AverageAmplifiedCopyCount = 10.99073174270926
+[amplicon1] #Chromosomes = 3
+[amplicon1] #SeqenceEdges = 39
+[amplicon1] #BreakpointEdges = 14
+[amplicon1] #CoverageShifts = 5
+[amplicon1] #MeanshiftSegmentsCopyCount>5 = 0
+[amplicon1] #Foldbacks = 2
+[amplicon1] #CoverageShiftsWithBreakpointEdges = 5
+[amplicon1] -----------------------------------------------------------------------------------------
+[amplicon2] AmpliconID = 2
+[amplicon2] #Intervals = 1
+[amplicon2] Intervals = chr8:127253811-127308812
+[amplicon2] OncogenesAmplified = ,
+[amplicon2] TotalIntervalSize = 55002
+[amplicon2] AmplifiedIntervalSize = 55001
+[amplicon2] AverageAmplifiedCopyCount = 5.7788008507654895
+[amplicon2] #Chromosomes = 1
+[amplicon2] #SeqenceEdges = 1
+[amplicon2] #BreakpointEdges = 0
+[amplicon2] #CoverageShifts = 0
+[amplicon2] #MeanshiftSegmentsCopyCount>5 = 0
+[amplicon2] #Foldbacks = 0
+[amplicon2] #CoverageShiftsWithBreakpointEdges = 0
+[amplicon2] -----------------------------------------------------------------------------------------
+[amplicon3] AmpliconID = 3
+[amplicon3] #Intervals = 1
+[amplicon3] Intervals = chr17:29186044-29956064
+[amplicon3] OncogenesAmplified = ,
+[amplicon3] TotalIntervalSize = 770021
+[amplicon3] AmplifiedIntervalSize = 770016
+[amplicon3] AverageAmplifiedCopyCount = 6.886322608592501
+[amplicon3] #Chromosomes = 1
+[amplicon3] #SeqenceEdges = 5
+[amplicon3] #BreakpointEdges = 2
+[amplicon3] #CoverageShifts = 1
+[amplicon3] #MeanshiftSegmentsCopyCount>5 = 0
+[amplicon3] #Foldbacks = 1
+[amplicon3] #CoverageShiftsWithBreakpointEdges = 0
+[amplicon3] -----------------------------------------------------------------------------------------
+[amplicon4] AmpliconID = 4
+[amplicon4] #Intervals = 1
+[amplicon4] Intervals = chr17:37151273-42896355
+[amplicon4] OncogenesAmplified = ERBB2,RARA,TBC1D3C,STAT3,CDK12,MLLT6,STAT5B,JUP,SMARCE1,TNS4,
+[amplicon4] TotalIntervalSize = 5745083
+[amplicon4] AmplifiedIntervalSize = 3600937
+[amplicon4] AverageAmplifiedCopyCount = 13.749640323367306
+[amplicon4] #Chromosomes = 1
+[amplicon4] #SeqenceEdges = 33
+[amplicon4] #BreakpointEdges = 10
+[amplicon4] #CoverageShifts = 11
+[amplicon4] #MeanshiftSegmentsCopyCount>5 = 4
+[amplicon4] #Foldbacks = 7
+[amplicon4] #CoverageShiftsWithBreakpointEdges = 10
+[amplicon4] -----------------------------------------------------------------------------------------
+[amplicon5] AmpliconID = 5
+[amplicon5] #Intervals = 1
+[amplicon5] Intervals = chrX:133600042-133805052
+[amplicon5] OncogenesAmplified = GPC3,
+[amplicon5] TotalIntervalSize = 205011
+[amplicon5] AmplifiedIntervalSize = 167536
+[amplicon5] AverageAmplifiedCopyCount = 3.453235778592369
+[amplicon5] #Chromosomes = 1
+[amplicon5] #SeqenceEdges = 4
+[amplicon5] #BreakpointEdges = 1
+[amplicon5] #CoverageShifts = 1
+[amplicon5] #MeanshiftSegmentsCopyCount>5 = 0
+[amplicon5] #Foldbacks = 1
+[amplicon5] #CoverageShiftsWithBreakpointEdges = 1
+[amplicon5] -----------------------------------------------------------------------------------------

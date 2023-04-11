@@ -1,0 +1,16 @@
+Interval	1	chr18	6611473	6631997
+Interval	2	chr18	6830398	7875459
+List of cycle segments
+Segment	1	chr18	6611473	6612030
+Segment	2	chr18	6611473	6631997
+Segment	3	chr18	6611668	6631997
+Segment	4	chr18	6830398	7875459
+Segment	5	chr18	6830814	7866608
+Segment	6	chr18	6830814	7875459
+Segment	7	chr18	6833496	7866608
+Segment	8	chr18	6833496	7875459
+Cycle=1;Copy_count=5.91819677825;Segments=0+,4-,0-
+Cycle=2;Copy_count=5.12061456602;Segments=0+,2-,0-
+Cycle=3;Copy_count=1.32199216462;Segments=0+,1-,7-,5+,1+,0-
+Cycle=4;Copy_count=0.749204518196;Segments=0+,3-,0-
+Cycle=5;Copy_count=0.620992022805;Segments=0+,8-,6+,0-

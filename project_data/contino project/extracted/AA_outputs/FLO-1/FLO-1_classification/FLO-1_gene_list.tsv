@@ -1,0 +1,31 @@
+sample_name	amplicon_number	feature	gene	gene_cn	truncated	is_canonical_oncogene
+FLO-1	amplicon1	Complex non-cyclic_1	ACOT13	7.706659521085718	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	ALDH5A1	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	ARMH2	7.706659521085718	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	C6orf62	7.706659521085718	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	CARMIL1	5.786787259509028	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	CASC15	5.591770354012752	5p	False
+FLO-1	amplicon1	Complex non-cyclic_1	CMAHP	5.786787259509028	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	DCDC2	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	GMNN	7.706659521085718	None	True
+FLO-1	amplicon1	Complex non-cyclic_1	GPLD1	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	H2AC1	5.971695625342058	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	H2AC2P	5.971695625342058	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	H2BC1	5.971695625342058	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	HDGFL1	5.591770354012752	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	KAAG1	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	KIAA0319	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	MRS2	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	NBAT1	5.591770354012752	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	NRSN1	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	PRL	5.591770354012752	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	RIPOR2	7.706659521085718	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	SCGN	5.786787259509028	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	SLC17A4	5.067112605488924	3p	False
+FLO-1	amplicon1	Complex non-cyclic_1	TDP2	6.909151304927343	None	False
+FLO-1	amplicon3	ecDNA_1	MUSK	4.875774655726435	3p	False
+FLO-1	amplicon3	ecDNA_1	SVEP1	4.875774655726435	3p	False
+FLO-1	amplicon4	ecDNA_1	GGTA1P	5.397767327946513	5p	False
+FLO-1	amplicon4	ecDNA_1	GSN	5.397767327946513	5p	False
+FLO-1	amplicon4	ecDNA_1	GSN-AS1	5.397767327946513	None	False
+FLO-1	amplicon4	ecDNA_1	STOM	5.397767327946513	None	False

@@ -1,0 +1,29 @@
+sample_name	amplicon_number	amplicon_decomposition_class	ecDNA+	BFB+	ecDNA_amplicons
+OACP4-C	amplicon10	Cyclic	Positive	None detected	1
+OACP4-C	amplicon11	Complex non-cyclic	None detected	None detected	0
+OACP4-C	amplicon12	Cyclic	Positive	None detected	1
+OACP4-C	amplicon13	Cyclic	Positive	None detected	1
+OACP4-C	amplicon14	Cyclic	Positive	None detected	1
+OACP4-C	amplicon15	Complex non-cyclic	None detected	None detected	0
+OACP4-C	amplicon16	Linear amplification	None detected	None detected	0
+OACP4-C	amplicon17	Cyclic	Positive	None detected	1
+OACP4-C	amplicon18	Cyclic	Positive	None detected	1
+OACP4-C	amplicon19	Linear amplification	None detected	None detected	0
+OACP4-C	amplicon1	Cyclic	Positive	None detected	1
+OACP4-C	amplicon20	Cyclic	Positive	None detected	1
+OACP4-C	amplicon21	Linear amplification	None detected	None detected	0
+OACP4-C	amplicon22	Linear amplification	None detected	None detected	0
+OACP4-C	amplicon23	Cyclic	Positive	None detected	1
+OACP4-C	amplicon24	Cyclic	Positive	None detected	1
+OACP4-C	amplicon25	Linear amplification	None detected	None detected	0
+OACP4-C	amplicon26	Cyclic	Positive	None detected	1
+OACP4-C	amplicon27	Cyclic	Positive	None detected	1
+OACP4-C	amplicon28	No amp/Invalid	None detected	None detected	0
+OACP4-C	amplicon2	Cyclic	Positive	None detected	1
+OACP4-C	amplicon3	Cyclic	Positive	None detected	1
+OACP4-C	amplicon4	Cyclic	Positive	None detected	1
+OACP4-C	amplicon5	Cyclic	Positive	None detected	1
+OACP4-C	amplicon6	Linear amplification	None detected	None detected	0
+OACP4-C	amplicon7	Cyclic	Positive	None detected	1
+OACP4-C	amplicon8	Cyclic	Positive	None detected	1
+OACP4-C	amplicon9	Cyclic	Positive	None detected	1

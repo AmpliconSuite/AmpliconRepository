@@ -1,0 +1,2 @@
+chrX:19765655-->chrX:19878178+	28	None	None
+chrX:19878178+->chrX:19765655-	28	None	None

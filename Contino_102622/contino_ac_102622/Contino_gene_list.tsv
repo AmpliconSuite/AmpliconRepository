@@ -1,0 +1,927 @@
+sample_name	amplicon_number	feature	gene	gene_cn	truncated	is_canonical_oncogene
+ESO26	amplicon1	BFB_1	ARL15	4.825827290464297	None	False
+ESO26	amplicon1	BFB_1	FST	5.031071353700711	None	False
+ESO26	amplicon1	BFB_1	HSPB3	4.825827290464297	None	False
+ESO26	amplicon1	BFB_1	ITGA1	5.031071353700711	None	False
+ESO26	amplicon1	BFB_1	ITGA2	5.031071353700711	None	False
+ESO26	amplicon1	BFB_1	MOCS2	5.031071353700711	None	False
+ESO26	amplicon1	BFB_1	NDUFS4	5.031071353700711	None	False
+ESO26	amplicon1	BFB_1	PELO	5.031071353700711	None	False
+ESO26	amplicon2	BFB_1	ADO	5.388892778949169	None	False
+ESO26	amplicon2	BFB_1	ARID5B	5.388892778949169	None	False
+ESO26	amplicon2	BFB_1	CABCOCO1	5.388892778949169	None	False
+ESO26	amplicon2	BFB_1	EGR2	5.388892778949169	None	False
+ESO26	amplicon2	BFB_1	RTKN2	5.388892778949169	None	False
+ESO26	amplicon2	BFB_1	TMEM26	5.388892778949169	None	False
+ESO26	amplicon2	BFB_1	TMEM26-AS1	5.388892778949169	None	False
+ESO26	amplicon2	BFB_1	ZNF365	5.388892778949169	None	False
+ESO26	amplicon3	Complex non-cyclic_1	CCSER2	5.243619789963921	None	False
+ESO26	amplicon3	Complex non-cyclic_1	CDHR1	3.5444032158960295	None	False
+ESO26	amplicon3	Complex non-cyclic_1	DLG5	5.694690609435769	None	False
+ESO26	amplicon3	Complex non-cyclic_1	DLG5-AS1	5.694690609435769	None	False
+ESO26	amplicon3	Complex non-cyclic_1	KCNMA1	5.694690609435769	3p	False
+ESO26	amplicon3	Complex non-cyclic_1	KCNMA1-AS3	5.694690609435769	None	False
+ESO26	amplicon3	Complex non-cyclic_1	LRIT1	3.5444032158960295	None	False
+ESO26	amplicon3	Complex non-cyclic_1	LRIT2	3.5444032158960295	None	False
+ESO26	amplicon3	Complex non-cyclic_1	POLR3A	5.694690609435769	None	False
+ESO26	amplicon3	Complex non-cyclic_1	RGR	3.5444032158960295	None	True
+ESO26	amplicon3	Complex non-cyclic_1	RPS24	5.694690609435769	None	False
+ESO26	amplicon3	Complex non-cyclic_1	ZMIZ1	6.134792395860982	3p	False
+ESO26	amplicon3	Complex non-cyclic_1	ZMIZ1-AS1	5.694690609435769	None	False
+ESO26	amplicon4	BFB_1	ADAMTS20	6.836063812355197	None	False
+ESO26	amplicon4	BFB_1	ANO6	6.820153734381607	None	False
+ESO26	amplicon4	BFB_1	ARID2	6.820153734381603	None	True
+ESO26	amplicon4	BFB_1	CNTN1	9.29905300321262	None	False
+ESO26	amplicon4	BFB_1	DBX2	6.820153734381607	None	False
+ESO26	amplicon4	BFB_1	GXYLT1	5.701487498055876	None	False
+ESO26	amplicon4	BFB_1	IRAK4	6.820153734381607	None	False
+ESO26	amplicon4	BFB_1	MUC19	9.299053003212622	5p	False
+ESO26	amplicon4	BFB_1	NELL2	6.820153734381607	None	False
+ESO26	amplicon4	BFB_1	PDZRN4	6.856242676288197	None	False
+ESO26	amplicon4	BFB_1	PLEKHA8P1	6.820153734381607	None	False
+ESO26	amplicon4	BFB_1	PPHLN1	5.701487498055876	None	False
+ESO26	amplicon4	BFB_1	PRICKLE1	5.701487498055876	None	False
+ESO26	amplicon4	BFB_1	PUS7L	6.820153734381607	None	False
+ESO26	amplicon4	BFB_1	RACGAP1P	6.820153734381607	None	False
+ESO26	amplicon4	BFB_1	SCAF11	6.820153734381603	None	False
+ESO26	amplicon4	BFB_1	SLC38A1	6.820153734381603	None	False
+ESO26	amplicon4	BFB_1	SLC38A2	6.820153734381603	None	False
+ESO26	amplicon4	BFB_1	SLC38A4	6.820153734381603	None	False
+ESO26	amplicon4	BFB_1	TMEM117	6.820153734381607	None	False
+ESO26	amplicon4	BFB_1	TWF1	6.820153734381607	None	False
+ESO26	amplicon4	BFB_1	YAF2	5.701487498055876	None	False
+ESO26	amplicon4	BFB_1	ZCRB1	5.701487498055876	None	False
+ESO26	amplicon4	unknown_1	C16orf82	9.943586404117415	None	False
+ESO26	amplicon4	unknown_1	COL2A1	9.99856080522554	None	False
+ESO26	amplicon4	unknown_1	IL4R	2.112674909472096	3p	False
+ESO26	amplicon4	unknown_1	KDM8	9.592057686944885	None	False
+ESO26	amplicon4	unknown_1	NSMCE1	9.592057686944885	None	False
+ESO26	amplicon4	unknown_1	NSMCE1-DT	2.112674909472096	None	False
+ESO26	amplicon4	unknown_1	SENP1	1.1560509287808851	5p	False
+ESO26	amplicon4	unknown_1	TMEM106C	9.99856080522554	None	False
+ESO26	amplicon4	unknown_1	VDR	9.99856080522554	3p	False
+ESO26	amplicon5	BFB_1	ARHGAP23	19.823465755462504	None	False
+ESO26	amplicon5	BFB_1	C17orf98	25.029360904044786	None	False
+ESO26	amplicon5	BFB_1	CASC3	26.022319569914384	5p	False
+ESO26	amplicon5	BFB_1	CDC6	1.8230638176424456	None	True
+ESO26	amplicon5	BFB_1	CISD3	15.848090800672637	None	False
+ESO26	amplicon5	BFB_1	CWC25	25.029360904044786	3p	False
+ESO26	amplicon5	BFB_1	EPOP	15.848090800672637	None	False
+ESO26	amplicon5	BFB_1	ERBB2	28.175612707228332	None	True
+ESO26	amplicon5	BFB_1	FBXO47	14.193609798336809	None	False
+ESO26	amplicon5	BFB_1	GRB7	28.175612707228332	None	False
+ESO26	amplicon5	BFB_1	IKZF3	28.175612707228332	None	False
+ESO26	amplicon5	BFB_1	JUP	46.835720558828456	5p	True
+ESO26	amplicon5	BFB_1	LASP1	25.029360904044786	None	True
+ESO26	amplicon5	BFB_1	MIEN1	28.175612707228332	None	False
+ESO26	amplicon5	BFB_1	MLLT6	15.848090800672637	None	True
+ESO26	amplicon5	BFB_1	PCGF2	15.848090800672637	None	False
+ESO26	amplicon5	BFB_1	PGAP3	28.175612707228332	None	False
+ESO26	amplicon5	BFB_1	PIP4K2B	45.86855028567604	5p	False
+ESO26	amplicon5	BFB_1	PNMT	28.175612707228332	None	False
+ESO26	amplicon5	BFB_1	PPP1R1B	24.613121445308398	5p	False
+ESO26	amplicon5	BFB_1	PSMB3	15.848090800672637	None	False
+ESO26	amplicon5	BFB_1	RAPGEFL1	26.022319569914384	None	False
+ESO26	amplicon5	BFB_1	RARA	1.8230638176424456	3p	True
+ESO26	amplicon5	BFB_1	RARA-AS1	1.8230638176424456	None	False
+ESO26	amplicon5	BFB_1	RPL23	25.029360904044786	None	True
+ESO26	amplicon5	BFB_1	SNORA21	25.029360904044786	None	False
+ESO26	amplicon5	BFB_1	SNORA21B	25.029360904044786	None	False
+ESO26	amplicon5	BFB_1	SRCIN1	19.31439042151848	None	False
+ESO26	amplicon5	BFB_1	STARD3	28.175612707228332	None	False
+ESO26	amplicon5	BFB_1	TCAP	28.175612707228332	None	False
+ESO26	amplicon5	BFB_1	WIPF2	26.022319569914384	None	False
+ESO51	amplicon1	Complex non-cyclic_1	ASZ1	35.8253566918787	None	False
+ESO51	amplicon1	Complex non-cyclic_1	BMT2	7.2910824458373265	None	False
+ESO51	amplicon1	Complex non-cyclic_1	CAPZA2	35.8253566918787	None	False
+ESO51	amplicon1	Complex non-cyclic_1	CAV1	35.8253566918787	None	True
+ESO51	amplicon1	Complex non-cyclic_1	CAV2	27.569302966926927	None	False
+ESO51	amplicon1	Complex non-cyclic_1	CFTR	35.8253566918787	None	False
+ESO51	amplicon1	Complex non-cyclic_1	CFTR-AS1	35.8253566918787	None	False
+ESO51	amplicon1	Complex non-cyclic_1	CTTNBP2	35.927973888235556	None	False
+ESO51	amplicon1	Complex non-cyclic_1	DOCK4	5.051634148153433	None	False
+ESO51	amplicon1	Complex non-cyclic_1	DOCK4-AS1	5.051634148153433	None	False
+ESO51	amplicon1	Complex non-cyclic_1	FOXP2	8.946781678616881	None	False
+ESO51	amplicon1	Complex non-cyclic_1	GPR85	8.741028788374422	None	False
+ESO51	amplicon1	Complex non-cyclic_1	HRAT17	9.126785244017533	None	False
+ESO51	amplicon1	Complex non-cyclic_1	IFRD1	5.051634148153433	None	False
+ESO51	amplicon1	Complex non-cyclic_1	IMMP2L	5.051634148153433	3p	False
+ESO51	amplicon1	Complex non-cyclic_1	LSMEM1	5.051634148153433	None	False
+ESO51	amplicon1	Complex non-cyclic_1	MDFIC	23.34036179493673	None	False
+ESO51	amplicon1	Complex non-cyclic_1	MET	35.8253566918787	None	True
+ESO51	amplicon1	Complex non-cyclic_1	PPP1R3A	8.741028788374422	None	False
+ESO51	amplicon1	Complex non-cyclic_1	SMIM30	8.741028788374422	None	False
+ESO51	amplicon1	Complex non-cyclic_1	SNORA25B	23.34036179493673	None	False
+ESO51	amplicon1	Complex non-cyclic_1	ST7	35.8253566918787	None	False
+ESO51	amplicon1	Complex non-cyclic_1	ST7-AS1	35.8253566918787	None	False
+ESO51	amplicon1	Complex non-cyclic_1	ST7-AS2	35.8253566918787	None	False
+ESO51	amplicon1	Complex non-cyclic_1	ST7-OT3	35.8253566918787	None	False
+ESO51	amplicon1	Complex non-cyclic_1	ST7-OT4	35.8253566918787	None	False
+ESO51	amplicon1	Complex non-cyclic_1	TES	27.569302966926927	None	False
+ESO51	amplicon1	Complex non-cyclic_1	TFEC	27.569302966926927	None	False
+ESO51	amplicon1	Complex non-cyclic_1	TMEM168	7.2910824458373265	None	False
+ESO51	amplicon1	Complex non-cyclic_1	WNT2	35.8253566918787	None	True
+ESO51	amplicon1	Complex non-cyclic_1	ZNF277	5.051634148153433	None	False
+ESO51	amplicon2	Linear amplification_1	ACAA1	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	ACVR2B	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	ACVR2B-AS1	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	CCR8	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	CSRNP1	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	CTDSPL	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	CX3CR1	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	DLEC1	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	EIF1B	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	EIF1B-AS1	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	ENTPD3	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	ENTPD3-AS1	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	EXOG	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	GORASP1	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	ITGA9	5.426528901471921	5p	False
+ESO51	amplicon2	Linear amplification_1	ITGA9-AS1	5.426528901471921	3p	False
+ESO51	amplicon2	Linear amplification_1	MOBP	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	MYD88	5.426528901471921	None	True
+ESO51	amplicon2	Linear amplification_1	MYRIP	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	OXSR1	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	PLCD1	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	RPL14	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	RPSA	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	SCN10A	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	SCN11A	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	SCN5A	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	SLC22A13	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	SLC22A14	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	SLC25A38	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	SNORA6	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	SNORA62	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	TTC21A	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	VILL	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	WDR48	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	XIRP1	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	XYLB	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	ZNF619	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	ZNF620	5.426528901471921	None	False
+ESO51	amplicon2	Linear amplification_1	ZNF621	5.426528901471921	None	False
+ESO51	amplicon3	Complex non-cyclic_1	APOD	3.4951246618719	3p	False
+ESO51	amplicon3	Complex non-cyclic_1	BDH1	4.76842721935183	3p	False
+ESO51	amplicon3	Complex non-cyclic_1	CLPTM1L	6.729457048524936	None	False
+ESO51	amplicon3	Complex non-cyclic_1	FYTTD1	4.8126057432209395	3p	False
+ESO51	amplicon3	Complex non-cyclic_1	LPCAT1	6.729457048524936	None	False
+ESO51	amplicon3	Complex non-cyclic_1	MUC20	8.605095296020275	None	False
+ESO51	amplicon3	Complex non-cyclic_1	MUC4	21.343545889730226	None	True
+ESO51	amplicon3	Complex non-cyclic_1	RUBCN	4.8126057432209395	None	False
+ESO51	amplicon3	Complex non-cyclic_1	SDHAP1	7.047469608544014	None	False
+ESO51	amplicon3	Complex non-cyclic_1	SDHAP2	7.318965234265494	None	False
+ESO51	amplicon3	Complex non-cyclic_1	SDHAP3	5.914037651705899	None	False
+ESO51	amplicon3	Complex non-cyclic_1	SLC6A3	6.729457048524936	None	False
+ESO51	amplicon3	Complex non-cyclic_1	TERT	4.984460157874023	3p	True
+ESO51	amplicon3	Complex non-cyclic_1	TFRC	3.9612215943061684	None	True
+ESO51	amplicon3	Complex non-cyclic_1	TNK2	4.803970824423718	None	False
+ESO51	amplicon3	Complex non-cyclic_1	TNK2-AS1	4.803970824423718	None	False
+ESO51	amplicon4	ecDNA_1	LRRN3	7.217044195394679	None	False
+ESO51	amplicon5	Complex non-cyclic_1	ARCN1	6.187012677720055	None	False
+ESO51	amplicon5	Complex non-cyclic_1	ATP5MG	3.9713068479021887	None	False
+ESO51	amplicon5	Complex non-cyclic_1	CHRNA6	8.686862999881015	None	False
+ESO51	amplicon5	Complex non-cyclic_1	CHRNB3	8.357141677542211	None	False
+ESO51	amplicon5	Complex non-cyclic_1	DDX6	3.3790003890612215	None	True
+ESO51	amplicon5	Complex non-cyclic_1	FNTA	8.18018549944637	None	False
+ESO51	amplicon5	Complex non-cyclic_1	HGSNAT	6.663838844209724	3p	False
+ESO51	amplicon5	Complex non-cyclic_1	HOOK3	10.440365767531333	None	True
+ESO51	amplicon5	Complex non-cyclic_1	IFT46	6.187012677720055	None	False
+ESO51	amplicon5	Complex non-cyclic_1	KMT2A	6.187012677720055	None	False
+ESO51	amplicon5	Complex non-cyclic_1	MYEOV	4.070422795490586	None	False
+ESO51	amplicon5	Complex non-cyclic_1	PHLDB1	6.187012677720055	None	False
+ESO51	amplicon5	Complex non-cyclic_1	POMK	8.18018549944637	None	False
+ESO51	amplicon5	Complex non-cyclic_1	RNF170	18.314654798475086	None	False
+ESO51	amplicon5	Complex non-cyclic_1	SMIM38	1.75894781833106	None	False
+ESO51	amplicon5	Complex non-cyclic_1	THAP1	10.440365767531333	None	False
+ESO51	amplicon5	Complex non-cyclic_1	TMEM25	6.187012677720055	None	False
+ESO51	amplicon5	Complex non-cyclic_1	TREH	6.187012677720055	None	True
+ESO51	amplicon5	Complex non-cyclic_1	TTC36	6.187012677720055	None	False
+ESO51	amplicon6	BFB_1	CASC11	17.663883485497255	None	False
+ESO51	amplicon6	BFB_1	CASC19	16.449140329744107	None	False
+ESO51	amplicon6	BFB_1	CASC21	16.449140329744107	None	False
+ESO51	amplicon6	BFB_1	CASC8	16.449140329744107	None	False
+ESO51	amplicon6	BFB_1	CCAT1	16.449140329744107	None	False
+ESO51	amplicon6	BFB_1	CCAT2	16.449140329744107	None	False
+ESO51	amplicon6	BFB_1	MYC	17.663883485497255	None	True
+ESO51	amplicon6	BFB_1	PCAT1	16.449140329744107	None	False
+ESO51	amplicon6	BFB_1	PCAT2	16.449140329744107	None	False
+ESO51	amplicon6	BFB_1	POU5F1B	16.449140329744107	None	False
+ESO51	amplicon6	BFB_1	PRNCR1	16.449140329744107	None	False
+ESO51	amplicon6	BFB_1	PVT1	17.663883485497255	None	True
+ESO51	amplicon6	BFB_1	TMEM75	17.663883485497255	None	False
+ESO51	amplicon7	Linear amplification_1	ACRV1	6.4181118749828885	None	False
+ESO51	amplicon7	Linear amplification_1	PATE1	6.4181118749828885	None	False
+ESO51	amplicon7	Linear amplification_1	PATE2	5.940635142305473	None	False
+ESO51	amplicon9	ecDNA_1	ADNP	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	ADNP-AS1	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	ATP9A	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	B4GALT5	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	BCAS1	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	BCAS4	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	CEBPB	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	CEBPB-AS1	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	CYP24A1	7.491971114608349	None	True
+ESO51	amplicon9	ecDNA_1	DDX27	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	DPM1	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	KCNB1	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	KCNG1	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	MOCS3	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	NFATC2	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	PARD6B	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	PFDN4	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	PTGIS	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	PTPN1	9.39147431349805	None	False
+ESO51	amplicon9	ecDNA_1	RIPOR3	8.263046548616972	None	False
+ESO51	amplicon9	ecDNA_1	RNF114	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	SALL4	7.491971114608349	None	True
+ESO51	amplicon9	ecDNA_1	SLC9A8	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	SMIM25	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	SNAI1	9.59476633124432	None	True
+ESO51	amplicon9	ecDNA_1	SNORD12	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	SNORD12B	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	SNORD12C	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	SPATA2	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	STAU1	9.59476633124432	3p	False
+ESO51	amplicon9	ecDNA_1	SUMO1P1	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	TMEM189	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	TMEM189-UBE2V1	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	TRERNA1	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	TSHZ2	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	UBE2V1	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	ZFAS1	9.59476633124432	None	False
+ESO51	amplicon9	ecDNA_1	ZFP64	7.491971114608349	None	False
+ESO51	amplicon9	ecDNA_1	ZNF217	7.491971114608349	None	True
+ESO51	amplicon9	ecDNA_1	ZNFX1	9.59476633124432	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	ACOT13	7.706659521085718	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	ALDH5A1	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	ARMH2	7.706659521085718	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	C6orf62	7.706659521085718	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	CARMIL1	5.786787259509028	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	CASC15	5.591770354012752	5p	False
+FLO-1	amplicon1	Complex non-cyclic_1	CMAHP	5.786787259509028	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	DCDC2	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	GMNN	7.706659521085718	None	True
+FLO-1	amplicon1	Complex non-cyclic_1	GPLD1	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	H2AC1	5.971695625342058	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	H2AC2P	5.971695625342058	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	H2BC1	5.971695625342058	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	HDGFL1	5.591770354012752	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	KAAG1	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	KIAA0319	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	MRS2	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	NBAT1	5.591770354012752	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	NRSN1	6.909151304927343	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	PRL	5.591770354012752	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	RIPOR2	7.706659521085718	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	SCGN	5.786787259509028	None	False
+FLO-1	amplicon1	Complex non-cyclic_1	SLC17A4	5.067112605488924	3p	False
+FLO-1	amplicon1	Complex non-cyclic_1	TDP2	6.909151304927343	None	False
+FLO-1	amplicon3	ecDNA_1	MUSK	4.875774655726435	3p	False
+FLO-1	amplicon3	ecDNA_1	SVEP1	4.875774655726435	3p	False
+FLO-1	amplicon4	ecDNA_1	GGTA1P	5.397767327946513	5p	False
+FLO-1	amplicon4	ecDNA_1	GSN	5.397767327946513	5p	False
+FLO-1	amplicon4	ecDNA_1	GSN-AS1	5.397767327946513	None	False
+FLO-1	amplicon4	ecDNA_1	STOM	5.397767327946513	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	AIFM3	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	ARVCF	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	BCRP2	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	C22orf39	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	CCDC116	16.58726684672552	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	CCDC188	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	CDC45	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	CLDN5	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	CLTCL1	12.109468499743066	None	True
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	COMT	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	CRKL	12.92855757633338	None	True
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	DGCR10	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	DGCR11	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	DGCR2	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	DGCR5	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	DGCR6L	13.71704438254663	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	DGCR8	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	DGCR9	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	ESS2	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	FAM230B	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	FAM230G	13.71704438254663	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	FAM230H	8.753040754420294	5p	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	GGT2	8.753040754420294	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	GNB1L	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	GP1BB	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	GSC2	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	HIC2	10.150827562450132	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	HIRA	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	KLHL22	13.71704438254663	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	LRRC74B	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	LZTR1	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	MAPK1	15.79878004051227	5p	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	MED15	13.71704438254663	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	MRPL40	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	P2RX6	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	P2RX6P	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	PI4KA	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	PI4KAP2	10.150827562450132	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	POM121L4P	13.71704438254663	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	POM121L8P	8.753040754420294	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	PPIL2	16.58726684672552	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	PRODH	7.32034634246251	3p	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	RANBP1	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	RIMBP3B	10.150827562450132	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	RIMBP3C	10.150827562450132	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	RTL10	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	RTN4R	13.64106343339845	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	SCARF2	13.71704438254663	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	SDF2L1	16.58726684672552	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	SEPT5-GP1BB	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	SEPTIN5	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	SERPIND1	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	SLC25A1	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	SLC7A4	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	SNAP29	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	SNORA77B	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	TANGO2	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	TBX1	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	THAP7	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	THAP7-AS1	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	TMEM191A	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	TMEM191C	10.150827562450132	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	TRMT2A	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	TSSK2	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	TUBA3FP	12.92855757633338	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	TXNRD2	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	UBE2L3	16.58726684672552	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	UFD1	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	YDJC	16.58726684672552	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	YPEL1	16.58726684672552	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	ZDHHC8	12.109468499743066	None	False
+JH-EsoAd1	amplicon1	Complex non-cyclic_1	ZNF74	13.71704438254663	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	ANGPTL5	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	ARHGAP42	19.87754226477748	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	BIRC2	18.66503359430104	None	True
+JH-EsoAd1	amplicon3	ecDNA_1	BIRC3	18.66503359430104	None	True
+JH-EsoAd1	amplicon3	ecDNA_1	CEP126	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	CFAP300	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	DCUN1D5	18.175816449910663	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	DYNC2H1	18.175816449910663	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	FAT3	9.92369893392968	5p	False
+JH-EsoAd1	amplicon3	ecDNA_1	MMP1	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	MMP10	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	MMP12	19.16251436321356	None	True
+JH-EsoAd1	amplicon3	ecDNA_1	MMP13	16.93630710529072	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	MMP20	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	MMP27	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	MMP3	19.16251436321356	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	MMP7	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	MMP8	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	MTNR1B	9.16672254623805	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	PGR	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	PGR-AS1	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	SLC36A4	8.727806850618878	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	SNORD13I	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	TMEM123	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	TRPC6	18.66503359430104	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	WTAPP1	19.16251436321356	None	False
+JH-EsoAd1	amplicon3	ecDNA_1	YAP1	18.66503359430104	None	True
+JH-EsoAd1	amplicon3	unknown_1	CWC15	4.101843341797278	None	False
+JH-EsoAd1	amplicon3	unknown_1	DEUP1	4.710133308412958	3p	False
+JH-EsoAd1	amplicon3	unknown_1	ENDOD1	3.678248603886757	None	False
+JH-EsoAd1	amplicon3	unknown_1	KDM4D	4.101843341797278	None	False
+JH-EsoAd1	amplicon3	unknown_1	KDM4E	4.649227747491268	None	False
+JH-EsoAd1	amplicon3	unknown_1	SESN3	3.678248603886757	5p	False
+JH-EsoAd1	amplicon3	unknown_1	SRSF8	3.678248603886757	None	False
+JH-EsoAd1	amplicon4	ecDNA_1	ERN1	12.23780765294106	None	False
+JH-EsoAd1	amplicon4	ecDNA_1	SNHG25	11.020319796243008	None	False
+JH-EsoAd1	amplicon4	ecDNA_1	SNORA50C	11.020319796243008	None	False
+JH-EsoAd1	amplicon4	ecDNA_1	SNORD104	11.020319796243008	None	False
+JH-EsoAd1	amplicon4	ecDNA_1	TEX2	11.020319796243008	None	False
+JH-EsoAd1	amplicon4	unknown_1	KRT13	2.674334307229555	None	False
+JH-EsoAd1	amplicon4	unknown_1	KRT36	5.238955078746834	None	False
+JH-EsoAd1	amplicon5	ecDNA_1	C19orf12	6.770292724361543	None	False
+JH-EsoAd1	amplicon5	ecDNA_1	CCNE1	6.770292724361543	None	True
+JH-EsoAd1	amplicon5	ecDNA_1	IPO5P1	4.710318584137543	None	False
+JH-EsoAd1	amplicon5	ecDNA_1	PLEKHF1	8.021574629953964	None	False
+JH-EsoAd1	amplicon5	ecDNA_1	POP4	9.220483727517632	None	False
+JH-EsoAd1	amplicon5	ecDNA_1	URI1	6.770292724361539	None	False
+JH-EsoAd1	amplicon5	ecDNA_1	VSTM2B	7.254753291574036	None	False
+JH-EsoAd1	amplicon5	ecDNA_1	ZNF536	6.770292724361539	None	False
+JH-EsoAd1	amplicon5	ecDNA_1	ZNF724	4.710318584137543	None	False
+JH-EsoAd1	amplicon5	ecDNA_1	ZNF91	5.34218981622313	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	CEBPA	7.635851696206237	None	True
+JH-EsoAd1	amplicon5	ecDNA_2	CEBPA-DT	7.635851696206237	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	CEBPG	6.008759412479773	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	CEP89	9.412780398959288	3p	False
+JH-EsoAd1	amplicon5	ecDNA_2	CHST8	6.008759412479773	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	FAAP24	9.412780398959288	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	FAM187B	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	FXYD1	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	FXYD3	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	FXYD5	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	FXYD7	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	GPATCH1	9.412780398959288	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	GPI	102.05594924461744	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	GRAMD1A	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	HPN	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	HPN-AS1	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	KCTD15	6.008759412479773	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	KIAA0355	7.108271121225278	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	LGI4	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	LRP3	6.781433893334063	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	LSR	8.533799389100464	3p	False
+JH-EsoAd1	amplicon5	ecDNA_2	PDCD2L	7.108271121225274	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	PEPD	6.008759412479773	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	RHPN2	9.412780398959288	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	SCGB1B2P	5.72301998689333	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	SCGB2B2	5.72301998689333	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	SCGB2B3P	5.72301998689333	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	SCN1B	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	SLC7A10	7.635851696206237	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	UBA2	5.72301998689333	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	WDR88	6.781433893334063	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	WTIP	5.72301998689333	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	ZNF181	5.72301998689333	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	ZNF30	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	ZNF30-AS1	10.09228854717276	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	ZNF302	5.72301998689333	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	ZNF599	5.72301998689333	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	ZNF792	8.533799389100464	None	False
+JH-EsoAd1	amplicon5	ecDNA_2	ZNF807P	5.72301998689333	None	False
+OACM5.1	amplicon1	ecDNA_1	BCAP29	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	C7orf66	6.805774627388146	None	False
+OACM5.1	amplicon1	ecDNA_1	CBLL1	4.767788436565568	None	True
+OACM5.1	amplicon1	ecDNA_1	CCDC71L	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	CDHR3	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	COG5	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	DLD	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	DNAJB9	4.6398012679345655	None	False
+OACM5.1	amplicon1	ecDNA_1	DOCK4	8.580389229051843	None	False
+OACM5.1	amplicon1	ecDNA_1	DOCK4-AS1	6.213451451823567	None	False
+OACM5.1	amplicon1	ecDNA_1	DUS4L	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	DUS4L-BCAP29	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	EIF3IP1	6.191132657108815	None	False
+OACM5.1	amplicon1	ecDNA_1	GPR22	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	HBP1	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	IFRD1	6.088824190382159	3p	False
+OACM5.1	amplicon1	ecDNA_1	IMMP2L	4.989573285534495	None	False
+OACM5.1	amplicon1	ecDNA_1	LAMB1	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	LAMB4	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	LRRN3	4.875136520781019	None	False
+OACM5.1	amplicon1	ecDNA_1	NAMPT	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	NRCAM	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	PIK3CG	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	PNPLA8	4.6398012679345655	None	False
+OACM5.1	amplicon1	ecDNA_1	PRKAR2B	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	SLC26A3	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	SLC26A4	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	SLC26A4-AS1	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	SYPL1	4.767788436565568	None	False
+OACM5.1	amplicon1	ecDNA_1	THAP5	4.6398012679345655	None	False
+OACM5.1	amplicon1	ecDNA_1	ZNF277	7.305378355431811	None	False
+OACM5.1	amplicon1	unknown_1	HEPACAM2	4.785477219452472	None	False
+OACM5.1	amplicon1	unknown_1	MET	2.482614665858228	3p	True
+OACM5.1	amplicon1	unknown_1	SAMD9	4.943939870919089	None	False
+OACM5.1	amplicon1	unknown_1	SAMD9L	4.943939870919089	None	False
+OACM5.1	amplicon1	unknown_1	VPS50	4.785477219452472	3p	False
+OACP4-C	amplicon10	ecDNA_1	AGR2	4.94802598626661	None	False
+OACP4-C	amplicon10	ecDNA_1	AGR3	4.94802598626661	5p	False
+OACP4-C	amplicon10	ecDNA_1	TSPAN13	4.94802598626661	5p	False
+OACP4-C	amplicon11	Complex non-cyclic_1	ADAM22	5.50542089408355	5p	False
+OACP4-C	amplicon11	Complex non-cyclic_1	ASB4	8.376440869804672	None	False
+OACP4-C	amplicon11	Complex non-cyclic_1	CDK14	10.078107263108999	3p	True
+OACP4-C	amplicon11	Complex non-cyclic_1	CLDN12	8.660929962198834	None	False
+OACP4-C	amplicon11	Complex non-cyclic_1	DYNC1I1	8.376440869804672	3p	False
+OACP4-C	amplicon11	Complex non-cyclic_1	GTPBP10	5.27839824457004	5p	False
+OACP4-C	amplicon11	Complex non-cyclic_1	PDK4	8.376440869804672	None	False
+OACP4-C	amplicon11	Complex non-cyclic_1	PON1	8.376440869804672	None	False
+OACP4-C	amplicon11	Complex non-cyclic_1	PON2	8.376440869804672	None	False
+OACP4-C	amplicon11	Complex non-cyclic_1	PON3	8.376440869804672	None	False
+OACP4-C	amplicon11	Complex non-cyclic_1	PPP1R9A	8.376440869804672	None	False
+OACP4-C	amplicon11	Complex non-cyclic_1	SRI	5.50542089408355	None	False
+OACP4-C	amplicon11	Complex non-cyclic_1	STEAP2-AS1	7.332524913365317	5p	False
+OACP4-C	amplicon11	Complex non-cyclic_1	STEAP4	7.855961028105896	None	False
+OACP4-C	amplicon12	ecDNA_1	ABCB8	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	ABCF2	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	AGAP3	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	ASB10	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	ASIC3	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	ATG9B	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	AZGP1	14.944906790460248	None	False
+OACP4-C	amplicon12	ecDNA_1	AZGP1P1	14.944906790460248	None	False
+OACP4-C	amplicon12	ecDNA_1	CDK5	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	CHPF2	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	FASTK	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	GBX1	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	GJC3	14.769103966238017	None	False
+OACP4-C	amplicon12	ecDNA_1	H2BE1	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	IQCA1L	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	NOS3	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	SLC4A2	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	SMARCD3	7.021558026976506	5p	False
+OACP4-C	amplicon12	ecDNA_1	TMUB1	7.021558026976506	None	False
+OACP4-C	amplicon12	ecDNA_1	TRIM4	12.160444015659321	None	False
+OACP4-C	amplicon12	ecDNA_1	ZKSCAN1	14.944906790460248	None	False
+OACP4-C	amplicon12	ecDNA_1	ZNF3	8.758750334236794	None	False
+OACP4-C	amplicon12	ecDNA_1	ZSCAN21	11.367410284815493	None	False
+OACP4-C	amplicon12	unknown_1	ARPC1A	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	ARPC1B	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	ATP5MF	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	ATP5MF-PTCD1	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	BUD31	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	CPSF4	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	FAM200A	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	KPNA7	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	MYH16	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	PDAP1	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	PTCD1	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	SCARNA28	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	SMURF1	12.759473755806198	None	True
+OACP4-C	amplicon12	unknown_1	TMEM130	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	TRRAP	12.759473755806198	None	True
+OACP4-C	amplicon12	unknown_1	ZKSCAN5	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	ZNF394	12.759473755806198	None	False
+OACP4-C	amplicon12	unknown_1	ZNF655	12.759473755806198	3p	False
+OACP4-C	amplicon12	unknown_1	ZNF789	12.759473755806198	None	False
+OACP4-C	amplicon13	unknown_1	CAPRIN1	5.608717733091534	None	False
+OACP4-C	amplicon13	unknown_1	CYP7A1	7.164048135742155	None	False
+OACP4-C	amplicon13	unknown_1	ELP4	5.051127004745053	3p	False
+OACP4-C	amplicon13	unknown_1	IMMP1L	5.051127004745053	3p	False
+OACP4-C	amplicon13	unknown_1	LMO2	5.608717733091534	None	True
+OACP4-C	amplicon13	unknown_1	NAT10	5.608717733091534	3p	False
+OACP4-C	amplicon13	unknown_1	UBXN2B	7.164048135742155	None	False
+OACP4-C	amplicon14	ecDNA_1	CASC11	9.875378621323653	None	False
+OACP4-C	amplicon14	ecDNA_1	CASC19	6.717470990062701	None	False
+OACP4-C	amplicon14	ecDNA_1	CASC21	6.717470990062701	None	False
+OACP4-C	amplicon14	ecDNA_1	CASC8	6.717470990062701	None	False
+OACP4-C	amplicon14	ecDNA_1	CCAT1	6.717470990062701	None	False
+OACP4-C	amplicon14	ecDNA_1	CCAT2	6.717470990062701	None	False
+OACP4-C	amplicon14	ecDNA_1	LRATD2	6.717470990062701	None	False
+OACP4-C	amplicon14	ecDNA_1	MYC	9.875378621323653	None	True
+OACP4-C	amplicon14	ecDNA_1	PCAT1	6.717470990062701	None	False
+OACP4-C	amplicon14	ecDNA_1	PCAT2	6.717470990062701	None	False
+OACP4-C	amplicon14	ecDNA_1	POU5F1B	6.717470990062701	None	False
+OACP4-C	amplicon14	ecDNA_1	PRNCR1	6.717470990062701	None	False
+OACP4-C	amplicon14	ecDNA_1	PVT1	6.952388386500784	None	True
+OACP4-C	amplicon14	ecDNA_1	TMEM75	6.952388386500784	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	ANAPC16	7.352700434030835	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	ASCC1	7.352700434030835	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	CFAP70	7.390377169847361	5p	False
+OACP4-C	amplicon15	Complex non-cyclic_1	CHST3	7.352700434030835	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	DDIT4	7.352700434030835	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	DNAJB12	7.352700434030835	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	DNAJC9	7.390377169847361	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	DNAJC9-AS1	7.390377169847361	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	ECD	7.390377169847361	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	FAM149B1	7.390377169847361	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	MCU	7.352700434030835	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	MICU1	7.352700434030835	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	MRPS16	7.390377169847361	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	NUDT13	7.390377169847361	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	OIT3	7.352700434030835	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	P4HA1	7.390377169847361	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	PLA2G12B	7.352700434030835	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	SNORA11F	7.390377169847361	None	False
+OACP4-C	amplicon15	Complex non-cyclic_1	SPOCK2	7.352700434030835	None	False
+OACP4-C	amplicon16	Linear amplification_1	GRK5	7.313004221743414	3p	False
+OACP4-C	amplicon16	Linear amplification_1	PRDX3	7.313004221743414	None	False
+OACP4-C	amplicon16	Linear amplification_1	SFXN4	5.670273229580602	3p	False
+OACP4-C	amplicon17	ecDNA_1	EHF	6.17133511912983	None	False
+OACP4-C	amplicon18	ecDNA_1	C11orf49	5.669272606487332	3p	False
+OACP4-C	amplicon18	ecDNA_1	CKAP5	5.669272606487332	None	False
+OACP4-C	amplicon18	ecDNA_1	F2	5.669272606487332	None	False
+OACP4-C	amplicon18	ecDNA_1	LRP4	5.669272606487332	None	False
+OACP4-C	amplicon18	ecDNA_1	LRP4-AS1	5.669272606487332	None	False
+OACP4-C	amplicon18	ecDNA_1	SNORD67	5.669272606487332	None	False
+OACP4-C	amplicon18	ecDNA_1	ZNF408	5.669272606487332	5p	False
+OACP4-C	amplicon19	Linear amplification_1	CELF1	5.439910976818806	5p	False
+OACP4-C	amplicon19	Linear amplification_1	PSMC3	5.298626637118874	None	False
+OACP4-C	amplicon19	Linear amplification_1	RAPSN	5.439910976818806	None	False
+OACP4-C	amplicon19	Linear amplification_1	SLC39A13	5.298626637118874	None	False
+OACP4-C	amplicon19	Linear amplification_1	SPI1	5.298626637118874	3p	True
+OACP4-C	amplicon1	ecDNA_1	ANXA9	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	BNIPL	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	C1orf56	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	CDC42SE1	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	CGN	7.924595966051388	None	False
+OACP4-C	amplicon1	ecDNA_1	GABPB2	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	LYSMD1	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	MINDY1	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	MLLT11	6.32817852059679	None	True
+OACP4-C	amplicon1	ecDNA_1	PI4KB	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	PIP5K1A	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	POGZ	6.061578633748327	None	False
+OACP4-C	amplicon1	ecDNA_1	PRUNE1	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	PSMB4	5.383703638808163	None	False
+OACP4-C	amplicon1	ecDNA_1	PSMD4	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	SCNM1	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	SEMA6C	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	TMOD4	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	TNFAIP8L2	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	TNFAIP8L2-SCNM1	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	TUFT1	7.924595966051388	3p	False
+OACP4-C	amplicon1	ecDNA_1	VPS72	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	ZNF687	6.32817852059679	None	False
+OACP4-C	amplicon1	ecDNA_1	ZNF687-AS1	6.32817852059679	None	False
+OACP4-C	amplicon1	unknown_1	ATOH8	3.0373514050975734	3p	False
+OACP4-C	amplicon1	unknown_1	C2orf68	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	CAPG	9.349334651842419	None	True
+OACP4-C	amplicon1	unknown_1	CHTOP	8.747632288962686	None	False
+OACP4-C	amplicon1	unknown_1	ELMOD3	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	GATAD2B	6.2430972062758325	5p	False
+OACP4-C	amplicon1	unknown_1	GGCX	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	GNLY	3.0373514050975734	None	False
+OACP4-C	amplicon1	unknown_1	ILF2	8.747632288962686	None	False
+OACP4-C	amplicon1	unknown_1	INTS3	12.476817467154095	None	True
+OACP4-C	amplicon1	unknown_1	LELP1	2.822691697741863	None	False
+OACP4-C	amplicon1	unknown_1	LOR	2.822691697741863	None	False
+OACP4-C	amplicon1	unknown_1	MAT2A	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	NPR1	8.747632288962686	None	False
+OACP4-C	amplicon1	unknown_1	PARTICL	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	PGLYRP3	10.102943331504711	None	False
+OACP4-C	amplicon1	unknown_1	PGLYRP4	10.102943331504711	None	False
+OACP4-C	amplicon1	unknown_1	PRR9	2.822691697741863	None	False
+OACP4-C	amplicon1	unknown_1	RETSAT	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	RNF181	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	S100A1	8.747632288962686	5p	False
+OACP4-C	amplicon1	unknown_1	S100A12	10.102943331504711	5p	False
+OACP4-C	amplicon1	unknown_1	S100A9	10.102943331504711	None	False
+OACP4-C	amplicon1	unknown_1	SFTPB	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	SH2D6	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	SLC27A3	6.2430972062758325	None	False
+OACP4-C	amplicon1	unknown_1	SNAPIN	8.747632288962686	None	False
+OACP4-C	amplicon1	unknown_1	TCF7L1	9.349334651842419	5p	False
+OACP4-C	amplicon1	unknown_1	TCF7L1-IT1	2.8991309058274313	None	False
+OACP4-C	amplicon1	unknown_1	TGOLN2	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	TMEM150A	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	USP39	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	VAMP5	9.349334651842419	None	False
+OACP4-C	amplicon1	unknown_1	VAMP8	9.349334651842419	None	False
+OACP4-C	amplicon20	ecDNA_1	FLJ22447	12.705715638551897	None	False
+OACP4-C	amplicon20	ecDNA_1	HIF1A	5.932220527722416	None	False
+OACP4-C	amplicon20	ecDNA_1	HIF1A-AS1	5.932220527722416	None	False
+OACP4-C	amplicon20	ecDNA_1	HIF1A-AS2	5.932220527722416	None	False
+OACP4-C	amplicon20	ecDNA_1	HIF1A-AS3	5.932220527722416	None	False
+OACP4-C	amplicon20	ecDNA_1	PRKCH	12.705715638551897	None	False
+OACP4-C	amplicon20	ecDNA_1	SNAPC1	5.932220527722416	None	False
+OACP4-C	amplicon20	ecDNA_1	SYT16	5.932220527722416	3p	False
+OACP4-C	amplicon20	ecDNA_1	TMEM30B	5.886348337455134	None	False
+OACP4-C	amplicon21	Linear amplification_1	FOS	5.814940770026611	None	True
+OACP4-C	amplicon21	Linear amplification_1	NEK9	5.814940770026611	3p	False
+OACP4-C	amplicon21	Linear amplification_1	TMED10	5.814940770026611	None	False
+OACP4-C	amplicon22	Linear amplification_1	ABR	6.462926535806463	None	False
+OACP4-C	amplicon22	Linear amplification_1	CDK5RAP3	5.975988074092142	None	False
+OACP4-C	amplicon22	Linear amplification_1	NXN	6.462926535806464	3p	False
+OACP4-C	amplicon22	Linear amplification_1	PNPO	5.975988074092142	None	False
+OACP4-C	amplicon22	Linear amplification_1	PRR15L	5.975988074092142	None	False
+OACP4-C	amplicon22	Linear amplification_1	RBX1	6.862268269582871	None	False
+OACP4-C	amplicon22	Linear amplification_1	SP2-AS1	5.975988074092142	3p	False
+OACP4-C	amplicon22	Linear amplification_1	TIMM22	6.462926535806463	None	False
+OACP4-C	amplicon23	ecDNA_1	BLMH	5.857985036403929	3p	False
+OACP4-C	amplicon23	ecDNA_1	TMIGD1	5.857985036403929	None	False
+OACP4-C	amplicon24	ecDNA_1	CASC3	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	CDC6	5.549261244681227	None	True
+OACP4-C	amplicon24	ecDNA_1	CDK12	7.5624802574999075	5p	True
+OACP4-C	amplicon24	ecDNA_1	CSF3	5.549261244681227	None	True
+OACP4-C	amplicon24	ecDNA_1	ERBB2	9.18906929137306	None	True
+OACP4-C	amplicon24	ecDNA_1	GJD3	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	GRB7	9.18906929137306	None	False
+OACP4-C	amplicon24	ecDNA_1	GSDMA	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	GSDMB	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	IGFBP4	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	IKZF3	9.18906929137306	None	False
+OACP4-C	amplicon24	ecDNA_1	LRRC3C	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	MED24	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	MIEN1	9.18906929137306	None	False
+OACP4-C	amplicon24	ecDNA_1	MSL1	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	NEUROD2	9.18906929137306	None	False
+OACP4-C	amplicon24	ecDNA_1	NR1D1	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	ORMDL3	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	PGAP3	9.18906929137306	None	False
+OACP4-C	amplicon24	ecDNA_1	PNMT	9.18906929137306	None	False
+OACP4-C	amplicon24	ecDNA_1	PPP1R1B	9.18906929137306	None	False
+OACP4-C	amplicon24	ecDNA_1	PSMD3	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	RAPGEFL1	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	RARA	5.549261244681227	None	True
+OACP4-C	amplicon24	ecDNA_1	RARA-AS1	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	SNORD124	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	STARD3	9.18906929137306	None	False
+OACP4-C	amplicon24	ecDNA_1	TCAP	9.18906929137306	None	False
+OACP4-C	amplicon24	ecDNA_1	THRA	5.549261244681227	None	True
+OACP4-C	amplicon24	ecDNA_1	TNS4	5.549261244681227	None	True
+OACP4-C	amplicon24	ecDNA_1	TOP2A	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	WIPF2	5.549261244681227	None	False
+OACP4-C	amplicon24	ecDNA_1	ZPBP2	5.549261244681227	None	False
+OACP4-C	amplicon25	Linear amplification_1	ARHGAP28	9.804165153106988	5p	False
+OACP4-C	amplicon25	Linear amplification_1	LAMA1	9.804165153106988	None	False
+OACP4-C	amplicon25	Linear amplification_1	LRRC30	9.804165153106988	None	False
+OACP4-C	amplicon25	Linear amplification_1	PTPRM	9.804165153106988	3p	False
+OACP4-C	amplicon26	ecDNA_1	BCAM	6.728496074225177	None	False
+OACP4-C	amplicon26	ecDNA_1	BCL3	6.728496074225177	None	True
+OACP4-C	amplicon26	ecDNA_1	CBLC	6.728496074225177	None	True
+OACP4-C	amplicon26	ecDNA_1	CEACAM16	6.728496074225177	None	False
+OACP4-C	amplicon26	ecDNA_1	CEACAM19	6.728496074225177	5p	False
+OACP4-C	amplicon26	ecDNA_1	NECTIN2	6.728496074225177	3p	False
+OACP4-C	amplicon27	ecDNA_1	PTPN1	10.10075801146324	3p	False
+OACP4-C	amplicon27	ecDNA_1	SMIM25	6.140310183928663	None	False
+OACP4-C	amplicon2	ecDNA_1	ACOT13	6.5124119926765776	None	False
+OACP4-C	amplicon2	ecDNA_1	ALDH5A1	6.5124119926765776	5p	False
+OACP4-C	amplicon2	ecDNA_1	ARMH2	6.214965375360675	None	False
+OACP4-C	amplicon2	ecDNA_1	C6orf62	6.214965375360675	None	False
+OACP4-C	amplicon2	ecDNA_1	CHRDL2	13.227001084166858	None	False
+OACP4-C	amplicon2	ecDNA_1	GMNN	6.214965375360675	None	True
+OACP4-C	amplicon2	ecDNA_1	KCNE3	7.272384750524496	None	False
+OACP4-C	amplicon2	ecDNA_1	KIAA0319	6.5124119926765776	None	False
+OACP4-C	amplicon2	ecDNA_1	LIPT2	13.227001084166858	None	False
+OACP4-C	amplicon2	ecDNA_1	PGM2L1	7.272384750524496	3p	False
+OACP4-C	amplicon2	ecDNA_1	POLD3	13.227001084166858	None	False
+OACP4-C	amplicon2	ecDNA_1	RIPOR2	6.214965375360675	5p	False
+OACP4-C	amplicon2	ecDNA_1	RNF169	7.553743975377489	3p	False
+OACP4-C	amplicon2	ecDNA_1	TDP2	6.5124119926765776	None	False
+OACP4-C	amplicon2	unknown_1	ADGRB2	6.700206558369011	None	False
+OACP4-C	amplicon2	unknown_1	COL16A1	6.700206558369011	None	False
+OACP4-C	amplicon2	unknown_1	HCRTR1	6.700206558369011	5p	False
+OACP4-C	amplicon2	unknown_1	IRF2BP2	5.762874857000307	None	False
+OACP4-C	amplicon2	unknown_1	KHDRBS1	2.7770602898207435	3p	False
+OACP4-C	amplicon2	unknown_1	LRSAM1	3.762986390261492	None	False
+OACP4-C	amplicon2	unknown_1	NIBAN2	8.161692916737037	None	False
+OACP4-C	amplicon2	unknown_1	PEF1	6.700206558369011	None	False
+OACP4-C	amplicon2	unknown_1	PP2672	5.762874857000307	None	False
+OACP4-C	amplicon2	unknown_1	PTP4A2	2.7770602898207435	None	True
+OACP4-C	amplicon2	unknown_1	RPL12	3.762986390261492	None	False
+OACP4-C	amplicon2	unknown_1	SNORA14B	2.8409215573897377	None	False
+OACP4-C	amplicon2	unknown_1	SNORA65	3.762986390261492	None	False
+OACP4-C	amplicon2	unknown_1	SPOCD1	6.700206558369011	None	False
+OACP4-C	amplicon2	unknown_1	STXBP1	8.161692916737037	3p	False
+OACP4-C	amplicon2	unknown_1	TOMM20	2.8409215573897377	3p	False
+OACP4-C	amplicon2	unknown_1	ZNF79	3.762986390261492	5p	False
+OACP4-C	amplicon3	ecDNA_1	C1orf50	5.541423917969513	None	False
+OACP4-C	amplicon3	ecDNA_1	CLDN19	5.541423917969513	3p	False
+OACP4-C	amplicon3	ecDNA_1	ERMAP	5.541423917969513	None	False
+OACP4-C	amplicon3	ecDNA_1	P3H1	5.541423917969513	None	False
+OACP4-C	amplicon3	ecDNA_1	SVBP	5.541423917969513	None	False
+OACP4-C	amplicon3	ecDNA_1	TMEM269	5.541423917969513	None	False
+OACP4-C	amplicon3	ecDNA_1	TMEM269-DT	5.541423917969513	None	False
+OACP4-C	amplicon3	ecDNA_1	ZNF691	5.541423917969513	None	False
+OACP4-C	amplicon4	ecDNA_1	FAM20B	5.648878345894416	None	False
+OACP4-C	amplicon5	ecDNA_1	ESRRG	6.037105584064188	3p	False
+OACP4-C	amplicon6	Linear amplification_1	CHML	7.4348614620705815	None	False
+OACP4-C	amplicon6	Linear amplification_1	EXO1	7.4348614620705815	3p	False
+OACP4-C	amplicon6	Linear amplification_1	FH	7.4348614620705815	None	True
+OACP4-C	amplicon6	Linear amplification_1	KMO	7.4348614620705815	None	False
+OACP4-C	amplicon6	Linear amplification_1	OPN3	7.4348614620705815	None	False
+OACP4-C	amplicon6	Linear amplification_1	RGS7	7.4348614620705815	3p	False
+OACP4-C	amplicon6	Linear amplification_1	WDR64	7.4348614620705815	None	False
+OACP4-C	amplicon8	ecDNA_1	BRD9	13.610331078371159	None	False
+OACP4-C	amplicon8	ecDNA_1	CLPTM1L	13.610331078371159	None	False
+OACP4-C	amplicon8	ecDNA_1	CTD-3080P12.3	13.610331078371159	5p	False
+OACP4-C	amplicon8	ecDNA_1	LPCAT1	13.610331078371159	None	False
+OACP4-C	amplicon8	ecDNA_1	NKD2	13.610331078371159	None	False
+OACP4-C	amplicon8	ecDNA_1	SDHAP3	11.497163880588838	5p	False
+OACP4-C	amplicon8	ecDNA_1	SLC12A7	13.610331078371159	None	False
+OACP4-C	amplicon8	ecDNA_1	SLC6A18	13.610331078371159	None	False
+OACP4-C	amplicon8	ecDNA_1	SLC6A19	13.610331078371159	None	False
+OACP4-C	amplicon8	ecDNA_1	SLC6A3	13.610331078371159	None	False
+OACP4-C	amplicon8	ecDNA_1	TERT	13.610331078371159	None	True
+OACP4-C	amplicon8	ecDNA_1	TRIP13	13.610331078371159	None	False
+OACP4-C	amplicon8	ecDNA_1	ZDHHC11	15.80635992884154	5p	False
+OACP4-C	amplicon8	ecDNA_1	ZDHHC11B	18.075529042996695	3p	False
+OACP4-C	amplicon8	unknown_1	HRAT5	5.518073822157766	None	False
+OACP4-C	amplicon8	unknown_1	PDCD6	5.518073822157766	3p	False
+OACP4-C	amplicon9	ecDNA_1	FAM198B-AS1	5.744705853118327	None	False
+OACP4-C	amplicon9	ecDNA_1	GASK1B	5.744705853118327	None	False
+OACP4-C	amplicon9	ecDNA_1	TMEM144	5.744705853118327	None	False
+OE33	amplicon1	ecDNA_1	ANKRD7	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	ASZ1	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	CAPZA2	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	CAV1	11.435019269524298	None	True
+OE33	amplicon1	ecDNA_1	CAV2	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	CFTR	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	CFTR-AS1	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	CTTNBP2	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	FOXP2	12.839007303729156	None	False
+OE33	amplicon1	ecDNA_1	KCND2	10.005064576373604	3p	False
+OE33	amplicon1	ecDNA_1	LSM8	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	MDFIC	11.13082660806015	None	False
+OE33	amplicon1	ecDNA_1	MET	11.435019269524298	None	True
+OE33	amplicon1	ecDNA_1	PPP1R3A	11.099384325632322	None	False
+OE33	amplicon1	ecDNA_1	SNORA25B	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	ST7	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	ST7-AS1	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	ST7-AS2	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	ST7-OT3	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	ST7-OT4	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	TES	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	TFEC	11.435019269524298	None	False
+OE33	amplicon1	ecDNA_1	WNT2	11.435019269524298	None	True
+OE33	amplicon1	unknown_1	EIF3IP1	11.182769103430152	None	False
+OE33	amplicon1	unknown_1	IMMP2L	11.847627011016584	5p	False
+OE33	amplicon2	Linear amplification_1	CASC8	5.778905917961555	5p	False
+OE33	amplicon3	ecDNA_1	ABHD15	7.463150516274534	None	False
+OE33	amplicon3	ecDNA_1	ANKRD13B	7.463150516274534	None	False
+OE33	amplicon3	ecDNA_1	CORO6	7.463150516274534	None	False
+OE33	amplicon3	ecDNA_1	CRYBA1	7.463150516274534	None	False
+OE33	amplicon3	ecDNA_1	GIT1	7.463150516274534	None	False
+OE33	amplicon3	ecDNA_1	NUFIP2	7.463150516274534	None	False
+OE33	amplicon3	ecDNA_1	SSH2	7.463150516274534	5p	False
+OE33	amplicon3	ecDNA_1	TAOK1	7.463150516274534	None	False
+OE33	amplicon3	ecDNA_1	TP53I13	7.463150516274534	None	False
+OE33	amplicon4	BFB_1	ACACA	12.700890829711831	3p	False
+OE33	amplicon4	BFB_1	ACLY	23.23852353479485	5p	False
+OE33	amplicon4	BFB_1	ARHGAP23	11.509164811009015	3p	False
+OE33	amplicon4	BFB_1	C17orf78	12.700890829711831	None	False
+OE33	amplicon4	BFB_1	CSF3	21.941940715267613	None	True
+OE33	amplicon4	BFB_1	DDX52	12.700890829711831	None	False
+OE33	amplicon4	BFB_1	DUSP14	12.700890829711831	None	False
+OE33	amplicon4	BFB_1	EIF1	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	ERBB2	20.374922324770058	None	True
+OE33	amplicon4	BFB_1	FKBP10	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	GAST	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	GPR179	11.509164811009015	None	False
+OE33	amplicon4	BFB_1	GRB7	20.374922324770058	None	False
+OE33	amplicon4	BFB_1	GSDMA	21.941940715267613	None	False
+OE33	amplicon4	BFB_1	GSDMB	21.941940715267613	None	False
+OE33	amplicon4	BFB_1	HAP1	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	HNF1B	12.700890829711831	None	False
+OE33	amplicon4	BFB_1	IKZF3	21.941940715267613	None	False
+OE33	amplicon4	BFB_1	JUP	23.23852353479485	None	True
+OE33	amplicon4	BFB_1	KLHL10	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KLHL11	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KRT13	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KRT14	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KRT15	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KRT16	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KRT17	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KRT19	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KRT31	27.82134518585213	None	False
+OE33	amplicon4	BFB_1	KRT32	27.82134518585213	None	False
+OE33	amplicon4	BFB_1	KRT33A	39.00133759443365	None	False
+OE33	amplicon4	BFB_1	KRT33B	27.82134518585213	None	False
+OE33	amplicon4	BFB_1	KRT34	27.82134518585213	None	False
+OE33	amplicon4	BFB_1	KRT35	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KRT36	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KRT37	27.82134518585213	None	False
+OE33	amplicon4	BFB_1	KRT38	27.82134518585213	None	False
+OE33	amplicon4	BFB_1	KRT42P	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KRT9	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	KRTAP16-1	39.00133759443365	None	False
+OE33	amplicon4	BFB_1	KRTAP17-1	39.00133759443365	None	False
+OE33	amplicon4	BFB_1	KRTAP29-1	39.00133759443365	None	False
+OE33	amplicon4	BFB_1	KRTAP9-2	39.001337594433565	None	False
+OE33	amplicon4	BFB_1	KRTAP9-3	38.68313566851904	None	False
+OE33	amplicon4	BFB_1	KRTAP9-4	38.68313566851904	None	False
+OE33	amplicon4	BFB_1	KRTAP9-6	39.00133759443362	3p	False
+OE33	amplicon4	BFB_1	KRTAP9-8	38.68313566851904	None	False
+OE33	amplicon4	BFB_1	KRTAP9-9	39.00133759443362	None	False
+OE33	amplicon4	BFB_1	LRRC3C	21.941940715267613	None	False
+OE33	amplicon4	BFB_1	MED24	21.941940715267613	None	False
+OE33	amplicon4	BFB_1	MIEN1	20.374922324770058	None	False
+OE33	amplicon4	BFB_1	MRPL45	11.509164811009015	None	False
+OE33	amplicon4	BFB_1	NT5C3B	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	ORMDL3	21.941940715267613	None	False
+OE33	amplicon4	BFB_1	P3H4	23.23852353479485	None	False
+OE33	amplicon4	BFB_1	PGAP3	20.374922324770058	None	False
+OE33	amplicon4	BFB_1	PNMT	20.374922324770058	None	False
+OE33	amplicon4	BFB_1	PSMD3	21.941940715267613	None	False
+OE33	amplicon4	BFB_1	SNORD124	21.941940715267613	None	False
+OE33	amplicon4	BFB_1	SOCS7	11.509164811009015	None	False
+OE33	amplicon4	BFB_1	STARD3	20.374922324770058	None	False
+OE33	amplicon4	BFB_1	SYNRG	12.700890829711831	None	False
+OE33	amplicon4	BFB_1	TADA2A	12.700890829711831	None	False
+OE33	amplicon4	BFB_1	TBC1D3	7.022397885199738	None	True
+OE33	amplicon4	BFB_1	TBC1D3C	7.022397885199738	None	True
+OE33	amplicon4	BFB_1	TBC1D3E	5.134454873307429	None	False
+OE33	amplicon4	BFB_1	TCAP	20.374922324770058	None	False
+OE33	amplicon4	BFB_1	THRA	21.941940715267613	3p	True
+OE33	amplicon4	BFB_1	YWHAEP7	12.700890829711831	None	False
+OE33	amplicon4	BFB_1	ZPBP2	21.941940715267613	None	False
+SK-GT-4	amplicon1	Linear amplification_1	ARHGAP5	5.455411575382751	3p	False
+SK-GT-4	amplicon1	Linear amplification_1	ARHGAP5-AS1	5.455411575382751	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	AKAP6	7.198744611224134	5p	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	BAZ1A	8.869419220173317	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	BRMS1L	8.869419220173318	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	CFL2	7.917203804604207	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	EAPP	11.151947911326653	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	EGLN3	11.151947911326653	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	FAM177A1	8.869419220173317	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	IGBP1P1	8.869419220173317	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	INSM2	8.869419220173318	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	MBIP	8.869419220173318	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	NFKBIA	8.869419220173318	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	NKX2-1	7.3115486700725265	None	True
+SK-GT-4	amplicon2	Complex non-cyclic_1	NKX2-1-AS1	7.3115486700725265	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	NKX2-8	7.3115486700725265	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	NPAS3	9.157968887191164	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	PAX9	7.3115486700725265	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	PPP2R3C	8.869419220173317	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	PRORP	8.869419220173318	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	PSMA6	8.869419220173318	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	PTCSC3	8.869419220173318	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	RALGAPA1	8.869419220173318	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	RPL10L	8.876559171333858	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	SFTA3	7.3115486700725265	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	SLC25A21	9.980867322358081	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	SLC25A21-AS1	4.9787457432631665	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	SNORA101B	8.869419220173318	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	SNORA89	7.533835190467206	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	SNX6	11.151947911326653	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	SPTSSA	11.151947911326653	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	SRP54	8.869419220173317	None	False
+SK-GT-4	amplicon2	Complex non-cyclic_1	SRP54-AS1	8.869419220173317	None	False

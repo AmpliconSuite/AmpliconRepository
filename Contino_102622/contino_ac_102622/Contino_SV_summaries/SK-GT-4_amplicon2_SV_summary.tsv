@@ -1,0 +1,15 @@
+chrom1	pos1	chrom2	pos2	sv_type	read_support	features	orientation	pos1_flanking_coordinate	pos2_flanking_coordinate
+chr14	33316887	chr14	33855634	inversion	22	Complex non-cyclic	--	33316888	33855635
+chr14	35038508	chr14	35040301	deletion-like	79	Complex non-cyclic	+-	35038507	35040302
+chr14	35136434	chr14	35145842	deletion-like	48	Complex non-cyclic	+-	35136433	35145843
+chr14	28288747	chr14	36991914	inversion	17	Complex non-cyclic	++	28288746	36991913
+chr14	36992003	chr14	37168632	duplication-like	17	Complex non-cyclic	-+	36992004	37168631
+chr14	36708837	chr14	38299887	deletion-like	9	Complex non-cyclic	+-	36708836	38299888
+chr14	34562676	chr14	38307091	inversion	20	Complex non-cyclic	++	34562675	38307090
+chr14	33727179	chr14	45866219	inversion	17	Complex non-cyclic	--	33727180	45866220
+chr14	33384117	chr14	46031406	inversion	15	Complex non-cyclic	++	33384116	46031405
+chr14	34729189	chr14	46122610	deletion-like	18	Complex non-cyclic	+-	34729188	46122611
+chr14	28278530	chr14	46352402	duplication-like	30	Complex non-cyclic	-+	28278531	46352401
+chr14	38497014	chr14	46448599	duplication-like	21	Complex non-cyclic	-+	38497015	46448598
+chr14	34610199	chr14	46514835	deletion-like	23	Complex non-cyclic	+-	34610198	46514836
+chr14	36703601	chr14	46703181	duplication-like	20	Complex non-cyclic	-+	36703602	46703180

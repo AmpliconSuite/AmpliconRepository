@@ -1,0 +1,5 @@
+chr4:157994547-->chr4:158262525+	7	None	None
+chr4:157994831+->chr4:157895241-	17	None	None
+chr4:157994836-->chr4:158258829+	25	None	None
+chr4:158258829+->chr4:157994836-	25	None	None
+chr4:158262525+->chr4:157994547-	7	None	None

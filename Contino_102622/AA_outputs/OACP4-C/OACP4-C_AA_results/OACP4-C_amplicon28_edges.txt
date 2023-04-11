@@ -1,0 +1,6 @@
+chrX:48511469-->chrX:48694144+	11	None	None
+chrX:48512039+->chrX:48517240-	13	None	None
+chrX:48512044-->chrX:48517645+	16	None	None
+chrX:48517240-->chrX:48512039+	13	None	None
+chrX:48517645+->chrX:48512044-	16	None	None
+chrX:48694144+->chrX:48511469-	11	None	None

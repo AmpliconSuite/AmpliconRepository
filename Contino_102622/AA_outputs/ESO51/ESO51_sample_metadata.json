@@ -1,0 +1,12 @@
+{
+  "sample_cnv_bed": "/nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO51/ERR1414289.cs.rmdup_CNV_CALLS.bed", 
+  "number_of_AA_amplicons": 9, 
+  "sample_description": "esophageal adenocarcinoma cell line", 
+  "number_of_AA_features": 10, 
+  "sample_type": "cell line", 
+  "reference_genome": "GRCh38", 
+  "tissue_of_origin": "esophagus", 
+  "sample_name": "ESO51", 
+  "sample_source": "ERR1414289", 
+  "run_metadata_file": "/nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/ESO51/ESO51_run_metadata.json"
+}

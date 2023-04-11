@@ -1,0 +1,5 @@
+chrom1	pos1	chrom2	pos2	sv_type	read_support	features	orientation	pos1_flanking_coordinate	pos2_flanking_coordinate
+chr20	50364813	chr20	50368867	foldback	10	ecDNA	--	50364814	50368868
+chr20	50219830	chr20	50516249	duplication-like	16	ecDNA	-+	50219831	50516248
+chr20	50368955	chr20	50528696	inversion	12	ecDNA	--	50368956	50528697
+chr20	50364887	chr20	50528955	duplication-like	13	ecDNA	-+	50364888	50528954

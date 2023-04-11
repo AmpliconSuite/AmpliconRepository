@@ -1,0 +1,6 @@
+sample_name	amplicon_number	amplicon_decomposition_class	ecDNA+	BFB+	ecDNA_amplicons
+ESO26	amplicon1	Cyclic	None detected	Positive	0
+ESO26	amplicon2	Complex non-cyclic	None detected	Positive	0
+ESO26	amplicon3	Complex non-cyclic	None detected	None detected	0
+ESO26	amplicon4	Cyclic	None detected	Positive	0
+ESO26	amplicon5	Cyclic	None detected	Positive	0

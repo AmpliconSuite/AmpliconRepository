@@ -1,0 +1,7 @@
+sample_name	amplicon_number	amplicon_decomposition_class	ecDNA+	BFB+	ecDNA_amplicons
+JH-EsoAd1	amplicon1	Complex non-cyclic	None detected	None detected	0
+JH-EsoAd1	amplicon2	Cyclic	Positive	None detected	1
+JH-EsoAd1	amplicon3	Linear amplification	None detected	None detected	0
+JH-EsoAd1	amplicon4	Cyclic	Positive	None detected	1
+JH-EsoAd1	amplicon5	Cyclic	Positive	None detected	1
+JH-EsoAd1	amplicon6	Cyclic	Positive	None detected	2

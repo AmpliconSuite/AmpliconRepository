@@ -1,0 +1,82 @@
+Tue Sep  6 23:07:13 PDT 2022
+genome-workhorse0.priv
+Global ref name is GRCh38
+[root:INFO]	Commandline: /home/jluebeck/dev/AmpliconArchitect/src/AmpliconArchitect.py --ref GRCh38 --downsample 10 --bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_AA_CNV_SEEDS.bed --bam /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414286/ERR1414286.cs.rmdup.bam --runmode FULL --extendmode EXPLORE --insert_sdevs 3.0 --out /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_AA_results//OACM5.1 
+[root:INFO]	AmpliconArchitect version 1.3.r1
+
+[root:INFO]	Python version 2.7.12 (default, Mar  1 2021, 11:38:31) 
+[GCC 5.4.0 20160609]
+
+[root:INFO]	#TIME 0.267	Loading libraries and reference annotations for: GRCh38
+Global ref name is GRCh38
+[root:INFO]	#TIME 2.824	Initiating bam_to_breakpoint object for: /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414286/ERR1414286.cs.rmdup.bam
+[root:INFO]	#TIME 2.826	Reusing cstats from /nucleus/libs/AmpliconArchitect/release/indexed/coverage.stats
+[root:INFO]	#TIME 2.827	Exploring interval: chr7	93056411	93261410
+[root:INFO]	#TIME 85.804	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 185.044	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 229.975	 Selecting neighbors
+[root:INFO]	#TIME 305.685	 New neighbor: chr7	105841258	112451179	19 (weight=19)
+[root:INFO]	#TIME 305.686	 New neighbor: chr7	116671459	116692006	12 (weight=12)
+[root:INFO]	#TIME 305.687	 New neighbor: chr7	119806576	119827123	5 (weight=5)
+[root:INFO]	#TIME 305.687	 New neighbor: chr7	120104331	120134877	14 (weight=14)
+[root:INFO]	#TIME 306.572	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 396.399	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 404.913	 Selecting neighbors
+[root:INFO]	#TIME 406.363	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 443.860	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 459.178	 Selecting neighbors
+[root:INFO]	#TIME 461.479	 New neighbor: chr7	115368865	115379412	12 (weight=12)
+[root:INFO]	#TIME 464.963	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 474.701	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 478.093	 Selecting neighbors
+[root:INFO]	#TIME 479.005	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 479.041	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 481.816	 Selecting neighbors
+[root:INFO]	#TIME 481.828	Exploring interval: chr7	105841258	112451179
+[root:INFO]	#TIME 497.385	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 844.312	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1059.941	 Selecting neighbors
+[root:INFO]	#TIME 1141.222	 New neighbor: chr7	93046411	93271410	19 (weight=19)
+[root:INFO]	#TIME 1141.237	Interval sets for amplicons determined: 
+[root:INFO]	[amplicon1]	chr7:93046411-93271410,chr7:105821258-112551179,chr7:115368865-115379412,chr7:116671459-116692006,chr7:119806576-119827123,chr7:120104331-120134877
+[root:INFO]	#TIME 1141.243	Reconstructing amplicon1
+[root:INFO]	#TIME 1141.244	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1141.436	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 1413.417	 Building breakpoint graph
+[root:INFO]	#TIME 1419.357	 Optimizing graph copy number flow
+[root:INFO]	#TIME 1656.948	 Plotting SV View
+[root:INFO]	#TIME 1676.555	Plotting SV View for amplicon1
+/usr/local/lib/python2.7/dist-packages/matplotlib/font_manager.py:1331: UserWarning: findfont: Font family [u'sans-serif'] not found. Falling back to DejaVu Sans
+  (prop.get_family(), self.defaultFamily[fontext]))
+[root:INFO]	#TIME 1795.367	Total Runtime
+AmpliconClassifier 0.4.11
+/home/jluebeck/ecDNA/AmpliconClassifier/amplicon_classifier.py -i /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_classification/OACM5.1.input --ref GRCh38 -o /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_classification/OACM5.1 --report_complexity
+reading /nucleus/libs/AmpliconArchitect/release/indexed//GRCh38/Genes_hg38.gff
+read 22998 genes
+
+OACM5.1 amplicon1
+Classification stage completed
+Writing outputs...
+done
+2022-09-06 23:07:13.364322
+PrepareAA version 0.1203.12
+
+Matched /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414286/ERR1414286.cs.rmdup.bam to reference genome GRCh38
+Running PrepareAA on sample: OACM5.1
+/nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414286/ERR1414286.cs.rmdup.bam: 1001415903 + 0 properly paired (89.84%:-nan%)
+WARNING: BAM FILE PROPERLY PAIRED RATE IS BELOW 95%.
+Quality of data may be insufficient for AA analysis. Poorly controlled insert size distribution during sample prep can cause high fractions of read pairs to be marked as discordant during alignment. Artifactual short SVs and long runtimes may occur!
+
+
+Running amplified_intervals
+python /home/jluebeck/dev/AmpliconArchitect/src/amplified_intervals.py --ref GRCh38 --bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1//ERR1414286.cs.rmdup_CNV_CALLS_pre_filtered.bed --bam /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414286/ERR1414286.cs.rmdup.bam --gain 4.5 --cnsize_min 50000 --out /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_AA_CNV_SEEDS
+python /home/jluebeck/dev/AmpliconArchitect/src/AmpliconArchitect.py --ref GRCh38 --downsample 10 --bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_AA_CNV_SEEDS.bed --bam /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414286/ERR1414286.cs.rmdup.bam --runmode FULL --extendmode EXPLORE --insert_sdevs 3.0 --out /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_AA_results//OACM5.1
+
+Running AC
+/home/jluebeck/ecDNA/AmpliconClassifier/make_input.sh /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_AA_results/ /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_classification/OACM5.1
+python3 /home/jluebeck/ecDNA/AmpliconClassifier/amplicon_classifier.py -i /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_classification/OACM5.1.input --ref GRCh38 -o /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_classification/OACM5.1 --report_complexity
+python3 /home/jluebeck/ecDNA/AmpliconClassifier/make_results_table.py -i /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_classification/OACM5.1.input --classification_file /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_classification/OACM5.1_amplicon_classification_profiles.tsv --cnv_bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/ERR1414286.cs.rmdup_CNV_CALLS.bed --metadata_dict /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_run_metadata.json
+Completed
+
+2022-09-06 23:54:44.206262
+Tue Sep  6 23:54:44 PDT 2022

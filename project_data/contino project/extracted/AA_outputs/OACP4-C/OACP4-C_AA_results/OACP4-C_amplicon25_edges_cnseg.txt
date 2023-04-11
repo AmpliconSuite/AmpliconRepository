@@ -1,0 +1,6 @@
+chr18:6611473-->chr18:7866608+	12	None	None
+chr18:6611668-->chr7:84352602+	11	None	None
+chr18:6612030+->chr18:6486909+	22	None	None
+chr18:6830814-->chr18:6833496-	20	None	None
+chr18:6833496-->chr18:6830814-	20	None	None
+chr18:7866608+->chr18:6611473-	12	None	None

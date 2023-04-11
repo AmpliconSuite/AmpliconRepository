@@ -1,0 +1,1186 @@
+INFO:root:Commandline: /home/jluebeck/dev/AmpliconArchitect/src/AmpliconArchitect.py --ref GRCh38 --downsample 10 --bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_CNV_SEEDS.bed --bam /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414288/ERR1414288.cs.rmdup.bam --runmode FULL --extendmode EXPLORE --insert_sdevs 3.0 --out /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1 
+INFO:root:AmpliconArchitect version 1.3.r1
+
+INFO:root:Python version 2.7.12 (default, Mar  1 2021, 11:38:31) 
+[GCC 5.4.0 20160609]
+
+INFO:root:#TIME 0.271	Loading libraries and reference annotations for: GRCh38
+DEBUG:matplotlib:CACHEDIR=/home/jluebeck/.cache/matplotlib
+DEBUG:matplotlib.font_manager:Using fontManager instance from /home/jluebeck/.cache/matplotlib/fontList.json
+DEBUG:matplotlib.backends:backend agg version v2.2
+INFO:root:#TIME 2.895	Initiating bam_to_breakpoint object for: /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414288/ERR1414288.cs.rmdup.bam
+INFO:root:#TIME 2.897	Reusing cstats from /nucleus/libs/AmpliconArchitect/release/indexed/coverage.stats
+INFO:root:#TIME 2.899	Exploring interval: chr6	21869584	25739511
+DEBUG:root:#TIME 2.899	 interval_hops: init chr6	21869584	25739511
+DEBUG:root:#TIME 143.078	 searching discordant edges in chr6	25739511	25749511
+DEBUG:root:#TIME 143.262	 discordant edges: discordant read pairs found: chr6	25739511	25749511 14 4
+DEBUG:root:#TIME 151.435	 discordant edges: local edges done chr6	25739511	25749511 1 0 0
+DEBUG:root:#TIME 152.029	 edge_breakpoint_filter: chr6:25739811+->chr6:50618859-
+DEBUG:root:#TIME 152.030	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 152.032	 breakpoint_entropy: 1.305 1.264
+DEBUG:root:#TIME 152.032	 discordant edges: external edges done chr6	25739511	25749511 0.0366237163544 16
+DEBUG:root:#TIME 152.039	 concordant edges chr6:25739811+ 60
+DEBUG:root:#TIME 152.046	 concordant edges chr6:25739811+ 60
+DEBUG:root:#TIME 152.032	discordant edges chr6:25739811+->chr6:50618859- 8 discordant chr6:25739811+->chr6:25739815- 60 1.000000
+DEBUG:root:#TIME 152.062	 searching discordant edges in chr6	21859584	21869584
+DEBUG:root:#TIME 152.255	 discordant edges: discordant read pairs found: chr6	21859584	21869584 8 10
+DEBUG:root:#TIME 152.256	 discordant edges: local edges done chr6	21859584	21869584 0 0 0
+DEBUG:root:#TIME 152.256	 discordant edges: external edges done chr6	21859584	21869584 0 0
+DEBUG:root:#TIME 152.743	 searching discordant edges in chr6	25739512	25749511
+DEBUG:root:#TIME 152.925	 discordant edges: discordant read pairs found: chr6	25739512	25749511 14 4
+DEBUG:root:#TIME 153.127	 discordant edges: local edges done chr6	25739512	25749511 1 0 0
+DEBUG:root:#TIME 153.815	 edge_breakpoint_filter: chr6:25739811+->chr6:50618859-
+DEBUG:root:#TIME 153.815	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 153.817	 breakpoint_entropy: 1.305 1.264
+DEBUG:root:#TIME 153.819	 discordant edges: external edges done chr6	25739512	25749511 0.0372996330261 16
+DEBUG:root:#TIME 153.827	 concordant edges chr6:25739811+ 60
+DEBUG:root:#TIME 153.834	 concordant edges chr6:25739811+ 60
+DEBUG:root:#TIME 153.820	discordant edges chr6:25739811+->chr6:50618859- 8 discordant chr6:25739811+->chr6:25739815- 60 1.000000
+DEBUG:root:#TIME 153.835	 searching discordant edges in chr6	21859584	21869583
+DEBUG:root:#TIME 154.029	 discordant edges: discordant read pairs found: chr6	21859584	21869583 8 10
+DEBUG:root:#TIME 154.029	 discordant edges: local edges done chr6	21859584	21869583 0 0 0
+DEBUG:root:#TIME 154.030	 discordant edges: external edges done chr6	21859584	21869583 0 0
+DEBUG:root:#TIME 154.030	 interval_extend: chr6	21869584	25739511, 0, chr6	21869584	25759511
+DEBUG:root:#TIME 154.030	 interval_hops: interval extend chr6	21869584	25739511 chr6	21869584	25759511
+DEBUG:root:#TIME 154.031	 interval_hops: check rd chr6	21869584	25739511 chr6	21869584	25759511 1
+DEBUG:root:#TIME 154.581	 searching discordant edges in chr6	25759511	25769511
+DEBUG:root:#TIME 154.762	 discordant edges: discordant read pairs found: chr6	25759511	25769511 12 4
+DEBUG:root:#TIME 154.763	 discordant edges: local edges done chr6	25759511	25769511 0 0 0
+DEBUG:root:#TIME 154.763	 discordant edges: external edges done chr6	25759511	25769511 0 0
+DEBUG:root:#TIME 154.779	 searching discordant edges in chr6	21859584	21869584
+DEBUG:root:#TIME 154.809	 searching discordant edges in chr6	25759512	25769511
+DEBUG:root:#TIME 154.990	 discordant edges: discordant read pairs found: chr6	25759512	25769511 12 4
+DEBUG:root:#TIME 155.003	 discordant edges: local edges done chr6	25759512	25769511 0 0 0
+DEBUG:root:#TIME 155.003	 discordant edges: external edges done chr6	25759512	25769511 0 0
+DEBUG:root:#TIME 155.003	 searching discordant edges in chr6	21859584	21869583
+DEBUG:root:#TIME 155.003	 interval_extend: chr6	21869584	25759511, 0, chr6	21869584	25759511
+INFO:root:#TIME 155.004	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chr6	21869584	25759511
+DEBUG:root:Meanshift refining chr6:21869584-25759511
+DEBUG:root:Computing meanshift segmentation on chr6	21869584	25759511
+DEBUG:root:MS: chr6	21870000	25760000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chr6	21870000	25760000 s2, e2: (11870000, 35760000)
+DEBUG:root:MS: chr6	21870000	25760000 startskip,endskip(0, 0)
+DEBUG:root:Computing meanshift segmentation on chr6	24039999	24099999
+DEBUG:root:MS: chr6	24039900	24099900 window_size, n: (300, 1000)
+DEBUG:root:MS: chr6	24039900	24099900 s2, e2: (23739900, 24399900)
+DEBUG:root:MS: chr6	24039900	24099900 startskip,endskip(0, 0)
+DEBUG:root:Computing meanshift segmentation on chr6	24969999	25029999
+DEBUG:root:MS: chr6	24969900	25029900 window_size, n: (300, 1000)
+DEBUG:root:MS: chr6	24969900	25029900 s2, e2: (24669900, 25329900)
+DEBUG:root:MS: chr6	24969900	25029900 startskip,endskip(0, 0)
+DEBUG:root:(21870000, 24067499, 5.57631927139319)
+DEBUG:root:(24067500, 24995399, 7.115002835063203)
+DEBUG:root:(24995400, 25760000, 5.779396112607623)
+INFO:root:#TIME 380.331	 Detecting breakpoint edges (interval neighbors)
+DEBUG:root:#TIME 380.332	 searching discordant edges in chr6	21869584	25759511
+DEBUG:root:#TIME 462.949	 discordant edges: discordant read pairs found: chr6	21869584	25759511 3766 3778
+DEBUG:root:#TIME 478.872	 edge_breakpoint_filter: chr6:22052540+->chr6:22053498-
+DEBUG:root:#TIME 478.873	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 478.877	 breakpoint_entropy: 1.377 1.379
+DEBUG:root:#TIME 478.929	 edge_breakpoint_filter: chr6:24811658+->chr6:24817722-
+DEBUG:root:#TIME 478.929	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 478.932	 breakpoint_entropy: 1.370 1.379
+DEBUG:root:#TIME 478.997	 edge_breakpoint_filter: chr6:23948520+->chr6:23949442-
+DEBUG:root:#TIME 478.997	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 478.999	 breakpoint_entropy: 1.256 1.357
+DEBUG:root:#TIME 479.094	 edge_breakpoint_filter: chr6:24817722-->chr6:24811658+
+DEBUG:root:#TIME 479.112	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 479.116	 breakpoint_entropy: 1.379 1.370
+DEBUG:root:#TIME 479.145	 edge_breakpoint_filter: chr6:23949442-->chr6:23948520+
+DEBUG:root:#TIME 479.164	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 479.166	 breakpoint_entropy: 1.357 1.256
+DEBUG:root:#TIME 479.191	 edge_breakpoint_filter: chr6:22053498-->chr6:22052540+
+DEBUG:root:#TIME 479.203	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 479.207	 breakpoint_entropy: 1.379 1.377
+DEBUG:root:#TIME 479.240	 discordant edges: local edges done chr6	21869584	25759511 23 20 6
+DEBUG:root:#TIME 488.373	 edge_breakpoint_filter: chr6:24683774+->chr22:32531898-
+DEBUG:root:#TIME 488.388	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 488.395	 breakpoint_entropy: 1.379 1.381
+DEBUG:root:#TIME 490.948	 edge_breakpoint_filter: chr6:25004605+->chr6:114978837-
+DEBUG:root:#TIME 490.949	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 490.951	 breakpoint_entropy: 1.378 1.305
+DEBUG:root:#TIME 491.852	 edge_breakpoint_filter: chr6:25739811+->chr6:50618804-
+DEBUG:root:#TIME 492.054	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 492.056	 breakpoint_entropy: 1.310 1.283
+DEBUG:root:#TIME 499.259	 edge_breakpoint_filter: chr6:24683759-->chr22:32532573+
+DEBUG:root:#TIME 499.260	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 499.268	 breakpoint_entropy: 1.375 1.373
+DEBUG:root:#TIME 500.558	 edge_breakpoint_filter: chr6:25005267-->chr6:114979027-
+DEBUG:root:#TIME 500.559	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 500.560	 breakpoint_entropy: 1.334 1.317
+DEBUG:root:#TIME 505.841	 edge_breakpoint_filter: chr6:24071102-->chr6:48679775-
+DEBUG:root:#TIME 505.842	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 505.847	 breakpoint_entropy: 1.368 1.379
+DEBUG:root:#TIME 506.879	 edge_breakpoint_filter: chr6:25709318-->chr15:68243832-
+DEBUG:root:#TIME 506.882	 breakpoint_mapq: 60 29
+DEBUG:root:#TIME 506.883	 breakpoint_entropy: 1.306 1.339
+DEBUG:root:#TIME 508.718	 discordant edges: external edges done chr6	21869584	25759511 6.13218092918 801
+DEBUG:root:#TIME 508.738	 concordant edges chr6:22052540+ 43
+DEBUG:root:#TIME 508.791	 concordant edges chr6:22052540+ 43
+DEBUG:root:#TIME 508.719	discordant edges chr6:22052540+->chr6:22053498- 22 discordant chr6:22052540+->chr6:22052541- 43 1.000000
+DEBUG:root:#TIME 508.797	 concordant edges chr6:22053498- 31
+DEBUG:root:#TIME 508.801	 concordant edges chr6:22053498- 31
+DEBUG:root:#TIME 508.792	discordant edges chr6:22053498-->chr6:22052540+ 22 discordant chr6:22053498-->chr6:22053497+ 31 1.000000
+DEBUG:root:#TIME 508.817	 concordant edges chr6:23948520+ not found
+DEBUG:root:#TIME 508.833	 concordant edges chr6:23948520+ not found
+DEBUG:root:#TIME 508.802	discordant edges chr6:23948520+->chr6:23949442- 8 discordant None 0 1.000000
+DEBUG:root:#TIME 508.847	 concordant edges chr6:23949442- 23
+DEBUG:root:#TIME 508.860	 concordant edges chr6:23949442- 23
+DEBUG:root:#TIME 508.834	discordant edges chr6:23949442-->chr6:23948520+ 8 discordant chr6:23949442-->chr6:23949441+ 23 1.000000
+DEBUG:root:#TIME 508.871	 concordant edges chr6:24071102- 66
+DEBUG:root:#TIME 508.882	 concordant edges chr6:24071102- 66
+DEBUG:root:#TIME 508.861	discordant edges chr6:24071102-->chr6:48679775- 30 reverse chr6:24071102-->chr6:24071101+ 66 1.004158
+DEBUG:root:#TIME 508.901	 concordant edges chr6:24683759- 29
+DEBUG:root:#TIME 508.918	 concordant edges chr6:24683759- 29
+DEBUG:root:#TIME 508.883	discordant edges chr6:24683759-->chr22:32532573+ 47 interchromosomal chr6:24683759-->chr6:24683758+ 29 1.440994
+DEBUG:root:#TIME 508.937	 concordant edges chr6:24683774+ 40
+DEBUG:root:#TIME 508.955	 concordant edges chr6:24683774+ 40
+DEBUG:root:#TIME 508.920	discordant edges chr6:24683774+->chr22:32531898- 38 interchromosomal chr6:24683774+->chr6:24683792- 40 2.220430
+DEBUG:root:#TIME 508.967	 concordant edges chr6:24811658+ 18
+DEBUG:root:#TIME 508.978	 concordant edges chr6:24811658+ 18
+DEBUG:root:#TIME 508.956	discordant edges chr6:24811658+->chr6:24817722- 17 discordant chr6:24811658+->chr6:24811659- 18 2.759889
+DEBUG:root:#TIME 508.993	 concordant edges chr6:24817722- 60
+DEBUG:root:#TIME 509.006	 concordant edges chr6:24817722- 60
+DEBUG:root:#TIME 508.980	discordant edges chr6:24817722-->chr6:24811658+ 17 discordant chr6:24817722-->chr6:24817721+ 60 2.172426
+DEBUG:root:#TIME 509.019	 concordant edges chr6:25004605+ 80
+DEBUG:root:#TIME 509.030	 concordant edges chr6:25004605+ 80
+DEBUG:root:#TIME 509.008	discordant edges chr6:25004605+->chr6:114978837- 9 discordant chr6:25004605+->chr6:25004611- 80 1.000000
+DEBUG:root:#TIME 509.060	 concordant edges chr6:25005267- 66
+DEBUG:root:#TIME 509.070	 concordant edges chr6:25005267- 66
+DEBUG:root:#TIME 509.051	discordant edges chr6:25005267-->chr6:114979027- 3 reverse chr6:25005267-->chr6:25005266+ 66 1.236150
+DEBUG:root:#TIME 509.079	 concordant edges chr6:25709318- 51
+DEBUG:root:#TIME 509.113	 concordant edges chr6:25709318- 51
+DEBUG:root:#TIME 509.071	discordant edges chr6:25709318-->chr15:68243832- 7 interchromosomal chr6:25709318-->chr6:25709317+ 51 1.602957
+DEBUG:root:#TIME 509.121	 concordant edges chr6:25739811+ 60
+DEBUG:root:#TIME 509.128	 concordant edges chr6:25739811+ 60
+DEBUG:root:#TIME 509.114	discordant edges chr6:25739811+->chr6:50618804- 9 discordant chr6:25739811+->chr6:25739815- 60 1.000000
+INFO:root:#TIME 509.135	 Selecting neighbors
+DEBUG:root:#TIME 577.685	 searching discordant edges in chr22	32532573	32542573
+DEBUG:root:#TIME 577.769	 discordant edges: discordant read pairs found: chr22	32532573	32542573 3 6
+DEBUG:root:#TIME 577.770	 discordant edges: local edges done chr22	32532573	32542573 0 0 0
+DEBUG:root:#TIME 577.770	 discordant edges: external edges done chr22	32532573	32542573 0 0
+DEBUG:root:#TIME 577.826	 searching discordant edges in chr22	32522060	32532060
+DEBUG:root:#TIME 577.913	 discordant edges: discordant read pairs found: chr22	32522060	32532060 2 22
+DEBUG:root:#TIME 578.354	 discordant edges: local edges done chr22	32522060	32532060 0 1 0
+DEBUG:root:#TIME 580.167	 edge_breakpoint_filter: chr22:32531898-->chr6:24683639+
+DEBUG:root:#TIME 580.170	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 580.183	 breakpoint_entropy: 1.381 1.379
+DEBUG:root:#TIME 580.183	 discordant edges: external edges done chr22	32522060	32532060 0.317996263504 42
+DEBUG:root:#TIME 580.188	 concordant edges chr22:32531898- 19
+DEBUG:root:#TIME 580.194	 concordant edges chr22:32531898- 19
+DEBUG:root:#TIME 580.183	discordant edges chr22:32531898-->chr6:24683639+ 21 interchromosomal chr22:32531898-->chr22:32531897+ 19 1.000000
+DEBUG:root:#TIME 580.305	 searching discordant edges in chr22	32532574	32542573
+DEBUG:root:#TIME 580.388	 discordant edges: discordant read pairs found: chr22	32532574	32542573 2 6
+DEBUG:root:#TIME 580.389	 discordant edges: local edges done chr22	32532574	32542573 0 0 0
+DEBUG:root:#TIME 580.389	 discordant edges: external edges done chr22	32532574	32542573 0 0
+DEBUG:root:#TIME 580.389	 searching discordant edges in chr22	32522060	32532059
+DEBUG:root:#TIME 580.475	 discordant edges: discordant read pairs found: chr22	32522060	32532059 2 22
+DEBUG:root:#TIME 580.881	 discordant edges: local edges done chr22	32522060	32532059 0 1 0
+DEBUG:root:#TIME 582.583	 edge_breakpoint_filter: chr22:32531898-->chr6:24683639+
+DEBUG:root:#TIME 582.585	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 582.589	 breakpoint_entropy: 1.381 1.379
+DEBUG:root:#TIME 582.589	 discordant edges: external edges done chr22	32522060	32532059 0.315755367279 42
+DEBUG:root:#TIME 582.594	 concordant edges chr22:32531898- 19
+DEBUG:root:#TIME 582.617	 concordant edges chr22:32531898- 19
+DEBUG:root:#TIME 582.589	discordant edges chr22:32531898-->chr6:24683639+ 21 interchromosomal chr22:32531898-->chr22:32531897+ 19 1.000000
+DEBUG:root:#TIME 582.618	 interval_extend: chr22	32532060	32532573, 0, chr22	32512060	32532573
+DEBUG:root:#TIME 582.707	 searching discordant edges in chr6	48680287	48690287
+DEBUG:root:#TIME 582.854	 discordant edges: discordant read pairs found: chr6	48680287	48690287 19 7
+DEBUG:root:#TIME 583.234	 discordant edges: local edges done chr6	48680287	48690287 2 0 0
+DEBUG:root:#TIME 584.440	 edge_breakpoint_filter: chr6:48680928+->chr6:48693415+
+DEBUG:root:#TIME 584.441	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 584.443	 breakpoint_entropy: 1.351 1.275
+DEBUG:root:#TIME 584.480	 discordant edges: external edges done chr6	48680287	48690287 0.0924301147461 31
+DEBUG:root:#TIME 584.488	 concordant edges chr6:48680928+ 45
+DEBUG:root:#TIME 584.500	 concordant edges chr6:48680928+ 45
+DEBUG:root:#TIME 584.480	discordant edges chr6:48680928+->chr6:48693415+ 14 forward chr6:48680928+->chr6:48680930- 45 1.000000
+DEBUG:root:#TIME 584.686	 searching discordant edges in chr6	48669775	48679775
+DEBUG:root:#TIME 584.812	 discordant edges: discordant read pairs found: chr6	48669775	48679775 5 5
+DEBUG:root:#TIME 584.888	 discordant edges: local edges done chr6	48669775	48679775 0 1 0
+DEBUG:root:#TIME 585.162	 edge_breakpoint_filter: chr6:48679775-->chr6:24071404-
+DEBUG:root:#TIME 585.162	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 585.163	 breakpoint_entropy: 1.367 1.319
+DEBUG:root:#TIME 585.164	 discordant edges: external edges done chr6	48669775	48679775 0.0201542377472 6
+DEBUG:root:#TIME 585.169	 concordant edges chr6:48679775- 46
+DEBUG:root:#TIME 585.175	 concordant edges chr6:48679775- 46
+DEBUG:root:#TIME 585.164	discordant edges chr6:48679775-->chr6:24071404- 3 reverse chr6:48679775-->chr6:48679774+ 46 1.000000
+DEBUG:root:#TIME 585.370	 searching discordant edges in chr6	48680288	48690287
+DEBUG:root:#TIME 585.527	 discordant edges: discordant read pairs found: chr6	48680288	48690287 19 7
+DEBUG:root:#TIME 585.969	 discordant edges: local edges done chr6	48680288	48690287 2 0 0
+DEBUG:root:#TIME 587.186	 edge_breakpoint_filter: chr6:48680928+->chr6:48693415+
+DEBUG:root:#TIME 587.187	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 587.189	 breakpoint_entropy: 1.351 1.275
+DEBUG:root:#TIME 587.225	 discordant edges: external edges done chr6	48680288	48690287 0.0917682647705 31
+DEBUG:root:#TIME 587.234	 concordant edges chr6:48680928+ 45
+DEBUG:root:#TIME 587.242	 concordant edges chr6:48680928+ 45
+DEBUG:root:#TIME 587.226	discordant edges chr6:48680928+->chr6:48693415+ 14 forward chr6:48680928+->chr6:48680930- 45 1.000000
+DEBUG:root:#TIME 587.243	 searching discordant edges in chr6	48669775	48679774
+DEBUG:root:#TIME 587.368	 discordant edges: discordant read pairs found: chr6	48669775	48679774 5 2
+DEBUG:root:#TIME 587.368	 discordant edges: local edges done chr6	48669775	48679774 0 0 0
+DEBUG:root:#TIME 587.369	 discordant edges: external edges done chr6	48669775	48679774 0 0
+DEBUG:root:#TIME 587.369	 interval_extend: chr6	48679775	48680287, 0, chr6	48679775	48700287
+DEBUG:root:#TIME 692.701	 searching discordant edges in chr6	114979349	114989349
+DEBUG:root:#TIME 692.834	 discordant edges: discordant read pairs found: chr6	114979349	114989349 2 5
+DEBUG:root:#TIME 692.834	 discordant edges: local edges done chr6	114979349	114989349 0 0 0
+DEBUG:root:#TIME 692.836	 discordant edges: external edges done chr6	114979349	114989349 0 0
+DEBUG:root:#TIME 692.911	 searching discordant edges in chr6	114968837	114978837
+DEBUG:root:#TIME 693.001	 discordant edges: discordant read pairs found: chr6	114968837	114978837 2 4
+DEBUG:root:#TIME 693.009	 discordant edges: local edges done chr6	114968837	114978837 0 0 0
+DEBUG:root:#TIME 693.010	 discordant edges: external edges done chr6	114968837	114978837 0 0
+DEBUG:root:#TIME 693.193	 searching discordant edges in chr6	114979350	114989349
+DEBUG:root:#TIME 693.298	 discordant edges: discordant read pairs found: chr6	114979350	114989349 2 5
+DEBUG:root:#TIME 693.298	 discordant edges: local edges done chr6	114979350	114989349 0 0 0
+DEBUG:root:#TIME 693.299	 discordant edges: external edges done chr6	114979350	114989349 0 0
+DEBUG:root:#TIME 693.299	 searching discordant edges in chr6	114968837	114978836
+DEBUG:root:#TIME 693.372	 discordant edges: discordant read pairs found: chr6	114968837	114978836 2 3
+DEBUG:root:#TIME 693.372	 discordant edges: local edges done chr6	114968837	114978836 0 0 0
+DEBUG:root:#TIME 693.373	 discordant edges: external edges done chr6	114968837	114978836 0 0
+DEBUG:root:#TIME 693.373	 interval_extend: chr6	114978837	114979349, 0, chr6	114978837	114979349
+DEBUG:root:#TIME 693.445	 searching discordant edges in chr6	50619316	50629316
+DEBUG:root:#TIME 693.557	 discordant edges: discordant read pairs found: chr6	50619316	50629316 1 3
+DEBUG:root:#TIME 693.558	 discordant edges: local edges done chr6	50619316	50629316 0 0 0
+DEBUG:root:#TIME 693.558	 discordant edges: external edges done chr6	50619316	50629316 0 0
+DEBUG:root:#TIME 693.611	 searching discordant edges in chr6	50608804	50618804
+DEBUG:root:#TIME 693.685	 discordant edges: discordant read pairs found: chr6	50608804	50618804 2 5
+DEBUG:root:#TIME 693.697	 discordant edges: local edges done chr6	50608804	50618804 0 0 0
+DEBUG:root:#TIME 693.697	 discordant edges: external edges done chr6	50608804	50618804 0 0
+DEBUG:root:#TIME 693.815	 searching discordant edges in chr6	50619317	50629316
+DEBUG:root:#TIME 693.927	 discordant edges: discordant read pairs found: chr6	50619317	50629316 1 3
+DEBUG:root:#TIME 693.928	 discordant edges: local edges done chr6	50619317	50629316 0 0 0
+DEBUG:root:#TIME 693.928	 discordant edges: external edges done chr6	50619317	50629316 0 0
+DEBUG:root:#TIME 693.929	 searching discordant edges in chr6	50608804	50618803
+DEBUG:root:#TIME 694.002	 discordant edges: discordant read pairs found: chr6	50608804	50618803 2 4
+DEBUG:root:#TIME 694.003	 discordant edges: local edges done chr6	50608804	50618803 0 0 0
+DEBUG:root:#TIME 694.003	 discordant edges: external edges done chr6	50608804	50618803 0 0
+DEBUG:root:#TIME 694.003	 interval_extend: chr6	50618804	50619316, 0, chr6	50618804	50619316
+DEBUG:root:#TIME 777.991	 searching discordant edges in chr15	68244344	68254344
+DEBUG:root:#TIME 778.076	 discordant edges: discordant read pairs found: chr15	68244344	68254344 5 1
+DEBUG:root:#TIME 778.199	 discordant edges: local edges done chr15	68244344	68254344 2 0 0
+DEBUG:root:#TIME 778.409	 discordant edges: external edges done chr15	68244344	68254344 0.103041887283 4
+DEBUG:root:#TIME 778.458	 searching discordant edges in chr15	68233832	68243832
+DEBUG:root:#TIME 778.530	 discordant edges: discordant read pairs found: chr15	68233832	68243832 2 4
+DEBUG:root:#TIME 778.531	 discordant edges: local edges done chr15	68233832	68243832 0 0 0
+DEBUG:root:#TIME 778.531	 discordant edges: external edges done chr15	68233832	68243832 0 0
+DEBUG:root:#TIME 778.629	 searching discordant edges in chr15	68244345	68254344
+DEBUG:root:#TIME 778.711	 discordant edges: discordant read pairs found: chr15	68244345	68254344 5 1
+DEBUG:root:#TIME 778.796	 discordant edges: local edges done chr15	68244345	68254344 2 0 0
+DEBUG:root:#TIME 778.910	 discordant edges: external edges done chr15	68244345	68254344 0.0115118026733 4
+DEBUG:root:#TIME 778.910	 searching discordant edges in chr15	68233832	68243831
+DEBUG:root:#TIME 778.983	 discordant edges: discordant read pairs found: chr15	68233832	68243831 2 3
+DEBUG:root:#TIME 778.983	 discordant edges: local edges done chr15	68233832	68243831 0 0 0
+DEBUG:root:#TIME 778.983	 discordant edges: external edges done chr15	68233832	68243831 0 0
+DEBUG:root:#TIME 778.984	 interval_extend: chr15	68243832	68244344, 0, chr15	68243832	68244344
+DEBUG:root:#TIME 779.000	 searching discordant edges in chr6	114979539	114989539
+DEBUG:root:#TIME 779.104	 discordant edges: discordant read pairs found: chr6	114979539	114989539 3 5
+DEBUG:root:#TIME 779.105	 discordant edges: local edges done chr6	114979539	114989539 0 0 0
+DEBUG:root:#TIME 779.105	 discordant edges: external edges done chr6	114979539	114989539 0 0
+DEBUG:root:#TIME 779.121	 searching discordant edges in chr6	114969027	114979027
+DEBUG:root:#TIME 779.195	 discordant edges: discordant read pairs found: chr6	114969027	114979027 1 12
+DEBUG:root:#TIME 779.408	 discordant edges: local edges done chr6	114969027	114979027 0 1 0
+DEBUG:root:#TIME 780.162	 edge_breakpoint_filter: chr6:114978837-->chr6:25004605+
+DEBUG:root:#TIME 780.163	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 780.165	 breakpoint_entropy: 1.305 1.378
+DEBUG:root:#TIME 780.166	 discordant edges: external edges done chr6	114969027	114979027 0.0739035606384 18
+DEBUG:root:#TIME 780.172	 concordant edges chr6:114978837- 31
+DEBUG:root:#TIME 780.179	 concordant edges chr6:114978837- 31
+DEBUG:root:#TIME 780.166	discordant edges chr6:114978837-->chr6:25004605+ 9 discordant chr6:114978837-->chr6:114978836+ 31 1.000000
+DEBUG:root:#TIME 780.210	 searching discordant edges in chr6	114979540	114989539
+DEBUG:root:#TIME 780.315	 discordant edges: discordant read pairs found: chr6	114979540	114989539 3 5
+DEBUG:root:#TIME 780.316	 discordant edges: local edges done chr6	114979540	114989539 0 0 0
+DEBUG:root:#TIME 780.316	 discordant edges: external edges done chr6	114979540	114989539 0 0
+DEBUG:root:#TIME 780.317	 searching discordant edges in chr6	114969027	114979026
+DEBUG:root:#TIME 780.390	 discordant edges: discordant read pairs found: chr6	114969027	114979026 1 11
+DEBUG:root:#TIME 780.610	 discordant edges: local edges done chr6	114969027	114979026 0 1 0
+DEBUG:root:#TIME 781.349	 edge_breakpoint_filter: chr6:114978837-->chr6:25004605+
+DEBUG:root:#TIME 781.349	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 781.351	 breakpoint_entropy: 1.305 1.378
+DEBUG:root:#TIME 781.351	 discordant edges: external edges done chr6	114969027	114979026 0.0731534957886 18
+DEBUG:root:#TIME 781.358	 concordant edges chr6:114978837- 31
+DEBUG:root:#TIME 781.364	 concordant edges chr6:114978837- 31
+DEBUG:root:#TIME 781.352	discordant edges chr6:114978837-->chr6:25004605+ 9 discordant chr6:114978837-->chr6:114978836+ 31 1.000000
+DEBUG:root:#TIME 781.365	 interval_extend: chr6	114979027	114979539, 0, chr6	114959027	114979539
+DEBUG:root:#TIME 781.366	 interval_neighbors: edges chr6	21869584	25759511 chr6	48679775	48700287	30
+DEBUG:root:#TIME 781.366	 interval_neighbors: edges chr6	21869584	25759511 chr6	114959027	114979539	3
+DEBUG:root:#TIME 781.366	 interval_neighbors: edges chr6	21869584	25759511 chr22	32512060	32532573	47
+DEBUG:root:#TIME 781.367	 interval_hops: neighbors chr6	21869584	25739511 chr6	21869584	25759511 3
+INFO:root:#TIME 781.367	 New neighbor: chr6	48679775	48700287	30 (weight=30)
+INFO:root:#TIME 781.368	 New neighbor: chr6	114959027	114979539	3 (weight=3)
+INFO:root:#TIME 781.368	 New neighbor: chr22	32512060	32532573	47 (weight=47)
+DEBUG:root:#TIME 781.369	 interval_hops: check rd chr6	21869584	25739511 chr22	32512060	32532573	47 0
+DEBUG:root:#TIME 781.491	 searching discordant edges in chr22	32532573	32542573
+DEBUG:root:#TIME 781.559	 searching discordant edges in chr22	32502060	32512060
+DEBUG:root:#TIME 781.642	 discordant edges: discordant read pairs found: chr22	32502060	32512060 4 2
+DEBUG:root:#TIME 781.642	 discordant edges: local edges done chr22	32502060	32512060 0 0 0
+DEBUG:root:#TIME 781.643	 discordant edges: external edges done chr22	32502060	32512060 0 0
+DEBUG:root:#TIME 781.669	 searching discordant edges in chr22	32532574	32542573
+DEBUG:root:#TIME 781.670	 searching discordant edges in chr22	32502060	32512059
+DEBUG:root:#TIME 781.753	 discordant edges: discordant read pairs found: chr22	32502060	32512059 4 2
+DEBUG:root:#TIME 781.753	 discordant edges: local edges done chr22	32502060	32512059 0 0 0
+DEBUG:root:#TIME 781.754	 discordant edges: external edges done chr22	32502060	32512059 0 0
+DEBUG:root:#TIME 781.754	 interval_extend: chr22	32512060	32532573	47, 0, chr22	32512060	32532573	47
+INFO:root:#TIME 781.754	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chr22	32512060	32532573	47
+DEBUG:root:Meanshift refining chr22:32512060-32532573
+DEBUG:root:Computing meanshift segmentation on chr22	32512060	32532573	47
+DEBUG:root:MS: chr22	32510000	32530000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chr22	32510000	32530000 s2, e2: (22510000, 42530000)
+DEBUG:root:MS: chr22	32510000	32530000 startskip,endskip(0, 0)
+DEBUG:root:(32512060, 32532573, 2.2538714309206127)
+INFO:root:#TIME 862.376	 Detecting breakpoint edges (interval neighbors)
+DEBUG:root:#TIME 862.377	 searching discordant edges in chr22	32512060	32532573	47
+DEBUG:root:#TIME 862.547	 discordant edges: discordant read pairs found: chr22	32512060	32532573	47 53 44
+DEBUG:root:#TIME 864.169	 discordant edges: local edges done chr22	32512060	32532573	47 1 1 0
+DEBUG:root:#TIME 868.363	 edge_breakpoint_filter: chr22:32532573+->chr6:24683759-
+DEBUG:root:#TIME 868.364	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 868.372	 breakpoint_entropy: 1.373 1.375
+DEBUG:root:#TIME 871.567	 edge_breakpoint_filter: chr22:32531898-->chr6:24683774+
+DEBUG:root:#TIME 871.568	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 871.574	 breakpoint_entropy: 1.381 1.379
+DEBUG:root:#TIME 871.590	 discordant edges: external edges done chr22	32512060	32532573	47 1.39363741875 174
+DEBUG:root:#TIME 871.599	 concordant edges chr22:32531898- 19
+DEBUG:root:#TIME 871.604	 concordant edges chr22:32531898- 19
+DEBUG:root:#TIME 871.594	discordant edges chr22:32531898-->chr6:24683774+ 38 interchromosomal chr22:32531898-->chr22:32531897+ 19 1.000000
+DEBUG:root:#TIME 871.621	 concordant edges chr22:32532573+ 24
+DEBUG:root:#TIME 871.631	 concordant edges chr22:32532573+ 24
+DEBUG:root:#TIME 871.611	discordant edges chr22:32532573+->chr6:24683759- 47 interchromosomal chr22:32532573+->chr22:32532581- 24 1.000000
+INFO:root:#TIME 871.632	 Selecting neighbors
+DEBUG:root:#TIME 871.633	 interval_hops: neighbors chr6	21869584	25739511 chr22	32512060	32532573	47 0
+DEBUG:root:#TIME 871.634	 interval_hops: check rd chr6	21869584	25739511 chr6	48679775	48700287	30 0
+DEBUG:root:#TIME 871.739	 searching discordant edges in chr6	48700287	48710287
+DEBUG:root:#TIME 871.799	 discordant edges: discordant read pairs found: chr6	48700287	48710287 4 5
+DEBUG:root:#TIME 871.868	 discordant edges: local edges done chr6	48700287	48710287 3 0 0
+DEBUG:root:#TIME 872.051	 discordant edges: external edges done chr6	48700287	48710287 0.101193904877 3
+DEBUG:root:#TIME 872.077	 searching discordant edges in chr6	48669775	48679775
+DEBUG:root:#TIME 872.107	 searching discordant edges in chr6	48700288	48710287
+DEBUG:root:#TIME 872.167	 discordant edges: discordant read pairs found: chr6	48700288	48710287 4 5
+DEBUG:root:#TIME 872.244	 discordant edges: local edges done chr6	48700288	48710287 3 0 0
+DEBUG:root:#TIME 872.349	 discordant edges: external edges done chr6	48700288	48710287 0.0138781070709 3
+DEBUG:root:#TIME 872.350	 searching discordant edges in chr6	48669775	48679774
+DEBUG:root:#TIME 872.350	 interval_extend: chr6	48679775	48700287	30, 0, chr6	48679775	48700287	30
+INFO:root:#TIME 872.351	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chr6	48679775	48700287	30
+DEBUG:root:Meanshift refining chr6:48679775-48700287
+DEBUG:root:Computing meanshift segmentation on chr6	48679775	48700287	30
+DEBUG:root:MS: chr6	48680000	48700000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chr6	48680000	48700000 s2, e2: (38680000, 58700000)
+DEBUG:root:MS: chr6	48680000	48700000 startskip,endskip(0, 0)
+DEBUG:root:(48679775, 48700287, 3.3947532570313266)
+INFO:root:#TIME 989.986	 Detecting breakpoint edges (interval neighbors)
+DEBUG:root:#TIME 989.987	 searching discordant edges in chr6	48679775	48700287	30
+DEBUG:root:#TIME 990.228	 discordant edges: discordant read pairs found: chr6	48679775	48700287	30 38 45
+DEBUG:root:#TIME 991.683	 edge_breakpoint_filter: chr6:48693415+->chr6:48680928+
+DEBUG:root:#TIME 991.683	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 991.686	 breakpoint_entropy: 1.275 1.351
+DEBUG:root:#TIME 991.704	 edge_breakpoint_filter: chr6:48680928+->chr6:48693415+
+DEBUG:root:#TIME 991.705	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 991.708	 breakpoint_entropy: 1.351 1.275
+DEBUG:root:#TIME 991.708	 discordant edges: local edges done chr6	48679775	48700287	30 3 1 2
+DEBUG:root:#TIME 994.813	 edge_breakpoint_filter: chr6:48679775-->chr6:24071102-
+DEBUG:root:#TIME 994.814	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 994.819	 breakpoint_entropy: 1.379 1.368
+DEBUG:root:#TIME 994.820	 discordant edges: external edges done chr6	48679775	48700287	30 0.29064822197 91
+DEBUG:root:#TIME 994.825	 concordant edges chr6:48679775- 46
+DEBUG:root:#TIME 994.831	 concordant edges chr6:48679775- 46
+DEBUG:root:#TIME 994.820	discordant edges chr6:48679775-->chr6:24071102- 30 reverse chr6:48679775-->chr6:48679774+ 46 1.000000
+DEBUG:root:#TIME 994.840	 concordant edges chr6:48680928+ 45
+DEBUG:root:#TIME 994.848	 concordant edges chr6:48680928+ 45
+DEBUG:root:#TIME 994.832	discordant edges chr6:48680928+->chr6:48693415+ 14 forward chr6:48680928+->chr6:48680930- 45 1.000000
+DEBUG:root:#TIME 994.861	 concordant edges chr6:48693415+ 12
+DEBUG:root:#TIME 994.872	 concordant edges chr6:48693415+ 12
+DEBUG:root:#TIME 994.849	discordant edges chr6:48693415+->chr6:48680928+ 14 forward chr6:48693415+->chr6:48693461- 12 1.262626
+INFO:root:#TIME 994.874	 Selecting neighbors
+DEBUG:root:#TIME 994.875	 interval_hops: neighbors chr6	21869584	25739511 chr6	48679775	48700287	30 0
+DEBUG:root:#TIME 994.875	 interval_hops: check rd chr6	21869584	25739511 chr6	114959027	114979539	3 0
+DEBUG:root:#TIME 995.030	 searching discordant edges in chr6	114979539	114989539
+DEBUG:root:#TIME 995.045	 searching discordant edges in chr6	114949027	114959027
+DEBUG:root:#TIME 995.113	 discordant edges: discordant read pairs found: chr6	114949027	114959027 4 4
+DEBUG:root:#TIME 995.113	 discordant edges: local edges done chr6	114949027	114959027 0 0 0
+DEBUG:root:#TIME 995.114	 discordant edges: external edges done chr6	114949027	114959027 0 0
+DEBUG:root:#TIME 995.142	 searching discordant edges in chr6	114979540	114989539
+DEBUG:root:#TIME 995.143	 searching discordant edges in chr6	114949027	114959026
+DEBUG:root:#TIME 995.211	 discordant edges: discordant read pairs found: chr6	114949027	114959026 4 4
+DEBUG:root:#TIME 995.211	 discordant edges: local edges done chr6	114949027	114959026 0 0 0
+DEBUG:root:#TIME 995.212	 discordant edges: external edges done chr6	114949027	114959026 0 0
+DEBUG:root:#TIME 995.212	 interval_extend: chr6	114959027	114979539	3, 0, chr6	114959027	114979539	3
+INFO:root:#TIME 995.212	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chr6	114959027	114979539	3
+DEBUG:root:Meanshift refining chr6:114959027-114979539
+DEBUG:root:Computing meanshift segmentation on chr6	114959027	114979539	3
+DEBUG:root:MS: chr6	114960000	114980000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chr6	114960000	114980000 s2, e2: (104960000, 124980000)
+DEBUG:root:MS: chr6	114960000	114980000 startskip,endskip(0, 0)
+DEBUG:root:(114959027, 114979539, 2.019036922549244)
+INFO:root:#TIME 1091.279	 Detecting breakpoint edges (interval neighbors)
+DEBUG:root:#TIME 1091.280	 searching discordant edges in chr6	114959027	114979539	3
+DEBUG:root:#TIME 1091.431	 discordant edges: discordant read pairs found: chr6	114959027	114979539	3 7 17
+DEBUG:root:#TIME 1091.726	 discordant edges: local edges done chr6	114959027	114979539	3 0 2 0
+DEBUG:root:#TIME 1092.005	 edge_breakpoint_filter: chr6:114979027-->chr6:25005267-
+DEBUG:root:#TIME 1092.005	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1092.006	 breakpoint_entropy: 1.317 1.334
+DEBUG:root:#TIME 1092.747	 edge_breakpoint_filter: chr6:114978837-->chr6:25004605+
+DEBUG:root:#TIME 1092.747	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1092.749	 breakpoint_entropy: 1.305 1.378
+DEBUG:root:#TIME 1092.750	 discordant edges: external edges done chr6	114959027	114979539	3 0.10032749176 24
+DEBUG:root:#TIME 1092.756	 concordant edges chr6:114978837- 31
+DEBUG:root:#TIME 1092.763	 concordant edges chr6:114978837- 31
+DEBUG:root:#TIME 1092.750	discordant edges chr6:114978837-->chr6:25004605+ 9 discordant chr6:114978837-->chr6:114978836+ 31 1.000000
+DEBUG:root:#TIME 1092.770	 concordant edges chr6:114979027- 41
+DEBUG:root:#TIME 1092.777	 concordant edges chr6:114979027- 41
+DEBUG:root:#TIME 1092.764	discordant edges chr6:114979027-->chr6:25005267- 3 reverse chr6:114979027-->chr6:114979026+ 41 1.000000
+INFO:root:#TIME 1092.778	 Selecting neighbors
+DEBUG:root:#TIME 1092.779	 interval_hops: neighbors chr6	21869584	25739511 chr6	114959027	114979539	3 0
+INFO:root:#TIME 1092.780	Exploring interval: chr8	13689318	13824316
+DEBUG:root:#TIME 1092.781	 interval_hops: init chr8	13689318	13824316
+DEBUG:root:#TIME 1158.772	 searching discordant edges in chr8	13824316	13834316
+DEBUG:root:#TIME 1158.917	 discordant edges: discordant read pairs found: chr8	13824316	13834316 6 6
+DEBUG:root:#TIME 1158.918	 discordant edges: local edges done chr8	13824316	13834316 0 0 0
+DEBUG:root:#TIME 1158.918	 discordant edges: external edges done chr8	13824316	13834316 0 0
+DEBUG:root:#TIME 1158.934	 searching discordant edges in chr8	13679318	13689318
+DEBUG:root:#TIME 1159.081	 discordant edges: discordant read pairs found: chr8	13679318	13689318 10 4
+DEBUG:root:#TIME 1159.081	 discordant edges: local edges done chr8	13679318	13689318 0 0 0
+DEBUG:root:#TIME 1159.082	 discordant edges: external edges done chr8	13679318	13689318 0 0
+DEBUG:root:#TIME 1159.454	 searching discordant edges in chr8	13824317	13834316
+DEBUG:root:#TIME 1159.598	 discordant edges: discordant read pairs found: chr8	13824317	13834316 6 6
+DEBUG:root:#TIME 1159.599	 discordant edges: local edges done chr8	13824317	13834316 0 0 0
+DEBUG:root:#TIME 1159.599	 discordant edges: external edges done chr8	13824317	13834316 0 0
+DEBUG:root:#TIME 1159.600	 searching discordant edges in chr8	13679318	13689317
+DEBUG:root:#TIME 1159.746	 discordant edges: discordant read pairs found: chr8	13679318	13689317 10 4
+DEBUG:root:#TIME 1159.747	 discordant edges: local edges done chr8	13679318	13689317 0 0 0
+DEBUG:root:#TIME 1159.748	 discordant edges: external edges done chr8	13679318	13689317 0 0
+DEBUG:root:#TIME 1159.748	 interval_extend: chr8	13689318	13824316, 0, chr8	13689318	13824316
+DEBUG:root:#TIME 1159.748	 interval_hops: interval extend chr8	13689318	13824316 chr8	13689318	13824316
+DEBUG:root:#TIME 1159.749	 interval_hops: check rd chr8	13689318	13824316 chr8	13689318	13824316 1
+DEBUG:root:#TIME 1159.848	 searching discordant edges in chr8	13824316	13834316
+DEBUG:root:#TIME 1159.863	 searching discordant edges in chr8	13679318	13689318
+DEBUG:root:#TIME 1159.892	 searching discordant edges in chr8	13824317	13834316
+DEBUG:root:#TIME 1159.892	 searching discordant edges in chr8	13679318	13689317
+DEBUG:root:#TIME 1159.892	 interval_extend: chr8	13689318	13824316, 0, chr8	13689318	13824316
+INFO:root:#TIME 1159.893	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chr8	13689318	13824316
+DEBUG:root:Meanshift refining chr8:13689318-13824316
+DEBUG:root:Computing meanshift segmentation on chr8	13689318	13824316
+DEBUG:root:MS: chr8	13690000	13820000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chr8	13690000	13820000 s2, e2: (3690000, 23820000)
+DEBUG:root:MS: chr8	13690000	13820000 startskip,endskip(0, 0)
+DEBUG:root:(13689318, 13824316, 4.762164215443688)
+INFO:root:#TIME 1262.702	 Detecting breakpoint edges (interval neighbors)
+DEBUG:root:#TIME 1262.703	 searching discordant edges in chr8	13689318	13824316
+DEBUG:root:#TIME 1265.001	 discordant edges: discordant read pairs found: chr8	13689318	13824316 200 184
+DEBUG:root:#TIME 1268.604	 edge_breakpoint_filter: chr8:13703126+->chr8:13712659-
+DEBUG:root:#TIME 1268.604	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1268.606	 breakpoint_entropy: 1.350 1.338
+DEBUG:root:#TIME 1268.674	 edge_breakpoint_filter: chr8:13712659-->chr8:13703126+
+DEBUG:root:#TIME 1268.675	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1268.676	 breakpoint_entropy: 1.338 1.350
+DEBUG:root:#TIME 1268.677	 discordant edges: local edges done chr8	13689318	13824316 4 7 2
+DEBUG:root:#TIME 1274.275	 edge_breakpoint_filter: chr8:13693656-->chr8:13663466-
+DEBUG:root:#TIME 1274.277	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1274.279	 breakpoint_entropy: 1.342 1.368
+DEBUG:root:#TIME 1274.279	 discordant edges: external edges done chr8	13689318	13824316 1.35632681847 168
+DEBUG:root:#TIME 1274.291	 concordant edges chr8:13693656- 37
+DEBUG:root:#TIME 1274.303	 concordant edges chr8:13693656- 37
+DEBUG:root:#TIME 1274.280	discordant edges chr8:13693656-->chr8:13663466- 11 reverse chr8:13693656-->chr8:13693655+ 37 1.010395
+DEBUG:root:#TIME 1274.313	 concordant edges chr8:13703126+ 33
+DEBUG:root:#TIME 1274.322	 concordant edges chr8:13703126+ 33
+DEBUG:root:#TIME 1274.304	discordant edges chr8:13703126+->chr8:13712659- 6 discordant chr8:13703126+->chr8:13703127- 33 1.000000
+DEBUG:root:#TIME 1274.337	 concordant edges chr8:13712659- 52
+DEBUG:root:#TIME 1274.351	 concordant edges chr8:13712659- 52
+DEBUG:root:#TIME 1274.323	discordant edges chr8:13712659-->chr8:13703126+ 6 discordant chr8:13712659-->chr8:13712658+ 52 1.000000
+INFO:root:#TIME 1274.352	 Selecting neighbors
+DEBUG:root:#TIME 1274.369	 searching discordant edges in chr8	13663978	13673978
+DEBUG:root:#TIME 1274.524	 discordant edges: discordant read pairs found: chr8	13663978	13673978 6 9
+DEBUG:root:#TIME 1274.525	 discordant edges: local edges done chr8	13663978	13673978 0 0 0
+DEBUG:root:#TIME 1274.525	 discordant edges: external edges done chr8	13663978	13673978 0 0
+DEBUG:root:#TIME 1274.541	 searching discordant edges in chr8	13653466	13663466
+DEBUG:root:#TIME 1274.653	 discordant edges: discordant read pairs found: chr8	13653466	13663466 2 3
+DEBUG:root:#TIME 1274.654	 discordant edges: local edges done chr8	13653466	13663466 0 0 0
+DEBUG:root:#TIME 1274.654	 discordant edges: external edges done chr8	13653466	13663466 0 0
+DEBUG:root:#TIME 1274.684	 searching discordant edges in chr8	13663979	13673978
+DEBUG:root:#TIME 1274.839	 discordant edges: discordant read pairs found: chr8	13663979	13673978 6 9
+DEBUG:root:#TIME 1274.840	 discordant edges: local edges done chr8	13663979	13673978 0 0 0
+DEBUG:root:#TIME 1274.841	 discordant edges: external edges done chr8	13663979	13673978 0 0
+DEBUG:root:#TIME 1274.841	 searching discordant edges in chr8	13653466	13663465
+DEBUG:root:#TIME 1274.953	 discordant edges: discordant read pairs found: chr8	13653466	13663465 2 1
+DEBUG:root:#TIME 1274.954	 discordant edges: local edges done chr8	13653466	13663465 0 0 0
+DEBUG:root:#TIME 1274.954	 discordant edges: external edges done chr8	13653466	13663465 0 0
+DEBUG:root:#TIME 1274.954	 interval_extend: chr8	13663466	13663978, 0, chr8	13663466	13663978
+DEBUG:root:#TIME 1274.954	 interval_hops: neighbors chr8	13689318	13824316 chr8	13689318	13824316 0
+INFO:root:#TIME 1274.955	Exploring interval: chr9	110525048	110680047
+DEBUG:root:#TIME 1274.956	 interval_hops: init chr9	110525048	110680047
+DEBUG:root:#TIME 1352.301	 searching discordant edges in chr9	110680047	110690047
+DEBUG:root:#TIME 1352.400	 discordant edges: discordant read pairs found: chr9	110680047	110690047 4 4
+DEBUG:root:#TIME 1352.401	 discordant edges: local edges done chr9	110680047	110690047 0 0 0
+DEBUG:root:#TIME 1352.402	 discordant edges: external edges done chr9	110680047	110690047 0 0
+DEBUG:root:#TIME 1352.417	 searching discordant edges in chr9	110515048	110525048
+DEBUG:root:#TIME 1352.524	 discordant edges: discordant read pairs found: chr9	110515048	110525048 2 23
+DEBUG:root:#TIME 1352.967	 discordant edges: local edges done chr9	110515048	110525048 0 1 0
+DEBUG:root:#TIME 1354.364	 edge_breakpoint_filter: chr9:110524069-->chr9:110678201+
+DEBUG:root:#TIME 1354.365	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1354.368	 breakpoint_entropy: 1.332 1.358
+DEBUG:root:#TIME 1354.368	 discordant edges: external edges done chr9	110515048	110525048 0.177162647247 35
+DEBUG:root:#TIME 1354.377	 concordant edges chr9:110524069- 35
+DEBUG:root:#TIME 1354.387	 concordant edges chr9:110524069- 35
+DEBUG:root:#TIME 1354.369	discordant edges chr9:110524069-->chr9:110678201+ 16 everted chr9:110524069-->chr9:110524068+ 35 1.000000
+DEBUG:root:#TIME 1354.786	 searching discordant edges in chr9	110680048	110690047
+DEBUG:root:#TIME 1354.885	 discordant edges: discordant read pairs found: chr9	110680048	110690047 4 4
+DEBUG:root:#TIME 1354.886	 discordant edges: local edges done chr9	110680048	110690047 0 0 0
+DEBUG:root:#TIME 1354.886	 discordant edges: external edges done chr9	110680048	110690047 0 0
+DEBUG:root:#TIME 1354.886	 searching discordant edges in chr9	110515048	110525047
+DEBUG:root:#TIME 1354.993	 discordant edges: discordant read pairs found: chr9	110515048	110525047 2 23
+DEBUG:root:#TIME 1355.441	 discordant edges: local edges done chr9	110515048	110525047 0 1 0
+DEBUG:root:#TIME 1356.830	 edge_breakpoint_filter: chr9:110524069-->chr9:110678201+
+DEBUG:root:#TIME 1356.831	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1356.834	 breakpoint_entropy: 1.332 1.358
+DEBUG:root:#TIME 1356.834	 discordant edges: external edges done chr9	110515048	110525047 0.179944515228 35
+DEBUG:root:#TIME 1356.843	 concordant edges chr9:110524069- 35
+DEBUG:root:#TIME 1356.852	 concordant edges chr9:110524069- 35
+DEBUG:root:#TIME 1356.834	discordant edges chr9:110524069-->chr9:110678201+ 16 everted chr9:110524069-->chr9:110524068+ 35 1.000000
+DEBUG:root:#TIME 1356.853	 interval_extend: chr9	110525048	110680047, 0, chr9	110505048	110680047
+DEBUG:root:#TIME 1356.854	 interval_hops: interval extend chr9	110525048	110680047 chr9	110505048	110680047
+DEBUG:root:#TIME 1356.854	 interval_hops: check rd chr9	110525048	110680047 chr9	110505048	110680047 1
+DEBUG:root:#TIME 1357.333	 searching discordant edges in chr9	110680047	110690047
+DEBUG:root:#TIME 1357.348	 searching discordant edges in chr9	110495048	110505048
+DEBUG:root:#TIME 1357.454	 discordant edges: discordant read pairs found: chr9	110495048	110505048 2 2
+DEBUG:root:#TIME 1357.455	 discordant edges: local edges done chr9	110495048	110505048 0 0 0
+DEBUG:root:#TIME 1357.455	 discordant edges: external edges done chr9	110495048	110505048 0 0
+DEBUG:root:#TIME 1357.485	 searching discordant edges in chr9	110680048	110690047
+DEBUG:root:#TIME 1357.485	 searching discordant edges in chr9	110495048	110505047
+DEBUG:root:#TIME 1357.591	 discordant edges: discordant read pairs found: chr9	110495048	110505047 2 2
+DEBUG:root:#TIME 1357.592	 discordant edges: local edges done chr9	110495048	110505047 0 0 0
+DEBUG:root:#TIME 1357.592	 discordant edges: external edges done chr9	110495048	110505047 0 0
+DEBUG:root:#TIME 1357.593	 interval_extend: chr9	110505048	110680047, 0, chr9	110505048	110680047
+INFO:root:#TIME 1357.593	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chr9	110505048	110680047
+DEBUG:root:Meanshift refining chr9:110505048-110680047
+DEBUG:root:Computing meanshift segmentation on chr9	110505048	110680047
+DEBUG:root:MS: chr9	110510000	110680000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chr9	110510000	110680000 s2, e2: (100510000, 120680000)
+DEBUG:root:MS: chr9	110510000	110680000 startskip,endskip(0, 0)
+DEBUG:root:(110505048, 110680047, 4.6734025443299325)
+INFO:root:#TIME 1461.789	 Detecting breakpoint edges (interval neighbors)
+DEBUG:root:#TIME 1461.789	 searching discordant edges in chr9	110505048	110680047
+DEBUG:root:#TIME 1464.678	 discordant edges: discordant read pairs found: chr9	110505048	110680047 154 154
+DEBUG:root:#TIME 1465.628	 edge_breakpoint_filter: chr9:110678201+->chr9:110524069-
+DEBUG:root:#TIME 1465.628	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1465.631	 breakpoint_entropy: 1.358 1.332
+DEBUG:root:#TIME 1465.658	 edge_breakpoint_filter: chr9:110524069-->chr9:110678201+
+DEBUG:root:#TIME 1465.658	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1465.661	 breakpoint_entropy: 1.332 1.358
+DEBUG:root:#TIME 1465.662	 discordant edges: local edges done chr9	110505048	110680047 1 2 2
+DEBUG:root:#TIME 1466.895	 discordant edges: external edges done chr9	110505048	110680047 0.289553403854 38
+DEBUG:root:#TIME 1466.904	 concordant edges chr9:110524069- 35
+DEBUG:root:#TIME 1466.913	 concordant edges chr9:110524069- 35
+DEBUG:root:#TIME 1466.896	discordant edges chr9:110524069-->chr9:110678201+ 16 everted chr9:110524069-->chr9:110524068+ 35 1.000000
+DEBUG:root:#TIME 1466.976	 concordant edges chr9:110678201+ 28
+DEBUG:root:#TIME 1466.985	 concordant edges chr9:110678201+ 28
+DEBUG:root:#TIME 1466.968	discordant edges chr9:110678201+->chr9:110524069- 16 everted chr9:110678201+->chr9:110678236- 28 1.382231
+INFO:root:#TIME 1466.986	 Selecting neighbors
+DEBUG:root:#TIME 1466.987	 interval_hops: neighbors chr9	110525048	110680047 chr9	110505048	110680047 0
+INFO:root:#TIME 1466.988	Exploring interval: chr9	121239920	121479918
+DEBUG:root:#TIME 1466.989	 interval_hops: init chr9	121239920	121479918
+DEBUG:root:#TIME 1469.890	 searching discordant edges in chr9	121479918	121489918
+DEBUG:root:#TIME 1470.031	 discordant edges: discordant read pairs found: chr9	121479918	121489918 28 2
+DEBUG:root:#TIME 1470.493	 discordant edges: local edges done chr9	121479918	121489918 1 0 0
+DEBUG:root:#TIME 1471.497	 edge_breakpoint_filter: chr9:121482062+->chr9:121241736-
+DEBUG:root:#TIME 1471.497	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1471.500	 breakpoint_entropy: 1.368 1.352
+DEBUG:root:#TIME 1471.502	 discordant edges: external edges done chr9	121479918	121489918 0.135559797287 26
+DEBUG:root:#TIME 1471.516	 concordant edges chr9:121482062+ 35
+DEBUG:root:#TIME 1471.533	 concordant edges chr9:121482062+ 35
+DEBUG:root:#TIME 1471.503	discordant edges chr9:121482062+->chr9:121241736- 12 everted chr9:121482062+->chr9:121482108- 35 3.254714
+DEBUG:root:#TIME 1471.548	 searching discordant edges in chr9	121229920	121239920
+DEBUG:root:#TIME 1471.680	 discordant edges: discordant read pairs found: chr9	121229920	121239920 2 1
+DEBUG:root:#TIME 1471.688	 discordant edges: local edges done chr9	121229920	121239920 0 0 0
+DEBUG:root:#TIME 1471.688	 discordant edges: external edges done chr9	121229920	121239920 0 0
+DEBUG:root:#TIME 1472.133	 searching discordant edges in chr9	121479919	121489918
+DEBUG:root:#TIME 1472.281	 discordant edges: discordant read pairs found: chr9	121479919	121489918 28 2
+DEBUG:root:#TIME 1472.710	 discordant edges: local edges done chr9	121479919	121489918 1 0 0
+DEBUG:root:#TIME 1473.816	 edge_breakpoint_filter: chr9:121482062+->chr9:121241736-
+DEBUG:root:#TIME 1473.817	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1473.819	 breakpoint_entropy: 1.368 1.352
+DEBUG:root:#TIME 1473.819	 discordant edges: external edges done chr9	121479919	121489918 0.136914014816 26
+DEBUG:root:#TIME 1473.833	 concordant edges chr9:121482062+ 35
+DEBUG:root:#TIME 1473.859	 concordant edges chr9:121482062+ 35
+DEBUG:root:#TIME 1473.820	discordant edges chr9:121482062+->chr9:121241736- 12 everted chr9:121482062+->chr9:121482108- 35 3.254714
+DEBUG:root:#TIME 1473.860	 searching discordant edges in chr9	121229920	121239919
+DEBUG:root:#TIME 1473.992	 discordant edges: discordant read pairs found: chr9	121229920	121239919 2 1
+DEBUG:root:#TIME 1473.992	 discordant edges: local edges done chr9	121229920	121239919 0 0 0
+DEBUG:root:#TIME 1473.993	 discordant edges: external edges done chr9	121229920	121239919 0 0
+DEBUG:root:#TIME 1473.993	 interval_extend: chr9	121239920	121479918, 0, chr9	121239920	121499918
+DEBUG:root:#TIME 1473.993	 interval_hops: interval extend chr9	121239920	121479918 chr9	121239920	121499918
+DEBUG:root:#TIME 1473.994	 interval_hops: check rd chr9	121239920	121479918 chr9	121239920	121499918 1
+DEBUG:root:#TIME 1474.488	 searching discordant edges in chr9	121499918	121509918
+DEBUG:root:#TIME 1474.601	 discordant edges: discordant read pairs found: chr9	121499918	121509918 8 6
+DEBUG:root:#TIME 1474.602	 discordant edges: local edges done chr9	121499918	121509918 0 0 0
+DEBUG:root:#TIME 1474.602	 discordant edges: external edges done chr9	121499918	121509918 0 0
+DEBUG:root:#TIME 1474.618	 searching discordant edges in chr9	121229920	121239920
+DEBUG:root:#TIME 1474.646	 searching discordant edges in chr9	121499919	121509918
+DEBUG:root:#TIME 1474.767	 discordant edges: discordant read pairs found: chr9	121499919	121509918 8 6
+DEBUG:root:#TIME 1474.767	 discordant edges: local edges done chr9	121499919	121509918 0 0 0
+DEBUG:root:#TIME 1474.768	 discordant edges: external edges done chr9	121499919	121509918 0 0
+DEBUG:root:#TIME 1474.768	 searching discordant edges in chr9	121229920	121239919
+DEBUG:root:#TIME 1474.768	 interval_extend: chr9	121239920	121499918, 0, chr9	121239920	121499918
+INFO:root:#TIME 1474.769	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chr9	121239920	121499918
+DEBUG:root:Meanshift refining chr9:121239920-121499918
+DEBUG:root:Computing meanshift segmentation on chr9	121239920	121499918
+DEBUG:root:MS: chr9	121240000	121500000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chr9	121240000	121500000 s2, e2: (111240000, 131500000)
+DEBUG:root:MS: chr9	121240000	121500000 startskip,endskip(0, 0)
+DEBUG:root:(121239920, 121499918, 5.223251010247715)
+INFO:root:#TIME 1537.386	 Detecting breakpoint edges (interval neighbors)
+DEBUG:root:#TIME 1537.386	 searching discordant edges in chr9	121239920	121499918
+DEBUG:root:#TIME 1542.228	 discordant edges: discordant read pairs found: chr9	121239920	121499918 182 220
+DEBUG:root:#TIME 1543.089	 edge_breakpoint_filter: chr9:121482062+->chr9:121241736-
+DEBUG:root:#TIME 1543.090	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1543.092	 breakpoint_entropy: 1.368 1.352
+DEBUG:root:#TIME 1543.111	 edge_breakpoint_filter: chr9:121241736-->chr9:121482062+
+DEBUG:root:#TIME 1543.112	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1543.114	 breakpoint_entropy: 1.352 1.368
+DEBUG:root:#TIME 1543.114	 discordant edges: local edges done chr9	121239920	121499918 1 1 2
+DEBUG:root:#TIME 1544.006	 discordant edges: external edges done chr9	121239920	121499918 0.19918680191 32
+DEBUG:root:#TIME 1544.018	 concordant edges chr9:121241736- 36
+DEBUG:root:#TIME 1544.031	 concordant edges chr9:121241736- 36
+DEBUG:root:#TIME 1544.006	discordant edges chr9:121241736-->chr9:121482062+ 12 everted chr9:121241736-->chr9:121241735+ 36 1.000000
+DEBUG:root:#TIME 1544.046	 concordant edges chr9:121482062+ 35
+DEBUG:root:#TIME 1544.060	 concordant edges chr9:121482062+ 35
+DEBUG:root:#TIME 1544.032	discordant edges chr9:121482062+->chr9:121241736- 12 everted chr9:121482062+->chr9:121482108- 35 3.254714
+INFO:root:#TIME 1544.061	 Selecting neighbors
+DEBUG:root:#TIME 1544.062	 interval_hops: neighbors chr9	121239920	121479918 chr9	121239920	121499918 0
+INFO:root:#TIME 1544.063	Exploring interval: chrX	13483405	13623411
+DEBUG:root:#TIME 1544.064	 interval_hops: init chrX	13483405	13623411
+DEBUG:root:#TIME 1605.028	 searching discordant edges in chrX	13623411	13633411
+DEBUG:root:#TIME 1605.109	 discordant edges: discordant read pairs found: chrX	13623411	13633411 3 6
+DEBUG:root:#TIME 1605.110	 discordant edges: local edges done chrX	13623411	13633411 0 0 0
+DEBUG:root:#TIME 1605.110	 discordant edges: external edges done chrX	13623411	13633411 0 0
+DEBUG:root:#TIME 1605.125	 searching discordant edges in chrX	13473405	13483405
+DEBUG:root:#TIME 1605.209	 discordant edges: discordant read pairs found: chrX	13473405	13483405 0 2
+DEBUG:root:#TIME 1605.210	 discordant edges: local edges done chrX	13473405	13483405 0 0 0
+DEBUG:root:#TIME 1605.210	 discordant edges: external edges done chrX	13473405	13483405 0 0
+DEBUG:root:#TIME 1605.578	 searching discordant edges in chrX	13623412	13633411
+DEBUG:root:#TIME 1605.660	 discordant edges: discordant read pairs found: chrX	13623412	13633411 3 6
+DEBUG:root:#TIME 1605.660	 discordant edges: local edges done chrX	13623412	13633411 0 0 0
+DEBUG:root:#TIME 1605.661	 discordant edges: external edges done chrX	13623412	13633411 0 0
+DEBUG:root:#TIME 1605.661	 searching discordant edges in chrX	13473405	13483404
+DEBUG:root:#TIME 1605.745	 discordant edges: discordant read pairs found: chrX	13473405	13483404 0 2
+DEBUG:root:#TIME 1605.746	 discordant edges: local edges done chrX	13473405	13483404 0 0 0
+DEBUG:root:#TIME 1605.746	 discordant edges: external edges done chrX	13473405	13483404 0 0
+DEBUG:root:#TIME 1605.747	 interval_extend: chrX	13483405	13623411, 0, chrX	13483405	13623411
+DEBUG:root:#TIME 1605.747	 interval_hops: interval extend chrX	13483405	13623411 chrX	13483405	13623411
+DEBUG:root:#TIME 1605.748	 interval_hops: check rd chrX	13483405	13623411 chrX	13483405	13623411 1
+DEBUG:root:#TIME 1605.840	 searching discordant edges in chrX	13623411	13633411
+DEBUG:root:#TIME 1605.854	 searching discordant edges in chrX	13473405	13483405
+DEBUG:root:#TIME 1605.880	 searching discordant edges in chrX	13623412	13633411
+DEBUG:root:#TIME 1605.881	 searching discordant edges in chrX	13473405	13483404
+DEBUG:root:#TIME 1605.882	 interval_extend: chrX	13483405	13623411, 0, chrX	13483405	13623411
+INFO:root:#TIME 1605.882	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chrX	13483405	13623411
+DEBUG:root:Meanshift refining chrX:13483405-13623411
+DEBUG:root:Computing meanshift segmentation on chrX	13483405	13623411
+DEBUG:root:MS: chrX	13480000	13620000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chrX	13480000	13620000 s2, e2: (3480000, 23620000)
+DEBUG:root:MS: chrX	13480000	13620000 startskip,endskip(0, 0)
+DEBUG:root:(13483405, 13623411, 4.0239349310750345)
+INFO:root:#TIME 1685.871	 Detecting breakpoint edges (interval neighbors)
+DEBUG:root:#TIME 1685.872	 searching discordant edges in chrX	13483405	13623411
+DEBUG:root:#TIME 1687.898	 discordant edges: discordant read pairs found: chrX	13483405	13623411 116 95
+DEBUG:root:#TIME 1688.963	 edge_breakpoint_filter: chrX:13620700+->chrX:13485517-
+DEBUG:root:#TIME 1688.964	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1688.969	 breakpoint_entropy: 1.353 1.385
+DEBUG:root:#TIME 1688.982	 edge_breakpoint_filter: chrX:13485517-->chrX:13620700+
+DEBUG:root:#TIME 1688.983	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1688.988	 breakpoint_entropy: 1.385 1.353
+DEBUG:root:#TIME 1688.988	 discordant edges: local edges done chrX	13483405	13623411 1 1 2
+DEBUG:root:#TIME 1690.203	 discordant edges: external edges done chrX	13483405	13623411 0.156263589859 56
+DEBUG:root:#TIME 1690.207	 concordant edges chrX:13485517- 26
+DEBUG:root:#TIME 1690.210	 concordant edges chrX:13485517- 26
+DEBUG:root:#TIME 1690.204	discordant edges chrX:13485517-->chrX:13620700+ 28 everted chrX:13485517-->chrX:13485516+ 26 1.000000
+DEBUG:root:#TIME 1690.219	 concordant edges chrX:13620700+ 19
+DEBUG:root:#TIME 1690.227	 concordant edges chrX:13620700+ 19
+DEBUG:root:#TIME 1690.211	discordant edges chrX:13620700+->chrX:13485517- 28 everted chrX:13620700+->chrX:13620720- 19 1.000000
+INFO:root:#TIME 1690.228	 Selecting neighbors
+DEBUG:root:#TIME 1690.229	 interval_hops: neighbors chrX	13483405	13623411 chrX	13483405	13623411 0
+INFO:root:#TIME 1690.230	Exploring interval: chrX	19763633	19878638
+DEBUG:root:#TIME 1690.231	 interval_hops: init chrX	19763633	19878638
+DEBUG:root:#TIME 1690.322	 searching discordant edges in chrX	19878638	19888638
+DEBUG:root:#TIME 1690.398	 discordant edges: discordant read pairs found: chrX	19878638	19888638 1 4
+DEBUG:root:#TIME 1690.399	 discordant edges: local edges done chrX	19878638	19888638 0 0 0
+DEBUG:root:#TIME 1690.399	 discordant edges: external edges done chrX	19878638	19888638 0 0
+DEBUG:root:#TIME 1690.412	 searching discordant edges in chrX	19753633	19763633
+DEBUG:root:#TIME 1690.493	 discordant edges: discordant read pairs found: chrX	19753633	19763633 3 6
+DEBUG:root:#TIME 1690.494	 discordant edges: local edges done chrX	19753633	19763633 0 0 0
+DEBUG:root:#TIME 1690.494	 discordant edges: external edges done chrX	19753633	19763633 0 0
+DEBUG:root:#TIME 1690.520	 searching discordant edges in chrX	19878639	19888638
+DEBUG:root:#TIME 1690.596	 discordant edges: discordant read pairs found: chrX	19878639	19888638 1 4
+DEBUG:root:#TIME 1690.596	 discordant edges: local edges done chrX	19878639	19888638 0 0 0
+DEBUG:root:#TIME 1690.597	 discordant edges: external edges done chrX	19878639	19888638 0 0
+DEBUG:root:#TIME 1690.597	 searching discordant edges in chrX	19753633	19763632
+DEBUG:root:#TIME 1690.678	 discordant edges: discordant read pairs found: chrX	19753633	19763632 3 6
+DEBUG:root:#TIME 1690.678	 discordant edges: local edges done chrX	19753633	19763632 0 0 0
+DEBUG:root:#TIME 1690.679	 discordant edges: external edges done chrX	19753633	19763632 0 0
+DEBUG:root:#TIME 1690.679	 interval_extend: chrX	19763633	19878638, 0, chrX	19763633	19878638
+DEBUG:root:#TIME 1690.679	 interval_hops: interval extend chrX	19763633	19878638 chrX	19763633	19878638
+DEBUG:root:#TIME 1690.680	 interval_hops: check rd chrX	19763633	19878638 chrX	19763633	19878638 1
+DEBUG:root:#TIME 1690.774	 searching discordant edges in chrX	19878638	19888638
+DEBUG:root:#TIME 1690.788	 searching discordant edges in chrX	19753633	19763633
+DEBUG:root:#TIME 1690.814	 searching discordant edges in chrX	19878639	19888638
+DEBUG:root:#TIME 1690.814	 searching discordant edges in chrX	19753633	19763632
+DEBUG:root:#TIME 1690.815	 interval_extend: chrX	19763633	19878638, 0, chrX	19763633	19878638
+INFO:root:#TIME 1690.815	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chrX	19763633	19878638
+DEBUG:root:Meanshift refining chrX:19763633-19878638
+DEBUG:root:Computing meanshift segmentation on chrX	19763633	19878638
+DEBUG:root:MS: chrX	19760000	19880000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chrX	19760000	19880000 s2, e2: (9760000, 29880000)
+DEBUG:root:MS: chrX	19760000	19880000 startskip,endskip(0, 0)
+DEBUG:root:(19763633, 19878638, 3.9659439609818667)
+INFO:root:#TIME 1714.657	 Detecting breakpoint edges (interval neighbors)
+DEBUG:root:#TIME 1714.658	 searching discordant edges in chrX	19763633	19878638
+DEBUG:root:#TIME 1716.303	 discordant edges: discordant read pairs found: chrX	19763633	19878638 110 125
+DEBUG:root:#TIME 1717.524	 edge_breakpoint_filter: chrX:19878178+->chrX:19765655-
+DEBUG:root:#TIME 1717.525	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1717.531	 breakpoint_entropy: 1.382 1.353
+DEBUG:root:#TIME 1717.545	 edge_breakpoint_filter: chrX:19765655-->chrX:19878178+
+DEBUG:root:#TIME 1717.546	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1717.551	 breakpoint_entropy: 1.353 1.382
+DEBUG:root:#TIME 1717.551	 discordant edges: local edges done chrX	19763633	19878638 2 3 2
+DEBUG:root:#TIME 1719.444	 discordant edges: external edges done chrX	19763633	19878638 0.252048254013 73
+DEBUG:root:#TIME 1719.449	 concordant edges chrX:19765655- 18
+DEBUG:root:#TIME 1719.454	 concordant edges chrX:19765655- 18
+DEBUG:root:#TIME 1719.445	discordant edges chrX:19765655-->chrX:19878178+ 28 everted chrX:19765655-->chrX:19765654+ 18 1.000000
+DEBUG:root:#TIME 1719.462	 concordant edges chrX:19878178+ 25
+DEBUG:root:#TIME 1719.469	 concordant edges chrX:19878178+ 25
+DEBUG:root:#TIME 1719.454	discordant edges chrX:19878178+->chrX:19765655- 28 everted chrX:19878178+->chrX:19878179- 25 1.000000
+INFO:root:#TIME 1719.470	 Selecting neighbors
+DEBUG:root:#TIME 1719.471	 interval_hops: neighbors chrX	19763633	19878638 chrX	19763633	19878638 0
+INFO:root:#TIME 1719.483	Interval sets for amplicons determined: 
+INFO:root:[amplicon1]	chr6:21869584-25759511,chr6:48679775-48700287,chr6:114959027-114979539,chr22:32512060-32532573
+INFO:root:[amplicon2]	chr8:13689318-13824316
+INFO:root:[amplicon3]	chr9:110505048-110680047
+INFO:root:[amplicon4]	chr9:121239920-121499918
+INFO:root:[amplicon5]	chrX:13483405-13623411
+INFO:root:[amplicon6]	chrX:19763633-19878638
+INFO:root:#TIME 1719.490	Reconstructing amplicon1
+INFO:root:#TIME 1719.491	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chr6	21869584	25759511
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chr6_21869584_25759511_cnseg.txt
+DEBUG:root:get_meanshift on chr6	48679775	48700287
+DEBUG:root:Meanshift refining chr6:48679775-48700287
+DEBUG:root:Computing meanshift segmentation on chr6	48679775	48700287
+DEBUG:root:MS: chr6	48680000	48700000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chr6	48680000	48700000 s2, e2: (38680000, 58700000)
+DEBUG:root:MS: chr6	48680000	48700000 startskip,endskip(0, 0)
+DEBUG:root:(48679775, 48700287, 3.3947532570313266)
+DEBUG:root:get_meanshift on chr6	114959027	114979539
+DEBUG:root:Meanshift refining chr6:114959027-114979539
+DEBUG:root:Computing meanshift segmentation on chr6	114959027	114979539
+DEBUG:root:MS: chr6	114960000	114980000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chr6	114960000	114980000 s2, e2: (104960000, 124980000)
+DEBUG:root:MS: chr6	114960000	114980000 startskip,endskip(0, 0)
+DEBUG:root:(114959027, 114979539, 2.019036922549244)
+DEBUG:root:get_meanshift on chr22	32512060	32532573
+DEBUG:root:Meanshift refining chr22:32512060-32532573
+DEBUG:root:Computing meanshift segmentation on chr22	32512060	32532573
+DEBUG:root:MS: chr22	32510000	32530000 window_size, n: (10000, 1000)
+DEBUG:root:MS: chr22	32510000	32530000 s2, e2: (22510000, 42530000)
+DEBUG:root:MS: chr22	32510000	32530000 startskip,endskip(0, 0)
+DEBUG:root:(32512060, 32532573, 2.2538714309206127)
+INFO:root:#TIME 1719.710	 Detecting breakpoint edges (interval filter vertices)
+DEBUG:root:#TIME 1719.711	 searching discordant edges in ['chr6\t21869584\t25759511', 'chr6\t48679775\t48700287', 'chr6\t114959027\t114979539', 'chr22\t32512060\t32532573']
+DEBUG:root:#TIME 1803.852	 discordant edges: discordant read pairs found: chr6	21869584	25759511 3864 3884
+DEBUG:root:#TIME 1822.597	 edge_breakpoint_filter: chr6:22052540+->chr6:22053498-
+DEBUG:root:#TIME 1822.598	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1822.602	 breakpoint_entropy: 1.377 1.379
+DEBUG:root:#TIME 1822.657	 edge_breakpoint_filter: chr22:32532573+->chr6:24683759-
+DEBUG:root:#TIME 1822.657	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1822.665	 breakpoint_entropy: 1.373 1.375
+DEBUG:root:#TIME 1822.692	 edge_breakpoint_filter: chr6:24811658+->chr6:24817722-
+DEBUG:root:#TIME 1822.693	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1822.696	 breakpoint_entropy: 1.370 1.379
+DEBUG:root:#TIME 1822.715	 edge_breakpoint_filter: chr6:48680928+->chr6:48693415+
+DEBUG:root:#TIME 1822.715	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1822.718	 breakpoint_entropy: 1.351 1.275
+DEBUG:root:#TIME 1822.753	 edge_breakpoint_filter: chr6:48693415+->chr6:48680928+
+DEBUG:root:#TIME 1822.753	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1822.756	 breakpoint_entropy: 1.275 1.351
+DEBUG:root:#TIME 1822.783	 edge_breakpoint_filter: chr6:24683774+->chr22:32531898-
+DEBUG:root:#TIME 1822.784	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1822.790	 breakpoint_entropy: 1.379 1.381
+DEBUG:root:#TIME 1822.821	 edge_breakpoint_filter: chr6:23948520+->chr6:23949442-
+DEBUG:root:#TIME 1822.821	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1822.823	 breakpoint_entropy: 1.256 1.357
+DEBUG:root:#TIME 1822.841	 edge_breakpoint_filter: chr6:25004605+->chr6:114978837-
+DEBUG:root:#TIME 1822.841	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1822.843	 breakpoint_entropy: 1.378 1.305
+DEBUG:root:#TIME 1822.913	 edge_breakpoint_filter: chr22:32531898-->chr6:24683774+
+DEBUG:root:#TIME 1822.914	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1822.920	 breakpoint_entropy: 1.381 1.379
+DEBUG:root:#TIME 1822.949	 edge_breakpoint_filter: chr6:24683759-->chr22:32532573+
+DEBUG:root:#TIME 1822.949	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1822.957	 breakpoint_entropy: 1.375 1.373
+DEBUG:root:#TIME 1823.000	 edge_breakpoint_filter: chr6:114978837-->chr6:25004605+
+DEBUG:root:#TIME 1823.000	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1823.002	 breakpoint_entropy: 1.305 1.378
+DEBUG:root:#TIME 1823.017	 edge_breakpoint_filter: chr6:25005267-->chr6:114979027-
+DEBUG:root:#TIME 1823.017	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1823.018	 breakpoint_entropy: 1.334 1.317
+DEBUG:root:#TIME 1823.045	 edge_breakpoint_filter: chr6:24817722-->chr6:24811658+
+DEBUG:root:#TIME 1823.045	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1823.048	 breakpoint_entropy: 1.379 1.370
+DEBUG:root:#TIME 1823.078	 edge_breakpoint_filter: chr6:23949442-->chr6:23948520+
+DEBUG:root:#TIME 1823.078	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1823.080	 breakpoint_entropy: 1.357 1.256
+DEBUG:root:#TIME 1823.105	 edge_breakpoint_filter: chr6:22053498-->chr6:22052540+
+DEBUG:root:#TIME 1823.106	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1823.110	 breakpoint_entropy: 1.379 1.377
+DEBUG:root:#TIME 1823.160	 edge_breakpoint_filter: chr6:24071102-->chr6:48679775-
+DEBUG:root:#TIME 1823.160	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1823.166	 breakpoint_entropy: 1.368 1.379
+DEBUG:root:#TIME 1823.181	 edge_breakpoint_filter: chr6:114979027-->chr6:25005267-
+DEBUG:root:#TIME 1823.181	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1823.182	 breakpoint_entropy: 1.317 1.334
+DEBUG:root:#TIME 1823.201	 edge_breakpoint_filter: chr6:48679775-->chr6:24071102-
+DEBUG:root:#TIME 1823.201	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1823.206	 breakpoint_entropy: 1.379 1.368
+DEBUG:root:#TIME 1823.207	 discordant edges: local edges done chr6	21869584	25759511 26 24 18
+DEBUG:root:#TIME 1834.742	 edge_breakpoint_filter: chr6:25739811+->chr6:50618804-
+DEBUG:root:#TIME 1834.743	 breakpoint_mapq: 60 60
+DEBUG:root:#TIME 1834.745	 breakpoint_entropy: 1.310 1.283
+DEBUG:root:#TIME 1847.792	 edge_breakpoint_filter: chr6:25709318-->chr15:68243832-
+DEBUG:root:#TIME 1847.793	 breakpoint_mapq: 60 29
+DEBUG:root:#TIME 1847.795	 breakpoint_entropy: 1.306 1.339
+DEBUG:root:#TIME 1848.762	 discordant edges: external edges done chr6	21869584	25759511 5.16309833527 832
+DEBUG:root:#TIME 1848.782	 concordant edges chr6:22052540+ 43
+DEBUG:root:#TIME 1848.801	 concordant edges chr6:22052540+ 43
+DEBUG:root:#TIME 1848.762	discordant edges chr6:22052540+->chr6:22053498- 22 discordant chr6:22052540+->chr6:22052541- 43 1.000000
+DEBUG:root:#TIME 1848.807	 concordant edges chr6:22053498- 31
+DEBUG:root:#TIME 1848.812	 concordant edges chr6:22053498- 31
+DEBUG:root:#TIME 1848.802	discordant edges chr6:22053498-->chr6:22052540+ 22 discordant chr6:22053498-->chr6:22053497+ 31 1.000000
+DEBUG:root:#TIME 1848.828	 concordant edges chr6:23948520+ not found
+DEBUG:root:#TIME 1848.843	 concordant edges chr6:23948520+ not found
+DEBUG:root:#TIME 1848.813	discordant edges chr6:23948520+->chr6:23949442- 8 discordant None 0 1.000000
+DEBUG:root:#TIME 1848.857	 concordant edges chr6:23949442- 23
+DEBUG:root:#TIME 1848.870	 concordant edges chr6:23949442- 23
+DEBUG:root:#TIME 1848.844	discordant edges chr6:23949442-->chr6:23948520+ 8 discordant chr6:23949442-->chr6:23949441+ 23 1.000000
+DEBUG:root:#TIME 1848.881	 concordant edges chr6:24071102- 66
+DEBUG:root:#TIME 1848.892	 concordant edges chr6:24071102- 66
+DEBUG:root:#TIME 1848.871	discordant edges chr6:24071102-->chr6:48679775- 30 reverse chr6:24071102-->chr6:24071101+ 66 1.004158
+DEBUG:root:#TIME 1848.912	 concordant edges chr6:24683759- 29
+DEBUG:root:#TIME 1848.930	 concordant edges chr6:24683759- 29
+DEBUG:root:#TIME 1848.893	discordant edges chr6:24683759-->chr22:32532573+ 47 interchromosomal chr6:24683759-->chr6:24683758+ 29 1.440994
+DEBUG:root:#TIME 1848.948	 concordant edges chr6:24683774+ 40
+DEBUG:root:#TIME 1848.966	 concordant edges chr6:24683774+ 40
+DEBUG:root:#TIME 1848.931	discordant edges chr6:24683774+->chr22:32531898- 38 interchromosomal chr6:24683774+->chr6:24683792- 40 2.220430
+DEBUG:root:#TIME 1848.978	 concordant edges chr6:24811658+ 18
+DEBUG:root:#TIME 1848.989	 concordant edges chr6:24811658+ 18
+DEBUG:root:#TIME 1848.967	discordant edges chr6:24811658+->chr6:24817722- 17 discordant chr6:24811658+->chr6:24811659- 18 2.759889
+DEBUG:root:#TIME 1849.004	 concordant edges chr6:24817722- 60
+DEBUG:root:#TIME 1849.017	 concordant edges chr6:24817722- 60
+DEBUG:root:#TIME 1848.991	discordant edges chr6:24817722-->chr6:24811658+ 17 discordant chr6:24817722-->chr6:24817721+ 60 2.172426
+DEBUG:root:#TIME 1849.029	 concordant edges chr6:25004605+ 80
+DEBUG:root:#TIME 1849.041	 concordant edges chr6:25004605+ 80
+DEBUG:root:#TIME 1849.019	discordant edges chr6:25004605+->chr6:114978837- 9 discordant chr6:25004605+->chr6:25004611- 80 1.000000
+DEBUG:root:#TIME 1849.051	 concordant edges chr6:25005267- 66
+DEBUG:root:#TIME 1849.061	 concordant edges chr6:25005267- 66
+DEBUG:root:#TIME 1849.042	discordant edges chr6:25005267-->chr6:114979027- 3 reverse chr6:25005267-->chr6:25005266+ 66 1.236150
+DEBUG:root:#TIME 1849.070	 concordant edges chr6:25709318- 51
+DEBUG:root:#TIME 1849.077	 concordant edges chr6:25709318- 51
+DEBUG:root:#TIME 1849.062	discordant edges chr6:25709318-->chr15:68243832- 7 interchromosomal chr6:25709318-->chr6:25709317+ 51 1.602957
+DEBUG:root:#TIME 1849.086	 concordant edges chr6:25739811+ 60
+DEBUG:root:#TIME 1849.093	 concordant edges chr6:25739811+ 60
+DEBUG:root:#TIME 1849.079	discordant edges chr6:25739811+->chr6:50618804- 9 discordant chr6:25739811+->chr6:25739815- 60 1.000000
+DEBUG:root:#TIME 1849.099	 concordant edges chr6:48679775- 46
+DEBUG:root:#TIME 1849.105	 concordant edges chr6:48679775- 46
+DEBUG:root:#TIME 1849.094	discordant edges chr6:48679775-->chr6:24071102- 30 reverse chr6:48679775-->chr6:48679774+ 46 1.000000
+DEBUG:root:#TIME 1849.114	 concordant edges chr6:48680928+ 45
+DEBUG:root:#TIME 1849.122	 concordant edges chr6:48680928+ 45
+DEBUG:root:#TIME 1849.106	discordant edges chr6:48680928+->chr6:48693415+ 14 forward chr6:48680928+->chr6:48680930- 45 1.000000
+DEBUG:root:#TIME 1849.134	 concordant edges chr6:48693415+ 12
+DEBUG:root:#TIME 1849.146	 concordant edges chr6:48693415+ 12
+DEBUG:root:#TIME 1849.123	discordant edges chr6:48693415+->chr6:48680928+ 14 forward chr6:48693415+->chr6:48693461- 12 1.262626
+DEBUG:root:#TIME 1849.154	 concordant edges chr6:114978837- 31
+DEBUG:root:#TIME 1849.160	 concordant edges chr6:114978837- 31
+DEBUG:root:#TIME 1849.148	discordant edges chr6:114978837-->chr6:25004605+ 9 discordant chr6:114978837-->chr6:114978836+ 31 1.000000
+DEBUG:root:#TIME 1849.168	 concordant edges chr6:114979027- 41
+DEBUG:root:#TIME 1849.175	 concordant edges chr6:114979027- 41
+DEBUG:root:#TIME 1849.161	discordant edges chr6:114979027-->chr6:25005267- 3 reverse chr6:114979027-->chr6:114979026+ 41 1.000000
+DEBUG:root:#TIME 1849.181	 concordant edges chr22:32531898- 19
+DEBUG:root:#TIME 1849.186	 concordant edges chr22:32531898- 19
+DEBUG:root:#TIME 1849.176	discordant edges chr22:32531898-->chr6:24683774+ 38 interchromosomal chr22:32531898-->chr22:32531897+ 19 1.000000
+DEBUG:root:#TIME 1849.197	 concordant edges chr22:32532573+ 24
+DEBUG:root:#TIME 1849.207	 concordant edges chr22:32532573+ 24
+DEBUG:root:#TIME 1849.187	discordant edges chr22:32532573+->chr6:24683759- 47 interchromosomal chr22:32532573+->chr22:32532581- 24 1.000000
+DEBUG:root:#TIME 1849.216	 searching discordant edges in chr6	24056987	24068312
+DEBUG:root:#TIME 1849.472	 discordant edges: discordant read pairs found: chr6	24056987	24068312 8 12
+DEBUG:root:#TIME 1849.570	 discordant edges: local edges done chr6	24056987	24068312 2 0 0
+DEBUG:root:#TIME 1849.696	 discordant edges: external edges done chr6	24056987	24068312 0.0613601207733 2
+DEBUG:root:#TIME 1849.696	 searching discordant edges in chr6	24984886	24996211
+DEBUG:root:#TIME 1850.022	 discordant edges: discordant read pairs found: chr6	24984886	24996211 6 7
+DEBUG:root:#TIME 1850.070	 discordant edges: local edges done chr6	24984886	24996211 0 1 0
+DEBUG:root:#TIME 1853.472	 discordant edges: external edges done chr6	24984886	24996211 3.35891509056 2
+INFO:root:#TIME 1853.475	 Building breakpoint graph
+DEBUG:root:#TIME 1853.495	interval_filter vertices new: chr6:22052540+ edge
+DEBUG:root:#TIME 1853.517	interval_filter vertices new: chr6:22053498- edge
+DEBUG:root:#TIME 1853.518	interval_filter vertices: adding reverse edge = chr6:22053498-
+DEBUG:root:#TIME 1853.556	 concordant edges chr6:22052540+ 43
+DEBUG:root:#TIME 1853.573	 concordant edges chr6:22053498- 31
+DEBUG:root:#TIME 1853.574	interval_filter vertices new: chr6:23948520+ edge
+DEBUG:root:#TIME 1853.590	interval_filter vertices new: chr6:23949442- edge
+DEBUG:root:#TIME 1853.591	interval_filter vertices: adding reverse edge = chr6:23949442-
+DEBUG:root:#TIME 1853.617	 concordant edges chr6:23948520+ not found
+DEBUG:root:#TIME 1853.659	 concordant edges chr6:23949442- 23
+DEBUG:root:#TIME 1853.659	interval_filter vertices new: chr6:24067500- meanshift
+DEBUG:root:#TIME 1853.660	interval_filter vertices: adding reverse edge = chr6:24067500-
+DEBUG:root:#TIME 1853.746	 concordant edges chr6:24067500- 68
+DEBUG:root:#TIME 1853.746	interval_filter vertices new: chr6:24071102- edge
+DEBUG:root:#TIME 1853.747	interval_filter vertices: adding reverse edge = chr6:24071102-
+DEBUG:root:#TIME 1853.784	 concordant edges chr6:24071102- 66
+DEBUG:root:#TIME 1853.785	interval_filter vertices new: chr6:24683759- edge
+DEBUG:root:#TIME 1853.785	interval_filter vertices: adding reverse edge = chr6:24683759-
+DEBUG:root:#TIME 1853.842	 concordant edges chr6:24683759- 29
+DEBUG:root:#TIME 1853.842	interval_filter vertices new: chr6:24683774+ edge
+DEBUG:root:#TIME 1853.862	interval_filter vertices new: chr6:24811658+ edge
+DEBUG:root:#TIME 1853.880	 concordant edges chr6:24683774+ 40
+DEBUG:root:#TIME 1853.893	interval_filter vertices new: chr6:24817722- edge
+DEBUG:root:#TIME 1853.893	interval_filter vertices: adding reverse edge = chr6:24817722-
+DEBUG:root:#TIME 1853.916	 concordant edges chr6:24811658+ 18
+DEBUG:root:#TIME 1853.963	 concordant edges chr6:24817722- 60
+DEBUG:root:#TIME 1853.963	interval_filter vertices new: chr6:24995399+ meanshift
+DEBUG:root:#TIME 1854.009	interval_filter vertices new: chr6:25004605+ edge
+DEBUG:root:#TIME 1854.028	 concordant edges chr6:24995399+ 71
+DEBUG:root:#TIME 1854.041	interval_filter vertices new: chr6:25005267- edge
+DEBUG:root:#TIME 1854.042	interval_filter vertices: adding reverse edge = chr6:25005267-
+DEBUG:root:#TIME 1854.065	 concordant edges chr6:25004605+ 80
+DEBUG:root:#TIME 1854.095	 concordant edges chr6:25005267- 66
+DEBUG:root:#TIME 1854.096	interval_filter vertices new: chr6:25709318- edge
+DEBUG:root:#TIME 1854.096	interval_filter vertices: adding reverse edge = chr6:25709318-
+DEBUG:root:#TIME 1854.122	 concordant edges chr6:25709318- 51
+DEBUG:root:#TIME 1854.123	interval_filter vertices new: chr6:25739811+ edge
+DEBUG:root:#TIME 1854.145	 concordant edges chr6:25709318- 51
+DEBUG:root:#TIME 1854.687	interval_filter vertices new: chr6:48680928+ edge
+DEBUG:root:#TIME 1854.697	interval_filter vertices new: chr6:48693415+ edge
+DEBUG:root:#TIME 1854.706	 concordant edges chr6:48680928+ 45
+DEBUG:root:#TIME 1854.728	 concordant edges chr6:48680928+ 45
+DEBUG:root:#TIME 1854.737	interval_filter vertices new: chr6:114978837- edge
+DEBUG:root:#TIME 1854.738	interval_filter vertices: adding reverse edge = chr6:114978837-
+DEBUG:root:#TIME 1854.760	 concordant edges chr6:114978837- 31
+DEBUG:root:#TIME 1854.760	interval_filter vertices new: chr6:114979027- edge
+DEBUG:root:#TIME 1854.761	interval_filter vertices: adding reverse edge = chr6:114979027-
+DEBUG:root:#TIME 1854.784	 concordant edges chr6:114979027- 41
+DEBUG:root:#TIME 1854.799	interval_filter vertices new: chr22:32531898- edge
+DEBUG:root:#TIME 1854.799	interval_filter vertices: adding reverse edge = chr22:32531898-
+DEBUG:root:#TIME 1854.820	 concordant edges chr22:32531898- 19
+DEBUG:root:#TIME 1854.821	interval_filter vertices new: chr22:32532573+ edge
+DEBUG:root:#TIME 1854.832	interval_filter vertices: added edge e = chr6:22053498-->chr6:22052540+
+DEBUG:root:#TIME 1854.833	interval_filter vertices: added edge ne = chr6:22053498-->chr6:22052540+ discordant
+DEBUG:root:#TIME 1854.833	interval_filter vertices: added edge ne, v1.elist = chr6:22053498- chr6:22053497+->chr6:22053498-,chr6:22053498-->chr6:22052540+
+DEBUG:root:#TIME 1854.833	interval_filter vertices: added edge ne, v2.elist = chr6:22052540+ chr6:22052540+->chr6:22052541-,chr6:22053498-->chr6:22052540+
+DEBUG:root:#TIME 1854.834	interval_filter vertices: added edge e = chr6:23949442-->chr6:23948520+
+DEBUG:root:#TIME 1854.834	interval_filter vertices: added edge ne = chr6:23949442-->chr6:23948520+ discordant
+DEBUG:root:#TIME 1854.835	interval_filter vertices: added edge ne, v1.elist = chr6:23949442- chr6:23949441+->chr6:23949442-,chr6:23949442-->chr6:23948520+
+DEBUG:root:#TIME 1854.835	interval_filter vertices: added edge ne, v2.elist = chr6:23948520+ chr6:23948520+->chr6:23948521-,chr6:23949442-->chr6:23948520+
+DEBUG:root:#TIME 1854.835	interval_filter vertices: added edge e = chr6:24817722-->chr6:24811658+
+DEBUG:root:#TIME 1854.836	interval_filter vertices: added edge ne = chr6:24817722-->chr6:24811658+ discordant
+DEBUG:root:#TIME 1854.836	interval_filter vertices: added edge ne, v1.elist = chr6:24817722- chr6:24817721+->chr6:24817722-,chr6:24817722-->chr6:24811658+
+DEBUG:root:#TIME 1854.836	interval_filter vertices: added edge ne, v2.elist = chr6:24811658+ chr6:24811658+->chr6:24811659-,chr6:24817722-->chr6:24811658+
+DEBUG:root:#TIME 1854.837	interval_filter vertices: added edge e = chr6:48679775-->chr6:24071102-
+DEBUG:root:#TIME 1854.837	interval_filter vertices: added edge ne = chr6:48679775-->chr6:24071102- discordant
+DEBUG:root:#TIME 1854.838	interval_filter vertices: added edge ne, v1.elist = chr6:48679775- chr6:-1-->chr6:48679775-,chr6:48679775-->chr6:24071102-
+DEBUG:root:#TIME 1854.838	interval_filter vertices: added edge ne, v2.elist = chr6:24071102- chr6:24071101+->chr6:24071102-,chr6:48679775-->chr6:24071102-
+DEBUG:root:#TIME 1854.838	interval_filter vertices: added edge e = chr6:48693415+->chr6:48680928+
+DEBUG:root:#TIME 1854.839	interval_filter vertices: added edge ne = chr6:48693415+->chr6:48680928+ discordant
+DEBUG:root:#TIME 1854.839	interval_filter vertices: added edge ne, v1.elist = chr6:48693415+ chr6:48693415+->chr6:48693416-,chr6:48693415+->chr6:48680928+
+DEBUG:root:#TIME 1854.839	interval_filter vertices: added edge ne, v2.elist = chr6:48680928+ chr6:48680928+->chr6:48680929-,chr6:48693415+->chr6:48680928+
+DEBUG:root:#TIME 1854.840	interval_filter vertices: added edge e = chr6:114978837-->chr6:25004605+
+DEBUG:root:#TIME 1854.840	interval_filter vertices: added edge ne = chr6:114978837-->chr6:25004605+ discordant
+DEBUG:root:#TIME 1854.840	interval_filter vertices: added edge ne, v1.elist = chr6:114978837- chr6:114978836+->chr6:114978837-,chr6:114978837-->chr6:25004605+
+DEBUG:root:#TIME 1854.841	interval_filter vertices: added edge ne, v2.elist = chr6:25004605+ chr6:25004605+->chr6:25004606-,chr6:114978837-->chr6:25004605+
+DEBUG:root:#TIME 1854.841	interval_filter vertices: added edge e = chr6:114979027-->chr6:25005267-
+DEBUG:root:#TIME 1854.842	interval_filter vertices: added edge ne = chr6:114979027-->chr6:25005267- discordant
+DEBUG:root:#TIME 1854.842	interval_filter vertices: added edge ne, v1.elist = chr6:114979027- chr6:114979026+->chr6:114979027-,chr6:114979027-->chr6:25005267-
+DEBUG:root:#TIME 1854.842	interval_filter vertices: added edge ne, v2.elist = chr6:25005267- chr6:25005266+->chr6:25005267-,chr6:114979027-->chr6:25005267-
+DEBUG:root:#TIME 1854.843	interval_filter vertices: added edge e = chr22:32531898-->chr6:24683774+
+DEBUG:root:#TIME 1854.843	interval_filter vertices: added edge ne = chr22:32531898-->chr6:24683774+ discordant
+DEBUG:root:#TIME 1854.843	interval_filter vertices: added edge ne, v1.elist = chr22:32531898- chr22:32531897+->chr22:32531898-,chr22:32531898-->chr6:24683774+
+DEBUG:root:#TIME 1854.844	interval_filter vertices: added edge ne, v2.elist = chr6:24683774+ chr6:24683774+->chr6:24683775-,chr22:32531898-->chr6:24683774+
+DEBUG:root:#TIME 1854.844	interval_filter vertices: added edge e = chr22:32532573+->chr6:24683759-
+DEBUG:root:#TIME 1854.844	interval_filter vertices: added edge ne = chr22:32532573+->chr6:24683759- discordant
+DEBUG:root:#TIME 1854.844	interval_filter vertices: added edge ne, v1.elist = chr22:32532573+ chr22:32532573+->chr6:24683759-
+DEBUG:root:#TIME 1854.845	interval_filter vertices: added edge ne, v2.elist = chr6:24683759- chr6:24683758+->chr6:24683759-,chr22:32532573+->chr6:24683759-
+INFO:root:#TIME 1854.845	 Optimizing graph copy number flow
+INFO:root:#TIME 1999.728	 Plotting SV View
+INFO:root:#TIME 2000.165	Plotting SV View for amplicon1
+DEBUG:root:get_meanshift on chr6	21869584	25759511
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chr6_21869584_25759511_cnseg.txt
+DEBUG:root:get_meanshift on chr6	48679775	48700287
+DEBUG:root:Meanshift refining chr6:48679775-48700287
+DEBUG:root:Computing meanshift segmentation on chr6	48679775	48700287
+DEBUG:root:MS: chr6	48679800	48700200 window_size, n: (300, 1000)
+DEBUG:root:MS: chr6	48679800	48700200 s2, e2: (48379800, 49000200)
+DEBUG:root:MS: chr6	48679800	48700200 startskip,endskip(0, 0)
+DEBUG:root:Computing meanshift segmentation on chr6	48679799	48681599
+DEBUG:root:MS: chr6	48679800	48681600 window_size, n: (300, 1000)
+DEBUG:root:MS: chr6	48679800	48681600 s2, e2: (48379800, 48981600)
+DEBUG:root:MS: chr6	48679800	48681600 startskip,endskip(0, 0)
+DEBUG:root:Computing meanshift segmentation on chr6	48692099	48693899
+DEBUG:root:MS: chr6	48692100	48693900 window_size, n: (300, 1000)
+DEBUG:root:MS: chr6	48692100	48693900 s2, e2: (48392100, 48993900)
+DEBUG:root:MS: chr6	48692100	48693900 startskip,endskip(0, 0)
+DEBUG:root:(48679800, 48680699, 21.995495883930126)
+DEBUG:root:(48680700, 48692999, 13.586417683651687)
+DEBUG:root:(48693000, 48700200, 6.569975088023605)
+DEBUG:root:get_meanshift on chr6	114959027	114979539
+DEBUG:root:Meanshift refining chr6:114959027-114979539
+DEBUG:root:Computing meanshift segmentation on chr6	114959027	114979539
+DEBUG:root:MS: chr6	114959100	114979500 window_size, n: (300, 1000)
+DEBUG:root:MS: chr6	114959100	114979500 s2, e2: (114659100, 115279500)
+DEBUG:root:MS: chr6	114959100	114979500 startskip,endskip(0, 0)
+DEBUG:root:Computing meanshift segmentation on chr6	114977999	114979799
+DEBUG:root:MS: chr6	114978000	114979800 window_size, n: (300, 1000)
+DEBUG:root:MS: chr6	114978000	114979800 s2, e2: (114678000, 115279800)
+DEBUG:root:MS: chr6	114978000	114979800 startskip,endskip(0, 0)
+DEBUG:root:(114959100, 114978899, 7.437983091968581)
+DEBUG:root:(114978900, 114979500, 12.671578653245785)
+DEBUG:root:get_meanshift on chr22	32512060	32532573
+DEBUG:root:Meanshift refining chr22:32512060-32532573
+DEBUG:root:Computing meanshift segmentation on chr22	32512060	32532573
+DEBUG:root:MS: chr22	32512200	32532600 window_size, n: (300, 1000)
+DEBUG:root:MS: chr22	32512200	32532600 s2, e2: (32212200, 32832600)
+DEBUG:root:MS: chr22	32512200	32532600 startskip,endskip(0, 0)
+DEBUG:root:(32512060, 32532573, 7.809276280304976)
+DEBUG:root:Max cov, max ms scales set to: 110.45333333333332 21.995495883930126
+DEBUG:matplotlib.font_manager:findfont: Matching :family=DejaVu Sans:style=normal:variant=normal:weight=normal:stretch=normal:size=10.0 to DejaVu Sans (u'/usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf') with score of 0.050000
+DEBUG:matplotlib.font_manager:findfont: Matching :family=DejaVu Sans:style=normal:variant=normal:weight=normal:stretch=normal:size=12.0 to DejaVu Sans (u'/usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf') with score of 0.050000
+DEBUG:matplotlib.backends.backend_pdf:Assigning font /F1 = u'/usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf'
+DEBUG:matplotlib.backends.backend_pdf:Embedding font /usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf.
+DEBUG:matplotlib.backends.backend_pdf:Writing TrueType font.
+INFO:root:#TIME 2071.768	Reconstructing amplicon2
+INFO:root:#TIME 2071.771	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chr8	13689318	13824316
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chr8_13689318_13824316_cnseg.txt
+INFO:root:#TIME 2071.773	 Detecting breakpoint edges (interval filter vertices)
+DEBUG:root:#TIME 2071.774	 searching discordant edges in ['chr8\t13689318\t13824316']
+INFO:root:#TIME 2071.776	 Building breakpoint graph
+DEBUG:root:#TIME 2071.786	interval_filter vertices new: chr8:13693656- edge
+DEBUG:root:#TIME 2071.786	interval_filter vertices: adding reverse edge = chr8:13693656-
+DEBUG:root:#TIME 2071.823	 concordant edges chr8:13693656- 37
+DEBUG:root:#TIME 2071.824	interval_filter vertices new: chr8:13703126+ edge
+DEBUG:root:#TIME 2071.833	interval_filter vertices new: chr8:13712659- edge
+DEBUG:root:#TIME 2071.833	interval_filter vertices: adding reverse edge = chr8:13712659-
+DEBUG:root:#TIME 2071.850	 concordant edges chr8:13703126+ 33
+DEBUG:root:#TIME 2071.899	 concordant edges chr8:13712659- 52
+DEBUG:root:#TIME 2071.913	interval_filter vertices: added edge e = chr8:13712659-->chr8:13703126+
+DEBUG:root:#TIME 2071.914	interval_filter vertices: added edge ne = chr8:13712659-->chr8:13703126+ discordant
+DEBUG:root:#TIME 2071.914	interval_filter vertices: added edge ne, v1.elist = chr8:13712659- chr8:13712658+->chr8:13712659-,chr8:13712659-->chr8:13703126+
+DEBUG:root:#TIME 2071.914	interval_filter vertices: added edge ne, v2.elist = chr8:13703126+ chr8:13703126+->chr8:13703127-,chr8:13712659-->chr8:13703126+
+INFO:root:#TIME 2071.915	 Optimizing graph copy number flow
+INFO:root:#TIME 2076.842	 Plotting SV View
+INFO:root:#TIME 2076.849	Plotting SV View for amplicon2
+DEBUG:root:get_meanshift on chr8	13689318	13824316
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chr8_13689318_13824316_cnseg.txt
+DEBUG:root:Max cov, max ms scales set to: 83.19365925925926 4.76216421544
+DEBUG:matplotlib.backends.backend_pdf:Assigning font /F1 = u'/usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf'
+DEBUG:matplotlib.backends.backend_pdf:Embedding font /usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf.
+DEBUG:matplotlib.backends.backend_pdf:Writing TrueType font.
+INFO:root:#TIME 2100.656	Reconstructing amplicon3
+INFO:root:#TIME 2100.658	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chr9	110505048	110680047
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chr9_110505048_110680047_cnseg.txt
+INFO:root:#TIME 2100.660	 Detecting breakpoint edges (interval filter vertices)
+DEBUG:root:#TIME 2100.661	 searching discordant edges in ['chr9\t110505048\t110680047']
+INFO:root:#TIME 2100.663	 Building breakpoint graph
+DEBUG:root:#TIME 2100.673	interval_filter vertices new: chr9:110524069- edge
+DEBUG:root:#TIME 2100.673	interval_filter vertices: adding reverse edge = chr9:110524069-
+DEBUG:root:#TIME 2100.702	 concordant edges chr9:110524069- 35
+DEBUG:root:#TIME 2100.702	interval_filter vertices new: chr9:110678201+ edge
+DEBUG:root:#TIME 2100.726	 concordant edges chr9:110524069- 35
+DEBUG:root:#TIME 2100.734	interval_filter vertices: added edge e = chr9:110678201+->chr9:110524069-
+DEBUG:root:#TIME 2100.742	interval_filter vertices: added edge ne = chr9:110678201+->chr9:110524069- discordant
+DEBUG:root:#TIME 2100.751	interval_filter vertices: added edge ne, v1.elist = chr9:110678201+ chr9:110678201+->chr9:110678202-,chr9:110678201+->chr9:110524069-
+DEBUG:root:#TIME 2100.752	interval_filter vertices: added edge ne, v2.elist = chr9:110524069- chr9:110524068+->chr9:110524069-,chr9:110678201+->chr9:110524069-
+INFO:root:#TIME 2100.752	 Optimizing graph copy number flow
+INFO:root:#TIME 2105.906	 Plotting SV View
+INFO:root:#TIME 2105.910	Plotting SV View for amplicon3
+DEBUG:root:get_meanshift on chr9	110505048	110680047
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chr9_110505048_110680047_cnseg.txt
+DEBUG:root:Max cov, max ms scales set to: 81.84854857142858 4.67340254433
+DEBUG:matplotlib.backends.backend_pdf:Assigning font /F1 = u'/usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf'
+DEBUG:matplotlib.backends.backend_pdf:Embedding font /usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf.
+DEBUG:matplotlib.backends.backend_pdf:Writing TrueType font.
+INFO:root:#TIME 2135.743	Reconstructing amplicon4
+INFO:root:#TIME 2135.745	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chr9	121239920	121499918
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chr9_121239920_121499918_cnseg.txt
+INFO:root:#TIME 2135.747	 Detecting breakpoint edges (interval filter vertices)
+DEBUG:root:#TIME 2135.748	 searching discordant edges in ['chr9\t121239920\t121499918']
+INFO:root:#TIME 2135.750	 Building breakpoint graph
+DEBUG:root:#TIME 2135.763	interval_filter vertices new: chr9:121241736- edge
+DEBUG:root:#TIME 2135.764	interval_filter vertices: adding reverse edge = chr9:121241736-
+DEBUG:root:#TIME 2135.796	 concordant edges chr9:121241736- 36
+DEBUG:root:#TIME 2135.796	interval_filter vertices new: chr9:121482062+ edge
+DEBUG:root:#TIME 2135.836	 concordant edges chr9:121241736- 36
+DEBUG:root:#TIME 2135.843	interval_filter vertices: added edge e = chr9:121482062+->chr9:121241736-
+DEBUG:root:#TIME 2135.844	interval_filter vertices: added edge ne = chr9:121482062+->chr9:121241736- discordant
+DEBUG:root:#TIME 2135.844	interval_filter vertices: added edge ne, v1.elist = chr9:121482062+ chr9:121482062+->chr9:121482063-,chr9:121482062+->chr9:121241736-
+DEBUG:root:#TIME 2135.844	interval_filter vertices: added edge ne, v2.elist = chr9:121241736- chr9:121241735+->chr9:121241736-,chr9:121482062+->chr9:121241736-
+INFO:root:#TIME 2135.845	 Optimizing graph copy number flow
+INFO:root:#TIME 2143.838	 Plotting SV View
+INFO:root:#TIME 2143.842	Plotting SV View for amplicon4
+DEBUG:root:get_meanshift on chr9	121239920	121499918
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chr9_121239920_121499918_cnseg.txt
+DEBUG:root:Max cov, max ms scales set to: 91.99477307692308 5.22325101025
+DEBUG:matplotlib.backends.backend_pdf:Assigning font /F1 = u'/usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf'
+DEBUG:matplotlib.backends.backend_pdf:Embedding font /usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf.
+DEBUG:matplotlib.backends.backend_pdf:Writing TrueType font.
+INFO:root:#TIME 2192.484	Reconstructing amplicon5
+INFO:root:#TIME 2192.486	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chrX	13483405	13623411
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chrX_13483405_13623411_cnseg.txt
+INFO:root:#TIME 2192.488	 Detecting breakpoint edges (interval filter vertices)
+DEBUG:root:#TIME 2192.489	 searching discordant edges in ['chrX\t13483405\t13623411']
+INFO:root:#TIME 2192.491	 Building breakpoint graph
+DEBUG:root:#TIME 2192.500	interval_filter vertices new: chrX:13485517- edge
+DEBUG:root:#TIME 2192.500	interval_filter vertices: adding reverse edge = chrX:13485517-
+DEBUG:root:#TIME 2192.512	 concordant edges chrX:13485517- 26
+DEBUG:root:#TIME 2192.513	interval_filter vertices new: chrX:13620700+ edge
+DEBUG:root:#TIME 2192.531	 concordant edges chrX:13485517- 26
+DEBUG:root:#TIME 2192.545	interval_filter vertices: added edge e = chrX:13620700+->chrX:13485517-
+DEBUG:root:#TIME 2192.545	interval_filter vertices: added edge ne = chrX:13620700+->chrX:13485517- discordant
+DEBUG:root:#TIME 2192.545	interval_filter vertices: added edge ne, v1.elist = chrX:13620700+ chrX:13620700+->chrX:13620701-,chrX:13620700+->chrX:13485517-
+DEBUG:root:#TIME 2192.546	interval_filter vertices: added edge ne, v2.elist = chrX:13485517- chrX:13485516+->chrX:13485517-,chrX:13620700+->chrX:13485517-
+INFO:root:#TIME 2192.546	 Optimizing graph copy number flow
+INFO:root:#TIME 2196.334	 Plotting SV View
+INFO:root:#TIME 2196.338	Plotting SV View for amplicon5
+DEBUG:root:get_meanshift on chrX	13483405	13623411
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chrX_13483405_13623411_cnseg.txt
+DEBUG:root:Max cov, max ms scales set to: 71.40290714285715 4.02393493108
+DEBUG:matplotlib.backends.backend_pdf:Assigning font /F1 = u'/usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf'
+DEBUG:matplotlib.backends.backend_pdf:Embedding font /usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf.
+DEBUG:matplotlib.backends.backend_pdf:Writing TrueType font.
+INFO:root:#TIME 2217.989	Reconstructing amplicon6
+INFO:root:#TIME 2217.991	 Calculating coverage meanshift segmentation
+DEBUG:root:get_meanshift on chrX	19763633	19878638
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chrX_19763633_19878638_cnseg.txt
+INFO:root:#TIME 2217.993	 Detecting breakpoint edges (interval filter vertices)
+DEBUG:root:#TIME 2217.994	 searching discordant edges in ['chrX\t19763633\t19878638']
+INFO:root:#TIME 2217.996	 Building breakpoint graph
+DEBUG:root:#TIME 2218.000	interval_filter vertices new: chrX:19765655- edge
+DEBUG:root:#TIME 2218.001	interval_filter vertices: adding reverse edge = chrX:19765655-
+DEBUG:root:#TIME 2218.018	 concordant edges chrX:19765655- 18
+DEBUG:root:#TIME 2218.018	interval_filter vertices new: chrX:19878178+ edge
+DEBUG:root:#TIME 2218.036	 concordant edges chrX:19765655- 18
+DEBUG:root:#TIME 2218.042	interval_filter vertices: added edge e = chrX:19878178+->chrX:19765655-
+DEBUG:root:#TIME 2218.042	interval_filter vertices: added edge ne = chrX:19878178+->chrX:19765655- discordant
+DEBUG:root:#TIME 2218.042	interval_filter vertices: added edge ne, v1.elist = chrX:19878178+ chrX:19878178+->chrX:19878179-,chrX:19878178+->chrX:19765655-
+DEBUG:root:#TIME 2218.043	interval_filter vertices: added edge ne, v2.elist = chrX:19765655- chrX:19765654+->chrX:19765655-,chrX:19878178+->chrX:19765655-
+INFO:root:#TIME 2218.043	 Optimizing graph copy number flow
+INFO:root:#TIME 2221.283	 Plotting SV View
+INFO:root:#TIME 2221.288	Plotting SV View for amplicon6
+DEBUG:root:get_meanshift on chrX	19763633	19878638
+DEBUG:root:Re-using cn-seg info in /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/FLO-1/FLO-1_AA_results//FLO-1_chrX_19763633_19878638_cnseg.txt
+DEBUG:root:Max cov, max ms scales set to: 70.70088695652173 3.96594396098
+DEBUG:matplotlib.backends.backend_pdf:Assigning font /F1 = u'/usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf'
+DEBUG:matplotlib.backends.backend_pdf:Embedding font /usr/local/lib/python2.7/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf.
+DEBUG:matplotlib.backends.backend_pdf:Writing TrueType font.
+INFO:root:#TIME 2238.640	Total Runtime

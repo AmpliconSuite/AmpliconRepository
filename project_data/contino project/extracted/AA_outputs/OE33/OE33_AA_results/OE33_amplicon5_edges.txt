@@ -1,0 +1,2 @@
+chrX:133618627-->chrX:133786164+	11	None	None
+chrX:133786164+->chrX:133618627-	11	None	None

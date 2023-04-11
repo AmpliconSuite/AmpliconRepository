@@ -1,0 +1,79 @@
+('Meanshift', 'chr17\t29186044\t29956064', 1, [chr17:29854799+])
+('MSstats', 1, 0)
+('MSadd', 'chr17:29854799+', -4.0949043019585725, 32, False)
+('C (haploid coverage) = ', 5.0)
+('########## len bplist', 8, ';   ################ kbpe, kce, koe = ', 2, 4, 2)
+Problem set up done. Optimizing ..
+Problem
+  Name                   :                 
+  Objective sense        : min             
+  Type                   : GECO (general convex optimization problem)
+  Constraints            : 10              
+  Cones                  : 0               
+  Scalar variables       : 13              
+  Matrix variables       : 0               
+  Integer variables      : 0               
+
+Optimizer started.
+Interior-point optimizer started.
+Presolve started.
+Linear dependency checker started.
+Linear dependency checker terminated.
+Eliminator started.
+Freed constraints in eliminator : 0
+Eliminator terminated.
+Eliminator - tries                  : 1                 time                   : 0.00            
+Lin. dep.  - tries                  : 1                 time                   : 0.00            
+Lin. dep.  - number                 : 0               
+Presolve terminated. Time: 0.00    
+Matrix reordering started.
+Local matrix reordering started.
+Local matrix reordering terminated.
+Matrix reordering terminated.
+Optimizer  - threads                : 1               
+Optimizer  - solved problem         : the primal      
+Optimizer  - Constraints            : 10
+Optimizer  - Cones                  : 0
+Optimizer  - Scalar variables       : 13                conic                  : 0               
+Optimizer  - Semi-definite variables: 0                 scalarized             : 0               
+Factor     - setup time             : 0.00              dense det. time        : 0.00            
+Factor     - ML order time          : 0.00              GP order time          : 0.00            
+Factor     - nonzeros before factor : 21                after factor           : 25              
+Factor     - dense dim.             : 0                 flops                  : 3.40e+01        
+ITE PFEAS    DFEAS    GFEAS    PRSTATUS   POBJ              DOBJ              MU       TIME  
+0   2.0e+00  2.3e+05  2.5e+05  0.00e+00   -2.964855693e+06  -2.712619537e+06  1.0e+00  0.00  
+1   1.1e-02  1.2e+03  1.4e+03  -1.00e+00  -2.966962603e+06  -2.715214064e+06  5.8e-03  0.00  
+2   9.0e-04  1.0e+02  1.1e+02  -9.95e-01  -2.985790233e+06  -2.739470273e+06  6.6e-04  0.00  
+3   4.8e-04  5.6e+01  6.1e+01  -9.35e-01  -2.996377545e+06  -2.752281395e+06  4.8e-04  0.00  
+4   6.0e-05  2.1e+01  7.5e+00  -8.73e-01  -3.143314585e+06  -2.947889911e+06  1.4e-04  0.00  
+5   1.8e-06  2.6e+00  2.3e-01  -2.07e-01  -3.275723390e+06  -3.213474455e+06  2.2e-05  0.00  
+6   4.3e-08  9.6e-02  5.4e-03  6.46e-01   -3.283764776e+06  -3.277869475e+06  8.3e-07  0.00  
+7   1.6e-08  5.7e-02  2.0e-03  8.80e-01   -3.286832321e+06  -3.284705088e+06  4.5e-07  0.00  
+8   4.6e-10  9.4e-03  5.8e-05  9.00e-01   -3.288162714e+06  -3.287960134e+06  3.7e-08  0.00  
+9   4.0e-12  9.4e-04  5.0e-07  8.54e-01   -3.288343233e+06  -3.288321037e+06  3.6e-09  0.00  
+10  3.5e-15  1.1e-05  4.3e-10  9.79e-01   -3.288345885e+06  -3.288345518e+06  5.4e-11  0.00  
+Interior-point optimizer terminated. Time: 0.00. 
+
+Optimizer terminated. Time: 0.01    
+Solution summary
+
+Interior-point solution summary
+  Problem status  : PRIMAL_AND_DUAL_FEASIBLE
+  Solution status : OPTIMAL
+  Primal.  obj: -3.2883458854e+06   nrm: 7e+00    Viol.  con: 1e-10    var: 0e+00  
+  Dual.    obj: -3.2883455175e+06   nrm: 3e+01    Viol.  con: 0e+00    var: 9e-01  
+Solution is: [5.093963711147701, 6.278557113711117, 7.463150516274534, 5.508921591965097, 3.554692667655659, 5.093963711147701, 5.093963711147702, 6.27855711371112, 5.508921591965098, 3.5546926676556607, 3.5546926676556607, 1.1845934027121336, 1.9542289244581557]
+Summary:	1	770021	770021	6.8863588404428	1	5	2	1	0	1	1	0	,	chr17:29186044-29956064
+('IntervalAmplifiedSize: ', 'chr17', 29186044, 29956064, 668698, 7.391182260918579)
+('Cycle ', 1, ': Copy count = ', 3.5546926676556607, [chr17:-1-->chr17:29186044-, chr17:29186044-->chr17:29187870+, chr17:29187870+->chr17:29187871-, chr17:29187871-->chr17:29222486+, chr17:29222486+->chr17:29222487-, chr17:29222487-->chr17:29853313+, chr17:29853313+->chr17:29853314-, chr17:29853314-->chr17:29854741+, chr17:29854741+->chr17:29854742-, chr17:29854742-->chr17:29956064+, chr17:-1-->chr17:29956064+])
+(chr17:-1-, '->', chr17:29186044-)
+(chr17:29186044-, '->', chr17:29956064+)
+(chr17:29956064+, '->', chr17:-1-)
+('Cycle ', 2, ': Copy count = ', 1.1845934027121336, [chr17:29187871-->chr17:29222486+, chr17:29222486+->chr17:29222487-, chr17:29222487-->chr17:29853313+, chr17:29853313+->chr17:29853314-, chr17:29853314-->chr17:29854741+, chr17:29854741+->chr17:29853313+, chr17:29222487-->chr17:29853313+, chr17:29222487-->chr17:29187871-])
+(chr17:29187871-, '->', chr17:29854741+)
+(chr17:29853313+, '->', chr17:29222487-)
+('Cycle ', 3, ': Copy count = ', 0.7696355215973039, [chr17:-1-->chr17:29186044-, chr17:29186044-->chr17:29187870+, chr17:29187870+->chr17:29187871-, chr17:29187871-->chr17:29222486+, chr17:29222486+->chr17:29222487-, chr17:29222487-->chr17:29853313+, chr17:29853313+->chr17:29853314-, chr17:29853314-->chr17:29854741+, chr17:29854741+->chr17:29853313+, chr17:29222487-->chr17:29853313+, chr17:29222486+->chr17:29222487-, chr17:29187871-->chr17:29222486+, chr17:29187870+->chr17:29187871-, chr17:29186044-->chr17:29187870+, chr17:-1-->chr17:29186044-])
+(chr17:-1-, '->', chr17:29186044-)
+(chr17:29186044-, '->', chr17:29854741+)
+(chr17:29853313+, '->', chr17:29186044-)
+(chr17:29186044-, '->', chr17:-1-)

@@ -1,0 +1,3 @@
+chr8:13693656-->chr8:13663466-	11	None	None
+chr8:13703126+->chr8:13712659-	6	None	None
+chr8:13712659-->chr8:13703126+	6	None	None

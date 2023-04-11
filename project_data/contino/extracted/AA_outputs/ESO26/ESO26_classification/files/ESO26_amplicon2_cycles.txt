@@ -1,0 +1,11 @@
+Interval	1	chr10	60960382	62980386
+List of cycle segments
+Segment	1	chr10	60960382	62956259
+Segment	2	chr10	60960382	62960659
+Segment	3	chr10	60979587	62956259
+Segment	4	chr10	60979587	62980386
+Segment	5	chr10	60981929	62960659
+Segment	6	chr10	60981929	62980386
+Cycle=1;Copy_count=1.71799489911;Segments=0+,1+,2-,0-
+Cycle=2;Copy_count=0.553807138076;Segments=0+,6-,4+,0-
+Cycle=3;Copy_count=0.422644352292;Segments=5+,3-

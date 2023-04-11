@@ -1,0 +1,24 @@
+chrom1	pos1	chrom2	pos2	sv_type	read_support	features	orientation	pos1_flanking_coordinate	pos2_flanking_coordinate
+chr3	195686042	chr5	1572122	interchromosomal	6	Complex non-cyclic	--	195686043	1572123
+chr3	195615235	chr3	195720988	deletion-like	6	Complex non-cyclic	+-	195615234	195720989
+chr3	195617425	chr3	195723035	deletion-like	7	Complex non-cyclic	+-	195617424	195723036
+chr3	195616641	chr3	195723150	duplication-like	8	Complex non-cyclic	-+	195616642	195723149
+chr3	195622059	chr3	195750507	duplication-like	14	Complex non-cyclic	-+	195622060	195750506
+chr3	195779197	chr3	195780177	deletion-like	54	Complex non-cyclic	+-	195779196	195780178
+chr3	195779060	chr3	195780974	duplication-like	27	Complex non-cyclic	-+	195779061	195780973
+chr3	195781339	chr3	195785392	deletion-like	6	Complex non-cyclic	+-	195781338	195785393
+chr3	195783137	chr3	195785589	deletion-like	16	Complex non-cyclic	+-	195783136	195785590
+chr3	195781199	chr3	195786892	duplication-like	6	Complex non-cyclic	-+	195781200	195786891
+chr3	195784034	chr3	195786932	duplication-like	15	Complex non-cyclic	-+	195784035	195786931
+chr3	195786848	chr3	195788129	deletion-like	74	Complex non-cyclic	+-	195786847	195788130
+chr3	195779882	chr3	195788410	duplication-like	12	Complex non-cyclic	-+	195779883	195788409
+chr3	195944181	chr3	195945210	duplication-like	13	Complex non-cyclic	-+	195944182	195945209
+chr3	195689285	chr3	195958638	inversion	8	Complex non-cyclic	--	195689286	195958639
+chr3	195690846	chr3	195958726	inversion	7	Complex non-cyclic	++	195690845	195958725
+chr3	195940784	chr3	196000837	duplication-like	26	Complex non-cyclic	-+	195940785	196000836
+chr3	195941593	chr3	196001053	deletion-like	6	Complex non-cyclic	+-	195941592	196001054
+chr3	195644762	chr3	197640987	inversion	29	Complex non-cyclic	--	195644763	197640988
+chr3	195944671	chr3	197641330	deletion-like	10	Complex non-cyclic	+-	195944670	197641331
+chr3	195943919	chr3	197641638	duplication-like	7	Complex non-cyclic	-+	195943920	197641637
+chr5	262509	chr5	1569770	inversion	13	None	++	262508	1569769
+chr5	1627023	chr5	1628733	deletion-like	7	Complex non-cyclic	+-	1627022	1628734

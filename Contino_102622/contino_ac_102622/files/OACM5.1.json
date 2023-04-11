@@ -1,0 +1,11 @@
+{
+  "sample_name": "OACM5.1",
+  "sample_type": "cell line",
+  "sample_source": "ERR1414286",
+  "tissue_of_origin": "esophagus",
+  "reference_genome": "",
+  "run_metadata_file": "",
+  "number_of_AA_amplicons": "NA",
+  "number_of_AA_features": "NA",
+  "sample_description": "esophageal adenocarcinoma cell line"
+}

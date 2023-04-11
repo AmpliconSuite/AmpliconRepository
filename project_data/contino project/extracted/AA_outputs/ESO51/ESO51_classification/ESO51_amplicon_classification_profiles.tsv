@@ -1,0 +1,9 @@
+sample_name	amplicon_number	amplicon_decomposition_class	ecDNA+	BFB+	ecDNA_amplicons
+ESO51	amplicon1	Complex non-cyclic	None detected	None detected	0
+ESO51	amplicon2	Linear amplification	None detected	None detected	0
+ESO51	amplicon3	Complex non-cyclic	None detected	None detected	0
+ESO51	amplicon4	Cyclic	Positive	None detected	1
+ESO51	amplicon5	Complex non-cyclic	None detected	None detected	0
+ESO51	amplicon6	Cyclic	None detected	Positive	0
+ESO51	amplicon7	Linear amplification	None detected	None detected	0
+ESO51	amplicon8	Cyclic	Positive	None detected	1

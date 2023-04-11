@@ -1,0 +1,12 @@
+{
+  "sample_cnv_bed": "/nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/SK-GT-4/ERR1414283.cs.rmdup_CNV_CALLS.bed", 
+  "number_of_AA_amplicons": 2, 
+  "sample_description": "esophageal adenocarcinoma cell line", 
+  "number_of_AA_features": 3, 
+  "sample_type": "cell line", 
+  "reference_genome": "GRCh38", 
+  "tissue_of_origin": "esophagus", 
+  "sample_name": "SK-GT-4", 
+  "sample_source": "ERR1414283", 
+  "run_metadata_file": "/nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/SK-GT-4/SK-GT-4_run_metadata.json"
+}

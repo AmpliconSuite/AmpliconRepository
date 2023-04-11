@@ -1,0 +1,636 @@
+Fri Sep 16 13:30:57 PDT 2022
+genome-workhorse0.priv
+Global ref name is GRCh38
+[root:INFO]	Commandline: /home/jluebeck/dev/AmpliconArchitect/src/AmpliconArchitect.py --ref GRCh38 --downsample 10 --bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_AA_CNV_SEEDS.bed --bam /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414285/ERR1414285.cs.rmdup.bam --runmode FULL --extendmode EXPLORE --insert_sdevs 3.0 --out /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_AA_results//OACP4-C 
+[root:INFO]	AmpliconArchitect version 1.3.r1
+
+[root:INFO]	Python version 2.7.12 (default, Mar  1 2021, 11:38:31) 
+[GCC 5.4.0 20160609]
+
+[root:INFO]	#TIME 0.341	Loading libraries and reference annotations for: GRCh38
+Global ref name is GRCh38
+[root:INFO]	#TIME 3.138	Initiating bam_to_breakpoint object for: /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414285/ERR1414285.cs.rmdup.bam
+[root:INFO]	#TIME 3.141	Reusing cstats from /nucleus/libs/AmpliconArchitect/release/indexed/coverage.stats
+[root:INFO]	#TIME 3.143	Exploring interval: chr1	31619485	31914493
+[root:INFO]	#TIME 95.151	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 202.968	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 221.560	 Selecting neighbors
+[root:INFO]	#TIME 308.633	 New neighbor: chr1	32268139	32278663	11 (weight=11)
+[root:INFO]	#TIME 314.722	 New neighbor: chr9	127424812	127655336	51 (weight=51)
+[root:INFO]	#TIME 320.603	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 490.899	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 501.988	 Selecting neighbors
+[root:INFO]	#TIME 502.052	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 503.219	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 509.225	 Selecting neighbors
+[root:INFO]	#TIME 578.157	 New neighbor: chr11	74234581	74465106	19 (weight=19)
+[root:INFO]	#TIME 587.697	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 722.769	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 771.729	 Selecting neighbors
+[root:INFO]	#TIME 949.366	 New neighbor: chr1	234482803	234952759	17 (weight=17)
+[root:INFO]	#TIME 949.367	 New neighbor: chr6	24197121	24217645	9 (weight=9)
+[root:INFO]	#TIME 949.367	 New neighbor: chr6	24494534	24834529	30 (weight=30)
+[root:INFO]	#TIME 949.368	 New neighbor: chr11	74315235	74855760	60 (weight=60)
+[root:INFO]	#TIME 949.369	 New neighbor: chrX	40815415	40825939	22 (weight=22)
+[root:INFO]	#TIME 954.501	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 963.700	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1011.242	 Selecting neighbors
+[root:INFO]	#TIME 1011.369	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1060.380	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1065.384	 Selecting neighbors
+[root:INFO]	#TIME 1065.559	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1129.540	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1132.448	 Selecting neighbors
+[root:INFO]	#TIME 1228.944	 New neighbor: chr1	235120399	235130923	8 (weight=8)
+[root:INFO]	#TIME 1231.649	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1359.176	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1361.624	 Selecting neighbors
+[root:INFO]	#TIME 1361.626	Exploring interval: chr1	42734728	42864732
+[root:INFO]	#TIME 1369.061	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1412.051	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1419.767	 Selecting neighbors
+[root:INFO]	#TIME 1419.770	Exploring interval: chr1	150979523	151554520
+[root:INFO]	#TIME 1432.202	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1659.103	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1690.367	 Selecting neighbors
+[root:INFO]	#TIME 1696.015	 New neighbor: chr1	23449931	23460455	20 (weight=20)
+[root:INFO]	#TIME 1701.549	 New neighbor: chr1	153630320	153870844	35 (weight=35)
+[root:INFO]	#TIME 1701.549	 New neighbor: chr1	201986272	201996796	20 (weight=20)
+[root:INFO]	#TIME 1706.033	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1801.215	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1837.829	 Selecting neighbors
+[root:INFO]	#TIME 1837.831	 New neighbor: chr2	85240647	85675652	75 (weight=75)
+[root:INFO]	#TIME 1837.892	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1862.457	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1868.018	 Selecting neighbors
+[root:INFO]	#TIME 1868.078	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 1949.216	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 1953.150	 Selecting neighbors
+[root:INFO]	#TIME 1953.213	Exploring interval: chr1	178939296	179079296
+[root:INFO]	#TIME 1961.508	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 2042.975	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 2048.289	 Selecting neighbors
+[root:INFO]	#TIME 2048.291	Exploring interval: chr1	216603991	216793990
+[root:INFO]	#TIME 2058.747	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 2120.574	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 2125.452	 Selecting neighbors
+[root:INFO]	#TIME 2125.455	Exploring interval: chr1	234482803	234952759
+[root:INFO]	#TIME 2126.188	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 2161.242	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 2180.246	 Selecting neighbors
+[root:INFO]	#TIME 2259.042	 New neighbor: chr1	235120399	235130923	12 (weight=12)
+[root:INFO]	#TIME 2259.043	 New neighbor: chr1	235290780	235311304	22 (weight=22)
+[root:INFO]	#TIME 2259.044	 New neighbor: chr6	24197121	24217645	8 (weight=8)
+[root:INFO]	#TIME 2259.045	 New neighbor: chr11	74234581	74855760	17 (weight=17)
+[root:INFO]	#TIME 2259.045	 New neighbor: chr19	45915978	45926502	11 (weight=11)
+[root:INFO]	#TIME 2263.696	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 2265.072	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 2273.242	 Selecting neighbors
+[root:INFO]	#TIME 2273.803	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 2385.938	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 2390.191	 Selecting neighbors
+[root:INFO]	#TIME 2390.719	Exploring interval: chr1	241232158	241862099
+[root:INFO]	#TIME 2391.756	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 2426.681	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 2441.274	 Selecting neighbors
+[root:INFO]	#TIME 2442.321	Exploring interval: chr2	85240647	85675652
+[root:INFO]	#TIME 2523.869	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 2667.459	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 2709.748	 Selecting neighbors
+[root:INFO]	#TIME 2710.533	 New neighbor: chr1	153173779	153374303	61 (weight=61)
+[root:INFO]	#TIME 2710.534	 New neighbor: chr1	153630320	153870844	75 (weight=75)
+[root:INFO]	#TIME 2711.228	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 2718.419	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 2753.599	 Selecting neighbors
+[root:INFO]	#TIME 2753.601	 New neighbor: chr1	150959523	151654520	35 (weight=35)
+[root:INFO]	#TIME 2753.605	Exploring interval: chr2	105494557	105694557
+[root:INFO]	#TIME 2857.155	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 2970.461	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 2980.924	 Selecting neighbors
+[root:INFO]	#TIME 2981.352	Exploring interval: chr4	157997694	158262699
+[root:INFO]	#TIME 3048.577	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 3103.884	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 3117.776	 Selecting neighbors
+[root:INFO]	#TIME 3118.169	Exploring interval: chr5	695021	1575049
+[root:INFO]	#TIME 3256.737	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 3482.509	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 3720.240	 Selecting neighbors
+[root:INFO]	#TIME 3815.453	 New neighbor: chr3	195992617	196003141	17 (weight=17)
+[root:INFO]	#TIME 3823.409	 New neighbor: chr5	261979	282504	23 (weight=23)
+[root:INFO]	#TIME 3823.953	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 3824.000	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 3828.675	 Selecting neighbors
+[root:INFO]	#TIME 3828.767	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 3881.522	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 3889.427	 Selecting neighbors
+[root:INFO]	#TIME 3897.135	 New neighbor: chr3	195920962	195951486	14 (weight=14)
+[root:INFO]	#TIME 3897.385	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 3897.730	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 3904.807	 Selecting neighbors
+[root:INFO]	#TIME 3906.649	 New neighbor: chr3	197637190	197647715	8 (weight=8)
+[root:INFO]	#TIME 3909.015	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 3909.046	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 3911.311	 Selecting neighbors
+[root:INFO]	#TIME 3913.922	Exploring interval: chr6	24494534	24834529
+[root:INFO]	#TIME 3915.013	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 3917.845	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 3936.575	 Selecting neighbors
+[root:INFO]	#TIME 3990.902	 New neighbor: chr10	112700198	112710723	10 (weight=10)
+[root:INFO]	#TIME 3994.124	 New neighbor: chr11	74234581	74855760	30 (weight=30)
+[root:INFO]	#TIME 3994.125	 New neighbor: chr22	32531995	32552519	8 (weight=8)
+[root:INFO]	#TIME 3994.126	 New neighbor: chrX	40815415	40825939	20 (weight=20)
+[root:INFO]	#TIME 3994.184	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4062.081	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 4065.257	 Selecting neighbors
+[root:INFO]	#TIME 4065.512	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4122.364	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 4124.026	 Selecting neighbors
+[root:INFO]	#TIME 4124.028	Exploring interval: chr7	16754900	16874900
+[root:INFO]	#TIME 4185.584	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4265.992	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 4268.588	 Selecting neighbors
+[root:INFO]	#TIME 4268.590	Exploring interval: chr7	81166554	81296554
+[root:INFO]	#TIME 4385.134	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4517.951	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 4536.320	 Selecting neighbors
+[root:INFO]	#TIME 4625.146	 New neighbor: chr7	90406443	90761440	40 (weight=40)
+[root:INFO]	#TIME 4625.147	 New neighbor: chr18	8285483	8400490	22 (weight=22)
+[root:INFO]	#TIME 4625.151	Exploring interval: chr7	81796547	82321541
+[root:INFO]	#TIME 4632.854	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4641.743	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 4658.155	 Selecting neighbors
+[root:INFO]	#TIME 4776.419	 New neighbor: chr7	88021472	88376469	23 (weight=23)
+[root:INFO]	#TIME 4776.420	 New neighbor: chr18	8284246	8294770	13 (weight=13)
+[root:INFO]	#TIME 4782.318	Exploring interval: chr7	88021472	88376469
+[root:INFO]	#TIME 4783.130	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4878.193	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 4891.834	 Selecting neighbors
+[root:INFO]	#TIME 4893.826	 New neighbor: chr7	81796547	82321541	23 (weight=23)
+[root:INFO]	#TIME 4893.829	Exploring interval: chr7	89691452	89976449
+[root:INFO]	#TIME 4905.327	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 4934.401	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 4959.063	 Selecting neighbors
+[root:INFO]	#TIME 4959.066	 New neighbor: chr7	81146554	81316554	19 (weight=19)
+[root:INFO]	#TIME 4959.067	 New neighbor: chr7	88021472	88376469	25 (weight=25)
+[root:INFO]	#TIME 4959.070	Exploring interval: chr7	90406443	90761440
+[root:INFO]	#TIME 4964.922	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 5023.260	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 5050.884	 Selecting neighbors
+[root:INFO]	#TIME 5050.887	 New neighbor: chr7	81146554	81316554	40 (weight=40)
+[root:INFO]	#TIME 5050.888	 New neighbor: chr7	94726391	95971377	20 (weight=20)
+[root:INFO]	#TIME 5050.889	 New neighbor: chr18	8285483	8400490	21 (weight=21)
+[root:INFO]	#TIME 5050.892	Exploring interval: chr7	94726391	95971377
+[root:INFO]	#TIME 5053.952	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 5127.616	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 5172.617	 Selecting neighbors
+[root:INFO]	#TIME 5176.872	 New neighbor: chr7	81488768	81509293	14 (weight=14)
+[root:INFO]	#TIME 5176.873	 New neighbor: chr7	90386443	90861440	20 (weight=20)
+[root:INFO]	#TIME 5177.194	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 5177.234	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 5180.969	 Selecting neighbors
+[root:INFO]	#TIME 5181.348	Exploring interval: chr7	98631344	100091328
+[root:INFO]	#TIME 5183.050	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 5379.315	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 5490.440	 Selecting neighbors
+[root:INFO]	#TIME 5502.283	 New neighbor: chr7	101896893	101907418	18 (weight=18)
+[root:INFO]	#TIME 5507.247	 New neighbor: chr7	150935444	151275886	37 (weight=37)
+[root:INFO]	#TIME 5507.305	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 5511.967	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 5516.941	 Selecting neighbors
+[root:INFO]	#TIME 5519.218	Exploring interval: chr7	150965882	151275886
+[root:INFO]	#TIME 5523.469	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 5621.699	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 5644.815	 Selecting neighbors
+[root:INFO]	#TIME 5649.908	 New neighbor: chr7	98531344	100191328	18 (weight=18)
+[root:INFO]	#TIME 5649.910	 New neighbor: chr7	150935444	151275886	18 (weight=18)
+[root:INFO]	#TIME 5650.103	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 5650.729	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 5677.203	 Selecting neighbors
+[root:INFO]	#TIME 5677.264	Exploring interval: chr8	58297874	58532886
+[root:INFO]	#TIME 5750.400	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 5832.809	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 5846.461	 Selecting neighbors
+[root:INFO]	#TIME 5931.284	 New neighbor: chr8	75788735	76023748	48 (weight=48)
+[root:INFO]	#TIME 5931.286	 New neighbor: chr8	78998893	79323910	26 (weight=26)
+[root:INFO]	#TIME 5931.287	 New neighbor: chr11	33505494	33516018	10 (weight=10)
+[root:INFO]	#TIME 5940.393	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6035.335	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6044.406	 Selecting neighbors
+[root:INFO]	#TIME 6046.966	 New neighbor: chr8	59324442	59344966	17 (weight=17)
+[root:INFO]	#TIME 6046.966	 New neighbor: chr11	33845897	34120905	9 (weight=9)
+[root:INFO]	#TIME 6047.157	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6049.211	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6053.252	 Selecting neighbors
+[root:INFO]	#TIME 6053.254	Exploring interval: chr8	75788735	76023748
+[root:INFO]	#TIME 6055.847	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6107.141	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6118.474	 Selecting neighbors
+[root:INFO]	#TIME 6119.612	 New neighbor: chr8	58197874	58542886	48 (weight=48)
+[root:INFO]	#TIME 6119.613	 New neighbor: chr11	33845897	34120905	24 (weight=24)
+[root:INFO]	#TIME 6119.615	Exploring interval: chr8	78998893	79323910
+[root:INFO]	#TIME 6120.423	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6128.479	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6142.419	 Selecting neighbors
+[root:INFO]	#TIME 6144.021	 New neighbor: chr8	58197874	58542886	26 (weight=26)
+[root:INFO]	#TIME 6144.025	Exploring interval: chr8	126228822	128568799
+[root:INFO]	#TIME 6164.579	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6297.641	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6365.106	 Selecting neighbors
+[root:INFO]	#TIME 6373.010	 New neighbor: chr8	115937514	115958039	10 (weight=10)
+[root:INFO]	#TIME 6373.262	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6401.368	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6403.732	 Selecting neighbors
+[root:INFO]	#TIME 6404.307	Exploring interval: chr10	71950395	73320398
+[root:INFO]	#TIME 6421.151	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6531.839	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6564.123	 Selecting neighbors
+[root:INFO]	#TIME 6633.749	 New neighbor: chr17	34336389	34346913	13 (weight=13)
+[root:INFO]	#TIME 6636.137	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6758.149	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6760.469	 Selecting neighbors
+[root:INFO]	#TIME 6760.471	Exploring interval: chr10	119185449	119280450
+[root:INFO]	#TIME 6764.834	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6802.869	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6808.522	 Selecting neighbors
+[root:INFO]	#TIME 6809.700	Exploring interval: chr11	29535782	29810791
+[root:INFO]	#TIME 6810.354	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6821.243	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6834.926	 Selecting neighbors
+[root:INFO]	#TIME 6835.339	 New neighbor: chr11	26307805	26508329	47 (weight=47)
+[root:INFO]	#TIME 6835.340	 New neighbor: chr11	31490834	31550837	9 (weight=9)
+[root:INFO]	#TIME 6835.613	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6867.111	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6877.204	 Selecting neighbors
+[root:INFO]	#TIME 6879.709	 New neighbor: chr11	25474283	25484807	19 (weight=19)
+[root:INFO]	#TIME 6883.439	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6885.959	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6889.581	 Selecting neighbors
+[root:INFO]	#TIME 6889.584	Exploring interval: chr11	31490834	31550837
+[root:INFO]	#TIME 6891.858	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6917.704	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6921.625	 Selecting neighbors
+[root:INFO]	#TIME 6921.627	 New neighbor: chr8	78998893	79323910	22 (weight=22)
+[root:INFO]	#TIME 6921.628	 New neighbor: chr11	29535782	29810791	9 (weight=9)
+[root:INFO]	#TIME 6921.631	Exploring interval: chr11	33845897	34120905
+[root:INFO]	#TIME 6924.821	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6960.397	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6970.160	 Selecting neighbors
+[root:INFO]	#TIME 6970.163	 New neighbor: chr8	59324442	59344966	11 (weight=11)
+[root:INFO]	#TIME 6970.163	 New neighbor: chr8	75788735	76023748	24 (weight=24)
+[root:INFO]	#TIME 6970.164	 New neighbor: chr11	33505494	33516018	9 (weight=9)
+[root:INFO]	#TIME 6970.168	Exploring interval: chr11	34565916	34680920
+[root:INFO]	#TIME 6971.189	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 6975.700	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 6980.625	 Selecting neighbors
+[root:INFO]	#TIME 6980.628	Exploring interval: chr11	46706238	47001247
+[root:INFO]	#TIME 6987.119	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 7054.036	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 7061.391	 Selecting neighbors
+[root:INFO]	#TIME 7061.394	Exploring interval: chr11	47371256	47476260
+[root:INFO]	#TIME 7064.120	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 7065.667	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 7070.564	 Selecting neighbors
+[root:INFO]	#TIME 7152.739	Exploring interval: chr14	61092665	62107690
+[root:INFO]	#TIME 7226.650	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 7389.603	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 7424.436	 Selecting neighbors
+[root:INFO]	#TIME 7424.440	Exploring interval: chr14	75107987	75357994
+[root:INFO]	#TIME 7432.757	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 7497.818	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 7505.818	 Selecting neighbors
+[root:INFO]	#TIME 7507.334	Exploring interval: chr17	874020	1039036
+[root:INFO]	#TIME 7565.017	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 7621.857	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 7645.082	 Selecting neighbors
+[root:INFO]	#TIME 7647.733	 New neighbor: chr17	47931578	48006581	18 (weight=18)
+[root:INFO]	#TIME 7647.734	 New neighbor: chr22	40908233	41018758	23 (weight=23)
+[root:INFO]	#TIME 7647.913	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 7689.742	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 7701.493	 Selecting neighbors
+[root:INFO]	#TIME 7702.719	Exploring interval: chr17	30276075	30346078
+[root:INFO]	#TIME 7703.643	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 7719.851	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 7722.734	 Selecting neighbors
+[root:INFO]	#TIME 7722.736	Exploring interval: chr17	39501338	40551369
+[root:INFO]	#TIME 7727.940	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 7815.932	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 7857.944	 Selecting neighbors
+[root:INFO]	#TIME 7858.297	Exploring interval: chr17	47931578	48006581
+[root:INFO]	#TIME 7858.861	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 7880.554	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 7890.843	 Selecting neighbors
+[root:INFO]	#TIME 7890.845	 New neighbor: chr17	854020	1179036	18 (weight=18)
+[root:INFO]	#TIME 7890.845	 New neighbor: chr22	40908233	41018758	64 (weight=64)
+[root:INFO]	#TIME 7890.849	Exploring interval: chr18	6830398	7865459
+[root:INFO]	#TIME 7913.161	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 8052.352	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 8088.695	 Selecting neighbors
+[root:INFO]	#TIME 8090.882	 New neighbor: chr18	6611473	6631997	12 (weight=12)
+[root:INFO]	#TIME 8091.324	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 8091.364	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 8096.024	 Selecting neighbors
+[root:INFO]	#TIME 8097.856	Exploring interval: chr18	8285483	8400490
+[root:INFO]	#TIME 8100.735	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 8105.413	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 8127.637	 Selecting neighbors
+[root:INFO]	#TIME 8128.548	 New neighbor: chr7	81146554	81316554	19 (weight=19)
+[root:INFO]	#TIME 8128.549	 New neighbor: chr7	81796547	82321541	13 (weight=13)
+[root:INFO]	#TIME 8128.550	 New neighbor: chr7	90386443	90861440	21 (weight=21)
+[root:INFO]	#TIME 8128.555	Exploring interval: chr19	44676842	44861853
+[root:INFO]	#TIME 8131.704	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 8135.664	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 8141.766	 Selecting neighbors
+[root:INFO]	#TIME 8141.769	Exploring interval: chr20	50218260	50528281
+[root:INFO]	#TIME 8235.953	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 8400.263	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 8419.498	 Selecting neighbors
+[root:INFO]	#TIME 8420.345	Exploring interval: chrX	48508564	48693527
+[root:INFO]	#TIME 8422.758	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 8443.298	 Detecting breakpoint edges (interval neighbors)
+[root:INFO]	#TIME 8450.415	 Selecting neighbors
+[root:INFO]	#TIME 8450.419	Interval sets for amplicons determined: 
+[root:INFO]	[amplicon1]	chr1:23449931-23460455,chr1:150959523-151654520,chr1:153173779-153374303,chr1:153630320-153870844,chr1:201986272-201996796,chr2:85140647-85775652
+[root:INFO]	[amplicon2]	chr1:31619485-32014493,chr1:32268139-32278663,chr1:234482803-234952759,chr1:235120399-235130923,chr1:235290780-235311304,chr6:24197121-24217645,chr6:24494534-24834529,chr9:127424812-127655336,chr10:112700198-112710723,chr11:74234581-74855760,chr19:45915978-45926502,chr22:32531995-32552519,chrX:40815415-40825939
+[root:INFO]	[amplicon3]	chr1:42734728-42884732
+[root:INFO]	[amplicon4]	chr1:178919296-179079296
+[root:INFO]	[amplicon5]	chr1:216583991-216813990
+[root:INFO]	[amplicon6]	chr1:241232158-241862099
+[root:INFO]	[amplicon7]	chr2:105474557-105714557
+[root:INFO]	[amplicon8]	chr3:195920962-195951486,chr3:195992617-196003141,chr3:197637190-197647715,chr5:261979-282504,chr5:695021-1675049
+[root:INFO]	[amplicon9]	chr4:157987694-158262699
+[root:INFO]	[amplicon10]	chr7:16734900-16874900
+[root:INFO]	[amplicon11]	chr7:81146554-81316554,chr7:81488768-81509293,chr7:81786547-82321541,chr7:88021472-88376469,chr7:89671452-89996449,chr7:90386443-90861440,chr7:94726391-96071377,chr18:8275483-8400490
+[root:INFO]	[amplicon12]	chr7:98531344-100191328,chr7:101896893-101907418,chr7:150935444-151275886
+[root:INFO]	[amplicon13]	chr8:58197874-58542886,chr8:59324442-59344966,chr8:75788735-76023748,chr8:78998893-79323910,chr11:25474283-25484807,chr11:26307805-26508329,chr11:29535782-29810791,chr11:31470834-31550837,chr11:33505494-33516018,chr11:33845897-34140905
+[root:INFO]	[amplicon14]	chr8:115937514-115958039,chr8:126228822-128568799
+[root:INFO]	[amplicon15]	chr10:71950395-73320398,chr17:34336389-34346913
+[root:INFO]	[amplicon16]	chr10:119165449-119280450
+[root:INFO]	[amplicon17]	chr11:34565916-34680920
+[root:INFO]	[amplicon18]	chr11:46696238-47001247
+[root:INFO]	[amplicon19]	chr11:47371256-47476260
+[root:INFO]	[amplicon20]	chr14:61072665-62127690
+[root:INFO]	[amplicon21]	chr14:75097987-75377994
+[root:INFO]	[amplicon22]	chr17:854020-1179036,chr17:47931578-48006581,chr22:40908233-41018758
+[root:INFO]	[amplicon23]	chr17:30276075-30346078
+[root:INFO]	[amplicon24]	chr17:39481338-40551369
+[root:INFO]	[amplicon25]	chr18:6611473-6631997,chr18:6830398-7875459
+[root:INFO]	[amplicon26]	chr19:44676842-44871853
+[root:INFO]	[amplicon27]	chr20:50218260-50538281
+[root:INFO]	[amplicon28]	chrX:48508564-48713527
+[root:INFO]	#TIME 8450.453	Reconstructing amplicon1
+[root:INFO]	#TIME 8450.462	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 8456.566	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 8584.559	 Building breakpoint graph
+[root:INFO]	#TIME 8587.318	 Optimizing graph copy number flow
+[root:INFO]	#TIME 8649.101	 Plotting SV View
+[root:INFO]	#TIME 8650.369	Plotting SV View for amplicon1
+/usr/local/lib/python2.7/dist-packages/matplotlib/font_manager.py:1331: UserWarning: findfont: Font family [u'sans-serif'] not found. Falling back to DejaVu Sans
+  (prop.get_family(), self.defaultFamily[fontext]))
+[root:INFO]	#TIME 8981.789	Reconstructing amplicon2
+[root:INFO]	#TIME 8981.792	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 8999.079	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 9132.039	 Building breakpoint graph
+[root:INFO]	#TIME 9135.839	 Optimizing graph copy number flow
+[root:INFO]	#TIME 9208.811	 Plotting SV View
+[root:INFO]	#TIME 9216.555	Plotting SV View for amplicon2
+[root:INFO]	#TIME 9682.100	Reconstructing amplicon3
+[root:INFO]	#TIME 9682.103	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 9682.106	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 9682.110	 Building breakpoint graph
+[root:INFO]	#TIME 9682.239	 Optimizing graph copy number flow
+[root:INFO]	#TIME 9687.001	 Plotting SV View
+[root:INFO]	#TIME 9687.012	Plotting SV View for amplicon3
+[root:INFO]	#TIME 9707.978	Reconstructing amplicon4
+[root:INFO]	#TIME 9707.981	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 9707.983	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 9707.986	 Building breakpoint graph
+[root:INFO]	#TIME 9708.031	 Optimizing graph copy number flow
+[root:INFO]	#TIME 9712.364	 Plotting SV View
+[root:INFO]	#TIME 9712.368	Plotting SV View for amplicon4
+[root:INFO]	#TIME 9736.060	Reconstructing amplicon5
+[root:INFO]	#TIME 9736.063	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 9736.065	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 9736.069	 Building breakpoint graph
+[root:INFO]	#TIME 9736.124	 Optimizing graph copy number flow
+[root:INFO]	#TIME 9742.623	 Plotting SV View
+[root:INFO]	#TIME 9742.627	Plotting SV View for amplicon5
+[root:INFO]	#TIME 9776.878	Reconstructing amplicon6
+[root:INFO]	#TIME 9776.881	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 9776.883	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 9776.887	 Building breakpoint graph
+[root:INFO]	#TIME 9776.941	 Optimizing graph copy number flow
+[root:INFO]	#TIME 9798.426	 Plotting SV View
+[root:INFO]	#TIME 9798.430	Plotting SV View for amplicon6
+[root:INFO]	#TIME 9913.440	Reconstructing amplicon7
+[root:INFO]	#TIME 9913.443	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 9913.446	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 9913.581	 Building breakpoint graph
+[root:INFO]	#TIME 9913.947	 Optimizing graph copy number flow
+[root:INFO]	#TIME 9920.665	 Plotting SV View
+[root:INFO]	#TIME 9920.692	Plotting SV View for amplicon7
+[root:INFO]	#TIME 9956.321	Reconstructing amplicon8
+[root:INFO]	#TIME 9956.324	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 9957.112	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 10214.901	 Building breakpoint graph
+[root:INFO]	#TIME 10217.573	 Optimizing graph copy number flow
+[root:INFO]	#TIME 10281.181	 Plotting SV View
+[root:INFO]	#TIME 10283.965	Plotting SV View for amplicon8
+[root:INFO]	#TIME 10650.867	Reconstructing amplicon9
+[root:INFO]	#TIME 10650.870	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 10650.873	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 10650.877	 Building breakpoint graph
+[root:INFO]	#TIME 10650.984	 Optimizing graph copy number flow
+[root:INFO]	#TIME 10658.203	 Plotting SV View
+[root:INFO]	#TIME 10658.216	Plotting SV View for amplicon9
+[root:INFO]	#TIME 10698.416	Reconstructing amplicon10
+[root:INFO]	#TIME 10698.419	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 10698.422	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 10698.553	 Building breakpoint graph
+[root:INFO]	#TIME 10698.770	 Optimizing graph copy number flow
+[root:INFO]	#TIME 10702.587	 Plotting SV View
+[root:INFO]	#TIME 10702.592	Plotting SV View for amplicon10
+[root:INFO]	#TIME 10721.902	Reconstructing amplicon11
+[root:INFO]	#TIME 10721.905	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 10721.952	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 10870.125	 Building breakpoint graph
+[root:INFO]	#TIME 10872.531	 Optimizing graph copy number flow
+[root:INFO]	#TIME 10987.194	 Plotting SV View
+[root:INFO]	#TIME 10989.004	Plotting SV View for amplicon11
+[root:INFO]	#TIME 11318.599	Reconstructing amplicon12
+[root:INFO]	#TIME 11318.602	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 11318.629	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 11458.401	 Building breakpoint graph
+[root:INFO]	#TIME 11460.892	 Optimizing graph copy number flow
+[root:INFO]	#TIME 11561.253	 Plotting SV View
+[root:INFO]	#TIME 11561.725	Plotting SV View for amplicon12
+[root:INFO]	#TIME 11637.561	Reconstructing amplicon13
+[root:INFO]	#TIME 11637.564	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 11637.656	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 11721.502	 Building breakpoint graph
+[root:INFO]	#TIME 11723.539	 Optimizing graph copy number flow
+[root:INFO]	#TIME 11769.566	 Plotting SV View
+[root:INFO]	#TIME 11771.879	Plotting SV View for amplicon13
+[root:INFO]	#TIME 12051.423	Reconstructing amplicon14
+[root:INFO]	#TIME 12051.426	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12051.464	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12119.201	 Building breakpoint graph
+[root:INFO]	#TIME 12119.833	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12193.422	 Plotting SV View
+[root:INFO]	#TIME 12193.679	Plotting SV View for amplicon14
+[root:INFO]	#TIME 12215.530	Reconstructing amplicon15
+[root:INFO]	#TIME 12215.532	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12215.557	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12247.301	 Building breakpoint graph
+[root:INFO]	#TIME 12247.489	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12294.769	 Plotting SV View
+[root:INFO]	#TIME 12294.785	Plotting SV View for amplicon15
+[root:INFO]	#TIME 12320.704	Reconstructing amplicon16
+[root:INFO]	#TIME 12320.706	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12320.709	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12320.712	 Building breakpoint graph
+[root:INFO]	#TIME 12320.828	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12324.447	 Plotting SV View
+[root:INFO]	#TIME 12324.455	Plotting SV View for amplicon16
+[root:INFO]	#TIME 12343.897	Reconstructing amplicon17
+[root:INFO]	#TIME 12343.900	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12343.903	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12343.907	 Building breakpoint graph
+[root:INFO]	#TIME 12344.000	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12347.765	 Plotting SV View
+[root:INFO]	#TIME 12347.770	Plotting SV View for amplicon17
+[root:INFO]	#TIME 12367.336	Reconstructing amplicon18
+[root:INFO]	#TIME 12367.339	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12367.342	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12367.345	 Building breakpoint graph
+[root:INFO]	#TIME 12367.426	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12375.596	 Plotting SV View
+[root:INFO]	#TIME 12375.601	Plotting SV View for amplicon18
+[root:INFO]	#TIME 12421.181	Reconstructing amplicon19
+[root:INFO]	#TIME 12421.184	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12421.186	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12421.189	 Building breakpoint graph
+[root:INFO]	#TIME 12421.247	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12424.204	 Plotting SV View
+[root:INFO]	#TIME 12424.208	Plotting SV View for amplicon19
+[root:INFO]	#TIME 12440.014	Reconstructing amplicon20
+[root:INFO]	#TIME 12440.017	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12440.020	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12458.926	 Building breakpoint graph
+[root:INFO]	#TIME 12460.105	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12498.668	 Plotting SV View
+[root:INFO]	#TIME 12498.722	Plotting SV View for amplicon20
+[root:INFO]	#TIME 12500.741	Reconstructing amplicon21
+[root:INFO]	#TIME 12500.744	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12500.746	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12501.867	 Building breakpoint graph
+[root:INFO]	#TIME 12502.104	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12510.056	 Plotting SV View
+[root:INFO]	#TIME 12510.067	Plotting SV View for amplicon21
+[root:INFO]	#TIME 12552.562	Reconstructing amplicon22
+[root:INFO]	#TIME 12552.565	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12552.571	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12588.895	 Building breakpoint graph
+[root:INFO]	#TIME 12589.824	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12602.244	 Plotting SV View
+[root:INFO]	#TIME 12602.571	Plotting SV View for amplicon22
+[root:INFO]	#TIME 12667.634	Reconstructing amplicon23
+[root:INFO]	#TIME 12667.637	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12667.639	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12667.643	 Building breakpoint graph
+[root:INFO]	#TIME 12667.714	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12669.312	 Plotting SV View
+[root:INFO]	#TIME 12669.316	Plotting SV View for amplicon23
+[root:INFO]	#TIME 12681.178	Reconstructing amplicon24
+[root:INFO]	#TIME 12681.181	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12681.184	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12687.240	 Building breakpoint graph
+[root:INFO]	#TIME 12687.968	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12720.422	 Plotting SV View
+[root:INFO]	#TIME 12720.483	Plotting SV View for amplicon24
+[root:INFO]	#TIME 12722.804	Reconstructing amplicon25
+[root:INFO]	#TIME 12722.807	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12722.845	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12761.652	 Building breakpoint graph
+[root:INFO]	#TIME 12761.911	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12808.455	 Plotting SV View
+[root:INFO]	#TIME 12808.481	Plotting SV View for amplicon25
+[root:INFO]	#TIME 12853.421	Reconstructing amplicon26
+[root:INFO]	#TIME 12853.424	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12853.426	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12853.430	 Building breakpoint graph
+[root:INFO]	#TIME 12853.533	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12860.442	 Plotting SV View
+[root:INFO]	#TIME 12860.446	Plotting SV View for amplicon26
+[root:INFO]	#TIME 12895.078	Reconstructing amplicon27
+[root:INFO]	#TIME 12895.080	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12895.082	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12900.077	 Building breakpoint graph
+[root:INFO]	#TIME 12901.090	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12914.044	 Plotting SV View
+[root:INFO]	#TIME 12914.111	Plotting SV View for amplicon27
+[root:INFO]	#TIME 12979.827	Reconstructing amplicon28
+[root:INFO]	#TIME 12979.829	 Calculating coverage meanshift segmentation
+[root:INFO]	#TIME 12979.832	 Detecting breakpoint edges (interval filter vertices)
+[root:INFO]	#TIME 12979.835	 Building breakpoint graph
+[root:INFO]	#TIME 12979.977	 Optimizing graph copy number flow
+[root:INFO]	#TIME 12983.763	 Plotting SV View
+[root:INFO]	#TIME 12983.778	Plotting SV View for amplicon28
+[root:INFO]	#TIME 13003.724	Total Runtime
+AmpliconClassifier 0.4.11
+/home/jluebeck/ecDNA/AmpliconClassifier/amplicon_classifier.py -i /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_classification/OACP4-C.input --ref GRCh38 -o /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_classification/OACP4-C --report_complexity
+reading /nucleus/libs/AmpliconArchitect/release/indexed//GRCh38/Genes_hg38.gff
+read 22998 genes
+
+OACP4-C amplicon10
+OACP4-C amplicon11
+OACP4-C amplicon12
+OACP4-C amplicon13
+OACP4-C amplicon14
+OACP4-C amplicon15
+OACP4-C amplicon16
+OACP4-C amplicon17
+OACP4-C amplicon18
+OACP4-C amplicon19
+OACP4-C amplicon1
+OACP4-C amplicon20
+OACP4-C amplicon21
+OACP4-C amplicon22
+OACP4-C amplicon23
+OACP4-C amplicon24
+OACP4-C amplicon25
+OACP4-C amplicon26
+OACP4-C amplicon27
+OACP4-C amplicon28
+OACP4-C amplicon2
+OACP4-C amplicon3
+OACP4-C amplicon4
+OACP4-C amplicon5
+OACP4-C amplicon6
+OACP4-C amplicon7
+OACP4-C amplicon8
+OACP4-C amplicon9
+Classification stage completed
+Writing outputs...
+done
+2022-09-16 13:30:57.567743
+PrepareAA version 0.1203.12
+
+Matched /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414285/ERR1414285.cs.rmdup.bam to reference genome GRCh38
+Running PrepareAA on sample: OACP4-C
+/nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414285/ERR1414285.cs.rmdup.bam: 1015450455 + 0 properly paired (85.74%:-nan%)
+WARNING: BAM FILE PROPERLY PAIRED RATE IS BELOW 95%.
+Quality of data may be insufficient for AA analysis. Poorly controlled insert size distribution during sample prep can cause high fractions of read pairs to be marked as discordant during alignment. Artifactual short SVs and long runtimes may occur!
+
+
+Running amplified_intervals
+python /home/jluebeck/dev/AmpliconArchitect/src/amplified_intervals.py --ref GRCh38 --bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C//ERR1414285.cs.rmdup_CNV_CALLS_pre_filtered.bed --bam /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414285/ERR1414285.cs.rmdup.bam --gain 4.5 --cnsize_min 50000 --out /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_AA_CNV_SEEDS
+python /home/jluebeck/dev/AmpliconArchitect/src/AmpliconArchitect.py --ref GRCh38 --downsample 10 --bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_AA_CNV_SEEDS.bed --bam /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/align_and_cnv/ERR1414285/ERR1414285.cs.rmdup.bam --runmode FULL --extendmode EXPLORE --insert_sdevs 3.0 --out /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_AA_results//OACP4-C
+
+Running AC
+/home/jluebeck/ecDNA/AmpliconClassifier/make_input.sh /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_AA_results/ /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_classification/OACP4-C
+python3 /home/jluebeck/ecDNA/AmpliconClassifier/amplicon_classifier.py -i /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_classification/OACP4-C.input --ref GRCh38 -o /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_classification/OACP4-C --report_complexity
+python3 /home/jluebeck/ecDNA/AmpliconClassifier/make_results_table.py -i /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_classification/OACP4-C.input --classification_file /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_classification/OACP4-C_amplicon_classification_profiles.tsv --cnv_bed /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/ERR1414285.cs.rmdup_CNV_CALLS.bed --metadata_dict /nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACP4-C/OACP4-C_run_metadata.json
+Completed
+
+2022-09-16 17:44:00.181123
+Fri Sep 16 17:44:00 PDT 2022

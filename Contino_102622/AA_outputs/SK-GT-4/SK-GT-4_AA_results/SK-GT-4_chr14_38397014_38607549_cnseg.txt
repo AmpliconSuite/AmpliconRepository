@@ -1,0 +1,2 @@
+#chrom	start	end	cn	start_refined	end_refined
+chr14	38397014	38607549	5.925290022053506	False	False

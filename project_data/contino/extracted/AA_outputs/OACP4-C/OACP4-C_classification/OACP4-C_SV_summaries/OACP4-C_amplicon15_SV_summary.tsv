@@ -1,0 +1,4 @@
+chrom1	pos1	chrom2	pos2	sv_type	read_support	features	orientation	pos1_flanking_coordinate	pos2_flanking_coordinate
+chr10	73007788	chr17	34346186	interchromosomal	10	Complex non-cyclic	-+	73007789	34346185
+chr10	73007794	chr17	34346389	interchromosomal	13	Complex non-cyclic	--	73007795	34346390
+chr10	73316718	chr10	73318124	foldback	21	Complex non-cyclic	++	73316717	73318123

@@ -1,0 +1,12 @@
+Interval	1	chr20	50218260	50538281
+List of cycle segments
+Segment	1	chr20	50218260	50236592
+Segment	2	chr20	50218260	50524199
+Segment	3	chr20	50218260	50538281
+Segment	4	chr20	50219830	50516249
+Segment	5	chr20	50364887	50528955
+Cycle=1;Copy_count=3.80315364667;Segments=0+,3-,0-
+Cycle=2;Copy_count=2.55270552568;Segments=5+
+Cycle=3;Copy_count=2.02414383928;Segments=0+,1-,0-
+Cycle=4;Copy_count=1.84434836757;Segments=4+
+Cycle=5;Copy_count=0.492808169694;Segments=0+,2-,0-

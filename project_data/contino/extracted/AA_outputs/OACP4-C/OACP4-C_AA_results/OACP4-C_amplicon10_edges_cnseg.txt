@@ -1,0 +1,2 @@
+chr7:16754473-->chr7:16873927+	7	None	None
+chr7:16873927+->chr7:16754473-	7	None	None

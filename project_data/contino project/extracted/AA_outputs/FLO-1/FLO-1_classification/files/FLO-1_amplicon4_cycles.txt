@@ -1,0 +1,6 @@
+Interval	1	chr9	121239920	121499918
+List of cycle segments
+Segment	1	chr9	121239920	121499918
+Segment	2	chr9	121241736	121482062
+Cycle=1;Copy_count=3.09962488382;Segments=0+,1-,0-
+Cycle=2;Copy_count=2.29814244471;Segments=2+

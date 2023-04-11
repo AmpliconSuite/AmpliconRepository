@@ -1,0 +1,8 @@
+#stage:	walltime(seconds)
+Initialization:	0.36
+Alignment and bam indexing:	2536.52
+CNV calling:	0.07
+Seed filtering (amplified_intervals.py):	843.56
+AmpliconArchitect:	2240.92
+AmpliconClassifier:	5.60
+Total_elapsed_walltime	5627.17

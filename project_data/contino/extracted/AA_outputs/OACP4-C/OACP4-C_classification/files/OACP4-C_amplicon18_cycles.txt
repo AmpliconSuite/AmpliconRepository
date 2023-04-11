@@ -1,0 +1,6 @@
+Interval	1	chr11	46696238	47001247
+List of cycle segments
+Segment	1	chr11	46696238	47001247
+Segment	2	chr11	46705830	46998217
+Cycle=1;Copy_count=4.00053220007;Segments=0+,1-,0-
+Cycle=2;Copy_count=1.66874040642;Segments=2+

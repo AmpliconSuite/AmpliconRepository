@@ -1,0 +1,17 @@
+#Amplicons = 1
+-----------------------------------------------------------------------------------------
+[amplicon1] AmpliconID = 1
+[amplicon1] #Intervals = 6
+[amplicon1] Intervals = chr7:93046411-93271410,chr7:105821258-112551179,chr7:115368865-115379412,chr7:116671459-116692006,chr7:119806576-119827123,chr7:120104331-120134877
+[amplicon1] OncogenesAmplified = MET,CBLL1,
+[amplicon1] TotalIntervalSize = 7037113
+[amplicon1] AmplifiedIntervalSize = 6946694
+[amplicon1] AverageAmplifiedCopyCount = 5.599205208064364
+[amplicon1] #Chromosomes = 1
+[amplicon1] #SeqenceEdges = 101
+[amplicon1] #BreakpointEdges = 40
+[amplicon1] #CoverageShifts = 11
+[amplicon1] #MeanshiftSegmentsCopyCount>5 = 0
+[amplicon1] #Foldbacks = 3
+[amplicon1] #CoverageShiftsWithBreakpointEdges = 11
+[amplicon1] -----------------------------------------------------------------------------------------

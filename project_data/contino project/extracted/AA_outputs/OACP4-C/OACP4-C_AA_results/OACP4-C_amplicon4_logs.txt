@@ -1,0 +1,70 @@
+('Meanshift', 'chr1\t178919296\t179079296', 0, [])
+('MSstats', 0, 0)
+('C (haploid coverage) = ', 5.0)
+('########## len bplist', 5, ';   ################ kbpe, kce, koe = ', 1, 2, 2)
+Problem set up done. Optimizing ..
+Problem
+  Name                   :                 
+  Objective sense        : min             
+  Type                   : GECO (general convex optimization problem)
+  Constraints            : 6               
+  Cones                  : 0               
+  Scalar variables       : 8               
+  Matrix variables       : 0               
+  Integer variables      : 0               
+
+Optimizer started.
+Interior-point optimizer started.
+Presolve started.
+Linear dependency checker started.
+Linear dependency checker terminated.
+Eliminator started.
+Freed constraints in eliminator : 0
+Eliminator terminated.
+Eliminator - tries                  : 1                 time                   : 0.00            
+Lin. dep.  - tries                  : 1                 time                   : 0.00            
+Lin. dep.  - number                 : 0               
+Presolve terminated. Time: 0.00    
+Matrix reordering started.
+Local matrix reordering started.
+Local matrix reordering terminated.
+Matrix reordering terminated.
+Optimizer  - threads                : 1               
+Optimizer  - solved problem         : the primal      
+Optimizer  - Constraints            : 6
+Optimizer  - Cones                  : 0
+Optimizer  - Scalar variables       : 8                 conic                  : 0               
+Optimizer  - Semi-definite variables: 0                 scalarized             : 0               
+Factor     - setup time             : 0.00              dense det. time        : 0.00            
+Factor     - ML order time          : 0.00              GP order time          : 0.00            
+Factor     - nonzeros before factor : 11                after factor           : 13              
+Factor     - dense dim.             : 0                 flops                  : 1.50e+01        
+ITE PFEAS    DFEAS    GFEAS    PRSTATUS   POBJ              DOBJ              MU       TIME  
+0   1.4e+00  3.6e+04  3.8e+04  0.00e+00   -4.031968979e+05  -3.651514577e+05  1.0e+00  0.00  
+1   9.1e-03  2.3e+02  2.4e+02  -1.00e+00  -4.043211582e+05  -3.667010073e+05  7.4e-03  0.00  
+2   1.7e-03  4.3e+01  4.5e+01  -9.68e-01  -4.081714597e+05  -3.722154030e+05  1.7e-03  0.00  
+3   2.9e-04  1.4e+01  7.9e+00  -8.77e-01  -4.224650684e+05  -3.911589727e+05  5.5e-04  0.00  
+4   1.0e-05  2.5e+00  2.7e-01  -3.63e-01  -4.421475908e+05  -4.308149180e+05  1.2e-04  0.00  
+5   9.1e-09  6.0e-02  2.5e-04  6.00e-01   -4.438089840e+05  -4.428161336e+05  3.0e-06  0.00  
+6   1.3e-09  1.1e-02  3.4e-05  9.41e-01   -4.441203587e+05  -4.440312885e+05  6.7e-07  0.00  
+7   1.0e-11  4.1e-04  2.8e-07  1.01e+00   -4.441294556e+05  -4.441273078e+05  1.7e-08  0.00  
+8   5.1e-14  2.0e-06  1.4e-09  1.00e+00   -4.441294567e+05  -4.441294459e+05  8.5e-11  0.00  
+Interior-point optimizer terminated. Time: 0.00. 
+
+Optimizer terminated. Time: 0.01    
+Solution summary
+
+Interior-point solution summary
+  Problem status  : PRIMAL_AND_DUAL_FEASIBLE
+  Solution status : OPTIMAL
+  Primal.  obj: -4.4412945671e+05   nrm: 6e+00    Viol.  con: 5e-10    var: 0e+00  
+  Dual.    obj: -4.4412944587e+05   nrm: 1e+01    Viol.  con: 0e+00    var: 2e-02  
+Solution is: [2.8548331478958815, 5.648878345894416, 2.8548331478958815, 2.8548331478958815, 2.854833147895881, 2.8548331478958815, 2.854833147895881, 2.7940451984566135]
+Summary:	1	160001	160001	5.294927419848752	1	3	1	0	0	0	0	0	,	chr1:178919296-179079296
+('IntervalAmplifiedSize: ', 'chr1', 178919296, 179079296, 139732, 5.648878345894416)
+('Cycle ', 1, ': Copy count = ', 2.854833147895881, [chr1:-1-->chr1:178919296-, chr1:178919296-->chr1:178937959+, chr1:178937959+->chr1:178937960-, chr1:178937960-->chr1:179077691+, chr1:179077691+->chr1:179077692-, chr1:179077692-->chr1:179079296+, chr1:-1-->chr1:179079296+])
+(chr1:-1-, '->', chr1:178919296-)
+(chr1:178919296-, '->', chr1:179079296+)
+(chr1:179079296+, '->', chr1:-1-)
+('Cycle ', 2, ': Copy count = ', 2.7940451984566135, [chr1:178937960-->chr1:179077691+, chr1:179077691+->chr1:178937960-])
+(chr1:179077691+, '->', chr1:178937960-)

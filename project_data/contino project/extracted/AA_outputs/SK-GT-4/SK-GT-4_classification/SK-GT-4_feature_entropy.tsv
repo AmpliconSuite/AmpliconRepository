@@ -1,0 +1,3 @@
+sample	amplicon	feature	total_feature_entropy	decomp_entropy	Amp_nseg_entropy
+SK-GT-4	amplicon1	Linear amplification_1	3.1923017135406955	0.5532443839254368	2.639057329615259
+SK-GT-4	amplicon2	Complex non-cyclic_1	5.521254771371637	1.5894291386473112	3.9318256327243257

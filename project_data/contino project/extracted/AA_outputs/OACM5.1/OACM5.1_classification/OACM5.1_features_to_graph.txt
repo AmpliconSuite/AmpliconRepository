@@ -1,0 +1,1 @@
+/nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_classification/OACM5.1_classification_bed_files/OACM5.1_amplicon1_ecDNA_1_intervals.bed	/nucleus/projects/cancer_cell_lines/WGS/Contino_EAC_cell_lines/AA_outputs/OACM5.1/OACM5.1_AA_results/OACM5.1_amplicon1_graph.txt

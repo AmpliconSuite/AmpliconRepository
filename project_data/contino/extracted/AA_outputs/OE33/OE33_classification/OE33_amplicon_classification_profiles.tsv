@@ -1,0 +1,6 @@
+sample_name	amplicon_number	amplicon_decomposition_class	ecDNA+	BFB+	ecDNA_amplicons
+OE33	amplicon1	Cyclic	Positive	None detected	1
+OE33	amplicon2	Linear amplification	None detected	None detected	0
+OE33	amplicon3	Cyclic	Positive	None detected	1
+OE33	amplicon4	Cyclic	None detected	Positive	0
+OE33	amplicon5	No amp/Invalid	None detected	None detected	0

@@ -1,0 +1,3 @@
+#chrom	start	end	cn	start_refined	end_refined
+chr7	81150000	81300899	5.452293739396252	False	True
+chr7	81300900	81320000	3.5001260674116232	True	False

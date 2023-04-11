@@ -1,0 +1,7 @@
+sample_name	amplicon_number	amplicon_decomposition_class	ecDNA+	BFB+	ecDNA_amplicons
+FLO-1	amplicon1	Complex non-cyclic	None detected	None detected	0
+FLO-1	amplicon2	Linear amplification	None detected	None detected	0
+FLO-1	amplicon3	Cyclic	Positive	None detected	1
+FLO-1	amplicon4	Cyclic	Positive	None detected	1
+FLO-1	amplicon5	No amp/Invalid	None detected	None detected	0
+FLO-1	amplicon6	No amp/Invalid	None detected	None detected	0

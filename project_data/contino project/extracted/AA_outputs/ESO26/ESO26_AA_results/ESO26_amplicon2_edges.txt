@@ -1,0 +1,4 @@
+chr10:60979587-->chr10:60981929-	15	None	None
+chr10:60981929-->chr10:60979587-	15	None	None
+chr10:62956259+->chr10:62960659+	17	None	None
+chr10:62960659+->chr10:62956259+	17	None	None

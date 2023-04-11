@@ -1,0 +1,79 @@
+('Meanshift', 'chr11\t125556876\t125881874', 2, [chr11:125661600-, chr11:125774099+])
+('MSstats', 2, 2)
+('MSadd', 'chr11:125661600-', 4.840886413318162, 0, True)
+('MSadd', 'chr11:125774099+', -4.7624370999656644, 0, True)
+('C (haploid coverage) = ', 5.0)
+('########## len bplist', 8, ';   ################ kbpe, kce, koe = ', 0, 3, 5)
+Problem set up done. Optimizing ..
+Problem
+  Name                   :                 
+  Objective sense        : min             
+  Type                   : GECO (general convex optimization problem)
+  Constraints            : 8               
+  Cones                  : 0               
+  Scalar variables       : 12              
+  Matrix variables       : 0               
+  Integer variables      : 0               
+
+Optimizer started.
+Interior-point optimizer started.
+Presolve started.
+Linear dependency checker started.
+Linear dependency checker terminated.
+Eliminator started.
+Freed constraints in eliminator : 0
+Eliminator terminated.
+Eliminator - tries                  : 1                 time                   : 0.00            
+Lin. dep.  - tries                  : 1                 time                   : 0.00            
+Lin. dep.  - number                 : 0               
+Presolve terminated. Time: 0.00    
+Matrix reordering started.
+Local matrix reordering started.
+Local matrix reordering terminated.
+Matrix reordering terminated.
+Optimizer  - threads                : 1               
+Optimizer  - solved problem         : the primal      
+Optimizer  - Constraints            : 8
+Optimizer  - Cones                  : 0
+Optimizer  - Scalar variables       : 12                conic                  : 0               
+Optimizer  - Semi-definite variables: 0                 scalarized             : 0               
+Factor     - setup time             : 0.00              dense det. time        : 0.00            
+Factor     - ML order time          : 0.00              GP order time          : 0.00            
+Factor     - nonzeros before factor : 15                after factor           : 18              
+Factor     - dense dim.             : 0                 flops                  : 2.00e+01        
+ITE PFEAS    DFEAS    GFEAS    PRSTATUS   POBJ              DOBJ              MU       TIME  
+0   1.7e+00  3.4e+04  4.3e+04  0.00e+00   -5.057496230e+05  -4.629096088e+05  1.0e+00  0.00  
+1   9.9e-03  2.0e+02  2.5e+02  -1.00e+00  -5.073847641e+05  -4.653278378e+05  6.1e-03  0.00  
+2   9.9e-04  2.1e+01  2.5e+01  -9.54e-01  -5.171158811e+05  -4.808974830e+05  8.4e-04  0.00  
+3   1.5e-04  6.1e+00  3.7e+00  -6.18e-01  -5.352463428e+05  -5.128751669e+05  2.6e-04  0.00  
+4   3.4e-06  8.4e-01  8.4e-02  1.88e-01   -5.455137921e+05  -5.420171489e+05  3.8e-05  0.00  
+5   4.1e-07  1.7e-01  1.0e-02  6.73e-01   -5.498397602e+05  -5.488924042e+05  8.2e-06  0.00  
+6   4.5e-08  3.7e-02  1.1e-03  8.38e-01   -5.506751021e+05  -5.504764304e+05  1.6e-06  0.00  
+7   1.9e-09  2.0e-03  4.7e-05  9.74e-01   -5.507301361e+05  -5.507180851e+05  1.0e-07  0.00  
+8   3.6e-11  2.9e-04  8.8e-07  9.57e-01   -5.507456935e+05  -5.507443105e+05  1.3e-08  0.00  
+9   1.9e-13  3.2e-05  4.4e-09  9.69e-01   -5.507467967e+05  -5.507466753e+05  1.0e-09  0.00  
+Interior-point optimizer terminated. Time: 0.00. 
+
+Optimizer terminated. Time: 0.01    
+Solution summary
+
+Interior-point solution summary
+  Problem status  : PRIMAL_AND_DUAL_FEASIBLE
+  Solution status : OPTIMAL
+  Primal.  obj: -5.5074679666e+05   nrm: 6e+00    Viol.  con: 1e-09    var: 0e+00  
+  Dual.    obj: -5.5074667531e+05   nrm: 3e+01    Viol.  con: 0e+00    var: 3e-01  
+Solution is: [1.6081784336598646, 6.4181118749828885, 5.940635142305473, 1.5776477200976737, 1.6081784336598646, 4.80993344262425, 1.6081784336598646, 0.4774767339786421, 5.940635142305473, 1.5776477200976737, 1.5776477200976737, 4.3629874235090265]
+Summary:	1	324999	119717	6.38932774591406	1	4	0	2	0	0	0	2	,	chr11:125556876-125881874
+('IntervalAmplifiedSize: ', 'chr11', 125556876, 125881874, 119717, 6.38932774591406)
+('Cycle ', 1, ': Copy count = ', 4.3629874235090265, [chr11:-1-->chr11:125661600-, chr11:125661600-->chr11:125774099+, chr11:125774099+->chr11:125774100-, chr11:125774100-->chr11:125781316+, chr11:-1-->chr11:125781316+])
+(chr11:-1-, '->', chr11:125661600-)
+(chr11:125661600-, '->', chr11:125781316+)
+(chr11:125781316+, '->', chr11:-1-)
+('Cycle ', 2, ': Copy count = ', 1.5776477187964462, [chr11:-1-->chr11:125556876-, chr11:125556876-->chr11:125661599+, chr11:125661599+->chr11:125661600-, chr11:125661600-->chr11:125774099+, chr11:125774099+->chr11:125774100-, chr11:125774100-->chr11:125781316+, chr11:125781316+->chr11:125781317-, chr11:125781317-->chr11:125881874+, chr11:-1-->chr11:125881874+])
+(chr11:-1-, '->', chr11:125556876-)
+(chr11:125556876-, '->', chr11:125881874+)
+(chr11:125881874+, '->', chr11:-1-)
+('Cycle ', 3, ': Copy count = ', 0.4469460191152237, [chr11:-1-->chr11:125661600-, chr11:125661600-->chr11:125774099+, chr11:-1-->chr11:125774099+])
+(chr11:-1-, '->', chr11:125661600-)
+(chr11:125661600-, '->', chr11:125774099+)
+(chr11:125774099+, '->', chr11:-1-)

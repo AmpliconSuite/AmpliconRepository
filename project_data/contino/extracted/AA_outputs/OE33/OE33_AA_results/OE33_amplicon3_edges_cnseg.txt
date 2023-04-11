@@ -1,0 +1,4 @@
+chr17:29187871-->chr17:29222487-	24	None	None
+chr17:29222487-->chr17:29187871-	24	None	None
+chr17:29853313+->chr17:29854741+	15	None	None
+chr17:29854741+->chr17:29853313+	15	None	None

@@ -1,0 +1,6 @@
+chr1:42736500-->chr1:42864854+	28	None	None
+chr1:42736651-->chr1:42882384+	17	None	None
+chr1:42864692+->chr1:42882208-	9	None	None
+chr1:42864854+->chr1:42736500-	28	None	None
+chr1:42882208-->chr1:42864692+	9	None	None
+chr1:42882384+->chr1:42736651-	17	None	None

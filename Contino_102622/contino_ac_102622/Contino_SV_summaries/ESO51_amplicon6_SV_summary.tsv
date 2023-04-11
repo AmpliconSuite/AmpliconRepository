@@ -1,0 +1,7 @@
+chrom1	pos1	chrom2	pos2	sv_type	read_support	features	orientation	pos1_flanking_coordinate	pos2_flanking_coordinate
+chr8	125883689	chr8	126422151	inversion	10	None	--	125883690	126422152
+chr8	126422151	chr8	126423618	foldback	8	None	--	126422152	126423619
+chr8	125883839	chr8	126423635	deletion-like	11	None	+-	125883838	126423636
+chr8	126888955	chr8	126998859	inversion	12	BFB	--	126888956	126998860
+chr8	127000017	chr8	127000680	deletion-like	23	BFB	+-	127000016	127000681
+chr8	128208875	chr8	128211006	foldback	36	BFB	++	128208874	128211005

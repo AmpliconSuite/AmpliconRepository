@@ -1,0 +1,6 @@
+Interval	1	chrX	13483405	13623411
+List of cycle segments
+Segment	1	chrX	13483405	13623411
+Segment	2	chrX	13485517	13620700
+Cycle=1;Copy_count=2.06936031028;Segments=2+
+Cycle=2;Copy_count=2.05082737638;Segments=0+,1-,0-
