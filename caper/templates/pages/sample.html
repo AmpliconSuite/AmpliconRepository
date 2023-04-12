@@ -49,6 +49,31 @@
             })
     }
 
+    function open_download_window(amplicon_num){
+        var link_window = document.getElementById("figure_download_window");
+        for (let j = 0; j < JSON.parse('{{ download_links|safe }}').length; j++){
+            var png = JSON.parse('{{ download_links|safe }}')[j];
+            if (png.aa_amplicon_number == amplicon_num){
+                link = png.download_link;
+            }
+        }
+
+        var link_elem = link_window.firstElementChild;
+        link_elem.href = link;
+
+        var preview_elem = link_elem.lastElementChild;
+        preview_elem.setAttribute('src', link);
+
+        if (link_elem.firstElementChild.tagName != "B") {{
+            link_elem.innerHTML = '<b>Download Amplicon ' + amplicon_num + ' PNG</b>' + link_elem.innerHTML;
+        }}
+        else {{
+            link_elem.firstElementChild.innerHTML = 'Download Amplicon ' + amplicon_num + ' PNG';
+        }}
+        link_window.setAttribute('style', 'display: flex; align-items: center; margin: auto; text-align: center; min-height: 300px; border: 0.5px solid grey; border-bottom: none;padding-top:5px;');
+
+    }
+
 </script>
 <style>
 .igv-container {
@@ -78,20 +103,9 @@
     <div class="col-md-9">
         <h2>Sample Name: <span style="font-weight: 200">{{ sample_name }}</span></h2>
         <h4>Project Name:  <a href="{% url 'project_page' project_name=project.linkid %}" style="font-weight: 200">{{ project.project_name }}</a></h4>
-        <h4>Reference Genome: <span style="font-weight: 200">{{ reference_genome }}</span></h4>
-        <button class="btn btn-primary" type="button" data-toggle="collapse" data-target="#collapseExample" aria-expanded="false" aria-controls="collapseExample"><a style="color: white">View Metadata</a></button>
-        <button class="btn btn-primary"><a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download_metadata" style="color: white; ">Download Metadata</a></button>
-        <div class="collapse" id="collapseExample" style="padding-top:10px">
-          <div class="card card-body">
-            {% for key, item in sample_metadata.items %}
-                <p><b>{{ key }}:</b> {{ item }}</p><br>
-            {% endfor %}
-          </div>
-        </div>
     </div>
     <div class="col-md-3" style='text-align:right'>
         <button class="btn btn-primary"><a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download" style="color: white">Download All Sample Data</a></button>
-
     </div>
 
 </div>
@@ -121,6 +135,7 @@
         
         <span style='margin-left: 1rem'> Display IGV Viewer </span>
         <input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle">
+
 
 
         {{ graph|safe }}
@@ -197,16 +212,15 @@
                             for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
                                 var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k];
                                 var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
-                                
+                                if (reference_genome !== 'GRCh37'){
+                                    chromosome_num = 'chr'+chromosome_num;
+                                }
+                                var locus_selection = JSON.parse('{{ locuses|safe }}')[k][chromosome_num];
                                 
 
                                 if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
                                     const tracks = [amplicon_selection];
                                     const locus = locus_selection;
-                                    if (reference_genome !== 'GRCh37'){
-                                        chromosome_num = 'chr'+chromosome_num;
-                                    }
-                                    var locus_selection = JSON.parse('{{ locuses|safe }}')[k][chromosome_num];
                                     // call function to create JS in THE IGV DIV
                                     create_igv(tracks, locus_selection, reference_genome);
                                     break
@@ -280,22 +294,14 @@
                 {% for feature in sample_data %}
                 <tr>
                     <td>{{ feature.AA_amplicon_number }}</td>
-                    <td><b>{{ feature.Feature_ID }} </b></td>
+                    <td><button onclick='open_download_window({{feature.AA_amplicon_number}})'><b>{{ feature.Feature_ID }}</b></button></td>
                     <td>{{ feature.Classification }}</td>
 		            <td>{{ feature.Oncogenes|join:", " }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
                     <td>
-                        {% if not  feature.BED_file  == 'Not Provided' %}
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a> 
-                        {% endif %}
-                        {% if not  feature.AA_PDF_file  == 'Not Provided' %}
-                        | <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a> 
-                        {% endif %}
-                        {% if not  feature.AA_PNG_file  == 'Not Provided' %}
-                        |
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a>
-                        {% endif %}
-                        <br>
+                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a> |
+                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a> |
+                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a><br>
                     </td>
                 </tr>
                 {% endfor %}
