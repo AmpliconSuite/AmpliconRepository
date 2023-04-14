@@ -114,222 +114,215 @@
 
 </div>
 
-{% if graph %}
-{% comment %} edited by Edwin: moved div to bottom {% endcomment %}
-    <div class="row " style="margin: auto;">
-        <div class='col-lg-6' id="figure_download_window", style='display:none;'>
-            <a href='' target='_blank' download="download" style=' display: flex; flex-flow: column; margin:auto; text-align:center; text-decoration:none;'>
-                <br>
-                <img src='' style='width:100%'>
-            </a>
-            <span id='close' style='margin-left: 5px; color: grey; font-size: 1.5rem; display: none;'>&times
-            </span>            
-        </div>          
-        <!-- <button onclick="toggle_igv()" style="height:100px;display:none" id="show_igv">SHOW IGV VIEWER</button> -->
-        {% comment %} <div class='col-lg-6' id="igv-div" style = "display: none;"> {% endcomment %}
-        </div>    
-    </div>
+<div class="row " style="margin: auto;">
+    {% if graph %}
+        <div class="row " style="margin: auto;">
+            <div class='col-lg-6' id="figure_download_window", style='display:none;'>
+                <a href='' target='_blank' download="download" style=' display: flex; flex-flow: column; margin:auto; text-align:center; text-decoration:none;'>
+                    <br>
+                    <img src='' style='width:100%'>
+                </a>
+                <span id='close' style='margin-left: 5px; color: grey; font-size: 1.5rem; display: none;'>&times
+                </span>
+            </div>
+            <!-- <button onclick="toggle_igv()" style="height:100px;display:none" id="show_igv">SHOW IGV VIEWER</button> -->
+            {% comment %} <div class='col-lg-6' id="igv-div" style = "display: none;"> {% endcomment %}
+            </div>
+        </div>
 
 
-    <div  style="margin-top: 0px; border: 0.5px solid grey; padding: 25px">
-        <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
-        
+        <div  style="margin-top: 0px; border: 0.5px solid grey; padding: 25px">
+            <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
 
 
+            {{ graph|safe }}
+            <span style='margin-left: 1rem'> Display All Chromosomes </span>
+            <input id="toggle-event" type="checkbox" class="form-check-input" data-toggle="toggle">
 
-        {{ graph|safe }}
-        <span style='margin-left: 1rem'> Display All Chromosomes </span>
-	    <input id="toggle-event" type="checkbox" class="form-check-input" data-toggle="toggle">
-        
-        <span style='margin-left: 1rem'> Display IGV Viewer </span>
-        <input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle">
-        
-        <br>
+            <span style='margin-left: 1rem'> Display IGV Viewer </span>
+            <input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle">
 
-        {% block plotly_js %}
-        <script src="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/js/bootstrap4-toggle.min.js"></script>
-        <script type="text/javascript">
-            if (window.location.href.split('?').length != 1) {
-                var toggle = document.getElementById("toggle-event");
-                toggle.setAttribute('checked', 'True');
-            }
+            <br>
 
-            var closebtn = document.getElementById("close");
-            closebtn.addEventListener("click", function() {{
-                this.parentElement.style.display = 'none';
-                var igv = document.getElementById("igv-div");
-                igv.style.display = "none";
-
-                var container = document.getElementById("big_container");
-                container.style.display = "none";
-            }});
-
-
-
-            $('#toggle-event').change(function() {{
-                const current_link = window.location.href.split('?');
-                if (current_link.length == 1) {{
-                    window.location.href = current_link[0] + '?display_all_chr=T';
-                }}
-                else {{
-                    window.location.href = current_link[0];
-                }}
-            }});
-
-            var igv_toggle = false;
-            $("#toggle-igv").on('change', function() {
-                if ($(this).is(':checked')) {
-                    igv_toggle = $(this).is(':checked');
-                    var x = document.getElementById("igv-div");
-                    x.style.display = "flex";
+            {% block plotly_js %}
+            <script src="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/js/bootstrap4-toggle.min.js"></script>
+            <script type="text/javascript">
+                if (window.location.href.split('?').length != 1) {
+                    var toggle = document.getElementById("toggle-event");
+                    toggle.setAttribute('checked', 'True');
                 }
-                else {
-                    igv_toggle = $(this).is(':checked');
-                    var x = document.getElementById("igv-div");
-                    x.style.display = "none";
-                    
-                }
-            });
+
+                var closebtn = document.getElementById("close");
+                closebtn.addEventListener("click", function() {{
+                    this.parentElement.style.display = 'none';
+                    var igv = document.getElementById("igv-div");
+                    igv.style.display = "none";
+
+                    var container = document.getElementById("big_container");
+                    container.style.display = "none";
+                }});
 
 
-            var plot_element = document.getElementById("plotly_div");
-            plot_element.on('plotly_click', function(data){{
-                console.log('click');
-                var link = '';
-                for (let i = 0; i < data['points'].length; i++) {{
-                    var name = data['points'][i]['data']['name'];
-                    if (name.includes('Amplicon')) {{
-                        var chromosome_num = data['points'][i]['customdata'][1];
 
-                        link = data['points'][i]['data']['hovertemplate'].split('"')[1];
-                        var amplicon_num = name.replace("<b>", "").replace("</b>", "").split(" ")[1];
-
-                        for (let j = 0; j < JSON.parse('{{ download_links|safe }}').length; j++){
-                            var png = JSON.parse('{{ download_links|safe }}')[j];
-                            if (png.aa_amplicon_number == amplicon_num){
-                                link = png.download_link;
-                            }
-                        }
-
-
-                        // if display IGV Viewer toggle is on:
-                        if (igv_toggle) {
-                            for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
-                                var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k];
-                                var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
-                                if (reference_genome !== 'GRCh37'){
-                                    chromosome_num = 'chr'+chromosome_num;
-                                }
-                                var locus_selection = JSON.parse('{{ locuses|safe }}')[k][chromosome_num];
-                                
-
-                                if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
-                                    const tracks = [amplicon_selection];
-                                    const locus = locus_selection;
-                                    // call function to create JS in THE IGV DIV
-                                    create_igv(tracks, locus_selection, reference_genome);
-                                    break
-                                }
-                            }
-                        }
-                        break;
-                    }}
-                }}
-
-                console.log(link == undefined);
-
-                if (link != '') {{
-                    var window_from_table = document.getElementById("figure_download_window_from_sample");
-                    window_from_table.style.display = 'none';
-
-                    var link_window = document.getElementById("figure_download_window_from_sample");
-                    var link_elem = link_window.firstElementChild;
-                    link_elem.href = link;
-
-                    var preview_elem = link_elem.lastElementChild;
-                    preview_elem.setAttribute('src', link);
-
-                    if (link_elem.firstElementChild.tagName != "B") {{
-                        link_elem.innerHTML = '<b>Download ' + name.slice(3, -4) + ' PNG</b>' + link_elem.innerHTML;
+                $('#toggle-event').change(function() {{
+                    const current_link = window.location.href.split('?');
+                    if (current_link.length == 1) {{
+                        window.location.href = current_link[0] + '?display_all_chr=T';
                     }}
                     else {{
-                        link_elem.firstElementChild.innerHTML = 'Download ' + name.slice(3, -4) + ' PNG';
+                        window.location.href = current_link[0];
                     }}
-                    link_window.setAttribute('style', 'display: flex; align-items: center; margin: auto; text-align: center; min-height: 300px; border: 0.5px solid grey; border-bottom: none;padding-top:5px;');
-                    if (igv_toggle){
+                }});
+
+                var igv_toggle = false;
+                $("#toggle-igv").on('change', function() {
+                    if ($(this).is(':checked')) {
+                        igv_toggle = $(this).is(':checked');
                         var x = document.getElementById("igv-div");
                         x.style.display = "flex";
-                        x.setAttribute('style', 'display: flex; align-items: center; text-align: center; min-height: 300px; border: 0.5px solid grey; padding-top:5px; border-left:none; border-bottom:none;');
                     }
+                    else {
+                        igv_toggle = $(this).is(':checked');
+                        var x = document.getElementById("igv-div");
+                        x.style.display = "none";
 
-                }} else if (link == undefined){
-                    
-                }
-            }})
-        </script>
-        {% endblock %}
-    </div>
-{% endif %}
+                    }
+                });
 
-{% comment %} moved Amplicon PNG and IGV div one row downwards {% endcomment %}
-<div class="row " style="margin: auto;">
+
+                var plot_element = document.getElementById("plotly_div");
+                plot_element.on('plotly_click', function(data){{
+                    console.log('click');
+                    var link = '';
+                    for (let i = 0; i < data['points'].length; i++) {{
+                        var name = data['points'][i]['data']['name'];
+                        if (name.includes('Amplicon')) {{
+                            var chromosome_num = data['points'][i]['customdata'][1];
+
+                            link = data['points'][i]['data']['hovertemplate'].split('"')[1];
+                            var amplicon_num = name.replace("<b>", "").replace("</b>", "").split(" ")[1];
+
+                            for (let j = 0; j < JSON.parse('{{ download_links|safe }}').length; j++){
+                                var png = JSON.parse('{{ download_links|safe }}')[j];
+                                if (png.aa_amplicon_number == amplicon_num){
+                                    link = png.download_link;
+                                }
+                            }
+
+
+                            // if display IGV Viewer toggle is on:
+                            if (igv_toggle) {
+                                for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
+                                    var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k];
+                                    var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
+                                    if (reference_genome !== 'GRCh37'){
+                                        chromosome_num = 'chr'+chromosome_num;
+                                    }
+                                    var locus_selection = JSON.parse('{{ locuses|safe }}')[k][chromosome_num];
+
+
+                                    if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
+                                        const tracks = [amplicon_selection];
+                                        const locus = locus_selection;
+                                        // call function to create JS in THE IGV DIV
+                                        create_igv(tracks, locus_selection, reference_genome);
+                                        break
+                                    }
+                                }
+                            }
+                            break;
+                        }}
+                    }}
+
+                    console.log(link == undefined);
+
+                    if (link != '') {{
+                        var window_from_table = document.getElementById("figure_download_window_from_sample");
+                        window_from_table.style.display = 'none';
+
+                        var link_window = document.getElementById("figure_download_window_from_sample");
+                        var link_elem = link_window.firstElementChild;
+                        link_elem.href = link;
+
+                        var preview_elem = link_elem.lastElementChild;
+                        preview_elem.setAttribute('src', link);
+
+                        if (link_elem.firstElementChild.tagName != "B") {{
+                            link_elem.innerHTML = '<b>Download ' + name.slice(3, -4) + ' PNG</b>' + link_elem.innerHTML;
+                        }}
+                        else {{
+                            link_elem.firstElementChild.innerHTML = 'Download ' + name.slice(3, -4) + ' PNG';
+                        }}
+                        link_window.setAttribute('style', 'display: flex; align-items: center; margin: auto; text-align: center; min-height: 300px; border: 0.5px solid grey; border-bottom: none;padding-top:5px;');
+                        if (igv_toggle){
+                            var x = document.getElementById("igv-div");
+                            x.style.display = "flex";
+                            x.setAttribute('style', 'display: flex; align-items: center; text-align: center; min-height: 300px; border: 0.5px solid grey; padding-top:5px; border-left:none; border-bottom:none;');
+                        }
+
+                    }} else if (link == undefined){
+
+                    }
+                }})
+            </script>
+            {% endblock %}
+        </div>
+    {% endif %}
+
     <div class='col-lg-6' id="figure_download_window_from_sample", style='display:none;'>
         <a href='' target='_blank' download="download" style=' display: flex; flex-flow: column; margin:auto; text-align:center; text-decoration:none;'>
             <br>
             <img src='' style='width:100%'>
         </a>
         <span id='close' style='margin-left: 5px; color: grey; font-size: 1.5rem; display: none;'>&times
-        </span>            
-    </div>          
+        </span>
+    </div>
     <!-- <button onclick="toggle_igv()" style="height:100px;display:none" id="show_igv">SHOW IGV VIEWER</button> -->
     <div class='col-lg-6' id="igv-div" style = "display: none;">
-    </div>    
-</div>
+    </div>
+
+    <div style="margin-top:25px; padding: 25px; border: 0.5px solid grey">
+        <h3>Features Table</h3>
+        <!-- <div style="text-align:right; padding-bottom:1em;">
+            <button type="submit">Download selected features</button>
+        </div> -->
+        <div class="table-responsive">
+            <table id='myTable2' class="table table-hover table-sm">
+                <thead>
+                    <tr>
+                        <th>Amplicon</th>
+                        <th>Feature ID</th>
+                        <th>Classification</th>
+                        <th>Oncogenes</th>
+                        <th>Location</th>
+                        <th>Downloads</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if  sample_data|length == 1 and sample_data.0.Feature_ID|slice:"-3:" == "_NA"   %}
 
 
-
-
-
-<div style="margin-top:25px; padding: 25px; border: 0.5px solid grey">
-    <h3>Features Table</h3>
-    <!-- <div style="text-align:right; padding-bottom:1em;">
-        <button type="submit">Download selected features</button>
-    </div> -->
-    <div class="table-responsive">
-        <table id='myTable2' class="table table-hover table-sm">
-            <thead>
-                <tr>
-                    <th>Amplicon</th>
-                    <th>Feature ID</th>
-                    <th>Classification</th>
-                    <th>Oncogenes</th>
-                    <th>Location</th>
-                    <th>Downloads</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% if  sample_data|length == 1 and sample_data.0.Feature_ID|slice:"-3:" == "_NA"   %}
-
-
-                       <!-- placeholder in case we want something other than the default 'no data available in table' message -->
-                {% else %}
-                {% for feature in sample_data %}
-                <tr>
-                    <td>{{ feature.AA_amplicon_number }}</td>
-                    <td><button onclick='open_download_window({{feature.AA_amplicon_number}})'><b>{{ feature.Feature_ID }}</b></button></td>
-                    <td>{{ feature.Classification }}</td>
-		            <td>{{ feature.Oncogenes|join:", " }}</td>
-                    <td>{{ feature.Location|join:", " }}</td>
-                    <td>
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a> |
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a> |
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a><br>
-                    </td>
-                </tr>
-                {% endfor %}
-                {% endif %}
-            </tbody>
-        </table>
+                           <!-- placeholder in case we want something other than the default 'no data available in table' message -->
+                    {% else %}
+                    {% for feature in sample_data %}
+                    <tr>
+                        <td>{{ feature.AA_amplicon_number }}</td>
+                        <td><button onclick='open_download_window({{feature.AA_amplicon_number}})'><b>{{ feature.Feature_ID }}</b></button></td>
+                        <td>{{ feature.Classification }}</td>
+                        <td>{{ feature.Oncogenes|join:", " }}</td>
+                        <td>{{ feature.Location|join:", " }}</td>
+                        <td>
+                            <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a> |
+                            <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a> |
+                            <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a><br>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
+
 {% endblock %}
