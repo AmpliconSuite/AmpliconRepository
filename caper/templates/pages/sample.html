@@ -115,6 +115,7 @@
 </div>
 
 {% if graph %}
+{% comment %} edited by Edwin: moved div to bottom {% endcomment %}
     <div class="row " style="margin: auto;">
         <div class='col-lg-6' id="figure_download_window", style='display:none;'>
             <a href='' target='_blank' download="download" style=' display: flex; flex-flow: column; margin:auto; text-align:center; text-decoration:none;'>
@@ -125,11 +126,9 @@
             </span>            
         </div>          
         <!-- <button onclick="toggle_igv()" style="height:100px;display:none" id="show_igv">SHOW IGV VIEWER</button> -->
-        <div class='col-lg-6' id="igv-div" style = "display: none;">
+        {% comment %} <div class='col-lg-6' id="igv-div" style = "display: none;"> {% endcomment %}
         </div>    
     </div>
-    
-
 
 
     <div  style="margin-top: 0px; border: 0.5px solid grey; padding: 25px">
@@ -144,7 +143,7 @@
 
         {{ graph|safe }}
         <br>
-        
+
         {% block plotly_js %}
         <script src="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/js/bootstrap4-toggle.min.js"></script>
         <script type="text/javascript">
@@ -189,7 +188,7 @@
                     
                 }
             });
-                        
+
 
             var plot_element = document.getElementById("plotly_div");
             plot_element.on('plotly_click', function(data){{
@@ -241,7 +240,7 @@
                     var window_from_table = document.getElementById("figure_download_window_from_sample");
                     window_from_table.style.display = 'none';
 
-                    var link_window = document.getElementById("figure_download_window");
+                    var link_window = document.getElementById("figure_download_window_from_sample");
                     var link_elem = link_window.firstElementChild;
                     link_elem.href = link;
 
@@ -260,9 +259,7 @@
                         x.style.display = "flex";
                         x.setAttribute('style', 'display: flex; align-items: center; text-align: center; min-height: 300px; border: 0.5px solid grey; padding-top:5px; border-left:none; border-bottom:none;');
                     }
-                    
 
-                    
                 }} else if (link == undefined){
                     
                 }
@@ -272,6 +269,7 @@
     </div>
 {% endif %}
 
+{% comment %} moved Amplicon PNG and IGV div one row downwards {% endcomment %}
 <div class="row " style="margin: auto;">
     <div class='col-lg-6' id="figure_download_window_from_sample", style='display:none;'>
         <a href='' target='_blank' download="download" style=' display: flex; flex-flow: column; margin:auto; text-align:center; text-decoration:none;'>
