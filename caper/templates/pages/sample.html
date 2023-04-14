@@ -49,6 +49,31 @@
             })
     }
 
+    function open_download_window(amplicon_num){
+        var link_window = document.getElementById("figure_download_window");
+        for (let j = 0; j < JSON.parse('{{ download_links|safe }}').length; j++){
+            var png = JSON.parse('{{ download_links|safe }}')[j];
+            if (png.aa_amplicon_number == amplicon_num){
+                link = png.download_link;
+            }
+        }
+
+        var link_elem = link_window.firstElementChild;
+        link_elem.href = link;
+
+        var preview_elem = link_elem.lastElementChild;
+        preview_elem.setAttribute('src', link);
+
+        if (link_elem.firstElementChild.tagName != "B") {{
+            link_elem.innerHTML = '<b>Download Amplicon ' + amplicon_num + ' PNG</b>' + link_elem.innerHTML;
+        }}
+        else {{
+            link_elem.firstElementChild.innerHTML = 'Download Amplicon ' + amplicon_num + ' PNG';
+        }}
+        link_window.setAttribute('style', 'display: flex; align-items: center; margin: auto; text-align: center; min-height: 300px; border: 0.5px solid grey; border-bottom: none;padding-top:5px;');
+
+    }
+
 </script>
 <style>
 .igv-container {
@@ -280,7 +305,7 @@
                 {% for feature in sample_data %}
                 <tr>
                     <td>{{ feature.AA_amplicon_number }}</td>
-                    <td><b>{{ feature.Feature_ID }} </b></td>
+                    <td><button onclick='open_download_window({{feature.AA_amplicon_number}})'><b>{{ feature.Feature_ID }}</b></button></td>
                     <td>{{ feature.Classification }}</td>
 		            <td>{{ feature.Oncogenes|join:", " }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
