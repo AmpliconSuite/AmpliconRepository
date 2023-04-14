@@ -33,11 +33,7 @@
             <h1 style="padding-top: 50px">Welcome to the AmpliconRepository</h1>
             <hr>
             <div stlye="margin-top: 30px">
-                <p>Focal oncogene amplification and rearrangements drive tumor growth and evolution in multiple cancer types. Proposed mechanisms for focal amplification include extrachromosomal DNA (ecDNA) formation, breakage-fusion-bridge (BFB) mechanism, tandem duplications, chromothripsis and others. Focally amplified regions are often hotspots for genomic rearrangements. As a result, the focally amplified region may undergo rapid copy number changes and the structure of the focally amplified region may evolve over time contributing to tumor progression. Furthermore, ecDNA elements may reintegrate back into the genome to form HSRs. The inter-cell heterogeneity in copy number of ecDNA as well as the interchangeability between ecDNA and HSR may allow the tumor to adapt to changing environment, e.g. targetted drug application. As a result, understanding the architecture of the focal amplifications is important to gain insights into cancer biology. AmpliconArchitect (AA) is a tool which can reconstruct the structure of focally amplified regions in a cancer sample using whole genome sequence short paired-end data.
-    
-                A full description of the methods and detailed characterization of copy number amplifications and ecDNA in cancer can be found in the following manuscript. Please cite the following reference if using AmpliconArchitect in your work:
-                        
-                Deshpande, V. et al. Exploring the landscape of focal amplifications in cancer using AmpliconArchitect. Nat. Commun. 10, 392 (2019). <a href="https://www.nature.com/articles/s41467-018-08200-y" target="_blank">Link to Paper</a></p>
+                <p>Focal oncogene amplification and rearrangements drive tumor growth and evolution in multiple cancer types. Some primary modes of focal amplification include extrachromosomal DNA (ecDNA) and breakage-fusion-bridge cycles (BFB), and other complex genomic rearrangements followed by amplification.</p>
             </div>
         </div>
         
@@ -70,7 +66,7 @@
             </style>
         <div style="margin-bottom: 20px; border: 0.5px solid grey; padding: 20px; border-radius: 10px;">
 
-            <div  style="padding-top: 30px;">
+            <div  style="padding-top: 10px;">
                 <div class="tab-pane active" id="search1">
                     <form id="searchform" class="input-group" method=GET action="{% url 'gene_search_page' %}">
                         {% csrf_token %}
