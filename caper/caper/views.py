@@ -9,7 +9,7 @@ from django.shortcuts import render, redirect
 # import pymongo
 import json
 # from .models import Run
-from .forms import RunForm, UpdateForm
+from .forms import RunForm, UpdateForm, FeaturedProjectForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
 import datetime
@@ -802,6 +802,37 @@ def clear_tmp():
                 shutil.rmtree(file_path)
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
+
+def admin_featured_projects(request):
+    if not request.user.is_superuser:
+        return redirect('/accounts/logout')
+
+    if request.method == "POST":
+
+        print("ITS A POST")
+        form = FeaturedProjectForm(request.POST)
+        form_dict = form_to_dict(form)
+        project_name = form_dict['project_name']
+        project_id = form_dict['project_id']
+        featured = form_dict['featured']
+
+        print("POST GOT: " + project_name + " " + project_id + " " + str(featured))
+        project = get_one_project(project_id)
+        query = {'_id': ObjectId(project_id)}
+        new_val = {"$set": {'featured': featured}}
+        collection_handle.update_one(query, new_val)
+
+
+        # get a project ID and make it feratured or not
+
+    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+
+    return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
+
+
+
 
 def create_project(request):
     if request.method == "POST":

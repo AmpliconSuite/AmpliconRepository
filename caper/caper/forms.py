@@ -1,6 +1,7 @@
 from django import forms
 
 from .models import Run
+from .models import FeaturedProjectUpdate
 
 class RunForm(forms.ModelForm):
     class Meta:
@@ -25,6 +26,13 @@ class UpdateForm(forms.ModelForm):
 
         self.fields['project_members'].required = False
         # self.fields['file'].required = False
+
+
+class FeaturedProjectForm(forms.ModelForm):
+    class Meta:
+        model = FeaturedProjectUpdate
+        fields = ('project_name','project_id','featured')
+
 
 
 

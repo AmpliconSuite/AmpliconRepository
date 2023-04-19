@@ -35,7 +35,10 @@
                     <li class="dropdown-item "><a href="/create-project">New Project</a></li>
                     <li class="dropdown-item "><a href="/accounts/email">Change Email</a></li>
                     <li class="dropdown-item "><a href="/accounts/logout">Logout</a></li>
-                    
+                    {% if user.is_superuser %}
+                            <li class="dropdown-item "><a href="/admin-featured-projects">Admin: Featured Projects</a></li>
+
+                    {% endif %}
                 </ul>
                    
                 </li>
