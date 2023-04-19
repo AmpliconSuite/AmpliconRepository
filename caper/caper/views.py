@@ -280,10 +280,16 @@ def index(request):
     for proj in public_projects:
         prepare_project_linkid(proj)
 
+    featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
+    for proj in featured_projects:
+        prepare_project_linkid(proj)
+
+
     public_projects = modify_date(public_projects)
     private_projects = modify_date(private_projects)
+    featured_projects = modify_date(featured_projects)
 
-    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects})
+    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects})
 
 
 def profile(request):

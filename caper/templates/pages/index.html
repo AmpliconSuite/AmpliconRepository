@@ -122,7 +122,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for project in private_projects %}
+                            {% for project in featured_projects %}
                             <tr>
                                 <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                 <td>{{ project.description }}</td>
