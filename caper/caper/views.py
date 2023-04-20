@@ -809,7 +809,7 @@ def clear_tmp():
 # deny that this might even be a valid URL
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_featured_projects(request):
-    if not request.user.is_superuser:
+    if not  request.user.is_staff:
         return redirect('/accounts/logout')
 
     if request.method == "POST":

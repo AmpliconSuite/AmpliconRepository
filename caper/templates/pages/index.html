@@ -8,11 +8,38 @@
             $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
         });
      
-        $('table.table').DataTable({
+        $('#projectTable0').DataTable({
             language: {
                     searchPlaceholder: "Search projects"
                     }
         });
+        $('#projectTable2').DataTable({
+            language: {
+                    searchPlaceholder: "Search projects"
+                    }
+        });
+        // $('#projectTable1').DataTable().column( 4 ).visible( true );
+        var pubTable = $('#projectTable1').DataTable({
+  //              language: {
+  //                  searchPlaceholder: "Search projects"
+  //                  },
+   //             initComplete: function() {
+  //                  pubTable = $('#projectTable1').DataTable();
+                    //pubTable.column( 4 ).visible( false );
+   //             },
+   //             "createdRow": function( row, data, dataIndex){
+   //                 if( data[4] ==  'True'){
+   //                      $(row).addClass('featured_row');
+   //                      $(row).attr('title', 'Featured Project ' );
+   //                 }
+   //             },
+//
+    //            "orderFixed": [ 4, 'desc' ]
+        });
+       // pubTable.column( 4 ).visible( false );
+
+
+
     });
 </script>
 {% endblock %}
@@ -139,24 +166,28 @@
                 </div>
 
                 <div class="tab-pane " id="tab-table1">
-                    <table id='projectTable1' class="table" style="padding-top: 20px; width:100%">
+                    <table name='projectTable1' id='projectTable1' class="table" style="padding-top: 20px; width:100%">
                         <thead>
                             <tr>
                                 <th>Name</th>
                                 <th>Description</th>
                                 <th>Last Updated</th>
                                 <th>Project Members</th>
+
                             </tr>
                         </thead>
                         <tbody>
                             {% for project in public_projects %}
                             <tr>
-                                <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+
+                                <td ><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor%}</td>
+                              
                             </tr>
                             {% endfor %}
                         </tbody>
