@@ -20,6 +20,8 @@ admin.autodiscover()
 urlpatterns = i18n_patterns(
     # Change the admin prefix here to use an alternate URL for the
     # admin interface, which would be marginally more secure.
+    
+    path('admin/featured-projects/', views.admin_featured_projects, name='admin_featured_projects'),
     path("admin/", include(admin.site.urls)),
 )
 
@@ -34,7 +36,6 @@ urlpatterns += [
     path('', views.index, name='index'),
     # path('runs/', views.run_list, name='run_list'),
     path('create-project/', views.create_project, name='create_project'),
-    path('admin-featured-projects/', views.admin_featured_projects, name='admin_featured_projects'),
     path('accounts/', include('allauth.urls')),
     path("accounts/profile/", views.profile, name="profile"),
     #path("accounts/login/", views.login, name="login"),

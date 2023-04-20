@@ -3,6 +3,8 @@
 from django.http import HttpResponse, FileResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import user_passes_test
+
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
 # from django.conf import settings
@@ -803,27 +805,26 @@ def clear_tmp():
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
+# only allow users designated as staff to see this, otherwise redirect to nonexistant page to 
+# deny that this might even be a valid URL
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_featured_projects(request):
     if not request.user.is_superuser:
         return redirect('/accounts/logout')
 
     if request.method == "POST":
 
-        print("ITS A POST")
         form = FeaturedProjectForm(request.POST)
         form_dict = form_to_dict(form)
         project_name = form_dict['project_name']
         project_id = form_dict['project_id']
         featured = form_dict['featured']
 
-        print("POST GOT: " + project_name + " " + project_id + " " + str(featured))
         project = get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
         new_val = {"$set": {'featured': featured}}
         collection_handle.update_one(query, new_val)
 
-
-        # get a project ID and make it feratured or not
 
     public_projects = list(collection_handle.find({'private': False, 'delete': False}))
     for proj in public_projects:
