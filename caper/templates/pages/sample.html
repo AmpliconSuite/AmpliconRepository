@@ -280,7 +280,7 @@
                 {% for feature in sample_data %}
                 <tr>
                     <td>{{ feature.AA_amplicon_number }}</td>
-                    <td display:flex><a class="thumbnail" href="#thumb"> <img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}" width = '100px'><span><img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}"></span><b>{{ feature.Feature_ID }}</b></a></td>
+                    <td display:flex><a class="thumbnail" href="#thumb"> <img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PDF_file }}" width = '100px'><span><img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PDF_file }}"></span><b>{{ feature.Feature_ID }}</b></a></td>
                     <td>{{ feature.Classification }}</td>
 		            <td>{{ feature.Oncogenes|join:", " }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
