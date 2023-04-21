@@ -279,8 +279,8 @@
                 {% else %}
                 {% for feature in sample_data %}
                 <tr>
-                    <td>{{ feature.AA_amplicon_number }}</td>
-                    <td display:flex><a class="thumbnail" href="#thumb"> <img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PDF_file }}" width = '100px'><span><img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PDF_file }}"></span><b>{{ feature.Feature_ID }}</b></a></td>
+                    <td display:flex><a class="thumbnail" href="#thumb"> <img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}" width = '100px'><span><img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}"></span><b>{{ feature.AA_amplicon_number }}</b></a></td>
+                    <td><b>{{ feature.Feature_ID }}</b></a></td>
                     <td>{{ feature.Classification }}</td>
 		            <td>{{ feature.Oncogenes|join:", " }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
@@ -313,6 +313,7 @@
     .thumbnail:hover{
         background-color: transparent;
         display: block;
+        position: relative;
     }
 
     .thumbnail:hover img{
@@ -336,7 +337,8 @@
     .thumbnail span img{ /*CSS for enlarged image*/
         border-width: 0;
         padding: 2px;
-        width: 550px
+        position: relative;
+        width: 550px;
     }
 
     .thumbnail:hover span{ /*CSS for enlarged image*/
@@ -344,6 +346,7 @@
         top: 0;
         left: 230px; /*position where enlarged image should offset horizontally */
         z-index: 50;
+        
     }
 
 
