@@ -279,7 +279,7 @@
                 {% else %}
                 {% for feature in sample_data %}
                 <tr>
-                    <td display:flex><a class="thumbnail" href="#thumb"> <img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}" width = '100px'><span><img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}"></span><b>{{ feature.AA_amplicon_number }}</b></a></td>
+                    <td display:flex><b>{{ feature.AA_amplicon_number }}</b><a class="thumbnail" href="#thumb"><img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}" width = '100px'><span><img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}"></span></a></td>
                     <td><b>{{ feature.Feature_ID }}</b></a></td>
                     <td>{{ feature.Classification }}</td>
 		            <td>{{ feature.Oncogenes|join:", " }}</td>
@@ -336,15 +336,15 @@
 
     .thumbnail span img{ /*CSS for enlarged image*/
         border-width: 0;
-        padding: 2px;
+        padding: 0px;
         position: relative;
-        width: 550px;
+        width: 750px;
     }
 
     .thumbnail:hover span{ /*CSS for enlarged image*/
         visibility: visible;
         top: 0;
-        left: 230px; /*position where enlarged image should offset horizontally */
+        left: 105px; /*position where enlarged image should offset horizontally */
         z-index: 50;
         
     }
