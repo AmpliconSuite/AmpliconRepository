@@ -48,11 +48,11 @@
         {% endfor %}
         </p>
     </div>
-    <div  style="margin-top: 0px; border: 0.5px solid grey; padding: 15px">
-        <span style="width: 50%; float:left">{{ stackedbar_graph|safe }}</span> <span style="width: 50%; float: right">{{ piechart|safe }}</span>
+    <div  style="margin:auto; border: 0.5px solid grey; padding: 0px">
+        <span style="display:inline-block">{{ stackedbar_graph|safe }}</span> <span style="display:inline-block">{{ piechart|safe }}</span>
     </div>
-    <div>
-        <span>Scroll on x-axis to view all samples</span>
+    <div class="col-md-9"; style="margin:auto">
+        <span>Click and drag near top of sample names to scroll horizontally</span>
     </div>
 
 </div>
