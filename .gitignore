@@ -16,4 +16,3 @@ pyvenv.cfg
 # pycharm IDE
 .idea/
 tmp/
-src

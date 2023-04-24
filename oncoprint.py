@@ -94,9 +94,11 @@ app = dash.Dash(__name__)
 
 app.layout = html.Div([
     Oncoprint(
+        id = 'Custom',
         data = data,
         showoverview=False,
-        backgroundcolor='rgb(255,255,255)',
+        padding = 0.0,
+        #backgroundcolor='rgb(255,255,255)',
         colorscale={'ECDNA': '#FF4343',
         'CNC' : '#FFBE00' , 
         'BFB' :'#00462E', 
