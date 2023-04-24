@@ -279,21 +279,21 @@
                 {% else %}
                 {% for feature in sample_data %}
                 <tr>
-                    <td>{{ feature.AA_amplicon_number }}</td>
-                    <td><b>{{ feature.Feature_ID }} </b></td>
+                    <td display:flex><b>{{ feature.AA_amplicon_number }}</b><a class="thumbnail" href="#thumb"><img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}" width = '100px'><span><img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}"></span></a></td>
+                    <td><b>{{ feature.Feature_ID }}</b></a></td>
                     <td>{{ feature.Classification }}</td>
 		            <td>{{ feature.Oncogenes|join:", " }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
                     <td>
                         {% if not  feature.BED_file  == 'Not Provided' %}
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a> 
+                        <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a>
                         {% endif %}
                         {% if not  feature.AA_PDF_file  == 'Not Provided' %}
-                        | <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a> 
+                        | <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a>
                         {% endif %}
                         {% if not  feature.AA_PNG_file  == 'Not Provided' %}
                         |
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a>
+                        <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a>
                         {% endif %}
                         <br>
                     </td>
@@ -304,4 +304,53 @@
         </table>
     </div>
 </div>
+<style>
+    .thumbnail img{
+        border: 1px solid white;
+        margin: 0 5px 5px 0;
+    }
+
+    .thumbnail:hover{
+        background-color: transparent;
+        display: block;
+        position: relative;
+    }
+
+    .thumbnail:hover img{
+        border: 1px solid blue;
+        display: block;
+        
+    }
+
+    .thumbnail span{ /*CSS for enlarged image*/
+        position: absolute;
+        background-color: lightyellow;
+        padding: 5px;
+        left: -1000px;
+        border: 1px dashed gray;
+        visibility: collapse;
+        color: black;
+        text-decoration: none;
+        
+    }
+
+    .thumbnail span img{ /*CSS for enlarged image*/
+        border-width: 0;
+        padding: 0px;
+        position: relative;
+        width: 750px;
+    }
+
+    .thumbnail:hover span{ /*CSS for enlarged image*/
+        visibility: visible;
+        top: 0;
+        left: 105px; /*position where enlarged image should offset horizontally */
+        z-index: 50;
+        
+    }
+
+
+
+
+</style>
 {% endblock %}
