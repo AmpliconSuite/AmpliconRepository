@@ -279,21 +279,21 @@
                 {% else %}
                 {% for feature in sample_data %}
                 <tr>
-                    <td display:flex><b>{{ feature.AA_amplicon_number }}</b><a class="thumbnail" href="#thumb"><img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}" width = '100px'><span><img src="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}"></span></a></td>
+                    <td display:flex><b>{{ feature.AA_amplicon_number }}</b><a class="thumbnail" href="#thumb"><img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}" width = '100px'><span><img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}"></span></a></td>
                     <td><b>{{ feature.Feature_ID }}</b></a></td>
                     <td>{{ feature.Classification }}</td>
 		            <td>{{ feature.Oncogenes|join:", " }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
                     <td>
                         {% if not  feature.BED_file  == 'Not Provided' %}
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a> 
+                        <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a>
                         {% endif %}
                         {% if not  feature.AA_PDF_file  == 'Not Provided' %}
-                        | <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a> 
+                        | <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a>
                         {% endif %}
                         {% if not  feature.AA_PNG_file  == 'Not Provided' %}
                         |
-                        <a href="/project/{{ project_name }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a>
+                        <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a>
                         {% endif %}
                         <br>
                     </td>
