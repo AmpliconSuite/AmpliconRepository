@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+{% block extra_js %}
+<script>
+  function set_project_featured(event, project_id, project_name, to_be_featured) {
+        var goahead = confirm("Really set project " + project_name + "("+project_id+") featured status as "+to_be_featured+"?");
+        if (goahead){
+            let form = document.getElementById("form__submit");
+            document.getElementById("form__project_name").value=project_name;
+            document.getElementById("form__project_id").value=project_id;
+            document.getElementById("form__featured").checked=to_be_featured;
+            form.submit();
+
+
+        } else {
+            event.stopPropagation();
+            event.preventDefault();
+            event.target.checked = !to_be_featured;
+            return false;
+        }
+  }
+
+
+    $(document).ready(function () {
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+        });
+     
+        $('table.table').DataTable({
+            language: {
+                    searchPlaceholder: "Search projects"
+                    }
+        });
+
+
+
+
+
+    });
+</script>
+{% endblock %}
+
+{% block meta_title %} Home
+{% endblock %}
+
+{% block main %}
+<head>
+    <title>
+        AmpliconRepository
+    </title>
+</head>
+
+<div class="row">
+    <div class="col-md-8">
+        <div>
+            <h1 style="padding-top: 50px">Select Featured Projects</h1>
+
+
+            <hr>
+            <div stlye="margin-top: 30px">
+                Select which projects are shown on the featured projects tab
+            </div>
+            <div style="display:none">
+                 <form id="form__submit" action="/admin-featured-projects/" method="post">
+                       {% csrf_token %}
+                     <input id="form__project_name" type="text" name="project_name" /><br />
+                     <input id="form__project_id" type="text" name="project_id" /><br />
+                     <input id="form__featured" type="checkbox" name="featured" /><br /><br />
+                 </form>
+
+
+            </div>
+
+
+        </div>
+        
+
+        <style>
+            .nav-tabs .nav-link {
+                color: gray;
+                border: 0;
+                border-bottom: 1px solid grey;
+            }
+            
+            .nav-tabs .nav-link:hover {
+                border: 0;
+                border-bottom: 1px solid grey;
+            }
+            
+            .nav-tabs .nav-link.active {
+                color: #000000;
+                border: 0;
+                border-radius: 0;
+                border-bottom: 2px solid  #0275d8 ;
+            }
+            </style>
+
+        
+        <div>
+            <ul class="nav nav-tabs" role="tablist" >
+                <li class="nav-item">
+                
+                    <a class="nav-link active" href="#tab-table0" data-toggle="tab">Public Projects</a>
+                </li>
+
+            </ul>
+
+            <div class="tab-content" style="padding-top: 30px;">
+
+                <div class="tab-pane active" id="tab-table0">
+                    <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Last Updated</th>
+                                <th>Project Members</th>
+                                <th>Featured</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in public_projects %}
+                            <tr>
+                                <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                                <td>{{ project.description }}</td>
+                                <td>{{ project.date }}</td>
+                                <td>{% for person in project.project_members %}
+                                    {{ person }}<br>
+                                {% endfor%}</td>
+                                <td>
+                                    {% if project.featured %}
+
+                                    <input type = "checkbox" checked onchange="set_project_featured(event, '{{ project.linkid }}', '{{ project.project_name }}', false)">
+                                    {% else %}
+                                    <input type = "checkbox"  onchange = "set_project_featured(event, '{{ project.linkid }}', '{{ project.project_name}}', true)">
+
+                                     {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+
+            </div> 
+        </div>
+    </div>
+
+</div>
+
+
+{% endblock %}

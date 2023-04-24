@@ -11,6 +11,12 @@ class Run(models.Model):
     private = models.BooleanField(choices=BOOL_CHOICES,default=True)
     project_members = models.CharField(max_length=1000, blank = True)
 
+
+class FeaturedProjectUpdate(models.Model):
+    project_name = models.CharField(max_length=1000)
+    project_id = models.CharField(max_length=1000)
+    featured = models.BooleanField(default=False)
+
 # class Feature(models.Model):
 #     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 #     project_name = models.CharField(max_length=1000)

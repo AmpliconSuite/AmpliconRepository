@@ -76,3 +76,7 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
         text-decoration: none;
     }
 }
+
+.featured_row {
+     background-color: rgba(0,0,255,.06) !important;
+}
