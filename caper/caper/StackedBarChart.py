@@ -34,11 +34,11 @@ def StackedBarChart(sample):
                         'Linear amplification' : 'rgb(27, 111, 185)'},
                  hover_data = {'Sample name': False})
 
-    fig.update_xaxes(tickangle=90)
+    fig.update_xaxes(tickangle=90, automargin=False, tickfont=dict(size=10))
     fig.update_layout(showlegend=False)
     fig.update_layout(yaxis_title="Number of focal amps")
     fig.update_layout(xaxis_title=None)
-    fig.update_layout(height=400, margin={'t': 20, 'b': 0, 'r': 0, 'l': 20})
+    fig.update_layout(height=400, margin={'t': 20, 'b': 80, 'r': 0, 'l': 20})
 
     end_time = time.time()
     elapsed_time = end_time - start_time

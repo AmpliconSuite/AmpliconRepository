@@ -19,6 +19,7 @@ def pie_chart(sample):
                 autosize = False,
                 margin=dict(l=15, r=15, t=15, b= 15),
                 showlegend = True, legend_itemclick=False)
+    fig.update_layout(title_text="Percentage of all focal amps", title_y=0.01, title_x=0.5)
 
     # fig.add_annotation(x=0.5, y=0.9, text="Proportion of all focal amps", showarrow=False)
 
@@ -27,12 +28,11 @@ def pie_chart(sample):
         yanchor="bottom",
         y=1.02,
         xanchor="right",
-        x=1,
-        title="% total amps"
+        x=1
     ))
     fig.update_traces(textfont_size = 12)
     fig.update_traces(textposition='inside', hovertemplate= "<br> %{label} </br> %{percent}")
-    fig.update_layout(margin={'t': 0, 'b': 0})
+    fig.update_layout(margin={'t': 0, 'b': 40})
 
     return fig.to_html(full_html=False, config={'displayModeBar': False}, div_id='project_pie_plotly_div')
     
