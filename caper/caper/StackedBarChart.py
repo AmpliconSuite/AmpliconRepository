@@ -39,6 +39,7 @@ def StackedBarChart(sample):
     fig.update_layout(yaxis_title="Number of focal amps")
     fig.update_layout(xaxis_title=None)
     fig.update_layout(height=400, margin={'t': 20, 'b': 80, 'r': 0, 'l': 20})
+    fig.update_traces(hovertemplate='%{y:} amps, ' + 'Sample: %{x}' + '<br><b></b>')
 
     end_time = time.time()
     elapsed_time = end_time - start_time
