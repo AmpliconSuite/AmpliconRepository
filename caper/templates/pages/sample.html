@@ -4,6 +4,9 @@
 <script>
     $(document).ready( function () {
         $('#myTable2').DataTable({
+            "drawCallback": function( settings ) {
+                $("#usersTable").wrap( "<div class='table-responsive'></div>" );
+            }
         }
         );
     } );
@@ -254,12 +257,10 @@
 
 
 
-<div style="margin-top:25px; padding: 25px; border: 0.5px solid grey">
+<div class="container" style="margin-top:25px; padding: 25px; border: 0.5px solid grey">
     <h3>Features Table</h3>
-    <!-- <div style="text-align:right; padding-bottom:1em;">
-        <button type="submit">Download selected features</button>
-    </div> -->
-    <div class="table-responsive">
+
+
         <table id='myTable2' class="table table-hover table-sm">
             <thead>
                 <tr>
@@ -302,7 +303,7 @@
                 {% endif %}
             </tbody>
         </table>
-    </div>
+
 </div>
 <style>
     .thumbnail img{
