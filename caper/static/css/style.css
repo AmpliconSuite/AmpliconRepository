@@ -76,3 +76,7 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
         text-decoration: none;
     }
 }
+
+li{
+  margin-bottom: 10px;
+}
