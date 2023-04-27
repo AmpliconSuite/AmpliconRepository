@@ -14,6 +14,7 @@ import json
 from .forms import RunForm, UpdateForm, FeaturedProjectForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
+import time
 import datetime
 import os
 import shutil
@@ -328,21 +329,27 @@ def reference_genome_from_sample(sample_data):
     return reference_genome
 
 def project_page(request, project_name):
+    t_i = time.time()
     project = get_one_project(project_name)
     samples = project['runs']
     features_list = replace_space_to_underscore(samples)
     reference_genome = reference_genome_from_project(samples)
     sample_data = sample_data_from_feature_list(features_list)
-    df = pd.DataFrame(sample_data)
+    # df = pd.DataFrame(sample_data)
+    t_sa = time.time()
     dfl = []
-    samples = df['Sample_name'].unique()
-    for sample in samples:
-        project, sample_info = get_one_sample(project_name, sample)
-        dfl.append(pd.DataFrame(sample_info))
+    for _, dlist in samples.items():
+        dfl.append(pd.DataFrame(dlist))
 
     aggregate = pd.concat(dfl)
+    t_sb = time.time()
+    diff = t_sb - t_sa
+    print(f"Iteratively build project dataframe from samples in {diff} seconds")
     stackedbar_plot = stacked_bar.StackedBarChart(aggregate)
     pie_chart = piechart.pie_chart(aggregate)
+    t_f = time.time()
+    diff = t_f - t_i
+    print(f"Generated the project page from views.py in {diff} seconds")
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
     
 
@@ -735,7 +742,6 @@ def project_delete(request, project_name):
     project = get_one_project(project_name)
 
     if check_project_exists(project_name):
-        print('FOUND 2')
         current_runs = project['runs']
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}

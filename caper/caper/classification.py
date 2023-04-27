@@ -11,7 +11,7 @@ def pie_chart(sample):
         'BFB' :'#00462E', 
         'Linear amplification': '#1B6FB9'
     }
-    fig = px.pie(class_counts, values= 'Classification', color=class_counts.index, names=class_counts.axes[0].tolist(),
+    fig = px.pie(class_counts, values='Classification', color=class_counts.index, names=class_counts.axes[0].tolist(),
                  color_discrete_map= color_scale_map)
     fig.update_layout(font = dict( size=12, color="black"),
                 width=400,
