@@ -40,7 +40,7 @@
         
     </div>
     <div class="col-md-3">
-        <button class="btn btn-primary"><a href="/project/{{ project.linkid }}/download" style="color: white">Download All Project Data</a></button>
+        <a class="btn btn-primary" href="/project/{{ project.linkid }}/download" style="color: white">Download All Project Data</a>
         <!-- <p><b>Last Updated:</b> {{ project.date }}</p> -->
         <!-- <p><b>Private:</b> {{ project.private }}</p> -->
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}

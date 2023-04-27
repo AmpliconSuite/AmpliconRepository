@@ -4,6 +4,9 @@
 <script>
     $(document).ready( function () {
         $('#myTable2').DataTable({
+            "drawCallback": function( settings ) {
+                $("#usersTable").wrap( "<div class='table-responsive'></div>" );
+            }
         }
         );
     } );
@@ -80,7 +83,7 @@
         <h4>Project Name:  <a href="{% url 'project_page' project_name=project.linkid %}" style="font-weight: 200">{{ project.project_name }}</a></h4>
         <h4>Reference Genome: <span style="font-weight: 200">{{ reference_genome }}</span></h4>
         <button class="btn btn-primary" type="button" data-toggle="collapse" data-target="#collapseExample" aria-expanded="false" aria-controls="collapseExample"><a style="color: white">View Metadata</a></button>
-        <button class="btn btn-primary"><a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download_metadata" style="color: white; ">Download Metadata</a></button>
+        <a class="btn btn-primary" href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download_metadata" style="color: white; ">Download Metadata</a>
         <div class="collapse" id="collapseExample" style="padding-top:10px">
           <div class="card card-body">
             {% for key, item in sample_metadata.items %}
@@ -90,8 +93,7 @@
         </div>
     </div>
     <div class="col-md-3" style='text-align:right'>
-        <button class="btn btn-primary"><a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download" style="color: white">Download All Sample Data</a></button>
-
+        <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download" style="color: white" class="btn btn-primary">Download All Sample Data</a>
     </div>
 
 </div>
@@ -256,10 +258,8 @@
 
 <div style="margin-top:25px; padding: 25px; border: 0.5px solid grey">
     <h3>Features Table</h3>
-    <!-- <div style="text-align:right; padding-bottom:1em;">
-        <button type="submit">Download selected features</button>
-    </div> -->
-    <div class="table-responsive">
+
+
         <table id='myTable2' class="table table-hover table-sm">
             <thead>
                 <tr>
@@ -302,7 +302,7 @@
                 {% endif %}
             </tbody>
         </table>
-    </div>
+
 </div>
 <style>
     .thumbnail img{
