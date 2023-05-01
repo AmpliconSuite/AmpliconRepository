@@ -486,6 +486,8 @@ def sample_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
 
+    sample_data_path = f"tmp/{project_name}/{sample_name}"        
+
     for feature in sample_data_processed:
         # set up file system
         feature_id = feature['Feature_ID']
@@ -552,13 +554,14 @@ def sample_download(request, project_name, sample_name):
             with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
                 png_file_tmp.write(png_file)
         if aa_directory_id:
-            with open(f'{feature_data_path}/aa_directory.tar.gz', "wb+") as aa_directory_tmp:
-                aa_directory_tmp.write(aa_directory_file)
+            if not os.path.exists(f'{sample_data_path}/aa_directory.tar.gz'):
+                with open(f'{sample_data_path}/aa_directory.tar.gz', "wb+") as aa_directory_tmp:
+                    aa_directory_tmp.write(aa_directory_file)
         if cnvkit_directory_id:
-            with open(f'{feature_data_path}/cnvkit_directory.tar.gz', "wb+") as cnvkit_directory_tmp:
-                cnvkit_directory_tmp.write(cnvkit_directory_file)
+            if not os.path.exists(f'{sample_data_path}/cnvkit_directory.tar.gz'):
+                with open(f'{sample_data_path}/cnvkit_directory.tar.gz', "wb+") as cnvkit_directory_tmp:
+                    cnvkit_directory_tmp.write(cnvkit_directory_file)
 
-    sample_data_path = f"tmp/{project_name}/{sample_name}"        
     shutil.make_archive(f'{sample_name}', 'zip', sample_data_path)
     zip_file_path = f"{sample_name}.zip"
     with open(zip_file_path, 'rb') as zip_file:
