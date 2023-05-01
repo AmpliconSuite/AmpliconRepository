@@ -84,3 +84,7 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
 .card-title {
     font-weight: 200 !important;
 }
+
+.col-lg-3 {
+    padding: 0px
+}
