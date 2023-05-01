@@ -1,6 +1,6 @@
 # AmpliconRepository
 
-#### Authors: Forrest Kim, Jens Luebeck, Ted Liefeld, Edwin Huang, Gino Prasad, Rohil Ahuja, Thorin Tabor, Vineet Bafna
+#### Authors: Forrest Kim, Jens Luebeck, Ted Liefeld, Edwin Huang, Gino Prasad, Rohil Ahuja, Rishaan Kenkre, Tushar Agashe, Devika Torvi, Thorin Tabor, Vineet Bafna
 ---
 
 This is the main repository for the AmpliconRepository.
@@ -36,6 +36,12 @@ This is the main repository for the AmpliconRepository.
 ## 3. Set up MongoDB locally (for development)
 - Install MongoDB
   - In Ubuntu this can be done with `sudo apt install mongodb-server-core`
+  - In macOS this can be done with
+    >`git config --global init.defaultBranch main`
+    
+    >`brew tap mongodb/brew`
+    
+    >`brew install mongodb-community@6.0`
   - If the package is not found you may need to follow the directions [here](https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-ubuntu/).
 - If you don't have a database location set up, set up a location:
 > `mkdir -p ~/data/db/`

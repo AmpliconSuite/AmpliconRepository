@@ -20,6 +20,7 @@ admin.autodiscover()
 urlpatterns = i18n_patterns(
     # Change the admin prefix here to use an alternate URL for the
     # admin interface, which would be marginally more secure.
+    
     path("admin/", include(admin.site.urls)),
 )
 
@@ -52,8 +53,8 @@ urlpatterns += [
     path("project/<project_name>/edit", views.edit_project_page, name="edit_project_page"),
     path('gene-search/', views.gene_search_page, name='gene_search_page'),
     path('gene-search/download', views.gene_search_download, name='gene_search_download'),
-    path('class-search/', views.class_search_page, name='class_search_page')
-
+    path('class-search/', views.class_search_page, name='class_search_page'),
+    path('admin-featured-projects/', views.admin_featured_projects, name='admin_featured_projects')
 ]
 
 urlpatterns += static(settings.PROJECT_DATA_URL, document_root=settings.PROJECT_DATA_ROOT)

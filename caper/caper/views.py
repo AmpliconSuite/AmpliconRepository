@@ -3,15 +3,18 @@
 from django.http import HttpResponse, FileResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import user_passes_test
+
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
 # from django.conf import settings
 # import pymongo
 import json
 # from .models import Run
-from .forms import RunForm, UpdateForm
+from .forms import RunForm, UpdateForm, FeaturedProjectForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
+import time
 import datetime
 import os
 import shutil
@@ -280,10 +283,16 @@ def index(request):
     for proj in public_projects:
         prepare_project_linkid(proj)
 
+    featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
+    for proj in featured_projects:
+        prepare_project_linkid(proj)
+
+
     public_projects = modify_date(public_projects)
     private_projects = modify_date(private_projects)
+    featured_projects = modify_date(featured_projects)
 
-    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects})
+    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects})
 
 
 def profile(request):
@@ -320,18 +329,29 @@ def reference_genome_from_sample(sample_data):
     return reference_genome
 
 def project_page(request, project_name):
+    t_i = time.time()
     project = get_one_project(project_name)
     samples = project['runs']
     features_list = replace_space_to_underscore(samples)
-    sample_data = sample_data_from_feature_list(features_list)
     reference_genome = reference_genome_from_project(samples)
-    # oncogenes = get_sample_oncogenes(features_list)
-    #stackedbar_plot = stacked_bar.StackedBarChart(file='/mnt/c/Users/ahuja/Desktop/data/aggregated_results.csv')
-    #pie_chart = piechart.pie_chart(directory = '/mnt/c/Users/ahuja/Desktop/bafna_lab/AABeautification/AA_outputs/')
-    stackedbar_plot = None
-    pie_chart = None 
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
+    sample_data = sample_data_from_feature_list(features_list)
+    # df = pd.DataFrame(sample_data)
+    t_sa = time.time()
+    dfl = []
+    for _, dlist in samples.items():
+        dfl.append(pd.DataFrame(dlist))
 
+    aggregate = pd.concat(dfl)
+    t_sb = time.time()
+    diff = t_sb - t_sa
+    print(f"Iteratively build project dataframe from samples in {diff} seconds")
+    stackedbar_plot = stacked_bar.StackedBarChart(aggregate)
+    pie_chart = piechart.pie_chart(aggregate)
+    t_f = time.time()
+    diff = t_f - t_i
+    print(f"Generated the project page from views.py in {diff} seconds")
+    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
+    
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
@@ -722,7 +742,6 @@ def project_delete(request, project_name):
     project = get_one_project(project_name)
 
     if check_project_exists(project_name):
-        print('FOUND 2')
         current_runs = project['runs']
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
@@ -796,6 +815,36 @@ def clear_tmp():
                 shutil.rmtree(file_path)
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
+
+# only allow users designated as staff to see this, otherwise redirect to nonexistant page to 
+# deny that this might even be a valid URL
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_featured_projects(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    if request.method == "POST":
+
+        form = FeaturedProjectForm(request.POST)
+        form_dict = form_to_dict(form)
+        project_name = form_dict['project_name']
+        project_id = form_dict['project_id']
+        featured = form_dict['featured']
+
+        project = get_one_project(project_id)
+        query = {'_id': ObjectId(project_id)}
+        new_val = {"$set": {'featured': featured}}
+        collection_handle.update_one(query, new_val)
+
+
+    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+
+    return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
+
+
+
 
 def create_project(request):
     if request.method == "POST":
