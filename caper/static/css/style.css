@@ -77,6 +77,10 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
     }
 }
 
-li{
+/* li{
   margin-bottom: 10px;
+} */
+
+.card-title {
+    font-weight: 200 !important;
 }
