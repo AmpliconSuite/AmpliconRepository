@@ -65,13 +65,19 @@ This is the main repository for the AmpliconRepository.
 - Open the application on a web browser (recommend using a private/incognito window for faster development):
 > https://localhost:8000
 
+## 6. Logging in as admin
+ - Please see the [wiki page on admin login](https://github.com/mesirovlab/AmpliconRepository/wiki/Becoming-Admin-on-a-development-server).
+
 
 # Committing and pushing changes to GitHub
 - Work on branches and open pull requests to merge changes into main.
 - Please ensure that you do not commit `caper.sqlite3` along with your other changes. 
 - PR reviewers, please check that `caper.sqlite3` is not among the changed files in a PR.
 
-# How to deploy and update the server for AmpliconRepository
+# Using the development server
+- Please see the [wiki page on using the development server](https://github.com/mesirovlab/AmpliconRepository/wiki/dev.ampliconrepository.org-instructions).
+
+# How to deploy and update the production server for AmpliconRepository
 The server is currently running on an EC2 instance through Docker. The ports active on HTTP and HTTPS through AWS Load Balancer. There are two main scripts to start and stop the server.
 
 ## 1. How to start the server
