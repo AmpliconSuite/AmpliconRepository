@@ -506,16 +506,38 @@ def sample_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
 
+    sample_data_path = f"tmp/{project_name}/{sample_name}"        
+
     for feature in sample_data_processed:
         # set up file system
         feature_id = feature['Feature_ID']
         feature_data_path = f"tmp/{project_name}/{sample_name}/{feature_id}"
         os.makedirs(feature_data_path, exist_ok=True)
         # get object ids
-        bed_id = feature['Feature_BED_file']
-        cnv_id = feature['CNV_BED_file']
-        pdf_id = feature['AA_PDF_file']
-        png_id = feature['AA_PNG_file']
+        if feature['Feature_BED_file'] != 'Not Provided':
+            bed_id = feature['Feature_BED_file']
+        else:
+            bed_id = False
+        if feature['CNV_BED_file'] != 'Not Provided':
+            cnv_id = feature['CNV_BED_file']
+        else:
+            cnv_id = False
+        if feature['AA_PDF_file'] != 'Not Provided':
+            pdf_id = feature['AA_PDF_file']
+        else:
+            pdf_id = False
+        if feature['AA_PNG_file'] != 'Not Provided':
+            png_id = feature['AA_PNG_file']
+        else:
+            png_id = False
+        if feature['AA_PNG_file'] != 'Not Provided':
+            aa_directory_id = feature['AA_directory']
+        else:
+            aa_directory_id = False
+        if feature['cnvkit_directory'] != 'Not Provided':
+            cnvkit_directory_id = feature['cnvkit_directory']
+        else:
+            cnvkit_directory_id = False
 
         # get files from gridfs
         # bed_file = fs_handle.get(ObjectId(bed_id)).read()
@@ -528,22 +550,38 @@ def sample_download(request, project_name, sample_name):
             with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
                 bed_file_tmp.write(bed_file)
   
-
-        cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
-        pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
-        png_file = fs_handle.get(ObjectId(png_id)).read()
+        if cnv_id:
+            cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
+        if pdf_id:
+            pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
+        if png_id:
+            png_file = fs_handle.get(ObjectId(png_id)).read()
+        if aa_directory_id:
+            aa_directory_file = fs_handle.get(ObjectId(aa_directory_id)).read()
+        if cnvkit_directory_id:
+            cnvkit_directory_file = fs_handle.get(ObjectId(cnvkit_directory_id)).read()
          
         # send files to tmp file system
 #        with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
 #            bed_file_tmp.write(bed_file)
-        with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
-            cnv_file_tmp.write(cnv_file)
-        with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
-            pdf_file_tmp.write(pdf_file)
-        with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
-            png_file_tmp.write(png_file)
+        if cnv_id:
+            with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
+                cnv_file_tmp.write(cnv_file)
+        if pdf_id:
+            with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
+                pdf_file_tmp.write(pdf_file)
+        if png_id:
+            with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
+                png_file_tmp.write(png_file)
+        if aa_directory_id:
+            if not os.path.exists(f'{sample_data_path}/aa_directory.tar.gz'):
+                with open(f'{sample_data_path}/aa_directory.tar.gz', "wb+") as aa_directory_tmp:
+                    aa_directory_tmp.write(aa_directory_file)
+        if cnvkit_directory_id:
+            if not os.path.exists(f'{sample_data_path}/cnvkit_directory.tar.gz'):
+                with open(f'{sample_data_path}/cnvkit_directory.tar.gz', "wb+") as cnvkit_directory_tmp:
+                    cnvkit_directory_tmp.write(cnvkit_directory_file)
 
-    sample_data_path = f"tmp/{project_name}/{sample_name}"        
     shutil.make_archive(f'{sample_name}', 'zip', sample_data_path)
     zip_file_path = f"{sample_name}.zip"
     with open(zip_file_path, 'rb') as zip_file:
@@ -885,7 +923,7 @@ def create_project(request):
                 print(feature['Sample name'])
                 if len(feature) > 0:
                     # get paths
-                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON']
+                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON','AA directory','cnvkit directory']
                     for k in key_names:
                         try:
                             path_var = feature[k]
