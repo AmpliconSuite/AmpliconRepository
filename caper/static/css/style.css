@@ -2,6 +2,7 @@
 body {
     padding-top: 0px;
     line-height: 1.5;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 container {
@@ -78,14 +79,13 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
     }
 }
 
-/* li{
-  margin-bottom: 10px;
-} */
-
 .card-title {
     font-weight: 200 !important;
 }
 
 .col-lg-3 {
     padding: 0px
+}
+.featured_row {
+     background-color: rgba(0,0,255,.06) !important;
 }
