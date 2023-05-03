@@ -85,25 +85,24 @@
     {% page_menu "includes/header.html" %}
     
     {% block index %}
-    {% endblock index %}
-
-    <div class="row" style="padding:100px">
+    <div class="row">
         <div class="container main-container" style="max-width:1400px; width:90%; margin:auto;">
 
-            
             <!-- Display the leading content -->
-            {% block lead %}
+            <!-- {% block lead %}
             <h1 id="page-title">{% block title %}{% endblock %}</h1>
             <h5 id="page-description">{% block description %}{% endblock %}</h5>
-            {% endblock %}
+            {% endblock %} -->
             <!-- Display the main content -->
             {% block main-container %}
-            <div style="padding-top:50px">
+            <div>
                 {% block main %}{% endblock %}
             </div>
             {% endblock main-container %}
         </div>
     </div>
+
+    {% endblock index %}
     <!-- Display the footer -->
     {% page_menu "includes/footer.html" %}
     {% include "includes/footer_scripts.html" %}
