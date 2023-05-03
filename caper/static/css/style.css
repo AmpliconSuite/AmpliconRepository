@@ -1,6 +1,7 @@
 
 body {
     padding-top: 0px;
+    line-height: 1.5;
 }
 
 container {
@@ -9,7 +10,7 @@ container {
 }
 
 p {
-    font-size: 14px;
+    font-size: 15px;
 }
 
 table th {

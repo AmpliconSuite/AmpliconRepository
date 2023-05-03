@@ -20,17 +20,19 @@
 {% block meta_title %} Home
 {% endblock %}
 
-{% block main %}
+{% block index %}
+
+
 <head>
     <title>
         AmpliconRepository
     </title>
 </head>
 
-
             
 
 <div class="row">
+    <div class="container main-container row" style="max-width:1400px; width:90%; margin:auto;">
     <div class="col-md-8">
         <script>
             $( "#searchform" ).submit( function( e ) {
@@ -74,7 +76,7 @@
                         <div class="card text-center" style="width:12rem; border:none;margin:auto; padding: 5px">
                             <img class="card-img-top" src="/static/img/250w/exploration_cartoonAsset 1.png" style="max-height:20rem; max-width:10rem; margin:auto">
                             <div class="card-body" style="margin-top:5px">
-                                <h6 class="card-title" style="font-weight:200">CN data exploration</h6>
+                                <p class="card-title" style="font-weight:200">Copy-number data exploration</p>
                             </div>
                         </div>
                     </div>
@@ -82,7 +84,7 @@
                         <div class="card text-center" style="width: 12rem; border:none;margin:auto; padding: 5px">
                             <img class="card-img-top" src="/static/img/250w/aa_viz_cartoonAsset 1.png" style="max-height:20rem; max-width:10rem; margin:auto">
                             <div class="card-body" style="margin-top:18px">
-                                <h6 class="card-title" style="font-weight:200;">Amplicon Architect output files</h6>
+                                <p class="card-title" style="font-weight:200;">AmpliconArchitect output files</p>
                             </div>
                         </div>
                     </div>
@@ -90,15 +92,15 @@
                         <div class="card text-center" style="width: 12rem; border:none;margin:auto; padding: 5px">
                             <img class="card-img-top" src="/static/img/250w/classes_cartoonAsset 1.png" style="max-height:20rem; max-width:10rem; margin:auto">
                             <div class="card-body" style="margin-top:18px">
-                                <h6 class="card-title" style="font-weight:200">Focal amplification classifications</h6>
+                                <p class="card-title" style="font-weight:200">Focal amplification classifications</p>
                             </div>
                         </div>
                     </div>
                     <div class="col-lg-3">
-                        <div class="card text-center" style="width: 12rem; border:none;margin:auto; padding: 5px">
+                        <div class="card text-center" style="width: 14rem; border:none;margin:auto; padding: 5px">
                             <img class="card-img-top" src="/static/img/250w/gene_coords_cartoonAsset 1.png" style="max-height:20rem; max-width:6rem; margin:auto">
                             <div class="card-body" style="margin-top:3px">
-                                <h6 class="card-title" style="font-weight:200">Amplicon coordinates and gene contents</h6>
+                                <p class="card-title" style="font-weight:200">Amplicon coordinates and gene contents</p>
                             </div>
                         </div>
                     </div>
@@ -210,8 +212,8 @@
         <h4 style="margin-top: 20px">News & Updates</h4>
 
         <ul>
-            <li>
-                <a href="https://www.nature.com/articles/d41586-023-00982-6" target="_blank">Study of ecDNA in Barrett's esophagus patients shows it arises early in the malignant transformation <i class="fas fa-external-link-alt"></i></a>;
+            <li style="margin-bottom:10px">
+                <a href="https://www.nature.com/articles/d41586-023-00982-6" target="_blank">Study of ecDNA in Barrett's esophagus patients shows it arises early in the malignant transformation <i class="fas fa-external-link-alt"></i></a>
             </li>
             <li>
                 <a href="https://www.nih.gov/news-events/news-releases/four-multinational-interdisciplinary-teams-selected-address-major-challenges-cancer" target="_blank">Team eDyNAmiC receives $25 million grant to study the creation and action of ecDNA <i class="fas fa-external-link-alt"></i></a>
@@ -226,6 +228,10 @@
 
     </div>
 </div>
+</div>
+
+{% endblock index %}
 
 
+{% block main %}
 {% endblock %}
