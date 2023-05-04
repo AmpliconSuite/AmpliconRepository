@@ -87,10 +87,10 @@ USE_MODELTRANSLATION = False
 
 # Hosts/domain names that are valid for this site; required if DEBUG is False
 # See https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','172.31.29.144','50.19.227.137']
+ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137']
 
 # Add CSRF trusted origins
-CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconrepository.org']
+CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconrepository.org','https://dev.ampliconrepository.org']
 
 # skip intermediate sign-out page
 ACCOUNT_LOGOUT_ON_GET = True
@@ -154,6 +154,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 GOOGLE_SECRET_KEY = os.environ['GOOGLE_SECRET_KEY']
 GLOBUS_SECRET_KEY = os.environ['GLOBUS_SECRET_KEY']
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'https'
+
 SOCIALACCOUNT_EMAIL_REQUIRED=True
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
@@ -193,7 +194,7 @@ SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
     'https://www.googleapis.com/auth/userinfo.profile'
 ]
 
-
+ACCOUNT_FORMS = {'signup': 'caper.forms.MySignUpForm'}
 
 #############
 # DATABASES #
@@ -383,6 +384,9 @@ if os.path.exists(f):
 PROJECT_DATA_URL='/project_data/'
 PROJECT_DATA_ROOT=os.path.join(BASE_DIR,'project_data')
 
+ACCOUNT_FORMS = {'signup': 'caper.forms.MySignUpForm'}
+SOCIALACCOUNT_FORMS =  {'signup': 'caper.forms.MySocialSignUpForm'}
+SOCIALACCOUNT_LOGIN_ON_GET = True
 
 ####################
 # DYNAMIC SETTINGS #

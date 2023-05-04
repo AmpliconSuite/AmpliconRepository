@@ -3,15 +3,18 @@
 from django.http import HttpResponse, FileResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import user_passes_test
+
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
 # from django.conf import settings
 # import pymongo
 import json
 # from .models import Run
-from .forms import RunForm, UpdateForm
+from .forms import RunForm, UpdateForm, FeaturedProjectForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
+import time
 import datetime
 import os
 import shutil
@@ -48,7 +51,8 @@ fs_handle = gridfs.GridFS(db_handle)
 
 def get_date():
     today = datetime.datetime.now()
-    date = today.strftime('%Y-%m-%d')
+    # date = today.strftime('%Y-%m-%d')
+    date = today.isoformat()
     return date
 
 
@@ -93,11 +97,14 @@ def get_one_feature(project_name, sample_name, feature_name):
 
 
 def check_project_exists(project_id):
-    if collection_handle.count_documents({ '_id': project_id }, limit = 1):
+
+    if collection_handle.count_documents({ '_id': ObjectId(project_id) }, limit = 1):
+
         return True
     elif collection_handle.count_documents({ 'project_name': project_id }, limit = 1):
         return True
     else:
+
         return False
 
 
@@ -243,6 +250,24 @@ def get_files(fs_id):
     # response =  StreamingHttpResponse(FileWrapper(wrapper),content_type=file_['contentType'])
     return wrapper
 
+def modify_date(projects):
+    """
+    Modifies the date to this format: 
+
+    MM DD, YYYY HH:MM:SS AM/PM
+    
+    """
+
+    for project in projects:
+        try:
+            dt = datetime.datetime.strptime(project['date'], f"%Y-%m-%dT%H:%M:%S.%f")
+            project['date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
+        except Exception as e:
+            print(e)
+
+    return projects
+
+    
 
 def index(request):
     if request.user.is_authenticated:
@@ -258,7 +283,16 @@ def index(request):
     for proj in public_projects:
         prepare_project_linkid(proj)
 
-    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects})
+    featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
+    for proj in featured_projects:
+        prepare_project_linkid(proj)
+
+
+    public_projects = modify_date(public_projects)
+    private_projects = modify_date(private_projects)
+    featured_projects = modify_date(featured_projects)
+
+    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects})
 
 
 def profile(request):
@@ -295,18 +329,29 @@ def reference_genome_from_sample(sample_data):
     return reference_genome
 
 def project_page(request, project_name):
+    t_i = time.time()
     project = get_one_project(project_name)
     samples = project['runs']
     features_list = replace_space_to_underscore(samples)
-    sample_data = sample_data_from_feature_list(features_list)
     reference_genome = reference_genome_from_project(samples)
-    # oncogenes = get_sample_oncogenes(features_list)
-    #stackedbar_plot = stacked_bar.StackedBarChart(file='/mnt/c/Users/ahuja/Desktop/data/aggregated_results.csv')
-    #pie_chart = piechart.pie_chart(directory = '/mnt/c/Users/ahuja/Desktop/bafna_lab/AABeautification/AA_outputs/')
-    stackedbar_plot = None
-    pie_chart = None 
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
+    sample_data = sample_data_from_feature_list(features_list)
+    # df = pd.DataFrame(sample_data)
+    t_sa = time.time()
+    dfl = []
+    for _, dlist in samples.items():
+        dfl.append(pd.DataFrame(dlist))
 
+    aggregate = pd.concat(dfl)
+    t_sb = time.time()
+    diff = t_sb - t_sa
+    print(f"Iteratively build project dataframe from samples in {diff} seconds")
+    stackedbar_plot = stacked_bar.StackedBarChart(aggregate)
+    pie_chart = piechart.pie_chart(aggregate)
+    t_f = time.time()
+    diff = t_f - t_i
+    print(f"Generated the project page from views.py in {diff} seconds")
+    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
+    
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
@@ -695,10 +740,11 @@ def get_current_user(request):
 
 def project_delete(request, project_name):
     project = get_one_project(project_name)
+
     if check_project_exists(project_name):
         current_runs = project['runs']
-        query = {'project_name': project_name}
-        query = {'project_name': project_name}
+        query = {'_id': project['_id']}
+        #query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True} }
         collection_handle.update_one(query, new_val)
         return redirect('profile')
@@ -714,15 +760,17 @@ def edit_project_page(request, project_name):
 
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
 
+
         if 'file' in form_dict:
             runs = samples_to_dict(form_dict['file'])
         else:
             runs = 0
         if check_project_exists(project_name):
+
             current_runs = project['runs']
             if runs != 0:
                 current_runs.update(runs)
-            query = {'project_name': project_name}
+            query = {'_id': ObjectId(project_name)}
             new_val = { "$set": {'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'],
                                  'Oncogenes': get_project_oncogenes(current_runs)} }
@@ -767,6 +815,36 @@ def clear_tmp():
                 shutil.rmtree(file_path)
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
+
+# only allow users designated as staff to see this, otherwise redirect to nonexistant page to 
+# deny that this might even be a valid URL
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_featured_projects(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    if request.method == "POST":
+
+        form = FeaturedProjectForm(request.POST)
+        form_dict = form_to_dict(form)
+        project_name = form_dict['project_name']
+        project_id = form_dict['project_id']
+        featured = form_dict['featured']
+
+        project = get_one_project(project_id)
+        query = {'_id': ObjectId(project_id)}
+        new_val = {"$set": {'featured': featured}}
+        collection_handle.update_one(query, new_val)
+
+
+    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+
+    return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
+
+
+
 
 def create_project(request):
     if request.method == "POST":
