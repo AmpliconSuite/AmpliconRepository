@@ -180,8 +180,6 @@ export default class CustomOncoPrint extends PureComponent {
             type: 'bar',
             x: xBackground.map(i => i - padding * 2),
             y: yBackground,
-            // set z to a value less than 0 to make the background appear in the back layer
-            z: [-1]
           };
 
         const data = [background];
@@ -251,46 +249,141 @@ export default class CustomOncoPrint extends PureComponent {
             hovermode: 'closest',
             showlegend: showlegend,
             xaxis: {
-                showgrid: true,
-                tickmode: 'array', // set the tick mode to 'array'
-                tickvals: samples.map((val, idx) => idx +1), // set the tick values to the indices of the groups
-                ticktext: samples, // set the tick text to the group names
-                tickangle: -45, // rotate the tick labels by -45 degrees
-                //tick0: 0.5,
-                //dtick: 1,
-                tickfont: {
-                    size: 15 // set the font size of the tick labels
-                },
-                showticklabels: true,
-                ticks: 'outside',
-                zeroline: true,
-                range: initialRange,
-                automargin: true,
-                gridcolor: 'rgb(0,0,0)',
-                gridwidth: 2,
-                showline: true,                
+              showgrid: false,
+              layer: 'above traces',
+              ticks: '',
+              showticklabels: true,
+              tickmode: 'array',
+              tickvals: samples.map((val, idx) => idx+0.5),
+              ticktext: samples,
+              tickfont: {
+                size: 15
+              },
+              automargin: true,
+              gridcolor: 'rgb(0,0,0)',
+              gridwidth: 5,
+              showline: true,
+              zeroline: false,
             },
             yaxis: {
-                showgrid: true,
-                zeroline: true,
-                tickmode: 'array', // set the tick mode to 'array'
-                tickvals: genes.map((val, idx) => idx +0.5), // set the tick values to the indices of the groups
-                ticktext: genes, // set the tick text to the group names
-                tickangle: -45, // rotate the tick labels by -45 degrees
-                tick0: 0.5,
-                dtick: 1,
-                tickfont: {
-                    size: 10 // set the font size of the tick labels
-                },
-                showticklabels : true,
-                fixedrange: true,
-                automargin: true,
-                gridcolor: 'rgb(0,0,0)',
-                gridwidth: 2,
-                showline: true,
+              showgrid: false,
+              layer: 'below traces',
+              zeroline: true,
+              tickmode: 'array',
+              tickvals: genes.map((val, idx) => idx + 0.5),
+              ticktext: Array(genes.length).fill(''),
+              tickangle: -45,
+              tick0: 0.5,
+              dtick: 1,
+              tickfont: {
+                size: 10
+              },
+              showticklabels: true,
+              fixedrange: true,
+              automargin: true,
+              gridcolor: 'rgb(0,0,0)',
+              gridwidth: 5,
+              showline: true,
             },
-            //margin: { t: 20, r: 20, b: 20 },
+            layer: 'above traces',
+            shapes: samples.map((val, idx) => idx + 1).map(makeLineVert).concat(genes.map((val, idx) => idx + 0.5).map(makeLineHoriz)),
+          
+        
         };
+        
+        function makeLineVert(x) {
+            return {
+                type: 'line',
+                xref: 'x',
+                yref: 'paper',
+                x0: x,
+                y0: 0,
+                x1: x,
+                y1: 1,
+            }
+        };
+
+        function makeLineHoriz(y) {
+        return {
+            type: 'line',
+            xref: 'paper',
+            yref: 'y',
+            x0: 0,
+            y0: y,
+            x1: 1,
+            y1: y,
+            }
+        };
+        // const layout = {
+        //     barmode: 'stack',
+        //     hovermode: 'closest',
+        //     showlegend: showlegend,
+        //     xaxis: {
+        //         showgrid: true,
+        //         tickmode: 'array', // set the tick mode to 'array'
+        //         tickvals: samples.map((val, idx) => idx +1), // set the tick values to the indices of the groups
+        //         ticktext: samples, // set the tick text to the group names
+        //         tickangle: -45, // rotate the tick labels by -45 degrees
+        //         //tick0: 0.5,
+        //         //dtick: 1,
+        //         tickfont: {
+        //             size: 15 // set the font size of the tick labels
+        //         },
+        //         showticklabels: true,
+        //         layer: 'above traces',
+        //         ticks: 'outside',
+        //         zeroline: true,
+        //         range: initialRange,
+        //         automargin: true,
+        //         gridcolor: 'rgb(0,0,0)',
+        //         gridwidth: 5,
+        //         showline: true,                
+        //     },
+        //     xaxis2: {
+        //         tickmode: 'array', // set the tick mode to 'array'
+        //         tickvals: samples.map((val, idx) => idx +0.5), // set the tick values to the indices of the groups
+        //         ticktext: samples, // set the tick text to the group names
+        //         tickangle: -45, // rotate the tick labels by -45 degrees
+        //         //tick0: 0.5,
+        //         //dtick: 1,
+        //         tickfont: {
+        //             size: 15 // set the font size of the tick labels
+        //         },
+        //         showticklabels: true,
+        //         anchor: 'free',
+        //         overlaying: 'x',
+        //         side: 'bottom',
+        //         position: 0.1,
+        //         ticks: 'outside',
+        //         zeroline: true,
+        //         range: initialRange,
+        //         automargin: true,
+        //         showline: true,                
+        //     },
+        //     yaxis: {
+        //         showgrid: true,
+        //         zeroline: true,
+        //         tickmode: 'array', // set the tick mode to 'array'
+        //         tickvals: genes.map((val, idx) => idx +0.5), // set the tick values to the indices of the groups
+        //         ticktext: Array(genes.length).fill(''), // set the tick text to the group names
+        //         tickangle: -45, // rotate the tick labels by -45 degrees
+        //         tick0: 0.5,
+        //         dtick: 1,
+        //         tickfont: {
+        //             size: 10 // set the font size of the tick labels
+        //         },
+        //         layer: 'above traces',
+        //         showticklabels : true,
+        //         fixedrange: true,
+        //         automargin: true,
+        //         gridcolor: 'rgb(0,0,0)',
+        //         gridwidth: 5,
+        //         showline: true,
+        //     },
+        //     grid: 'above traces',
+        //     layer: 'above traces',
+        //     margin: { t: 20, r: 20, b: 20 },
+        // };
 
         if (showoverview) {
             layout.xaxis.rangeslider = { autorange: true };

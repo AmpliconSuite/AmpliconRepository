@@ -16,3 +16,6 @@ pyvenv.cfg
 # pycharm IDE
 .idea/
 tmp/
+results/
+Contino_102622/
+settings.json

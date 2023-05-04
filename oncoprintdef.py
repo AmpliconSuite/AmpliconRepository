@@ -15,7 +15,7 @@ from dash_bio import OncoPrint
 
 #from custom_oncoprint.custom_oncoprint.Oncoprint import Oncoprint
 
-newdata = pd.read_csv('Contino_102622/contino_ac_102622/Contino_result_table.tsv', sep='\t', header=0)
+newdata = pd.read_csv('results/other_files/ccle_hg38_ac/ccle_hg38_result_table.tsv', sep='\t', header=0)
 newdata2 = newdata[['Sample name', 'Classification']]
 table = {}
 for key in list(newdata2['Sample name'].unique()):

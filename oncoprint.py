@@ -15,7 +15,7 @@ from custom_oncoprint import Oncoprint
 
 #from custom_oncoprint.custom_oncoprint.Oncoprint import Oncoprint
 
-newdata = pd.read_csv('Contino_102622/contino_ac_102622/Contino_result_table.tsv', sep='\t', header=0)
+newdata = pd.read_csv('results/other_files/ccle_hg38_ac/ccle_hg38_result_table.tsv', sep='\t', header=0)
 newdata2 = newdata[['Sample name', 'Classification']]
 table = {}
 for key in list(newdata2['Sample name'].unique()):
@@ -52,12 +52,12 @@ for key in table:
 
 df = df.sort_values(['ecDNA', 'BFB', 'Complex non-cyclic', 'Linear amplification'], ascending=[False, False, False, False])
 df = df.reset_index(drop=True)
-print(df)
+#print(df)
 
 df_rows = df[['ecDNA', 'BFB', 'Complex non-cyclic', 'Linear amplification']]
 for ind in df_rows.index:
   cells_per_sample.append(df_rows.loc[ind,:].values.flatten().tolist())
-print(cells_per_sample)
+#print(cells_per_sample)
 data = []
 
 #  Sample name ecDNA     BFB Complex non-cyclic Linear amplification
@@ -86,7 +86,7 @@ for ind in df.index:
       x['type'] = cells_per_sample[ind][i]
       data.append(x)
 
-print(data)
+##print(data)
 
 
 
