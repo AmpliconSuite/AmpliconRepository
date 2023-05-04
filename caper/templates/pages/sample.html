@@ -86,7 +86,7 @@
         <div class="collapse" id="collapseExample" style="padding-top:10px">
           <div class="card card-body">
             {% for key, item in sample_metadata.items %}
-                <p><b>{{ key }}:</b> {{ item }}</p><br>
+                <p><b>{{ key }}:</b> {{ item }}</p>
             {% endfor %}
           </div>
         </div>
@@ -95,6 +95,7 @@
         <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download" style="color: white; margin-bottom: 8px;" class="btn btn-primary">Download Sample Data</a>
         <a class="btn btn-primary" href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download_metadata" style="color: white; ">Download Metadata</a>
     </div>
+
 
 </div>
 
@@ -123,8 +124,7 @@
         
         <span style='margin-left: 1rem'> Display IGV Viewer </span>
         <input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle">
-
-
+        <span style='margin-left: 2rem'> Hover and click to interact with plots </span>
         {{ graph|safe }}
         <br>
         
