@@ -79,22 +79,23 @@
 
 <div class='row' style="margin:auto; padding-top: 20px; padding-bottom: 50px">
     <div class="col-md-9">
-        <h2>Sample Name: <span style="font-weight: 200">{{ sample_name }}</span></h2>
-        <h4>Project Name:  <a href="{% url 'project_page' project_name=project.linkid %}" style="font-weight: 200">{{ project.project_name }}</a></h4>
-        <h4>Reference Genome: <span style="font-weight: 200">{{ reference_genome }}</span></h4>
+        <h2>Sample: <span style="font-weight: 200">{{ sample_name }}</span></h2>
+        <h4>Project:  <a href="{% url 'project_page' project_name=project.linkid %}" style="font-weight: 200">{{ project.project_name }}</a></h4>
+        <h4>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h4>
         <button class="btn btn-primary" type="button" data-toggle="collapse" data-target="#collapseExample" aria-expanded="false" aria-controls="collapseExample"><a style="color: white">View Metadata</a></button>
-        <a class="btn btn-primary" href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download_metadata" style="color: white; ">Download Metadata</a>
         <div class="collapse" id="collapseExample" style="padding-top:10px">
           <div class="card card-body">
             {% for key, item in sample_metadata.items %}
-                <p><b>{{ key }}:</b> {{ item }}</p><br>
+                <p><b>{{ key }}:</b> {{ item }}</p>
             {% endfor %}
           </div>
         </div>
     </div>
     <div class="col-md-3" style='text-align:right'>
-        <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download" style="color: white" class="btn btn-primary">Download All Sample Data</a>
+        <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download" style="color: white; margin-bottom: 8px;" class="btn btn-primary">Download Sample Data</a>
+        <a class="btn btn-primary" href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download_metadata" style="color: white; ">Download Metadata</a>
     </div>
+
 
 </div>
 
@@ -123,8 +124,7 @@
         
         <span style='margin-left: 1rem'> Display IGV Viewer </span>
         <input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle">
-
-
+        <span style='margin-left: 2rem'> Hover and click to interact with plots </span>
         {{ graph|safe }}
         <br>
         
@@ -257,10 +257,7 @@
 
 
 <div style="margin-top:25px; padding: 25px; border: 0.5px solid grey">
-    <h3>Features Table</h3>
-
-
-        <table id='myTable2' class="table table-hover table-sm">
+        <table id='myTable2' class="table table-hover table-sm stripe no-border">
             <thead>
                 <tr>
                     <th>Amplicon</th>

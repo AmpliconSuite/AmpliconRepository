@@ -89,3 +89,15 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
 .featured_row {
      background-color: rgba(0,0,255,.06) !important;
 }
+tr:nth-child(odd) {
+  background-color: #F8F8F8; /* light grey */
+}
+
+tr:nth-child(even) {
+  background-color: #fff; /* white */
+}
+
+table.dataTable.no-border tbody th,
+table.dataTable.no-border tbody td {
+  border: 0;
+}

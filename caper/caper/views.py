@@ -224,13 +224,12 @@ def get_project_classifications(runs):
 def get_sample_oncogenes(feature_list, sample_name):
     oncogenes = set()
     for feature in feature_list:
-        if feature['Sample_name'] == sample_name:
-            if feature['Oncogenes']:
-                for gene in feature['Oncogenes']:
-                    if len(gene) != 0:
-                        oncogenes.add(gene.strip().replace("'",''))
+        if feature['Sample_name'] == sample_name and feature['Oncogenes']:
+            for gene in feature['Oncogenes']:
+                if len(gene) != 0:
+                    oncogenes.add(gene.strip().replace("'",''))
 
-    return list(oncogenes)
+    return sorted(list(oncogenes))
 
 
 def get_sample_classifications(feature_list, sample_name):
