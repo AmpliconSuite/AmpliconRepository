@@ -1,6 +1,6 @@
 # from asyncore import file_wrapper
 # from tkinter import E
-from django.http import HttpResponse, FileResponse
+from django.http import HttpResponse, FileResponse, StreamingHttpResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
@@ -358,7 +358,7 @@ def project_download(request, project_name):
     real_project_name = project['project_name']
     tar_id = project['tarfile']
     tarfile = fs_handle.get(ObjectId(tar_id)).read()
-    response = HttpResponse(tarfile)
+    response = StreamingHttpResponse(tarfile)
     response['Content-Type'] = 'application/x-zip-compressed'
     response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
     clear_tmp()
@@ -584,7 +584,7 @@ def sample_download(request, project_name, sample_name):
     shutil.make_archive(f'{sample_name}', 'zip', sample_data_path)
     zip_file_path = f"{sample_name}.zip"
     with open(zip_file_path, 'rb') as zip_file:
-        response = HttpResponse(zip_file)
+        response = StreamingHttpResponse(zip_file)
         response['Content-Type'] = 'application/x-zip-compressed'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.zip'
 
@@ -879,9 +879,6 @@ def admin_featured_projects(request):
         prepare_project_linkid(proj)
 
     return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
-
-
-
 
 def create_project(request):
     if request.method == "POST":
