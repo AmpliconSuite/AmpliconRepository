@@ -13,6 +13,7 @@ from django.conf.urls.static import static
 
 admin.autodiscover()
 
+
 # Add the urlpatterns for any custom Django applications here.
 # You can also change the ``home`` view to add your own functionality
 # to the project's homepage.
