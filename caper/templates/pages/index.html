@@ -8,11 +8,38 @@
             $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
         });
      
-        $('table.table').DataTable({
+        $('#projectTable0').DataTable({
             language: {
                     searchPlaceholder: "Search projects"
                     }
         });
+        $('#projectTable2').DataTable({
+            language: {
+                    searchPlaceholder: "Search projects"
+                    }
+        });
+        // $('#projectTable1').DataTable().column( 4 ).visible( true );
+        var pubTable = $('#projectTable1').DataTable({
+  //              language: {
+  //                  searchPlaceholder: "Search projects"
+  //                  },
+   //             initComplete: function() {
+  //                  pubTable = $('#projectTable1').DataTable();
+                    //pubTable.column( 4 ).visible( false );
+   //             },
+   //             "createdRow": function( row, data, dataIndex){
+   //                 if( data[4] ==  'True'){
+   //                      $(row).addClass('featured_row');
+   //                      $(row).attr('title', 'Featured Project ' );
+   //                 }
+   //             },
+//
+    //            "orderFixed": [ 4, 'desc' ]
+        });
+       // pubTable.column( 4 ).visible( false );
+
+
+
     });
 </script>
 {% endblock %}
@@ -20,27 +47,20 @@
 {% block meta_title %} Home
 {% endblock %}
 
-{% block main %}
+{% block index %}
+
+
 <head>
     <title>
         AmpliconRepository
     </title>
 </head>
 
+            
+
 <div class="row">
+    <div class="container main-container row" style="max-width:1400px; width:90%; margin:auto;">
     <div class="col-md-8">
-        <div>
-            <h1 style="padding-top: 50px">Welcome to the AmpliconRepository</h1>
-            <hr>
-            <div stlye="margin-top: 30px">
-                <p>Focal oncogene amplification and rearrangements drive tumor growth and evolution in multiple cancer types. Proposed mechanisms for focal amplification include extrachromosomal DNA (ecDNA) formation, breakage-fusion-bridge (BFB) mechanism, tandem duplications, chromothripsis and others. Focally amplified regions are often hotspots for genomic rearrangements. As a result, the focally amplified region may undergo rapid copy number changes and the structure of the focally amplified region may evolve over time contributing to tumor progression. Furthermore, ecDNA elements may reintegrate back into the genome to form HSRs. The inter-cell heterogeneity in copy number of ecDNA as well as the interchangeability between ecDNA and HSR may allow the tumor to adapt to changing environment, e.g. targetted drug application. As a result, understanding the architecture of the focal amplifications is important to gain insights into cancer biology. AmpliconArchitect (AA) is a tool which can reconstruct the structure of focally amplified regions in a cancer sample using whole genome sequence short paired-end data.
-    
-                A full description of the methods and detailed characterization of copy number amplifications and ecDNA in cancer can be found in the following manuscript. Please cite the following reference if using AmpliconArchitect in your work:
-                        
-                Deshpande, V. et al. Exploring the landscape of focal amplifications in cancer using AmpliconArchitect. Nat. Commun. 10, 392 (2019). <a href="https://www.nature.com/articles/s41467-018-08200-y" target="_blank">Link to Paper</a></p>
-            </div>
-        </div>
-        
         <script>
             $( "#searchform" ).submit( function( e ) {
                 e.preventDefault();
@@ -67,10 +87,55 @@
                 border-radius: 0;
                 border-bottom: 2px solid  #0275d8 ;
             }
-            </style>
-        <div style="margin-bottom: 20px; border: 0.5px solid grey; padding: 20px; border-radius: 10px;">
 
-            <div  style="padding-top: 30px;">
+            .col-lg-3 {
+                padding:0px
+            }
+        </style>
+            <div style="margin-top: 20px">
+                <h1 style="">Welcome to the AmpliconRepository</h1>
+                <hr>
+                <div stlye="margin-top: 30px;">
+                    <p style="font-size:18px;">An online repository of AmpliconArchitect outputs. Explore and download focal amplification predictions and annotations.</p>
+                </div>
+                <div class="row">
+                    <div class="col-lg-3">
+                        <div class="card text-center" style="width:12rem; border:none;margin:auto; padding: 5px">
+                            <img class="card-img-top" src="/static/img/250w/exploration_cartoonAsset 1.png" style="max-height:20rem; max-width:10rem; margin:auto">
+                            <div class="card-body" style="margin-top:5px">
+                                <p class="card-title" style="font-weight:200">Copy-number data exploration</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-3">
+                        <div class="card text-center" style="width: 12rem; border:none;margin:auto; padding: 5px">
+                            <img class="card-img-top" src="/static/img/250w/aa_viz_cartoonAsset 1.png" style="max-height:20rem; max-width:10rem; margin:auto">
+                            <div class="card-body" style="margin-top:18px">
+                                <p class="card-title" style="font-weight:200;">AmpliconArchitect output files</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-3">
+                        <div class="card text-center" style="width: 12rem; border:none;margin:auto; padding: 5px">
+                            <img class="card-img-top" src="/static/img/250w/classes_cartoonAsset 1.png" style="max-height:20rem; max-width:10rem; margin:auto">
+                            <div class="card-body" style="margin-top:18px">
+                                <p class="card-title" style="font-weight:200">Focal amplification classifications</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-3">
+                        <div class="card text-center" style="width: 14rem; border:none;margin:auto; padding: 5px">
+                            <img class="card-img-top" src="/static/img/250w/gene_coords_cartoonAsset 1.png" style="max-height:20rem; max-width:6rem; margin:auto">
+                            <div class="card-body" style="margin-top:3px">
+                                <p class="card-title" style="font-weight:200">Amplicon coordinates and gene contents</p>
+                            </div>
+                        </div>
+                    </div>
+            
+                </div>
+        </div>
+        <div style="margin-bottom: 20px; border: 0.5px solid grey; padding: 20px; border-radius: 10px;">
+            <div  style="padding-top: 0px;">
                 <div class="tab-pane active" id="search1">
                     <form id="searchform" class="input-group" method=GET action="{% url 'gene_search_page' %}">
                         {% csrf_token %}
@@ -79,112 +144,198 @@
                         <datalist id="ecDNAclassificationDefaults">
                             <option value="ecDNA">ecDNA</option>
                             <option value="linear amplification">linear amplification</option>
-                            <option value="breakage-fusion-bridge (BFB)">breakage-fusion-bridge (BFB) </option>
-                            <option value="tandem duplications">tandem duplications </option>
-                            <option value="chromothripsis">chromothripsis </option>
+                            <option value="BFB">breakage-fusion-bridge (BFB) </option>
                             <option value="complex non-cyclic">complex non-cyclic </option>
 
 
                         </datalist>
-                        <button type="submit" class="btn btn-outline-primary">Search</button>
+                        <button type="submit" class="btn btn-outline-primary">Search all samples</button>
                     </form>
+                </div>
+                <div style="padding-top: 10px">
+                    <ul class="nav nav-tabs" role="tablist" >
+                        <li class="nav-item">
+
+                            <a class="nav-link active" href="#tab-table0" data-toggle="tab">Featured Projects</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link " href="#tab-table1" data-toggle="tab">Public Projects</a>
+                        </li>
+                        {% if user.is_authenticated %}
+                        <li class="nav-item">
+                            <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
+                        </li>
+                        {% endif %}
+                    </ul>
+
+                    <div class="tab-content" style="padding-top: 30px;">
+
+                        <div class="tab-pane active" id="tab-table0">
+                            <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Description</th>
+                                        <th>Last Updated</th>
+                                        <th>Project Members</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for project in featured_projects %}
+                                    <tr>
+                                        <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                                        <td>{{ project.description }}</td>
+                                        <td>{{ project.date }}</td>
+                                        <td>{% for person in project.project_members %}
+                                            {{ person }}<br>
+                                        {% endfor%}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="tab-pane " id="tab-table1">
+                            <table name='projectTable1' id='projectTable1' class="table" style="padding-top: 20px; width:100%">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Description</th>
+                                        <th>Last Updated</th>
+                                        <th>Project Members</th>
+
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for project in public_projects %}
+                                    <tr>
+
+                                        <td ><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+
+                                        <td>{{ project.description }}</td>
+                                        <td>{{ project.date }}</td>
+                                        <td>{% for person in project.project_members %}
+                                            {{ person }}<br>
+                                        {% endfor%}</td>
+
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% if user.is_authenticated %}
+                        <div class="tab-pane" id="tab-table2">
+                            <table id='projectTable2' class="table" style="padding-top: 20px; width:100%">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Description</th>
+                                        <th>Last Updated</th>
+                                        <th>Project Members</th>
+                                        <th>Edit Project</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for project in private_projects %}
+                                    <tr>
+                                        <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                                        <td>{{ project.description }}</td>
+                                        <td>{{ project.date }}</td>
+                                        <td>{% for person in project.project_members %}
+                                            {{ person }}<br>
+                                        {% endfor%}</td>
+                                        <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.linkid %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
 
             </div>
         </div>
         
-        <div>
-            <ul class="nav nav-tabs" role="tablist" >
-                <li class="nav-item">
-                    <a class="nav-link active" href="#tab-table1" data-toggle="tab">Public Projects</a>
-                </li>
-                {% if user.is_authenticated %}
-                <li class="nav-item"> 
-                    <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
-                </li>
-                {% endif %}
-            </ul>
-            <div class="tab-content" style="padding-top: 30px;">
-                <div class="tab-pane active" id="tab-table1">
-                    <table id='projectTable1' class="table" style="padding-top: 20px; width:100%">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Description</th>
-                                <th>Last Updated</th>
-                                <th>Project Members</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for project in public_projects %}
-                            <tr>
-                                <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
-                                <td>{{ project.description }}</td>
-                                <td>{{ project.date }}</td>
-                                <td>{% for person in project.project_members %}
-                                    {{ person }}<br>
-                                {% endfor%}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% if user.is_authenticated %}
-                <div class="tab-pane" id="tab-table2">
-                    <table id='projectTable2' class="table" style="padding-top: 20px; width:100%">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Description</th>
-                                <th>Last Updated</th>
-                                <th>Project Members</th>
-                                <th>Edit Project</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for project in private_projects %}
-                            <tr>
-                                <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
-                                <td>{{ project.description }}</td>
-                                <td>{{ project.date }}</td>
-                                <td>{% for person in project.project_members %}
-                                    {{ person }}<br>
-                                {% endfor%}</td>
-                                <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.linkid %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% endif %}
-            </div> 
-        </div>
     </div>
     <div class="col-md-4">
-        <figure class="figure">
-            <img src="/static/img/ff11_amplicon1.png" alt="" width="100%">
-            <figcaption class="figure-caption">Structural Variation view: show discordant edges, copy number segments and genomic coverage.</figcaption>
-        </figure>
+{#        <figure class="figure">#}
+{#            <img src="/static/img/ff11_amplicon1.png" alt="" width="100%">#}
+{#            <figcaption class="figure-caption">Structural Variation view: show discordant edges, copy number segments and genomic coverage.</figcaption>#}
+{#        </figure>#}
+{#        <br>#}
+{#        <figure class="figure">#}
+{#            <img src="/static/img/exampleAR.png" alt="" width="100%">#}
+{#            <figcaption class="figure-caption">CycleViz view: circular visualization of focal amplifications detected by AmpliconArchitect.</figcaption>#}
+{#        </figure>#}
         <br>
-        <figure class="figure">
-            <img src="/static/img/exampleAR.png" alt="" width="100%">
-            <figcaption class="figure-caption">CycleViz view: circular visualization of focal amplifications detected by AmpliconArchitect.</figcaption>
-        </figure>
         <h4 style="margin-top: 20px">News & Updates</h4>
-        <ul>
-            <li>
-                <a href="https://www.genengnews.com/news/extrachromosal-dna-found-to-play-a-critical-role-in-cancer/" target="_blank">Extrachromosal DNA Found to Play a Critical Role in Cancer <i class="fas fa-external-link-alt"></i></a>
-            </li>
-        </ul>
-        <h4 style="margin-top: 20px">How to Cite</h4>
-        <ul>
-            <li>
-                Deshpande, V., Luebeck, J., Nguyen, NP.D. et al. Exploring the landscape of focal amplifications in cancer using AmpliconArchitect. Nat Commun 10, 392 (2019). <a href="https://doi.org/10.1038/s41467-018-08200-y" target="_blank">https://doi.org/10.1038/s41467-018-08200-y</a>
-            </li>
-        </ul>
 
+        <ul>
+            <li style="margin-bottom:10px">
+                <a href="https://www.nature.com/articles/d41586-023-00982-6" target="_blank">Study of ecDNA in Barrett's esophagus patients shows ecDNA arises early in cancer development <i class="fas fa-external-link-alt"></i></a>
+            </li>
+            <li>
+                <a href="https://www.nih.gov/news-events/news-releases/four-multinational-interdisciplinary-teams-selected-address-major-challenges-cancer" target="_blank">Team eDyNAmiC receives $25 million grant to study the role of ecDNA in cancer <i class="fas fa-external-link-alt"></i></a>
+            </li>
+        </ul>
+        <div id="accordion" >
+            <div class="card">
+                <style>
+                    .btn-link:not([aria-expanded="false"]).collapsed::before {
+                        content: "";
+                        display: inline-block;
+                        border-style: solid;
+                        border-width: 0.4em 0 0.4em 0.4em;
+                        border-color: transparent transparent transparent #000;
+                        margin-right: 0.5em;
+                        transform: rotate(0deg);
+                        vertical-align: middle;
+                    }
+
+                    .btn-link[aria-expanded="true"]::before {
+                        content: "";
+                        display: inline-block;
+                        border-style: solid;
+                        border-width: 0.4em 0 0.4em 0.4em;
+                        border-color: transparent transparent transparent #000;
+                        margin-right: 0.5em;
+                        transform: rotate(90deg);
+                        vertical-align: middle;
+                    }
+
+                    .btn-link:not([aria-expanded="true"]).collapsed::before {
+                        content: "";
+                        display: inline-block;
+                        border-style: solid;
+                        border-width: 0.4em 0 0.4em 0.4em;
+                        border-color: transparent transparent transparent #000;
+                        margin-right: 0.5em;
+                        transform: rotate(0deg);
+                        vertical-align: middle;
+                    }
+
+                </style>
+
+              <div class="card-header" id="headingOne" style="background:none;">
+                <h4 class="mb-0">
+                    <button class="btn btn-link collapsed" data-toggle="collapse" data-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne" style="padding: 0.25rem 0.5rem; font-weight: bold;">How to cite AmpliconRepository</button>
+                </h4>
+              </div>
+
+              <div id="collapseOne" class="collapse" aria-labelledby="headingOne" data-parent="#accordion" >
+                <div class="card-body">
+                    Deshpande, V., Luebeck, J., Nguyen, NP.D. et al. Exploring the landscape of focal amplifications in cancer using AmpliconArchitect. Nat Commun 10, 392 (2019). <a href="https://doi.org/10.1038/s41467-018-08200-y" target="_blank">https://doi.org/10.1038/s41467-018-08200-y</a>
+                </div>
+              </div>
+            </div>
+        </div>
     </div>
 </div>
+</div>
+
+{% endblock index %}
 
 
+{% block main %}
 {% endblock %}

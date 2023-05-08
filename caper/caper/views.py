@@ -3,15 +3,18 @@
 from django.http import HttpResponse, FileResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import user_passes_test
+
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
 # from django.conf import settings
 # import pymongo
 import json
 # from .models import Run
-from .forms import RunForm, UpdateForm
+from .forms import RunForm, UpdateForm, FeaturedProjectForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
+import time
 import datetime
 import os
 import shutil
@@ -48,7 +51,8 @@ fs_handle = gridfs.GridFS(db_handle)
 
 def get_date():
     today = datetime.datetime.now()
-    date = today.strftime('%Y-%m-%d')
+    # date = today.strftime('%Y-%m-%d')
+    date = today.isoformat()
     return date
 
 
@@ -93,11 +97,14 @@ def get_one_feature(project_name, sample_name, feature_name):
 
 
 def check_project_exists(project_id):
-    if collection_handle.count_documents({ '_id': project_id }, limit = 1):
+
+    if collection_handle.count_documents({ '_id': ObjectId(project_id) }, limit = 1):
+
         return True
     elif collection_handle.count_documents({ 'project_name': project_id }, limit = 1):
         return True
     else:
+
         return False
 
 
@@ -217,13 +224,12 @@ def get_project_classifications(runs):
 def get_sample_oncogenes(feature_list, sample_name):
     oncogenes = set()
     for feature in feature_list:
-        if feature['Sample_name'] == sample_name:
-            if feature['Oncogenes']:
-                for gene in feature['Oncogenes']:
-                    if len(gene) != 0:
-                        oncogenes.add(gene.strip().replace("'",''))
+        if feature['Sample_name'] == sample_name and feature['Oncogenes']:
+            for gene in feature['Oncogenes']:
+                if len(gene) != 0:
+                    oncogenes.add(gene.strip().replace("'",''))
 
-    return list(oncogenes)
+    return sorted(list(oncogenes))
 
 
 def get_sample_classifications(feature_list, sample_name):
@@ -276,10 +282,16 @@ def index(request):
     for proj in public_projects:
         prepare_project_linkid(proj)
 
+    featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
+    for proj in featured_projects:
+        prepare_project_linkid(proj)
+
+
     public_projects = modify_date(public_projects)
     private_projects = modify_date(private_projects)
+    featured_projects = modify_date(featured_projects)
 
-    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects})
+    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects})
 
 
 def profile(request):
@@ -316,21 +328,27 @@ def reference_genome_from_sample(sample_data):
     return reference_genome
 
 def project_page(request, project_name):
+    t_i = time.time()
     project = get_one_project(project_name)
     samples = project['runs']
     features_list = replace_space_to_underscore(samples)
     reference_genome = reference_genome_from_project(samples)
     sample_data = sample_data_from_feature_list(features_list)
-    df = pd.DataFrame(sample_data)
+    # df = pd.DataFrame(sample_data)
+    t_sa = time.time()
     dfl = []
-    samples = df['Sample_name'].unique()
-    for sample in samples:
-        project, sample_info = get_one_sample(project_name, sample)
-        dfl.append(pd.DataFrame(sample_info))
+    for _, dlist in samples.items():
+        dfl.append(pd.DataFrame(dlist))
 
     aggregate = pd.concat(dfl)
+    t_sb = time.time()
+    diff = t_sb - t_sa
+    print(f"Iteratively build project dataframe from samples in {diff} seconds")
     stackedbar_plot = stacked_bar.StackedBarChart(aggregate)
     pie_chart = piechart.pie_chart(aggregate)
+    t_f = time.time()
+    diff = t_f - t_i
+    print(f"Generated the project page from views.py in {diff} seconds")
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
     
 
@@ -487,16 +505,38 @@ def sample_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
 
+    sample_data_path = f"tmp/{project_name}/{sample_name}"        
+
     for feature in sample_data_processed:
         # set up file system
         feature_id = feature['Feature_ID']
         feature_data_path = f"tmp/{project_name}/{sample_name}/{feature_id}"
         os.makedirs(feature_data_path, exist_ok=True)
         # get object ids
-        bed_id = feature['Feature_BED_file']
-        cnv_id = feature['CNV_BED_file']
-        pdf_id = feature['AA_PDF_file']
-        png_id = feature['AA_PNG_file']
+        if feature['Feature_BED_file'] != 'Not Provided':
+            bed_id = feature['Feature_BED_file']
+        else:
+            bed_id = False
+        if feature['CNV_BED_file'] != 'Not Provided':
+            cnv_id = feature['CNV_BED_file']
+        else:
+            cnv_id = False
+        if feature['AA_PDF_file'] != 'Not Provided':
+            pdf_id = feature['AA_PDF_file']
+        else:
+            pdf_id = False
+        if feature['AA_PNG_file'] != 'Not Provided':
+            png_id = feature['AA_PNG_file']
+        else:
+            png_id = False
+        if feature['AA_PNG_file'] != 'Not Provided':
+            aa_directory_id = feature['AA_directory']
+        else:
+            aa_directory_id = False
+        if feature['cnvkit_directory'] != 'Not Provided':
+            cnvkit_directory_id = feature['cnvkit_directory']
+        else:
+            cnvkit_directory_id = False
 
         # get files from gridfs
         # bed_file = fs_handle.get(ObjectId(bed_id)).read()
@@ -509,22 +549,38 @@ def sample_download(request, project_name, sample_name):
             with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
                 bed_file_tmp.write(bed_file)
   
-
-        cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
-        pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
-        png_file = fs_handle.get(ObjectId(png_id)).read()
+        if cnv_id:
+            cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
+        if pdf_id:
+            pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
+        if png_id:
+            png_file = fs_handle.get(ObjectId(png_id)).read()
+        if aa_directory_id:
+            aa_directory_file = fs_handle.get(ObjectId(aa_directory_id)).read()
+        if cnvkit_directory_id:
+            cnvkit_directory_file = fs_handle.get(ObjectId(cnvkit_directory_id)).read()
          
         # send files to tmp file system
 #        with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
 #            bed_file_tmp.write(bed_file)
-        with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
-            cnv_file_tmp.write(cnv_file)
-        with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
-            pdf_file_tmp.write(pdf_file)
-        with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
-            png_file_tmp.write(png_file)
+        if cnv_id:
+            with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
+                cnv_file_tmp.write(cnv_file)
+        if pdf_id:
+            with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
+                pdf_file_tmp.write(pdf_file)
+        if png_id:
+            with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
+                png_file_tmp.write(png_file)
+        if aa_directory_id:
+            if not os.path.exists(f'{sample_data_path}/aa_directory.tar.gz'):
+                with open(f'{sample_data_path}/aa_directory.tar.gz', "wb+") as aa_directory_tmp:
+                    aa_directory_tmp.write(aa_directory_file)
+        if cnvkit_directory_id:
+            if not os.path.exists(f'{sample_data_path}/cnvkit_directory.tar.gz'):
+                with open(f'{sample_data_path}/cnvkit_directory.tar.gz', "wb+") as cnvkit_directory_tmp:
+                    cnvkit_directory_tmp.write(cnvkit_directory_file)
 
-    sample_data_path = f"tmp/{project_name}/{sample_name}"        
     shutil.make_archive(f'{sample_name}', 'zip', sample_data_path)
     zip_file_path = f"{sample_name}.zip"
     with open(zip_file_path, 'rb') as zip_file:
@@ -721,10 +777,11 @@ def get_current_user(request):
 
 def project_delete(request, project_name):
     project = get_one_project(project_name)
+
     if check_project_exists(project_name):
         current_runs = project['runs']
-        query = {'project_name': project_name}
-        query = {'project_name': project_name}
+        query = {'_id': project['_id']}
+        #query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True} }
         collection_handle.update_one(query, new_val)
         return redirect('profile')
@@ -740,15 +797,17 @@ def edit_project_page(request, project_name):
 
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
 
+
         if 'file' in form_dict:
             runs = samples_to_dict(form_dict['file'])
         else:
             runs = 0
         if check_project_exists(project_name):
+
             current_runs = project['runs']
             if runs != 0:
                 current_runs.update(runs)
-            query = {'project_name': project_name}
+            query = {'_id': ObjectId(project_name)}
             new_val = { "$set": {'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'],
                                  'Oncogenes': get_project_oncogenes(current_runs)} }
@@ -794,6 +853,36 @@ def clear_tmp():
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
+# only allow users designated as staff to see this, otherwise redirect to nonexistant page to 
+# deny that this might even be a valid URL
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_featured_projects(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    if request.method == "POST":
+
+        form = FeaturedProjectForm(request.POST)
+        form_dict = form_to_dict(form)
+        project_name = form_dict['project_name']
+        project_id = form_dict['project_id']
+        featured = form_dict['featured']
+
+        project = get_one_project(project_id)
+        query = {'_id': ObjectId(project_id)}
+        new_val = {"$set": {'featured': featured}}
+        collection_handle.update_one(query, new_val)
+
+
+    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+
+    return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
+
+
+
+
 def create_project(request):
     if request.method == "POST":
         form = RunForm(request.POST)
@@ -833,7 +922,7 @@ def create_project(request):
                 print(feature['Sample name'])
                 if len(feature) > 0:
                     # get paths
-                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON']
+                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON','AA directory','cnvkit directory']
                     for k in key_names:
                         try:
                             path_var = feature[k]
