@@ -44,5 +44,5 @@ def StackedBarChart(sample):
     end_time = time.time()
     elapsed_time = end_time - start_time
     print(f"Created project barchart plot in {elapsed_time} seconds")
-    return fig.to_html(full_html=False, config={'modeBarButtonsToRemove': ['zoom'], 'displayModeBar':False},
+    return fig.to_html(full_html=False, config={'modeBarButtonsToRemove': ['zoom']},
                        div_id="project_bar_plotly_div")
