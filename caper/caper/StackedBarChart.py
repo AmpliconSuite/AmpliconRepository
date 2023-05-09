@@ -25,7 +25,8 @@ def StackedBarChart(sample):
     df = output.sort_values(classes, ascending=[False, False, False, False])
     df2 = df.reset_index()
 
-    fig = px.bar(df2, x="Sample_name", y = classes,
+    if len(df2['Sample_name']) < 10:
+        fig = px.bar(df2, x="Sample_name", y = classes,
                 barmode = 'stack',
                  color_discrete_map = {
                         'ecDNA' : "rgb(255, 0, 0)",
@@ -33,8 +34,17 @@ def StackedBarChart(sample):
                         'Complex non-cyclic' : 'rgb(255, 190, 0)',
                         'Linear amplification' : 'rgb(27, 111, 185)'},
                  hover_data = {'Sample_name': False})
+    else:
+        fig = px.bar(df2, x="Sample_name", y = classes,
+                barmode = 'stack',
+                 color_discrete_map = {
+                        'ecDNA' : "rgb(255, 0, 0)",
+                        'BFB' : 'rgb(0, 70, 46)',
+                        'Complex non-cyclic' : 'rgb(255, 190, 0)',
+                        'Linear amplification' : 'rgb(27, 111, 185)'},
+                 hover_data = {'Sample_name': False}, range_x=([0, 9]))
 
-    fig.update_xaxes(tickangle=90, automargin=False, tickfont=dict(size=10), gridcolor = 'white')
+    fig.update_xaxes(tickangle=270, automargin=False, tickfont=dict(size=10), gridcolor = 'white')
     fig.update_yaxes(gridcolor = 'white')
     fig.update_layout(showlegend=False, plot_bgcolor = 'white')
     fig.update_layout(yaxis_title="Number of focal amps")
