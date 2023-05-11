@@ -42,15 +42,15 @@ def StackedBarChart(sample):
                         'BFB' : 'rgb(0, 70, 46)',
                         'Complex non-cyclic' : 'rgb(255, 190, 0)',
                         'Linear amplification' : 'rgb(27, 111, 185)'},
-                 hover_data = {'Sample_name': False}, range_x=([0, 9]))
+                 hover_data = {'Sample_name': False}, range_x=([-0.5, 9]))
 
-    fig.update_xaxes(tickangle=270, automargin=False, tickfont=dict(size=10), gridcolor = 'white')
+    fig.update_xaxes(tickangle=90, automargin=False, tickfont=dict(size=10), gridcolor = 'white', tickprefix = "   ")
     fig.update_yaxes(gridcolor = 'white')
     fig.update_layout(showlegend=False, plot_bgcolor = 'white')
     fig.update_layout(yaxis_title="Number of focal amps")
     fig.update_layout(xaxis_title=None)
     fig.update_layout(height=400, margin={'t': 20, 'b': 80, 'r': 0, 'l': 20})
-    fig.update_traces(hovertemplate='%{y:} amps, ' + 'Sample: %{x}' + '<br><b></b>', cliponaxis = True)
+    fig.update_traces(hovertemplate='%{y:} amps, ' + 'Sample: %{x}' + '<br><b></b>', cliponaxis = False)
 
     end_time = time.time()
     elapsed_time = end_time - start_time
