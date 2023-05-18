@@ -31,8 +31,8 @@ def pie_chart(sample):
         x=1
     ))
     fig.update_traces(textfont_size = 12)
-    fig.update_traces(textposition='inside', hovertemplate= "<br> %{label} </br> %{percent}")
+    fig.update_traces(textposition='inside', hovertemplate= '<b>%{label}</b><br>%{value} Focal Amps')
     fig.update_layout(margin={'t': 0, 'b': 40})
 
-    return fig.to_html(full_html=False, config={'displayModeBar': False}, div_id='project_pie_plotly_div')
+    return fig.to_html(full_html=False, config={'displayModeBar': True}, div_id='project_pie_plotly_div')
     
