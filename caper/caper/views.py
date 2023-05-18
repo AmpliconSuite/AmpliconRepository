@@ -36,6 +36,7 @@ from bson.objectid import ObjectId
 import re
 # from tqdm import tqdm
 from collections import defaultdict
+from wsgiref.util import FileWrapper
 
 
 # FOR LOCAL DEVELOPMENT
@@ -354,15 +355,18 @@ def project_page(request, project_name):
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
+    try:
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
-    real_project_name = project['project_name']
-    tar_id = project['tarfile']
-    tarfile = fs_handle.get(ObjectId(tar_id)).read()
-    response = StreamingHttpResponse(tarfile)
-    response['Content-Type'] = 'application/x-zip-compressed'
-    response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
-    clear_tmp()
-    return response
+        real_project_name = project['project_name']
+        tar_id = project['tarfile']
+        # tarfile = fs_handle.get(ObjectId(tar_id)).read()
+        chunk_size = 8192
+        response = StreamingHttpResponse(FileWrapper(fs_handle.get(ObjectId(tar_id)), chunk_size), content_type = 'application/zip')
+        response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
+        clear_tmp()
+        return response
+    except:
+        return Http404()
 
 
 def igv_features_creation(locations):
@@ -584,7 +588,7 @@ def sample_download(request, project_name, sample_name):
     shutil.make_archive(f'{sample_name}', 'zip', sample_data_path)
     zip_file_path = f"{sample_name}.zip"
     with open(zip_file_path, 'rb') as zip_file:
-        response = StreamingHttpResponse(zip_file)
+        response = HttpResponse(zip_file)
         response['Content-Type'] = 'application/x-zip-compressed'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.zip'
 
