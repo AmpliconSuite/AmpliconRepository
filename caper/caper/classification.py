@@ -7,9 +7,11 @@ def pie_chart(sample):
     class_counts = df['Classification'].value_counts()
     color_scale_map = {
         'ecDNA': '#FF4343',
-        'Complex non-cyclic' : '#FFBE00' , 
+        'Complex non-cyclic': '#FFBE00',
         'BFB' :'#00462E', 
-        'Linear amplification': '#1B6FB9'
+        'Linear amplification': '#1B6FB9',
+        'Complex-non-cyclic': '#FFBE00',
+        'Linear': '#1B6FB9'
     }
     fig = px.pie(class_counts, values='Classification', color=class_counts.index, names=class_counts.axes[0].tolist(),
                  color_discrete_map= color_scale_map)
