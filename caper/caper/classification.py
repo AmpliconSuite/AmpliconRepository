@@ -13,26 +13,24 @@ def pie_chart(sample):
     }
     fig = px.pie(class_counts, values='Classification', color=class_counts.index, names=class_counts.axes[0].tolist(),
                  color_discrete_map= color_scale_map)
-    fig.update_layout(font = dict( size=12, color="black"),
+    fig.update_layout(font = dict( size=12),
                 width=400,
                 height=400,
                 autosize = False,
                 margin=dict(l=15, r=15, t=15, b= 15),
                 showlegend = True, legend_itemclick=False)
-    fig.update_layout(title_text="Percentage of all focal amps", title_y=0.01, title_x=0.5)
 
-    # fig.add_annotation(x=0.5, y=0.9, text="Proportion of all focal amps", showarrow=False)
-
-    fig.update_layout(legend=dict(
+    fig.update_layout(
+        title_text="Percentage of all focal amps", title_y=0.01, title_x=0.5,
+        legend=dict(
         orientation="h",
         yanchor="bottom",
         y=1.02,
         xanchor="right",
-        x=1
+        x=0.96
     ))
-    fig.update_traces(textfont_size = 12)
-    fig.update_traces(textposition='inside', hovertemplate= '<b>%{label}</b><br>%{value} Focal Amps')
+    fig.update_traces(textfont_size = 12, textposition='inside', hovertemplate= '<b>%{label}</b><br>%{value} Focal Amps')
     fig.update_layout(margin={'t': 0, 'b': 40})
 
-    return fig.to_html(full_html=False, config={'displayModeBar': True}, div_id='project_pie_plotly_div')
+    return fig.to_html(full_html=False, config={'displayModeBar': True, 'displaylogo':False}, div_id='project_pie_plotly_div')
     
