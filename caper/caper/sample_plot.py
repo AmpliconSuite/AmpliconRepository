@@ -1,28 +1,19 @@
-from statistics import mode
-from dash import Dash, html, dcc
-import plotly.express as px
-#import dash_bio as dashbio
 import pandas as pd
 import plotly.graph_objs as go
 import numpy as np
-from numpy import random
 import warnings
 from plotly.subplots import make_subplots
 from pylab import cm
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
 import os
-import re
-from .utils import get_db_handle, get_collection_handle, create_run_display
+from .utils import get_db_handle, get_collection_handle
 import gridfs
 from bson.objectid import ObjectId
 from io import StringIO
-from collections import defaultdict
 import time
 
 warnings.filterwarnings("ignore")
 
-# FOR LOCAL DEVELOPMENT
+# FOR LOCAL DEVELOPMENT [Deprecated]
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
 
 # FOR PRODUICTION
@@ -55,9 +46,6 @@ def get_chrom_lens(ref):
 
 
 def plot(sample, sample_name, project_name, filter_plots=False):
-    # project_data_dir = f'project_data/{project_name}/extracted'
-    # if not os.path.exists(project_data_dir):
-    #     return ''
     start_time = time.time()
     potential_ref_genomes = set()
     for item in sample:
@@ -97,7 +85,6 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
 
     amplicon = pd.DataFrame(sample)
-    # amplicon['AA amplicon number'] = amplicon['AA amplicon number'].astype(int).astype(str)
 
     amplicon_numbers = sorted(list(amplicon['AA_amplicon_number'].unique()))
     seen = set()
@@ -106,14 +93,11 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     if filter_plots:
         chromosomes = set()
         for x in amplicon['Location']:
-            # if len(x) > 1:
             for loc in x:
                 chr_num = get_chrom_num(loc)
                 if chr_num:
                     chromosomes.add(chr_num)
-            # else:
-            #     chr_num = get_chrom_num(x[0])
-            #     chromosomes.add(chr_num)
+
         if chromosomes:
             chromosomes = sorted(list(chromosomes), key=chr_order)
 
@@ -230,15 +214,12 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
                         amplicon_df = pd.DataFrame()
 
-            #display(a_df)
             cent_df = full_cent_df[full_cent_df[0] == key]
-            #display(cent_df)
             chr_df = pd.DataFrame()
             for i in range(len(cent_df)):
                 row = cent_df.iloc[[i]]
                 if (row.iloc[0, 2] - row.iloc[0, 1]) / x_range < min_width:
                     offset = (x_range * min_width) - (row.iloc[0, 2] - row.iloc[0, 1])
-                    # offset = 0
                 else:
                     offset = 0
 
@@ -250,8 +231,6 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                         row['Centromere Position'] = row.iloc[0, 2] + offset
                         row['Y-axis'] = 95
                     chr_df = pd.concat([row, chr_df])
-
-
 
             if rowind == 1 and colind == 1:
                 fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)',
@@ -301,7 +280,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         fig.update_traces(textposition="bottom right")
         fig.update_layout(title_font_size=30,
         xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified', title_text=f"{sample_name} Copy Number Plots",
-        height = height[rows], width = 1300, margin = dict(t = 70, r = 70, b = 70, l = 70))
+        height = height[rows], margin = dict(t = 70, r = 35, b = 15, l = 70))
 
         # add select and deselect all buttons
         fig.update_layout(dict(updatemenus=[
