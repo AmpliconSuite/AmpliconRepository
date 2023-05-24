@@ -1,18 +1,20 @@
 import pandas as pd
 import plotly.express as px
 
-def pie_chart(sample):
+def pie_chart(sample, fa_cmap):
     df = pd.DataFrame(sample)
 
     class_counts = df['Classification'].value_counts()
-    color_scale_map = {
-        'ecDNA': '#FF4343',
-        'Complex non-cyclic' : '#FFBE00' , 
-        'BFB' :'#00462E', 
-        'Linear amplification': '#1B6FB9'
-    }
+    # color_scale_map = {
+    #     'ecDNA': '#FF4343',
+    #     'Complex non-cyclic': '#FFBE00',
+    #     'BFB' :'#00462E',
+    #     'Linear amplification': '#1B6FB9',
+    #     'Complex-non-cyclic': '#FFBE00',
+    #     'Linear': '#1B6FB9'
+    # }
     fig = px.pie(class_counts, values='Classification', color=class_counts.index, names=class_counts.axes[0].tolist(),
-                 color_discrete_map= color_scale_map)
+                 color_discrete_map= fa_cmap)
     fig.update_layout(font = dict( size=12),
                 width=400,
                 height=400,
