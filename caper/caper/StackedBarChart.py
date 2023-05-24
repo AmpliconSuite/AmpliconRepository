@@ -2,18 +2,8 @@ import time
 import pandas as pd
 import plotly.express as px
 
-def StackedBarChart(sample):
+def StackedBarChart(sample, fa_cmap):
     start_time = time.time()
-
-    fa_cmap = {
-                'ecDNA': "rgb(255, 0, 0)",
-                'BFB': 'rgb(0, 70, 46)',
-                'Complex non-cyclic': 'rgb(255, 190, 0)',
-                'Linear amplification': 'rgb(27, 111, 185)',
-                'Complex-non-cyclic': 'rgb(255, 190, 0)',
-                'Linear': 'rgb(27, 111, 185)'
-                }
-
     df = pd.DataFrame(sample)
     classes = ['ecDNA', 'BFB', 'Complex non-cyclic', 'Complex-non-cyclic', 'Linear amplification', 'Linear']
 
