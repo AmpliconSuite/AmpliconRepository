@@ -31,7 +31,7 @@ def StackedBarChart(sample, fa_cmap):
     sort_col = [(corder[row['Classification']], cc_tuples[row['Sample_name']], row['Sample_name']) for _, row in df2.iterrows()]
     df2['sort_order_col'] = sort_col
     df2.sort_values(inplace=True, by=['sort_order_col'])
-    print(df2)
+    ordered_name_set = df2['Sample_name'].unique()
 
     if len(df2['Sample_name']) < 10:
         fig = px.bar(df2, x="Sample_name", y = "Count", color='Classification',
@@ -40,7 +40,7 @@ def StackedBarChart(sample, fa_cmap):
             )
     else:
         fig = px.bar(df2, x="Sample_name", y = "Count", color='Classification',
-                barmode = 'stack', custom_data=["Sample_name", "Classification"], range_x=([-0.5, 24]),
+                barmode = 'stack', custom_data=["Sample_name", "Classification"], range_x=([-0.5, min(24, len(ordered_name_set))]),
                 color_discrete_map = fa_cmap,
             )
 
@@ -54,7 +54,6 @@ def StackedBarChart(sample, fa_cmap):
                       "Count: %{y}<br>" +
                       "<extra></extra>",
                       )
-    ordered_name_set = df2['Sample_name'].unique()
     trunc_names = [x[0:10] + "..." if len(x) > 10 else x for x in ordered_name_set]
     fig.update_layout(showlegend=False, plot_bgcolor = 'white', yaxis_title="Number of focal amps", xaxis_title=None,
                       height=400, margin={'t': 20, 'b': 0, 'r': 0, 'l': 20},
