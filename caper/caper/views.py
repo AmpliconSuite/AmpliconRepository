@@ -20,7 +20,7 @@ import os
 import shutil
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
-import caper.classification as piechart
+import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
 # from django.views.decorators.cache import cache_page
 # from zipfile import ZipFile
@@ -49,6 +49,15 @@ db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
 fs_handle = gridfs.GridFS(db_handle)
 
+# Site-wide focal amp color scheme
+fa_cmap = {
+                'ecDNA': "rgb(255, 0, 0)",
+                'BFB': 'rgb(0, 70, 46)',
+                'Complex non-cyclic': 'rgb(255, 190, 0)',
+                'Linear amplification': 'rgb(27, 111, 185)',
+                'Complex-non-cyclic': 'rgb(255, 190, 0)',
+                'Linear': 'rgb(27, 111, 185)'
+                }
 
 def get_date():
     today = datetime.datetime.now()
@@ -345,12 +354,12 @@ def project_page(request, project_name):
     t_sb = time.time()
     diff = t_sb - t_sa
     print(f"Iteratively build project dataframe from samples in {diff} seconds")
-    stackedbar_plot = stacked_bar.StackedBarChart(aggregate)
-    pie_chart = piechart.pie_chart(aggregate)
+    stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
+    pc_fig = piechart.pie_chart(aggregate, fa_cmap)
     t_f = time.time()
     diff = t_f - t_i
     print(f"Generated the project page from views.py in {diff} seconds")
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
+    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig})
     
 
 def project_download(request, project_name):
