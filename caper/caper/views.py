@@ -355,18 +355,29 @@ def project_page(request, project_name):
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
-    try:
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
-        real_project_name = project['project_name']
-        tar_id = project['tarfile']
+    real_project_name = project['project_name']
+    #tar_id = project['tarfile']
         # tarfile = fs_handle.get(ObjectId(tar_id)).read()
-        chunk_size = 8192
-        response = StreamingHttpResponse(FileWrapper(fs_handle.get(ObjectId(tar_id)), chunk_size), content_type = 'application/zip')
-        response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
-        clear_tmp()
-        return response
-    except:
-        return Http404()
+    #tarfile = fs_handle.get(ObjectId(tar_id))
+    #response = FileResponse(tarfile)
+    #chunk_size = 8192
+    #response = FileResponse(FileWrapper(fs_handle.get(ObjectId(tar_id)), chunk_size), content_type = 'application/zip')
+    #real_project_name = project['project_name']
+    project_data_path = f"tmp/{project_name}"  
+    file_location = f'{project_data_path}/{project_name}'
+    chunk_size = 8192
+    response = StreamingHttpResponse(
+        FileWrapper(
+            open(file_location, "rb"),
+            chunk_size,
+        )    
+        )
+    response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
+    #clear_tmp()
+    return response
+    #except:
+       # raise Http404()
 
 
 def igv_features_creation(locations):
@@ -847,15 +858,16 @@ def create_user_list(string, current_user):
 
 def clear_tmp():
     folder = 'tmp/'
-    for filename in os.listdir(folder):
-        file_path = os.path.join(folder, filename)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)
-        except Exception as e:
-            print('Failed to delete %s. Reason: %s' % (file_path, e))
+    if os.path.isdir(folder):
+        for filename in os.listdir(folder):
+            file_path = os.path.join(folder, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print('Failed to delete %s. Reason: %s' % (file_path, e))
 
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to 
 # deny that this might even be a valid URL
@@ -951,10 +963,10 @@ def create_project(request):
         project['Classification'] = get_project_classifications(runs)
         if form.is_valid():
             new_id = collection_handle.insert_one(project)
-            clear_tmp()
+    #        clear_tmp()
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
-            clear_tmp()
+    #        clear_tmp()
             raise Http404()
     else:
         form = RunForm()

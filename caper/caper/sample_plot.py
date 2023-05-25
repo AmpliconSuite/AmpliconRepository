@@ -45,6 +45,7 @@ def get_chrom_num(location: str):
 
 def get_chrom_lens(ref):
     chrom_len_dict = {}
+    print(f'====================== {os.getcwd()}')
     with open(f'bed_files/{ref}_noAlt.fa.fai') as infile:
         for line in infile:
             fields = line.rstrip().rsplit()
@@ -71,6 +72,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
     ref = potential_ref_genomes.pop()
     cent_file = f'bed_files/{ref}_centromere.bed'
+    print(os.getcwd())
     full_cent_df = pd.read_csv(cent_file, header=None, sep='\t')
     for i, row in full_cent_df.iterrows():
         chr_num = get_chrom_num(row[0])
