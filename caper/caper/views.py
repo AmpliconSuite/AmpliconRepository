@@ -355,30 +355,18 @@ def project_page(request, project_name):
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
+    try:
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
-    real_project_name = project['project_name']
-    #tar_id = project['tarfile']
+        real_project_name = project['project_name']
+        tar_id = project['tarfile']
         # tarfile = fs_handle.get(ObjectId(tar_id)).read()
-    #tarfile = fs_handle.get(ObjectId(tar_id))
-    #response = FileResponse(tarfile)
-    #chunk_size = 8192
-    #response = FileResponse(FileWrapper(fs_handle.get(ObjectId(tar_id)), chunk_size), content_type = 'application/zip')
-    #real_project_name = project['project_name']
-    project_data_path = f"tmp/{project_name}"  
-    file_location = f'{project_data_path}/{project_name}'
-    chunk_size = 8192
-    response = StreamingHttpResponse(
-        FileWrapper(
-            open(file_location, "rb"),
-            chunk_size,
-        )    
-        )
-    response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
-    #clear_tmp()
-    return response
-    #except:
-       # raise Http404()
-
+        chunk_size = 8192
+        response = StreamingHttpResponse(FileWrapper(fs_handle.get(ObjectId(tar_id)), chunk_size), content_type = 'application/zip')
+        response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
+        clear_tmp()
+        return response
+    except:
+        return Http404()
 
 def igv_features_creation(locations):
     """
