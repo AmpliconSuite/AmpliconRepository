@@ -56,7 +56,8 @@ fa_cmap = {
                 'Complex non-cyclic': 'rgb(255, 190, 0)',
                 'Linear amplification': 'rgb(27, 111, 185)',
                 'Complex-non-cyclic': 'rgb(255, 190, 0)',
-                'Linear': 'rgb(27, 111, 185)'
+                'Linear': 'rgb(27, 111, 185)',
+                'Virus': 'rgb(255,192,203)',
                 }
 
 def get_date():
@@ -400,8 +401,9 @@ def igv_features_creation(locations):
         ## each key is a chromosome
         ## each value is a constructed focal range, including chr_num, chr_min, chr_max
     locuses = {}
-    
     for location in locations:
+        if not location:
+            continue
         parsed = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")
         chrom = parsed[0]
         start = int(parsed[1])
@@ -422,7 +424,6 @@ def igv_features_creation(locations):
                 'max':end,
                 
                 }
-        # chr_num = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
 
     ## reconstruct locuses
     for key in locuses.keys():
@@ -430,13 +431,7 @@ def igv_features_creation(locations):
         chr_max = int(locuses[key]['max'])
         chr_num = key.replace('chr', '')
         locuses[key] = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
-    # chr_num = locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
-    # chr_min = int(locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[1])
-    # chr_max = int(locations[-1].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[-1])
-    # if chr_min > chr_max:
-    #     locus = f"{chr_num}:{(int(chr_max)):,}-{(int(chr_min)):,}"
-    # else:
-    #     locus = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
+
     return features, locuses
 
 def get_sample_metadata(sample_data):

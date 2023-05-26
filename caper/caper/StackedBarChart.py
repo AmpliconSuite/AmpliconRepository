@@ -6,8 +6,8 @@ import plotly.express as px
 def StackedBarChart(sample, fa_cmap):
     start_time = time.time()
     df = pd.DataFrame(sample)
-    corder = {'ecDNA':0, 'BFB': 1, 'Complex-non-cyclic':2, 'Complex non-cyclic':3, 'Linear amplification':4, 'Linear':5, 'None':6}
-    classes = ['ecDNA', 'BFB', 'Complex non-cyclic', 'Complex-non-cyclic', 'Linear amplification', 'Linear', 'None']
+    corder = {'ecDNA':0, 'BFB': 1, 'Complex-non-cyclic':2, 'Complex non-cyclic':3, 'Linear amplification':4, 'Linear':5, 'Virus':6, 'None':100}
+    classes = ['ecDNA', 'BFB', 'Complex non-cyclic', 'Complex-non-cyclic', 'Linear amplification', 'Linear', 'Virus', 'None']
 
     seen_classes = set(df['Classification'])
     if None in seen_classes:
@@ -54,7 +54,7 @@ def StackedBarChart(sample, fa_cmap):
                       "Count: %{y}<br>" +
                       "<extra></extra>",
                       )
-    trunc_names = [x[0:10] + "..." if len(x) > 10 else x for x in ordered_name_set]
+    trunc_names = [x[0:10] + "..." if len(x) > 12 else x for x in ordered_name_set]
     fig.update_layout(showlegend=False, plot_bgcolor = 'white', yaxis_title="Number of focal amps", xaxis_title=None,
                       height=400, margin={'t': 20, 'b': 0, 'r': 0, 'l': 20},
                       xaxis={
