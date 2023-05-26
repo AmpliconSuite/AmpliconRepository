@@ -232,16 +232,26 @@ PROJECT_ROOT = BASE_DIR = os.path.dirname(PROJECT_APP_PATH)
 # project specific.
 CACHE_MIDDLEWARE_KEY_PREFIX = PROJECT_APP
 
-# URL prefix for static files.
-# Example: "http://media.lawrence.com/static/"
-STATIC_URL = "https://amprepobucket.s3.amazonaws.com/static/"
 
-# Absolute path to the directory static files should be collected to.
-# Don't put anything in this directory yourself; store your static files
-# in apps' "static/" subdirectories and in STATICFILES_DIRS.
-# Example: "/home/media/media.lawrence.com/static/"
-#STATIC_ROOT = os.path.join(PROJECT_ROOT, STATIC_URL.strip("/"))
-STATIC_ROOT = "/srv/static"
+USE_S3 = os.getenv('S3_STATIC_FILES') == 'TRUE'
+
+if USE_S3:
+    # s3 static settings
+    # URL prefix for static files.
+    # Example: "http://media.lawrence.com/static/"
+
+    STATIC_URL = "https://amprepobucket.s3.amazonaws.com/static/"
+    # Absolute path to the directory static files should be collected to.
+    # Don't put anything in this directory yourself; store your static files
+    # in apps' "static/" subdirectories and in STATICFILES_DIRS.
+    # Example: "/home/media/media.lawrence.com/static/"
+    #STATIC_ROOT = os.path.join(PROJECT_ROOT, STATIC_URL.strip("/"))
+    STATIC_ROOT = "/srv/static"
+else:
+    STATIC_URL = '/static/'
+    STATIC_ROOT = os.path.join(PROJECT_ROOT, STATIC_URL.strip("/"))
+
+
 
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a
 # trailing slash.
