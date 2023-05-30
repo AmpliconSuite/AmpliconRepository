@@ -47,7 +47,7 @@ def StackedBarChart(sample, fa_cmap):
     showslider = True if len(df2['Sample_name']) > 24 else False
     fig.update_xaxes(tickangle=60, automargin=True, tickfont=dict(size=10), gridcolor = 'white',
                      rangeslider_visible=showslider, tickprefix = "  ")
-    fig.update_yaxes(gridcolor = 'white', rangemode='tozero', ticks = 'outside') ## ADD Y TICKS
+    fig.update_yaxes(gridcolor = 'white', rangemode='tozero', ticks = 'outside')
     fig.update_traces(hovertemplate=
                       "<b>%{customdata[0]}</b><br>" +
                       "Class: %{customdata[1]}<br>" +
