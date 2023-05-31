@@ -8,6 +8,8 @@ from mezzanine.conf import settings
 from . import views
 from django.conf.urls.static import static
 
+from rest_framework import routers
+
 # Uncomment to use blog as home page. See also urlpatterns section below.
 # from mezzanine.blog import views as blog_views
 
@@ -55,7 +57,8 @@ urlpatterns += [
     path('gene-search/', views.gene_search_page, name='gene_search_page'),
     path('gene-search/download', views.gene_search_download, name='gene_search_download'),
     path('class-search/', views.class_search_page, name='class_search_page'),
-    path('admin-featured-projects/', views.admin_featured_projects, name='admin_featured_projects')
+    path('admin-featured-projects/', views.admin_featured_projects, name='admin_featured_projects'),
+    path('upload_api/', views.FileUploadView.as_view(), name = 'Document')
 ]
 
 urlpatterns += static(settings.PROJECT_DATA_URL, document_root=settings.PROJECT_DATA_ROOT)

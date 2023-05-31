@@ -1,9 +1,20 @@
 # from asyncore import file_wrapper
 # from tkinter import E
-from django.http import HttpResponse, FileResponse, StreamingHttpResponse
+from django.http import HttpResponse, FileResponse, StreamingHttpResponse, JsonResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
+
+## API framework packages
+from rest_framework.response import Response
+from  .serializers import FileSerializer
+from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser, FileUploadParser
+from rest_framework import status
+
+
+
+
 
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
@@ -841,8 +852,7 @@ def create_user_list(string, current_user):
     user_list = list(set(user_list))
     return user_list
 
-def clear_tmp():
-    folder = 'tmp/'
+def clear_tmp(folder = 'tmp/'):
     for filename in os.listdir(folder):
         file_path = os.path.join(folder, filename)
         try:
@@ -883,68 +893,9 @@ def admin_featured_projects(request):
 def create_project(request):
     if request.method == "POST":
         form = RunForm(request.POST)
-        
-        # 
-        form_dict = form_to_dict(form)
-        project_name = form_dict['project_name']
-        project = dict()        
-        # download_file(project_name, form_dict['file'])
-        # runs = samples_to_dict(form_dict['file'])
-        
-        # file download
+        user = get_current_user(request)
         request_file = request.FILES['document'] if 'document' in request.FILES else None
-        if request_file:
-            project_data_path = f"tmp/{project_name}"
-            # create a new instance of FileSystemStorage
-            fs = FileSystemStorage(location=project_data_path)
-            file = fs.save(request_file.name, request_file)
-            
-        # extract contents of file
-        file_location = f'{project_data_path}/{request_file.name}'
-        with open(file_location, "rb") as tar_file:
-            project_tar_id = fs_handle.put(tar_file)
-        with tarfile.open(file_location, "r:gz") as tar_file:
-            tar_file.extractall(path=project_data_path)
-            
-        #get run.json 
-        run_path =  f'{project_data_path}/results/run.json'   
-        with open(run_path, 'r') as run_json:
-            runs = samples_to_dict(run_json)
-        # for filename in os.listdir(project_data_path):
-        #     if os.path.isdir(f'{project_data_path}/{filename}'):
-                
-        # get cnv, image, bed files
-        for sample, features in runs.items():
-            for feature in features:
-                print(feature['Sample name'])
-                if len(feature) > 0:
-                    # get paths
-                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON','AA directory','cnvkit directory']
-                    for k in key_names:
-                        try:
-                            path_var = feature[k]
-                            with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
-                                id_var = fs_handle.put(file_var)
-
-                        except:
-                            id_var = "Not Provided"
-
-                        feature[k] = id_var
-
-        current_user = get_current_user(request)
-        project['creator'] = current_user
-        project['project_name'] = form_dict['project_name']
-        project['description'] = form_dict['description']
-        project['tarfile'] = project_tar_id
-        project['date_created'] = get_date()
-        project['date'] = get_date()
-        project['private'] = form_dict['private']
-        project['delete'] = False
-        user_list = create_user_list(form_dict['project_members'], current_user)
-        project['project_members'] = user_list
-        project['runs'] = runs
-        project['Oncogenes'] = get_project_oncogenes(runs)
-        project['Classification'] = get_project_classifications(runs)
+        project = create_project_helper(form, user, request_file)
         if form.is_valid():
             new_id = collection_handle.insert_one(project)
             clear_tmp()
@@ -955,3 +906,112 @@ def create_project(request):
     else:
         form = RunForm()
     return render(request, 'pages/create_project.html', {'run' : form}) 
+
+## make a create_project_helper for project creation code 
+
+def create_project_helper(form, user, request_file, save = True):
+    """
+    Creates a project dictionary from 
+    
+    """
+    form_dict = form_to_dict(form)
+    project_name = form_dict['project_name']
+    project = dict()        
+    # download_file(project_name, form_dict['file'])
+    # runs = samples_to_dict(form_dict['file'])
+    
+    # file download
+    
+    if request_file:
+        project_data_path = f"tmp/{project_name}"
+        # create a new instance of FileSystemStorage
+        if save:
+            fs = FileSystemStorage(location=project_data_path)
+            file = fs.save(request_file.name, request_file) 
+        
+    # extract contents of file
+    file_location = f'{project_data_path}/{request_file.name}'
+    with open(file_location, "rb") as tar_file:
+        project_tar_id = fs_handle.put(tar_file)
+    with tarfile.open(file_location, "r:gz") as tar_file:
+        tar_file.extractall(path=project_data_path)
+        
+    #get run.json 
+    run_path =  f'{project_data_path}/results/run.json'   
+    with open(run_path, 'r') as run_json:
+        runs = samples_to_dict(run_json)
+    # for filename in os.listdir(project_data_path):
+    #     if os.path.isdir(f'{project_data_path}/{filename}'):
+            
+    # get cnv, image, bed files
+    for sample, features in runs.items():
+        for feature in features:
+            print(feature['Sample name'])
+            if len(feature) > 0:
+                # get paths
+                key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON','AA directory','cnvkit directory']
+                for k in key_names:
+                    try:
+                        path_var = feature[k]
+                        with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
+                            id_var = fs_handle.put(file_var)
+
+                    except:
+                        id_var = "Not Provided"
+
+                    feature[k] = id_var
+
+    current_user = user
+    project['creator'] = current_user
+    project['project_name'] = form_dict['project_name']
+    project['description'] = form_dict['description']
+    project['tarfile'] = project_tar_id
+    project['date_created'] = get_date()
+    project['date'] = get_date()
+    project['private'] = form_dict['private']
+    project['delete'] = False
+    user_list = create_user_list(form_dict['project_members'], current_user)
+    project['project_members'] = user_list
+    project['runs'] = runs
+    project['Oncogenes'] = get_project_oncogenes(runs)
+    project['Classification'] = get_project_classifications(runs)
+    return project
+    
+
+class FileUploadView(APIView):
+    parser_class = (MultiPartParser,)
+    permission_classes = []
+
+    def get(self, request):
+        print('Hello')
+        return Response({'response':'success'})
+
+    def post(self, request, format= None):
+        '''
+
+        Post API
+        '''
+        file_serializer = FileSerializer(data = request.data)
+
+        if file_serializer.is_valid():
+            # save the uploaded file to media directory
+            file_serializer.save()
+            form = RunForm(request.POST)
+            form_dict = form_to_dict(form)
+            proj_name = form_dict['project_name']
+            request_file = request.FILES['file']
+            os.system(f'mkdir -p tmp/{proj_name}')
+            os.system(f'mv tmp/{request_file.name} tmp/{proj_name}/{request_file.name}')
+            # extract contents of file
+            ## TO CHANGE TO DUMMY ACCOUNT
+
+            current_user = request.POST['project_members']
+            print(f'Creating project for user {current_user}')
+
+            project = create_project_helper(form, current_user, request_file, save = False)
+            new_id = collection_handle.insert_one(project)
+            clear_tmp('tmp/')
+            
+            return Response(file_serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -17,6 +17,16 @@ class FeaturedProjectUpdate(models.Model):
     project_id = models.CharField(max_length=1000)
     featured = models.BooleanField(default=False)
 
+class File(models.Model):
+    """
+    Model for tarfile upload directly from AmpliconSuiteAggregator
+    """
+    id = models.UUIDField(primary_key=True, default = uuid.uuid4, editable = False)
+    file = models.FileField(blank = False, null = False)
+
+    def __str__(self):
+        return self.file.name
+
 # class Feature(models.Model):
 #     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 #     project_name = models.CharField(max_length=1000)
