@@ -20,7 +20,7 @@ import os
 import shutil
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
-import caper.classification as piechart
+import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
 # from django.views.decorators.cache import cache_page
 # from zipfile import ZipFile
@@ -49,6 +49,16 @@ db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
 fs_handle = gridfs.GridFS(db_handle)
 
+# Site-wide focal amp color scheme
+fa_cmap = {
+                'ecDNA': "rgb(255, 0, 0)",
+                'BFB': 'rgb(0, 70, 46)',
+                'Complex non-cyclic': 'rgb(255, 190, 0)',
+                'Linear amplification': 'rgb(27, 111, 185)',
+                'Complex-non-cyclic': 'rgb(255, 190, 0)',
+                'Linear': 'rgb(27, 111, 185)',
+                'Virus': 'rgb(140,217,236)',
+                }
 
 def get_date():
     today = datetime.datetime.now()
@@ -345,28 +355,39 @@ def project_page(request, project_name):
     t_sb = time.time()
     diff = t_sb - t_sa
     print(f"Iteratively build project dataframe from samples in {diff} seconds")
-    stackedbar_plot = stacked_bar.StackedBarChart(aggregate)
-    pie_chart = piechart.pie_chart(aggregate)
+    stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
+    pc_fig = piechart.pie_chart(aggregate, fa_cmap)
     t_f = time.time()
     diff = t_f - t_i
     print(f"Generated the project page from views.py in {diff} seconds")
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
+    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig})
     
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
-    try:
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
-        real_project_name = project['project_name']
-        tar_id = project['tarfile']
+    real_project_name = project['project_name']
+    #tar_id = project['tarfile']
         # tarfile = fs_handle.get(ObjectId(tar_id)).read()
-        chunk_size = 8192
-        response = StreamingHttpResponse(FileWrapper(fs_handle.get(ObjectId(tar_id)), chunk_size), content_type = 'application/zip')
-        response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
-        clear_tmp()
-        return response
-    except:
-        return Http404()
+    #tarfile = fs_handle.get(ObjectId(tar_id))
+    #response = FileResponse(tarfile)
+    #chunk_size = 8192
+    #response = FileResponse(FileWrapper(fs_handle.get(ObjectId(tar_id)), chunk_size), content_type = 'application/zip')
+    #real_project_name = project['project_name']
+    project_data_path = f"tmp/{project_name}"  
+    file_location = f'{project_data_path}/{project_name}'
+    chunk_size = 8192
+    response = StreamingHttpResponse(
+        FileWrapper(
+            open(file_location, "rb"),
+            chunk_size,
+        )    
+        )
+    response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
+    #clear_tmp()
+    return response
+    #except:
+       # raise Http404()
 
 def igv_features_creation(locations):
     """
@@ -379,8 +400,9 @@ def igv_features_creation(locations):
         ## each key is a chromosome
         ## each value is a constructed focal range, including chr_num, chr_min, chr_max
     locuses = {}
-    
     for location in locations:
+        if not location:
+            continue
         parsed = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")
         chrom = parsed[0]
         start = int(parsed[1])
@@ -401,7 +423,6 @@ def igv_features_creation(locations):
                 'max':end,
                 
                 }
-        # chr_num = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
 
     ## reconstruct locuses
     for key in locuses.keys():
@@ -409,13 +430,7 @@ def igv_features_creation(locations):
         chr_max = int(locuses[key]['max'])
         chr_num = key.replace('chr', '')
         locuses[key] = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
-    # chr_num = locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
-    # chr_min = int(locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[1])
-    # chr_max = int(locations[-1].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[-1])
-    # if chr_min > chr_max:
-    #     locus = f"{chr_num}:{(int(chr_max)):,}-{(int(chr_min)):,}"
-    # else:
-    #     locus = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
+
     return features, locuses
 
 def get_sample_metadata(sample_data):

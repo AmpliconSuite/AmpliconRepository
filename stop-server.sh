@@ -1,3 +1,3 @@
 #!/bin/bash
 
-docker exec -t amplicon-dev bash /srv/caper/stop-server.sh
+docker exec -t amplicon-prod bash /srv/caper/stop-server.sh
