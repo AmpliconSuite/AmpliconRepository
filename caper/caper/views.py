@@ -1,13 +1,13 @@
 # from asyncore import file_wrapper
 # from tkinter import E
-from django.http import HttpResponse, FileResponse, StreamingHttpResponse
+from django.http import HttpResponse, FileResponse, StreamingHttpResponse, HttpResponseRedirect
 from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
-# from django.conf import settings
+from django.conf import settings
 # import pymongo
 import json
 # from .models import Run
@@ -37,7 +37,9 @@ import re
 # from tqdm import tqdm
 from collections import defaultdict
 from wsgiref.util import FileWrapper
-
+import boto3
+import botocore
+from threading import Thread
 
 # FOR LOCAL DEVELOPMENT
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
@@ -361,31 +363,94 @@ def project_page(request, project_name):
     diff = t_f - t_i
     print(f"Generated the project page from views.py in {diff} seconds")
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig})
-    
+
+
+
+def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
+    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+    s3client = session.client('s3')
+    print(f'==== XXX STARTING uploaded to {file_path_and_location_local}')
+    s3client.upload_file(f'{file_path_and_location_local}', settings.S3_DOWNLOADS_BUCKET,
+                         f'{file_path_and_name_in_bucket}')
+    print('==== XXX uploaded to bucket ')
+
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     real_project_name = project['project_name']
-    #tar_id = project['tarfile']
-        # tarfile = fs_handle.get(ObjectId(tar_id)).read()
-    #tarfile = fs_handle.get(ObjectId(tar_id))
-    #response = FileResponse(tarfile)
-    #chunk_size = 8192
-    #response = FileResponse(FileWrapper(fs_handle.get(ObjectId(tar_id)), chunk_size), content_type = 'application/zip')
-    #real_project_name = project['project_name']
+
     project_data_path = f"tmp/{project_name}"  
     file_location = f'{project_data_path}/{project_name}'
+
+
+
+    if settings.USE_S3_DOWNLOADS:
+
+        project_linkid = project['_id']
+        s3_file_location = f'{project_linkid}/{project_linkid}.tar.gz'
+        print(f'==== XXX STARTING download for {s3_file_location} for project {real_project_name}')
+
+        if not settings.AWS_PROFILE_NAME:
+            settings.AWS_PROFILE_NAME = 'default'
+
+        session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+        s3client = session.client('s3')
+
+        try:
+            s3client.head_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_file_location)
+        except botocore.exceptions.ClientError as e:
+            if e.response['Error']['Code'] == "404":
+                # The object does not exist.
+                # so we need to get a local file from mongo and push that to S3
+                print("===== XXX PROJECT FILE NOT IN S3 --  GET IT IN THERE")
+                tar_id = project['tarfile']
+                tar_file_wrapper = FileWrapper(fs_handle.get(ObjectId(tar_id)), blksize=32728)
+
+                isExist = os.path.exists(f'{project_data_path}')
+                if not isExist:
+                    # Create a new directory because it does not exist
+                    os.makedirs(f'{project_data_path}')
+
+                output = open(f'{project_data_path}/{project_linkid}.tar.gz', "wb")
+                for chunk in tar_file_wrapper:
+                    output.write(chunk)
+                output.close()
+                upload_file_to_s3(f'{project_data_path}/{project_linkid}.tar.gz', s3_file_location)
+                print('==== XXX upload to bucket complete, move on to get one time url')
+
+            else:
+                # Something else has gone wrong.
+                raise
+        else:
+            # The object does exist.
+            print('==== XXX found it in bucket, move on to get one time url')
+
+        # we should have uploaded the file if it was not already there
+        # get a one-time-use url and redirect the response
+        expiration=600
+        # good for seconds, can move this to settings later
+        presigned_url = s3client.generate_presigned_url('get_object', Params = {'Bucket': settings.S3_DOWNLOADS_BUCKET, 'Key': s3_file_location}, ExpiresIn = expiration)
+
+        return HttpResponseRedirect(presigned_url)
+
+
+
+
+    ###### the following is used when S3 is not used for download
     chunk_size = 8192
+    print('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
     response = StreamingHttpResponse(
         FileWrapper(
             open(file_location, "rb"),
             chunk_size,
-        )    
         )
+    )
     response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
-    #clear_tmp()
+    # clear_tmp()
     return response
+
+
     #except:
        # raise Http404()
 
@@ -912,11 +977,23 @@ def create_project(request):
         
         # file download
         request_file = request.FILES['document'] if 'document' in request.FILES else None
+        project_data_path = f"tmp/{project_name}"
         if request_file:
-            project_data_path = f"tmp/{project_name}"
+
             # create a new instance of FileSystemStorage
             fs = FileSystemStorage(location=project_data_path)
             file = fs.save(request_file.name, request_file)
+
+            #file_exists = os.path.exists(project_data_path+ "/" + request_file.name)
+            #if settings.USE_S3_DOWNLOADS and file_exists:
+            #    # we need to upload it to S3, we use the same path as here in the bucket to keep things simple
+            #    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+            #    s3client = session.client('s3')
+            #    print(f'==== XXX STARTING uploaded to {project_data_path}/{request_file.name}')
+            #    s3client.upload_file(f'{project_data_path}/{request_file.name}', settings.S3_DOWNLOADS_BUCKET, f'{project_data_path}/{request_file.name}')
+            #    print('==== XXX uploaded to bucket')
+
+
             
         # extract contents of file
         file_location = f'{project_data_path}/{request_file.name}'
@@ -966,6 +1043,17 @@ def create_project(request):
         project['Classification'] = get_project_classifications(runs)
         if form.is_valid():
             new_id = collection_handle.insert_one(project)
+            # now insert the file into the bucket for later downloads
+
+            # XXXXX TODO Make the upload happen async so it does not slow things down
+            if settings.USE_S3_DOWNLOADS:
+                # load the zip asynch to S3 for later use
+
+                thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
+                thread.start()
+
+
+
     #        clear_tmp()
             return redirect('project_page', project_name=new_id.inserted_id)
         else:

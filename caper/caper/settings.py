@@ -119,7 +119,7 @@ LANGUAGES = (("en", _("English")),)
 # A boolean that turns on/off debug mode. When set to ``True``, stack traces
 # are displayed for error pages. Should always be set to ``False`` in
 # production. Best set to ``True`` in local_settings.py
-DEBUG = False
+DEBUG = True
 
 # Whether a user's session cookie expires when the Web browser is closed.
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
@@ -266,6 +266,21 @@ MEDIA_ROOT = os.path.join(PROJECT_ROOT, MEDIA_URL.strip("/"))
 
 # Package/module name to import the root urlpatterns from for the project.
 ROOT_URLCONF = "%s.urls" % PROJECT_APP
+
+# config for uploading/downloading files directly to S3
+USE_S3_DOWNLOADS = os.getenv('S3_FILE_DOWNLOADS') == 'TRUE'
+if USE_S3_DOWNLOADS:
+    # config for BOTO, bucket etc here but not credentials
+    if os.getenv("AWS_PROFILE_NAME") is not None:
+        AWS_PROFILE_NAME='amprepo'
+    else:
+        AWS_PROFILE_NAME = 'default'
+
+    # assume UUIDs are unique across servers so we can all use the same bucket
+    S3_DOWNLOADS_BUCKET='amprepo-private'
+
+
+
 
 TEMPLATES = [
     {
