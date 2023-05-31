@@ -389,7 +389,6 @@ def project_download(request, project_name):
     #except:
        # raise Http404()
 
-
 def igv_features_creation(locations):
     """
     Locations should look like: ["'chr11:56595156-58875237'", " 'chr11:66684707-68055335'", " 'chr11:69975662-70290667'"]
