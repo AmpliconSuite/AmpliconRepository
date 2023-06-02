@@ -21,7 +21,7 @@ from rest_framework import status
 from django.conf import settings
 # import pymongo
 import json
-# from .models import Run
+# from .models import File
 from .forms import RunForm, UpdateForm, FeaturedProjectForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
@@ -1102,17 +1102,17 @@ class FileUploadView(APIView):
             file_serializer.save()
             form = RunForm(request.POST)
             form_dict = form_to_dict(form)
+            print(form_dict)
             proj_name = form_dict['project_name']
             request_file = request.FILES['file']
             os.system(f'mkdir -p tmp/{proj_name}')
             os.system(f'mv tmp/{request_file.name} tmp/{proj_name}/{request_file.name}')
             # extract contents of file
-            ## TO CHANGE TO DUMMY ACCOUNT
-
             current_user = request.POST['project_members']
             print(f'Creating project for user {current_user}')
 
             project = create_project_helper(form, current_user, request_file, save = False)
+            print(project)
             new_id = collection_handle.insert_one(project)
             clear_tmp('tmp/')
             
