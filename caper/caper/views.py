@@ -57,7 +57,7 @@ fa_cmap = {
                 'Linear amplification': 'rgb(27, 111, 185)',
                 'Complex-non-cyclic': 'rgb(255, 190, 0)',
                 'Linear': 'rgb(27, 111, 185)',
-                'Virus': 'rgb(140,217,236)',
+                'Virus': 'rgb(163,163,163)',
                 }
 
 def get_date():
