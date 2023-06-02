@@ -3,6 +3,7 @@ attrs==22.1.0
 beautifulsoup4==4.11.1
 biopython==1.79
 bleach==5.0.1
+boto3==1.26.144
 cffi==1.15.1
 chardet==5.0.0
 charset-normalizer==2.1.0
