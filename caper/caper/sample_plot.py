@@ -123,7 +123,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     n_amps = len(amplicon_numbers)
     cmap = cm.get_cmap('Spectral', n_amps + 2)
     amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(1, n_amps + 1)]
-
+    #print(df[df['Chromosome Number'] == 'hpv16ref_1'])
     if chromosomes:
         rows = (len(chromosomes) // 4) + 1 if len(chromosomes) % 4 else len(chromosomes) // 4
         fig = make_subplots(rows=rows, cols=4,
@@ -149,6 +149,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                 if len(dfs[key].columns) >= 4:
                     for ind, row in dfs[key].iterrows():
                         # CN Start
+
                         x_array.append(row[1])
                         y_array.append(row[-1])
 
@@ -189,18 +190,35 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                                 offset = (x_range * min_width) - (int(float(locsplit[1])) - int(float(locsplit[0])))
                             else:
                                 offset = 0
-
+                            
                             if j == 0:
                                 row['Feature Position'] = int(float(locsplit[0])) - offset//2
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(locsplit[0]) + "-"
-                            elif j == 1:
-                                row['Feature Position'] = int(float(locsplit[1])) + offset//2
-                                row['Y-axis'] = 95
-                                curr_updated_loc += str(int(row['Feature Position']))
+                                amplicon_df = amplicon_df.append(row)
 
-                            amplicon_df = amplicon_df.append(row)
+                            else:
+                                if 'ref_1' in chrom:
+                                    for i in range(30,0,-1):
+                                        if i != 1:
+                                            row['Feature Position'] = (int(float(locsplit[0])) - offset//2) + ((int(float(locsplit[1])) + offset//2) // i)
+                                            row['Y-axis'] = 95
+                                            curr_updated_loc += str(int(row['Feature Position']))
+                                            amplicon_df = amplicon_df.append(row)
+                                        else:
+                                            row['Feature Position'] = ((int(float(locsplit[1])) + offset//2) // i)
+                                            row['Y-axis'] = 95
+                                            curr_updated_loc += str(int(row['Feature Position']))
+                                            amplicon_df = amplicon_df.append(row)
+                                else:
+                                    row['Feature Position'] = int(float(locsplit[1])) + offset//2
+                                    row['Y-axis'] = 95
+                                    curr_updated_loc += str(int(row['Feature Position']))
+                                    amplicon_df = amplicon_df.append(row)
 
+                            
+
+                        print(amplicon_df)
                         amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature_maximum_copy_number']
                         amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature_median_copy_number']
                         for i in range(len(amplicon_df['AA_amplicon_number'].unique())):
@@ -214,7 +232,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                                                         'Feature End Position','Oncogenes','Feature Maximum Copy Number',
                                                         'AA_amplicon_number', 'Feature Position','Y-axis']]
                             # amplicon_df2 = amplicon_df2.astype({'AA PNG file':'string'})
-
+                            #print(amplicon_df2)
                             oncogenetext = '<i>Oncogenes:</i> %{customdata[4]}<br>' if amplicon_df2['Oncogenes'].iloc[0][0] else ""
                             ht = '<br><i>Feature Classification:</i> %{customdata[0]}<br>' + \
                                  '<i>%{customdata[1]}:</i> %{customdata[2]} - %{customdata[3]}<br>' + \
