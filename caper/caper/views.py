@@ -976,6 +976,11 @@ def admin_featured_projects(request):
 def create_project(request):
     if request.method == "POST":
         form = RunForm(request.POST)
+        form_dict = form_to_dict(form)
+        project_name = form_dict['project_name']
+
+
+        print(form)
         user = get_current_user(request)
         request_file = request.FILES['document'] if 'document' in request.FILES else None
 
