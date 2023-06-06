@@ -25,11 +25,13 @@ This is the main repository for the AmpliconRepository.
 > `pip install -r requirements.txt`
 #### Option B: Using conda's environment manager
 - Create a new Conda environment
-> `conda create -n "ampliconenv" python=3.8.0`
+> `conda create -n "ampliconenv" python>=3.8.0`
 - To activate
 > `conda activate ampliconenv`
+- Install pip to that environment 
+> `conda install pip -n ampliconenv`
 - Install required packages
-> `pip install -r requirements.txt`
+> `[/path/to/your/conda]/env/ampliconenv/bin/pip install -r requirements.txt`
 
 
 

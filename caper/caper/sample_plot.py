@@ -138,7 +138,8 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         ## CREATE ARRAY
         rowind = 1
         colind = 1
-        min_width = 0.03
+        min_width = 0.03  # minimum width before adding padding to make visible on default zoom
+        max_width = 0.06  # maximum width before chunking to create hover points inside feature block
         # for key in (chromosomes if filter_plots else dfs):
         for key in chromosomes:
             x_range = chrom_lens[key]
@@ -186,8 +187,10 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                             row['Feature Start Position'] = int(float(locsplit[0]))
                             row['Feature End Position'] = int(float(locsplit[1].strip()))
 
-                            if (int(float(locsplit[1])) - int(float(locsplit[0]))) / x_range < min_width:
+                            relative_width = (int(float(locsplit[1])) - int(float(locsplit[0]))) / x_range
+                            if relative_width < min_width:
                                 offset = (x_range * min_width) - (int(float(locsplit[1])) - int(float(locsplit[0])))
+
                             else:
                                 offset = 0
                             
@@ -198,27 +201,22 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                                 amplicon_df = amplicon_df.append(row)
 
                             else:
-                                if 'ref_1' in chrom:
-                                    for i in range(30,0,-1):
-                                        if i != 1:
-                                            row['Feature Position'] = (int(float(locsplit[0])) - offset//2) + ((int(float(locsplit[1])) + offset//2) // i)
-                                            row['Y-axis'] = 95
-                                            curr_updated_loc += str(int(row['Feature Position']))
-                                            amplicon_df = amplicon_df.append(row)
-                                        else:
-                                            row['Feature Position'] = ((int(float(locsplit[1])) + offset//2) // i)
-                                            row['Y-axis'] = 95
-                                            curr_updated_loc += str(int(row['Feature Position']))
-                                            amplicon_df = amplicon_df.append(row)
-                                else:
-                                    row['Feature Position'] = int(float(locsplit[1])) + offset//2
-                                    row['Y-axis'] = 95
-                                    curr_updated_loc += str(int(row['Feature Position']))
-                                    amplicon_df = amplicon_df.append(row)
+                                if relative_width > max_width:
+                                    num_chunks = int(relative_width // max_width)
+                                    abs_step = max_width * x_range
+                                    spos = int(float(locsplit[0])) - offset//2
+                                    for k in range(1, num_chunks):
+                                        row['Feature Position'] = spos + k * abs_step
+                                        row['Y-axis'] = 95
+                                        curr_updated_loc += str(int(row['Feature Position']))
+                                        amplicon_df = amplicon_df.append(row)
+
+                                row['Feature Position'] = int(float(locsplit[1])) + offset//2
+                                row['Y-axis'] = 95
+                                curr_updated_loc += str(int(row['Feature Position']))
+                                amplicon_df = amplicon_df.append(row)
 
                             
-
-                        print(amplicon_df)
                         amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature_maximum_copy_number']
                         amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature_median_copy_number']
                         for i in range(len(amplicon_df['AA_amplicon_number'].unique())):
