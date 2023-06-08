@@ -38,7 +38,9 @@
             genome = 'hg19';
         } else if (reference_genome === 'GRCh38_viral'){
             genome = 'hg38'
-        };
+        } else if (reference_genome === 'mm10'){
+            genome = 'mm10'
+        }
         const options =
             { 
                 locus: locus_selection,
