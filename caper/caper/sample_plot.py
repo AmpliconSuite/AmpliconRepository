@@ -158,7 +158,6 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                 if len(dfs[key].columns) >= 4:
                     for ind, row in dfs[key].iterrows():
                         # CN Start
-
                         x_array.append(row[1])
                         y_array.append(row[-1])
 
@@ -237,7 +236,6 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                             amplicon_df2 = amplicon_df[['Classification','Chromosome Number', 'Feature Start Position',
                                                         'Feature End Position','Oncogenes','Feature Maximum Copy Number',
                                                         'AA_amplicon_number', 'Feature Position','Y-axis']]
-                            # amplicon_df2 = amplicon_df2.astype({'AA PNG file':'string'})
                             #print(amplicon_df2)
                             oncogenetext = '<i>Oncogenes:</i> %{customdata[4]}<br>' if amplicon_df2['Oncogenes'].iloc[0][0] else ""
                             ht = '<br><i>Feature Classification:</i> %{customdata[0]}<br>' + \
@@ -284,9 +282,9 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                 log_scale = True
 
             if log_scale:
-                fig.update_yaxes(autorange = False, type="log", ticks = 'outside', ticktext = ['0','1', '', '', '', '', '', '', '', '', '10', '100'],
-                    ticklen = 10, showline = True, linewidth = 1, showgrid = False, range = [0,2], tick0 = 0, dtick = 1, tickmode = 'array',
-                    tickvals = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 100],
+                fig.update_yaxes(autorange = False, type="log", ticks = 'outside', ticktext = ['0','1', '', '', '', '', '', '', '', '', '10', '', '', '', '', '', '', '', '', '100'],
+                    ticklen = 10, showline = True, linewidth = 1, showgrid = False, range = [-0.3, 2], tick0 = 0, dtick = 1, tickmode = 'array',
+                    tickvals = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
                     ticksuffix = " ", row = rowind, col = colind)
             else:
                 fig.update_yaxes(autorange = False, ticks = 'outside', ticklen = 10, range = [0, 20],
