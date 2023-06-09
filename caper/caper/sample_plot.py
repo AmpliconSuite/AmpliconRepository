@@ -118,12 +118,20 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             chromosomes = []
 
     else:
-        chromosomes = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X", "Y")
+        if ref == "mm10":
+            chromosomes = (
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
+            "X", "Y")
+        else:
+            chromosomes = (
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
+            "20", "21", "22", "X", "Y")
+
 
     n_amps = len(amplicon_numbers)
     cmap = cm.get_cmap('Spectral', n_amps + 2)
     amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(1, n_amps + 1)]
-
+    #print(df[df['Chromosome Number'] == 'hpv16ref_1'])
     if chromosomes:
         rows = (len(chromosomes) // 4) + 1 if len(chromosomes) % 4 else len(chromosomes) // 4
         fig = make_subplots(rows=rows, cols=4,
@@ -138,7 +146,8 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         ## CREATE ARRAY
         rowind = 1
         colind = 1
-        min_width = 0.03
+        min_width = 0.03  # minimum width before adding padding to make visible on default zoom
+        max_width = 0.06  # maximum width before chunking to create hover points inside feature block
         # for key in (chromosomes if filter_plots else dfs):
         for key in chromosomes:
             x_range = chrom_lens[key]
@@ -185,22 +194,36 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                             row['Feature Start Position'] = int(float(locsplit[0]))
                             row['Feature End Position'] = int(float(locsplit[1].strip()))
 
-                            if (int(float(locsplit[1])) - int(float(locsplit[0]))) / x_range < min_width:
+                            relative_width = (int(float(locsplit[1])) - int(float(locsplit[0]))) / x_range
+                            if relative_width < min_width:
                                 offset = (x_range * min_width) - (int(float(locsplit[1])) - int(float(locsplit[0])))
+
                             else:
                                 offset = 0
-
+                            
                             if j == 0:
                                 row['Feature Position'] = int(float(locsplit[0])) - offset//2
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(locsplit[0]) + "-"
-                            elif j == 1:
+                                amplicon_df = amplicon_df.append(row)
+
+                            else:
+                                if relative_width > max_width:
+                                    num_chunks = int(relative_width // max_width)
+                                    abs_step = max_width * x_range
+                                    spos = int(float(locsplit[0])) - offset//2
+                                    for k in range(1, num_chunks):
+                                        row['Feature Position'] = spos + k * abs_step
+                                        row['Y-axis'] = 95
+                                        curr_updated_loc += str(int(row['Feature Position']))
+                                        amplicon_df = amplicon_df.append(row)
+
                                 row['Feature Position'] = int(float(locsplit[1])) + offset//2
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(int(row['Feature Position']))
+                                amplicon_df = amplicon_df.append(row)
 
-                            amplicon_df = amplicon_df.append(row)
-
+                            
                         amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature_maximum_copy_number']
                         amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature_median_copy_number']
                         for i in range(len(amplicon_df['AA_amplicon_number'].unique())):
@@ -213,8 +236,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                             amplicon_df2 = amplicon_df[['Classification','Chromosome Number', 'Feature Start Position',
                                                         'Feature End Position','Oncogenes','Feature Maximum Copy Number',
                                                         'AA_amplicon_number', 'Feature Position','Y-axis']]
-                            # amplicon_df2 = amplicon_df2.astype({'AA PNG file':'string'})
-
+                            #print(amplicon_df2)
                             oncogenetext = '<i>Oncogenes:</i> %{customdata[4]}<br>' if amplicon_df2['Oncogenes'].iloc[0][0] else ""
                             ht = '<br><i>Feature Classification:</i> %{customdata[0]}<br>' + \
                                  '<i>%{customdata[1]}:</i> %{customdata[2]} - %{customdata[3]}<br>' + \
@@ -260,9 +282,9 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                 log_scale = True
 
             if log_scale:
-                fig.update_yaxes(autorange = False, type="log", ticks = 'outside', ticktext = ['0','1', '', '', '', '', '', '', '', '', '10', '100'],
-                    ticklen = 10, showline = True, linewidth = 1, showgrid = False, range = [0,2], tick0 = 0, dtick = 1, tickmode = 'array',
-                    tickvals = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 100],
+                fig.update_yaxes(autorange = False, type="log", ticks = 'outside', ticktext = ['0','1', '', '', '', '', '', '', '', '', '10', '', '', '', '', '', '', '', '', '100'],
+                    ticklen = 10, showline = True, linewidth = 1, showgrid = False, range = [-0.3, 2], tick0 = 0, dtick = 1, tickmode = 'array',
+                    tickvals = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
                     ticksuffix = " ", row = rowind, col = colind)
             else:
                 fig.update_yaxes(autorange = False, ticks = 'outside', ticklen = 10, range = [0, 20],
