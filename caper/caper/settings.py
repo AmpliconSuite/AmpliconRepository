@@ -272,7 +272,7 @@ USE_S3_DOWNLOADS = os.getenv('S3_FILE_DOWNLOADS') == 'TRUE'
 if USE_S3_DOWNLOADS:
     # config for BOTO, bucket etc here but not credentials
     if os.getenv("AWS_PROFILE_NAME") is not None:
-        AWS_PROFILE_NAME='amprepo'
+        AWS_PROFILE_NAME=os.getenv("AWS_PROFILE_NAME")
     else:
         AWS_PROFILE_NAME = 'default'
 

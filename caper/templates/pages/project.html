@@ -11,7 +11,20 @@
         $('#myTable2').DataTable({
         }
         );
+
+
+        message_to_user = "{{ message }}";
+        if (message_to_user.length > 0){
+            alert(message_to_user);
+        } else {
+            alert("Nothing to say")
+        }
+
     } );
+
+
+
+
 </script>
 {% endblock %}
 
