@@ -87,11 +87,10 @@ USE_MODELTRANSLATION = False
 
 # Hosts/domain names that are valid for this site; required if DEBUG is False
 # See https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137', '54.165.214.83']
+ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137', 'host.docker.internal']
 
 # Add CSRF trusted origins
-CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconrepository.org','https://dev.ampliconrepository.org']
-
+CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconrepository.org','https://dev.ampliconrepository.org', 'http://127.0.0.1:8888/']
 # skip intermediate sign-out page
 ACCOUNT_LOGOUT_ON_GET = True
 # SSL Redirect
@@ -258,7 +257,7 @@ else:
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a
 # trailing slash.
 # Examples: "http://media.lawrence.com/media/", "http://example.com/media/"
-MEDIA_URL = "/media/"
+MEDIA_URL = "/tmp/"
 
 # Absolute filesystem path to the directory that will hold user-uploaded files.
 # Example: "/home/media/media.lawrence.com/media/"
@@ -342,7 +341,8 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.globus',
-    'allauth.socialaccount.providers.google'
+    'allauth.socialaccount.providers.google',
+    'rest_framework',
     ]
 
 CRISPY_TEMPLATE_PACK = 'bootstrap4'
@@ -428,3 +428,8 @@ except ImportError:
     pass
 else:
     set_dynamic_settings(globals())
+
+DATA_UPLOAD_MAX_MEMORY_SIZE = 524288000
+DATA_UPLOAD_MAX_NUMBER_FIELDS = None
+
+
