@@ -6,8 +6,21 @@
     <title>
         Create Project
     </title>
+
+
+
+
 </head>
 {% block main %}
+
+    <script>
+        function showWaitCursor() {
+            document.body.style.cursor = 'wait';
+            // force it on the button that is being clicked
+            $(".btn").css("cursor", "wait");
+            return false
+        }
+        </script>
 <h1>Create New Project</h1>
 {% if user.is_authenticated %}
 <form method="post" enctype="multipart/form-data">
@@ -15,8 +28,10 @@
     {{ run|crispy }}
 
     <input type="file" name="document">
-    <button type="submit" class="btn btn-primary">Create Project</button>
+    <button type="submit" class="btn btn-primary" onclick="showWaitCursor()"  >Create Project</button>
 </form>
+
+
 {% else %}
 <p>Sign in to Upload Files</p>
 {% endif %}
