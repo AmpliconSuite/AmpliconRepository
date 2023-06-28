@@ -1,0 +1,49 @@
+version: "3"
+
+services:
+
+  amplrepdev:
+    build:
+      context: .
+      dockerfile: Dockerfile_dev
+      args:
+        AMPLICON_ENV_PORT: ${AMPLICON_ENV_PORT}
+        AA_USER: ${AA_USER}
+    image: genepattern/amplicon-repo:dev-test
+    container_name: amplicon-repo
+#    restart: always
+    env_file: .env
+    environment:
+      - MONGO_DB_NAME=${MONGO_DB_NAME}
+      - DB_URI=${DB_URI}
+      - AMPLICON_ENV=${AMPLICON_ENV}
+      - AMPLICON_ENV_PORT=${AMPLICON_ENV_PORT}
+      - GOOGLE_SECRET_KEY=${GOOGLE_SECRET_KEY}
+      - GLOBUS_SECRET_KEY=${GLOBUS_SECRET_KEY}
+    ports:
+      - '8000:8000'
+    volumes:
+      - ${PWD}/.aws:/root/.aws
+      - ${PWD}/logs:/srv/logs
+      - ${PWD}:/home/${AA_USER}/code
+    depends_on:
+      - mongodb
+    links:
+      - mongodb
+
+  mongodb:
+    image: mongo:4
+    hostname: mongodb
+    env_file: .env
+    environment:
+      - MONGO_INITDB_DATABASE=${MONGO_DB_NAME}
+    volumes:
+      - ${PWD}/data:/data/db
+    #      - ${PWD}/docker/_mongo/fixtures:/import
+    #      - ${PWD}/docker/_mongo/scripts/init.sh:/docker-entrypoint-initdb.d/setup.sh
+    ports:
+      - '27017:27017'
+
+networks:
+  default:
+
