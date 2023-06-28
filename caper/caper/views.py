@@ -401,9 +401,9 @@ def project_page(request, project_name, message=''):
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
     session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
     s3client = session.client('s3')
-    print(f'==== XXX STARTING uploaded to {file_path_and_location_local}')
+    print(f'==== XXX STARTING upload of {file_path_and_location_local} to s3://{settings.S3_DOWNLOADS_BUCKET}/{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
     s3client.upload_file(f'{file_path_and_location_local}', settings.S3_DOWNLOADS_BUCKET,
-                         f'{file_path_and_name_in_bucket}')
+                         f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
     print('==== XXX uploaded to bucket ')
 
 
@@ -420,7 +420,7 @@ def project_download(request, project_name):
     if settings.USE_S3_DOWNLOADS:
 
         project_linkid = project['_id']
-        s3_file_location = f'{project_linkid}/{project_linkid}.tar.gz'
+        s3_file_location = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_linkid}/{project_linkid}.tar.gz'
         print(f'==== XXX STARTING download for {s3_file_location} for project {real_project_name}')
 
         if not settings.AWS_PROFILE_NAME:
@@ -1000,11 +1000,16 @@ def admin_featured_projects(request):
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
-def extract_project_files(tarfile, runs, file_location, project_data_path):
-
+def extract_project_files(tarfile, file_location, project_data_path):
+    print("Extracting files from tar")
     try:
         with tarfile.open(file_location, "r:gz") as tar_file:
             tar_file.extractall(path=project_data_path)
+
+        # get run.json
+        run_path = f'{project_data_path}/results/run.json'
+        with open(run_path, 'r') as run_json:
+           runs = samples_to_dict(run_json)
 
         # get cnv, image, bed files
         for sample, features in runs.items():
@@ -1043,75 +1048,19 @@ def extract_project_files(tarfile, runs, file_location, project_data_path):
 def create_project(request):
     if request.method == "POST":
         form = RunForm(request.POST)
-#<<<<<<< main
         form_dict = form_to_dict(form)
         project_name = form_dict['project_name']
-#=======
+        user = get_current_user(request)
 
-
-        # 
-        form_dict = form_to_dict(form)
-        project_name = form_dict['project_name']
-        project = dict()        
-        # download_file(project_name, form_dict['file'])
-        # runs = samples_to_dict(form_dict['file'])
-        
         # file download
         request_file = request.FILES['document'] if 'document' in request.FILES else None
         project_data_path = f"tmp/{project_name}"
 
-
-        if request_file:
-#>>>>>>> issue_54
-
-
-        print(form)
-        user = get_current_user(request)
         request_file = request.FILES['document'] if 'document' in request.FILES else None
-
-#<<<<<<< main
         project = create_project_helper(form, user, request_file)
         project_data_path = f"tmp/{project_name}"
-        
-#=======
-        # extract contents of file
-        file_location = f'{project_data_path}/{request_file.name}'
-        with open(file_location, "rb") as tar_file:
-            project_tar_id = fs_handle.put(tar_file)
 
 
-        with tarfile.open(file_location, "r:gz") as tar_file:
-            #tar_file.extractall(path=project_data_path)
-            # just get runs for now, do the full extract in the extract_project_files method
-            #for x in tar_file.getmembers():
-            #    print("tarfile member: " + x.name)
-            files_i_want = ['./results/run.json']
-            tar_file.extractall(members=[x for x in tar_file.getmembers() if x.name in files_i_want], path=project_data_path)
-
-
-        #get run.json 
-        run_path =  f'{project_data_path}/results/run.json'   
-        with open(run_path, 'r') as run_json:
-            runs = samples_to_dict(run_json)
-
-
-
-        current_user = get_current_user(request)
-        project['creator'] = current_user
-        project['project_name'] = form_dict['project_name']
-        project['description'] = form_dict['description']
-        project['tarfile'] = project_tar_id
-        project['date_created'] = get_date()
-        project['date'] = get_date()
-        project['private'] = form_dict['private']
-        project['delete'] = False
-        user_list = create_user_list(form_dict['project_members'], current_user)
-        project['project_members'] = user_list
-        project['runs'] = runs
-        project['Oncogenes'] = get_project_oncogenes(runs)
-        project['Classification'] = get_project_classifications(runs)
-
-#>>>>>>> issue_54
         if form.is_valid():
             new_id = collection_handle.insert_one(project)
 
@@ -1130,7 +1079,7 @@ def create_project(request):
                 s3_thread.start()
 
                 # extract the files async also
-                extract_thread = Thread(target=extract_project_files, args=(tarfile, runs, file_location, project_data_path))
+                extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path))
                 extract_thread.start()
 
             # estimate how long the extraction could take and round up
@@ -1150,6 +1099,7 @@ def create_project(request):
     else:
         form = RunForm()
     return render(request, 'pages/create_project.html', {'run' : form}) 
+
 
 ## make a create_project_helper for project creation code 
 def create_project_helper(form, user, request_file, save = True):
@@ -1184,8 +1134,14 @@ def create_project_helper(form, user, request_file, save = True):
     file_location = f'{project_data_path}/{request_file.name}'
     with open(file_location, "rb") as tar_file:
         project_tar_id = fs_handle.put(tar_file)
+
+    # extract only run.json now because we will need it for project creation.
+    # defer the rest to another thread to keep this faster
     with tarfile.open(file_location, "r:gz") as tar_file:
-        tar_file.extractall(path=project_data_path)
+        #tar_file.extractall(path=project_data_path)
+        files_i_want = ['./results/run.json']
+        tar_file.extractall(members=[x for x in tar_file.getmembers() if x.name in files_i_want],
+                            path=project_data_path)
         
     #get run.json 
     run_path =  f'{project_data_path}/results/run.json'   
@@ -1193,24 +1149,25 @@ def create_project_helper(form, user, request_file, save = True):
         runs = samples_to_dict(run_json)
     # for filename in os.listdir(project_data_path):
     #     if os.path.isdir(f'{project_data_path}/{filename}'):
-            
+
+    ### Now do this in seperate thread using the extract_project_files: method
     # get cnv, image, bed files
-    for sample, features in runs.items():
-        for feature in features:
-            print(feature['Sample name'])
-            if len(feature) > 0:
-                # get paths
-                key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON','AA directory','cnvkit directory']
-                for k in key_names:
-                    try:
-                        path_var = feature[k]
-                        with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
-                            id_var = fs_handle.put(file_var)
-
-                    except:
-                        id_var = "Not Provided"
-
-                    feature[k] = id_var
+    #for sample, features in runs.items():
+    #    for feature in features:
+    #        print(feature['Sample name'])
+    #        if len(feature) > 0:
+    #            # get paths
+    #            key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON','AA directory','cnvkit directory']
+    #            for k in key_names:
+    #                try:
+    #                    path_var = feature[k]
+    #                    with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
+    #                        id_var = fs_handle.put(file_var)
+    #
+    #                except:
+    #                    id_var = "Not Provided"
+   #
+    #                feature[k] = id_var
 
     current_user = user
     project['creator'] = current_user
