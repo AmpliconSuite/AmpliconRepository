@@ -96,6 +96,8 @@ This is the main repository for the AmpliconRepository.
 # How to deploy and update the production server for AmpliconRepository
 The server is currently running on an EC2 instance through Docker. The ports active on HTTP and HTTPS through AWS Load Balancer. There are two main scripts to start and stop the server.
 
+**Note:** While we provide a Dockerfile, local deployment of the site using the docker will only properly work on AWS. Local deployment should be done with a local install using the steps above.
+
 ## 1. How to start the server
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)
   - this requires a PEM key
