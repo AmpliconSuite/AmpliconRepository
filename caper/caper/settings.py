@@ -87,11 +87,10 @@ USE_MODELTRANSLATION = False
 
 # Hosts/domain names that are valid for this site; required if DEBUG is False
 # See https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137']
+ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137', 'host.docker.internal']
 
 # Add CSRF trusted origins
-CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconrepository.org','https://dev.ampliconrepository.org']
-
+CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconrepository.org','https://dev.ampliconrepository.org', 'http://127.0.0.1:8888/']
 # skip intermediate sign-out page
 ACCOUNT_LOGOUT_ON_GET = True
 # SSL Redirect
@@ -232,20 +231,33 @@ PROJECT_ROOT = BASE_DIR = os.path.dirname(PROJECT_APP_PATH)
 # project specific.
 CACHE_MIDDLEWARE_KEY_PREFIX = PROJECT_APP
 
-# URL prefix for static files.
-# Example: "http://media.lawrence.com/static/"
-STATIC_URL = "/static/"
 
-# Absolute path to the directory static files should be collected to.
-# Don't put anything in this directory yourself; store your static files
-# in apps' "static/" subdirectories and in STATICFILES_DIRS.
-# Example: "/home/media/media.lawrence.com/static/"
-STATIC_ROOT = os.path.join(PROJECT_ROOT, STATIC_URL.strip("/"))
+USE_S3 = os.getenv('S3_STATIC_FILES') == 'TRUE'
+
+if USE_S3:
+    # s3 static settings
+    # URL prefix for static files.
+    # Example: "http://media.lawrence.com/static/"
+
+    STATIC_URL = "https://amprepobucket.s3.amazonaws.com/static/"
+    # Absolute path to the directory static files should be collected to.
+    # Don't put anything in this directory yourself; store your static files
+    # in apps' "static/" subdirectories and in STATICFILES_DIRS.
+    # Example: "/home/media/media.lawrence.com/static/"
+    #STATIC_ROOT = os.path.join(PROJECT_ROOT, STATIC_URL.strip("/"))
+    STATIC_ROOT = "/srv/static"
+else:
+    STATIC_URL = '/static/'
+    STATIC_ROOT = os.path.join(PROJECT_ROOT, STATIC_URL.strip("/"))
+
+
+
+
 
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a
 # trailing slash.
 # Examples: "http://media.lawrence.com/media/", "http://example.com/media/"
-MEDIA_URL = "/media/"
+MEDIA_URL = "/tmp/"
 
 # Absolute filesystem path to the directory that will hold user-uploaded files.
 # Example: "/home/media/media.lawrence.com/media/"
@@ -253,6 +265,21 @@ MEDIA_ROOT = os.path.join(PROJECT_ROOT, MEDIA_URL.strip("/"))
 
 # Package/module name to import the root urlpatterns from for the project.
 ROOT_URLCONF = "%s.urls" % PROJECT_APP
+
+# config for uploading/downloading files directly to S3
+USE_S3_DOWNLOADS = os.getenv('S3_FILE_DOWNLOADS') == 'TRUE'
+if USE_S3_DOWNLOADS:
+    # config for BOTO, bucket etc here but not credentials
+    if os.getenv("AWS_PROFILE_NAME") is not None:
+        AWS_PROFILE_NAME='amprepo'
+    else:
+        AWS_PROFILE_NAME = 'default'
+
+    # assume UUIDs are unique across servers so we can all use the same bucket
+    S3_DOWNLOADS_BUCKET='amprepo-private'
+
+
+
 
 TEMPLATES = [
     {
@@ -314,7 +341,8 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.globus',
-    'allauth.socialaccount.providers.google'
+    'allauth.socialaccount.providers.google',
+    'rest_framework',
     ]
 
 CRISPY_TEMPLATE_PACK = 'bootstrap4'
@@ -400,3 +428,8 @@ except ImportError:
     pass
 else:
     set_dynamic_settings(globals())
+
+DATA_UPLOAD_MAX_MEMORY_SIZE = 524288000
+DATA_UPLOAD_MAX_NUMBER_FIELDS = None
+
+

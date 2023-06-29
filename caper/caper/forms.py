@@ -67,6 +67,8 @@ class MySocialSignUpForm(SocialSignupForm):
         self.helper.form_show_labels = True
         self.helper.add_input(Submit('signup', 'Create My Account'))
 
+    
+
 
 # class RunForm(forms.ModelForm):
 #     class Meta:

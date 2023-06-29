@@ -25,11 +25,13 @@ This is the main repository for the AmpliconRepository.
 > `pip install -r requirements.txt`
 #### Option B: Using conda's environment manager
 - Create a new Conda environment
-> `conda create -n "ampliconenv" python=3.8.0`
+> `conda create -n "ampliconenv" python>=3.8.0`
 - To activate
 > `conda activate ampliconenv`
+- Install pip to that environment 
+> `conda install pip -n ampliconenv`
 - Install required packages
-> `pip install -r requirements.txt`
+> `[/path/to/your/conda]/env/ampliconenv/bin/pip install -r requirements.txt`
 
 
 
@@ -71,20 +73,30 @@ This is the main repository for the AmpliconRepository.
 - Open the application on a web browser (recommend using a private/incognito window for faster development):
 > https://localhost:8000
 
-## 6. Logging in as admin
- - Please see the [wiki page on admin login](https://github.com/mesirovlab/AmpliconRepository/wiki/Becoming-Admin-on-a-development-server).
+# Testing datasets
+[These datasets](https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=share_link) are ready to upload to the site for testing purposes.
 
-
-# Committing and pushing changes to GitHub
+# Pushing changes to GitHub and merging PRs
 - Work on branches and open pull requests to merge changes into main.
 - Please ensure that you do not commit `caper.sqlite3` along with your other changes. 
 - PR reviewers, please check that `caper.sqlite3` is not among the changed files in a PR.
+- When merging a PR, please do the following steps:
+  - pull the branch in question and load in local deployment
+  - at minimum, test the following pages to see if everything looks right:
+    - home page
+    - CCLE project page
+    - load a random sample in CCLE
 
 # Using the development server
 - Please see the [wiki page on using the development server](https://github.com/mesirovlab/AmpliconRepository/wiki/dev.ampliconrepository.org-instructions).
 
+# Logging in as admin
+ - Please see the [wiki page on admin login](https://github.com/mesirovlab/AmpliconRepository/wiki/Becoming-Admin-on-a-development-server).
+
 # How to deploy and update the production server for AmpliconRepository
 The server is currently running on an EC2 instance through Docker. The ports active on HTTP and HTTPS through AWS Load Balancer. There are two main scripts to start and stop the server.
+
+**Note:** While we provide a Dockerfile, local deployment of the site using the docker will only properly work on AWS. Local deployment should be done with a local install using the steps above.
 
 ## 1. How to start the server
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)

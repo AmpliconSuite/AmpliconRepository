@@ -1,28 +1,19 @@
-from statistics import mode
-from dash import Dash, html, dcc
-import plotly.express as px
-#import dash_bio as dashbio
 import pandas as pd
 import plotly.graph_objs as go
 import numpy as np
-from numpy import random
 import warnings
 from plotly.subplots import make_subplots
 from pylab import cm
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
 import os
-import re
-from .utils import get_db_handle, get_collection_handle, create_run_display
+from .utils import get_db_handle, get_collection_handle
 import gridfs
 from bson.objectid import ObjectId
 from io import StringIO
-from collections import defaultdict
 import time
 
 warnings.filterwarnings("ignore")
 
-# FOR LOCAL DEVELOPMENT
+# FOR LOCAL DEVELOPMENT [Deprecated]
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
 
 # FOR PRODUICTION
@@ -45,19 +36,20 @@ def get_chrom_num(location: str):
 
 def get_chrom_lens(ref):
     chrom_len_dict = {}
+
     with open(f'bed_files/{ref}_noAlt.fa.fai') as infile:
         for line in infile:
             fields = line.rstrip().rsplit()
             if fields:
-                chrom_len_dict[fields[0].lstrip('chr')] = int(fields[1])
+                if fields[0].startswith('chr'):
+                    chrom_len_dict[fields[0].lstrip('chr')] = int(fields[1])
+                else:
+                    chrom_len_dict[fields[0]] = int(fields[1])
 
     return chrom_len_dict
 
 
 def plot(sample, sample_name, project_name, filter_plots=False):
-    # project_data_dir = f'project_data/{project_name}/extracted'
-    # if not os.path.exists(project_data_dir):
-    #     return ''
     start_time = time.time()
     potential_ref_genomes = set()
     for item in sample:
@@ -71,13 +63,23 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
     ref = potential_ref_genomes.pop()
     cent_file = f'bed_files/{ref}_centromere.bed'
-    full_cent_df = pd.read_csv(cent_file, header=None, sep='\t')
-    for i, row in full_cent_df.iterrows():
-        chr_num = get_chrom_num(row[0])
-        full_cent_df.at[i, 0] = chr_num
+
+    full_cent_dict = {}
+    with open(cent_file) as infile:
+        for line in infile:
+            fields = line.rsplit("\t")
+            chr_num = get_chrom_num(fields[0])
+            s, e = int(fields[1]), int(fields[2])
+            if chr_num not in full_cent_dict:
+                full_cent_dict[chr_num] = (s, e)
+            else:
+                cp = full_cent_dict[chr_num]
+                full_cent_dict[chr_num] = (min(cp[0], s), max(cp[1], e))
+
 
     # updated_loc_dict = defaultdict(list)  # stores the locations following the plotting adjustments
     chrom_lens = get_chrom_lens(ref)
+
     cnv_file_id = sample[0]['CNV_BED_file']
 
     try:
@@ -95,9 +97,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
     # Note, that a 4 column CNV file, instead of a 5 column CNV file may be given. We instruct users to place Copy Number in the last column.
 
-
     amplicon = pd.DataFrame(sample)
-    # amplicon['AA amplicon number'] = amplicon['AA amplicon number'].astype(int).astype(str)
 
     amplicon_numbers = sorted(list(amplicon['AA_amplicon_number'].unique()))
     seen = set()
@@ -106,14 +106,11 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     if filter_plots:
         chromosomes = set()
         for x in amplicon['Location']:
-            # if len(x) > 1:
             for loc in x:
                 chr_num = get_chrom_num(loc)
                 if chr_num:
                     chromosomes.add(chr_num)
-            # else:
-            #     chr_num = get_chrom_num(x[0])
-            #     chromosomes.add(chr_num)
+
         if chromosomes:
             chromosomes = sorted(list(chromosomes), key=chr_order)
 
@@ -121,11 +118,20 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             chromosomes = []
 
     else:
-        chromosomes = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X", "Y")
-    
-    cmap = cm.get_cmap('Spectral', len(amplicon['AA_amplicon_number'].unique()))
-    amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(cmap.N)]
+        if ref == "mm10":
+            chromosomes = (
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
+            "X", "Y")
+        else:
+            chromosomes = (
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
+            "20", "21", "22", "X", "Y")
 
+
+    n_amps = len(amplicon_numbers)
+    cmap = cm.get_cmap('Spectral', n_amps + 2)
+    amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(1, n_amps + 1)]
+    #print(df[df['Chromosome Number'] == 'hpv16ref_1'])
     if chromosomes:
         rows = (len(chromosomes) // 4) + 1 if len(chromosomes) % 4 else len(chromosomes) // 4
         fig = make_subplots(rows=rows, cols=4,
@@ -140,7 +146,8 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         ## CREATE ARRAY
         rowind = 1
         colind = 1
-        min_width = 0.03
+        min_width = 0.03  # minimum width before adding padding to make visible on default zoom
+        max_width = 0.06  # maximum width before chunking to create hover points inside feature block
         # for key in (chromosomes if filter_plots else dfs):
         for key in chromosomes:
             x_range = chrom_lens[key]
@@ -187,22 +194,36 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                             row['Feature Start Position'] = int(float(locsplit[0]))
                             row['Feature End Position'] = int(float(locsplit[1].strip()))
 
-                            if (int(float(locsplit[1])) - int(float(locsplit[0]))) / x_range < min_width:
+                            relative_width = (int(float(locsplit[1])) - int(float(locsplit[0]))) / x_range
+                            if relative_width < min_width:
                                 offset = (x_range * min_width) - (int(float(locsplit[1])) - int(float(locsplit[0])))
+
                             else:
                                 offset = 0
-
+                            
                             if j == 0:
                                 row['Feature Position'] = int(float(locsplit[0])) - offset//2
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(locsplit[0]) + "-"
-                            elif j == 1:
+                                amplicon_df = amplicon_df.append(row)
+
+                            else:
+                                if relative_width > max_width:
+                                    num_chunks = int(relative_width // max_width)
+                                    abs_step = max_width * x_range
+                                    spos = int(float(locsplit[0])) - offset//2
+                                    for k in range(1, num_chunks):
+                                        row['Feature Position'] = spos + k * abs_step
+                                        row['Y-axis'] = 95
+                                        curr_updated_loc += str(int(row['Feature Position']))
+                                        amplicon_df = amplicon_df.append(row)
+
                                 row['Feature Position'] = int(float(locsplit[1])) + offset//2
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(int(row['Feature Position']))
+                                amplicon_df = amplicon_df.append(row)
 
-                            amplicon_df = amplicon_df.append(row)
-
+                            
                         amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature_maximum_copy_number']
                         amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature_median_copy_number']
                         for i in range(len(amplicon_df['AA_amplicon_number'].unique())):
@@ -215,52 +236,41 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                             amplicon_df2 = amplicon_df[['Classification','Chromosome Number', 'Feature Start Position',
                                                         'Feature End Position','Oncogenes','Feature Maximum Copy Number',
                                                         'AA_amplicon_number', 'Feature Position','Y-axis']]
-                            # amplicon_df2 = amplicon_df2.astype({'AA PNG file':'string'})
-                            # print(amplicon_df.head())
+                            #print(amplicon_df2)
+                            oncogenetext = '<i>Oncogenes:</i> %{customdata[4]}<br>' if amplicon_df2['Oncogenes'].iloc[0][0] else ""
+                            ht = '<br><i>Feature Classification:</i> %{customdata[0]}<br>' + \
+                                 '<i>%{customdata[1]}:</i> %{customdata[2]} - %{customdata[3]}<br>' + \
+                                 oncogenetext + \
+                                 '<i>Feature Maximum Copy Number:</i> %{customdata[5]}<br>'
+
                             fig.add_trace(go.Scatter(x = per_amplicon['Feature Position'], y = per_amplicon['Y-axis'],
-                                    customdata = amplicon_df2, mode='lines',fill='tozeroy', hoveron='points+fills', hovertemplate=
-                                    '<br><i>Feature Classification:</i> %{customdata[0]}<br>' +
-                                    '<i>%{customdata[1]}:</i> %{customdata[2]} - %{customdata[3]}<br>' +
-                                    '<i>Oncogenes:</i> %{customdata[4]}<br>'+
-                                    '<i>Feature Maximum Copy Number:</i> %{customdata[5]}<br>'
-                                    ,name = '<b>Amplicon ' + str(number) + '</b>', opacity = 0.3, fillcolor = amplicon_colors[amplicon_numbers.index(number)],
+                                    customdata = amplicon_df2, mode='lines',fill='tozeroy', hoveron='points+fills', hovertemplate=ht,
+                                    name = '<b>Amplicon ' + str(number) + '</b>', fillcolor = amplicon_colors[amplicon_numbers.index(number)],
                                     line = dict(color = amplicon_colors[amplicon_numbers.index(number)]),
                                         showlegend=show_legend, legendrank=number, legendgroup='<b>Amplicon ' + str(number) + '</b>'),
                                           row = rowind, col = colind)
 
                         amplicon_df = pd.DataFrame()
 
-            #display(a_df)
-            cent_df = full_cent_df[full_cent_df[0] == key]
-            #display(cent_df)
-            chr_df = pd.DataFrame()
-            for i in range(len(cent_df)):
-                row = cent_df.iloc[[i]]
-                if (row.iloc[0, 2] - row.iloc[0, 1]) / x_range < min_width:
-                    offset = (x_range * min_width) - (row.iloc[0, 2] - row.iloc[0, 1])
-                    # offset = 0
+            if key in full_cent_dict:
+                cp = full_cent_dict[key]
+                clen = cp[1] - cp[0]
+                if clen / x_range < min_width:
+                    offset = (x_range * min_width) - clen
                 else:
                     offset = 0
 
-                for j in range(0, 2):
-                    if j == 0:
-                        row['Centromere Position'] = row.iloc[0, 1]
-                        row['Y-axis'] = 95
-                    elif j == 1:
-                        row['Centromere Position'] = row.iloc[0, 2] + offset
-                        row['Y-axis'] = 95
-                    chr_df = pd.concat([row, chr_df])
+                cen_data = [[key, cp[0] - offset/2, 95, "-".join([str(x) for x in cp])], [key, cp[1] + offset/2, 95, "-".join([str(x) for x in cp])]]
+                chr_df = pd.DataFrame(data=cen_data, columns=['ID', 'Centromere Position', 'Y-axis', 'pos-pair'])
 
-
-
-            if rowind == 1 and colind == 1:
-                fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)',
-                    line_color = 'rgba(2, 6, 54, 0.2)', customdata = chr_df, hovertemplate =
-                    '<br>%{customdata[0]}: %{customdata[1]}-%{customdata[2]}', name = 'Centromere', legendrank=0, legendgroup='Centromere'), row = rowind, col = colind)
-            else:
-                fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)',
-                    line_color = 'rgba(2, 6, 54, 0.2)', customdata = chr_df, name = 'Centromere', legendrank=0, showlegend = False, legendgroup='Centromere', hovertemplate =
-                    '<br>%{customdata[0]}: %{customdata[1]}-%{customdata[2]}'), row = rowind, col = colind)
+                if rowind == 1 and colind == 1:
+                    fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)',
+                        line_color = 'rgba(2, 6, 54, 0.2)', customdata = chr_df, hovertemplate =
+                        '<br>%{customdata[0]}: %{customdata[3]}', name = 'Centromere', legendrank=0, legendgroup='Centromere'), row = rowind, col = colind)
+                else:
+                    fig.add_trace(go.Scatter(x = chr_df['Centromere Position'], y = chr_df['Y-axis'], fill = 'tozeroy', mode = 'lines', fillcolor = 'rgba(2, 6, 54, 0.3)',
+                        line_color = 'rgba(2, 6, 54, 0.2)', customdata = chr_df, name = 'Centromere', legendrank=0, showlegend = False, legendgroup='Centromere', hovertemplate =
+                        '<br>%{customdata[0]}: %{customdata[3]}'), row = rowind, col = colind)
 
             fig.add_trace(go.Scatter(x=x_array,y=y_array,mode = 'lines', name="CN", showlegend = (rowind == 1 and colind == 1),
                                      legendrank=0, legendgroup='CN', line = dict(color = 'black')), row = rowind, col = colind)
@@ -272,12 +282,15 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                 log_scale = True
 
             if log_scale:
-                fig.update_yaxes(autorange = False, type="log", ticks = 'outside', ticktext = ['0','1', '', '', '', '', '', '', '', '', '10', '100'],
-                    ticklen = 10, showline = True, linewidth = 1, showgrid = False, range = [0,2], tick0 = 0, dtick = 1, tickmode = 'array', tickvals = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 100],
+                fig.update_yaxes(autorange = False, type="log", ticks = 'outside', ticktext = ['0','1', '', '', '', '', '', '', '', '', '10', '', '', '', '', '', '', '', '', '100'],
+                    ticklen = 10, showline = True, linewidth = 1, showgrid = False, range = [-0.3, 2], tick0 = 0, dtick = 1, tickmode = 'array',
+                    tickvals = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
                     ticksuffix = " ", row = rowind, col = colind)
             else:
-                fig.update_yaxes(autorange = False, ticks = 'outside', ticklen = 10, range = [0, 20], ticktext = ['0', '', '10', '', '20'], tickvals = [0, 5, 10, 15, 20], showline = True, linewidth = 1, showgrid = False,
-                    tick0 = 0, dtick = 1, tickmode = 'array', ticksuffix = " ", row = rowind, col = colind)
+                fig.update_yaxes(autorange = False, ticks = 'outside', ticklen = 10, range = [0, 20],
+                                 ticktext = ['0', '', '10', '', '20'], tickvals = [0, 5, 10, 15, 20],
+                                 showline = True, linewidth = 1, showgrid = False,
+                                 tick0 = 0, dtick = 1, tickmode = 'array', ticksuffix = " ", row = rowind, col = colind)
 
             if colind == 1:
                 fig.update_yaxes(title = 'Copy Number', row = rowind, col = colind)
@@ -299,9 +312,11 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
         fig.update_xaxes(showline=True, linewidth=1, title_font_size=10, ticksuffix=" ")
         fig.update_traces(textposition="bottom right")
-        fig.update_layout(title_font_size=30,
-        xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified', title_text=f"{sample_name} Copy Number Plots",
-        height = height[rows], width = 1300, margin = dict(t = 70, r = 70, b = 70, l = 70))
+
+        # note: setting hoverdistance (measured in pixels) too high will cause spillover of hover text to bad places
+        fig.update_layout(title_font_size=30, xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified',
+                          title_text=f"{sample_name} Copy Number Plots", height = height[rows], hoverdistance=2,
+                          margin = dict(t = 70, r = 35, b = 15, l = 70))
 
         # add select and deselect all buttons
         fig.update_layout(dict(updatemenus=[

@@ -1,16 +1,27 @@
 # from asyncore import file_wrapper
 # from tkinter import E
-from django.http import HttpResponse, FileResponse
+from django.http import HttpResponse, FileResponse, StreamingHttpResponse, HttpResponseRedirect, JsonResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 
+## API framework packages
+from rest_framework.response import Response
+from  .serializers import FileSerializer
+from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser, FileUploadParser
+from rest_framework import status
+
+
+
+
+
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
-# from django.conf import settings
+from django.conf import settings
 # import pymongo
 import json
-# from .models import Run
+# from .models import File
 from .forms import RunForm, UpdateForm, FeaturedProjectForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
@@ -20,7 +31,7 @@ import os
 import shutil
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
-import caper.classification as piechart
+import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
 # from django.views.decorators.cache import cache_page
 # from zipfile import ZipFile
@@ -36,7 +47,10 @@ from bson.objectid import ObjectId
 import re
 # from tqdm import tqdm
 from collections import defaultdict
-
+from wsgiref.util import FileWrapper
+import boto3
+import botocore
+from threading import Thread
 
 # FOR LOCAL DEVELOPMENT
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
@@ -48,6 +62,16 @@ db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
 fs_handle = gridfs.GridFS(db_handle)
 
+# Site-wide focal amp color scheme
+fa_cmap = {
+                'ecDNA': "rgb(255, 0, 0)",
+                'BFB': 'rgb(0, 70, 46)',
+                'Complex non-cyclic': 'rgb(255, 190, 0)',
+                'Linear amplification': 'rgb(27, 111, 185)',
+                'Complex-non-cyclic': 'rgb(255, 190, 0)',
+                'Linear': 'rgb(27, 111, 185)',
+                'Virus': 'rgb(163,163,163)',
+                }
 
 def get_date():
     today = datetime.datetime.now()
@@ -344,26 +368,102 @@ def project_page(request, project_name):
     t_sb = time.time()
     diff = t_sb - t_sa
     print(f"Iteratively build project dataframe from samples in {diff} seconds")
-    stackedbar_plot = stacked_bar.StackedBarChart(aggregate)
-    pie_chart = piechart.pie_chart(aggregate)
+    stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
+    pc_fig = piechart.pie_chart(aggregate, fa_cmap)
     t_f = time.time()
     diff = t_f - t_i
     print(f"Generated the project page from views.py in {diff} seconds")
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pie_chart})
-    
+    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig})
+
+
+
+def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
+    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+    s3client = session.client('s3')
+    print(f'==== XXX STARTING uploaded to {file_path_and_location_local}')
+    s3client.upload_file(f'{file_path_and_location_local}', settings.S3_DOWNLOADS_BUCKET,
+                         f'{file_path_and_name_in_bucket}')
+    print('==== XXX uploaded to bucket ')
+
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     real_project_name = project['project_name']
-    tar_id = project['tarfile']
-    tarfile = fs_handle.get(ObjectId(tar_id)).read()
-    response = HttpResponse(tarfile)
-    response['Content-Type'] = 'application/x-zip-compressed'
+
+    project_data_path = f"tmp/{project_name}"  
+    file_location = f'{project_data_path}/{project_name}'
+
+
+
+    if settings.USE_S3_DOWNLOADS:
+
+        project_linkid = project['_id']
+        s3_file_location = f'{project_linkid}/{project_linkid}.tar.gz'
+        print(f'==== XXX STARTING download for {s3_file_location} for project {real_project_name}')
+
+        if not settings.AWS_PROFILE_NAME:
+            settings.AWS_PROFILE_NAME = 'default'
+
+        session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+        s3client = session.client('s3')
+
+        try:
+            s3client.head_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_file_location)
+        except botocore.exceptions.ClientError as e:
+            if e.response['Error']['Code'] == "404":
+                # The object does not exist.
+                # so we need to get a local file from mongo and push that to S3
+                print("===== XXX PROJECT FILE NOT IN S3 --  GET IT IN THERE")
+                tar_id = project['tarfile']
+                tar_file_wrapper = FileWrapper(fs_handle.get(ObjectId(tar_id)), blksize=32728)
+
+                isExist = os.path.exists(f'{project_data_path}')
+                if not isExist:
+                    # Create a new directory because it does not exist
+                    os.makedirs(f'{project_data_path}')
+
+                output = open(f'{project_data_path}/{project_linkid}.tar.gz', "wb")
+                for chunk in tar_file_wrapper:
+                    output.write(chunk)
+                output.close()
+                upload_file_to_s3(f'{project_data_path}/{project_linkid}.tar.gz', s3_file_location)
+                print('==== XXX upload to bucket complete, move on to get one time url')
+
+            else:
+                # Something else has gone wrong.
+                raise
+        else:
+            # The object does exist.
+            print('==== XXX found it in bucket, move on to get one time url')
+
+        # we should have uploaded the file if it was not already there
+        # get a one-time-use url and redirect the response
+        expiration=600
+        # good for seconds, can move this to settings later
+        presigned_url = s3client.generate_presigned_url('get_object', Params = {'Bucket': settings.S3_DOWNLOADS_BUCKET, 'Key': s3_file_location}, ExpiresIn = expiration)
+
+        return HttpResponseRedirect(presigned_url)
+
+
+
+
+    ###### the following is used when S3 is not used for download
+    chunk_size = 8192
+    print('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
+    response = StreamingHttpResponse(
+        FileWrapper(
+            open(file_location, "rb"),
+            chunk_size,
+        )
+    )
     response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
-    clear_tmp()
+    # clear_tmp()
     return response
 
+
+    #except:
+       # raise Http404()
 
 def igv_features_creation(locations):
     """
@@ -376,8 +476,9 @@ def igv_features_creation(locations):
         ## each key is a chromosome
         ## each value is a constructed focal range, including chr_num, chr_min, chr_max
     locuses = {}
-    
     for location in locations:
+        if not location:
+            continue
         parsed = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")
         chrom = parsed[0]
         start = int(parsed[1])
@@ -398,7 +499,6 @@ def igv_features_creation(locations):
                 'max':end,
                 
                 }
-        # chr_num = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
 
     ## reconstruct locuses
     for key in locuses.keys():
@@ -406,13 +506,7 @@ def igv_features_creation(locations):
         chr_max = int(locuses[key]['max'])
         chr_num = key.replace('chr', '')
         locuses[key] = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
-    # chr_num = locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")[0].replace("chr", "")
-    # chr_min = int(locations[0].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[1])
-    # chr_max = int(locations[-1].replace(":", ",").replace("'", "").replace("-", ",").replace(" ", "").split(",")[-1])
-    # if chr_min > chr_max:
-    #     locus = f"{chr_num}:{(int(chr_max)):,}-{(int(chr_min)):,}"
-    # else:
-    #     locus = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
+
     return features, locuses
 
 def get_sample_metadata(sample_data):
@@ -841,8 +935,7 @@ def create_user_list(string, current_user):
     user_list = list(set(user_list))
     return user_list
 
-def clear_tmp():
-    folder = 'tmp/'
+def clear_tmp(folder = 'tmp/'):
     for filename in os.listdir(folder):
         file_path = os.path.join(folder, filename)
         try:
@@ -880,81 +973,154 @@ def admin_featured_projects(request):
 
     return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
 
-
-
-
 def create_project(request):
     if request.method == "POST":
         form = RunForm(request.POST)
-        
-        # 
         form_dict = form_to_dict(form)
         project_name = form_dict['project_name']
-        project = dict()        
-        # download_file(project_name, form_dict['file'])
-        # runs = samples_to_dict(form_dict['file'])
-        
-        # file download
+
+
+        print(form)
+        user = get_current_user(request)
         request_file = request.FILES['document'] if 'document' in request.FILES else None
-        if request_file:
-            project_data_path = f"tmp/{project_name}"
-            # create a new instance of FileSystemStorage
-            fs = FileSystemStorage(location=project_data_path)
-            file = fs.save(request_file.name, request_file)
-            
-        # extract contents of file
-        file_location = f'{project_data_path}/{request_file.name}'
-        with open(file_location, "rb") as tar_file:
-            project_tar_id = fs_handle.put(tar_file)
-        with tarfile.open(file_location, "r:gz") as tar_file:
-            tar_file.extractall(path=project_data_path)
-            
-        #get run.json 
-        run_path =  f'{project_data_path}/results/run.json'   
-        with open(run_path, 'r') as run_json:
-            runs = samples_to_dict(run_json)
-        # for filename in os.listdir(project_data_path):
-        #     if os.path.isdir(f'{project_data_path}/{filename}'):
-                
-        # get cnv, image, bed files
-        for sample, features in runs.items():
-            for feature in features:
-                print(feature['Sample name'])
-                if len(feature) > 0:
-                    # get paths
-                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON','AA directory','cnvkit directory']
-                    for k in key_names:
-                        try:
-                            path_var = feature[k]
-                            with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
-                                id_var = fs_handle.put(file_var)
 
-                        except:
-                            id_var = "Not Provided"
-
-                        feature[k] = id_var
-
-        current_user = get_current_user(request)
-        project['creator'] = current_user
-        project['project_name'] = form_dict['project_name']
-        project['description'] = form_dict['description']
-        project['tarfile'] = project_tar_id
-        project['date_created'] = get_date()
-        project['date'] = get_date()
-        project['private'] = form_dict['private']
-        project['delete'] = False
-        user_list = create_user_list(form_dict['project_members'], current_user)
-        project['project_members'] = user_list
-        project['runs'] = runs
-        project['Oncogenes'] = get_project_oncogenes(runs)
-        project['Classification'] = get_project_classifications(runs)
+        project = create_project_helper(form, user, request_file)
+        project_data_path = f"tmp/{project_name}"
+        
         if form.is_valid():
             new_id = collection_handle.insert_one(project)
-            clear_tmp()
+            # now insert the file into the bucket for later downloads
+
+            # XXXXX TODO Make the upload happen async so it does not slow things down
+            if settings.USE_S3_DOWNLOADS:
+                # load the zip asynch to S3 for later use
+
+                thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
+                thread.start()
+
+
+
+    #        clear_tmp()
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
-            clear_tmp()
+    #        clear_tmp()
             raise Http404()
     else:
         form = RunForm()
     return render(request, 'pages/create_project.html', {'run' : form}) 
+
+## make a create_project_helper for project creation code 
+def create_project_helper(form, user, request_file, save = True):
+    """
+    Creates a project dictionary from 
+    
+    """
+    form_dict = form_to_dict(form)
+    project_name = form_dict['project_name']
+    project = dict()        
+    # download_file(project_name, form_dict['file'])
+    # runs = samples_to_dict(form_dict['file'])
+    
+    # file download
+    
+    if request_file:
+        project_data_path = f"tmp/{project_name}"
+        # create a new instance of FileSystemStorage
+        if save:
+            fs = FileSystemStorage(location=project_data_path)
+            file = fs.save(request_file.name, request_file) 
+            #file_exists = os.path.exists(project_data_path+ "/" + request_file.name)
+            #if settings.USE_S3_DOWNLOADS and file_exists:
+            #    # we need to upload it to S3, we use the same path as here in the bucket to keep things simple
+            #    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+            #    s3client = session.client('s3')
+            #    print(f'==== XXX STARTING uploaded to {project_data_path}/{request_file.name}')
+            #    s3client.upload_file(f'{project_data_path}/{request_file.name}', settings.S3_DOWNLOADS_BUCKET, f'{project_data_path}/{request_file.name}')
+            #    print('==== XXX uploaded to bucket')
+        
+    # extract contents of file
+    file_location = f'{project_data_path}/{request_file.name}'
+    with open(file_location, "rb") as tar_file:
+        project_tar_id = fs_handle.put(tar_file)
+    with tarfile.open(file_location, "r:gz") as tar_file:
+        tar_file.extractall(path=project_data_path)
+        
+    #get run.json 
+    run_path =  f'{project_data_path}/results/run.json'   
+    with open(run_path, 'r') as run_json:
+        runs = samples_to_dict(run_json)
+    # for filename in os.listdir(project_data_path):
+    #     if os.path.isdir(f'{project_data_path}/{filename}'):
+            
+    # get cnv, image, bed files
+    for sample, features in runs.items():
+        for feature in features:
+            print(feature['Sample name'])
+            if len(feature) > 0:
+                # get paths
+                key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON','AA directory','cnvkit directory']
+                for k in key_names:
+                    try:
+                        path_var = feature[k]
+                        with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
+                            id_var = fs_handle.put(file_var)
+
+                    except:
+                        id_var = "Not Provided"
+
+                    feature[k] = id_var
+
+    current_user = user
+    project['creator'] = current_user
+    project['project_name'] = form_dict['project_name']
+    project['description'] = form_dict['description']
+    project['tarfile'] = project_tar_id
+    project['date_created'] = get_date()
+    project['date'] = get_date()
+    project['private'] = form_dict['private']
+    project['delete'] = False
+    user_list = create_user_list(form_dict['project_members'], current_user)
+    project['project_members'] = user_list
+    project['runs'] = runs
+    project['Oncogenes'] = get_project_oncogenes(runs)
+    project['Classification'] = get_project_classifications(runs)
+    return project
+    
+
+class FileUploadView(APIView):
+    parser_class = (MultiPartParser,)
+    permission_classes = []
+
+    def get(self, request):
+        print('Hello')
+        return Response({'response':'success'})
+
+    def post(self, request, format= None):
+        '''
+
+        Post API
+        '''
+        file_serializer = FileSerializer(data = request.data)
+
+        if file_serializer.is_valid():
+            # save the uploaded file to media directory
+            file_serializer.save()
+            form = RunForm(request.POST)
+            form_dict = form_to_dict(form)
+            print(form_dict)
+            proj_name = form_dict['project_name']
+            request_file = request.FILES['file']
+            os.system(f'mkdir -p tmp/{proj_name}')
+            os.system(f'mv tmp/{request_file.name} tmp/{proj_name}/{request_file.name}')
+            # extract contents of file
+            current_user = request.POST['project_members']
+            print(f'Creating project for user {current_user}')
+
+            project = create_project_helper(form, current_user, request_file, save = False)
+            print(project)
+            new_id = collection_handle.insert_one(project)
+            clear_tmp('tmp/')
+            
+            return Response(file_serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)

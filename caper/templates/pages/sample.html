@@ -36,7 +36,11 @@
             genome = 'hg19';
         } else if (reference_genome === 'GRCh37'){
             genome = 'hg19';
-        };
+        } else if (reference_genome === 'GRCh38_viral'){
+            genome = 'hg38'
+        } else if (reference_genome === 'mm10'){
+            genome = 'mm10'
+        }
         const options =
             { 
                 locus: locus_selection,
@@ -146,8 +150,6 @@
                 container.style.display = "none";
             }});
 
-
-
             $('#toggle-event').change(function() {{
                 const current_link = window.location.href.split('?');
                 if (current_link.length == 1) {{
@@ -172,11 +174,10 @@
                     
                 }
             });
-                        
 
             var plot_element = document.getElementById("plotly_div");
             plot_element.on('plotly_click', function(data){{
-                console.log('click');
+{#                console.log('click');#}
                 var link = '';
                 for (let i = 0; i < data['points'].length; i++) {{
                     var name = data['points'][i]['data']['name'];
@@ -193,15 +194,11 @@
                             }
                         }
 
-
                         // if display IGV Viewer toggle is on:
                         if (igv_toggle) {
                             for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
                                 var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k];
                                 var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
-                                
-                                
-
                                 if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
                                     const tracks = [amplicon_selection];
                                     const locus = locus_selection;
@@ -219,7 +216,7 @@
                     }}
                 }}
 
-                console.log(link == undefined);
+                {#console.log(link == undefined);#}
 
                 if (link != '') {{
                     var link_window = document.getElementById("figure_download_window");
