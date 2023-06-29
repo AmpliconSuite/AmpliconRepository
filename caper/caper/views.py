@@ -1127,7 +1127,7 @@ def create_project_helper(form, user, request_file, save = True):
             #    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
             #    s3client = session.client('s3')
             #    print(f'==== XXX STARTING uploaded to {project_data_path}/{request_file.name}')
-            #    s3client.upload_file(f'{project_data_path}/{request_file.name}', settings.S3_DOWNLOADS_BUCKET, f'{project_data_path}/{request_file.name}')
+            #    s3client.upload_file(f'{project_data_path}/{request_file.name}', settings.S3_DOWNLOADS_BUCKET, f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_data_path}/{request_file.name}')
             #    print('==== XXX uploaded to bucket')
         
     # extract contents of file
