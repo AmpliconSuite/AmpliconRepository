@@ -22,7 +22,7 @@ from django.conf import settings
 # import pymongo
 import json
 # from .models import File
-from .forms import RunForm, UpdateForm, FeaturedProjectForm
+from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
 import time
@@ -51,6 +51,7 @@ from wsgiref.util import FileWrapper
 import boto3
 import botocore
 from threading import Thread
+import logging
 
 # FOR LOCAL DEVELOPMENT
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
@@ -92,6 +93,22 @@ def get_one_project(project_name_or_uuid):
 
     except:
         project = None    
+
+    # backstop using the name the old way
+    if project is None:
+        project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+        prepare_project_linkid(project)
+
+    return project
+
+def get_one_deleted_project(project_name_or_uuid):
+    try:
+        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
+        prepare_project_linkid(project)
+        return project
+
+    except:
+        project = None
 
     # backstop using the name the old way
     if project is None:
@@ -972,6 +989,88 @@ def admin_featured_projects(request):
         prepare_project_linkid(proj)
 
     return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
+
+
+# only allow users designated as staff to see this, otherwise redirect to nonexistant page to
+# deny that this might even be a valid URL
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_delete_project(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    error_message = ""
+    if request.method == "POST":
+
+        form = DeletedProjectForm(request.POST)
+        form_dict = form_to_dict(form)
+        project_name = form_dict['project_name']
+        project_id = form_dict['project_id']
+        deleteit = form_dict['delete']
+
+        if deleteit:
+
+            project = get_one_deleted_project(project_id)
+            query = {'_id': ObjectId(project_id)}
+
+            try:
+                # delete Samples & Features and feature files from mongo,
+                # Is this needed or will deleting the parent project delete the whole thing
+                current_runs = project['runs']
+                runs = project['runs']
+                for sample in runs:
+                    for feature in sample:
+                        key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'AA directory', 'cnvkit directory']
+                        for k in key_names:
+                            try:
+                                print(sample[k])
+                                fs_handle.delete(ObjectId(sample[k]))
+
+
+                            except:
+                                # DO NOTHING, its not there
+                                id_var = "Not Provided"
+            except:
+                logging.exception('Problem deleting sample files from Mongo.')
+                error_message="Problem deleting sample files from Mongo."
+
+            # delete project tar and files from mongo and local disk
+            #    - assume all feature and sample files are in this dir
+            try:
+                fs_handle.delete(ObjectId(project['tarfile']))
+            except:
+                logging.exception(f'Problem deleting project tar file from mongo. { project["tarfile"]}')
+                error_message = error_message + " Problem deleting project tar file from mongo."
+
+
+            s3_file_path = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
+            try:
+                project_data_path = f"tmp/{project_id}/"
+                shutil.rmtree(project_data_path)
+                session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+                s3client = session.client('s3')
+                s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path);
+            except:
+                logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
+                error_message = error_message+" Problem deleting tar file from S3. "
+            # Final step, delete the project
+            try:
+                collection_handle.delete_one(query)
+            except:
+                logging.exception('Problem deleting Project document from Mongo.')
+                error_message = error_message + " Problem deleting Project document from Mongo. "
+
+            if error_message:
+                error_message = error_message + " Other project artifacts successfully deleted. Please refer to the application log files for details. "
+            else:
+                error_message = f"Project {project_name} deleted.";
+
+    deleted_projects = list(collection_handle.find({'delete': True}))
+    for proj in deleted_projects:
+        prepare_project_linkid(proj)
+
+    return render(request, 'pages/admin_delete_project.html', {'deleted_projects': deleted_projects, 'error_message':error_message})
+
+
 
 def create_project(request):
     if request.method == "POST":
