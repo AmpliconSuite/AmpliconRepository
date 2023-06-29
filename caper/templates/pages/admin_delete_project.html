@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+{% block extra_js %}
+<script>
+  function set_project_deleted(event, project_id, project_name, to_be_deleted) {
+        var goahead = confirm("Really PERMANENTLY delete project " + project_name + "("+project_id+")? This cannot be undone.");
+        if (goahead){
+
+            let form = document.getElementById("form__submit");
+
+            document.getElementById("form__project_name").value=project_name;
+
+            document.getElementById("form__project_id").value=project_id;
+
+            document.getElementById("form__delete").checked=to_be_deleted;
+            form.submit();
+
+
+        } else {
+            alert('5--')
+            event.stopPropagation();
+            event.preventDefault();
+            event.target.checked = !to_be_featured;
+            return false;
+        }
+  }
+
+
+    $(document).ready(function () {
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+        });
+     
+        $('table.table').DataTable({
+            language: {
+                    searchPlaceholder: "Search deleted projects"
+                    }
+        });
+
+  message_to_user = "{{ error_message }}";
+    if (message_to_user.length > 0){
+        alert(message_to_user);
+    } else {
+        //alert("Nothing to say")
+    }
+
+
+
+
+    });
+</script>
+{% endblock %}
+
+{% block meta_title %} Home
+{% endblock %}
+
+{% block main %}
+<head>
+    <title>
+        AmpliconRepository
+    </title>
+</head>
+
+<div class="row">
+    <div class="col-md-8">
+        <div>
+            <h1 style="padding-top: 50px">Permanently Delete Projects</h1>
+
+            <hr>
+            <div stlye="margin-top: 30px">
+                <p>This will <b>permanently delete</b> a project.  These projects are flagged as deleted in the DB already but this will
+            actually delete them and delete their files on the file system and in S3. This cannot be undone. </p>
+
+            </div>
+            <div style="display:none">
+                 <form id="form__submit" action="/admin-delete-project/" method="post">
+                       {% csrf_token %}
+                     <input id="form__project_name" type="text" name="project_name" /><br />
+                     <input id="form__project_id" type="text" name="project_id" /><br />
+                     <input id="form__delete" type="checkbox" name="delete" /><br /><br />
+                  </form>
+
+
+            </div>
+
+
+        </div>
+        
+
+        <style>
+            .nav-tabs .nav-link {
+                color: gray;
+                border: 0;
+                border-bottom: 1px solid grey;
+            }
+            
+            .nav-tabs .nav-link:hover {
+                border: 0;
+                border-bottom: 1px solid grey;
+            }
+            
+            .nav-tabs .nav-link.active {
+                color: #000000;
+                border: 0;
+                border-radius: 0;
+                border-bottom: 2px solid  #0275d8 ;
+            }
+            </style>
+
+        
+        <div>
+            <ul class="nav nav-tabs" role="tablist" >
+                <li class="nav-item">
+                
+                    <a class="nav-link active" href="#tab-table0" data-toggle="tab">Projects flagged as Deleted</a>
+                </li>
+
+            </ul>
+
+            <div class="tab-content" style="padding-top: 30px;">
+
+                <div class="tab-pane active" id="tab-table0">
+                    <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
+                        <thead>
+                            <tr>
+                                <th>Creator</th>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Last Updated</th>
+                                <th>Project Members</th>
+                                <th>Delete</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in deleted_projects %}
+                            <tr>
+                                <td>{{ project.creator }}</td>
+                                <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                                <td>{{ project.description }}</td>
+                                <td>{{ project.date }}</td>
+                                <td>{% for person in project.project_members %}
+                                    {{ person }}<br>
+                                {% endfor%}</td>
+                                <td>
+
+                                    <input type = "button"  onclick="set_project_deleted(event, '{{ project.linkid }}', '{{ project.project_name }}', true)" value="delete"/>
+
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+
+            </div> 
+        </div>
+    </div>
+
+</div>
+
+
+{% endblock %}
