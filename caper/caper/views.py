@@ -51,6 +51,8 @@ from wsgiref.util import FileWrapper
 import boto3
 import botocore
 from threading import Thread
+import time
+import math
 
 # FOR LOCAL DEVELOPMENT
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
@@ -351,7 +353,7 @@ def reference_genome_from_sample(sample_data):
         reference_genome = reference_genomes[0]
     return reference_genome
 
-def project_page(request, project_name):
+def project_page(request, project_name, message=''):
     t_i = time.time()
     project = get_one_project(project_name)
     samples = project['runs']
@@ -373,16 +375,35 @@ def project_page(request, project_name):
     t_f = time.time()
     diff = t_f - t_i
     print(f"Generated the project page from views.py in {diff} seconds")
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig})
+
+    # check for an error when project was created, but don't override a message that was already sent in
+    if not message :
+        extraction_error = None
+        project_error_file_path = f"tmp/{project_name}/project_extraction_errors.txt"
+        alt_project_error_file_path = f"tmp/{project['project_name']}/project_extraction_errors.txt"
+        if os.path.isfile(project_error_file_path):
+            extraction_error = project_error_file_path
+        elif os.path.isfile(alt_project_error_file_path):
+            extraction_error = alt_project_error_file_path
+
+        if extraction_error:
+            over_a_month_old = time.time() - os.path.getmtime(extraction_error) > (30 * 24 * 60 * 60)
+            if over_a_month_old:
+                # if its been ignored for a month, rename the file and stop sending warnings
+                os.rename(extraction_error, "_"+extraction_error)
+            else:
+                message = 'There was a problem extracting the results from the AmpliconAggregator .tar.gz file for this project.  Please notifiy the administrator so that they can help resolve the problem.'
+
+    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig})
 
 
 
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
     session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
     s3client = session.client('s3')
-    print(f'==== XXX STARTING uploaded to {file_path_and_location_local}')
+    print(f'==== XXX STARTING upload of {file_path_and_location_local} to s3://{settings.S3_DOWNLOADS_BUCKET}/{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
     s3client.upload_file(f'{file_path_and_location_local}', settings.S3_DOWNLOADS_BUCKET,
-                         f'{file_path_and_name_in_bucket}')
+                         f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
     print('==== XXX uploaded to bucket ')
 
 
@@ -399,7 +420,7 @@ def project_download(request, project_name):
     if settings.USE_S3_DOWNLOADS:
 
         project_linkid = project['_id']
-        s3_file_location = f'{project_linkid}/{project_linkid}.tar.gz'
+        s3_file_location = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_linkid}/{project_linkid}.tar.gz'
         print(f'==== XXX STARTING download for {s3_file_location} for project {real_project_name}')
 
         if not settings.AWS_PROFILE_NAME:
@@ -407,6 +428,10 @@ def project_download(request, project_name):
 
         session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
         s3client = session.client('s3')
+
+        print("BUCKET "+ settings.S3_DOWNLOADS_BUCKET)
+        print("FILELOC " + s3_file_location)
+        print("PROFILE " + settings.AWS_PROFILE_NAME)
 
         try:
             s3client.head_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_file_location)
@@ -973,41 +998,117 @@ def admin_featured_projects(request):
 
     return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
 
+# extract_project_files is meant to be called in a seperate thread to reduce the wait
+# for users as they create the project
+def extract_project_files(tarfile, file_location, project_data_path, project_id):
+    print("Extracting files from tar")
+    try:
+        with tarfile.open(file_location, "r:gz") as tar_file:
+            tar_file.extractall(path=project_data_path)
+
+        # get run.json
+        run_path = f'{project_data_path}/results/run.json'
+        with open(run_path, 'r') as run_json:
+           runs = samples_to_dict(run_json)
+
+        # get cnv, image, bed files
+        for sample, features in runs.items():
+            for feature in features:
+                print(feature['Sample name'])
+                if len(feature) > 0:
+
+                    # get paths
+                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON',
+                                 'AA directory', 'cnvkit directory']
+                    for k in key_names:
+                        try:
+                            path_var = feature[k]
+                            with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
+                                id_var = fs_handle.put(file_var)
+
+                        except:
+                            id_var = "Not Provided"
+
+                        feature[k] = id_var
+
+        # Now update the project with the updated runs
+        project = get_one_project(project_id)
+        query = {'_id': ObjectId(project_id)}
+        new_val = {"$set": {'runs': runs,
+                            'Oncogenes': get_project_oncogenes(runs)}}
+
+        collection_handle.update_one(query, new_val)
+
+    except Exception as anError:
+        print("Error occurred extracting project tarfile results into "+ project_data_path)
+        print(type(anError))  # the exception type
+        print(anError.args)  # arguments stored in .args
+        print(anError)
+        # print error to file called project_extraction_errors.txt that we can
+        # see and let owner know to contact an admin
+        with open(project_data_path + '/project_extraction_errors.txt', 'a') as fh:
+            print("Error occurred extracting project tarfile results into " + project_data_path, file = fh)
+            print(type(anError), file = fh)  # the exception type
+            print(anError.args, file = fh )  # arguments stored in .args
+            print(anError, file=fh)
+
+
+
 def create_project(request):
     if request.method == "POST":
         form = RunForm(request.POST)
         form_dict = form_to_dict(form)
         project_name = form_dict['project_name']
-
-
-        print(form)
         user = get_current_user(request)
-        request_file = request.FILES['document'] if 'document' in request.FILES else None
 
+        # file download
+        request_file = request.FILES['document'] if 'document' in request.FILES else None
+        project_data_path = f"tmp/{project_name}"
+
+        request_file = request.FILES['document'] if 'document' in request.FILES else None
         project = create_project_helper(form, user, request_file)
         project_data_path = f"tmp/{project_name}"
-        
+
+
         if form.is_valid():
             new_id = collection_handle.insert_one(project)
-            # now insert the file into the bucket for later downloads
 
-            # XXXXX TODO Make the upload happen async so it does not slow things down
+            # move the project location to a new name using the UUID to prevent name collisions
+            new_project_data_path = f"tmp/{new_id.inserted_id}"
+            os.rename(project_data_path, new_project_data_path)
+            project_data_path = new_project_data_path
+            file_location = f'{project_data_path}/{request_file.name}'
+
+            # extract the files async also
+            extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
+            extract_thread.start()
+
             if settings.USE_S3_DOWNLOADS:
                 # load the zip asynch to S3 for later use
+                file_location = f'{project_data_path}/{request_file.name}'
 
-                thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
-                thread.start()
+                s3_thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
+                s3_thread.start()
 
 
+            # estimate how long the extraction could take and round up
+            # CCLE was 3GB and took about 3 minutes
+            try:
+                file_size = os.path.getsize(file_location)
+                est_min_to_extract = max(2, 1+math.ceil(file_size / (1024 ** 3)))
+            except:
+                est_min_to_extract = 5
 
-    #        clear_tmp()
-            return redirect('project_page', project_name=new_id.inserted_id)
+            a_message = f"Project creation is still in process.  It is estimated to take {est_min_to_extract} minutes before all samples and features are available."
+            #        clear_tmp()
+            return redirect('project_page', project_name=new_id.inserted_id, message=a_message)
         else:
     #        clear_tmp()
             raise Http404()
     else:
         form = RunForm()
     return render(request, 'pages/create_project.html', {'run' : form}) 
+
 
 ## make a create_project_helper for project creation code 
 def create_project_helper(form, user, request_file, save = True):
@@ -1035,15 +1136,21 @@ def create_project_helper(form, user, request_file, save = True):
             #    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
             #    s3client = session.client('s3')
             #    print(f'==== XXX STARTING uploaded to {project_data_path}/{request_file.name}')
-            #    s3client.upload_file(f'{project_data_path}/{request_file.name}', settings.S3_DOWNLOADS_BUCKET, f'{project_data_path}/{request_file.name}')
+            #    s3client.upload_file(f'{project_data_path}/{request_file.name}', settings.S3_DOWNLOADS_BUCKET, f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_data_path}/{request_file.name}')
             #    print('==== XXX uploaded to bucket')
         
     # extract contents of file
     file_location = f'{project_data_path}/{request_file.name}'
     with open(file_location, "rb") as tar_file:
         project_tar_id = fs_handle.put(tar_file)
+
+    # extract only run.json now because we will need it for project creation.
+    # defer the rest to another thread to keep this faster
     with tarfile.open(file_location, "r:gz") as tar_file:
-        tar_file.extractall(path=project_data_path)
+        #tar_file.extractall(path=project_data_path)
+        files_i_want = ['./results/run.json']
+        tar_file.extractall(members=[x for x in tar_file.getmembers() if x.name in files_i_want],
+                            path=project_data_path)
         
     #get run.json 
     run_path =  f'{project_data_path}/results/run.json'   
@@ -1051,24 +1158,25 @@ def create_project_helper(form, user, request_file, save = True):
         runs = samples_to_dict(run_json)
     # for filename in os.listdir(project_data_path):
     #     if os.path.isdir(f'{project_data_path}/{filename}'):
-            
+
+    ### Now do this in seperate thread using the extract_project_files: method
     # get cnv, image, bed files
-    for sample, features in runs.items():
-        for feature in features:
-            print(feature['Sample name'])
-            if len(feature) > 0:
-                # get paths
-                key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON','AA directory','cnvkit directory']
-                for k in key_names:
-                    try:
-                        path_var = feature[k]
-                        with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
-                            id_var = fs_handle.put(file_var)
-
-                    except:
-                        id_var = "Not Provided"
-
-                    feature[k] = id_var
+    #for sample, features in runs.items():
+    #    for feature in features:
+    #        print(feature['Sample name'])
+    #        if len(feature) > 0:
+    #            # get paths
+    #            key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON','AA directory','cnvkit directory']
+    #            for k in key_names:
+    #                try:
+    #                    path_var = feature[k]
+    #                    with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
+    #                        id_var = fs_handle.put(file_var)
+    #
+    #                except:
+    #                    id_var = "Not Provided"
+   #
+    #                feature[k] = id_var
 
     current_user = user
     project['creator'] = current_user
@@ -1117,9 +1225,24 @@ class FileUploadView(APIView):
             print(f'Creating project for user {current_user}')
 
             project = create_project_helper(form, current_user, request_file, save = False)
+            
+
             print(project)
             new_id = collection_handle.insert_one(project)
-            clear_tmp('tmp/')
+            project_data_path = f"tmp/{proj_name}"
+            file_location = f'{project_data_path}/{request_file.name}'
+
+             # extract the files async also
+            extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
+            extract_thread.start()
+
+            if settings.USE_S3_DOWNLOADS:
+                # load the zip asynch to S3 for later use
+                file_location = f'{project_data_path}/{request_file.name}'
+
+                s3_thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
+                s3_thread.start()
+
             
             return Response(file_serializer.data, status=status.HTTP_201_CREATED)
         else:
