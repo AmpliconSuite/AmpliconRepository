@@ -1000,7 +1000,7 @@ def admin_featured_projects(request):
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
-def extract_project_files(tarfile, file_location, project_data_path):
+def extract_project_files(tarfile, file_location, project_data_path, project_id):
     print("Extracting files from tar")
     try:
         with tarfile.open(file_location, "r:gz") as tar_file:
@@ -1030,6 +1030,15 @@ def extract_project_files(tarfile, file_location, project_data_path):
                             id_var = "Not Provided"
 
                         feature[k] = id_var
+
+        # Now update the project with the updated runs
+        project = get_one_project(project_id)
+        query = {'_id': ObjectId(project_id)}
+        new_val = {"$set": {'runs': runs,
+                            'Oncogenes': get_project_oncogenes(runs)}}
+
+        collection_handle.update_one(query, new_val)
+
     except Exception as anError:
         print("Error occurred extracting project tarfile results into "+ project_data_path)
         print(type(anError))  # the exception type
@@ -1070,17 +1079,17 @@ def create_project(request):
             project_data_path = new_project_data_path
             file_location = f'{project_data_path}/{request_file.name}'
 
+            # extract the files async also
+            extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
+            extract_thread.start()
+
             if settings.USE_S3_DOWNLOADS:
                 # load the zip asynch to S3 for later use
-
                 file_location = f'{project_data_path}/{request_file.name}'
 
                 s3_thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
                 s3_thread.start()
 
-                # extract the files async also
-                extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path))
-                extract_thread.start()
 
             # estimate how long the extraction could take and round up
             # CCLE was 3GB and took about 3 minutes
