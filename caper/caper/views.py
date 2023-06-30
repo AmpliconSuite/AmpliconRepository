@@ -1067,9 +1067,18 @@ def admin_delete_project(request):
     deleted_projects = list(collection_handle.find({'delete': True}))
     for proj in deleted_projects:
         prepare_project_linkid(proj)
+        tar_file_len = fs_handle.get(ObjectId(proj['tarfile'])).length
+        proj['tar_file_len'] = sizeof_fmt(tar_file_len)
 
     return render(request, 'pages/admin_delete_project.html', {'deleted_projects': deleted_projects, 'error_message':error_message})
 
+
+def sizeof_fmt(num, suffix="B"):
+    for unit in ("", "K", "M", "G", "T", "P", "E", "Z"):
+        if abs(num) < 1024.0:
+            return f"{num:3.1f} {unit}{suffix}"
+        num /= 1024.0
+    return f"{num:.1f}Yi{suffix}"
 
 
 def create_project(request):

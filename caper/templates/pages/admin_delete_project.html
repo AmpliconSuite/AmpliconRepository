@@ -147,6 +147,7 @@
                                 <th>Description</th>
                                 <th>Last Updated</th>
                                 <th>Project Members</th>
+                                <th>Tarfile Size</th>
                                 <th>Delete</th>
                             </tr>
                         </thead>
@@ -154,12 +155,13 @@
                             {% for project in deleted_projects %}
                             <tr>
                                 <td>{{ project.creator }}</td>
-                                <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                                <td>{{ project.project_name }}</td>
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor%}</td>
+                                <td>{{ project.tar_file_len }}</td>
                                 <td>
 
                                     <input type = "button"  onclick="set_project_deleted(event, '{{ project.linkid }}', '{{ project.project_name }}', true)" value="delete"/>
