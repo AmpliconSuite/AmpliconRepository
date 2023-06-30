@@ -300,6 +300,7 @@ def modify_date(projects):
 
     for project in projects:
         try:
+
             dt = datetime.datetime.strptime(project['date'], f"%Y-%m-%dT%H:%M:%S.%f")
             project['date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
         except Exception as e:
@@ -888,12 +889,12 @@ def get_current_user(request):
 
 def project_delete(request, project_name):
     project = get_one_project(project_name)
-
+    deleter = get_current_user(request)
     if check_project_exists(project_name):
         current_runs = project['runs']
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
-        new_val = { "$set": {'delete' : True} }
+        new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
         return redirect('profile')
     else:
@@ -1069,6 +1070,16 @@ def admin_delete_project(request):
         prepare_project_linkid(proj)
         tar_file_len = fs_handle.get(ObjectId(proj['tarfile'])).length
         proj['tar_file_len'] = sizeof_fmt(tar_file_len)
+        try:
+
+            if proj['delete_date']:
+                dt = datetime.datetime.strptime(proj['delete_date'], f"%Y-%m-%dT%H:%M:%S.%f")
+                proj['delete_date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
+        except:
+            #ignore missing date
+            print(proj['project_name'])
+
+
 
     return render(request, 'pages/admin_delete_project.html', {'deleted_projects': deleted_projects, 'error_message':error_message})
 

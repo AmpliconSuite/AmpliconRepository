@@ -91,6 +91,12 @@
             actually delete them and delete their files on the file system and in S3. This cannot be undone. </p>
 
             </div>
+        </div>
+    </div>
+</div>
+    <div class="row">
+        <div class="col-md-12">
+        <div>
             <div style="display:none">
                  <form id="form__submit" action="/admin-delete-project/" method="post">
                        {% csrf_token %}
@@ -143,9 +149,10 @@
                         <thead>
                             <tr>
                                 <th>Creator</th>
+                                <th>Deleted by</th>
                                 <th>Name</th>
                                 <th>Description</th>
-                                <th>Last Updated</th>
+                                <th>Deleted on</th>
                                 <th>Project Members</th>
                                 <th>Tarfile Size</th>
                                 <th>Delete</th>
@@ -155,9 +162,10 @@
                             {% for project in deleted_projects %}
                             <tr>
                                 <td>{{ project.creator }}</td>
+                                <td>{{ project.delete_user }}</td>
                                 <td>{{ project.project_name }}</td>
                                 <td>{{ project.description }}</td>
-                                <td>{{ project.date }}</td>
+                                <td>{{ project.delete_date }}</td>
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor%}</td>
