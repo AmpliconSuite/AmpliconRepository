@@ -1225,9 +1225,24 @@ class FileUploadView(APIView):
             print(f'Creating project for user {current_user}')
 
             project = create_project_helper(form, current_user, request_file, save = False)
+            
+
             print(project)
             new_id = collection_handle.insert_one(project)
-            clear_tmp('tmp/')
+            project_data_path = f"tmp/{proj_name}"
+            file_location = f'{project_data_path}/{request_file.name}'
+
+             # extract the files async also
+            extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
+            extract_thread.start()
+
+            if settings.USE_S3_DOWNLOADS:
+                # load the zip asynch to S3 for later use
+                file_location = f'{project_data_path}/{request_file.name}'
+
+                s3_thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
+                s3_thread.start()
+
             
             return Response(file_serializer.data, status=status.HTTP_201_CREATED)
         else:
