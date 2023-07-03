@@ -5,7 +5,16 @@
 
 This is the main repository for the AmpliconRepository.
 
-# How to set up a development server for AmpliconRepository
+- [How to set up a development server for AmpliconRepository](#aa-env-install)
+- [Setup your development environment using Docker and docker-compose](#dev-docker)
+- [Testing datasets](#test-datasets) 
+- [Pushing changes to GitHub and merging PRs](#pr)
+- [Using the development server](#dev-server)
+- [Logging in as admin](#admin-logging)
+- [How to deploy and update the production server for AmpliconRepository](#deploy)
+
+
+# How to set up a development server for AmpliconRepository <a name="aa-env-install"></a> 
 
 ## Requirements
 - Python Virtual Environment (3.8 or higher)
@@ -73,10 +82,103 @@ This is the main repository for the AmpliconRepository.
 - Open the application on a web browser (recommend using a private/incognito window for faster development):
 > https://localhost:8000
 
-# Testing datasets
+# Setup your development environment using Docker and docker-compose <a name="dev-docker"></a> 
+
+To use containers for development you need to install [Docker](https://docs.docker.com/engine/install/) and [docker-compose](https://docs.docker.com/compose/install/) on your machine.
+
+## 1. Getting started for impatience developers
+
+Build and run your development webserver and mongo db using docker:
+
+```bash
+cd AmpliconRepository
+docker-compose -f docker-compose-dev.yml build
+docker-compose -f docker-compose-dev.yml up -d
+```
+
+## 2. Getting started
+
+### 2.1 Start your [docker deamon](https://docs.docker.com/config/daemon/start/) and make sure is running:
+
+```bash
+# for linux
+sudo systemctl start docker
+docker --help
+docker-compose --help
+
+# or alternatively start manually from interface (macos or windows)
+```
+
+### 2.2. Clone the repository (skip this if you are already done this):
+
+```bash
+git clone https://github.com/AmpliconSuite/AmpliconRepository.git
+cd AmpliconRepository
+```
+
+### 2.3. Build a local Docker image:
+
+This command will create a Docker image `genepattern/amplicon-repo:dev-test` with your environment, all dependencies and application code you need to run the webserver.
+Additionally, this command will pull a `mongo:4` image for the test database. 
+
+```bash
+cd AmpliconRepository
+docker-compose -f docker-compose-dev.yml build
+```
+
+Dependency files:
+- `docker-compose-dev.yml`
+- `Dockerfile_dev`
+- `.env` (make sure you ask your collegues)
+- `environment-dev.yml`
+- `requirements.txt`
+
+### 2.4 Run webserver and mongo db instances: 
+
+This command will:
+- create two containers, one for the webserver (`amplicon-repo`) and one for the mongo database (`ampliconrepository_mongodb_1`)
+- will use `.env` to configure all environment variables used by the webserver and mongodb 
+- will start the webserver on `localhost:8000`
+- will start a mongodb instance listening on port `27017`
+- will mount a volume with your source code `-v ${PWD}:/home/${AA_USER}/code`
+
+
+
+```bash
+docker-compose -f docker-compose-dev.yml up -d
+# Starting ampliconrepository_mongodb_1 ... done
+# Starting amplicon-repo                ... done
+```
+
+To check if your containers are running do:
+
+```bash
+docker ps
+```
+and you should see something like below:
+```
+# CONTAINER ID   IMAGE                                COMMAND                   CREATED         STATUS              PORTS                      NAMES
+# 311a560ec20a   genepattern/amplicon-repo:dev-test   "/bin/sh -c 'echo \"H…"   3 minutes ago   Up About a minute   0.0.0.0:8000->8000/tcp     amplicon-repo
+# deaa521621f1   mongo:4                              "docker-entrypoint.s…"    4 days ago      Up About a minute   0.0.0.0:27017->27017/tcp   ampliconrepository_mongodb_1
+```
+
+### 2.5 Stop webserver and mongodb
+
+To stop the webserver and mongodb service:
+
+```bash
+docker-compose -f docker-compose-dev.yml down
+# Stopping amplicon-repo                ... done
+# Stopping ampliconrepository_mongodb_1 ... done
+# Removing amplicon-repo                ... done
+# Removing ampliconrepository_mongodb_1 ... done
+# Removing network ampliconrepository_default
+```
+
+# Testing datasets <a name="test-datasets"></a> 
 [These datasets](https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=share_link) are ready to upload to the site for testing purposes.
 
-# Pushing changes to GitHub and merging PRs
+# Pushing changes to GitHub and merging PRs <a name="pr"></a> 
 - Work on branches and open pull requests to merge changes into main.
 - Please ensure that you do not commit `caper.sqlite3` along with your other changes. 
 - PR reviewers, please check that `caper.sqlite3` is not among the changed files in a PR.
@@ -87,13 +189,13 @@ This is the main repository for the AmpliconRepository.
     - CCLE project page
     - load a random sample in CCLE
 
-# Using the development server
+# Using the development server <a name="dev-server"></a> 
 - Please see the [wiki page on using the development server](https://github.com/mesirovlab/AmpliconRepository/wiki/dev.ampliconrepository.org-instructions).
 
-# Logging in as admin
+# Logging in as admin <a name="admin-logging"></a> 
  - Please see the [wiki page on admin login](https://github.com/mesirovlab/AmpliconRepository/wiki/Becoming-Admin-on-a-development-server).
 
-# How to deploy and update the production server for AmpliconRepository
+# How to deploy and update the production server for AmpliconRepository <a name="deploy"></a> 
 The server is currently running on an EC2 instance through Docker. The ports active on HTTP and HTTPS through AWS Load Balancer. There are two main scripts to start and stop the server.
 
 ## 1. How to start the server

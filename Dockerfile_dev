@@ -35,8 +35,7 @@ RUN python -m pip install -r /tmp/requirements.txt
 ARG AMPLICON_ENV_PORT
 ARG AA_USER
 
-RUN useradd -rm -d /home/${AA_USER} -s /bin/bash -g root -G sudo -u 1001 ${AA_USER} && \
-    chown ${AA_USER}:${AA_USER} -R /home/${AA_USER}
+RUN useradd -rm -d /home/${AA_USER} -s /bin/bash -g root -G sudo -u 1001 ${AA_USER}
 USER ${AA_USER}
 COPY ./caper/ /home/${AA_USER}/code/caper/
 
