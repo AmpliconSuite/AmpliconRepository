@@ -86,7 +86,7 @@ This is the main repository for the AmpliconRepository.
 
 To use containers for development you need to install [Docker](https://docs.docker.com/engine/install/) and [docker-compose](https://docs.docker.com/compose/install/) on your machine.
 
-## 1. Getting started for impatience developers
+## 1. Quickstart
 
 Build and run your development webserver and mongo db using docker:
 
@@ -94,11 +94,13 @@ Build and run your development webserver and mongo db using docker:
 cd AmpliconRepository
 docker-compose -f docker-compose-dev.yml build
 docker-compose -f docker-compose-dev.yml up -d
+# to shutdown
+docker-compose -f docker-compose-dev.yml down
 ```
 
-## 2. Getting started
+## 2. Complete steps
 
-### 2.1 Start your [docker deamon](https://docs.docker.com/config/daemon/start/) and make sure is running:
+### 2.1 Start your [docker daemon](https://docs.docker.com/config/daemon/start/) and make sure is running:
 
 ```bash
 # for linux
@@ -109,11 +111,10 @@ docker-compose --help
 # or alternatively start manually from interface (macos or windows)
 ```
 
-### 2.2. Clone the repository (skip this if you are already done this):
+### 2.2. Clone the repository (skip this if you have already done this):
 
 ```bash
 git clone https://github.com/AmpliconSuite/AmpliconRepository.git
-cd AmpliconRepository
 ```
 
 ### 2.3. Build a local Docker image:
@@ -129,7 +130,7 @@ docker-compose -f docker-compose-dev.yml build
 Dependency files:
 - `docker-compose-dev.yml`
 - `Dockerfile_dev`
-- `.env` (make sure you ask your collegues)
+- `.env` (make sure to first ask AmpRepo devs for the contents of this file)
 - `environment-dev.yml`
 - `requirements.txt`
 
