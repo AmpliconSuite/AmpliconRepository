@@ -87,14 +87,16 @@ S3_DOWNLOADS_BUCKET_PATH="ted/dev/"
 
 # Hosts/domain names that are valid for this site; required if DEBUG is False
 # See https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137', 'host.docker.internal']
+ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137', 'host.docker.internal', '172.31.85.178']
 
 # Add CSRF trusted origins
 CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconrepository.org','https://dev.ampliconrepository.org', 'http://127.0.0.1:8888/']
 # skip intermediate sign-out page
 ACCOUNT_LOGOUT_ON_GET = True
 # SSL Redirect
-SECURE_SSL_REDIRECT=False
+
+SECURE_SSL_REDIRECT_ENVVAR=os.getenv('SECURE_SSL_REDIRECT', default="True")
+SECURE_SSL_REDIRECT=(SECURE_SSL_REDIRECT_ENVVAR == 'True')
 
 # Local time zone for this installation. Choices can be found here:
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name
@@ -152,7 +154,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Provider specific settings
 GOOGLE_SECRET_KEY = os.environ['GOOGLE_SECRET_KEY']
 GLOBUS_SECRET_KEY = os.environ['GLOBUS_SECRET_KEY']
-ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'http'
+
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.getenv('ACCOUNT_DEFAULT_HTTP_PROTOCOL', default='https')
+
 
 SOCIALACCOUNT_EMAIL_REQUIRED=True
 SOCIALACCOUNT_PROVIDERS = {
@@ -271,13 +275,13 @@ USE_S3_DOWNLOADS = os.getenv('S3_FILE_DOWNLOADS') == 'TRUE'
 if USE_S3_DOWNLOADS:
     # config for BOTO, bucket etc here but not credentials
     if os.getenv("AWS_PROFILE_NAME") is not None:
-        AWS_PROFILE_NAME='amprepo'
+        AWS_PROFILE_NAME=os.getenv("AWS_PROFILE_NAME")
     else:
         AWS_PROFILE_NAME = 'default'
 
     # assume UUIDs are unique across servers so we can all use the same bucket
     S3_DOWNLOADS_BUCKET='amprepo-private'
-
+    S3_DOWNLOADS_BUCKET_PATH=os.getenv('S3_DOWNLOADS_BUCKET_PATH', default="")
 
 
 
