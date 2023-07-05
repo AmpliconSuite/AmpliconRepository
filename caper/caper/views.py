@@ -1119,9 +1119,10 @@ def admin_delete_project(request):
             # delete project tar and files from mongo and local disk
             #    - assume all feature and sample files are in this dir
             try:
+                print("WTF")
                 fs_handle.delete(ObjectId(project['tarfile']))
-            except:
-                logging.exception(f'Problem deleting project tar file from mongo. { project["tarfile"]}')
+            except KeyError:
+                logging.exception(f'Problem deleting project tar file from mongo. { project["project_name"]}')
                 error_message = error_message + " Problem deleting project tar file from mongo."
 
 
@@ -1150,10 +1151,11 @@ def admin_delete_project(request):
     deleted_projects = list(collection_handle.find({'delete': True}))
     for proj in deleted_projects:
         prepare_project_linkid(proj)
-        tar_file_len = fs_handle.get(ObjectId(proj['tarfile'])).length
-        proj['tar_file_len'] = sizeof_fmt(tar_file_len)
+
         try:
 
+            tar_file_len = fs_handle.get(ObjectId(proj['tarfile'])).length
+            proj['tar_file_len'] = sizeof_fmt(tar_file_len)
             if proj['delete_date']:
                 dt = datetime.datetime.strptime(proj['delete_date'], f"%Y-%m-%dT%H:%M:%S.%f")
                 proj['delete_date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
