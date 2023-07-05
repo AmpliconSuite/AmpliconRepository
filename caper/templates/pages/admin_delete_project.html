@@ -3,17 +3,22 @@
 {% load mezzanine_tags %}
 {% block extra_js %}
 <script>
-  function set_project_featured(event, project_id, project_name, to_be_featured) {
-        var goahead = confirm("Really set project " + project_name + "("+project_id+") featured status as "+to_be_featured+"?");
+  function set_project_deleted(event, project_id, project_name, to_be_deleted) {
+        var goahead = confirm("Really PERMANENTLY delete project " + project_name + "("+project_id+")? This cannot be undone.");
         if (goahead){
+
             let form = document.getElementById("form__submit");
+
             document.getElementById("form__project_name").value=project_name;
+
             document.getElementById("form__project_id").value=project_id;
-            document.getElementById("form__featured").checked=to_be_featured;
+
+            document.getElementById("form__delete").checked=to_be_deleted;
             form.submit();
 
 
         } else {
+            alert('5--')
             event.stopPropagation();
             event.preventDefault();
             event.target.checked = !to_be_featured;
@@ -29,10 +34,26 @@
      
         $('table.table').DataTable({
             language: {
-                    searchPlaceholder: "Search projects"
+                    searchPlaceholder: "Search deleted projects"
                     }
         });
 
+  message_to_user = "{{ error_message }}";
+    if (message_to_user.length > 0){
+
+        $('#message_to_user').text(message_to_user)
+
+        if (message_to_user.includes("Problem")){
+            $("#message_dialog").addClass("alert-warning");
+            $("#message_dialog").removeClass("alert-success");
+        }
+        $("#message_dialog").show()
+
+    } else {
+        //alert("Nothing to say")
+
+        document.getElementById("message_dialog").style.display = "none";
+    }
 
 
 
@@ -51,24 +72,38 @@
     </title>
 </head>
 
-<div class="row">
-    <div class="col-md-10">
-        <div>
-            <h1 style="padding-top: 50px">Select Featured Projects</h1>
+<div id="message_dialog" class="alert alert-success" role="alert" style="display:none">
+<span id="message_to_user">default text</span>
+<button type="button" class="close" data-dismiss="alert" aria-label="Close">
+    <span aria-hidden="true">&times;</span>
+  </button>
+</div>
 
+
+<div class="row">
+    <div class="col-md-8">
+        <div>
+            <h1 style="padding-top: 50px">Permanently Delete Projects</h1>
 
             <hr>
             <div stlye="margin-top: 30px">
-                Select which projects are shown on the featured projects tab
-            </div>
+                <p>This will <b>permanently delete</b> a project.  These projects are flagged as deleted in the DB already but this will
+            actually delete them and delete their files on the file system and in S3. This cannot be undone. </p>
 
+            </div>
+        </div>
+    </div>
+</div>
+    <div class="row">
+        <div class="col-md-12">
+        <div>
             <div style="display:none">
-                 <form id="form__submit" action="/admin-featured-projects/" method="post">
+                 <form id="form__submit" action="/admin-delete-project/" method="post">
                        {% csrf_token %}
                      <input id="form__project_name" type="text" name="project_name" /><br />
                      <input id="form__project_id" type="text" name="project_id" /><br />
-                     <input id="form__featured" type="checkbox" name="featured" /><br /><br />
-                 </form>
+                     <input id="form__delete" type="checkbox" name="delete" /><br /><br />
+                  </form>
 
 
             </div>
@@ -96,16 +131,13 @@
                 border-bottom: 2px solid  #0275d8 ;
             }
             </style>
-    </div>
-</div>
-    <div class="row">
-    <div class="col-md-12">
+
         
         <div>
             <ul class="nav nav-tabs" role="tablist" >
                 <li class="nav-item">
                 
-                    <a class="nav-link active" href="#tab-table0" data-toggle="tab">Public Projects</a>
+                    <a class="nav-link active" href="#tab-table0" data-toggle="tab">Projects flagged as Deleted</a>
                 </li>
 
             </ul>
@@ -116,30 +148,32 @@
                     <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
                         <thead>
                             <tr>
+                                <th>Creator</th>
+                                <th>Deleted by</th>
                                 <th>Name</th>
                                 <th>Description</th>
-                                <th>Last Updated</th>
+                                <th>Deleted on</th>
                                 <th>Project Members</th>
-                                <th>Featured</th>
+                                <th>Tarfile Size</th>
+                                <th>Delete</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for project in public_projects %}
+                            {% for project in deleted_projects %}
                             <tr>
-                                <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                                <td>{{ project.creator }}</td>
+                                <td>{{ project.delete_user }}</td>
+                                <td>{{ project.project_name }}</td>
                                 <td>{{ project.description }}</td>
-                                <td>{{ project.date }}</td>
+                                <td>{{ project.delete_date }}</td>
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor%}</td>
+                                <td>{{ project.tar_file_len }}</td>
                                 <td>
-                                    {% if project.featured %}
 
-                                    <input type = "checkbox" checked onchange="set_project_featured(event, '{{ project.linkid }}', '{{ project.project_name }}', false)">
-                                    {% else %}
-                                    <input type = "checkbox"  onchange = "set_project_featured(event, '{{ project.linkid }}', '{{ project.project_name}}', true)">
+                                    <input type = "button"  onclick="set_project_deleted(event, '{{ project.linkid }}', '{{ project.project_name }}', true)" value="delete"/>
 
-                                     {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
