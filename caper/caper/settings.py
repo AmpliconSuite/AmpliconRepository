@@ -80,7 +80,6 @@ from django.utils.translation import gettext_lazy as _
 # INSTALLED_APPS setting.
 USE_MODELTRANSLATION = False
 
-S3_DOWNLOADS_BUCKET_PATH="ted/dev/"
 ########################
 # MAIN DJANGO SETTINGS #
 ########################
