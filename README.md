@@ -56,6 +56,7 @@ This is the main repository for the AmpliconRepository.
 - Connect to your local instance of MongoDB:
 > URI: `mongodb://localhost:27017`
 - Relevant data will be located in `/AmpliconRepository/projects/`
+- You can periodically clear your local deployment mongodb files using Compass so that your disk does not fill up.
 - Run `export DB_URI='mongodb://localhost:27017'` in your terminal to set the environment variable for your local database.
   - So that this is active every time, you can add the command above to your `~/.bashrc` file
 - Note that the latest version of Compass (1.34.2) won't work with our older DB version.  You can get an old compass for mac at https://downloads.mongodb.com/compass/mongodb-compass-1.28.4-darwin-x64.dmg
