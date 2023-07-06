@@ -70,7 +70,7 @@
         plot_element.on('plotly_click', function(data){{
             var sname = data['points'][0]['customdata'][0];
             var link = window.location.href + '/sample/' + sname;
-            console.log(link);
+{#            console.log(link);#}
             window.open(link, "_blank");
             }})
 
