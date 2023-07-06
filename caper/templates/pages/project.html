@@ -63,7 +63,21 @@
         </p>
     </div>
     <div  style="margin:auto; border: 0.5px solid grey; padding: 0px">
-        <span style="display:inline-block">{{ stackedbar_graph|safe }}</span> <span style="display:inline-block">{{ piechart|safe }}</span>
+        <span style="display:inline-block">{{ stackedbar_graph|safe }}
+        {% block plotly_js %}
+        <script type="text/javascript">
+        var plot_element = document.getElementById("project_bar_plotly_div");
+        plot_element.on('plotly_click', function(data){{
+            var sname = data['points'][0]['customdata'][0];
+            var link = window.location.href + '/sample/' + sname;
+            console.log(link);
+            window.open(link, "_blank");
+            }})
+
+        </script>
+        {% endblock %}
+        </span>
+        <span style="display:inline-block">{{ piechart|safe }}</span>
     </div>
 
 </div>
