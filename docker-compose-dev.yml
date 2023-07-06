@@ -7,17 +7,17 @@ services:
       context: .
       dockerfile: Dockerfile_dev
       args:
-        AMPLICON_ENV_PORT: ${AMPLICON_ENV_PORT}
-        AA_USER: ${AA_USER}
+        AMPLICON_ENV_PORT: ${AMPLICON_ENV_PORT:-8000}
+        AA_USER: ${AA_USER:-amprepouser}
     image: genepattern/amplicon-repo:dev-test
     container_name: amplicon-repo
 #    restart: always
-    env_file: .env
+    env_file: config.sh
     environment:
-      - MONGO_DB_NAME=${MONGO_DB_NAME}
+      - MONGO_DB_NAME=${DB_NAME:-caper}
       - DB_URI=${DB_URI}
-      - AMPLICON_ENV=${AMPLICON_ENV}
-      - AMPLICON_ENV_PORT=${AMPLICON_ENV_PORT}
+      - AMPLICON_ENV=${AMPLICON_ENV:-dev}
+      - AMPLICON_ENV_PORT=${AMPLICON_ENV_PORT:-8000}
       - GOOGLE_SECRET_KEY=${GOOGLE_SECRET_KEY}
       - GLOBUS_SECRET_KEY=${GLOBUS_SECRET_KEY}
     ports:
@@ -25,7 +25,7 @@ services:
     volumes:
       - ${PWD}/.aws:/root/.aws
       - ${PWD}/logs:/srv/logs
-      - ${PWD}:/home/${AA_USER}/code
+      - ${PWD}:/home/${AA_USER:-amprepouser}/code
     depends_on:
       - mongodb
     links:
@@ -34,9 +34,9 @@ services:
   mongodb:
     image: mongo:4
     hostname: mongodb
-    env_file: .env
+    env_file: config.sh
     environment:
-      - MONGO_INITDB_DATABASE=${MONGO_DB_NAME}
+      - MONGO_INITDB_DATABASE=${DB_NAME:-caper}
     volumes:
       - ${PWD}/data:/data/db
     #      - ${PWD}/docker/_mongo/fixtures:/import
