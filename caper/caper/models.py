@@ -17,6 +17,12 @@ class FeaturedProjectUpdate(models.Model):
     project_id = models.CharField(max_length=1000)
     featured = models.BooleanField(default=False)
 
+class AdminDeleteProject(models.Model):
+    project_name = models.CharField(max_length=1000)
+    project_id = models.CharField(max_length=1000)
+    delete = models.BooleanField(default=False)
+
+
 class UploadTarFile(models.Model):
     """
     Model for tarfile upload directly from AmpliconSuiteAggregator

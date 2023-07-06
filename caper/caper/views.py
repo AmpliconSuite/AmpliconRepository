@@ -22,7 +22,7 @@ from django.conf import settings
 # import pymongo
 import json
 # from .models import File
-from .forms import RunForm, UpdateForm, FeaturedProjectForm
+from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
 import time
@@ -51,8 +51,10 @@ from wsgiref.util import FileWrapper
 import boto3
 import botocore
 from threading import Thread
+
 import time
 import math
+import logging
 
 # FOR LOCAL DEVELOPMENT
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
@@ -94,6 +96,22 @@ def get_one_project(project_name_or_uuid):
 
     except:
         project = None    
+
+    # backstop using the name the old way
+    if project is None:
+        project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+        prepare_project_linkid(project)
+
+    return project
+
+def get_one_deleted_project(project_name_or_uuid):
+    try:
+        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
+        prepare_project_linkid(project)
+        return project
+
+    except:
+        project = None
 
     # backstop using the name the old way
     if project is None:
@@ -285,6 +303,7 @@ def modify_date(projects):
 
     for project in projects:
         try:
+
             dt = datetime.datetime.strptime(project['date'], f"%Y-%m-%dT%H:%M:%S.%f")
             project['date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
         except Exception as e:
@@ -896,12 +915,12 @@ def get_current_user(request):
 
 def project_delete(request, project_name):
     project = get_one_project(project_name)
-
+    deleter = get_current_user(request)
     if check_project_exists(project_name):
         current_runs = project['runs']
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
-        new_val = { "$set": {'delete' : True} }
+        new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
         return redirect('profile')
     else:
@@ -998,6 +1017,7 @@ def admin_featured_projects(request):
 
     return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
 
+
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
 def extract_project_files(tarfile, file_location, project_data_path, project_id):
@@ -1051,6 +1071,109 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
             print(type(anError), file = fh)  # the exception type
             print(anError.args, file = fh )  # arguments stored in .args
             print(anError, file=fh)
+
+
+
+# only allow users designated as staff to see this, otherwise redirect to nonexistant page to
+# deny that this might even be a valid URL
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_delete_project(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    error_message = ""
+    if request.method == "POST":
+
+        form = DeletedProjectForm(request.POST)
+        form_dict = form_to_dict(form)
+        project_name = form_dict['project_name']
+        project_id = form_dict['project_id']
+        deleteit = form_dict['delete']
+
+        if deleteit:
+
+            project = get_one_deleted_project(project_id)
+            query = {'_id': ObjectId(project_id)}
+
+            try:
+                # delete Samples & Features and feature files from mongo,
+                # Is this needed or will deleting the parent project delete the whole thing
+                current_runs = project['runs']
+                runs = project['runs']
+                for sample in runs:
+                    for feature in sample:
+                        key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'AA directory', 'cnvkit directory']
+                        for k in key_names:
+                            try:
+                                print(sample[k])
+                                fs_handle.delete(ObjectId(sample[k]))
+
+
+                            except:
+                                # DO NOTHING, its not there
+                                id_var = "Not Provided"
+            except:
+                logging.exception('Problem deleting sample files from Mongo.')
+                error_message="Problem deleting sample files from Mongo."
+
+            # delete project tar and files from mongo and local disk
+            #    - assume all feature and sample files are in this dir
+            try:
+                print("WTF")
+                fs_handle.delete(ObjectId(project['tarfile']))
+            except KeyError:
+                logging.exception(f'Problem deleting project tar file from mongo. { project["project_name"]}')
+                error_message = error_message + " Problem deleting project tar file from mongo."
+
+
+            s3_file_path = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
+            try:
+                project_data_path = f"tmp/{project_id}/"
+                shutil.rmtree(project_data_path)
+                session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+                s3client = session.client('s3')
+                s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path);
+            except:
+                logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
+                error_message = error_message+" Problem deleting tar file from S3. "
+            # Final step, delete the project
+            try:
+                collection_handle.delete_one(query)
+            except:
+                logging.exception('Problem deleting Project document from Mongo.')
+                error_message = error_message + " Problem deleting Project document from Mongo. "
+
+            if error_message:
+                error_message = error_message + " Other project artifacts successfully deleted. Please refer to the application log files for details. "
+            else:
+                error_message = f"Project {project_name} deleted.";
+
+    deleted_projects = list(collection_handle.find({'delete': True}))
+    for proj in deleted_projects:
+        prepare_project_linkid(proj)
+
+        try:
+
+            tar_file_len = fs_handle.get(ObjectId(proj['tarfile'])).length
+            proj['tar_file_len'] = sizeof_fmt(tar_file_len)
+            if proj['delete_date']:
+                dt = datetime.datetime.strptime(proj['delete_date'], f"%Y-%m-%dT%H:%M:%S.%f")
+                proj['delete_date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
+        except:
+            #ignore missing date
+            print(proj['project_name'])
+
+
+
+    return render(request, 'pages/admin_delete_project.html', {'deleted_projects': deleted_projects, 'error_message':error_message})
+
+
+def sizeof_fmt(num, suffix="B"):
+    for unit in ("", "K", "M", "G", "T", "P", "E", "Z"):
+        if abs(num) < 1024.0:
+            return f"{num:3.1f} {unit}{suffix}"
+        num /= 1024.0
+    return f"{num:.1f}Yi{suffix}"
 
 
 

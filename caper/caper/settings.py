@@ -80,7 +80,6 @@ from django.utils.translation import gettext_lazy as _
 # INSTALLED_APPS setting.
 USE_MODELTRANSLATION = False
 
-
 ########################
 # MAIN DJANGO SETTINGS #
 ########################
@@ -94,6 +93,7 @@ CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconre
 # skip intermediate sign-out page
 ACCOUNT_LOGOUT_ON_GET = True
 # SSL Redirect
+
 SECURE_SSL_REDIRECT_ENVVAR=os.getenv('SECURE_SSL_REDIRECT', default="True")
 SECURE_SSL_REDIRECT=(SECURE_SSL_REDIRECT_ENVVAR == 'True')
 
@@ -153,7 +153,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Provider specific settings
 GOOGLE_SECRET_KEY = os.environ['GOOGLE_SECRET_KEY']
 GLOBUS_SECRET_KEY = os.environ['GLOBUS_SECRET_KEY']
+
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.getenv('ACCOUNT_DEFAULT_HTTP_PROTOCOL', default='https')
+
 
 SOCIALACCOUNT_EMAIL_REQUIRED=True
 SOCIALACCOUNT_PROVIDERS = {
