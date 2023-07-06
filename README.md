@@ -31,7 +31,7 @@ This is the main repository for the AmpliconRepository.
 - Install pip to that environment 
 > `conda install pip -n ampliconenv`
 - Install required packages
-> `[/path/to/your/conda]/env/ampliconenv/bin/pip install -r requirements.txt`
+> `[/path/to/your/conda]/envs/ampliconenv/bin/pip install -r requirements.txt`
 
 
 
