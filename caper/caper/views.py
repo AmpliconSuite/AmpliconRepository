@@ -372,9 +372,18 @@ def reference_genome_from_sample(sample_data):
         reference_genome = reference_genomes[0]
     return reference_genome
 
+def set_project_edit_OK_flag(project, request):
+    current_user = get_current_user(request)
+    if current_user in project['project_members']:
+        project['current_user_may_edit'] = True
+
+
+
+
 def project_page(request, project_name, message=''):
     t_i = time.time()
     project = get_one_project(project_name)
+    set_project_edit_OK_flag(project, request)
     samples = project['runs']
     features_list = replace_space_to_underscore(samples)
     reference_genome = reference_genome_from_project(samples)
@@ -908,9 +917,15 @@ def gene_search_download(request, project_name):
 
 
 def get_current_user(request):
-    current_user = request.user.email
-    if not current_user:
+    current_user = request.user.username
+    try:
+        if current_user.email:
+            current_user = request.user.email
+        else:
+            current_user = request.user.username
+    except:
         current_user = request.user.username
+
     return current_user
 
 def project_delete(request, project_name):
