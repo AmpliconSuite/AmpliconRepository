@@ -1201,9 +1201,7 @@ def create_project(request):
 
         # file download
         request_file = request.FILES['document'] if 'document' in request.FILES else None
-        project_data_path = f"tmp/{project_name}"
 
-        request_file = request.FILES['document'] if 'document' in request.FILES else None
         project = create_project_helper(form, user, request_file)
         project_data_path = f"tmp/{project_name}"
 
