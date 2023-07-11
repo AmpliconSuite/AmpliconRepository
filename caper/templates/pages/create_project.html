@@ -17,22 +17,42 @@
         function showWaitCursor() {
             document.body.style.cursor = 'wait';
             // force it on the button that is being clicked
+            checkinputfield();
             $(".btn").css("cursor", "wait");
             return false
         }
-        </script>
+
+        function checkinputfield(){
+            if( document.getElementById("fileuploadfield").files.length == 0 ){
+                console.log("no files selected");
+                document.getElementById("upload_failed").style.display = "flex";
+                return false
+            } else{
+                console.log(document.getElementById("fileuploadfield").files);
+                console.log("file is uploaded");
+                return true
+            }
+        }
+    </script>
 <h1>Create New Project</h1>
+<div class="alert alert-danger alert-dismissible" role="alert" id="upload_failed" style="display:none; flex;">
+    No File Selected, Please select a file using the "Choose File" button at the bottom of the form and try again.
+</div>
+
+
 {% if user.is_authenticated %}
-<form method="post" enctype="multipart/form-data">
+<form method="post" enctype="multipart/form-data" onsubmit="return checkinputfield();">
     {% csrf_token %}
     {{ run|crispy }}
 
-    <input type="file" name="document">
-    <button type="submit" class="btn btn-primary" onclick="showWaitCursor()"  >Create Project</button>
+    <input type="file" name="document" id="fileuploadfield">
+    
+    <button class="btn btn-primary">Create Project</button>
 </form>
 
 
 {% else %}
 <p>Sign in to Upload Files</p>
 {% endif %}
+
 {% endblock %}
