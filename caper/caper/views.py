@@ -340,7 +340,7 @@ def index(request):
 
 
 def profile(request):
-    user = get_current_user(request)
+    user = request.user.email
     projects = list(collection_handle.find({ 'project_members' : user , 'delete': False}))
     for proj in projects:
         prepare_project_linkid(proj)
