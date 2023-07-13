@@ -373,8 +373,11 @@ def reference_genome_from_sample(sample_data):
     return reference_genome
 
 def set_project_edit_OK_flag(project, request):
+    current_user_email = request.user.email
     current_user = get_current_user(request)
     if current_user in project['project_members']:
+        project['current_user_may_edit'] = True
+    if current_user_email in project['project_members']:
         project['current_user_may_edit'] = True
 
 
