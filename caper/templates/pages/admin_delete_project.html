@@ -3,6 +3,27 @@
 {% load mezzanine_tags %}
 {% block extra_js %}
 <script>
+
+function undelete_project(event, project_id, project_name) {
+        var goahead = confirm("Really un-delete project " + project_name + "("+project_id+")?");
+        if (goahead){
+            let form = document.getElementById("form__submit");
+            document.getElementById("form__project_name").value=project_name;
+            document.getElementById("form__project_id").value=project_id;
+            document.getElementById("form__delete").checked=false;
+            document.getElementById("form__action").value="un-delete"
+            form.submit();
+
+
+        } else {
+            event.stopPropagation();
+            event.preventDefault();
+            event.target.checked = !to_be_featured;
+            return false;
+        }
+  }
+
+
   function set_project_deleted(event, project_id, project_name, to_be_deleted) {
         var goahead = confirm("Really PERMANENTLY delete project " + project_name + "("+project_id+")? This cannot be undone.");
         if (goahead){
@@ -14,11 +35,12 @@
             document.getElementById("form__project_id").value=project_id;
 
             document.getElementById("form__delete").checked=to_be_deleted;
+            document.getElementById("form__action").value="delete"
             form.submit();
 
 
         } else {
-            alert('5--')
+
             event.stopPropagation();
             event.preventDefault();
             event.target.checked = !to_be_featured;
@@ -103,6 +125,8 @@
                      <input id="form__project_name" type="text" name="project_name" /><br />
                      <input id="form__project_id" type="text" name="project_id" /><br />
                      <input id="form__delete" type="checkbox" name="delete" /><br /><br />
+                     <input id="form__action" type="text" name="action" /><br />
+
                   </form>
 
 
@@ -148,6 +172,7 @@
                     <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
                         <thead>
                             <tr>
+                                <th>Deleted</th>
                                 <th>Creator</th>
                                 <th>Deleted by</th>
                                 <th>Name</th>
@@ -161,6 +186,8 @@
                         <tbody>
                             {% for project in deleted_projects %}
                             <tr>
+                                <td> <input type = "checkbox" checked onchange="undelete_project(event, '{{ project.linkid }}', '{{ project.project_name }}', false)">
+                                   </td>
                                 <td>{{ project.creator }}</td>
                                 <td>{{ project.delete_user }}</td>
                                 <td>{{ project.project_name }}</td>
