@@ -105,11 +105,12 @@ function undelete_project(event, project_id, project_name) {
 <div class="row">
     <div class="col-md-8">
         <div>
-            <h1 style="padding-top: 50px">Permanently Delete Projects</h1>
+            <h1 style="padding-top: 50px">Manage Deleted Projects</h1>
 
             <hr>
             <div stlye="margin-top: 30px">
-                <p>This will <b>permanently delete</b> a project.  These projects are flagged as deleted in the DB already but this will
+                <p>To restore (un-delete) a project, uncheck the 'Deleted' checkbox in the first column.</p>
+                <p>Clicking the 'delete' button in the last column below will <b>permanently delete</b> a project.  These projects are flagged as deleted in the DB already but this will
             actually delete them and delete their files on the file system and in S3. This cannot be undone. </p>
 
             </div>
@@ -158,13 +159,6 @@ function undelete_project(event, project_id, project_name) {
 
         
         <div>
-            <ul class="nav nav-tabs" role="tablist" >
-                <li class="nav-item">
-                
-                    <a class="nav-link active" href="#tab-table0" data-toggle="tab">Projects flagged as Deleted</a>
-                </li>
-
-            </ul>
 
             <div class="tab-content" style="padding-top: 30px;">
 
@@ -180,7 +174,7 @@ function undelete_project(event, project_id, project_name) {
                                 <th>Deleted on</th>
                                 <th>Project Members</th>
                                 <th>Tarfile Size</th>
-                                <th>Delete</th>
+                                <th>Permanently Delete</th>
                             </tr>
                         </thead>
                         <tbody>
