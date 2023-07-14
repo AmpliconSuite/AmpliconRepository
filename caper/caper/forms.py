@@ -42,7 +42,7 @@ class FeaturedProjectForm(forms.ModelForm):
 class DeletedProjectForm(forms.ModelForm):
     class Meta:
         model = AdminDeleteProject
-        fields = ('project_name','project_id','delete')
+        fields = ('project_name','project_id','delete', 'action')
 
 
 

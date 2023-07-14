@@ -1107,8 +1107,18 @@ def admin_delete_project(request):
         project_name = form_dict['project_name']
         project_id = form_dict['project_id']
         deleteit = form_dict['delete']
+        print(" FORM = " + str(form_dict))
+        action = form_dict['action']
 
-        if deleteit:
+        if action == 'un-delete':
+            # remove the delete flag, this project goes back
+            project = get_one_deleted_project(project_id)
+            query = {'_id': ObjectId(project_id)}
+            new_val = {"$set": {'delete': False}}
+            collection_handle.update_one(query, new_val)
+            error_message = f"Project {project_name} restored.";
+
+        elif deleteit and (action == 'delete'):
 
             project = get_one_deleted_project(project_id)
             query = {'_id': ObjectId(project_id)}
