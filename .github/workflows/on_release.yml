@@ -27,6 +27,7 @@ jobs:
     - uses: stefanzweifel/git-auto-commit-action@v4
       with:
         commit_message: Auto-Update version.txt on release
+        push_options: '--force'
         branch: main
     - name: move tag on version.txt to our updated one
       run: |
