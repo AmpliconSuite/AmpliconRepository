@@ -19,14 +19,15 @@ jobs:
         ref: ${{ github.head_ref }}
     - name: Update version.txt
       run: |
-        echo "Version: ${GITHUB_REF_NAME}" > version.txt
-        echo "Creator: ${GITHUB_ACTOR}" >> version.txt
+        echo "Version= ${GITHUB_REF_NAME}" > version.txt
+        echo "Creator= ${GITHUB_ACTOR}" >> version.txt
         NOW=`date`
-        echo "Date: ${NOW}" >> version.txt
+        echo "Date= ${NOW}" >> version.txt
         
     - uses: stefanzweifel/git-auto-commit-action@v4
       with:
         commit_message: Auto-Update version.txt on release
+        push_options: '--force'
         branch: main
     - name: move tag on version.txt to our updated one
       run: |
