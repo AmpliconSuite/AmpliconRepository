@@ -1,0 +1,157 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+{% block extra_js %}
+<script>
+
+
+
+    $(document).ready(function () {
+
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+        });
+
+        $('table.table').DataTable({
+            language: {
+                    searchPlaceholder: "Search projects"
+                    }
+        });
+
+
+    });
+</script>
+{% endblock %}
+
+{% block meta_title %} Home
+{% endblock %}
+
+{% block main %}
+<head>
+    <title>
+        AmpliconRepository
+    </title>
+</head>
+
+<div class="row">
+    <div class="col-md-10">
+        <div>
+            <h1 style="padding-top: 50px">Version Details</h1>
+
+
+            <hr>
+            <div stlye="margin-top: 30px">
+                Details of this version's environment and code
+            </div>
+
+            <div style="display:none">
+
+
+            </div>
+
+
+        </div>
+        
+
+        <style>
+            .nav-tabs .nav-link {
+                color: gray;
+                border: 0;
+                border-bottom: 1px solid grey;
+            }
+            
+            .nav-tabs .nav-link:hover {
+                border: 0;
+                border-bottom: 1px solid grey;
+            }
+            
+            .nav-tabs .nav-link.active {
+                color: #000000;
+                border: 0;
+                border-radius: 0;
+                border-bottom: 2px solid  #0275d8 ;
+            }
+            </style>
+    </div>
+</div>
+    <div class="row">
+    <div class="col-md-12">
+        
+        <div>
+            <ul class="nav nav-tabs" role="tablist" >
+                <li class="nav-item">
+                
+                    <a class="nav-link active" href="#tab-table0" data-toggle="tab">From version.txt</a>
+                </li>
+                <li class="nav-item">
+                        <a class="nav-link " href="#tab-table1" data-toggle="tab">Git status</a>
+                </li>
+
+                <li class="nav-item">
+                    <a class='nav-link' href="#tab-table2" data-toggle="tab">Environment</a>
+                </li>
+            </ul>
+
+            <div class="tab-content" style="padding-top: 30px;">
+                <div class="tab-pane active" id="tab-table0">
+                    <table id='projectTable1' class="table" style="padding-top: 20px; width:100%">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Value</th>
+
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for detail in details %}
+                            <tr>
+                                <td>{{ detail.name }}</td>
+                                <td>{{ detail.value }}</td>
+
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="tab-pane " id="tab-table1">
+                    {{ git|linebreaksbr }}
+                </div>
+
+
+
+
+                <div class="tab-pane " id="tab-table2">
+                    <table id='projectTable2' class="table" style="padding-top: 20px; width:100%">
+                        <thead>
+                            <tr>
+                                <th>ENV variable</th>
+                                <th>Value</th>
+
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for detail in env %}
+                            <tr>
+                                <td>{{ detail.name }}</td>
+                                <td>{{ detail.value }}</td>
+
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+
+            </div>
+
+        </div>
+    </div>
+
+</div>
+
+
+
+
+
+{% endblock %}

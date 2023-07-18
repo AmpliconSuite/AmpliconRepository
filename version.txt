@@ -1,3 +1,5 @@
-Version= v1.0.0_071823b
-Creator= liefeld
-Date= Tue Jul 18 15:16:48 UTC 2023
+
+version=dev
+creator=ted
+date=now
+

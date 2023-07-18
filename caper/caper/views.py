@@ -28,6 +28,7 @@ from django.forms.models import model_to_dict
 import time
 import datetime
 import os
+import subprocess
 import shutil
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
@@ -1034,6 +1035,36 @@ def admin_featured_projects(request):
         prepare_project_linkid(proj)
 
     return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_version_details(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    #details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
+    details = []
+    comment_char="#"
+    sep="="
+    with open("version.txt", 'r') as version_file:
+        for line in version_file:
+            l = line.strip()
+            if l and not l.startswith(comment_char):
+                key_value = l.split(sep)
+                key = key_value[0].strip()
+                value = sep.join(key_value[1:]).strip().strip('"')
+                details.append({"name": key,  "value": value})
+
+    env=[]
+    for key, value in os.environ.items():
+        env.append({"name": key, "value": value})
+
+    gitcmd = "git status"
+    git_result = subprocess.check_output(gitcmd, shell=True)
+    git_result = git_result.decode("UTF-8")\
+        #.replace("\n", "<br/>")
+
+    return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result})
+
 
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
