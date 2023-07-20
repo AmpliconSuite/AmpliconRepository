@@ -1,6 +1,18 @@
 FROM continuumio/miniconda3:23.3.1-0
 
 #############################################
+##      Arguments                          ##
+#############################################
+
+ARG AA_USER
+ARG ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS
+ARG GOOGLE_SECRET_KEY
+ARG GLOBUS_SECRET_KEY
+ARG ACCOUNT_DEFAULT_HTTP_PROTOCOL
+ARG SECURE_SSL_REDIRECT
+ARG DB_URI
+
+#############################################
 ##      System updates                     ##
 #############################################
 
@@ -32,30 +44,20 @@ RUN python -m pip install -r /tmp/requirements.txt
 ##      Add caper webapp code              ##
 #############################################
 
-ARG AMPLICON_ENV_PORT
-ARG AA_USER
-
 RUN useradd -rm -d /home/${AA_USER} -s /bin/bash -g root -G sudo -u 1001 ${AA_USER}
 USER ${AA_USER}
-COPY ./caper/ /home/${AA_USER}/code/caper/
+COPY ./caper/ /srv/caper/
 
 #############################################
 ##      Start web server code              ##
 #############################################
 
-WORKDIR /home/${AA_USER}/code/caper
-EXPOSE ${AMPLICON_ENV_PORT}
+WORKDIR /srv/caper
+EXPOSE 8000
 CMD echo "Hello world" && \
     python --version && \
     echo "" && \
     echo "Conda environment list" && \
     conda env list && \
-    conda list && \
-    echo "" && \
-    echo "pip freeze" && \
-    python -m pip freeze && \
-#    echo "--------" && \
-#    echo "cat ~/.bashrc" && \
-#    cat ~/.bashrc && \
     python manage.py runserver 0.0.0.0:8000
 

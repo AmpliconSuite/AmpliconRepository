@@ -7,25 +7,26 @@ services:
       context: .
       dockerfile: Dockerfile_dev
       args:
-        AMPLICON_ENV_PORT: ${AMPLICON_ENV_PORT:-8000}
-        AA_USER: ${AA_USER:-amprepouser}
+        AA_USER: ${AA_USER}
+        ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS: ${ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS}
+        GOOGLE_SECRET_KEY: ${GOOGLE_SECRET_KEY}
+        GLOBUS_SECRET_KEY: ${GLOBUS_SECRET_KEY}
+        ACCOUNT_DEFAULT_HTTP_PROTOCOL: ${ACCOUNT_DEFAULT_HTTP_PROTOCOL}
+        SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT}
+        DB_URI: ${DB_URI}
     image: genepattern/amplicon-repo:dev-test
     container_name: amplicon-repo
-#    restart: always
-    env_file: config.sh
-    environment:
-      - MONGO_DB_NAME=${DB_NAME:-caper}
-      - DB_URI=${DB_URI}
-      - AMPLICON_ENV=${AMPLICON_ENV:-dev}
-      - AMPLICON_ENV_PORT=${AMPLICON_ENV_PORT:-8000}
-      - GOOGLE_SECRET_KEY=${GOOGLE_SECRET_KEY}
-      - GLOBUS_SECRET_KEY=${GLOBUS_SECRET_KEY}
+    restart: always
+    # .env is not need to be specified, all the variales will be set as environment parameters in the container
+    # however if you specify .env then you can see all the variables if you do docker-compose -f docker-compose-dev.yml config
+    env_file: .env
     ports:
-      - '8000:8000'
+      - '${AMPLICON_ENV_PORT}:8000'
     volumes:
-      - ${PWD}/.aws:/root/.aws
+      - ${PWD}/.aws:/srv/.aws
       - ${PWD}/logs:/srv/logs
-      - ${PWD}:/home/${AA_USER:-amprepouser}/code
+      # mount your code
+      - ${PWD}:/srv/
     depends_on:
       - mongodb
     links:
@@ -33,14 +34,8 @@ services:
 
   mongodb:
     image: mongo:4
-    hostname: mongodb
-    env_file: config.sh
-    environment:
-      - MONGO_INITDB_DATABASE=${DB_NAME:-caper}
     volumes:
       - ${PWD}/data:/data/db
-    #      - ${PWD}/docker/_mongo/fixtures:/import
-    #      - ${PWD}/docker/_mongo/scripts/init.sh:/docker-entrypoint-initdb.d/setup.sh
     ports:
       - '27017:27017'
 

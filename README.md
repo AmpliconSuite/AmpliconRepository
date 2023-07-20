@@ -176,6 +176,27 @@ docker-compose -f docker-compose-dev.yml down
 # Removing network ampliconrepository_default
 ```
 
+### 2.6 Check environment configuration of your docker-compose
+
+Before you build your image you can check if the `config.sh` is set correctly by doing:
+
+```bash
+docker-compose -f docker-compose-dev.yml config
+```
+
+This command will show you the `docker-compose-dev.yml` customized with your environment variables.
+
+### 2.7 Check environment variables for running container
+
+You can check the environment variables which your running container uses:
+
+```bash
+docker inspect -f \
+   '{{range $index, $value := .Config.Env}} {{$value}}{{println}}{{end}}' \
+   container_name
+```
+
+
 # Testing datasets <a name="test-datasets"></a> 
 [These datasets](https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=share_link) are ready to upload to the site for testing purposes.
 
