@@ -302,6 +302,7 @@ TEMPLATES = [
                 "mezzanine.conf.context_processors.settings",
                 "mezzanine.pages.context_processors.page",
                 # 'caper.context_processors.get_files'
+                "caper.context_processor.context_processor"
             ],
             "loaders": [
                 "mezzanine.template.loaders.host_themes.Loader",
@@ -436,3 +437,20 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 524288000
 DATA_UPLOAD_MAX_NUMBER_FIELDS = None
 
 
+###########################
+# version info for footer #
+###########################
+
+SERVER_VERSION = "unversioned"
+with open("version.txt", 'r') as version_file:
+    comment_char = "#"
+    sep = "="
+    for line in version_file:
+        l = line.strip()
+        if l and not l.startswith(comment_char):
+            key_value = l.split(sep)
+            key = key_value[0].strip()
+            value = sep.join(key_value[1:]).strip().strip('"')
+            if "version" == key.lower():
+                SERVER_VERSION = value
+                break

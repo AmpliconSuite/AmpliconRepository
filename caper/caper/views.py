@@ -29,6 +29,7 @@ from django.forms.models import model_to_dict
 import time
 import datetime
 import os
+import subprocess
 import shutil
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
@@ -337,7 +338,7 @@ def index(request):
 
 
 def profile(request):
-    user = get_current_user(request)
+    user = request.user.email
     projects = list(collection_handle.find({ 'project_members' : user , 'delete': False}))
     for proj in projects:
         prepare_project_linkid(proj)
@@ -372,8 +373,15 @@ def reference_genome_from_sample(sample_data):
     return reference_genome
 
 def set_project_edit_OK_flag(project, request):
-    current_user = get_current_user(request)
+    try:
+        current_user_email = request.user.email
+        current_user = get_current_user(request)
+    except:
+        current_user_email = 0
+        current_user = 0
     if current_user in project['project_members']:
+        project['current_user_may_edit'] = True
+    if current_user_email in project['project_members']:
         project['current_user_may_edit'] = True
 
 
@@ -1056,6 +1064,36 @@ def admin_featured_projects(request):
 
     return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
 
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_version_details(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    #details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
+    details = []
+    comment_char="#"
+    sep="="
+    with open("version.txt", 'r') as version_file:
+        for line in version_file:
+            l = line.strip()
+            if l and not l.startswith(comment_char):
+                key_value = l.split(sep)
+                key = key_value[0].strip()
+                value = sep.join(key_value[1:]).strip().strip('"')
+                details.append({"name": key,  "value": value})
+
+    env=[]
+    for key, value in os.environ.items():
+        env.append({"name": key, "value": value})
+
+    gitcmd = "git status"
+    git_result = subprocess.check_output(gitcmd, shell=True)
+    git_result = git_result.decode("UTF-8")\
+        #.replace("\n", "<br/>")
+
+    return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result})
+
+
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_stats(request):
@@ -1150,8 +1188,18 @@ def admin_delete_project(request):
         project_name = form_dict['project_name']
         project_id = form_dict['project_id']
         deleteit = form_dict['delete']
+        print(" FORM = " + str(form_dict))
+        action = form_dict['action']
 
-        if deleteit:
+        if action == 'un-delete':
+            # remove the delete flag, this project goes back
+            project = get_one_deleted_project(project_id)
+            query = {'_id': ObjectId(project_id)}
+            new_val = {"$set": {'delete': False}}
+            collection_handle.update_one(query, new_val)
+            error_message = f"Project {project_name} restored.";
+
+        elif deleteit and (action == 'delete'):
 
             project = get_one_deleted_project(project_id)
             query = {'_id': ObjectId(project_id)}
@@ -1247,9 +1295,7 @@ def create_project(request):
 
         # file download
         request_file = request.FILES['document'] if 'document' in request.FILES else None
-        project_data_path = f"tmp/{project_name}"
 
-        request_file = request.FILES['document'] if 'document' in request.FILES else None
         project = create_project_helper(form, user, request_file)
         project_data_path = f"tmp/{project_name}"
 

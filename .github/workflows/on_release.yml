@@ -1,0 +1,36 @@
+name: On Release
+
+on:
+  release:
+    branches: [ "main" ]
+    types: [published, prereleased]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        ref: ${{ github.head_ref }}
+        token: ${{ secrets.TOKEN_FOR_ONCHANGE }}
+    - name: Update version.txt
+      run: |
+        echo "Version= ${GITHUB_REF_NAME}" > version.txt
+        echo "Creator= ${GITHUB_ACTOR}" >> version.txt
+        NOW=`date`
+        echo "Date= ${NOW}" >> version.txt
+        
+    - uses: stefanzweifel/git-auto-commit-action@v4
+      with:
+        commit_message: Auto-Update version.txt on release
+        push_options: '--force'
+        branch: main
+    - name: move tag on version.txt to our updated one
+      run: |
+        git tag -f ${GITHUB_REF_NAME}
+        git push -f --tags
