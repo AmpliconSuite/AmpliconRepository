@@ -17,3 +17,4 @@ pyvenv.cfg
 .idea/
 tmp/
 data/
+logs/
