@@ -3,6 +3,19 @@ FROM ubuntu:20.04
 MAINTAINER Forrest Kim <f1kim@health.ucsd.edu>
 
 #############################################
+##      Arguments                          ##
+#############################################
+
+ARG AA_USER
+ARG ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS
+ARG GOOGLE_SECRET_KEY
+ARG GLOBUS_SECRET_KEY
+ARG ACCOUNT_DEFAULT_HTTP_PROTOCOL
+ARG SECURE_SSL_REDIRECT
+ARG DB_URI
+
+
+#############################################
 ##      System updates                     ##
 #############################################
 
@@ -66,13 +79,10 @@ COPY ./caper/ /srv/caper/
 # RUN ln -s /config/static /srv/caper/static
 
 RUN /bin/bash -c "source /opt/venv/bin/activate && \
-	source /srv/caper/config.sh && \
 	/srv/caper/manage.py makemigrations"
 RUN /bin/bash -c "source /opt/venv/bin/activate && \
-	source /srv/caper/config.sh && \
 	/srv/caper/manage.py migrate --run-syncdb"
 RUN /bin/bash -c "source /opt/venv/bin/activate && \
-	source /srv/caper/config.sh && \
 	/srv/caper/manage.py collectstatic --noinput"
 
 # COPY ./start-server.sh /srv/caper/start-server.sh
@@ -84,4 +94,11 @@ RUN mkdir /srv/logs/
 COPY ./run-manage-py.sh /srv/run-manage-py.sh
 RUN apt-get update && apt-get install vim --yes
 
+# Create user
+RUN useradd -rm -d /home/${AA_USER} -s /bin/bash -g root -G sudo -u 1001 ${AA_USER}
+
+# Switch root to user
+USER ${AA_USER}
+
+EXPOSE 8000
 CMD ["/srv/run-manage-py.sh","&"]
