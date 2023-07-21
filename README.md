@@ -31,7 +31,7 @@ This is the main repository for the AmpliconRepository.
 - Install pip to that environment 
 > `conda install pip -n ampliconenv`
 - Install required packages
-> `[/path/to/your/conda]/envs/ampliconenv/bin/pip install -r requirements.txt`
+> `~/[anaconda3/miniconda3]/envs/ampliconenv/bin/pip install -r requirements.txt`
 
 
 
@@ -61,10 +61,23 @@ This is the main repository for the AmpliconRepository.
   - So that this is active every time, you can add the command above to your `~/.bashrc` file
 - Note that the latest version of Compass (1.34.2) won't work with our older DB version.  You can get an old compass for mac at https://downloads.mongodb.com/compass/mongodb-compass-1.28.4-darwin-x64.dmg
 
-## 4. Set up secret keys for OAuth2
+## 3b. Clearing your local DB
+Periodically, you will want to purge old or excessively large accumulated data from you DB. You can do this using the provided script
+> `python purge-local-db.py`
+
+## 4. Set up secret keys for OAuth2 and other environment variables
 - Make sure you have the `config.sh` file from another developer (this contains secret key information)
 - Run the command to initialize variables:
 `source config.sh`
+
+For local deployments, you will need to ensure that the following two variables are set to FALSE, as shown below
+```
+export S3_STATIC_FILES=FALSE
+export S3_FILE_DOWNLOADS='FALSE'
+```
+
+**IMPORTANT**: After recieving your `config.sh`, please ensure you do not upload it to Github or make it available publicly anywhere.
+
 
 ## 5. Run development server (Django)
 - Open a terminal window or tab with the `ampliconenv` environment active
