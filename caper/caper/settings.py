@@ -80,21 +80,22 @@ from django.utils.translation import gettext_lazy as _
 # INSTALLED_APPS setting.
 USE_MODELTRANSLATION = False
 
-
 ########################
 # MAIN DJANGO SETTINGS #
 ########################
 
 # Hosts/domain names that are valid for this site; required if DEBUG is False
 # See https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137', 'host.docker.internal']
+ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137', 'host.docker.internal', '172.31.85.178']
 
 # Add CSRF trusted origins
 CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconrepository.org','https://dev.ampliconrepository.org', 'http://127.0.0.1:8888/']
 # skip intermediate sign-out page
 ACCOUNT_LOGOUT_ON_GET = True
 # SSL Redirect
-SECURE_SSL_REDIRECT=True
+
+SECURE_SSL_REDIRECT_ENVVAR=os.getenv('SECURE_SSL_REDIRECT', default="True")
+SECURE_SSL_REDIRECT=(SECURE_SSL_REDIRECT_ENVVAR == 'True')
 
 # Local time zone for this installation. Choices can be found here:
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name
@@ -152,7 +153,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Provider specific settings
 GOOGLE_SECRET_KEY = os.environ['GOOGLE_SECRET_KEY']
 GLOBUS_SECRET_KEY = os.environ['GLOBUS_SECRET_KEY']
-ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.environ['ACCOUNT_DEFAULT_HTTP_PROTOCOL']
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.getenv('ACCOUNT_DEFAULT_HTTP_PROTOCOL', default='https')
+
 
 SOCIALACCOUNT_EMAIL_REQUIRED=True
 SOCIALACCOUNT_PROVIDERS = {
@@ -271,13 +273,13 @@ USE_S3_DOWNLOADS = os.getenv('S3_FILE_DOWNLOADS') == 'TRUE'
 if USE_S3_DOWNLOADS:
     # config for BOTO, bucket etc here but not credentials
     if os.getenv("AWS_PROFILE_NAME") is not None:
-        AWS_PROFILE_NAME='amprepo'
+        AWS_PROFILE_NAME=os.getenv("AWS_PROFILE_NAME")
     else:
         AWS_PROFILE_NAME = 'default'
 
     # assume UUIDs are unique across servers so we can all use the same bucket
     S3_DOWNLOADS_BUCKET='amprepo-private'
-
+    S3_DOWNLOADS_BUCKET_PATH=os.getenv('S3_DOWNLOADS_BUCKET_PATH', default="")
 
 
 
@@ -299,6 +301,7 @@ TEMPLATES = [
                 "mezzanine.conf.context_processors.settings",
                 "mezzanine.pages.context_processors.page",
                 # 'caper.context_processors.get_files'
+                "caper.context_processor.context_processor"
             ],
             "loaders": [
                 "mezzanine.template.loaders.host_themes.Loader",
@@ -431,3 +434,22 @@ else:
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 524288000
 DATA_UPLOAD_MAX_NUMBER_FIELDS = None
+
+###########################
+# version info for footer #
+###########################
+
+SERVER_VERSION = "unversioned"
+with open("version.txt", 'r') as version_file:
+    comment_char = "#"
+    sep = "="
+    for line in version_file:
+        l = line.strip()
+        if l and not l.startswith(comment_char):
+            key_value = l.split(sep)
+            key = key_value[0].strip()
+            value = sep.join(key_value[1:]).strip().strip('"')
+            if "version" == key.lower():
+                SERVER_VERSION = value
+                break
+

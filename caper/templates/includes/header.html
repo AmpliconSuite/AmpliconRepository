@@ -2,22 +2,22 @@
     <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarTogglerDemo01" aria-controls="navbarTogglerDemo01" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
     </button>
-    <!-- <div class="collapse navbar-collapse"> -->
+    {% comment %} <div class="collapse navbar-collapse" id = "navbarTogglerDemo01"> {% endcomment %}
         <a class="navbar-brand" href="/">AmpliconRepository</a>
-        <div class="navbar-collapse collapse w-100 order-1 order-md-0 dual-collapse2">
+        <div class="navbar-collapse collapse w-100 order-1 order-md-0 dual-collapse2" id = "navbarTogglerDemo01">
             <ul class="navbar-nav mr-auto mt-2 mt-lg-0">
                 <li class="nav-item active">
                     <a class="nav-link" href="/">Home <span class="sr-only">(current)</span></a>
                 </li>
                 <li>
-                    <a class="nav-link" href="/about">About </a>
+                    <a class="nav-link" href="https://docs.ampliconrepository.org/en/latest/">Docs</a>
                 </li>
                 <li>
-                    <a class="nav-link" href="/faq">FAQ </a>
+                    <a class="nav-link" href="https://docs.ampliconrepository.org/en/latest/getting-started">Getting Started</a>
                 </li>
-
             </ul>
         </div>
+
     {% if not user.is_authenticated %}
     <div class="custom-bootstrap-menu navbar-collapse collapse w-200 order-2 dual-collapse2">
             <ul class="navbar-nav ">
@@ -37,6 +37,9 @@
                    <a href="#" class="nav-link dropdown-toggle " data-toggle="dropdown" role="button" aria-haspopup="false" >Admin</a>
                 <ul class="dropdown-menu dropdown-menu-right" style="margin-top:0px;">
                     <li class="dropdown-item "><a href="/admin-featured-projects">Featured Projects</a></li>
+                    <li class="dropdown-item "><a href="/admin-delete-project">Permanently Delete Projects</a></li>
+                    <li class="dropdown-item "><a href="/admin-version-details">Server Details</a></li>
+
                 </ul>
 
                 </li>
@@ -59,7 +62,7 @@
                     <li class="dropdown-item "><a href="/create-project">New Project</a></li>
                     <li class="dropdown-item "><a href="/accounts/email">Change Email</a></li>
                     <li class="dropdown-item "><a href="/accounts/logout">Logout</a></li>
-
+<a href=""></a>
                 </ul>
                    
                 </li>

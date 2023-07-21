@@ -11,7 +11,20 @@
         $('#myTable2').DataTable({
         }
         );
+
+
+        message_to_user = "{{ message }}";
+        if (message_to_user.length > 0){
+            alert(message_to_user);
+        } else {
+            //alert("Nothing to say")
+        }
+
     } );
+
+
+
+
 </script>
 {% endblock %}
 
@@ -31,8 +44,10 @@
 
 <div class="container row" style="margin:auto; padding:0px; padding-top: 20px;">
     <div class="col-md-9">
-        <h2>Project: <span style="font-weight: 200">{{ project.project_name }}</span></h2>
-        <!-- <h2>Name: <span style="font-weight: 200">{{ project.project_name }}</span> <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 14px"></i></a></h2> -->
+        <h2>Project: <span style="font-weight: 200">{{ project.project_name }}</span>
+        {% if project.current_user_may_edit  %}
+         <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 24px"></i></a>
+        {%  endif %}</h2>
         <br>
         <h4>Description: <span style="font-weight: 200">{{ project.description }}</span></h4>
         <h4>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h4>
@@ -50,7 +65,21 @@
         </p>
     </div>
     <div  style="margin:auto; border: 0.5px solid grey; padding: 0px">
-        <span style="display:inline-block">{{ stackedbar_graph|safe }}</span> <span style="display:inline-block">{{ piechart|safe }}</span>
+        <span style="display:inline-block">{{ stackedbar_graph|safe }}
+        {% block plotly_js %}
+        <script type="text/javascript">
+        var plot_element = document.getElementById("project_bar_plotly_div");
+        plot_element.on('plotly_click', function(data){{
+            var sname = data['points'][0]['customdata'][0];
+            var link = window.location.href + '/sample/' + sname;
+{#            console.log(link);#}
+            window.open(link, "_blank");
+            }})
+
+        </script>
+        {% endblock %}
+        </span>
+        <span style="display:inline-block">{{ piechart|safe }}</span>
     </div>
 
 </div>

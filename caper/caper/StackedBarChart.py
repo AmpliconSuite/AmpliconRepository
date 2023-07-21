@@ -1,7 +1,9 @@
 from collections import defaultdict
 import time
+
 import pandas as pd
 import plotly.express as px
+
 
 def StackedBarChart(sample, fa_cmap):
     start_time = time.time()
@@ -44,7 +46,7 @@ def StackedBarChart(sample, fa_cmap):
                 color_discrete_map = fa_cmap,
             )
 
-    showslider = True if len(df2['Sample_name']) > 24 else False
+    showslider = True if len(ordered_name_set) > 24 else False
     fig.update_xaxes(tickangle=60, automargin=True, tickfont=dict(size=10), gridcolor = 'white',
                      rangeslider_visible=showslider, tickprefix = "  ")
     fig.update_yaxes(gridcolor = 'white', rangemode='tozero', ticks = 'outside')
@@ -61,7 +63,7 @@ def StackedBarChart(sample, fa_cmap):
                         'tickmode': 'array',
                         'tickvals': list(range(len(df2['Sample_name']))),
                         'ticktext': trunc_names,
-                      },
+                      }
     )
 
     end_time = time.time()

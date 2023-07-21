@@ -44,6 +44,8 @@ urlpatterns += [
     # path("accounts/login/", views.login, name="login"),
     # path("accounts/login/", views.login, name="login"),
     path("project/<project_name>", views.project_page, name="project_page"),
+    path("project/<project_name>/message/<message>", views.project_page, name="project_page"),
+
     path("project/<project_name>/download", views.project_download, name="project_download"),
     path("project/<project_name>/delete", views.project_delete, name="project_delete"),
     path("project/<project_name>/sample/<sample_name>", views.sample_page, name="sample_page"),
@@ -58,6 +60,10 @@ urlpatterns += [
     path('gene-search/download', views.gene_search_download, name='gene_search_download'),
     path('class-search/', views.class_search_page, name='class_search_page'),
     path('admin-featured-projects/', views.admin_featured_projects, name='admin_featured_projects'),
+    path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
+
+    path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),
+
     path('upload_api/', views.FileUploadView.as_view(), name = 'Document')
 ]
 

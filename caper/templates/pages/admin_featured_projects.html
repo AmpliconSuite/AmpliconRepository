@@ -52,7 +52,7 @@
 </head>
 
 <div class="row">
-    <div class="col-md-8">
+    <div class="col-md-10">
         <div>
             <h1 style="padding-top: 50px">Select Featured Projects</h1>
 
@@ -61,6 +61,7 @@
             <div stlye="margin-top: 30px">
                 Select which projects are shown on the featured projects tab
             </div>
+
             <div style="display:none">
                  <form id="form__submit" action="/admin-featured-projects/" method="post">
                        {% csrf_token %}
@@ -95,7 +96,10 @@
                 border-bottom: 2px solid  #0275d8 ;
             }
             </style>
-
+    </div>
+</div>
+    <div class="row">
+    <div class="col-md-12">
         
         <div>
             <ul class="nav nav-tabs" role="tablist" >

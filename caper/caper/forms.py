@@ -1,7 +1,7 @@
 from django import forms
 
 from .models import Run
-from .models import FeaturedProjectUpdate
+from .models import FeaturedProjectUpdate, AdminDeleteProject
 from allauth.account.forms import SignupForm
 from allauth.socialaccount.forms import SignupForm as SocialSignupForm
 
@@ -38,6 +38,13 @@ class FeaturedProjectForm(forms.ModelForm):
     class Meta:
         model = FeaturedProjectUpdate
         fields = ('project_name','project_id','featured')
+
+class DeletedProjectForm(forms.ModelForm):
+    class Meta:
+        model = AdminDeleteProject
+        fields = ('project_name','project_id','delete', 'action')
+
+
 
 class MySignUpForm(SignupForm):
 
