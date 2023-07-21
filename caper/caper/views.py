@@ -53,6 +53,7 @@ from wsgiref.util import FileWrapper
 import boto3
 import botocore
 from threading import Thread
+import os, fnmatch
 
 import time
 import math
@@ -448,6 +449,14 @@ def check_if_db_field_exists(project, field):
         return False
     
     #db.Doc.update_one({"_id": project["_id"]}, {"$set": {"geolocCountry": myGeolocCountry}})
+    
+def find(pattern, path):
+    result = []
+    for root, dirs, files in os.walk(path):
+        for name in files:
+            if fnmatch.fnmatch(name, pattern):
+                result.append(os.path.join(root, name))
+    return result
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
@@ -464,9 +473,7 @@ def project_download(request, project_name):
     real_project_name = project['project_name']
 
     project_data_path = f"tmp/{project_name}"  
-    file_location = f'{project_data_path}/{project_name}'
-
-
+    file_location = find('*.tar.gz', project_data_path)[0]
 
     if settings.USE_S3_DOWNLOADS:
 
@@ -533,7 +540,9 @@ def project_download(request, project_name):
             chunk_size,
         )
     )
-    response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
+    filename = file_location.split('/')[-1]
+    response['Content-Type'] = f'application/tar+gzip'
+    response['Content-Disposition'] = f'attachment; filename={filename}'
     # clear_tmp()
     return response
 
