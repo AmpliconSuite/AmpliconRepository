@@ -4,6 +4,7 @@ from django.http import HttpResponse, FileResponse, StreamingHttpResponse, HttpR
 from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
+from django.contrib.auth import get_user_model
 
 ## API framework packages
 from rest_framework.response import Response
@@ -52,15 +53,12 @@ from wsgiref.util import FileWrapper
 import boto3
 import botocore
 from threading import Thread
+import os, fnmatch
 
 import time
 import math
 import logging
 
-# FOR LOCAL DEVELOPMENT
-# db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
-
-# FOR PRODUICTION
 db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI'])
 
 # SET UP HANDLE
@@ -352,6 +350,7 @@ def profile(request):
 def login(request):
     return render(request, "pages/login.html")
 
+
 def reference_genome_from_project(samples):
     reference_genomes = list()
     for sample, features in samples.items():
@@ -362,6 +361,7 @@ def reference_genome_from_project(samples):
     else:
         reference_genome = reference_genomes[0]
     return reference_genome
+
 
 def reference_genome_from_sample(sample_data):
     reference_genomes = list()
@@ -374,14 +374,16 @@ def reference_genome_from_sample(sample_data):
     return reference_genome
 
 def set_project_edit_OK_flag(project, request):
-    current_user_email = request.user.email
-    current_user = get_current_user(request)
+    try:
+        current_user_email = request.user.email
+        current_user = get_current_user(request)
+    except:
+        current_user_email = 0
+        current_user = 0
     if current_user in project['project_members']:
         project['current_user_may_edit'] = True
     if current_user_email in project['project_members']:
         project['current_user_may_edit'] = True
-
-
 
 
 def project_page(request, project_name, message=''):
@@ -439,15 +441,39 @@ def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket
     print('==== XXX uploaded to bucket ')
 
 
+def check_if_db_field_exists(project, field):
+    try: 
+        if project[field]:
+            return True
+    except:
+        return False
+    
+    #db.Doc.update_one({"_id": project["_id"]}, {"$set": {"geolocCountry": myGeolocCountry}})
+    
+def find(pattern, path):
+    result = []
+    for root, dirs, files in os.walk(path):
+        for name in files:
+            if fnmatch.fnmatch(name, pattern):
+                result.append(os.path.join(root, name))
+    return result
+
 def project_download(request, project_name):
     project = get_one_project(project_name)
+    
+    if check_if_db_field_exists(project, 'project_downloads'):
+        updated_downloads = project['project_downloads'] + 1
+    else: 
+        updated_downloads = 1
+    
+    query = {'_id': ObjectId(project_name)}
+    new_val = { "$set": {'project_downloads': updated_downloads} }
+    collection_handle.update_one(query, new_val)   
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     real_project_name = project['project_name']
 
     project_data_path = f"tmp/{project_name}"  
-    file_location = f'{project_data_path}/{project_name}'
-
-
+    file_location = find('*.tar.gz', project_data_path)[0]
 
     if settings.USE_S3_DOWNLOADS:
 
@@ -514,7 +540,9 @@ def project_download(request, project_name):
             chunk_size,
         )
     )
-    response['Content-Disposition'] = f'attachment; filename={real_project_name}.tar.gz'
+    filename = file_location.split('/')[-1]
+    response['Content-Type'] = f'application/tar+gzip'
+    response['Content-Disposition'] = f'attachment; filename={filename}'
     # clear_tmp()
     return response
 
@@ -655,6 +683,15 @@ def sample_page(request, project_name, sample_name):
 def sample_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
+    
+    if check_if_db_field_exists(project, 'sample_downloads'):
+        updated_downloads = project['sample_downloads'] + 1
+    else:
+        updated_downloads = 1
+    
+    query = {'_id': ObjectId(project_name)}
+    new_val = { "$set": {'sample_downloads': updated_downloads} }
+    collection_handle.update_one(query, new_val)   
 
     sample_data_path = f"tmp/{project_name}/{sample_name}"        
 
@@ -1066,6 +1103,28 @@ def admin_version_details(request):
     return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result})
 
 
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_stats(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    # Get all user data
+    User = get_user_model()
+    users = User.objects.all()
+    
+    # Get public and private project data
+    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    private_projects = list(collection_handle.find({'private': True, 'delete': False}))
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+    for proj in private_projects:
+        prepare_project_linkid(proj)
+        
+    # Calculate stats
+    # total_downloads = [project['project_downloads'] for project in public_projects]
+
+    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'private_projects': private_projects, 'users': users})
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
