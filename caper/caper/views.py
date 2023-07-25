@@ -1099,7 +1099,7 @@ def admin_version_details(request):
         env.append({"name": key, "value": value})
 
     try:
-        gitcmd = "export GIT_DISCOVERY_ACROSS_FILESYSTEM=1;git config --global --add safe.directory /srv;git status;git rev-parse HEAD"
+        gitcmd = 'export GIT_DISCOVERY_ACROSS_FILESYSTEM=1;git config --global --add safe.directory /srv;git status;echo \"Commit id:\"; git rev-parse HEAD'
         git_result = subprocess.check_output(gitcmd, shell=True)
         git_result = git_result.decode("UTF-8")\
         #.replace("\n", "<br/>")
