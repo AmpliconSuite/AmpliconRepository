@@ -24,6 +24,8 @@ jobs:
         echo "Creator= ${GITHUB_ACTOR}" >> version.txt
         NOW=`date`
         echo "Date= ${NOW}" >> version.txt
+        COMMIT_ID=`git rev-parse HEAD`
+        echo "CommitID=${COMMIT_ID}" >> version.txt
         
     - uses: stefanzweifel/git-auto-commit-action@v4
       with:
