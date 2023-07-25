@@ -83,11 +83,18 @@ This is the main repository for the AmpliconRepository.
 - Open the application on a web browser (recommend using a private/incognito window for faster development):
 > https://localhost:8000
 
-# Setup your development environment using Docker and docker-compose <a name="dev-docker"></a> 
+# Local deployment - Docker option <a name="dev-docker"></a>
+
+Set up your development environment using Docker and docker-compose as an alternative to python or conda-based package management and installation. 
 
 To use containers for development you need to install [Docker](https://docs.docker.com/engine/install/) and [docker-compose](https://docs.docker.com/compose/install/) on your machine.
 
-## 1. Quickstart
+Instructions for Ubuntu:
+- Follow instructions at https://docs.docker.com/engine/install/ubuntu/#set-up-the-repository
+then do
+- `sudo apt-get install docker-compose`
+
+## a. Quickstart
 
 Build and run your development webserver and mongo db using docker:
 
@@ -99,9 +106,9 @@ docker-compose -f docker-compose-dev.yml up -d
 docker-compose -f docker-compose-dev.yml down
 ```
 
-## 2. Complete steps
+## b. Complete steps
 
-### 2.1 Start your [docker daemon](https://docs.docker.com/config/daemon/start/) and make sure is running:
+### i. Start your [docker daemon](https://docs.docker.com/config/daemon/start/) and make sure is running:
 
 ```bash
 # for linux
@@ -112,13 +119,13 @@ docker-compose --help
 # or alternatively start manually from interface (macos or windows)
 ```
 
-### 2.2. Clone the repository (skip this if you have already done this):
+### ii. Clone the repository (skip this if you have already done this):
 
 ```bash
 git clone https://github.com/AmpliconSuite/AmpliconRepository.git
 ```
 
-### 2.3. Build a local Docker image:
+### iii. Build a local Docker image:
 
 This command will create a Docker image `genepattern/amplicon-repo:dev-test` with your environment, all dependencies and application code you need to run the webserver.
 Additionally, this command will pull a `mongo:4` image for the test database. 
@@ -135,7 +142,7 @@ Dependency files:
 - `environment-dev.yml`
 - `requirements.txt`
 
-### 2.4 Run webserver and mongo db instances: 
+### iv. Run webserver and mongo db instances: 
 
 This command will:
 - create two containers, one for the webserver (`amplicon-repo`) and one for the mongo database (`ampliconrepository_mongodb_1`)
@@ -164,7 +171,7 @@ and you should see something like below:
 # deaa521621f1   mongo:4                              "docker-entrypoint.s…"    4 days ago      Up About a minute   0.0.0.0:27017->27017/tcp   ampliconrepository_mongodb_1
 ```
 
-### 2.5 Stop webserver and mongodb
+### v. Stop webserver and mongodb
 
 To stop the webserver and mongodb service:
 
@@ -177,7 +184,7 @@ docker-compose -f docker-compose-dev.yml down
 # Removing network ampliconrepository_default
 ```
 
-### 2.6 Check environment configuration of your docker-compose
+### vi. Check environment configuration of your docker-compose
 
 Before you build your image you can check if the `config.sh` is set correctly by doing:
 
@@ -187,7 +194,7 @@ docker-compose -f docker-compose-dev.yml config
 
 This command will show you the `docker-compose-dev.yml` customized with your environment variables.
 
-### 2.7 Check environment variables for running container
+### vii. Check environment variables for running container
 
 You can check the environment variables which your running container uses:
 
