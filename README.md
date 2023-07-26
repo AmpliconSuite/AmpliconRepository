@@ -112,6 +112,8 @@ The server is currently running on an EC2 instance through Docker. The ports act
 
 **Note:** While we provide a Dockerfile, local deployment of the site using the docker will only properly work on AWS. Local deployment should be done with a local install using the steps above.
 
+
+
 ## 1. How to start the server
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)
   - this requires a PEM key
@@ -133,15 +135,23 @@ The server is currently running on an EC2 instance through Docker. The ports act
 > `./stop-server.sh`
 
 ## 3. How to update the server
+
 - Clone repo using https, ssh, or GitHub Desktop to your local machine
 - Make changes locally 
 - Push changes to the main branch of the repository
+- Create a release on GitHub
+    -   login to github and go to the releases page at https://github.com/AmpliconSuite/AmpliconRepository/releases.
+    -   Create a new release using a tag with the pattern v<major version>.<minor version>.<patch version>_<MMDDYY>  e.g. v1.0.1_072523 for version 1.0.1 created July 15, 2023.
+    - This will create a tag on the contents of the repo at this moment
+    - a github action will update and commit the version.txt file with the date, tag, commit ID and person doing the release and apply the tag to the updated version.txt
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)
   - this requires a PEM key
 - Go to project directory
 > `cd /home/ubuntu/caper/`
 - Pull your changes from Github
-> `git pull origin main`
+> `git fetch`
+> `git pull`
+> `git checkout tags/<release tag in github>`
 - Restart the server
 > `./stop-server.sh`
 > `./start-server.sh`
