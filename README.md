@@ -144,10 +144,11 @@ The server is currently running on an EC2 instance through Docker. The ports act
     -   Create a new release using a tag with the pattern v<major version>.<minor version>.<patch version>_<MMDDYY>  e.g. v1.0.1_072523 for version 1.0.1 created July 15, 2023.
     - This will create a tag on the contents of the repo at this moment
     - a github action will update and commit the version.txt file with the date, tag, commit ID and person doing the release and apply the tag to the updated version.txt
-- SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)
+- SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04` in us-east-1)
   - this requires a PEM key
 - Go to project directory
-> `cd /home/ubuntu/caper/`
+> `cd /home/ubuntu/AmpliconRepository-prod/`
+> `source caper/config.sh`
 - Pull your changes from Github
 > `git fetch`
 > `git pull`
