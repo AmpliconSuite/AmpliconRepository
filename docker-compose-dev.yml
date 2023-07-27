@@ -9,6 +9,7 @@ services:
       args:
         AA_USER: $AA_USER
         UID: $UID
+        GID: $GID
         ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS: ${ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS}
         GOOGLE_SECRET_KEY: ${GOOGLE_SECRET_KEY}
         GLOBUS_SECRET_KEY: ${GLOBUS_SECRET_KEY}
@@ -18,8 +19,8 @@ services:
         S3_FILE_DOWNLOADS: ${S3_FILE_DOWNLOADS}
         AWS_PROFILE_NAME: ${AWS_PROFILE_NAME}
         S3_DOWNLOADS_BUCKET_PATH: ${S3_DOWNLOADS_BUCKET_PATH}
-    image: genepattern/amplicon-repo:dev-test
-    container_name: amplicon-repo
+    image: genepattern/amplicon-repo:${AMPLICON_ENV}
+    container_name: ${CONTAINER_NAME}
     restart: always
     # .env is not need to be specified, all the variales will be set as environment parameters in the container
     # however if you specify .env then you can see all the variables if you do docker-compose -f docker-compose-dev.yml config

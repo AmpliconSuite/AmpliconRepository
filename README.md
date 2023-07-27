@@ -207,10 +207,10 @@ docker inspect -f \
 ### viii. Debug
 
 - Run `docker ps` and check if the port mapping is correct, i.e. you should see `0.0.0.0:8000->8000`=`inside_docker_port->host_port`
-- Which is different from `-p 8000:8000`=`HOST:DOCKER`
+- Please be aware that the above port mapping annotation is different from `docker run -p 8000:8000 ...`=`HOST:DOCKER`
 - For local development you need to use host port `8000` to be able to use the Google Authentication in the App
 - Set `AMPLICON_ENV_PORT` if you want to use another port on the host machine
-- If you get the error `permission denied/read only database` please set the code permissions on your local machine to 777
+- If you get the error `permission denied/read only database` please set the code permissions on your local machine to `777`
 
 # Testing datasets <a name="test-datasets"></a> 
 [These datasets](https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=share_link) are ready to upload to the site for testing purposes.

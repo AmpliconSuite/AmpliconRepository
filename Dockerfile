@@ -8,6 +8,7 @@ MAINTAINER Forrest Kim <f1kim@health.ucsd.edu>
 
 ARG AA_USER
 ARG UID
+ARG GID
 ARG ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS
 ARG GOOGLE_SECRET_KEY
 ARG GLOBUS_SECRET_KEY
@@ -83,11 +84,15 @@ COPY ./caper/ /srv/caper/
 # RUN ln -s /config/static /srv/caper/static
 
 RUN /bin/bash -c "source /opt/venv/bin/activate && \
+	source /srv/caper/config.sh && \
 	/srv/caper/manage.py makemigrations"
 RUN /bin/bash -c "source /opt/venv/bin/activate && \
+	source /srv/caper/config.sh && \
 	/srv/caper/manage.py migrate --run-syncdb"
 RUN /bin/bash -c "source /opt/venv/bin/activate && \
+	source /srv/caper/config.sh && \
 	/srv/caper/manage.py collectstatic --noinput"
+
 
 # COPY ./start-server.sh /srv/caper/start-server.sh
 
@@ -99,7 +104,7 @@ COPY ./run-manage-py.sh /srv/run-manage-py.sh
 RUN apt-get update && apt-get install vim --yes
 
 # Create user
-RUN useradd -ms /bin/bash -u ${UID} ${AA_USER}
+RUN useradd -ms /bin/bash -u ${UID} ${AA_USER} && chown ${AA_USER}:${GID} -R /srv
 
 # Switch root to user
 USER ${AA_USER}

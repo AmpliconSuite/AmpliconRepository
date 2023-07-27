@@ -6,6 +6,7 @@ FROM continuumio/miniconda3:23.3.1-0
 
 ARG AA_USER
 ARG UID
+ARG GID
 ARG ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS
 ARG GOOGLE_SECRET_KEY
 ARG GLOBUS_SECRET_KEY
@@ -52,7 +53,7 @@ RUN python -m pip install -r /tmp/requirements.txt
 #RUN groupmod -g 1011 ${AA_GROUP} && \
 #useradd -ms /bin/bash -u 1001 ${AA_USER} -g ${AA_GROUP} && \
 #chmod ${AA_USER}:${AA_GROUP} -R /srv
-RUN useradd -ms /bin/bash -u ${UID} ${AA_USER}
+RUN useradd -ms /bin/bash -u ${UID} ${AA_USER} && chown ${AA_USER}:${GID} -R /srv
 
 USER ${AA_USER}
 COPY ./caper/ /srv/caper/
