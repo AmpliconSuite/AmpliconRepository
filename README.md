@@ -102,7 +102,8 @@ Build and run your development webserver and mongo db using docker:
 cd AmpliconRepository
 docker-compose -f docker-compose-dev.yml build
 docker-compose -f docker-compose-dev.yml up -d
-# to shutdown
+# then visit http://localhost:8000/ in your web browser
+# once finished, to shutdown:
 docker-compose -f docker-compose-dev.yml down
 ```
 
@@ -170,6 +171,8 @@ and you should see something like below:
 # 311a560ec20a   genepattern/amplicon-repo:dev-test   "/bin/sh -c 'echo \"H…"   3 minutes ago   Up About a minute   0.0.0.0:8000->8000/tcp     amplicon-repo
 # deaa521621f1   mongo:4                              "docker-entrypoint.s…"    4 days ago      Up About a minute   0.0.0.0:27017->27017/tcp   ampliconrepository_mongodb_1
 ```
+
+To view the site locally, visit http://localhost:8000/ in your web browser.
 
 ### v. Stop webserver and mongodb
 

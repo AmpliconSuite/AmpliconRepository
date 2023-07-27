@@ -1,4 +1,6 @@
 config.sh
+*.swp
+.env
 /caper/caper.sqlite3
 .DS_Store
 Dockerfile
