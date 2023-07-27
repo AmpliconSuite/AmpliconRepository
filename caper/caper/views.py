@@ -472,7 +472,7 @@ def project_download(request, project_name):
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     real_project_name = project['project_name']
 
-    project_data_path = f"tmp/{project_name}"  
+    project_data_path = f"tmp/{project_name}"
 
     if settings.USE_S3_DOWNLOADS:
 
@@ -614,7 +614,7 @@ def sample_metadata_download(request, project_name, sample_name):
         response = HttpResponse(sample_metadata)
         response['Content-Type'] = 'application/json'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
-        clear_tmp()
+        # clear_tmp()
         return response
 
     except Exception as e:
