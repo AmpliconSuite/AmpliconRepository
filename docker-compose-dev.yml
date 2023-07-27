@@ -1,4 +1,4 @@
-version: "3"
+version: "3.9"
 
 services:
 
@@ -7,7 +7,8 @@ services:
       context: .
       dockerfile: Dockerfile_dev
       args:
-        AA_USER: ${AA_USER}
+        AA_USER: $AA_USER
+        UID: $UID
         ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS: ${ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS}
         GOOGLE_SECRET_KEY: ${GOOGLE_SECRET_KEY}
         GLOBUS_SECRET_KEY: ${GLOBUS_SECRET_KEY}
@@ -26,12 +27,13 @@ services:
     ports:
       - '${AMPLICON_ENV_PORT}:8000'
     volumes:
-      - ${PWD}/.aws:/srv/.aws
-      - ${PWD}/logs:/srv/logs
+      - ${PWD}/.aws:/tmp/.aws
+      - ${PWD}/logs:/logs
       # might want to mount the temp files on the local machine
       - ${PWD}/tmp:/tmp
       # mount your code
-      - ${PWD}:/srv/
+      - ${PWD}:/srv/:rw
+    user: "${UID}:${GID}"
     depends_on:
       - mongodb
     links:
