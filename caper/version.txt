@@ -1,3 +1,4 @@
-Version=local_dev
-Creator=me
-Date=Once upon a time
+Version= v1.1.0_072723a
+Creator= liefeld
+Date= Thu Jul 27 19:47:55 UTC 2023
+CommitID=c8db9698c48ed992baf29b5436e86cc6a6ecc921
