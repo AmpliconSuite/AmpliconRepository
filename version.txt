@@ -1,5 +1,4 @@
-
-version=dev
-creator=ted
-date=now
-
+Version= v1.1.0_072723
+Creator= liefeld
+Date= Thu Jul 27 19:35:46 UTC 2023
+CommitID=178fa674b0e30439196b87966bf2a35bdb68b40e

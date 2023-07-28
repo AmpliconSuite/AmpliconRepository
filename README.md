@@ -40,7 +40,7 @@ This is the main repository for the AmpliconRepository.
 - Install pip to that environment 
 > `conda install pip -n ampliconenv`
 - Install required packages
-> `[/path/to/your/conda]/envs/ampliconenv/bin/pip install -r requirements.txt`
+> `~/[anaconda3/miniconda3]/envs/ampliconenv/bin/pip install -r requirements.txt`
 
 
 
@@ -70,10 +70,23 @@ This is the main repository for the AmpliconRepository.
   - So that this is active every time, you can add the command above to your `~/.bashrc` file
 - Note that the latest version of Compass (1.34.2) won't work with our older DB version.  You can get an old compass for mac at https://downloads.mongodb.com/compass/mongodb-compass-1.28.4-darwin-x64.dmg
 
-## 4. Set up secret keys for OAuth2
+## 3b. Clearing your local DB
+Periodically, you will want to purge old or excessively large accumulated data from you DB. You can do this using the provided script
+> `python purge-local-db.py`
+
+## 4. Set up secret keys for OAuth2 and other environment variables
 - Make sure you have the `config.sh` file from another developer (this contains secret key information)
 - Run the command to initialize variables:
 `source config.sh`
+
+For local deployments, you will need to ensure that the following two variables are set to FALSE, as shown below
+```
+export S3_STATIC_FILES=FALSE
+export S3_FILE_DOWNLOADS='FALSE'
+```
+
+**IMPORTANT**: After recieving your `config.sh`, please ensure you do not upload it to Github or make it available publicly anywhere.
+
 
 ## 5. Run development server (Django)
 - Open a terminal window or tab with the `ampliconenv` environment active
@@ -244,6 +257,8 @@ The server is currently running on an EC2 instance through Docker. The ports act
 
 **Note:** While we provide a Dockerfile, local deployment of the site using the docker will only properly work on AWS. Local deployment should be done with a local install using the steps above.
 
+
+
 ## 1. How to start the server
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)
   - this requires a PEM key
@@ -265,15 +280,24 @@ The server is currently running on an EC2 instance through Docker. The ports act
 > `./stop-server.sh`
 
 ## 3. How to update the server
+
 - Clone repo using https, ssh, or GitHub Desktop to your local machine
 - Make changes locally 
 - Push changes to the main branch of the repository
-- SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)
+- Create a release on GitHub
+    -   login to github and go to the releases page at https://github.com/AmpliconSuite/AmpliconRepository/releases.
+    -   Create a new release using a tag with the pattern v<major version>.<minor version>.<patch version>_<MMDDYY>  e.g. v1.0.1_072523 for version 1.0.1 created July 15, 2023.
+    - This will create a tag on the contents of the repo at this moment
+    - a github action will update and commit the version.txt file with the date, tag, commit ID and person doing the release and apply the tag to the updated version.txt
+- SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04` in us-east-1)
   - this requires a PEM key
 - Go to project directory
-> `cd /home/ubuntu/caper/`
+> `cd /home/ubuntu/AmpliconRepository-prod/`
+> `source caper/config.sh`
 - Pull your changes from Github
-> `git pull origin main`
+> `git fetch`
+> `git pull`
+> `git checkout tags/<release tag in github>`
 - Restart the server
 > `./stop-server.sh`
 > `./start-server.sh`

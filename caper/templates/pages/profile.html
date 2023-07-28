@@ -16,52 +16,64 @@
 </script>
 {% endblock %}
 
-
 <head>
     <title>
         Profile
     </title>
 </head>
-    {% if user.is_authenticated %}
-    <h2>
-        {% if user.email  %}
-         {{ user.email }}:
-        {% else %}
-         {{ user.username }}:   
-        {% endif %}
-    </h1>
-    <hr>
-    <h3>Projects</h3>
-    <div class="table-responsive">
-        <table id='projectTable' class="table table-hover table-sm">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Description</th>
-                    <th>Date</th>
-                    <th>Visibility</th>
-                    <th>Project Members</th>
-                    <th>Edit Project</th>
-                    <th>Delete Project</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for project in projects %}
-                <tr>
-                    <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
-                    <td>{{ project.description }}</td>
-                    <td>{{ project.date }}</td>
-                    <td>{% if  project.private %}private{%  else  %}public{% endif %}</td>
-                    <td>{% for person in project.project_members %}
-                        {{ person }}<br>
-                    {% endfor%}</td>
-                    <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.linkid %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
-                    <td><a href="{% url 'project_delete' project_name=project.linkid %}"  onclick="return confirm('Are you sure?')"><i class="fas fa-trash" style="font-size:15px"></i></a></td>
+{% if user.is_authenticated %}
+    <div class="container main-container" style="max-width:1600px; width:90%; margin:auto;">
+        <div class="row">
+            <div class="col-md-12">
+                <h2>
+                    {% if user.email  %}
+                     {{ user.email }}:
+                    {% else %}
+                     {{ user.username }}:
+                    {% endif %}
+                </h2>
+                <hr>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-9">
+                <h3>Projects</h3>
+            </div>
+            <div class="col-md-3 text-right">
+                <a href="/create-project/" class="btn btn-primary">Create Project</a>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table id='projectTable' class="table table-hover table-sm">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Date</th>
+                        <th>Visibility</th>
+                        <th>Project Members</th>
+                        <th>Edit Project</th>
+                        <th>Delete Project</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project in projects %}
+                    <tr>
+                        <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                        <td>{{ project.description }}</td>
+                        <td>{{ project.date }}</td>
+                        <td>{% if  project.private %}private{%  else  %}public{% endif %}</td>
+                        <td>{% for person in project.project_members %}
+                            {{ person }}<br>
+                        {% endfor%}</td>
+                        <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.linkid %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
+                        <td><a href="{% url 'project_delete' project_name=project.linkid %}"  onclick="return confirm('Are you sure?')"><i class="fas fa-trash" style="font-size:15px"></i></a></td>
 
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
     {% endif %}
     {% if not user.is_authenticated %}

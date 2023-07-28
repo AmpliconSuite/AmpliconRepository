@@ -20,10 +20,12 @@ jobs:
         token: ${{ secrets.TOKEN_FOR_ONCHANGE }}
     - name: Update version.txt
       run: |
-        echo "Version= ${GITHUB_REF_NAME}" > version.txt
-        echo "Creator= ${GITHUB_ACTOR}" >> version.txt
+        echo "Version= ${GITHUB_REF_NAME}" > caper/version.txt
+        echo "Creator= ${GITHUB_ACTOR}" >> caper/version.txt
         NOW=`date`
-        echo "Date= ${NOW}" >> version.txt
+        echo "Date= ${NOW}" >> caper/version.txt
+        COMMIT_ID=`git rev-parse HEAD`
+        echo "CommitID=${COMMIT_ID}" >> caper/version.txt
         
     - uses: stefanzweifel/git-auto-commit-action@v4
       with:

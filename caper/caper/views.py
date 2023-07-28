@@ -472,8 +472,7 @@ def project_download(request, project_name):
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     real_project_name = project['project_name']
 
-    project_data_path = f"tmp/{project_name}"  
-    file_location = find('*.tar.gz', project_data_path)[0]
+    project_data_path = f"tmp/{project_name}"
 
     if settings.USE_S3_DOWNLOADS:
 
@@ -534,6 +533,7 @@ def project_download(request, project_name):
     ###### the following is used when S3 is not used for download
     chunk_size = 8192
     print('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
+    file_location = find('*.tar.gz', project_data_path)[0]
     response = StreamingHttpResponse(
         FileWrapper(
             open(file_location, "rb"),
@@ -614,7 +614,7 @@ def sample_metadata_download(request, project_name, sample_name):
         response = HttpResponse(sample_metadata)
         response['Content-Type'] = 'application/json'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
-        clear_tmp()
+        # clear_tmp()
         return response
 
     except Exception as e:
@@ -1078,28 +1078,34 @@ def admin_version_details(request):
     if not  request.user.is_staff:
         return redirect('/accounts/logout')
 
-    #details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
-    details = []
-    comment_char="#"
-    sep="="
-    with open("version.txt", 'r') as version_file:
-        for line in version_file:
-            l = line.strip()
-            if l and not l.startswith(comment_char):
-                key_value = l.split(sep)
-                key = key_value[0].strip()
-                value = sep.join(key_value[1:]).strip().strip('"')
-                details.append({"name": key,  "value": value})
+    try:
+    	#details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
+    	details = []
+    	comment_char="#"
+    	sep="="
+    	with open("version.txt", 'r') as version_file:
+    	    for line in version_file:
+    	        l = line.strip()
+    	        if l and not l.startswith(comment_char):
+    	            key_value = l.split(sep)
+    	            key = key_value[0].strip()
+    	            value = sep.join(key_value[1:]).strip().strip('"')
+    	            details.append({"name": key,  "value": value})
+    except:
+	    details = [{"name":"version","value":"unknown"},{"name":"creator","value":"unknown"},{"name": "date", "value":"unknown" }]
 
     env=[]
     for key, value in os.environ.items():
         env.append({"name": key, "value": value})
 
-    gitcmd = "git status"
-    git_result = subprocess.check_output(gitcmd, shell=True)
-    git_result = git_result.decode("UTF-8")\
+    try:
+        gitcmd = 'export GIT_DISCOVERY_ACROSS_FILESYSTEM=1;git config --global --add safe.directory /srv;git status;echo \"Commit id:\"; git rev-parse HEAD'
+        git_result = subprocess.check_output(gitcmd, shell=True)
+        git_result = git_result.decode("UTF-8")\
         #.replace("\n", "<br/>")
-
+    except:
+        git_result = "git status call failed"
+ 
     return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result})
 
 
