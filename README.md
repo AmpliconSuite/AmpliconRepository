@@ -132,16 +132,18 @@ This command will create a Docker image `genepattern/amplicon-repo:dev-test` wit
 Additionally, this command will pull a `mongo:4` image for the test database. 
 
 ```bash
-cd AmpliconRepository
-docker-compose -f docker-compose-dev.yml build
-```
 
 Dependency files:
 - `docker-compose-dev.yml`
 - `Dockerfile_dev`
-- `.env` (make sure to first ask AmpRepo devs for the contents of this file)
+- `.env` # ask AmpRepo devs for the contents of this file
 - `environment-dev.yml`
 - `requirements.txt`
+- `caper/config.sh` # ask AmpRepo devs for the contents of this file & place in caper/ dir.
+
+cd AmpliconRepository
+docker-compose -f docker-compose-dev.yml build
+```
 
 ### iv. Run webserver and mongo db instances: 
 
@@ -213,7 +215,8 @@ docker inspect -f \
 - Please be aware that the above port mapping annotation is different from `docker run -p 8000:8000 ...`=`HOST:DOCKER`
 - For local development you need to use host port `8000` to be able to use the Google Authentication in the App
 - Set `AMPLICON_ENV_PORT` if you want to use another port on the host machine
-- If you get the error `permission denied/read only database` please set the code permissions on your local machine to `777`
+- If you get the error `permission denied/read only database` please set the read-write permissions on your local machine to `777` for the following
+`sudo chmod 777 logs/ tmp/ .aws/ caper/caper.sqlite3 -R`
 
 # Testing datasets <a name="test-datasets"></a> 
 [These datasets](https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=share_link) are ready to upload to the site for testing purposes.
