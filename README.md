@@ -100,11 +100,11 @@ Build and run your development webserver and mongo db using docker:
 
 ```bash
 cd AmpliconRepository
-docker-compose -f docker-compose-dev.yml build
-docker-compose -f docker-compose-dev.yml up -d
+docker compose -f docker-compose-dev.yml build
+docker compose -f docker-compose-dev.yml up -d
 # then visit http://localhost:8000/ in your web browser
 # once finished, to shutdown:
-docker-compose -f docker-compose-dev.yml down
+docker compose -f docker-compose-dev.yml down
 ```
 
 ## b. Complete steps
@@ -115,7 +115,7 @@ docker-compose -f docker-compose-dev.yml down
 # for linux
 sudo systemctl start docker
 docker --help
-docker-compose --help
+docker compose --help
 
 # or alternatively start manually from interface (macos or windows)
 ```
@@ -142,7 +142,7 @@ Dependency files:
 - `caper/config.sh` # ask AmpRepo devs for the contents of this file & place in caper/ dir.
 
 cd AmpliconRepository
-docker-compose -f docker-compose-dev.yml build
+docker compose -f docker-compose-dev.yml build
 ```
 
 ### iv. Run webserver and mongo db instances: 
@@ -157,7 +157,7 @@ This command will:
 
 
 ```bash
-docker-compose -f docker-compose-dev.yml up -d
+docker compose -f docker-compose-dev.yml up -d
 # Starting ampliconrepository_mongodb_1 ... done
 # Starting amplicon-repo                ... done
 ```
@@ -181,7 +181,7 @@ To view the site locally, visit http://localhost:8000/ in your web browser.
 To stop the webserver and mongodb service:
 
 ```bash
-docker-compose -f docker-compose-dev.yml down
+docker compose -f docker-compose-dev.yml down
 # Stopping amplicon-repo                ... done
 # Stopping ampliconrepository_mongodb_1 ... done
 # Removing amplicon-repo                ... done
@@ -194,7 +194,7 @@ docker-compose -f docker-compose-dev.yml down
 Before you build your image you can check if the `config.sh` is set correctly by doing:
 
 ```bash
-docker-compose -f docker-compose-dev.yml config
+docker compose -f docker-compose-dev.yml config
 ```
 
 This command will show you the `docker-compose-dev.yml` customized with your environment variables.
@@ -214,9 +214,10 @@ docker inspect -f \
 - Run `docker ps` and check if the port mapping is correct, i.e. you should see `0.0.0.0:8000->8000`=`inside_docker_port->host_port`
 - Please be aware that the above port mapping annotation is different from `docker run -p 8000:8000 ...`=`HOST:DOCKER`
 - For local development you need to use host port `8000` to be able to use the Google Authentication in the App
-- Set `AMPLICON_ENV_PORT` if you want to use another port on the host machine
+- Set `AMPLICON_ENV_PORT` if you want to use another port on the host machine, then rebuild the docker image.
 - If you get the error `permission denied/read only database` please set the read-write permissions on your local machine to `777` for the following
 `sudo chmod 777 logs/ tmp/ .aws/ caper/caper.sqlite3 -R`
+- If you have an older version of docker `docker compose` may not be available and you will need to install `docker-compose` and use that, replacing `docker compose` with `docker-compose`.
 
 # Testing datasets <a name="test-datasets"></a> 
 [These datasets](https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=share_link) are ready to upload to the site for testing purposes.
