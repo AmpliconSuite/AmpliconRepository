@@ -1105,24 +1105,26 @@ def admin_version_details(request):
         return redirect('/accounts/logout')
 
     try:
-    	#details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
-    	details = []
-    	comment_char="#"
-    	sep="="
-    	with open("version.txt", 'r') as version_file:
-    	    for line in version_file:
-    	        l = line.strip()
-    	        if l and not l.startswith(comment_char):
-    	            key_value = l.split(sep)
-    	            key = key_value[0].strip()
-    	            value = sep.join(key_value[1:]).strip().strip('"')
-    	            details.append({"name": key,  "value": value})
+        #details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
+        details = []
+        comment_char="#"
+        sep="="
+        with open("version.txt", 'r') as version_file:
+            for line in version_file:
+                l = line.strip()
+                if l and not l.startswith(comment_char):
+                    key_value = l.split(sep)
+                    key = key_value[0].strip()
+                    value = sep.join(key_value[1:]).strip().strip('"')
+                    details.append({"name": key,  "value": value})
     except:
-	    details = [{"name":"version","value":"unknown"},{"name":"creator","value":"unknown"},{"name": "date", "value":"unknown" }]
+        details = [{"name":"version","value":"unknown"},{"name":"creator","value":"unknown"},{"name": "date", "value":"unknown" }]
 
+    env_to_skip = ['DB_URI', "GOOGLE_SECRET", "GLOBUS_SECRET"]
     env=[]
     for key, value in os.environ.items():
-        env.append({"name": key, "value": value})
+        if not key.endswith("SECRET") and not key in env_to_skip:
+            env.append({"name": key, "value": value})
 
     try:
         gitcmd = 'export GIT_DISCOVERY_ACROSS_FILESYSTEM=1;git config --global --add safe.directory /srv;git status;echo \"Commit id:\"; git rev-parse HEAD'
@@ -1131,8 +1133,21 @@ def admin_version_details(request):
         #.replace("\n", "<br/>")
     except:
         git_result = "git status call failed"
- 
-    return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result})
+
+
+    settingscmd = 'source config.sh;python manage.py diffsettings --all'
+    settings_raw_result = subprocess.check_output(settingscmd, shell=True)
+    settings_result = ""
+    for line in settings_raw_result.splitlines():
+        line_enc = line.decode("UTF-8")
+        if not(( "SECRET" in line_enc.upper()) or ( "mongodb" in line_enc)):
+            settings_result = settings_result + line_enc + "\n"
+    print(f"Sett res = {settings_result}")
+
+
+    #settings_result = "Get settings call failed."
+
+    return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result, 'django_settings': settings_result})
 
 
 
