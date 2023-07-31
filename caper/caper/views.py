@@ -335,12 +335,20 @@ def index(request):
     private_projects = modify_date(private_projects)
     featured_projects = modify_date(featured_projects)
 
+    try:
+        print(f"auth: ", request.user.is_authenticated)
+        print(f"username: ", request.user.username)
+        print(f"email: ", request.user.email)
+        print(f"gcu: ", request.get_current_user())
+    except:
+        print("Not logged  in")
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects})
 
 
 def profile(request):
-    user = request.user.email
-    projects = list(collection_handle.find({ 'project_members' : user , 'delete': False}))
+    username = request.user.username
+    useremail = request.user.email
+    projects = list(collection_handle.find({  "$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
     for proj in projects:
         prepare_project_linkid(proj)
 
