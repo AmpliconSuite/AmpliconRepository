@@ -314,8 +314,9 @@ def modify_date(projects):
 
 def index(request):
     if request.user.is_authenticated:
-        user = request.user.email
-        private_projects = list(collection_handle.find({ 'private' : True, 'project_members' : user , 'delete': False}))
+        username = request.user.username
+        useremail = request.user.email
+        private_projects = list(collection_handle.find({ 'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
         for proj in private_projects:
             prepare_project_linkid(proj)
 
@@ -335,20 +336,17 @@ def index(request):
     private_projects = modify_date(private_projects)
     featured_projects = modify_date(featured_projects)
 
-    try:
-        print(f"auth: ", request.user.is_authenticated)
-        print(f"username: ", request.user.username)
-        print(f"email: ", request.user.email)
-        print(f"gcu: ", request.get_current_user())
-    except:
-        print("Not logged  in")
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects})
 
 
 def profile(request):
     username = request.user.username
     useremail = request.user.email
+    # prevent an absent/null email from matching on anything
+    if not useremail:
+        useremail = username
     projects = list(collection_handle.find({  "$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+
     for proj in projects:
         prepare_project_linkid(proj)
 
@@ -381,22 +379,36 @@ def reference_genome_from_sample(sample_data):
         reference_genome = reference_genomes[0]
     return reference_genome
 
-def set_project_edit_OK_flag(project, request):
+
+def is_user_a_project_member(project, request):
     try:
         current_user_email = request.user.email
-        current_user = get_current_user(request)
+        current_user_username = request.user.username
+        if not current_user_email:
+            current_user_email = current_user_username
     except:
         current_user_email = 0
-        current_user = 0
-    if current_user in project['project_members']:
-        project['current_user_may_edit'] = True
+        current_user_username = 0
+
+    if current_user_username in project['project_members']:
+        return True
     if current_user_email in project['project_members']:
+        return True
+    return False
+
+def set_project_edit_OK_flag(project, request):
+    if (is_user_a_project_member(project, request)):
         project['current_user_may_edit'] = True
+    else:
+        project['current_user_may_edit'] = False
 
 
 def project_page(request, project_name, message=''):
     t_i = time.time()
     project = get_one_project(project_name)
+    if project['private'] and not is_user_a_project_member(project, request):
+        return HttpResponse("Project does not exist")
+
     set_project_edit_OK_flag(project, request)
     samples = project['runs']
     features_list = replace_space_to_underscore(samples)
@@ -827,8 +839,9 @@ def class_search_page(request):
 
     # Gene Search
     if request.user.is_authenticated:
-        user = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'Classification' : class_query}))
+        username = request.user.username
+        useremail = request.user.email
+        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}], 'Oncogenes' : gen_query, 'Classification' : class_query}))
     else:
         private_projects = []
     
@@ -864,8 +877,9 @@ def gene_search_page(request):
 
     # Gene Search
     if request.user.is_authenticated:
-        user = request.user.email
-        query_obj = {'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'delete': False}
+        username = request.user.username
+        useremail = request.user.email
+        query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
 
 
         private_projects = list(collection_handle.find(query_obj))
@@ -980,7 +994,7 @@ def get_current_user(request):
 def project_delete(request, project_name):
     project = get_one_project(project_name)
     deleter = get_current_user(request)
-    if check_project_exists(project_name):
+    if check_project_exists(project_name) and is_user_a_project_member(project, request):
         current_runs = project['runs']
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
@@ -994,6 +1008,10 @@ def project_delete(request, project_name):
 def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
+        # no edits for non-project members
+        if not is_user_a_project_member(project, request):
+            return HttpResponse("Project does not exist")
+
         form = UpdateForm(request.POST, request.FILES)
         form_dict = form_to_dict(form)
 
