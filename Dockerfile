@@ -7,18 +7,19 @@ MAINTAINER Forrest Kim <f1kim@health.ucsd.edu>
 #############################################
 
 ARG AA_USER
+ARG AA_GROUP
 ARG UID
 ARG GID
-ARG ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS
-ARG GOOGLE_SECRET_KEY
-ARG GLOBUS_SECRET_KEY
-ARG ACCOUNT_DEFAULT_HTTP_PROTOCOL
-ARG SECURE_SSL_REDIRECT
-ARG DB_URI
-ARG S3_FILE_DOWNLOADS
-ARG AWS_PROFILE_NAME
-ARG S3_DOWNLOADS_BUCKET_PATH
-ARG S3_STATIC_FILES
+# ARG ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS
+# ARG GOOGLE_SECRET_KEY
+# ARG GLOBUS_SECRET_KEY
+# ARG ACCOUNT_DEFAULT_HTTP_PROTOCOL
+# ARG SECURE_SSL_REDIRECT
+# ARG DB_URI
+# ARG S3_FILE_DOWNLOADS
+# ARG AWS_PROFILE_NAME
+# ARG S3_DOWNLOADS_BUCKET_PATH
+# ARG S3_STATIC_FILES
 
 #############################################
 ##      System updates                     ##
@@ -104,10 +105,11 @@ COPY ./run-manage-py.sh /srv/run-manage-py.sh
 RUN apt-get update && apt-get install vim --yes
 
 # Create user if specified
-RUN /bin/bash -c "if [[ -z '$UID' || -z '$AA_USER' || -z '${GID}' ]] ; \
+RUN /bin/bash -c "if [[ -z '${UID}' || -z '${AA_USER}' || -z '${GID}' ]] ; \
     then echo 'Running as root'; \
         export AA_USER=root; \
-    else echo 'Running as $UID $AA_USER';  \
+    else echo 'Running as ${UID} ${AA_USER}';  \
+        addgroup --gid ${GID} ${AA_GROUP}; \
         useradd -ms /bin/bash -u ${UID} ${AA_USER}; \
         chown ${AA_USER}:${GID} -R /srv; \
         su - ${AA_USER}; \

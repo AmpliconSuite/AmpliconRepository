@@ -7,18 +7,19 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        AA_USER: $AA_USER
-        UID: $UID
-        GID: $GID
-        ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS: ${ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS}
-        GOOGLE_SECRET_KEY: ${GOOGLE_SECRET_KEY}
-        GLOBUS_SECRET_KEY: ${GLOBUS_SECRET_KEY}
-        ACCOUNT_DEFAULT_HTTP_PROTOCOL: ${ACCOUNT_DEFAULT_HTTP_PROTOCOL}
-        SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT}
-        DB_URI: ${DB_URI}
-        S3_FILE_DOWNLOADS: ${S3_FILE_DOWNLOADS}
-        AWS_PROFILE_NAME: ${AWS_PROFILE_NAME}
-        S3_DOWNLOADS_BUCKET_PATH: ${S3_DOWNLOADS_BUCKET_PATH}
+        AA_USER: ${AA_USER}
+        AA_GROUP: ${AA_GROUP}
+        UID: ${UID}
+        GID: ${GID}
+#        ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS: ${ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS}
+#        GOOGLE_SECRET_KEY: ${GOOGLE_SECRET_KEY}
+#        GLOBUS_SECRET_KEY: ${GLOBUS_SECRET_KEY}
+#        ACCOUNT_DEFAULT_HTTP_PROTOCOL: ${ACCOUNT_DEFAULT_HTTP_PROTOCOL}
+#        SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT}
+#        DB_URI: ${DB_URI}
+#        S3_FILE_DOWNLOADS: ${S3_FILE_DOWNLOADS}
+#        AWS_PROFILE_NAME: ${AWS_PROFILE_NAME}
+#        S3_DOWNLOADS_BUCKET_PATH: ${S3_DOWNLOADS_BUCKET_PATH}
     image: genepattern/amplicon-repo:${AMPLICON_ENV}
     container_name: ${CONTAINER_NAME}
     restart: always
@@ -36,7 +37,7 @@ services:
       - ${PWD}/.git:/srv/.git
       # mount your code
       - ${PWD}:/srv/:rw
-#    user: "${UID}:${GID}"
+    user: "${UID}:${GID}"
     depends_on:
       - mongodb
     links:
