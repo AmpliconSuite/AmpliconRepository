@@ -36,7 +36,7 @@ services:
       - ${PWD}/.git:/srv/.git
       # mount your code
       - ${PWD}:/srv/:rw
-#    user: "${UID}:${GID}"
+    user: "${UID}:${GID}"
     depends_on:
       - mongodb
     links:

@@ -100,12 +100,17 @@ export S3_FILE_DOWNLOADS='FALSE'
 
 Set up your development environment using Docker and docker-compose as an alternative to python or conda-based package management and installation. 
 
-To use containers for development you need to install [Docker](https://docs.docker.com/engine/install/) and [docker-compose](https://docs.docker.com/compose/install/) on your machine.
+To use containers for development you need to install [docker>=20.10](https://docs.docker.com/engine/install/) on your machine.
+To test the installation please do:
 
-Instructions for Ubuntu:
-- Follow instructions at https://docs.docker.com/engine/install/ubuntu/#set-up-the-repository
-then do
-- `sudo apt-get install docker-compose`
+```bash
+# Check version: e.g. Docker version 20.10.8, build 3967b7d
+docker --version
+
+# Check if compose module is present
+docker compose --help
+```
+
 
 ## a. Quickstart
 
@@ -144,24 +149,24 @@ git clone https://github.com/AmpliconSuite/AmpliconRepository.git
 This command will create a Docker image `genepattern/amplicon-repo:dev-test` with your environment, all dependencies and application code you need to run the webserver.
 Additionally, this command will pull a `mongo:4` image for the test database. 
 
-```bash
+
 
 Dependency files:
 - `docker-compose-dev.yml`
-- `Dockerfile_dev`
+- `Dockerfile`
 - `.env` # ask AmpRepo devs for the contents of this file
-- `environment-dev.yml`
 - `requirements.txt`
-- `caper/config.sh` # ask AmpRepo devs for the contents of this file & place in caper/ dir.
+- `caper/config.sh` # ask AmpRepo devs for the contents of this file & place in `caper/` dir.
 
+```bash
 cd AmpliconRepository
-docker compose -f docker-compose-dev.yml build
+docker compose -f docker-compose-dev.yml build --progress=plain --no-cache
 ```
 
 ### iv. Run webserver and mongo db instances: 
 
 This command will:
-- create two containers, one for the webserver (`amplicon-repo`) and one for the mongo database (`ampliconrepository_mongodb_1`)
+- create two containers, one for the webserver (`amplicon-dev`) and one for the mongo database (`ampliconrepository_mongodb_1`)
 - will use `.env` to configure all environment variables used by the webserver and mongodb 
 - will start the webserver on `localhost:8000`
 - will start a mongodb instance listening on port `27017`
@@ -171,8 +176,9 @@ This command will:
 
 ```bash
 docker compose -f docker-compose-dev.yml up -d
-# Starting ampliconrepository_mongodb_1 ... done
-# Starting amplicon-repo                ... done
+#[+] Running 2/2
+# ⠿ Container ampliconrepository-mongodb-1  Started                                                                                                                           0.3s
+# ⠿ Container amplicon-dev                  Started                                                                                                                           1.1s
 ```
 
 To check if your containers are running do:
@@ -183,7 +189,7 @@ docker ps
 and you should see something like below:
 ```
 # CONTAINER ID   IMAGE                                COMMAND                   CREATED         STATUS              PORTS                      NAMES
-# 311a560ec20a   genepattern/amplicon-repo:dev-test   "/bin/sh -c 'echo \"H…"   3 minutes ago   Up About a minute   0.0.0.0:8000->8000/tcp     amplicon-repo
+# 311a560ec20a   genepattern/amplicon-repo:dev   "/bin/sh -c 'echo \"H…"   3 minutes ago   Up About a minute   0.0.0.0:8000->8000/tcp     amplicon-dev
 # deaa521621f1   mongo:4                              "docker-entrypoint.s…"    4 days ago      Up About a minute   0.0.0.0:27017->27017/tcp   ampliconrepository_mongodb_1
 ```
 
@@ -195,11 +201,10 @@ To stop the webserver and mongodb service:
 
 ```bash
 docker compose -f docker-compose-dev.yml down
-# Stopping amplicon-repo                ... done
-# Stopping ampliconrepository_mongodb_1 ... done
-# Removing amplicon-repo                ... done
-# Removing ampliconrepository_mongodb_1 ... done
-# Removing network ampliconrepository_default
+#[+] Running 3/2
+# ⠿ Container amplicon-dev                  Removed                                                                                                                          10.3s
+# ⠿ Container ampliconrepository-mongodb-1  Removed                                                                                                                           0.3s
+# ⠿ Network ampliconrepository_default      Removed                                                                                                                           0.0s
 ```
 
 ### vi. Check environment configuration of your docker-compose
@@ -219,7 +224,7 @@ You can check the environment variables which your running container uses:
 ```bash
 docker inspect -f \
    '{{range $index, $value := .Config.Env}} {{$value}}{{println}}{{end}}' \
-   container_name
+   container_id
 ```
 
 ### viii. Debug

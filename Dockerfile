@@ -99,15 +99,25 @@ RUN /bin/bash -c "source /opt/venv/bin/activate && \
 #############################################
 ##      Start the webapp                   ##
 #############################################
-RUN mkdir /srv/logs/
+RUN mkdir -p /srv/logs/
 COPY ./run-manage-py.sh /srv/run-manage-py.sh
 RUN apt-get update && apt-get install vim --yes
 
-# Create user
-RUN useradd -ms /bin/bash -u ${UID} ${AA_USER} && chown ${AA_USER}:${GID} -R /srv
+# Create user if specified
+RUN /bin/bash -c "if [[ -z '$UID' || -z '$AA_USER' || -z '${GID}' ]] ; \
+    then echo 'Running as root'; \
+        export AA_USER=root; \
+    else echo 'Running as $UID $AA_USER';  \
+        useradd -ms /bin/bash -u ${UID} ${AA_USER}; \
+        chown ${AA_USER}:${GID} -R /srv; \
+        su - ${AA_USER}; \
+    fi"
 
-# Switch root to user
+# Check which user is set
+RUN whoami
+RUN echo ${AA_USER}
 USER ${AA_USER}
+RUN whoami
 
 EXPOSE 8000
 CMD ["/srv/run-manage-py.sh","&"]
