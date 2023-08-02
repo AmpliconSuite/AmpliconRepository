@@ -14,6 +14,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, FileUploadParser
 from rest_framework import status
 
 
+from pathlib import Path
 
 
 
@@ -1134,16 +1135,32 @@ def admin_version_details(request):
     except:
         git_result = "git status call failed"
 
+    try:
+        # try to account for different working directories as found in dev and prod
+        conf_file_locs = ["../config.sh", "./caper/config.sh", "./config.sh"]
+        manage_file_locs = ["./manage.py", "./caper/manage.py"]
+        for apath in conf_file_locs:
+            my_file = Path(apath)
+            if my_file.is_file():
+                config_path = apath
+                break
+        for apath in manage_file_locs:
+            my_file = Path(apath)
+            if my_file.is_file():
+                manage_path = apath
+                break
 
-    settingscmd = 'source config.sh;python manage.py diffsettings --all'
-    settings_raw_result = subprocess.check_output(settingscmd, shell=True)
-    settings_result = ""
-    for line in settings_raw_result.splitlines():
-        line_enc = line.decode("UTF-8")
-        if not(( "SECRET" in line_enc.upper()) or ( "mongodb" in line_enc)):
-            settings_result = settings_result + line_enc + "\n"
-    print(f"Sett res = {settings_result}")
+        settingscmd = f'source {config_path};python {manage_path} diffsettings --all'
 
+        settings_raw_result = subprocess.check_output(settingscmd, shell=True)
+        settings_result = ""
+        for line in settings_raw_result.splitlines():
+            line_enc = line.decode("UTF-8")
+            if not(( "SECRET" in line_enc.upper()) or ( "mongodb" in line_enc)):
+                settings_result = settings_result + line_enc + "\n"
+        
+    except:
+        settings_result="An error occurred getting the contents of settings.py."
 
     #settings_result = "Get settings call failed."
 
