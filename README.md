@@ -104,11 +104,14 @@ To use containers for development you need to install [docker>=20.10](https://do
 To test the installation please do:
 
 ```bash
-# Check version: e.g. Docker version 20.10.8, build 3967b7d
+# check version: e.g. Docker version 20.10.8, build 3967b7d
 docker --version
 
-# Check if compose module is present
+# check if compose module is present
 docker compose --help
+
+# check docker engine installation
+sudo docker run hello-world
 ```
 
 
@@ -118,8 +121,8 @@ Build and run your development webserver and mongo db using docker:
 
 ```bash
 cd AmpliconRepository
-docker compose -f docker-compose-dev.yml build
-docker compose -f docker-compose-dev.yml up -d
+docker compose -f docker-compose-dev.yml build --no-cache --progress=plain
+env UID=${UID} GID=${GID} docker compose -f docker-compose-dev.yml up -d
 # then visit http://localhost:8000/ in your web browser
 # once finished, to shutdown:
 docker compose -f docker-compose-dev.yml down
@@ -175,7 +178,8 @@ This command will:
 
 
 ```bash
-docker compose -f docker-compose-dev.yml up -d
+# start container using the host user and groupid
+env UID=${UID} GID=${GID} docker compose -f docker-compose-dev.yml up -d
 #[+] Running 2/2
 # ⠿ Container ampliconrepository-mongodb-1  Started                                                                                                                           0.3s
 # ⠿ Container amplicon-dev                  Started                                                                                                                           1.1s
@@ -229,8 +233,8 @@ docker inspect -f \
 
 ### viii. Debug
 
-- Run `docker ps` and check if the port mapping is correct, i.e. you should see `0.0.0.0:8000->8000`=`inside_docker_port->host_port`
-- Please be aware that the above port mapping annotation is different from `docker run -p 8000:8000 ...`=`HOST:DOCKER`
+- Run `docker ps` and check if the port mapping is correct, i.e. you should see `0.0.0.0:8000->8000`=`host_localip:host_port->docker_port`
+- Port mapping annotation for `docker run -p 8000:8000 ...`=`HOST:DOCKER`
 - For local development you need to use host port `8000` to be able to use the Google Authentication in the App
 - Set `AMPLICON_ENV_PORT` if you want to use another port on the host machine, then rebuild the docker image.
 - If you get the error `permission denied/read only database` please set the read-write permissions on your local machine to `777` for the following
