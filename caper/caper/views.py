@@ -1124,7 +1124,7 @@ def admin_version_details(request):
     env_to_skip = ['DB_URI', "GOOGLE_SECRET", "GLOBUS_SECRET"]
     env=[]
     for key, value in os.environ.items():
-        if not key.endswith("SECRET") and not key in env_to_skip:
+        if not ("SECRET" in key) and not key in env_to_skip:
             env.append({"name": key, "value": value})
 
     try:
@@ -1158,7 +1158,7 @@ def admin_version_details(request):
             line_enc = line.decode("UTF-8")
             if not(( "SECRET" in line_enc.upper()) or ( "mongodb" in line_enc)):
                 settings_result = settings_result + line_enc + "\n"
-        
+
     except:
         settings_result="An error occurred getting the contents of settings.py."
 
