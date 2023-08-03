@@ -86,7 +86,9 @@
                 <li class="nav-item">
                         <a class="nav-link " href="#tab-table1" data-toggle="tab">Git status</a>
                 </li>
-
+                <li class="nav-item">
+                    <a class='nav-link' href="#tab-table3" data-toggle="tab">Django Settings</a>
+                </li>
                 <li class="nav-item">
                     <a class='nav-link' href="#tab-table2" data-toggle="tab">Environment</a>
                 </li>
@@ -117,7 +119,11 @@
                 <div class="tab-pane " id="tab-table1">
                     {{ git|linebreaksbr }}
                 </div>
-
+                <div class="tab-pane " id="tab-table3">
+                    <i><P>Lines beginning with "###' are defaults that have not been overridden. Settings where 'secret' or 'mongo' are part of the
+                    name or line are not shown.</P></i>
+                    {{ django_settings|linebreaksbr }}
+                </div>
 
 
 
