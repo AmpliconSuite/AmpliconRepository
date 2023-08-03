@@ -30,7 +30,7 @@ def create_run_display(project):
 # where the 'username' matches an existing account's email address.
 # We also don't want an email address that matches an existing username
 class CustomAccountAdapter(DefaultAccountAdapter):
-    def clean_username(self, username):
+    def clean_username(self, username, *args, **kwargs):
         User = get_user_model()
         users = User.objects.filter(email=username)
 
