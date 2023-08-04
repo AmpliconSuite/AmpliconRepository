@@ -5,8 +5,8 @@
 
 This is the main repository for the AmpliconRepository.
 
-- [How to set up a development server for AmpliconRepository](#aa-env-install)
-- [Setup your development environment using Docker and docker-compose](#dev-docker)
+- [How to install the development environment for AmpliconRepository](#aa-env-install)
+- [How to set up your development environment using docker compose](#dev-docker)
 - [Testing datasets](#test-datasets) 
 - [Pushing changes to GitHub and merging PRs](#pr)
 - [Using the development server](#dev-server)
@@ -14,7 +14,12 @@ This is the main repository for the AmpliconRepository.
 - [How to deploy and update the production server for AmpliconRepository](#deploy)
 
 
-# How to set up a development server for AmpliconRepository <a name="aa-env-install"></a> 
+## There are two options for running the server locally: 
+**[Option A](#aa-env-install)**: Manually install modules and configure the environment step-by-step.
+
+**[Option B](#dev-docker)**: Use Docker to deploy the server and its environment on your system.
+
+## Option A - install the development environment for AmpliconRepository: <a name="aa-env-install"></a> 
 
 ## Requirements
 - Python Virtual Environment (3.8 or higher)
@@ -23,7 +28,7 @@ This is the main repository for the AmpliconRepository.
 - Clone repo using https, ssh, or GitHub Desktop to your local machine
 
 ## 2. Set up the virtual environment and install packages:
-- In a terminal window, move to the cloned Github repo
+- In a terminal window, move to the cloned GitHub repo
 - Go to the AmpliconRepository top level directory (should see `requirements.txt`)
 #### Option A: Using python's environment manager
 - Create a new Python virtual environment:
@@ -96,12 +101,14 @@ export S3_FILE_DOWNLOADS='FALSE'
 - Open the application on a web browser (recommend using a private/incognito window for faster development):
 > https://localhost:8000
 
-# Local deployment - Docker option <a name="dev-docker"></a>
+# Option B - Local deployment with Docker: <a name="dev-docker"></a>
 
-Set up your development environment using Docker and docker-compose as an alternative to python or conda-based package management and installation. 
+These steps guide users on how to set up their development environment using Docker and `docker compose` as an alternative to python or conda-based package management and installation. **This is the simplest way to locally deploy the server for new users.** 
 
-To use containers for development you need to install [docker>=20.10](https://docs.docker.com/engine/install/) on your machine.
-To test the installation please do:
+**Important:** You first need to install [docker>=20.10](https://docs.docker.com/engine/install/) on your machine.
+
+
+To test the installation of Docker please do:
 
 ```bash
 # check version: e.g. Docker version 20.10.8, build 3967b7d
@@ -115,12 +122,13 @@ sudo docker run hello-world
 ```
 
 
-## a. Quickstart
+## Quickstart
 
 Build and run your development webserver and mongo db using docker:
 
 ```bash
 cd AmpliconRepository
+# place config.sh in caper/, and place .env in current dir
 docker compose -f docker-compose-dev.yml build --no-cache --progress=plain
 env UID=${UID} GID=${GID} docker compose -f docker-compose-dev.yml up -d
 # then visit http://localhost:8000/ in your web browser
@@ -128,7 +136,7 @@ env UID=${UID} GID=${GID} docker compose -f docker-compose-dev.yml up -d
 docker compose -f docker-compose-dev.yml down
 ```
 
-## b. Complete steps
+## Complete steps
 
 ### i. Start your [docker daemon](https://docs.docker.com/config/daemon/start/) and make sure is running:
 
@@ -152,14 +160,16 @@ git clone https://github.com/AmpliconSuite/AmpliconRepository.git
 This command will create a Docker image `genepattern/amplicon-repo:dev-test` with your environment, all dependencies and application code you need to run the webserver.
 Additionally, this command will pull a `mongo:4` image for the test database. 
 
+**First, obtain the secret files `.env` and `config.sh` from another developer**. Do not share these files with others outside the project. Do not upload them anywhere. Keep them private.
 
+Next, Place `.env` under `AmpliconRepository/` and `config.sh` under `AmpliconRepository/caper/`.
 
-Dependency files:
+You should see these required files:
 - `docker-compose-dev.yml`
 - `Dockerfile`
-- `.env` # ask AmpRepo devs for the contents of this file
+- `.env` 
 - `requirements.txt`
-- `caper/config.sh` # ask AmpRepo devs for the contents of this file & place in `caper/` dir.
+- `caper/config.sh`
 
 ```bash
 cd AmpliconRepository
@@ -175,11 +185,9 @@ This command will:
 - will start a mongodb instance listening on port `27017`
 - will mount a volume with your source code `-v ${PWD}:/home/${AA_USER}/code`
 
-
-
 ```bash
 # start container using the host user and groupid
-env UID=${UID} GID=${GID} docker compose -f docker-compose-dev.yml up -d
+docker compose -f docker-compose-dev.yml up -d
 #[+] Running 2/2
 # ⠿ Container ampliconrepository-mongodb-1  Started                                                                                                                           0.3s
 # ⠿ Container amplicon-dev                  Started                                                                                                                           1.1s
@@ -240,6 +248,8 @@ docker inspect -f \
 - If you get the error `permission denied/read only database` please set the read-write permissions on your local machine to `777` for the following
 `sudo chmod 777 logs/ tmp/ .aws/ caper/caper.sqlite3 -R`
 - If you have an older version of docker `docker compose` may not be available and you will need to install `docker-compose` and use that, replacing `docker compose` with `docker-compose`.
+- If you need to run as a non-root user (rare), then you can set a `UID` and `GID` in your `.env` file, or run as so:
+  `env UID=${UID} GID=${GID} docker compose -f docker-compose-dev.yml up`
 
 # Testing datasets <a name="test-datasets"></a> 
 [These datasets](https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=share_link) are ready to upload to the site for testing purposes.
