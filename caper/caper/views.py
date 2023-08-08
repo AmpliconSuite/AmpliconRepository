@@ -168,26 +168,53 @@ def form_to_dict(form):
     form_dict = model_to_dict(run)
     return form_dict
 
+def flatten(nested, lst = True, sort = True):
+    """
+    recursive function to get elements in nested list
+    """
+    flat = []
+    def helper(nested):
+        for e in nested:
+            if isinstance(e, list):
+                helper(e)
+            else:
+                if e:
+                    e = e.replace("'",'')
+                    if len(e) > 0:
+                        flat.append(e)
+    helper(nested)
+    
+    if lst and sort:
+        return list(sorted(flat))
+    return flat
 
 def sample_data_from_feature_list(features_list):
-    df = pd.DataFrame(features_list)
-    df2 = df.groupby(['Sample_name']).size().reset_index(name="Features")
+    """
+    extracts sample data from a list of features
+    """
+    now = datetime.datetime.now()
+    df = pd.DataFrame(features_list)[['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID']]
     sample_data = []
-    for index, row in df2.iterrows():
+    for sample_name, indices in df.groupby(['Sample_name']).groups.items():
         sample_dict = dict()
-        sample_dict['Sample_name'] = row['Sample_name']
-        sample_dict['Oncogenes'] = get_sample_oncogenes(features_list, row['Sample_name'])
-        sample_dict['Classifications'] = get_sample_classifications(features_list, row['Sample_name'])
+        subset = df.iloc[indices]
+        sample_dict['Sample_name'] = sample_name
+        sample_dict['Oncogenes'] = flatten(subset['Oncogenes'].values.tolist())
+        sample_dict['Classifications'] = flatten(subset['Classification'].values.tolist())
         if len(sample_dict['Oncogenes']) == 0 and len(sample_dict['Classifications']) == 0:
             sample_dict['Features'] = 0
         else:
-            sample_dict['Features'] = row['Features']
+            sample_dict['Features'] = len(subset['Feature_ID'])
         sample_data.append(sample_dict)
-
+    # print(f'********** TOOK {datetime.datetime.now() - now}')
     return sample_data
 
 
 def replace_space_to_underscore(runs):
+    '''
+    Replaces all spaces to underscores
+    '''
+        
     if type(runs) == dict:
         run_list = []
         for run in runs:
@@ -265,13 +292,18 @@ def get_project_classifications(runs):
 
 
 def get_sample_oncogenes(feature_list, sample_name):
+    """
+    Finds the oncogenes for a given sample_name
+    """
     oncogenes = set()
+    print(feature_list[0])
     for feature in feature_list:
         if feature['Sample_name'] == sample_name and feature['Oncogenes']:
             for gene in feature['Oncogenes']:
                 if len(gene) != 0:
                     oncogenes.add(gene.strip().replace("'",''))
 
+    print(sorted(list(oncogenes)))
     return sorted(list(oncogenes))
 
 
@@ -387,13 +419,46 @@ def set_project_edit_OK_flag(project, request):
 
 
 def project_page(request, project_name, message=''):
+    """
+    Render Project Page
+
+    will append sample_data, ref genome, feature_list to project json in the database
+    for faster querying in the future. 
+
+    """
+
+
     t_i = time.time()
-    project = get_one_project(project_name)
-    set_project_edit_OK_flag(project, request)
-    samples = project['runs']
-    features_list = replace_space_to_underscore(samples)
-    reference_genome = reference_genome_from_project(samples)
-    sample_data = sample_data_from_feature_list(features_list)
+    project = get_one_project(project_name) ## 0 loops
+    if 'sample_data' not in project:
+        #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
+        set_project_edit_OK_flag(project, request) ## 0 loops
+        samples = project['runs'].copy()
+        features_list = replace_space_to_underscore(samples) # 1 loop
+        reference_genome = reference_genome_from_project(samples) # 1 over sample nested with 1 over features O(S^f)
+        sample_data = sample_data_from_feature_list(features_list) # O(S)
+        print(samples)
+        
+        new_values = {"$set" : {'sample_data' : sample_data, 
+                                'reference_genome' : reference_genome,
+                                'features_list' : features_list,
+                                'runs': samples}}
+        query = {'_id' : project['_id'],
+                 'delete': False}
+        
+        print('Inserting Now')
+        collection_handle.update_one(query, new_values)
+
+    elif ('sample_data' in project) and ('reference_genome' in project) and ('features_list' in project):
+        print('Already have the lists in DB')
+
+        set_project_edit_OK_flag(project, request) ## 0 loops
+        samples = project['runs']
+        features_list = project['features_list']
+        reference_genome = project['reference_genome']
+        sample_data = project['sample_data']
+
+
     # df = pd.DataFrame(sample_data)
     t_sa = time.time()
     dfl = []
@@ -401,6 +466,8 @@ def project_page(request, project_name, message=''):
         dfl.append(pd.DataFrame(dlist))
 
     aggregate = pd.concat(dfl)
+    aggregate.columns = [col.replace(' ', "_") for col in aggregate.columns]
+    print(aggregate.columns)
     t_sb = time.time()
     diff = t_sb - t_sa
     print(f"Iteratively build project dataframe from samples in {diff} seconds")
@@ -1075,28 +1142,27 @@ def admin_featured_projects(request):
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_version_details(request):
-    if not  request.user.is_staff:
+    if not request.user.is_staff:
         return redirect('/accounts/logout')
-
     try:
-    	#details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
-    	details = []
-    	comment_char="#"
-    	sep="="
-    	with open("version.txt", 'r') as version_file:
-    	    for line in version_file:
-    	        l = line.strip()
-    	        if l and not l.startswith(comment_char):
-    	            key_value = l.split(sep)
-    	            key = key_value[0].strip()
-    	            value = sep.join(key_value[1:]).strip().strip('"')
-    	            details.append({"name": key,  "value": value})
+        #details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
+        details = []
+        comment_char="#"
+        sep="="
+        with open("version.txt", 'r') as version_file:
+            for line in version_file:
+                l = line.strip()
+                if l and not l.startswith(comment_char):
+                    key_value = l.split(sep)
+                    key = key_value[0].strip()
+                    value = sep.join(key_value[1:]).strip().strip('"')
+                    details.append({"name": key,  "value": value})
     except:
-	    details = [{"name":"version","value":"unknown"},{"name":"creator","value":"unknown"},{"name": "date", "value":"unknown" }]
+        details = [{"name":"version","value":"unknown"},{"name":"creator","value":"unknown"},{"name": "date", "value":"unknown" }]
 
-    env=[]
-    for key, value in os.environ.items():
-        env.append({"name": key, "value": value})
+        env=[]
+        for key, value in os.environ.items():
+            env.append({"name": key, "value": value})
 
     try:
         gitcmd = 'export GIT_DISCOVERY_ACROSS_FILESYSTEM=1;git config --global --add safe.directory /srv;git status;echo \"Commit id:\"; git rev-parse HEAD'
@@ -1212,7 +1278,7 @@ def admin_delete_project(request):
             query = {'_id': ObjectId(project_id)}
             new_val = {"$set": {'delete': False}}
             collection_handle.update_one(query, new_val)
-            error_message = f"Project {project_name} restored.";
+            error_message = f"Project {project_name} restored."
 
         elif deleteit and (action == 'delete'):
 
@@ -1398,7 +1464,7 @@ def create_project_helper(form, user, request_file, save = True):
                             path=project_data_path)
         
     #get run.json 
-    run_path =  f'{project_data_path}/results/run.json'   
+    run_path =  f'{project_data_path}/results/run.json'
     with open(run_path, 'r') as run_json:
         runs = samples_to_dict(run_json)
     # for filename in os.listdir(project_data_path):

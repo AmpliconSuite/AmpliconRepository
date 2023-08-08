@@ -25,14 +25,14 @@ def StackedBarChart(sample, fa_cmap):
         df2.loc[len(df2)] = [x, "None", 0]
 
     class_count_per_sample = defaultdict(lambda: defaultdict(int))
-    for _, row in df2.iterrows():
+    for _, row in df2.iterrows(): # 1 loop 
         class_count_per_sample[row['Sample_name']][row['Classification']] = row['Count']
 
     # df2['Sample_name_trunc'] = df2['Sample_name'].apply(lambda x: x[0:10] + "..." if len(x) > 10 else x)
-    cc_tuples = {x: [-y[c] for c in classes] for x, y in class_count_per_sample.items()}
-    sort_col = [(corder[row['Classification']], cc_tuples[row['Sample_name']], row['Sample_name']) for _, row in df2.iterrows()]
+    cc_tuples = {x: [-y[c] for c in classes] for x, y in class_count_per_sample.items()} 
+    sort_col = [(corder[row['Classification']], cc_tuples[row['Sample_name']], row['Sample_name']) for _, row in df2.iterrows()] # 1 loop
     df2['sort_order_col'] = sort_col
-    df2.sort_values(inplace=True, by=['sort_order_col'])
+    df2.sort_values(inplace=True, by=['sort_order_col']) # 1 loop
     ordered_name_set = df2['Sample_name'].unique()
 
     if len(df2['Sample_name']) < 10:
