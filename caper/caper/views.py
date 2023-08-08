@@ -474,7 +474,7 @@ def project_page(request, project_name, message=''):
     t_f = time.time()
     diff = t_f - t_i
     print(f"Generated the project page from views.py in {diff} seconds")
-    logging.warning(f"Generated the project page from views.py in {diff} seconds")
+    logging.error(f"Generated the project page from views.py in {diff} seconds")
 
     # check for an error when project was created, but don't override a message that was already sent in
     if not message :
