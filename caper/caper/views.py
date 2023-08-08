@@ -437,7 +437,6 @@ def project_page(request, project_name, message=''):
         features_list = replace_space_to_underscore(samples) # 1 loop
         reference_genome = reference_genome_from_project(samples) # 1 over sample nested with 1 over features O(S^f)
         sample_data = sample_data_from_feature_list(features_list) # O(S)
-        print(samples)
         
         new_values = {"$set" : {'sample_data' : sample_data, 
                                 'reference_genome' : reference_genome,
@@ -467,7 +466,6 @@ def project_page(request, project_name, message=''):
 
     aggregate = pd.concat(dfl)
     aggregate.columns = [col.replace(' ', "_") for col in aggregate.columns]
-    print(aggregate.columns)
     t_sb = time.time()
     diff = t_sb - t_sa
     print(f"Iteratively build project dataframe from samples in {diff} seconds")
