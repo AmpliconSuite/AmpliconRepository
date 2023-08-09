@@ -430,51 +430,55 @@ def project_page(request, project_name, message=''):
 
     t_i = time.time()
     project = get_one_project(project_name) ## 0 loops
-    if 'sample_data' not in project:
+    if 'metadata_stored' not in project:
         #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
         set_project_edit_OK_flag(project, request) ## 0 loops
         samples = project['runs'].copy()
         features_list = replace_space_to_underscore(samples) # 1 loop
         reference_genome = reference_genome_from_project(samples) # 1 over sample nested with 1 over features O(S^f)
         sample_data = sample_data_from_feature_list(features_list) # O(S)
+
+        t_sa = time.time()
+        dfl = []
+        for _, dlist in samples.items():
+            dfl.append(pd.DataFrame(dlist))
+        aggregate = pd.concat(dfl)
+        aggregate.columns = [col.replace(' ', "_") for col in aggregate.columns]
+
+        t_sb = time.time()
+        diff = t_sb - t_sa
+        print(f"Iteratively build project dataframe from samples in {diff} seconds")
+
+ 
+        
         
         new_values = {"$set" : {'sample_data' : sample_data, 
                                 'reference_genome' : reference_genome,
                                 'features_list' : features_list,
-                                'runs': samples}}
+                                'runs': samples,
+                                'aggregate_df' : aggregate.to_dict(orient='records'),
+                                'metadata_stored': 'Yes'}}
         query = {'_id' : project['_id'],
                  'delete': False}
         
         print('Inserting Now')
         collection_handle.update_one(query, new_values)
 
-    elif ('sample_data' in project) and ('reference_genome' in project) and ('features_list' in project):
+    elif 'metadata_stored' in project:
         print('Already have the lists in DB')
-
         set_project_edit_OK_flag(project, request) ## 0 loops
         samples = project['runs']
         features_list = project['features_list']
         reference_genome = project['reference_genome']
         sample_data = project['sample_data']
+        aggregate = pd.DataFrame().from_dict(project['aggregate_df'])
 
 
-    # df = pd.DataFrame(sample_data)
-    t_sa = time.time()
-    dfl = []
-    for _, dlist in samples.items():
-        dfl.append(pd.DataFrame(dlist))
-
-    aggregate = pd.concat(dfl)
-    aggregate.columns = [col.replace(' ', "_") for col in aggregate.columns]
-    t_sb = time.time()
-    diff = t_sb - t_sa
-    print(f"Iteratively build project dataframe from samples in {diff} seconds")
     stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
     pc_fig = piechart.pie_chart(aggregate, fa_cmap)
     t_f = time.time()
     diff = t_f - t_i
     print(f"Generated the project page from views.py in {diff} seconds")
-    logging.error(f"Generated the project page from views.py in {diff} seconds")
 
     # check for an error when project was created, but don't override a message that was already sent in
     if not message :
