@@ -253,6 +253,7 @@ docker inspect -f \
   `env UID=${UID} GID=${GID} docker compose -f docker-compose-dev.yml up`
 - Make sure all folders which are mounted as volumes at runtime are created upfront (below for development):
   `cd AmpliconRepository; mkdir -p logs tmp .aws .git`
+- My local `mongodb` instance is not running or you get `ampliconrepository-mongodb-1 exited with code 14`? Try do `cd AmpliconRepository; rm -rf data` and restart using `docker-compose`
 
 
 # Testing datasets <a name="test-datasets"></a> 
