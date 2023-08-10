@@ -500,6 +500,8 @@ def project_page(request, project_name, message=''):
         if not os.path.exists(aggregate_df_fp):
             ## create the aggregate df if it doesn't exist already. 
             aggregate, aggregate_df_fp = create_aggregate_df(samples)
+        else:
+            aggregate = pd.read_csv(aggregate_df_fp)
 
 
     stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
