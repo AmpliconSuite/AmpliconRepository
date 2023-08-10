@@ -129,8 +129,11 @@ Build and run your development webserver and mongo db using docker:
 ```bash
 cd AmpliconRepository
 # place config.sh in caper/, and place .env in current dir
+# change UID and GID in .env to match the host configuration
+# create all folders which you want to expose to the container
+mkdir -p logs tmp .aws .git
 docker compose -f docker-compose-dev.yml build --no-cache --progress=plain
-env UID=${UID} GID=${GID} docker compose -f docker-compose-dev.yml up -d
+docker compose -f docker-compose-dev.yml up -d
 # then visit http://localhost:8000/ in your web browser
 # once finished, to shutdown:
 docker compose -f docker-compose-dev.yml down
@@ -183,10 +186,12 @@ This command will:
 - will use `.env` to configure all environment variables used by the webserver and mongodb 
 - will start the webserver on `localhost:8000`
 - will start a mongodb instance listening on port `27017`
-- will mount a volume with your source code `-v ${PWD}:/home/${AA_USER}/code`
+- will mount a volume with your source code `-v ${PWD}:/srv/:rw`
 
 ```bash
-# start container using the host user and groupid
+# create all folders exposed to container
+mkdir -p logs tmp .aws .git
+# start container using the host UID and GID (change in .env)
 docker compose -f docker-compose-dev.yml up -d
 #[+] Running 2/2
 # ⠿ Container ampliconrepository-mongodb-1  Started                                                                                                                           0.3s
@@ -249,7 +254,7 @@ docker inspect -f \
 `sudo chmod 777 logs/ tmp/ .aws/ caper/caper.sqlite3 -R`
 - If you have an older version of docker `docker compose` may not be available and you will need to install `docker-compose` and use that, replacing `docker compose` with `docker-compose`.
 - Error: `unix /var/run/docker.sock: connect: permission denied` -> [see](https://stackoverflow.com/questions/48568172/docker-sock-permission-denied)
-- If you need to run as a non-root user (rare), then you can set a `UID` and `GID` in your `.env` file, or run as so:
+- If you need to run as a non-root user (rare), please set `UID` and `GID` in your `.env` file to match the host `UID` `GID`, or run as so:
   `env UID=${UID} GID=${GID} docker compose -f docker-compose-dev.yml up`
 - Make sure all folders which are mounted as volumes at runtime are created upfront (below for development):
   `cd AmpliconRepository; mkdir -p logs tmp .aws .git`
