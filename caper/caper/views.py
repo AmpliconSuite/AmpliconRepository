@@ -417,7 +417,7 @@ def set_project_edit_OK_flag(project, request):
     if current_user_email in project['project_members']:
         project['current_user_may_edit'] = True
 
-def create_aggregate_df(samples):
+def create_aggregate_df(project, samples):
     """
     creates the aggregate dataframe for figures:
     
@@ -473,7 +473,7 @@ def project_page(request, project_name, message=''):
         reference_genome = reference_genome_from_project(samples) # 1 over sample nested with 1 over features O(S^f)
         sample_data = sample_data_from_feature_list(features_list) # O(S)
 
-        aggregate, aggregate_save_fp = create_aggregate_df(samples)
+        aggregate, aggregate_save_fp = create_aggregate_df(project, samples)
 
         logging.warning(f'aggregate shape: {aggregate.shape}')
         new_values = {"$set" : {'sample_data' : sample_data, 
@@ -499,7 +499,7 @@ def project_page(request, project_name, message=''):
         aggregate_df_fp = project['aggregate_df']
         if not os.path.exists(aggregate_df_fp):
             ## create the aggregate df if it doesn't exist already. 
-            aggregate, aggregate_df_fp = create_aggregate_df(samples)
+            aggregate, aggregate_df_fp = create_aggregate_df(project, samples)
         else:
             aggregate = pd.read_csv(aggregate_df_fp)
 
