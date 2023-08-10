@@ -120,6 +120,20 @@ sudo docker run hello-world
 Build and run your development webserver and mongo db using docker:
 
 ```bash
+# make sure to create all the folders you want to mount as volume into the container
+cd AmpliconRepository
+mkdir -p logs tmp .aws .git
+
+# check if your local ${UID} and ${GID} are set
+echo ${UID}
+echo ${GID}
+
+# set ${UID} and ${GID} for linux
+UID=$(id -u)
+GID=$(id -g)
+```
+
+```bash
 cd AmpliconRepository
 docker compose -f docker-compose-dev.yml build --no-cache --progress=plain
 env UID=${UID} GID=${GID} docker compose -f docker-compose-dev.yml up -d
@@ -240,6 +254,7 @@ docker inspect -f \
 - If you get the error `permission denied/read only database` please set the read-write permissions on your local machine to `777` for the following
 `sudo chmod 777 logs/ tmp/ .aws/ caper/caper.sqlite3 -R`
 - If you have an older version of docker `docker compose` may not be available and you will need to install `docker-compose` and use that, replacing `docker compose` with `docker-compose`.
+- Error: `unix /var/run/docker.sock: connect: permission denied` -> [see](https://stackoverflow.com/questions/48568172/docker-sock-permission-denied)
 
 # Testing datasets <a name="test-datasets"></a> 
 [These datasets](https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=share_link) are ready to upload to the site for testing purposes.
