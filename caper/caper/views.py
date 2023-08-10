@@ -417,7 +417,30 @@ def set_project_edit_OK_flag(project, request):
     if current_user_email in project['project_members']:
         project['current_user_may_edit'] = True
 
+def create_aggregate_df(samples):
+    """
+    creates the aggregate dataframe for figures:
+    
+    """
+    t_sa = time.time()
+    dfl = []
+    for _, dlist in samples.items():
+        dfl.append(pd.DataFrame(dlist))
+    aggregate = pd.concat(dfl)
+    aggregate.columns = [col.replace(' ', "_") for col in aggregate.columns]
+    proj_id = str(project['_id'])
+    if not os.path.exists(os.path.join('tmp', proj_id)):
+        os.system(f'mkdir -p tmp/{proj_id}')
+    aggregate_save_fp = os.path.join('tmp', proj_id, f'{proj_id}_aggregated_df.csv')
+    aggregate.to_csv(aggregate_save_fp)
+    t_sb = time.time()
+    diff = t_sb - t_sa
+    logging.warning(f"Iteratively build project dataframe from samples in {diff} seconds")
+    
+    return aggregate, aggregate_save_fp
 
+
+    
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -426,10 +449,22 @@ def project_page(request, project_name, message=''):
     for faster querying in the future. 
 
     """
-
+    
 
     t_i = time.time()
-    project = get_one_project(project_name) ## 0 loops
+
+    ## leaving this bit of code here
+    ### this part will delete the metadata_stored field for a project
+    ### is is only run IF we need to reset a project and reload the data
+    # project = get_one_project(project_name) ## 0 loops
+    # query = {'_id' : project['_id'],
+    #                 'delete': False}
+    # val = {'$unset':{'metadata_stored':""}}
+    # collection_handle.update(query, val)
+    # logging.warning('delete complete')
+
+    project = get_one_project(project_name)
+
     if 'metadata_stored' not in project:
         #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
         set_project_edit_OK_flag(project, request) ## 0 loops
@@ -438,47 +473,40 @@ def project_page(request, project_name, message=''):
         reference_genome = reference_genome_from_project(samples) # 1 over sample nested with 1 over features O(S^f)
         sample_data = sample_data_from_feature_list(features_list) # O(S)
 
-        t_sa = time.time()
-        dfl = []
-        for _, dlist in samples.items():
-            dfl.append(pd.DataFrame(dlist))
-        aggregate = pd.concat(dfl)
-        aggregate.columns = [col.replace(' ', "_") for col in aggregate.columns]
+        aggregate, aggregate_save_fp = create_aggregate_df(samples)
 
-        t_sb = time.time()
-        diff = t_sb - t_sa
-        print(f"Iteratively build project dataframe from samples in {diff} seconds")
-
- 
-        
-        
+        logging.warning(f'aggregate shape: {aggregate.shape}')
         new_values = {"$set" : {'sample_data' : sample_data, 
                                 'reference_genome' : reference_genome,
                                 'features_list' : features_list,
                                 'runs': samples,
-                                'aggregate_df' : aggregate.to_dict(orient='records'),
+                                'aggregate_df' : aggregate_save_fp,
                                 'metadata_stored': 'Yes'}}
         query = {'_id' : project['_id'],
-                 'delete': False}
-        
-        print('Inserting Now')
-        collection_handle.update_one(query, new_values)
+                    'delete': False}
+
+        logging.warning('Inserting Now')
+        collection_handle.update(query, new_values)
+        logging.warning('Insert complete')
 
     elif 'metadata_stored' in project:
-        print('Already have the lists in DB')
+        logging.warning('Already have the lists in DB')
         set_project_edit_OK_flag(project, request) ## 0 loops
         samples = project['runs']
         features_list = project['features_list']
         reference_genome = project['reference_genome']
         sample_data = project['sample_data']
-        aggregate = pd.DataFrame().from_dict(project['aggregate_df'])
+        aggregate_df_fp = project['aggregate_df']
+        if not os.path.exists(aggregate_df_fp):
+            ## create the aggregate df if it doesn't exist already. 
+            aggregate, aggregate_df_fp = create_aggregate_df(samples)
 
 
     stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
     pc_fig = piechart.pie_chart(aggregate, fa_cmap)
     t_f = time.time()
     diff = t_f - t_i
-    print(f"Generated the project page from views.py in {diff} seconds")
+    logging.warning(f"Generated the project page from views.py in {diff} seconds")
 
     # check for an error when project was created, but don't override a message that was already sent in
     if not message :
