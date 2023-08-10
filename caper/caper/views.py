@@ -14,6 +14,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, FileUploadParser
 from rest_framework import status
 
 
+from pathlib import Path
 
 
 
@@ -314,8 +315,9 @@ def modify_date(projects):
 
 def index(request):
     if request.user.is_authenticated:
-        user = request.user.email
-        private_projects = list(collection_handle.find({ 'private' : True, 'project_members' : user , 'delete': False}))
+        username = request.user.username
+        useremail = request.user.email
+        private_projects = list(collection_handle.find({ 'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
         for proj in private_projects:
             prepare_project_linkid(proj)
 
@@ -339,8 +341,13 @@ def index(request):
 
 
 def profile(request):
-    user = request.user.email
-    projects = list(collection_handle.find({ 'project_members' : user , 'delete': False}))
+    username = request.user.username
+    useremail = request.user.email
+    # prevent an absent/null email from matching on anything
+    if not useremail:
+        useremail = username
+    projects = list(collection_handle.find({  "$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+
     for proj in projects:
         prepare_project_linkid(proj)
 
@@ -373,22 +380,36 @@ def reference_genome_from_sample(sample_data):
         reference_genome = reference_genomes[0]
     return reference_genome
 
-def set_project_edit_OK_flag(project, request):
+
+def is_user_a_project_member(project, request):
     try:
         current_user_email = request.user.email
-        current_user = get_current_user(request)
+        current_user_username = request.user.username
+        if not current_user_email:
+            current_user_email = current_user_username
     except:
         current_user_email = 0
-        current_user = 0
-    if current_user in project['project_members']:
-        project['current_user_may_edit'] = True
+        current_user_username = 0
+
+    if current_user_username in project['project_members']:
+        return True
     if current_user_email in project['project_members']:
+        return True
+    return False
+
+def set_project_edit_OK_flag(project, request):
+    if (is_user_a_project_member(project, request)):
         project['current_user_may_edit'] = True
+    else:
+        project['current_user_may_edit'] = False
 
 
 def project_page(request, project_name, message=''):
     t_i = time.time()
     project = get_one_project(project_name)
+    if project['private'] and not is_user_a_project_member(project, request):
+        return HttpResponse("Project does not exist")
+
     set_project_edit_OK_flag(project, request)
     samples = project['runs']
     features_list = replace_space_to_underscore(samples)
@@ -819,8 +840,9 @@ def class_search_page(request):
 
     # Gene Search
     if request.user.is_authenticated:
-        user = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'Classification' : class_query}))
+        username = request.user.username
+        useremail = request.user.email
+        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}], 'Oncogenes' : gen_query, 'Classification' : class_query}))
     else:
         private_projects = []
     
@@ -856,8 +878,9 @@ def gene_search_page(request):
 
     # Gene Search
     if request.user.is_authenticated:
-        user = request.user.email
-        query_obj = {'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'delete': False}
+        username = request.user.username
+        useremail = request.user.email
+        query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
 
 
         private_projects = list(collection_handle.find(query_obj))
@@ -972,7 +995,7 @@ def get_current_user(request):
 def project_delete(request, project_name):
     project = get_one_project(project_name)
     deleter = get_current_user(request)
-    if check_project_exists(project_name):
+    if check_project_exists(project_name) and is_user_a_project_member(project, request):
         current_runs = project['runs']
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
@@ -986,6 +1009,10 @@ def project_delete(request, project_name):
 def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
+        # no edits for non-project members
+        if not is_user_a_project_member(project, request):
+            return HttpResponse("Project does not exist")
+
         form = UpdateForm(request.POST, request.FILES)
         form_dict = form_to_dict(form)
 
@@ -1079,24 +1106,26 @@ def admin_version_details(request):
         return redirect('/accounts/logout')
 
     try:
-    	#details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
-    	details = []
-    	comment_char="#"
-    	sep="="
-    	with open("version.txt", 'r') as version_file:
-    	    for line in version_file:
-    	        l = line.strip()
-    	        if l and not l.startswith(comment_char):
-    	            key_value = l.split(sep)
-    	            key = key_value[0].strip()
-    	            value = sep.join(key_value[1:]).strip().strip('"')
-    	            details.append({"name": key,  "value": value})
+        #details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
+        details = []
+        comment_char="#"
+        sep="="
+        with open("version.txt", 'r') as version_file:
+            for line in version_file:
+                l = line.strip()
+                if l and not l.startswith(comment_char):
+                    key_value = l.split(sep)
+                    key = key_value[0].strip()
+                    value = sep.join(key_value[1:]).strip().strip('"')
+                    details.append({"name": key,  "value": value})
     except:
-	    details = [{"name":"version","value":"unknown"},{"name":"creator","value":"unknown"},{"name": "date", "value":"unknown" }]
+        details = [{"name":"version","value":"unknown"},{"name":"creator","value":"unknown"},{"name": "date", "value":"unknown" }]
 
+    env_to_skip = ['DB_URI', "GOOGLE_SECRET", "GLOBUS_SECRET"]
     env=[]
     for key, value in os.environ.items():
-        env.append({"name": key, "value": value})
+        if not ("SECRET" in key) and not key in env_to_skip:
+            env.append({"name": key, "value": value})
 
     try:
         gitcmd = 'export GIT_DISCOVERY_ACROSS_FILESYSTEM=1;git config --global --add safe.directory /srv;git status;echo \"Commit id:\"; git rev-parse HEAD'
@@ -1105,8 +1134,37 @@ def admin_version_details(request):
         #.replace("\n", "<br/>")
     except:
         git_result = "git status call failed"
- 
-    return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result})
+
+    try:
+        # try to account for different working directories as found in dev and prod
+        conf_file_locs = ["../config.sh", "./caper/config.sh", "./config.sh"]
+        manage_file_locs = ["./manage.py", "./caper/manage.py"]
+        for apath in conf_file_locs:
+            my_file = Path(apath)
+            if my_file.is_file():
+                config_path = apath
+                break
+        for apath in manage_file_locs:
+            my_file = Path(apath)
+            if my_file.is_file():
+                manage_path = apath
+                break
+
+        settingscmd = f'source {config_path};python {manage_path} diffsettings --all'
+
+        settings_raw_result = subprocess.check_output(settingscmd, shell=True)
+        settings_result = ""
+        for line in settings_raw_result.splitlines():
+            line_enc = line.decode("UTF-8")
+            if not(( "SECRET" in line_enc.upper()) or ( "mongodb" in line_enc)):
+                settings_result = settings_result + line_enc + "\n"
+
+    except:
+        settings_result="An error occurred getting the contents of settings.py."
+
+    #settings_result = "Get settings call failed."
+
+    return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result, 'django_settings': settings_result})
 
 
 

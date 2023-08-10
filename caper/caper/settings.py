@@ -155,6 +155,9 @@ GOOGLE_SECRET_KEY = os.environ['GOOGLE_SECRET_KEY']
 GLOBUS_SECRET_KEY = os.environ['GLOBUS_SECRET_KEY']
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.getenv('ACCOUNT_DEFAULT_HTTP_PROTOCOL', default='https')
 
+# add a custom account adaptor to prevent having a username match an email in another user
+# account
+ACCOUNT_ADAPTER = "caper.utils.CustomAccountAdapter"
 
 SOCIALACCOUNT_EMAIL_REQUIRED=True
 SOCIALACCOUNT_PROVIDERS = {
