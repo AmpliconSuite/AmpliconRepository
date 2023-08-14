@@ -56,6 +56,7 @@ import boto3
 import botocore
 from threading import Thread
 import os, fnmatch
+import uuid
 
 import time
 import math
@@ -1422,8 +1423,8 @@ def create_project(request):
         # file download
         request_file = request.FILES['document'] if 'document' in request.FILES else None
 
-        project = create_project_helper(form, user, request_file)
-        project_data_path = f"tmp/{project_name}"
+        project, tmp_id = create_project_helper(form, user, request_file)
+        project_data_path = f"tmp/{tmp_id}"
 
 
         if form.is_valid():
@@ -1474,6 +1475,7 @@ def create_project_helper(form, user, request_file, save = True):
     """
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
+    tmp_id = uuid.uuid4().hex
     project = dict()        
     # download_file(project_name, form_dict['file'])
     # runs = samples_to_dict(form_dict['file'])
@@ -1481,7 +1483,7 @@ def create_project_helper(form, user, request_file, save = True):
     # file download
     
     if request_file:
-        project_data_path = f"tmp/{project_name}"
+        project_data_path = f"tmp/{tmp_id}"
         # create a new instance of FileSystemStorage
         if save:
             fs = FileSystemStorage(location=project_data_path)
@@ -1548,7 +1550,7 @@ def create_project_helper(form, user, request_file, save = True):
     project['runs'] = runs
     project['Oncogenes'] = get_project_oncogenes(runs)
     project['Classification'] = get_project_classifications(runs)
-    return project
+    return project, tmp_id
     
 
 class FileUploadView(APIView):
