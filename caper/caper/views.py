@@ -436,22 +436,12 @@ def set_project_edit_OK_flag(project, request):
         project['current_user_may_edit'] = False
 
 
-def create_aggregate_df(request, project_name, message=''):
+def create_aggregate_df(project, samples):
     """
     creates the aggregate dataframe for figures:
 
     """
     t_sa = time.time()
-    project = get_one_project(project_name)
-    if project['private'] and not is_user_a_project_member(project, request):
-        return HttpResponse("Project does not exist")
-
-    set_project_edit_OK_flag(project, request)
-    samples = project['runs']
-    # features_list = replace_space_to_underscore(samples)
-    # reference_genome = reference_genome_from_project(samples)
-    # sample_data = sample_data_from_feature_list(features_list)
-    # df = pd.DataFrame(sample_data)
 
     dfl = []
     for _, dlist in samples.items():
