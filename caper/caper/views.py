@@ -12,12 +12,8 @@ from  .serializers import FileSerializer
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser, FileUploadParser
 from rest_framework import status
-
-
 from pathlib import Path
 import csv
-
-
 
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
@@ -61,6 +57,8 @@ import uuid
 import time
 import math
 import logging
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
+                    level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
 db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI'])
 
@@ -306,7 +304,7 @@ def get_sample_oncogenes(feature_list, sample_name):
                 if len(gene) != 0:
                     oncogenes.add(gene.strip().replace("'",''))
 
-    print(sorted(list(oncogenes)))
+    # print(sorted(list(oncogenes)))
     return sorted(list(oncogenes))
 
 
@@ -341,7 +339,8 @@ def modify_date(projects):
             dt = datetime.datetime.strptime(project['date'], f"%Y-%m-%dT%H:%M:%S.%f")
             project['date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
         except Exception as e:
-            print(e)
+            logging.exception("Could not modify date for " + project['project_name'])
+            logging.exception(e)
 
     return projects
 
@@ -463,7 +462,7 @@ def project_page(request, project_name, message=''):
     aggregate.to_csv(aggregate_save_fp)
     t_sb = time.time()
     diff = t_sb - t_sa
-    logging.warning(f"Iteratively build project dataframe from samples in {diff} seconds")
+    logging.info(f"Iteratively build project dataframe from samples in {diff} seconds")
     
     return aggregate, aggregate_save_fp
 
@@ -503,7 +502,7 @@ def project_page(request, project_name, message=''):
 
         aggregate, aggregate_save_fp = create_aggregate_df(project, samples)
 
-        logging.warning(f'aggregate shape: {aggregate.shape}')
+        logging.debug(f'aggregate shape: {aggregate.shape}')
         new_values = {"$set" : {'sample_data' : sample_data, 
                                 'reference_genome' : reference_genome,
                                 'features_list' : features_list,
@@ -513,12 +512,12 @@ def project_page(request, project_name, message=''):
         query = {'_id' : project['_id'],
                     'delete': False}
 
-        logging.warning('Inserting Now')
+        logging.debug('Inserting Now')
         collection_handle.update(query, new_values)
-        logging.warning('Insert complete')
+        logging.debug('Insert complete')
 
     elif 'metadata_stored' in project:
-        logging.warning('Already have the lists in DB')
+        logging.info('Already have the lists in DB')
         set_project_edit_OK_flag(project, request) ## 0 loops
         samples = project['runs']
         features_list = project['features_list']
@@ -536,7 +535,7 @@ def project_page(request, project_name, message=''):
     pc_fig = piechart.pie_chart(aggregate, fa_cmap)
     t_f = time.time()
     diff = t_f - t_i
-    logging.warning(f"Generated the project page from views.py in {diff} seconds")
+    logging.info(f"Generated the project page for '{project['project_name']}' with views.py in {diff} seconds")
 
     # check for an error when project was created, but don't override a message that was already sent in
     if not message :
@@ -559,7 +558,6 @@ def project_page(request, project_name, message=''):
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig})
 
 
-
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
     session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
     s3client = session.client('s3')
@@ -575,9 +573,8 @@ def check_if_db_field_exists(project, field):
             return True
     except:
         return False
-    
-    #db.Doc.update_one({"_id": project["_id"]}, {"$set": {"geolocCountry": myGeolocCountry}})
-    
+
+
 def find(pattern, path):
     result = []
     for root, dirs, files in os.walk(path):
@@ -1178,7 +1175,7 @@ def clear_tmp(folder = 'tmp/'):
             elif os.path.isdir(file_path):
                 shutil.rmtree(file_path)
         except Exception as e:
-            print('Failed to delete %s. Reason: %s' % (file_path, e))
+            logging.exception('Failed to delete %s. Reason: %s' % (file_path, e))
 
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to 
 # deny that this might even be a valid URL
@@ -1351,7 +1348,7 @@ def project_stats_download(request):
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
 def extract_project_files(tarfile, file_location, project_data_path, project_id):
-    print("Extracting files from tar")
+    logging.debug("Extracting files from tar")
     try:
         with tarfile.open(file_location, "r:gz") as tar_file:
             tar_file.extractall(path=project_data_path)
@@ -1364,7 +1361,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
         # get cnv, image, bed files
         for sample, features in runs.items():
             for feature in features:
-                print(feature['Sample name'])
+                logging.debug(feature['Sample name'])
                 if len(feature) > 0:
 
                     # get paths
@@ -1459,7 +1456,6 @@ def admin_delete_project(request):
             # delete project tar and files from mongo and local disk
             #    - assume all feature and sample files are in this dir
             try:
-                print("WTF")
                 fs_handle.delete(ObjectId(project['tarfile']))
             except KeyError:
                 logging.exception(f'Problem deleting project tar file from mongo. { project["project_name"]}')
@@ -1491,9 +1487,7 @@ def admin_delete_project(request):
     deleted_projects = list(collection_handle.find({'delete': True}))
     for proj in deleted_projects:
         prepare_project_linkid(proj)
-
         try:
-
             tar_file_len = fs_handle.get(ObjectId(proj['tarfile'])).length
             proj['tar_file_len'] = sizeof_fmt(tar_file_len)
             if proj['delete_date']:
@@ -1501,7 +1495,7 @@ def admin_delete_project(request):
                 proj['delete_date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
         except:
             #ignore missing date
-            print(proj['project_name'])
+            logging.warning(proj['project_name'] + " missing date")
 
 
 

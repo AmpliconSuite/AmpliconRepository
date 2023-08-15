@@ -1,4 +1,5 @@
 from collections import defaultdict
+import logging
 import time
 
 import pandas as pd
@@ -68,6 +69,6 @@ def StackedBarChart(sample, fa_cmap):
 
     end_time = time.time()
     elapsed_time = end_time - start_time
-    print(f"Created project barchart plot in {elapsed_time} seconds")
+    logging.info(f"Created project barchart plot in {elapsed_time} seconds")
     return fig.to_html(full_html=False, config={'displayModeBar': ['True']}, #'modeBarButtonsToRemove': ['zoom'],
                        div_id="project_bar_plotly_div")
