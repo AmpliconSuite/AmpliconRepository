@@ -14,6 +14,8 @@ from rest_framework.parsers import MultiPartParser, FormParser, FileUploadParser
 from rest_framework import status
 
 
+from pathlib import Path
+import csv
 
 
 
@@ -54,6 +56,7 @@ import boto3
 import botocore
 from threading import Thread
 import os, fnmatch
+import uuid
 
 import time
 import math
@@ -346,8 +349,9 @@ def modify_date(projects):
 
 def index(request):
     if request.user.is_authenticated:
-        user = request.user.email
-        private_projects = list(collection_handle.find({ 'private' : True, 'project_members' : user , 'delete': False}))
+        username = request.user.username
+        useremail = request.user.email
+        private_projects = list(collection_handle.find({ 'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
         for proj in private_projects:
             prepare_project_linkid(proj)
 
@@ -371,8 +375,13 @@ def index(request):
 
 
 def profile(request):
-    user = request.user.email
-    projects = list(collection_handle.find({ 'project_members' : user , 'delete': False}))
+    username = request.user.username
+    useremail = request.user.email
+    # prevent an absent/null email from matching on anything
+    if not useremail:
+        useremail = username
+    projects = list(collection_handle.find({  "$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+
     for proj in projects:
         prepare_project_linkid(proj)
 
@@ -405,23 +414,42 @@ def reference_genome_from_sample(sample_data):
         reference_genome = reference_genomes[0]
     return reference_genome
 
-def set_project_edit_OK_flag(project, request):
+
+def is_user_a_project_member(project, request):
     try:
         current_user_email = request.user.email
-        current_user = get_current_user(request)
+        current_user_username = request.user.username
+        if not current_user_email:
+            current_user_email = current_user_username
     except:
         current_user_email = 0
-        current_user = 0
-    if current_user in project['project_members']:
-        project['current_user_may_edit'] = True
-    if current_user_email in project['project_members']:
-        project['current_user_may_edit'] = True
+        current_user_username = 0
 
-def create_aggregate_df(project, samples):
-    """
-    creates the aggregate dataframe for figures:
-    
-    """
+    if current_user_username in project['project_members']:
+        return True
+    if current_user_email in project['project_members']:
+        return True
+    return False
+
+def set_project_edit_OK_flag(project, request):
+    if (is_user_a_project_member(project, request)):
+        project['current_user_may_edit'] = True
+    else:
+        project['current_user_may_edit'] = False
+
+
+def project_page(request, project_name, message=''):
+    t_i = time.time()
+    project = get_one_project(project_name)
+    if project['private'] and not is_user_a_project_member(project, request):
+        return HttpResponse("Project does not exist")
+
+    set_project_edit_OK_flag(project, request)
+    samples = project['runs']
+    features_list = replace_space_to_underscore(samples)
+    reference_genome = reference_genome_from_project(samples)
+    sample_data = sample_data_from_feature_list(features_list)
+    # df = pd.DataFrame(sample_data)
     t_sa = time.time()
     dfl = []
     for _, dlist in samples.items():
@@ -919,8 +947,9 @@ def class_search_page(request):
 
     # Gene Search
     if request.user.is_authenticated:
-        user = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'Classification' : class_query}))
+        username = request.user.username
+        useremail = request.user.email
+        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}], 'Oncogenes' : gen_query, 'Classification' : class_query}))
     else:
         private_projects = []
     
@@ -956,8 +985,9 @@ def gene_search_page(request):
 
     # Gene Search
     if request.user.is_authenticated:
-        user = request.user.email
-        query_obj = {'private' : True, 'project_members' : user , 'Oncogenes' : gen_query, 'delete': False}
+        username = request.user.username
+        useremail = request.user.email
+        query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
 
 
         private_projects = list(collection_handle.find(query_obj))
@@ -1072,7 +1102,7 @@ def get_current_user(request):
 def project_delete(request, project_name):
     project = get_one_project(project_name)
     deleter = get_current_user(request)
-    if check_project_exists(project_name):
+    if check_project_exists(project_name) and is_user_a_project_member(project, request):
         current_runs = project['runs']
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
@@ -1086,6 +1116,10 @@ def project_delete(request, project_name):
 def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
+        # no edits for non-project members
+        if not is_user_a_project_member(project, request):
+            return HttpResponse("Project does not exist")
+
         form = UpdateForm(request.POST, request.FILES)
         form_dict = form_to_dict(form)
 
@@ -1193,8 +1227,10 @@ def admin_version_details(request):
     except:
         details = [{"name":"version","value":"unknown"},{"name":"creator","value":"unknown"},{"name": "date", "value":"unknown" }]
 
-        env=[]
-        for key, value in os.environ.items():
+    env_to_skip = ['DB_URI', "GOOGLE_SECRET", "GLOBUS_SECRET"]
+    env=[]
+    for key, value in os.environ.items():
+        if not ("SECRET" in key) and not key in env_to_skip:
             env.append({"name": key, "value": value})
 
     try:
@@ -1204,8 +1240,37 @@ def admin_version_details(request):
         #.replace("\n", "<br/>")
     except:
         git_result = "git status call failed"
- 
-    return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result})
+
+    try:
+        # try to account for different working directories as found in dev and prod
+        conf_file_locs = ["../config.sh", "./caper/config.sh", "./config.sh"]
+        manage_file_locs = ["./manage.py", "./caper/manage.py"]
+        for apath in conf_file_locs:
+            my_file = Path(apath)
+            if my_file.is_file():
+                config_path = apath
+                break
+        for apath in manage_file_locs:
+            my_file = Path(apath)
+            if my_file.is_file():
+                manage_path = apath
+                break
+
+        settingscmd = f'source {config_path};python {manage_path} diffsettings --all'
+
+        settings_raw_result = subprocess.check_output(settingscmd, shell=True)
+        settings_result = ""
+        for line in settings_raw_result.splitlines():
+            line_enc = line.decode("UTF-8")
+            if not(( "SECRET" in line_enc.upper()) or ( "mongodb" in line_enc)):
+                settings_result = settings_result + line_enc + "\n"
+
+    except:
+        settings_result="An error occurred getting the contents of settings.py."
+
+    #settings_result = "Get settings call failed."
+
+    return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result, 'django_settings': settings_result})
 
 
 
@@ -1220,16 +1285,68 @@ def admin_stats(request):
     
     # Get public and private project data
     public_projects = list(collection_handle.find({'private': False, 'delete': False}))
-    private_projects = list(collection_handle.find({'private': True, 'delete': False}))
     for proj in public_projects:
-        prepare_project_linkid(proj)
-    for proj in private_projects:
         prepare_project_linkid(proj)
         
     # Calculate stats
     # total_downloads = [project['project_downloads'] for project in public_projects]
 
-    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'private_projects': private_projects, 'users': users})
+    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'users': users})
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def user_stats_download(request):
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    # Get all user data
+    User = get_user_model()
+    users = User.objects.all()
+    
+    # Create the HttpResponse object with the appropriate CSV header.
+    today = datetime.date.today()
+    response = HttpResponse(
+        content_type="text/csv",
+    )
+    response['Content-Disposition'] = f'attachment; filename="users_{today}.csv"'
+
+    user_data = []
+    for user in users:
+        user_dict = {'username':user.username,'email':user.email,'date_joined':user.date_joined,'last_login':user.last_login}
+        user_data.append(user_dict)
+    
+    writer = csv.writer(response)
+    keys = ['username','email','date_joined','last_login']
+    writer.writerow(keys)
+    for dictionary in user_data:
+        output = {k: dictionary.get(k, None) for k in keys}
+        writer.writerow(output.values())
+    
+    return response
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def project_stats_download(request):
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    # Get public and private project data
+    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+    
+    # Create the HttpResponse object with the appropriate CSV header.
+    today = datetime.date.today()
+    response = HttpResponse(
+        content_type="text/csv",
+    )
+    response['Content-Disposition'] = f'attachment; filename="projects_{today}.csv"'
+
+    writer = csv.writer(response)
+    keys = ['project_name','description','project_members','date_created','project_downloads','sample_downloads']
+    writer.writerow(keys)
+    for dictionary in public_projects:
+        output = {k: dictionary.get(k, None) for k in keys}
+        writer.writerow(output.values())
+    return response
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
@@ -1410,8 +1527,8 @@ def create_project(request):
         # file download
         request_file = request.FILES['document'] if 'document' in request.FILES else None
 
-        project = create_project_helper(form, user, request_file)
-        project_data_path = f"tmp/{project_name}"
+        project, tmp_id = create_project_helper(form, user, request_file)
+        project_data_path = f"tmp/{tmp_id}"
 
 
         if form.is_valid():
@@ -1462,6 +1579,7 @@ def create_project_helper(form, user, request_file, save = True):
     """
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
+    tmp_id = uuid.uuid4().hex
     project = dict()        
     # download_file(project_name, form_dict['file'])
     # runs = samples_to_dict(form_dict['file'])
@@ -1469,7 +1587,7 @@ def create_project_helper(form, user, request_file, save = True):
     # file download
     
     if request_file:
-        project_data_path = f"tmp/{project_name}"
+        project_data_path = f"tmp/{tmp_id}"
         # create a new instance of FileSystemStorage
         if save:
             fs = FileSystemStorage(location=project_data_path)
@@ -1536,7 +1654,7 @@ def create_project_helper(form, user, request_file, save = True):
     project['runs'] = runs
     project['Oncogenes'] = get_project_oncogenes(runs)
     project['Classification'] = get_project_classifications(runs)
-    return project
+    return project, tmp_id
     
 
 class FileUploadView(APIView):
