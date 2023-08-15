@@ -15,6 +15,7 @@ from rest_framework import status
 
 
 from pathlib import Path
+import csv
 
 
 
@@ -55,6 +56,7 @@ import boto3
 import botocore
 from threading import Thread
 import os, fnmatch
+import uuid
 
 import time
 import math
@@ -1179,16 +1181,68 @@ def admin_stats(request):
     
     # Get public and private project data
     public_projects = list(collection_handle.find({'private': False, 'delete': False}))
-    private_projects = list(collection_handle.find({'private': True, 'delete': False}))
     for proj in public_projects:
-        prepare_project_linkid(proj)
-    for proj in private_projects:
         prepare_project_linkid(proj)
         
     # Calculate stats
     # total_downloads = [project['project_downloads'] for project in public_projects]
 
-    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'private_projects': private_projects, 'users': users})
+    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'users': users})
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def user_stats_download(request):
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    # Get all user data
+    User = get_user_model()
+    users = User.objects.all()
+    
+    # Create the HttpResponse object with the appropriate CSV header.
+    today = datetime.date.today()
+    response = HttpResponse(
+        content_type="text/csv",
+    )
+    response['Content-Disposition'] = f'attachment; filename="users_{today}.csv"'
+
+    user_data = []
+    for user in users:
+        user_dict = {'username':user.username,'email':user.email,'date_joined':user.date_joined,'last_login':user.last_login}
+        user_data.append(user_dict)
+    
+    writer = csv.writer(response)
+    keys = ['username','email','date_joined','last_login']
+    writer.writerow(keys)
+    for dictionary in user_data:
+        output = {k: dictionary.get(k, None) for k in keys}
+        writer.writerow(output.values())
+    
+    return response
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def project_stats_download(request):
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    # Get public and private project data
+    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+    
+    # Create the HttpResponse object with the appropriate CSV header.
+    today = datetime.date.today()
+    response = HttpResponse(
+        content_type="text/csv",
+    )
+    response['Content-Disposition'] = f'attachment; filename="projects_{today}.csv"'
+
+    writer = csv.writer(response)
+    keys = ['project_name','description','project_members','date_created','project_downloads','sample_downloads']
+    writer.writerow(keys)
+    for dictionary in public_projects:
+        output = {k: dictionary.get(k, None) for k in keys}
+        writer.writerow(output.values())
+    return response
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
@@ -1369,8 +1423,8 @@ def create_project(request):
         # file download
         request_file = request.FILES['document'] if 'document' in request.FILES else None
 
-        project = create_project_helper(form, user, request_file)
-        project_data_path = f"tmp/{project_name}"
+        project, tmp_id = create_project_helper(form, user, request_file)
+        project_data_path = f"tmp/{tmp_id}"
 
 
         if form.is_valid():
@@ -1421,6 +1475,7 @@ def create_project_helper(form, user, request_file, save = True):
     """
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
+    tmp_id = uuid.uuid4().hex
     project = dict()        
     # download_file(project_name, form_dict['file'])
     # runs = samples_to_dict(form_dict['file'])
@@ -1428,7 +1483,7 @@ def create_project_helper(form, user, request_file, save = True):
     # file download
     
     if request_file:
-        project_data_path = f"tmp/{project_name}"
+        project_data_path = f"tmp/{tmp_id}"
         # create a new instance of FileSystemStorage
         if save:
             fs = FileSystemStorage(location=project_data_path)
@@ -1495,7 +1550,7 @@ def create_project_helper(form, user, request_file, save = True):
     project['runs'] = runs
     project['Oncogenes'] = get_project_oncogenes(runs)
     project['Classification'] = get_project_classifications(runs)
-    return project
+    return project, tmp_id
     
 
 class FileUploadView(APIView):
