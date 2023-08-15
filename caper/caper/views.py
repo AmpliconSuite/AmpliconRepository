@@ -437,8 +437,8 @@ def set_project_edit_OK_flag(project, request):
         project['current_user_may_edit'] = False
 
 
-def project_page(request, project_name, message=''):
-    t_i = time.time()
+def create_aggregate_df(request, project_name, message=''):
+    t_sa = time.time()
     project = get_one_project(project_name)
     if project['private'] and not is_user_a_project_member(project, request):
         return HttpResponse("Project does not exist")
@@ -449,7 +449,6 @@ def project_page(request, project_name, message=''):
     reference_genome = reference_genome_from_project(samples)
     sample_data = sample_data_from_feature_list(features_list)
     # df = pd.DataFrame(sample_data)
-    t_sa = time.time()
     dfl = []
     for _, dlist in samples.items():
         dfl.append(pd.DataFrame(dlist))
@@ -1524,7 +1523,6 @@ def create_project(request):
         project, tmp_id = create_project_helper(form, user, request_file)
         project_data_path = f"tmp/{tmp_id}"
 
-
         if form.is_valid():
             new_id = collection_handle.insert_one(project)
 
@@ -1544,7 +1542,6 @@ def create_project(request):
 
                 s3_thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
                 s3_thread.start()
-
 
             # estimate how long the extraction could take and round up
             # CCLE was 3GB and took about 3 minutes
