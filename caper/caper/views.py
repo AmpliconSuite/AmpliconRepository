@@ -157,7 +157,7 @@ def samples_to_dict(form_file):
     all_samples = file_json['runs']
     for key, value in all_samples.items():
         sample_name = key
-        print(f'in samples_to_dict {sample_name}')
+        logging.debug(f'in samples_to_dict {sample_name}')
         runs[sample_name] = value
 
     return runs
@@ -296,14 +296,12 @@ def get_sample_oncogenes(feature_list, sample_name):
     Finds the oncogenes for a given sample_name
     """
     oncogenes = set()
-    print(feature_list[0])
     for feature in feature_list:
         if feature['Sample_name'] == sample_name and feature['Oncogenes']:
             for gene in feature['Oncogenes']:
                 if len(gene) != 0:
                     oncogenes.add(gene.strip().replace("'",''))
 
-    # print(sorted(list(oncogenes)))
     return sorted(list(oncogenes))
 
 
@@ -343,7 +341,6 @@ def modify_date(projects):
 
     return projects
 
-    
 
 def index(request):
     if request.user.is_authenticated:
@@ -439,7 +436,6 @@ def set_project_edit_OK_flag(project, request):
 def create_aggregate_df(project, samples):
     """
     creates the aggregate dataframe for figures:
-
     """
     t_sa = time.time()
 
@@ -458,7 +454,6 @@ def create_aggregate_df(project, samples):
     logging.info(f"Iteratively build project dataframe from samples in {diff} seconds")
     
     return aggregate, aggregate_save_fp
-
 
     
 def project_page(request, project_name, message=''):
@@ -554,10 +549,10 @@ def project_page(request, project_name, message=''):
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
     session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
     s3client = session.client('s3')
-    print(f'==== XXX STARTING upload of {file_path_and_location_local} to s3://{settings.S3_DOWNLOADS_BUCKET}/{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
+    logging.info(f'==== XXX STARTING upload of {file_path_and_location_local} to s3://{settings.S3_DOWNLOADS_BUCKET}/{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
     s3client.upload_file(f'{file_path_and_location_local}', settings.S3_DOWNLOADS_BUCKET,
                          f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
-    print('==== XXX uploaded to bucket ')
+    logging.info('==== XXX uploaded to bucket ')
 
 
 def check_if_db_field_exists(project, field):
@@ -596,7 +591,7 @@ def project_download(request, project_name):
 
         project_linkid = project['_id']
         s3_file_location = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_linkid}/{project_linkid}.tar.gz'
-        print(f'==== XXX STARTING download for {s3_file_location} for project {real_project_name}')
+        logging.info(f'==== XXX STARTING download for {s3_file_location} for project {real_project_name}')
 
         if not settings.AWS_PROFILE_NAME:
             settings.AWS_PROFILE_NAME = 'default'
@@ -604,9 +599,9 @@ def project_download(request, project_name):
         session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
         s3client = session.client('s3')
 
-        print("BUCKET "+ settings.S3_DOWNLOADS_BUCKET)
-        print("FILELOC " + s3_file_location)
-        print("PROFILE " + settings.AWS_PROFILE_NAME)
+        logging.info("BUCKET "+ settings.S3_DOWNLOADS_BUCKET)
+        logging.info("FILELOC " + s3_file_location)
+        logging.info("PROFILE " + settings.AWS_PROFILE_NAME)
 
         try:
             s3client.head_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_file_location)
@@ -614,7 +609,7 @@ def project_download(request, project_name):
             if e.response['Error']['Code'] == "404":
                 # The object does not exist.
                 # so we need to get a local file from mongo and push that to S3
-                print("===== XXX PROJECT FILE NOT IN S3 --  GET IT IN THERE")
+                logging.debug("===== XXX PROJECT FILE NOT IN S3 --  GET IT IN THERE")
                 tar_id = project['tarfile']
                 tar_file_wrapper = FileWrapper(fs_handle.get(ObjectId(tar_id)), blksize=32728)
 
@@ -628,14 +623,14 @@ def project_download(request, project_name):
                     output.write(chunk)
                 output.close()
                 upload_file_to_s3(f'{project_data_path}/{project_linkid}.tar.gz', s3_file_location)
-                print('==== XXX upload to bucket complete, move on to get one time url')
+                logging.info('==== XXX upload to bucket complete, move on to get one time url')
 
             else:
                 # Something else has gone wrong.
                 raise
         else:
             # The object does exist.
-            print('==== XXX found it in bucket, move on to get one time url')
+            logging.debug('==== XXX found it in bucket, move on to get one time url')
 
         # we should have uploaded the file if it was not already there
         # get a one-time-use url and redirect the response
@@ -650,7 +645,7 @@ def project_download(request, project_name):
 
     ###### the following is used when S3 is not used for download
     chunk_size = 8192
-    print('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
+    logging.info('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
     file_location = find('*.tar.gz', project_data_path)[0]
     response = StreamingHttpResponse(
         FileWrapper(
@@ -719,7 +714,7 @@ def get_sample_metadata(sample_data):
         sample_metadata = json.loads(sample_metadata.decode())
 
     except Exception as e:
-        print(e)
+        logging.exception(e)
         sample_metadata = defaultdict(str)
 
     return sample_metadata
@@ -736,7 +731,7 @@ def sample_metadata_download(request, project_name, sample_name):
         return response
 
     except Exception as e:
-        print(e)
+        logging.exception(e)
         return HttpResponse()
 
 # @cache_page(600) # 10 minutes
@@ -848,7 +843,7 @@ def sample_download(request, project_name, sample_name):
         # bed_file = fs_handle.get(ObjectId(bed_id)).read()
         if bed_id is not None:
             if not ObjectId.is_valid(bed_id):
-                 print("Sample: ", sample_name, "Feature: ", feature_id,"BED_ID is ->" , bed_id, "<-")
+                 logging.debug("Sample: " + sample_name + ", Feature: " + feature_id + ", BED_ID is ->" + str(bed_id) + " <-")
                  break
 
             bed_file = fs_handle.get(ObjectId(bed_id)).read()
@@ -1003,10 +998,8 @@ def gene_search_page(request):
             for sample in data:
                 sample['project_name'] = project_name
                 sample['project_linkid'] = project_linkid
-                # print(sample)
                 if genequery in sample['Oncogenes']:
                     upperclass =  map(str.upper, sample['Classifications'])
-                    # print(upperclass)
                     classmatch =(classquery in upperclass)
                     classempty = (len(classquery) == 0)
                     # keep the sample if we have matched on both oncogene and classification or oncogene and classification is empty
@@ -1131,7 +1124,6 @@ def edit_project_page(request, project_name):
                                  'Oncogenes': get_project_oncogenes(current_runs)} }
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
-                # print(f'in valid form')
                 return redirect('project_page', project_name=project_name)
             else:
                 raise Http404()
@@ -1380,10 +1372,10 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
         collection_handle.update_one(query, new_val)
 
     except Exception as anError:
-        print("Error occurred extracting project tarfile results into "+ project_data_path)
-        print(type(anError))  # the exception type
-        print(anError.args)  # arguments stored in .args
-        print(anError)
+        logging.error("Error occurred extracting project tarfile results into "+ project_data_path)
+        logging.error(type(anError))  # the exception type
+        logging.error(anError.args)  # arguments stored in .args
+        logging.error(anError)
         # print error to file called project_extraction_errors.txt that we can
         # see and let owner know to contact an admin
         with open(project_data_path + '/project_extraction_errors.txt', 'a') as fh:
@@ -1398,18 +1390,17 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
 # deny that this might even be a valid URL
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_delete_project(request):
-    if not  request.user.is_staff:
+    if not request.user.is_staff:
         return redirect('/accounts/logout')
 
     error_message = ""
     if request.method == "POST":
-
         form = DeletedProjectForm(request.POST)
         form_dict = form_to_dict(form)
         project_name = form_dict['project_name']
         project_id = form_dict['project_id']
         deleteit = form_dict['delete']
-        print(" FORM = " + str(form_dict))
+        logging.debug(" FORM = " + str(form_dict))
         action = form_dict['action']
 
         if action == 'un-delete':
@@ -1421,7 +1412,6 @@ def admin_delete_project(request):
             error_message = f"Project {project_name} restored."
 
         elif deleteit and (action == 'delete'):
-
             project = get_one_deleted_project(project_id)
             query = {'_id': ObjectId(project_id)}
 
@@ -1435,7 +1425,6 @@ def admin_delete_project(request):
                         key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'AA directory', 'cnvkit directory']
                         for k in key_names:
                             try:
-                                print(sample[k])
                                 fs_handle.delete(ObjectId(sample[k]))
 
 
@@ -1647,7 +1636,7 @@ class FileUploadView(APIView):
     permission_classes = []
 
     def get(self, request):
-        print('Hello')
+        logging.debug('Hello')
         return Response({'response':'success'})
 
     def post(self, request, format= None):
@@ -1662,19 +1651,15 @@ class FileUploadView(APIView):
             file_serializer.save()
             form = RunForm(request.POST)
             form_dict = form_to_dict(form)
-            print(form_dict)
+            logging.debug(str(form_dict))
             proj_name = form_dict['project_name']
             request_file = request.FILES['file']
             os.system(f'mkdir -p tmp/{proj_name}')
             os.system(f'mv tmp/{request_file.name} tmp/{proj_name}/{request_file.name}')
             # extract contents of file
             current_user = request.POST['project_members']
-            print(f'Creating project for user {current_user}')
-
+            logging.info(f'Creating project for user {current_user}')
             project = create_project_helper(form, current_user, request_file, save = False)
-            
-
-            print(project)
             new_id = collection_handle.insert_one(project)
             project_data_path = f"tmp/{proj_name}"
             file_location = f'{project_data_path}/{request_file.name}'
