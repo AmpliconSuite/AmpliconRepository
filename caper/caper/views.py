@@ -136,7 +136,6 @@ def get_one_sample(project_name, sample_name):
     project = get_one_project(project_name)
     # print("ID --- ", project['_id'])
     runs = project['runs']
-    print(runs)
     for sample_num in runs.keys():
         current = runs[sample_num]
         if len(current) > 0:
@@ -532,7 +531,6 @@ def project_page(request, project_name, message=''):
         logging.info('Already have the lists in DB')
         set_project_edit_OK_flag(project, request) ## 0 loops
         samples = project['runs']
-
         features_list = project['features_list']
         reference_genome = project['reference_genome']
         sample_data = project['sample_data']
