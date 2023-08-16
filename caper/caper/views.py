@@ -128,7 +128,7 @@ def get_one_sample(project_name, sample_name):
     for sample_num in runs.keys():
         current = runs[sample_num]
         if len(current) > 0:
-            if current[0]['Sample name'] == sample_name:
+            if current[0]['Sample_name'] == sample_name:
                 sample_out = current
 
     return project, sample_out
@@ -402,7 +402,7 @@ def reference_genome_from_project(samples):
 def reference_genome_from_sample(sample_data):
     reference_genomes = list()
     for feature in sample_data:
-        reference_genomes.append(feature['Reference version'])
+        reference_genomes.append(feature['Reference_version'])
     if len(set(reference_genomes)) > 1:
         reference_genome = 'Multiple'
     else:
