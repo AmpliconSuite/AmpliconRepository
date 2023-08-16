@@ -138,10 +138,8 @@ def get_one_sample(project_name, sample_name):
     runs = project['runs']
     for sample_num in runs.keys():
         current = runs[sample_num]
-        if len(current) > 0:
-            # print(current[0])
-                if current[0]['Sample_name'] == sample_name:
-                    sample_out = current
+        if len(current) > 0 and current[0]['Sample_name'] == sample_name:
+            sample_out = current
 
     return project, sample_out
 
