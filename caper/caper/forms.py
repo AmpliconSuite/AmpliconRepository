@@ -20,7 +20,7 @@ class RunForm(forms.ModelForm):
 class UpdateForm(forms.ModelForm):
     class Meta:
         model = Run
-        fields = ('description','private','project_members')
+        fields = ('project_name', 'description','private','project_members')
         labels = {
             'private': 'Visibility'
         }

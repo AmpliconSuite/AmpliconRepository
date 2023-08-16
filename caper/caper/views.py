@@ -1026,12 +1026,13 @@ def edit_project_page(request, project_name):
         else:
             runs = 0
         if check_project_exists(project_name):
-
+            new_project_name = form_dict['project_name']
+            print(f"project name: {project_name}  change to {new_project_name}")
             current_runs = project['runs']
             if runs != 0:
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
-            new_val = { "$set": {'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
+            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'],
                                  'Oncogenes': get_project_oncogenes(current_runs)} }
             if form.is_valid():
@@ -1048,7 +1049,7 @@ def edit_project_page(request, project_name):
         members = project['project_members']
         members = [i for i in members if i]
         memberString = ', '.join(members)
-        form = UpdateForm(initial={"description": project['description'],"private":project['private'],"project_members": memberString})
+        form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString})
     return render(request, "pages/edit_project.html", {'project': project, 'run': form})
 
 def create_user_list(string, current_user):
