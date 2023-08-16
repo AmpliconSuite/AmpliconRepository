@@ -77,6 +77,7 @@ fa_cmap = {
                 'Virus': 'rgb(163,163,163)',
                 }
 
+
 def get_date():
     today = datetime.datetime.now()
     # date = today.strftime('%Y-%m-%d')
@@ -100,9 +101,15 @@ def get_one_project(project_name_or_uuid):
     # backstop using the name the old way
     if project is None:
         project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+        if project:
+            logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
         prepare_project_linkid(project)
 
+    if project is None:
+        logging.error(f"Project is None for {project_name_or_uuid}")
+
     return project
+
 
 def get_one_deleted_project(project_name_or_uuid):
     try:
@@ -116,7 +123,11 @@ def get_one_deleted_project(project_name_or_uuid):
     # backstop using the name the old way
     if project is None:
         project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+        logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
         prepare_project_linkid(project)
+
+    if project is None:
+        logging.error(f"Project is None for {project_name_or_uuid}")
 
     return project
 
@@ -174,6 +185,7 @@ def form_to_dict(form):
     form_dict = model_to_dict(run)
     return form_dict
 
+
 def flatten(nested, lst = True, sort = True):
     """
     recursive function to get elements in nested list
@@ -193,6 +205,7 @@ def flatten(nested, lst = True, sort = True):
     if lst and sort:
         return list(sorted(flat))
     return flat
+
 
 def sample_data_from_feature_list(features_list):
     """
@@ -1126,12 +1139,13 @@ def edit_project_page(request, project_name):
         else:
             runs = 0
         if check_project_exists(project_name):
-
+            new_project_name = form_dict['project_name']
+            print(f"project name: {project_name}  change to {new_project_name}")
             current_runs = project['runs']
             if runs != 0:
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
-            new_val = { "$set": {'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
+            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'],
                                  'Oncogenes': get_project_oncogenes(current_runs)} }
             if form.is_valid():
@@ -1147,7 +1161,7 @@ def edit_project_page(request, project_name):
         members = project['project_members']
         members = [i for i in members if i]
         memberString = ', '.join(members)
-        form = UpdateForm(initial={"description": project['description'],"private":project['private'],"project_members": memberString})
+        form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString})
     return render(request, "pages/edit_project.html", {'project': project, 'run': form})
 
 def create_user_list(string, current_user):
@@ -1439,7 +1453,6 @@ def admin_delete_project(request):
                             try:
                                 fs_handle.delete(ObjectId(sample[k]))
 
-
                             except:
                                 # DO NOTHING, its not there
                                 id_var = "Not Provided"
@@ -1491,8 +1504,6 @@ def admin_delete_project(request):
             #ignore missing date
             logging.warning(proj['project_name'] + " missing date")
 
-
-
     return render(request, 'pages/admin_delete_project.html', {'deleted_projects': deleted_projects, 'error_message':error_message})
 
 
@@ -1502,7 +1513,6 @@ def sizeof_fmt(num, suffix="B"):
             return f"{num:3.1f} {unit}{suffix}"
         num /= 1024.0
     return f"{num:.1f}Yi{suffix}"
-
 
 
 def create_project(request):
