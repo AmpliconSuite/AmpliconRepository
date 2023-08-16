@@ -125,11 +125,17 @@ def get_one_sample(project_name, sample_name):
     project = get_one_project(project_name)
     # print("ID --- ", project['_id'])
     runs = project['runs']
+    print(runs)
     for sample_num in runs.keys():
         current = runs[sample_num]
         if len(current) > 0:
-            if current[0]['Sample_name'] == sample_name:
-                sample_out = current
+            # print(current[0])
+            try:
+                if current[0]['Sample name'] == sample_name:
+                    sample_out = current
+            except:
+                if current[0]['Sample_name'] == sample_name:
+                    sample_out = current
 
     return project, sample_out
 
@@ -236,7 +242,6 @@ def replace_space_to_underscore(runs):
                 run_list[-1][newkey] = sample[key]
 
         return run_list
-
 
 def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
     if copy:
@@ -402,7 +407,10 @@ def reference_genome_from_project(samples):
 def reference_genome_from_sample(sample_data):
     reference_genomes = list()
     for feature in sample_data:
-        reference_genomes.append(feature['Reference_version'])
+        try:
+            reference_genomes.append(feature['Reference version'])
+        except:
+            reference_genomes.append(feature['Reference_version'])
     if len(set(reference_genomes)) > 1:
         reference_genome = 'Multiple'
     else:
@@ -455,7 +463,10 @@ def create_aggregate_df(project, samples):
     
     return aggregate, aggregate_save_fp
 
-    
+
+
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -467,10 +478,10 @@ def project_page(request, project_name, message=''):
     
 
     t_i = time.time()
-
     ## leaving this bit of code here
     ### this part will delete the metadata_stored field for a project
     ### is is only run IF we need to reset a project and reload the data
+
     # project = get_one_project(project_name) ## 0 loops
     # query = {'_id' : project['_id'],
     #                 'delete': False}
@@ -479,6 +490,8 @@ def project_page(request, project_name, message=''):
     # logging.warning('delete complete')
 
     project = get_one_project(project_name)
+    if project['private'] and not is_user_a_project_member(project, request):
+        return HttpResponse("Project does not exist")
 
     if 'metadata_stored' not in project:
         #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
@@ -487,14 +500,12 @@ def project_page(request, project_name, message=''):
         features_list = replace_space_to_underscore(samples) # 1 loop
         reference_genome = reference_genome_from_project(samples) # 1 over sample nested with 1 over features O(S^f)
         sample_data = sample_data_from_feature_list(features_list) # O(S)
-
         aggregate, aggregate_save_fp = create_aggregate_df(project, samples)
 
         logging.debug(f'aggregate shape: {aggregate.shape}')
         new_values = {"$set" : {'sample_data' : sample_data, 
                                 'reference_genome' : reference_genome,
                                 'features_list' : features_list,
-                                'runs': samples,
                                 'aggregate_df' : aggregate_save_fp,
                                 'metadata_stored': 'Yes'}}
         query = {'_id' : project['_id'],
@@ -508,6 +519,7 @@ def project_page(request, project_name, message=''):
         logging.info('Already have the lists in DB')
         set_project_edit_OK_flag(project, request) ## 0 loops
         samples = project['runs']
+
         features_list = project['features_list']
         reference_genome = project['reference_genome']
         sample_data = project['sample_data']
@@ -1611,7 +1623,7 @@ def create_project_helper(form, user, request_file, save = True):
     #
     #                except:
     #                    id_var = "Not Provided"
-   #
+    #
     #                feature[k] = id_var
 
     current_user = user
