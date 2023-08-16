@@ -77,6 +77,7 @@ fa_cmap = {
                 'Virus': 'rgb(163,163,163)',
                 }
 
+
 def get_date():
     today = datetime.datetime.now()
     # date = today.strftime('%Y-%m-%d')
@@ -100,9 +101,15 @@ def get_one_project(project_name_or_uuid):
     # backstop using the name the old way
     if project is None:
         project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+        if project:
+            logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
         prepare_project_linkid(project)
 
+    if project is None:
+        logging.error(f"Project is None for {project_name_or_uuid}")
+
     return project
+
 
 def get_one_deleted_project(project_name_or_uuid):
     try:
@@ -116,7 +123,11 @@ def get_one_deleted_project(project_name_or_uuid):
     # backstop using the name the old way
     if project is None:
         project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+        logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
         prepare_project_linkid(project)
+
+    if project is None:
+        logging.error(f"Project is None for {project_name_or_uuid}")
 
     return project
 
@@ -168,6 +179,7 @@ def form_to_dict(form):
     form_dict = model_to_dict(run)
     return form_dict
 
+
 def flatten(nested, lst = True, sort = True):
     """
     recursive function to get elements in nested list
@@ -187,6 +199,7 @@ def flatten(nested, lst = True, sort = True):
     if lst and sort:
         return list(sorted(flat))
     return flat
+
 
 def sample_data_from_feature_list(features_list):
     """
@@ -1428,7 +1441,6 @@ def admin_delete_project(request):
                             try:
                                 fs_handle.delete(ObjectId(sample[k]))
 
-
                             except:
                                 # DO NOTHING, its not there
                                 id_var = "Not Provided"
@@ -1480,8 +1492,6 @@ def admin_delete_project(request):
             #ignore missing date
             logging.warning(proj['project_name'] + " missing date")
 
-
-
     return render(request, 'pages/admin_delete_project.html', {'deleted_projects': deleted_projects, 'error_message':error_message})
 
 
@@ -1491,7 +1501,6 @@ def sizeof_fmt(num, suffix="B"):
             return f"{num:3.1f} {unit}{suffix}"
         num /= 1024.0
     return f"{num:.1f}Yi{suffix}"
-
 
 
 def create_project(request):
