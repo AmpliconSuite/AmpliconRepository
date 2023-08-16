@@ -140,10 +140,6 @@ def get_one_sample(project_name, sample_name):
         current = runs[sample_num]
         if len(current) > 0:
             # print(current[0])
-            try:
-                if current[0]['Sample name'] == sample_name:
-                    sample_out = current
-            except:
                 if current[0]['Sample_name'] == sample_name:
                     sample_out = current
 
@@ -240,9 +236,7 @@ def replace_space_to_underscore(runs):
                 for key in list(sample.keys()):
                     newkey = key.replace(" ", "_")
                     sample[newkey] = sample.pop(key)
-
                 run_list.append(sample)
-
         return run_list
 
     else:
@@ -419,10 +413,7 @@ def reference_genome_from_project(samples):
 def reference_genome_from_sample(sample_data):
     reference_genomes = list()
     for feature in sample_data:
-        try:
-            reference_genomes.append(feature['Reference version'])
-        except:
-            reference_genomes.append(feature['Reference_version'])
+        reference_genomes.append(feature['Reference_version'])
     if len(set(reference_genomes)) > 1:
         reference_genome = 'Multiple'
     else:
@@ -475,8 +466,51 @@ def create_aggregate_df(project, samples):
     
     return aggregate, aggregate_save_fp
 
+def replace_underscore_keys(runs_from_proj_creation):
+    """
+    Replaces underscores in the keys from runs at proj creation step
+    """
+    new_run = {}
+    for sample in runs_from_proj_creation.keys():
+        features = []
+        for feature in runs_from_proj_creation[sample]:
+            new_feat = {}
+            for key in feature.keys():
+                new_feat[key.replace(" ", '_')] = feature[key]
+            features.append(new_feat)
+        new_run[sample] = features
+    return new_run
 
 
+def validate_project(project, project_name):
+    """
+    Checks the following for a project: 
+    1. if keys in project[runs] all contain underscores, if not, replace them with underscores, insert into db
+    """
+
+    ## check for 1
+    update = False
+    for sample in project['runs'].keys():
+        for feature in project['runs'][sample]:
+            for key in feature.keys():
+                if ' ' in key:
+                    runs = replace_underscore_keys(project['runs'])
+                    update = True
+                    break
+    if update:
+        new_values = {"$set" : {
+            'runs' : runs
+        }}
+        query = {'_id' : project['_id'],
+                    'delete': False}
+        collection_handle.update(query, new_values)
+
+    get_one_project(project_name)
+    return project
+
+    
+    
+    
 
 
 def project_page(request, project_name, message=''):
@@ -485,10 +519,7 @@ def project_page(request, project_name, message=''):
 
     will append sample_data, ref genome, feature_list to project json in the database
     for faster querying in the future. 
-
     """
-    
-
     t_i = time.time()
     ## leaving this bit of code here
     ### this part will delete the metadata_stored field for a project
@@ -501,10 +532,10 @@ def project_page(request, project_name, message=''):
     # collection_handle.update(query, val)
     # logging.warning('delete complete')
 
-    project = get_one_project(project_name)
+    project = validate_project(get_one_project(project_name), project_name)
     if project['private'] and not is_user_a_project_member(project, request):
         return HttpResponse("Project does not exist")
-
+    
     if 'metadata_stored' not in project:
         #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
         set_project_edit_OK_flag(project, request) ## 0 loops
@@ -732,7 +763,7 @@ def igv_features_creation(locations):
 
 def get_sample_metadata(sample_data):
     try:
-        sample_metadata_id = sample_data[0]['Sample metadata JSON']
+        sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
         sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
         sample_metadata = json.loads(sample_metadata.decode())
 
@@ -744,7 +775,7 @@ def get_sample_metadata(sample_data):
 
 def sample_metadata_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
-    sample_metadata_id = sample_data[0]['Sample metadata JSON']
+    sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
     try:
         sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
         response = HttpResponse(sample_metadata)
@@ -1057,8 +1088,8 @@ def gene_search_download(request, project_name):
         if len(samples[sample]) > 0:
             for feature in samples[sample]:
                 # set up file system
-                feature_id = feature['Feature ID']
-                feature_data_path = f"tmp/{project_name}/{feature['Sample name']}/{feature_id}"
+                feature_id = feature['Feature_ID']
+                feature_data_path = f"tmp/{project_name}/{feature['Sample_name']}/{feature_id}"
                 os.makedirs(feature_data_path, exist_ok=True)
                 # get object ids
                 bed_id = feature['Feature_BED_file']
@@ -1473,7 +1504,7 @@ def admin_delete_project(request):
                 shutil.rmtree(project_data_path)
                 session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
                 s3client = session.client('s3')
-                s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path);
+                s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path)
             except:
                 logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
                 error_message = error_message+" Problem deleting tar file from S3. "
@@ -1487,7 +1518,7 @@ def admin_delete_project(request):
             if error_message:
                 error_message = error_message + " Other project artifacts successfully deleted. Please refer to the application log files for details. "
             else:
-                error_message = f"Project {project_name} deleted.";
+                error_message = f"Project {project_name} deleted."
 
     deleted_projects = list(collection_handle.find({'delete': True}))
     for proj in deleted_projects:
@@ -1645,11 +1676,10 @@ def create_project_helper(form, user, request_file, save = True):
     project['delete'] = False
     user_list = create_user_list(form_dict['project_members'], current_user)
     project['project_members'] = user_list
-    project['runs'] = runs
+    project['runs'] = replace_underscore_keys(runs)
     project['Oncogenes'] = get_project_oncogenes(runs)
     project['Classification'] = get_project_classifications(runs)
     return project, tmp_id
-    
 
 class FileUploadView(APIView):
     parser_class = (MultiPartParser,)
