@@ -799,11 +799,10 @@ def sample_page(request, project_name, sample_name):
     download_png = []
     reference_version = []
     if sample_data_processed[0]['AA_amplicon_number'] == None:
-        plot = sample_plot.plot(sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
+        plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
 
     else:
-        plot = sample_plot.plot(sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
-        #plot, featid_to_updated_locations = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
+        plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
         for feature in sample_data_processed:
             reference_version.append(feature['Reference_version'])
             download_png.append({

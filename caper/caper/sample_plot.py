@@ -18,11 +18,7 @@ warnings.filterwarnings("ignore")
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
 
 # FOR PRODUICTION
-db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
-
-# SET UP HANDLE
-collection_handle = get_collection_handle(db_handle,'projects')
-fs_handle = gridfs.GridFS(db_handle)
+# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 
 
 # assumes 'location' is a string formatted like chr8:10-30 or 3:5903-6567 or hpv16ref_1:1-2342
@@ -50,7 +46,11 @@ def get_chrom_lens(ref):
     return chrom_len_dict
 
 
-def plot(sample, sample_name, project_name, filter_plots=False):
+def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
+    # SET UP HANDLE
+    # collection_handle = get_collection_handle(db_handle, 'projects')
+    fs_handle = gridfs.GridFS(db_handle)
+
     start_time = time.time()
     potential_ref_genomes = set()
     for item in sample:
