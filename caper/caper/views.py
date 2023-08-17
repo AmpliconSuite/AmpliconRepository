@@ -1594,14 +1594,13 @@ def create_project(request):
 
 
 ## make a create_project_helper for project creation code 
-def create_project_helper(form, user, request_file, save = True):
+def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex):
     """
     Creates a project dictionary from 
     
     """
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
-    tmp_id = uuid.uuid4().hex
     project = dict()        
     # download_file(project_name, form_dict['file'])
     # runs = samples_to_dict(form_dict['file'])
@@ -1693,22 +1692,28 @@ class FileUploadView(APIView):
         '''
         file_serializer = FileSerializer(data = request.data)
 
+
+
         if file_serializer.is_valid():
-            # save the uploaded file to media directory
             file_serializer.save()
             form = RunForm(request.POST)
             form_dict = form_to_dict(form)
             logging.debug(str(form_dict))
             proj_name = form_dict['project_name']
             request_file = request.FILES['file']
-            os.system(f'mkdir -p tmp/{proj_name}')
-            os.system(f'mv tmp/{request_file.name} tmp/{proj_name}/{request_file.name}')
             # extract contents of file
             current_user = request.POST['project_members']
             logging.info(f'Creating project for user {current_user}')
-            project = create_project_helper(form, current_user, request_file, save = False)
+            api_id = uuid.uuid4().hex
+            os.system(f'mkdir -p tmp/{api_id}')
+            os.system(f'mv tmp/{request_file.name} tmp/{api_id}/{request_file.name}')
+            project, tmp_id = create_project_helper(form, current_user, request_file,save = False, tmp_id = api_id)
             new_id = collection_handle.insert_one(project)
-            project_data_path = f"tmp/{proj_name}"
+            project_data_path = f"tmp/{api_id}"
+            # move the project location to a new name using the UUID to prevent name collisions
+            new_project_data_path = f"tmp/{new_id.inserted_id}"
+            os.rename(project_data_path, new_project_data_path)
+            project_data_path = new_project_data_path
             file_location = f'{project_data_path}/{request_file.name}'
 
              # extract the files async also
