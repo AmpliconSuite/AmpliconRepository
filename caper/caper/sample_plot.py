@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 import plotly.graph_objs as go
 import numpy as np
@@ -81,6 +82,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     chrom_lens = get_chrom_lens(ref)
 
     cnv_file_id = sample[0]['CNV_BED_file']
+    logging.debug('cnv_file_id: ' + str(cnv_file_id))
 
     try:
         cnv_file = fs_handle.get(ObjectId(cnv_file_id)).read()
