@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 import plotly.graph_objs as go
 import numpy as np
@@ -10,6 +11,7 @@ import gridfs
 from bson.objectid import ObjectId
 from io import StringIO
 import time
+from pandas.api.types import is_numeric_dtype
 
 warnings.filterwarnings("ignore")
 
@@ -17,11 +19,7 @@ warnings.filterwarnings("ignore")
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
 
 # FOR PRODUICTION
-db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
-
-# SET UP HANDLE
-collection_handle = get_collection_handle(db_handle,'projects')
-fs_handle = gridfs.GridFS(db_handle)
+# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
 
 
 # assumes 'location' is a string formatted like chr8:10-30 or 3:5903-6567 or hpv16ref_1:1-2342
@@ -49,7 +47,11 @@ def get_chrom_lens(ref):
     return chrom_len_dict
 
 
-def plot(sample, sample_name, project_name, filter_plots=False):
+def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
+    # SET UP HANDLE
+    # collection_handle = get_collection_handle(db_handle, 'projects')
+    fs_handle = gridfs.GridFS(db_handle)
+
     start_time = time.time()
     potential_ref_genomes = set()
     for item in sample:
@@ -58,8 +60,8 @@ def plot(sample, sample_name, project_name, filter_plots=False):
         potential_ref_genomes.add(ref_version)
 
     if len(potential_ref_genomes) > 1:
-        print("\nWARNING! Multiple reference genomes found in project samples, but each project only supports one "
-              "reference genome across samples.\n")
+        logging.warning("\nMultiple reference genomes found in project samples, but each project only supports one "
+              "reference genome across samples. Only the first will be used.\n")
 
     ref = potential_ref_genomes.pop()
     cent_file = f'bed_files/{ref}_centromere.bed'
@@ -81,6 +83,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
     chrom_lens = get_chrom_lens(ref)
 
     cnv_file_id = sample[0]['CNV_BED_file']
+    logging.debug('cnv_file_id: ' + str(cnv_file_id))
 
     try:
         cnv_file = fs_handle.get(ObjectId(cnv_file_id)).read()
@@ -91,7 +94,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                            4: 'Copy Number'}, inplace=True)
 
     except Exception as e:
-        print(e)
+        logging.exception(e)
         df = pd.DataFrame(columns=["Chromosome Number", "Feature Start Position", "Feature End Position", "Source",
                                    "Copy Number"])
 
@@ -155,12 +158,13 @@ def plot(sample, sample_name, project_name, filter_plots=False):
             x_array = []
             y_array = []
             if key in dfs:
-                if len(dfs[key].columns) >= 4:
+                if len(dfs[key].columns) >= 4 and is_numeric_dtype(df['Copy Number'][0]):
                     for ind, row in dfs[key].iterrows():
                         # CN Start
                         x_array.append(row[1])
-                        y_array.append(row[-1])
+                        y_array.append(float(row[-1]))
 
+                        # CN End
                         if row[2] - row[1] > 10000000:
                             divisor = (row[2] - row[1]) / 10
                             for j in range(1, 11):
@@ -168,7 +172,6 @@ def plot(sample, sample_name, project_name, filter_plots=False):
                                 y_array.append(row[-1])
 
                         else:
-                            # CN End
                             x_array.append(row[2])
                             y_array.append(row[-1])
 
@@ -348,7 +351,7 @@ def plot(sample, sample_name, project_name, filter_plots=False):
 
         end_time = time.time()
         elapsed_time = end_time - start_time
-        print(f"Created a sample plot in {elapsed_time} seconds")
+        logging.info(f"Created sample plot in {elapsed_time} seconds")
         return fig.to_html(full_html=False, div_id='plotly_div')
 
     else:
