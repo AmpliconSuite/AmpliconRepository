@@ -12,11 +12,8 @@ from  .serializers import FileSerializer
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser, FileUploadParser
 from rest_framework import status
-
-
 from pathlib import Path
-
-
+import csv
 
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
@@ -55,10 +52,13 @@ import boto3
 import botocore
 from threading import Thread
 import os, fnmatch
+import uuid
 
 import time
 import math
 import logging
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
+                    level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
 db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI'])
 
@@ -76,6 +76,7 @@ fa_cmap = {
                 'Linear': 'rgb(27, 111, 185)',
                 'Virus': 'rgb(163,163,163)',
                 }
+
 
 def get_date():
     today = datetime.datetime.now()
@@ -100,9 +101,15 @@ def get_one_project(project_name_or_uuid):
     # backstop using the name the old way
     if project is None:
         project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+        if project:
+            logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
         prepare_project_linkid(project)
 
+    if project is None:
+        logging.error(f"Project is None for {project_name_or_uuid}")
+
     return project
+
 
 def get_one_deleted_project(project_name_or_uuid):
     try:
@@ -116,7 +123,11 @@ def get_one_deleted_project(project_name_or_uuid):
     # backstop using the name the old way
     if project is None:
         project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+        logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
         prepare_project_linkid(project)
+
+    if project is None:
+        logging.error(f"Project is None for {project_name_or_uuid}")
 
     return project
 
@@ -128,8 +139,13 @@ def get_one_sample(project_name, sample_name):
     for sample_num in runs.keys():
         current = runs[sample_num]
         if len(current) > 0:
-            if current[0]['Sample name'] == sample_name:
-                sample_out = current
+            # print(current[0])
+            try:
+                if current[0]['Sample name'] == sample_name:
+                    sample_out = current
+            except:
+                if current[0]['Sample_name'] == sample_name:
+                    sample_out = current
 
     return project, sample_out
 
@@ -141,14 +157,13 @@ def get_one_feature(project_name, sample_name, feature_name):
 
 
 def check_project_exists(project_id):
-
     if collection_handle.count_documents({ '_id': ObjectId(project_id) }, limit = 1):
-
         return True
+
     elif collection_handle.count_documents({ 'project_name': project_id }, limit = 1):
         return True
-    else:
 
+    else:
         return False
 
 
@@ -158,7 +173,7 @@ def samples_to_dict(form_file):
     all_samples = file_json['runs']
     for key, value in all_samples.items():
         sample_name = key
-        print(f'in samples_to_dict {sample_name}')
+        logging.debug(f'in samples_to_dict {sample_name}')
         runs[sample_name] = value
 
     return runs
@@ -170,25 +185,54 @@ def form_to_dict(form):
     return form_dict
 
 
+def flatten(nested, lst = True, sort = True):
+    """
+    recursive function to get elements in nested list
+    """
+    flat = []
+    def helper(nested):
+        for e in nested:
+            if isinstance(e, list):
+                helper(e)
+            else:
+                if e:
+                    e = e.replace("'",'')
+                    if len(e) > 0:
+                        flat.append(e)
+    helper(nested)
+    
+    if lst and sort:
+        return list(sorted(flat))
+    return flat
+
+
 def sample_data_from_feature_list(features_list):
-    df = pd.DataFrame(features_list)
-    df2 = df.groupby(['Sample_name']).size().reset_index(name="Features")
+    """
+    extracts sample data from a list of features
+    """
+    now = datetime.datetime.now()
+    df = pd.DataFrame(features_list)[['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID']]
     sample_data = []
-    for index, row in df2.iterrows():
+    for sample_name, indices in df.groupby(['Sample_name']).groups.items():
         sample_dict = dict()
-        sample_dict['Sample_name'] = row['Sample_name']
-        sample_dict['Oncogenes'] = get_sample_oncogenes(features_list, row['Sample_name'])
-        sample_dict['Classifications'] = get_sample_classifications(features_list, row['Sample_name'])
+        subset = df.iloc[indices]
+        sample_dict['Sample_name'] = sample_name
+        sample_dict['Oncogenes'] = flatten(subset['Oncogenes'].values.tolist())
+        sample_dict['Classifications'] = flatten(subset['Classification'].values.tolist())
         if len(sample_dict['Oncogenes']) == 0 and len(sample_dict['Classifications']) == 0:
             sample_dict['Features'] = 0
         else:
-            sample_dict['Features'] = row['Features']
+            sample_dict['Features'] = len(subset['Feature_ID'])
         sample_data.append(sample_dict)
-
+    # print(f'********** TOOK {datetime.datetime.now() - now}')
     return sample_data
 
 
 def replace_space_to_underscore(runs):
+    '''
+    Replaces all spaces to underscores
+    '''
+        
     if type(runs) == dict:
         run_list = []
         for run in runs:
@@ -210,7 +254,6 @@ def replace_space_to_underscore(runs):
                 run_list[-1][newkey] = sample[key]
 
         return run_list
-
 
 def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
     if copy:
@@ -266,6 +309,9 @@ def get_project_classifications(runs):
 
 
 def get_sample_oncogenes(feature_list, sample_name):
+    """
+    Finds the oncogenes for a given sample_name
+    """
     oncogenes = set()
     for feature in feature_list:
         if feature['Sample_name'] == sample_name and feature['Oncogenes']:
@@ -307,11 +353,11 @@ def modify_date(projects):
             dt = datetime.datetime.strptime(project['date'], f"%Y-%m-%dT%H:%M:%S.%f")
             project['date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
         except Exception as e:
-            print(e)
+            logging.exception("Could not modify date for " + project['project_name'])
+            logging.exception(e)
 
     return projects
 
-    
 
 def index(request):
     if request.user.is_authenticated:
@@ -373,7 +419,10 @@ def reference_genome_from_project(samples):
 def reference_genome_from_sample(sample_data):
     reference_genomes = list()
     for feature in sample_data:
-        reference_genomes.append(feature['Reference version'])
+        try:
+            reference_genomes.append(feature['Reference version'])
+        except:
+            reference_genomes.append(feature['Reference_version'])
     if len(set(reference_genomes)) > 1:
         reference_genome = 'Multiple'
     else:
@@ -404,32 +453,100 @@ def set_project_edit_OK_flag(project, request):
         project['current_user_may_edit'] = False
 
 
+def create_aggregate_df(project, samples):
+    """
+    creates the aggregate dataframe for figures:
+    """
+    t_sa = time.time()
+
+    dfl = []
+    for _, dlist in samples.items():
+        dfl.append(pd.DataFrame(dlist))
+    aggregate = pd.concat(dfl)
+    aggregate.columns = [col.replace(' ', "_") for col in aggregate.columns]
+    proj_id = str(project['_id'])
+    if not os.path.exists(os.path.join('tmp', proj_id)):
+        os.system(f'mkdir -p tmp/{proj_id}')
+    aggregate_save_fp = os.path.join('tmp', proj_id, f'{proj_id}_aggregated_df.csv')
+    aggregate.to_csv(aggregate_save_fp)
+    t_sb = time.time()
+    diff = t_sb - t_sa
+    logging.info(f"Iteratively build project dataframe from samples in {diff} seconds")
+    
+    return aggregate, aggregate_save_fp
+
+
+
+
+
 def project_page(request, project_name, message=''):
+    """
+    Render Project Page
+
+    will append sample_data, ref genome, feature_list to project json in the database
+    for faster querying in the future. 
+
+    """
+    
+
     t_i = time.time()
+    ## leaving this bit of code here
+    ### this part will delete the metadata_stored field for a project
+    ### is is only run IF we need to reset a project and reload the data
+
+    # project = get_one_project(project_name) ## 0 loops
+    # query = {'_id' : project['_id'],
+    #                 'delete': False}
+    # val = {'$unset':{'metadata_stored':""}}
+    # collection_handle.update(query, val)
+    # logging.warning('delete complete')
+
     project = get_one_project(project_name)
     if project['private'] and not is_user_a_project_member(project, request):
         return HttpResponse("Project does not exist")
 
-    set_project_edit_OK_flag(project, request)
-    samples = project['runs']
-    features_list = replace_space_to_underscore(samples)
-    reference_genome = reference_genome_from_project(samples)
-    sample_data = sample_data_from_feature_list(features_list)
-    # df = pd.DataFrame(sample_data)
-    t_sa = time.time()
-    dfl = []
-    for _, dlist in samples.items():
-        dfl.append(pd.DataFrame(dlist))
+    if 'metadata_stored' not in project:
+        #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
+        set_project_edit_OK_flag(project, request) ## 0 loops
+        samples = project['runs'].copy()
+        features_list = replace_space_to_underscore(samples) # 1 loop
+        reference_genome = reference_genome_from_project(samples) # 1 over sample nested with 1 over features O(S^f)
+        sample_data = sample_data_from_feature_list(features_list) # O(S)
+        aggregate, aggregate_save_fp = create_aggregate_df(project, samples)
 
-    aggregate = pd.concat(dfl)
-    t_sb = time.time()
-    diff = t_sb - t_sa
-    print(f"Iteratively build project dataframe from samples in {diff} seconds")
+        logging.debug(f'aggregate shape: {aggregate.shape}')
+        new_values = {"$set" : {'sample_data' : sample_data, 
+                                'reference_genome' : reference_genome,
+                                'features_list' : features_list,
+                                'aggregate_df' : aggregate_save_fp,
+                                'metadata_stored': 'Yes'}}
+        query = {'_id' : project['_id'],
+                    'delete': False}
+
+        logging.debug('Inserting Now')
+        collection_handle.update(query, new_values)
+        logging.debug('Insert complete')
+
+    elif 'metadata_stored' in project:
+        logging.info('Already have the lists in DB')
+        set_project_edit_OK_flag(project, request) ## 0 loops
+        samples = project['runs']
+        features_list = project['features_list']
+        reference_genome = project['reference_genome']
+        sample_data = project['sample_data']
+        aggregate_df_fp = project['aggregate_df']
+        if not os.path.exists(aggregate_df_fp):
+            ## create the aggregate df if it doesn't exist already. 
+            aggregate, aggregate_df_fp = create_aggregate_df(project, samples)
+        else:
+            aggregate = pd.read_csv(aggregate_df_fp)
+
+
     stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
     pc_fig = piechart.pie_chart(aggregate, fa_cmap)
     t_f = time.time()
     diff = t_f - t_i
-    print(f"Generated the project page from views.py in {diff} seconds")
+    logging.info(f"Generated the project page for '{project['project_name']}' with views.py in {diff} seconds")
 
     # check for an error when project was created, but don't override a message that was already sent in
     if not message :
@@ -452,14 +569,13 @@ def project_page(request, project_name, message=''):
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig})
 
 
-
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
     session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
     s3client = session.client('s3')
-    print(f'==== XXX STARTING upload of {file_path_and_location_local} to s3://{settings.S3_DOWNLOADS_BUCKET}/{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
+    logging.info(f'==== XXX STARTING upload of {file_path_and_location_local} to s3://{settings.S3_DOWNLOADS_BUCKET}/{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
     s3client.upload_file(f'{file_path_and_location_local}', settings.S3_DOWNLOADS_BUCKET,
                          f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
-    print('==== XXX uploaded to bucket ')
+    logging.info('==== XXX uploaded to bucket ')
 
 
 def check_if_db_field_exists(project, field):
@@ -468,9 +584,8 @@ def check_if_db_field_exists(project, field):
             return True
     except:
         return False
-    
-    #db.Doc.update_one({"_id": project["_id"]}, {"$set": {"geolocCountry": myGeolocCountry}})
-    
+
+
 def find(pattern, path):
     result = []
     for root, dirs, files in os.walk(path):
@@ -499,7 +614,7 @@ def project_download(request, project_name):
 
         project_linkid = project['_id']
         s3_file_location = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_linkid}/{project_linkid}.tar.gz'
-        print(f'==== XXX STARTING download for {s3_file_location} for project {real_project_name}')
+        logging.info(f'==== XXX STARTING download for {s3_file_location} for project {real_project_name}')
 
         if not settings.AWS_PROFILE_NAME:
             settings.AWS_PROFILE_NAME = 'default'
@@ -507,9 +622,9 @@ def project_download(request, project_name):
         session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
         s3client = session.client('s3')
 
-        print("BUCKET "+ settings.S3_DOWNLOADS_BUCKET)
-        print("FILELOC " + s3_file_location)
-        print("PROFILE " + settings.AWS_PROFILE_NAME)
+        logging.info("BUCKET "+ settings.S3_DOWNLOADS_BUCKET)
+        logging.info("FILELOC " + s3_file_location)
+        logging.info("PROFILE " + settings.AWS_PROFILE_NAME)
 
         try:
             s3client.head_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_file_location)
@@ -517,7 +632,7 @@ def project_download(request, project_name):
             if e.response['Error']['Code'] == "404":
                 # The object does not exist.
                 # so we need to get a local file from mongo and push that to S3
-                print("===== XXX PROJECT FILE NOT IN S3 --  GET IT IN THERE")
+                logging.debug("===== XXX PROJECT FILE NOT IN S3 --  GET IT IN THERE")
                 tar_id = project['tarfile']
                 tar_file_wrapper = FileWrapper(fs_handle.get(ObjectId(tar_id)), blksize=32728)
 
@@ -531,14 +646,14 @@ def project_download(request, project_name):
                     output.write(chunk)
                 output.close()
                 upload_file_to_s3(f'{project_data_path}/{project_linkid}.tar.gz', s3_file_location)
-                print('==== XXX upload to bucket complete, move on to get one time url')
+                logging.info('==== XXX upload to bucket complete, move on to get one time url')
 
             else:
                 # Something else has gone wrong.
                 raise
         else:
             # The object does exist.
-            print('==== XXX found it in bucket, move on to get one time url')
+            logging.debug('==== XXX found it in bucket, move on to get one time url')
 
         # we should have uploaded the file if it was not already there
         # get a one-time-use url and redirect the response
@@ -553,7 +668,7 @@ def project_download(request, project_name):
 
     ###### the following is used when S3 is not used for download
     chunk_size = 8192
-    print('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
+    logging.info('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
     file_location = find('*.tar.gz', project_data_path)[0]
     response = StreamingHttpResponse(
         FileWrapper(
@@ -622,7 +737,7 @@ def get_sample_metadata(sample_data):
         sample_metadata = json.loads(sample_metadata.decode())
 
     except Exception as e:
-        print(e)
+        logging.exception(e)
         sample_metadata = defaultdict(str)
 
     return sample_metadata
@@ -639,7 +754,7 @@ def sample_metadata_download(request, project_name, sample_name):
         return response
 
     except Exception as e:
-        print(e)
+        logging.exception(e)
         return HttpResponse()
 
 # @cache_page(600) # 10 minutes
@@ -751,7 +866,7 @@ def sample_download(request, project_name, sample_name):
         # bed_file = fs_handle.get(ObjectId(bed_id)).read()
         if bed_id is not None:
             if not ObjectId.is_valid(bed_id):
-                 print("Sample: ", sample_name, "Feature: ", feature_id,"BED_ID is ->" , bed_id, "<-")
+                 logging.debug("Sample: " + sample_name + ", Feature: " + feature_id + ", BED_ID is ->" + str(bed_id) + " <-")
                  break
 
             bed_file = fs_handle.get(ObjectId(bed_id)).read()
@@ -906,10 +1021,8 @@ def gene_search_page(request):
             for sample in data:
                 sample['project_name'] = project_name
                 sample['project_linkid'] = project_linkid
-                # print(sample)
                 if genequery in sample['Oncogenes']:
                     upperclass =  map(str.upper, sample['Classifications'])
-                    # print(upperclass)
                     classmatch =(classquery in upperclass)
                     classempty = (len(classquery) == 0)
                     # keep the sample if we have matched on both oncogene and classification or oncogene and classification is empty
@@ -1024,17 +1137,17 @@ def edit_project_page(request, project_name):
         else:
             runs = 0
         if check_project_exists(project_name):
-
+            new_project_name = form_dict['project_name']
+            print(f"project name: {project_name}  change to {new_project_name}")
             current_runs = project['runs']
             if runs != 0:
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
-            new_val = { "$set": {'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
+            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'],
                                  'Oncogenes': get_project_oncogenes(current_runs)} }
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
-                # print(f'in valid form')
                 return redirect('project_page', project_name=project_name)
             else:
                 raise Http404()
@@ -1046,7 +1159,7 @@ def edit_project_page(request, project_name):
         members = project['project_members']
         members = [i for i in members if i]
         memberString = ', '.join(members)
-        form = UpdateForm(initial={"description": project['description'],"private":project['private'],"project_members": memberString})
+        form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString})
     return render(request, "pages/edit_project.html", {'project': project, 'run': form})
 
 def create_user_list(string, current_user):
@@ -1071,7 +1184,7 @@ def clear_tmp(folder = 'tmp/'):
             elif os.path.isdir(file_path):
                 shutil.rmtree(file_path)
         except Exception as e:
-            print('Failed to delete %s. Reason: %s' % (file_path, e))
+            logging.exception('Failed to delete %s. Reason: %s' % (file_path, e))
 
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to 
 # deny that this might even be a valid URL
@@ -1102,9 +1215,8 @@ def admin_featured_projects(request):
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_version_details(request):
-    if not  request.user.is_staff:
+    if not request.user.is_staff:
         return redirect('/accounts/logout')
-
     try:
         #details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
         details = []
@@ -1179,21 +1291,73 @@ def admin_stats(request):
     
     # Get public and private project data
     public_projects = list(collection_handle.find({'private': False, 'delete': False}))
-    private_projects = list(collection_handle.find({'private': True, 'delete': False}))
     for proj in public_projects:
-        prepare_project_linkid(proj)
-    for proj in private_projects:
         prepare_project_linkid(proj)
         
     # Calculate stats
     # total_downloads = [project['project_downloads'] for project in public_projects]
 
-    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'private_projects': private_projects, 'users': users})
+    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'users': users})
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def user_stats_download(request):
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    # Get all user data
+    User = get_user_model()
+    users = User.objects.all()
+    
+    # Create the HttpResponse object with the appropriate CSV header.
+    today = datetime.date.today()
+    response = HttpResponse(
+        content_type="text/csv",
+    )
+    response['Content-Disposition'] = f'attachment; filename="users_{today}.csv"'
+
+    user_data = []
+    for user in users:
+        user_dict = {'username':user.username,'email':user.email,'date_joined':user.date_joined,'last_login':user.last_login}
+        user_data.append(user_dict)
+    
+    writer = csv.writer(response)
+    keys = ['username','email','date_joined','last_login']
+    writer.writerow(keys)
+    for dictionary in user_data:
+        output = {k: dictionary.get(k, None) for k in keys}
+        writer.writerow(output.values())
+    
+    return response
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def project_stats_download(request):
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    # Get public and private project data
+    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+    
+    # Create the HttpResponse object with the appropriate CSV header.
+    today = datetime.date.today()
+    response = HttpResponse(
+        content_type="text/csv",
+    )
+    response['Content-Disposition'] = f'attachment; filename="projects_{today}.csv"'
+
+    writer = csv.writer(response)
+    keys = ['project_name','description','project_members','date_created','project_downloads','sample_downloads']
+    writer.writerow(keys)
+    for dictionary in public_projects:
+        output = {k: dictionary.get(k, None) for k in keys}
+        writer.writerow(output.values())
+    return response
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
 def extract_project_files(tarfile, file_location, project_data_path, project_id):
-    print("Extracting files from tar")
+    logging.debug("Extracting files from tar")
     try:
         with tarfile.open(file_location, "r:gz") as tar_file:
             tar_file.extractall(path=project_data_path)
@@ -1206,7 +1370,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
         # get cnv, image, bed files
         for sample, features in runs.items():
             for feature in features:
-                print(feature['Sample name'])
+                logging.debug(feature['Sample name'])
                 if len(feature) > 0:
 
                     # get paths
@@ -1232,10 +1396,10 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
         collection_handle.update_one(query, new_val)
 
     except Exception as anError:
-        print("Error occurred extracting project tarfile results into "+ project_data_path)
-        print(type(anError))  # the exception type
-        print(anError.args)  # arguments stored in .args
-        print(anError)
+        logging.error("Error occurred extracting project tarfile results into "+ project_data_path)
+        logging.error(type(anError))  # the exception type
+        logging.error(anError.args)  # arguments stored in .args
+        logging.error(anError)
         # print error to file called project_extraction_errors.txt that we can
         # see and let owner know to contact an admin
         with open(project_data_path + '/project_extraction_errors.txt', 'a') as fh:
@@ -1250,18 +1414,17 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
 # deny that this might even be a valid URL
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_delete_project(request):
-    if not  request.user.is_staff:
+    if not request.user.is_staff:
         return redirect('/accounts/logout')
 
     error_message = ""
     if request.method == "POST":
-
         form = DeletedProjectForm(request.POST)
         form_dict = form_to_dict(form)
         project_name = form_dict['project_name']
         project_id = form_dict['project_id']
         deleteit = form_dict['delete']
-        print(" FORM = " + str(form_dict))
+        logging.debug(" FORM = " + str(form_dict))
         action = form_dict['action']
 
         if action == 'un-delete':
@@ -1270,10 +1433,9 @@ def admin_delete_project(request):
             query = {'_id': ObjectId(project_id)}
             new_val = {"$set": {'delete': False}}
             collection_handle.update_one(query, new_val)
-            error_message = f"Project {project_name} restored.";
+            error_message = f"Project {project_name} restored."
 
         elif deleteit and (action == 'delete'):
-
             project = get_one_deleted_project(project_id)
             query = {'_id': ObjectId(project_id)}
 
@@ -1287,9 +1449,7 @@ def admin_delete_project(request):
                         key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'AA directory', 'cnvkit directory']
                         for k in key_names:
                             try:
-                                print(sample[k])
                                 fs_handle.delete(ObjectId(sample[k]))
-
 
                             except:
                                 # DO NOTHING, its not there
@@ -1301,7 +1461,6 @@ def admin_delete_project(request):
             # delete project tar and files from mongo and local disk
             #    - assume all feature and sample files are in this dir
             try:
-                print("WTF")
                 fs_handle.delete(ObjectId(project['tarfile']))
             except KeyError:
                 logging.exception(f'Problem deleting project tar file from mongo. { project["project_name"]}')
@@ -1333,9 +1492,7 @@ def admin_delete_project(request):
     deleted_projects = list(collection_handle.find({'delete': True}))
     for proj in deleted_projects:
         prepare_project_linkid(proj)
-
         try:
-
             tar_file_len = fs_handle.get(ObjectId(proj['tarfile'])).length
             proj['tar_file_len'] = sizeof_fmt(tar_file_len)
             if proj['delete_date']:
@@ -1343,9 +1500,7 @@ def admin_delete_project(request):
                 proj['delete_date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
         except:
             #ignore missing date
-            print(proj['project_name'])
-
-
+            logging.warning(proj['project_name'] + " missing date")
 
     return render(request, 'pages/admin_delete_project.html', {'deleted_projects': deleted_projects, 'error_message':error_message})
 
@@ -1358,7 +1513,6 @@ def sizeof_fmt(num, suffix="B"):
     return f"{num:.1f}Yi{suffix}"
 
 
-
 def create_project(request):
     if request.method == "POST":
         form = RunForm(request.POST)
@@ -1369,9 +1523,8 @@ def create_project(request):
         # file download
         request_file = request.FILES['document'] if 'document' in request.FILES else None
 
-        project = create_project_helper(form, user, request_file)
-        project_data_path = f"tmp/{project_name}"
-
+        project, tmp_id = create_project_helper(form, user, request_file)
+        project_data_path = f"tmp/{tmp_id}"
 
         if form.is_valid():
             new_id = collection_handle.insert_one(project)
@@ -1392,7 +1545,6 @@ def create_project(request):
 
                 s3_thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
                 s3_thread.start()
-
 
             # estimate how long the extraction could take and round up
             # CCLE was 3GB and took about 3 minutes
@@ -1421,6 +1573,7 @@ def create_project_helper(form, user, request_file, save = True):
     """
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
+    tmp_id = uuid.uuid4().hex
     project = dict()        
     # download_file(project_name, form_dict['file'])
     # runs = samples_to_dict(form_dict['file'])
@@ -1428,7 +1581,7 @@ def create_project_helper(form, user, request_file, save = True):
     # file download
     
     if request_file:
-        project_data_path = f"tmp/{project_name}"
+        project_data_path = f"tmp/{tmp_id}"
         # create a new instance of FileSystemStorage
         if save:
             fs = FileSystemStorage(location=project_data_path)
@@ -1456,7 +1609,7 @@ def create_project_helper(form, user, request_file, save = True):
                             path=project_data_path)
         
     #get run.json 
-    run_path =  f'{project_data_path}/results/run.json'   
+    run_path =  f'{project_data_path}/results/run.json'
     with open(run_path, 'r') as run_json:
         runs = samples_to_dict(run_json)
     # for filename in os.listdir(project_data_path):
@@ -1478,7 +1631,7 @@ def create_project_helper(form, user, request_file, save = True):
     #
     #                except:
     #                    id_var = "Not Provided"
-   #
+    #
     #                feature[k] = id_var
 
     current_user = user
@@ -1495,7 +1648,7 @@ def create_project_helper(form, user, request_file, save = True):
     project['runs'] = runs
     project['Oncogenes'] = get_project_oncogenes(runs)
     project['Classification'] = get_project_classifications(runs)
-    return project
+    return project, tmp_id
     
 
 class FileUploadView(APIView):
@@ -1503,7 +1656,7 @@ class FileUploadView(APIView):
     permission_classes = []
 
     def get(self, request):
-        print('Hello')
+        logging.debug('Hello')
         return Response({'response':'success'})
 
     def post(self, request, format= None):
@@ -1518,19 +1671,15 @@ class FileUploadView(APIView):
             file_serializer.save()
             form = RunForm(request.POST)
             form_dict = form_to_dict(form)
-            print(form_dict)
+            logging.debug(str(form_dict))
             proj_name = form_dict['project_name']
             request_file = request.FILES['file']
             os.system(f'mkdir -p tmp/{proj_name}')
             os.system(f'mv tmp/{request_file.name} tmp/{proj_name}/{request_file.name}')
             # extract contents of file
             current_user = request.POST['project_members']
-            print(f'Creating project for user {current_user}')
-
+            logging.info(f'Creating project for user {current_user}')
             project = create_project_helper(form, current_user, request_file, save = False)
-            
-
-            print(project)
             new_id = collection_handle.insert_one(project)
             project_data_path = f"tmp/{proj_name}"
             file_location = f'{project_data_path}/{request_file.name}'
