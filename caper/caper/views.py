@@ -211,8 +211,8 @@ def sample_data_from_feature_list(features_list):
         sample_dict = dict()
         subset = df.iloc[indices]
         sample_dict['Sample_name'] = sample_name
-        sample_dict['Oncogenes'] = flatten(subset['Oncogenes'].values.tolist())
-        sample_dict['Classifications'] = flatten(subset['Classification'].values.tolist())
+        sample_dict['Oncogenes'] = sorted(set(flatten(subset['Oncogenes'].values.tolist())))
+        sample_dict['Classifications'] = list(set(flatten(subset['Classification'].values.tolist())))
         if len(sample_dict['Oncogenes']) == 0 and len(sample_dict['Classifications']) == 0:
             sample_dict['Features'] = 0
         else:
