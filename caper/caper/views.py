@@ -787,6 +787,7 @@ def sample_metadata_download(request, project_name, sample_name):
 
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
+    logging.info(f"Loading sample page for {sample_name}")
     project, sample_data = get_one_sample(project_name, sample_name)
     project_linkid = project['_id']
     sample_metadata = get_sample_metadata(sample_data)
@@ -1165,7 +1166,7 @@ def edit_project_page(request, project_name):
             runs = 0
         if check_project_exists(project_name):
             new_project_name = form_dict['project_name']
-            print(f"project name: {project_name}  change to {new_project_name}")
+            logging.info(f"project name: {project_name}  change to {new_project_name}")
             current_runs = project['runs']
             if runs != 0:
                 current_runs.update(runs)
@@ -1551,7 +1552,6 @@ def create_project(request):
         request_file = request.FILES['document'] if 'document' in request.FILES else None
 
         project, tmp_id = create_project_helper(form, user, request_file)
-        print(project['runs'])
         project_data_path = f"tmp/{tmp_id}"
 
         if form.is_valid():
