@@ -133,7 +133,7 @@ def get_one_deleted_project(project_name_or_uuid):
 
 
 def get_one_sample(project_name, sample_name):
-    project = get_one_project(project_name)
+    project = validate_project(get_one_project(project_name), project_name)
     # print("ID --- ", project['_id'])
     runs = project['runs']
     for sample_num in runs.keys():
@@ -503,8 +503,7 @@ def validate_project(project, project_name):
                     'delete': False}
         collection_handle.update(query, new_values)
 
-    get_one_project(project_name)
-    return project
+    return get_one_project(project_name)
 
     
     
@@ -788,7 +787,6 @@ def sample_metadata_download(request, project_name, sample_name):
 
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
-    logging.info(f"Loading sample page for {sample_name}")
     project, sample_data = get_one_sample(project_name, sample_name)
     project_linkid = project['_id']
     sample_metadata = get_sample_metadata(sample_data)
@@ -804,6 +802,7 @@ def sample_page(request, project_name, sample_name):
 
     else:
         plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
+        #plot, featid_to_updated_locations = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
         for feature in sample_data_processed:
             reference_version.append(feature['Reference_version'])
             download_png.append({
@@ -1081,7 +1080,6 @@ def gene_search_page(request):
 def gene_search_download(request, project_name):
     project = get_one_project(project_name)
     samples = project['runs']
-    
     for sample in samples:
         if len(samples[sample]) > 0:
             for feature in samples[sample]:
@@ -1553,6 +1551,7 @@ def create_project(request):
         request_file = request.FILES['document'] if 'document' in request.FILES else None
 
         project, tmp_id = create_project_helper(form, user, request_file)
+        print(project['runs'])
         project_data_path = f"tmp/{tmp_id}"
 
         if form.is_valid():
