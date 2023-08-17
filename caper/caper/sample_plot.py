@@ -11,6 +11,7 @@ import gridfs
 from bson.objectid import ObjectId
 from io import StringIO
 import time
+from pandas.api.types import is_numeric_dtype
 
 warnings.filterwarnings("ignore")
 
@@ -157,12 +158,13 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
             x_array = []
             y_array = []
             if key in dfs:
-                if len(dfs[key].columns) >= 4:
+                if len(dfs[key].columns) >= 4 and is_numeric_dtype(df['Copy Number'][0]):
                     for ind, row in dfs[key].iterrows():
                         # CN Start
                         x_array.append(row[1])
-                        y_array.append(row[-1])
+                        y_array.append(float(row[-1]))
 
+                        # CN End
                         if row[2] - row[1] > 10000000:
                             divisor = (row[2] - row[1]) / 10
                             for j in range(1, 11):
@@ -170,7 +172,6 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
                                 y_array.append(row[-1])
 
                         else:
-                            # CN End
                             x_array.append(row[2])
                             y_array.append(row[-1])
 
