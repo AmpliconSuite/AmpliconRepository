@@ -59,8 +59,8 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
         potential_ref_genomes.add(ref_version)
 
     if len(potential_ref_genomes) > 1:
-        print("\nWARNING! Multiple reference genomes found in project samples, but each project only supports one "
-              "reference genome across samples.\n")
+        logging.warning("\nMultiple reference genomes found in project samples, but each project only supports one "
+              "reference genome across samples. Only the first will be used.\n")
 
     ref = potential_ref_genomes.pop()
     cent_file = f'bed_files/{ref}_centromere.bed'
@@ -93,7 +93,7 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
                            4: 'Copy Number'}, inplace=True)
 
     except Exception as e:
-        print(e)
+        logging.exception(e)
         df = pd.DataFrame(columns=["Chromosome Number", "Feature Start Position", "Feature End Position", "Source",
                                    "Copy Number"])
 
@@ -350,7 +350,7 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
 
         end_time = time.time()
         elapsed_time = end_time - start_time
-        print(f"Created a sample plot in {elapsed_time} seconds")
+        logging.info(f"Created sample plot in {elapsed_time} seconds")
         return fig.to_html(full_html=False, div_id='plotly_div')
 
     else:
