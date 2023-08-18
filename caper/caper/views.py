@@ -1494,17 +1494,26 @@ def admin_delete_project(request):
                 logging.exception(f'Problem deleting project tar file from mongo. { project["project_name"]}')
                 error_message = error_message + " Problem deleting project tar file from mongo."
 
-
-            s3_file_path = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
             try:
                 project_data_path = f"tmp/{project_id}/"
                 shutil.rmtree(project_data_path)
-                session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
-                s3client = session.client('s3')
-                s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path)
             except:
-                logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
-                error_message = error_message+" Problem deleting tar file from S3. "
+                logging.exception(f'Problem deleting tar file from local drive. {project_data_path}')
+
+            if hasattr(settings, 'S3_DOWNLOADS_BUCKET_PATH'):
+                print("============= HAS ATTR  ================")
+                s3_file_path = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
+                try:
+                    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+                    s3client = session.client('s3')
+                    s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path)
+                except:
+                    logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
+                    error_message = error_message+" Problem deleting tar file from S3. "
+            else:
+
+                error_message = error_message + " No S3 bucket path set. No attempt made to delete the tar file from S3. "
+
             # Final step, delete the project
             try:
                 collection_handle.delete_one(query)
