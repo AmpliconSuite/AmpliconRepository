@@ -12,8 +12,9 @@
         {% csrf_token %}
         {{ run|crispy }}
          <label for="document">
-                (optional)
-        </label><input type="file" name="document" id="fileuploadfield">
+                New AmpliconAggregator ouput file: &nbsp;&nbsp;
+        </label><input type="file" name="document" id="fileuploadfield"><br/>
+
         <button type="submit" class="btn btn-primary">Update Project</button>
     </form>
     {% endif %}
