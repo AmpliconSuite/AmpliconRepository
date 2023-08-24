@@ -566,7 +566,6 @@ def project_page(request, project_name, message=''):
         logging.debug(f'aggregate shape: {aggregate.shape}')
         new_values = {"$set" : {'sample_data' : sample_data, 
                                 'reference_genome' : reference_genome,
-                                'features_list' : features_list,
                                 'aggregate_df' : aggregate_save_fp,
                                 'metadata_stored': 'Yes'}}
         query = {'_id' : project['_id'],
@@ -580,7 +579,7 @@ def project_page(request, project_name, message=''):
         logging.info('Already have the lists in DB')
         set_project_edit_OK_flag(project, request) ## 0 loops
         samples = project['runs']
-        features_list = project['features_list']
+        # features_list = project['features_list']
         reference_genome = project['reference_genome']
         sample_data = project['sample_data']
         aggregate_df_fp = project['aggregate_df']
