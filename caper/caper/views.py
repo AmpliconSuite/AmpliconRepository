@@ -100,10 +100,27 @@ def get_one_project(project_name_or_uuid):
 
     # backstop using the name the old way
     if project is None:
-        project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
-        if project:
-            logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
-        prepare_project_linkid(project)
+        try:
+            project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+            if project is not None:
+                logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
+                prepare_project_linkid(project)
+                return project
+        except:
+            project = None
+
+    # look for project that has been versioned by editing and giving it a new file.  This makes sure that
+    # the old links work
+    if project is None:
+        try:
+            project = collection_handle.find_one({'previous_project_ids': project_name_or_uuid, 'delete': False})
+            if project is not None:
+                prepare_project_linkid(project)
+                logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
+
+                return project
+        except:
+            project = None
 
     if project is None:
         logging.error(f"Project is None for {project_name_or_uuid}")
@@ -532,7 +549,11 @@ def project_page(request, project_name, message=''):
     project = validate_project(get_one_project(project_name), project_name)
     if project['private'] and not is_user_a_project_member(project, request):
         return HttpResponse("Project does not exist")
-    
+
+    # if we got here by an OLD project id (prior to edits) then we want to redirect to the new one
+    if not project_name == str(project['linkid']):
+        return redirect('project_page', project_name=project['linkid'])
+
     if 'metadata_stored' not in project:
         #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
         set_project_edit_OK_flag(project, request) ## 0 loops
@@ -1150,6 +1171,11 @@ def project_delete(request, project_name):
 def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
+        try:
+            prev_ids = project['previous_project_ids']
+        except:
+            prev_ids = []
+
         # no edits for non-project members
         if not is_user_a_project_member(project, request):
             return HttpResponse("Project does not exist")
@@ -1159,11 +1185,32 @@ def edit_project_page(request, project_name):
 
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
 
+        request_file = request.FILES['document'] if 'document' in request.FILES else None
+        print(f"request file is {request_file}")
+        if request_file is not None:
+            # mark the current project as deleted
+            del_ret = project_delete(request, project_name)
+            # create a new one with the new form
+            a_message, new_id = _create_project(form, request)
 
+            prev_ids.append(str(project['linkid']))
+           # Create a mapping so links to the old project id still work
+            query = {'_id': ObjectId(new_id.inserted_id)}
+            new_val = {"$set": {'previous_project_ids': prev_ids}}
+
+            collection_handle.update_one(query, new_val)
+
+            return redirect('project_page', project_name=new_id.inserted_id, message=a_message)
+            # go to the new project
+
+
+        # JTL 081823 Not sure what these next 4 lines are about?  An earlier plan to change the project file?
+        # leaving them alone for now but they smell like dead code
         if 'file' in form_dict:
             runs = samples_to_dict(form_dict['file'])
         else:
             runs = 0
+
         if check_project_exists(project_name):
             new_project_name = form_dict['project_name']
             logging.info(f"project name: {project_name}  change to {new_project_name}")
@@ -1494,17 +1541,26 @@ def admin_delete_project(request):
                 logging.exception(f'Problem deleting project tar file from mongo. { project["project_name"]}')
                 error_message = error_message + " Problem deleting project tar file from mongo."
 
-
-            s3_file_path = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
             try:
                 project_data_path = f"tmp/{project_id}/"
                 shutil.rmtree(project_data_path)
-                session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
-                s3client = session.client('s3')
-                s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path)
             except:
-                logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
-                error_message = error_message+" Problem deleting tar file from S3. "
+                logging.exception(f'Problem deleting tar file from local drive. {project_data_path}')
+
+            if hasattr(settings, 'S3_DOWNLOADS_BUCKET_PATH'):
+                print("============= HAS ATTR  ================")
+                s3_file_path = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
+                try:
+                    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+                    s3client = session.client('s3')
+                    s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path)
+                except:
+                    logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
+                    error_message = error_message+" Problem deleting tar file from S3. "
+            else:
+
+                error_message = error_message + " No S3 bucket path set. No attempt made to delete the tar file from S3. "
+
             # Final step, delete the project
             try:
                 collection_handle.delete_one(query)
@@ -1544,53 +1600,52 @@ def sizeof_fmt(num, suffix="B"):
 def create_project(request):
     if request.method == "POST":
         form = RunForm(request.POST)
-        form_dict = form_to_dict(form)
-        project_name = form_dict['project_name']
-        user = get_current_user(request)
-
-        # file download
-        request_file = request.FILES['document'] if 'document' in request.FILES else None
-
-        project, tmp_id = create_project_helper(form, user, request_file)
-        project_data_path = f"tmp/{tmp_id}"
-
-        if form.is_valid():
-            new_id = collection_handle.insert_one(project)
-
-            # move the project location to a new name using the UUID to prevent name collisions
-            new_project_data_path = f"tmp/{new_id.inserted_id}"
-            os.rename(project_data_path, new_project_data_path)
-            project_data_path = new_project_data_path
-            file_location = f'{project_data_path}/{request_file.name}'
-
-            # extract the files async also
-            extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
-            extract_thread.start()
-
-            if settings.USE_S3_DOWNLOADS:
-                # load the zip asynch to S3 for later use
-                file_location = f'{project_data_path}/{request_file.name}'
-
-                s3_thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
-                s3_thread.start()
-
-            # estimate how long the extraction could take and round up
-            # CCLE was 3GB and took about 3 minutes
-            try:
-                file_size = os.path.getsize(file_location)
-                est_min_to_extract = max(2, 1+math.ceil(file_size / (1024 ** 3)))
-            except:
-                est_min_to_extract = 5
-
-            a_message = f"Project creation is still in process.  It is estimated to take {est_min_to_extract} minutes before all samples and features are available."
-            #        clear_tmp()
-            return redirect('project_page', project_name=new_id.inserted_id, message=a_message)
-        else:
-    #        clear_tmp()
+        if not form.is_valid():
             raise Http404()
+
+        a_message, new_id = _create_project(form, request)
+
+        return redirect('project_page', project_name=new_id.inserted_id, message=a_message)
+
     else:
         form = RunForm()
-    return render(request, 'pages/create_project.html', {'run' : form}) 
+    return render(request, 'pages/create_project.html', {'run' : form})
+
+
+def _create_project(form, request):
+    form_dict = form_to_dict(form)
+    project_name = form_dict['project_name']
+    user = get_current_user(request)
+    # file download
+    request_file = request.FILES['document'] if 'document' in request.FILES else None
+    project, tmp_id = create_project_helper(form, user, request_file)
+    project_data_path = f"tmp/{tmp_id}"
+    new_id = collection_handle.insert_one(project)
+    # move the project location to a new name using the UUID to prevent name collisions
+    new_project_data_path = f"tmp/{new_id.inserted_id}"
+    os.rename(project_data_path, new_project_data_path)
+    project_data_path = new_project_data_path
+    file_location = f'{project_data_path}/{request_file.name}'
+    # extract the files async also
+    extract_thread = Thread(target=extract_project_files,
+                            args=(tarfile, file_location, project_data_path, new_id.inserted_id))
+    extract_thread.start()
+    if settings.USE_S3_DOWNLOADS:
+        # load the zip asynch to S3 for later use
+        file_location = f'{project_data_path}/{request_file.name}'
+
+        s3_thread = Thread(target=upload_file_to_s3, args=(
+        f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
+        s3_thread.start()
+    # estimate how long the extraction could take and round up
+    # CCLE was 3GB and took about 3 minutes
+    try:
+        file_size = os.path.getsize(file_location)
+        est_min_to_extract = max(2, 1 + math.ceil(file_size / (1024 ** 3)))
+    except:
+        est_min_to_extract = 5
+    a_message = f"Project creation is still in process.  It is estimated to take {est_min_to_extract} minutes before all samples and features are available."
+    return a_message, new_id
 
 
 ## make a create_project_helper for project creation code 
