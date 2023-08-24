@@ -69,6 +69,10 @@ def StackedBarChart(sample, fa_cmap):
 
     end_time = time.time()
     elapsed_time = end_time - start_time
+    updated_config_dict = {'displayModeBar': ['True'],
+                           'toImageButtonOptions': {
+                               'format': 'svg',  # one of png, svg, jpeg, webp
+                            }
+                           }
     logging.info(f"Created project barchart plot in {elapsed_time} seconds")
-    return fig.to_html(full_html=False, config={'displayModeBar': ['True']}, #'modeBarButtonsToRemove': ['zoom'],
-                       div_id="project_bar_plotly_div")
+    return fig.to_html(full_html=False, config=updated_config_dict, div_id="project_bar_plotly_div")

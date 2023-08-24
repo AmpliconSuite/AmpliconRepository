@@ -34,5 +34,11 @@ def pie_chart(sample, fa_cmap):
     fig.update_traces(textfont_size = 12, textposition='inside', hovertemplate= '<b>%{label}</b><br>%{value} Focal Amps')
     fig.update_layout(margin={'t': 0, 'b': 40})
 
-    return fig.to_html(full_html=False, config={'displayModeBar': True, 'displaylogo':False}, div_id='project_pie_plotly_div')
+    updated_config_dict = {'displayModeBar': True, 'displaylogo':False,
+                           'toImageButtonOptions': {
+                               'format': 'svg',  # one of png, svg, jpeg, webp
+                            }
+                           }
+
+    return fig.to_html(full_html=False, config=updated_config_dict, div_id='project_pie_plotly_div')
     
