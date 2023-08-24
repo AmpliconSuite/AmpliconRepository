@@ -71,7 +71,9 @@
         var plot_element = document.getElementById("project_bar_plotly_div");
         plot_element.on('plotly_click', function(data){{
             var sname = data['points'][0]['customdata'][0];
-            var link = window.location.href + '/sample/' + sname;
+            var url_no_message = window.location.href.split('/message')[0];
+            var link = url_no_message + '/sample/' + sname;
+{#            var link = window.location.href + '/sample/' + sname;#}
 {#            console.log(link);#}
             window.open(link, "_blank");
             }})

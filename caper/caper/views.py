@@ -184,7 +184,7 @@ def samples_to_dict(form_file):
     all_samples = file_json['runs']
     for key, value in all_samples.items():
         sample_name = key
-        logging.debug(f'in samples_to_dict {sample_name}')
+        # logging.debug(f'in samples_to_dict {sample_name}')
         runs[sample_name] = value
 
     return runs
@@ -221,7 +221,7 @@ def sample_data_from_feature_list(features_list):
     """
     extracts sample data from a list of features
     """
-    now = datetime.datetime.now()
+    # now = datetime.datetime.now()
     df = pd.DataFrame(features_list)[['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID']]
     sample_data = []
     for sample_name, indices in df.groupby(['Sample_name']).groups.items():
@@ -481,6 +481,7 @@ def create_aggregate_df(project, samples):
     
     return aggregate, aggregate_save_fp
 
+
 def replace_underscore_keys(runs_from_proj_creation):
     """
     Replaces underscores in the keys from runs at proj creation step
@@ -513,18 +514,14 @@ def validate_project(project, project_name):
                     update = True
                     break
     if update:
-        new_values = {"$set" : {
-            'runs' : runs
+        new_values = {"$set": {
+            'runs': runs
         }}
-        query = {'_id' : project['_id'],
+        query = {'_id': project['_id'],
                     'delete': False}
         collection_handle.update(query, new_values)
 
     return get_one_project(project_name)
-
-    
-    
-    
 
 
 def project_page(request, project_name, message=''):
@@ -589,7 +586,6 @@ def project_page(request, project_name, message=''):
         else:
             aggregate = pd.read_csv(aggregate_df_fp)
 
-
     stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
     pc_fig = piechart.pie_chart(aggregate, fa_cmap)
     t_f = time.time()
@@ -597,7 +593,7 @@ def project_page(request, project_name, message=''):
     logging.info(f"Generated the project page for '{project['project_name']}' with views.py in {diff} seconds")
 
     # check for an error when project was created, but don't override a message that was already sent in
-    if not message :
+    if not message:
         extraction_error = None
         project_error_file_path = f"tmp/{project_name}/project_extraction_errors.txt"
         alt_project_error_file_path = f"tmp/{project['project_name']}/project_extraction_errors.txt"
@@ -711,9 +707,6 @@ def project_download(request, project_name):
 
         return HttpResponseRedirect(presigned_url)
 
-
-
-
     ###### the following is used when S3 is not used for download
     chunk_size = 8192
     logging.info('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
@@ -777,6 +770,7 @@ def igv_features_creation(locations):
         locuses[key] = f"{chr_num}:{(int(chr_min)):,}-{(int(chr_max)):,}"
 
     return features, locuses
+
 
 def get_sample_metadata(sample_data):
     try:
@@ -970,66 +964,69 @@ def feature_page(request, project_name, sample_name, feature_name):
     feature_data = replace_space_to_underscore(feature)
     return render(request, "pages/feature.html", {'project': project, 'sample_name': sample_name, 'feature_name': feature_name, 'feature' : feature_data})
 
+
 def feature_download(request, project_name, sample_name, feature_name, feature_id):
     bed_file = fs_handle.get(ObjectId(feature_id)).read()
     response = HttpResponse(bed_file, content_type='application/caper.bed+csv')
     response['Content-Disposition'] = f'attachment; filename="{feature_name}.bed"'
-    return(response)
+    return response
+
 
 def pdf_download(request, project_name, sample_name, feature_name, feature_id):
     img_file = fs_handle.get(ObjectId(feature_id)).read()
     response = HttpResponse(img_file, content_type='application/pdf')
     response['Content-Disposition'] = f'inline; filename="{feature_name}.pdf"'
     # response = FileResponse(img_file)
-    return(response)
+    return response
+
 
 def png_download(request, project_name, sample_name, feature_name, feature_id):
     img_file = fs_handle.get(ObjectId(feature_id)).read()
     response = HttpResponse(img_file, content_type='image/png')
     response['Content-Disposition'] = f'inline; filename="{feature_name}.png"'
-    return(response)
+    return response
 
 
 #
 # actually the old gene search page function, deprecated and replaced
 #
-def class_search_page(request):
-    genequery = request.GET.get("genequery")
-    genequery = genequery.upper()
-    gen_query = {'$regex': genequery }
-
-    classquery = request.GET.get("classquery")
-    classquery = classquery.upper()
-    class_query = {'$regex': classquery}
-
-    # Gene Search
-    if request.user.is_authenticated:
-        username = request.user.username
-        useremail = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}], 'Oncogenes' : gen_query, 'Classification' : class_query}))
-    else:
-        private_projects = []
-    
-    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'Classification' : class_query}))
-    
-    for proj in private_projects:
-        prepare_project_linkid(proj)   
-    for proj in public_projects:
-        prepare_project_linkid(proj)
- 
-    sample_data = []
-    for project in public_projects:
-        project_name = project['project_name']
-        features = project['runs']
-        features_list = replace_space_to_underscore(features)
-        data = sample_data_from_feature_list(features_list)
-        for sample in data:
-            sample['project_name'] = project_name
-            if genequery in sample['Oncogenes']:
-                sample_data.append(sample)
-
-
-    return render(request, "pages/gene_search.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'sample_data': sample_data, 'query': query})
+# def class_search_page(request):
+#     genequery = request.GET.get("genequery")
+#     genequery = genequery.upper()
+#     gen_query = {'$regex': genequery }
+#
+#     classquery = request.GET.get("classquery")
+#     classquery = classquery.upper()
+#     class_query = {'$regex': classquery}
+#
+#     # Gene Search
+#     if request.user.is_authenticated:
+#         username = request.user.username
+#         useremail = request.user.email
+#         private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}], 'Oncogenes' : gen_query, 'Classification' : class_query}))
+#     else:
+#         private_projects = []
+#
+#     public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'Classification' : class_query}))
+#
+#     for proj in private_projects:
+#         prepare_project_linkid(proj)
+#     for proj in public_projects:
+#         prepare_project_linkid(proj)
+#
+#     sample_data = []
+#     for project in public_projects:
+#         project_name = project['project_name']
+#         features = project['runs']
+#         features_list = replace_space_to_underscore(features)
+#         data = sample_data_from_feature_list(features_list)
+#         for sample in data:
+#             sample['project_name'] = project_name
+#             if genequery in sample['Oncogenes']:
+#                 sample_data.append(sample)
+#
+#     return render(request, "pages/gene_search.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'sample_data': sample_data, 'query': query})
+#
 
 def gene_search_page(request):
     genequery = request.GET.get("genequery")
@@ -1045,7 +1042,6 @@ def gene_search_page(request):
         username = request.user.username
         useremail = request.user.email
         query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
-
 
         private_projects = list(collection_handle.find(query_obj))
     else:
@@ -1097,6 +1093,7 @@ def gene_search_page(request):
                   {'public_projects': public_projects, 'private_projects' : private_projects,
                    'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data,
                    'gene_query': genequery, 'class_query': classquery})
+
 
 def gene_search_download(request, project_name):
     project = get_one_project(project_name)
@@ -1153,6 +1150,7 @@ def get_current_user(request):
 
     return current_user
 
+
 def project_delete(request, project_name):
     project = get_one_project(project_name)
     deleter = get_current_user(request)
@@ -1165,7 +1163,8 @@ def project_delete(request, project_name):
         return redirect('profile')
     else:
         return HttpResponse("Project does not exist")
-    return redirect('profile')
+    # return redirect('profile')
+
 
 def edit_project_page(request, project_name):
     if request.method == "POST":
@@ -1431,6 +1430,7 @@ def project_stats_download(request):
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
 def extract_project_files(tarfile, file_location, project_data_path, project_id):
+    t_sa = time.time()
     logging.debug("Extracting files from tar")
     try:
         with tarfile.open(file_location, "r:gz") as tar_file:
@@ -1443,8 +1443,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
 
         # get cnv, image, bed files
         for sample, features in runs.items():
+            logging.debug(f"Extracting {str(len(features))} features from {features[0]['Sample name']}")
             for feature in features:
-                logging.debug(feature['Sample name'])
+                # logging.debug(feature['Sample name'])
                 if len(feature) > 0:
 
                     # get paths
@@ -1462,12 +1463,15 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
                         feature[k] = id_var
 
         # Now update the project with the updated runs
-        project = get_one_project(project_id)
+        get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
 
         collection_handle.update_one(query, new_val)
+        t_sb = time.time()
+        diff = t_sb - t_sa
+        logging.info(f"Finished extracting from tar in {str(diff)} seconds")
 
     except Exception as anError:
         logging.error("Error occurred extracting project tarfile results into "+ project_data_path)
@@ -1481,7 +1485,6 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
             print(type(anError), file = fh)  # the exception type
             print(anError.args, file = fh )  # arguments stored in .args
             print(anError, file=fh)
-
 
 
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to
