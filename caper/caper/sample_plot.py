@@ -352,7 +352,13 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
         end_time = time.time()
         elapsed_time = end_time - start_time
         logging.info(f"Created sample plot in {elapsed_time} seconds")
-        return fig.to_html(full_html=False, div_id='plotly_div')
+
+        updated_config_dict = {'toImageButtonOptions': {
+                                   'format': 'svg',  # one of png, svg, jpeg, webp
+                                }
+                               }
+
+        return fig.to_html(full_html=False, config=updated_config_dict, div_id='plotly_div')
 
     else:
         plot = go.Figure(go.Scatter(x=[2], y = [2],
