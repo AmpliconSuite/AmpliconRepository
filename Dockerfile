@@ -3,6 +3,25 @@ FROM ubuntu:20.04
 MAINTAINER Forrest Kim <f1kim@health.ucsd.edu>
 
 #############################################
+##      Arguments                          ##
+#############################################
+
+ARG AA_USER
+ARG AA_GROUP
+ARG UID
+ARG GID
+# ARG ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS
+# ARG GOOGLE_SECRET_KEY
+# ARG GLOBUS_SECRET_KEY
+# ARG ACCOUNT_DEFAULT_HTTP_PROTOCOL
+# ARG SECURE_SSL_REDIRECT
+# ARG DB_URI
+# ARG S3_FILE_DOWNLOADS
+# ARG AWS_PROFILE_NAME
+# ARG S3_DOWNLOADS_BUCKET_PATH
+# ARG S3_STATIC_FILES
+
+#############################################
 ##      System updates                     ##
 #############################################
 
@@ -75,13 +94,32 @@ RUN /bin/bash -c "source /opt/venv/bin/activate && \
 	source /srv/caper/config.sh && \
 	/srv/caper/manage.py collectstatic --noinput"
 
+
 # COPY ./start-server.sh /srv/caper/start-server.sh
 
 #############################################
 ##      Start the webapp                   ##
 #############################################
-RUN mkdir /srv/logs/
+RUN mkdir -p /srv/logs/
 COPY ./run-manage-py.sh /srv/run-manage-py.sh
 RUN apt-get update && apt-get install vim --yes
 
+# Create user if specified
+RUN /bin/bash -c "if [[ -z '${UID}' || -z '${AA_USER}' || -z '${GID}' ]] ; \
+    then echo 'Running as root'; \
+        export AA_USER=root; \
+    else echo 'Running as ${UID} ${AA_USER}';  \
+        addgroup --gid ${GID} ${AA_GROUP}; \
+        useradd -ms /bin/bash -u ${UID} ${AA_USER}; \
+        chown ${AA_USER}:${GID} -R /srv; \
+        su - ${AA_USER}; \
+    fi"
+
+# Check which user is set
+RUN whoami
+RUN echo ${AA_USER}
+USER ${AA_USER}
+RUN whoami
+
+EXPOSE 8000
 CMD ["/srv/run-manage-py.sh","&"]

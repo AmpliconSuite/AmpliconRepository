@@ -5,7 +5,21 @@
 
 This is the main repository for the AmpliconRepository.
 
-# How to set up a development server for AmpliconRepository
+- [How to install the development environment for AmpliconRepository](#aa-env-install)
+- [How to set up your development environment using docker compose](#dev-docker)
+- [Testing datasets](#test-datasets) 
+- [Pushing changes to GitHub and merging PRs](#pr)
+- [Using the development server](#dev-server)
+- [Logging in as admin](#admin-logging)
+- [How to deploy and update the production server for AmpliconRepository](#deploy)
+
+
+## There are two options for running the server locally: 
+**[Option A](#aa-env-install)**: Manually install modules and configure the environment step-by-step.
+
+**[Option B](#dev-docker)**: Use Docker to deploy the server and its environment on your system.
+
+## Option A - install the development environment for AmpliconRepository: <a name="aa-env-install"></a> 
 
 ## Requirements
 - Python Virtual Environment (3.8 or higher)
@@ -14,7 +28,7 @@ This is the main repository for the AmpliconRepository.
 - Clone repo using https, ssh, or GitHub Desktop to your local machine
 
 ## 2. Set up the virtual environment and install packages:
-- In a terminal window, move to the cloned Github repo
+- In a terminal window, move to the cloned GitHub repo
 - Go to the AmpliconRepository top level directory (should see `requirements.txt`)
 #### Option A: Using python's environment manager
 - Create a new Python virtual environment:
@@ -87,10 +101,170 @@ export S3_FILE_DOWNLOADS='FALSE'
 - Open the application on a web browser (recommend using a private/incognito window for faster development):
 > https://localhost:8000
 
-# Testing datasets
+# Option B - Local deployment with Docker: <a name="dev-docker"></a>
+
+These steps guide users on how to set up their development environment using Docker and `docker compose` as an alternative to python or conda-based package management and installation. **This is the simplest way to locally deploy the server for new users.** 
+
+**Important:** You first need to install [docker>=20.10](https://docs.docker.com/engine/install/) on your machine.
+
+
+To test the installation of Docker please do:
+
+```bash
+# check version: e.g. Docker version 20.10.8, build 3967b7d
+docker --version
+
+# check if compose module is present
+docker compose --help
+
+# check docker engine installation
+sudo docker run hello-world
+```
+
+
+## Quickstart
+
+Build and run your development webserver and mongo db using docker:
+
+```bash
+cd AmpliconRepository
+# place config.sh in caper/, and place .env in current dir
+# change UID and GID in .env to match the host configuration
+# create all folders which you want to expose to the container
+mkdir -p logs tmp .aws .git
+docker compose -f docker-compose-dev.yml build --no-cache --progress=plain
+docker compose -f docker-compose-dev.yml up -d
+# then visit http://localhost:8000/ in your web browser
+# once finished, to shutdown:
+docker compose -f docker-compose-dev.yml down
+```
+
+## Complete steps
+
+### i. Start your [docker daemon](https://docs.docker.com/config/daemon/start/) and make sure is running:
+
+```bash
+# for linux
+sudo systemctl start docker
+docker --help
+docker compose --help
+
+# or alternatively start manually from interface (macos or windows)
+```
+
+### ii. Clone the repository (skip this if you have already done this):
+
+```bash
+git clone https://github.com/AmpliconSuite/AmpliconRepository.git
+```
+
+### iii. Build a local Docker image:
+
+This command will create a Docker image `genepattern/amplicon-repo:dev-test` with your environment, all dependencies and application code you need to run the webserver.
+Additionally, this command will pull a `mongo:4` image for the test database. 
+
+**First, obtain the secret files `.env` and `config.sh` from another developer**. Do not share these files with others outside the project. Do not upload them anywhere. Keep them private.
+
+Next, Place `.env` under `AmpliconRepository/` and `config.sh` under `AmpliconRepository/caper/`.
+
+You should see these required files:
+- `docker-compose-dev.yml`
+- `Dockerfile`
+- `.env` 
+- `requirements.txt`
+- `caper/config.sh`
+
+```bash
+cd AmpliconRepository
+docker compose -f docker-compose-dev.yml build --progress=plain --no-cache
+```
+
+### iv. Run webserver and mongo db instances: 
+
+This command will:
+- create two containers, one for the webserver (`amplicon-dev`) and one for the mongo database (`ampliconrepository_mongodb_1`)
+- will use `.env` to configure all environment variables used by the webserver and mongodb 
+- will start the webserver on `localhost:8000`
+- will start a mongodb instance listening on port `27017`
+- will mount a volume with your source code `-v ${PWD}:/srv/:rw`
+
+```bash
+# create all folders exposed to container
+mkdir -p logs tmp .aws .git
+# start container using the host UID and GID (change in .env)
+docker compose -f docker-compose-dev.yml up -d
+#[+] Running 2/2
+# ⠿ Container ampliconrepository-mongodb-1  Started                                                                                                                           0.3s
+# ⠿ Container amplicon-dev                  Started                                                                                                                           1.1s
+```
+
+To check if your containers are running do:
+
+```bash
+docker ps
+```
+and you should see something like below:
+```
+# CONTAINER ID   IMAGE                                COMMAND                   CREATED         STATUS              PORTS                      NAMES
+# 311a560ec20a   genepattern/amplicon-repo:dev   "/bin/sh -c 'echo \"H…"   3 minutes ago   Up About a minute   0.0.0.0:8000->8000/tcp     amplicon-dev
+# deaa521621f1   mongo:4                              "docker-entrypoint.s…"    4 days ago      Up About a minute   0.0.0.0:27017->27017/tcp   ampliconrepository_mongodb_1
+```
+
+To view the site locally, visit http://localhost:8000/ in your web browser.
+
+### v. Stop webserver and mongodb
+
+To stop the webserver and mongodb service:
+
+```bash
+docker compose -f docker-compose-dev.yml down
+#[+] Running 3/2
+# ⠿ Container amplicon-dev                  Removed                                                                                                                          10.3s
+# ⠿ Container ampliconrepository-mongodb-1  Removed                                                                                                                           0.3s
+# ⠿ Network ampliconrepository_default      Removed                                                                                                                           0.0s
+```
+
+### vi. Check environment configuration of your docker-compose
+
+Before you build your image you can check if the `config.sh` is set correctly by doing:
+
+```bash
+docker compose -f docker-compose-dev.yml config
+```
+
+This command will show you the `docker-compose-dev.yml` customized with your environment variables.
+
+### vii. Check environment variables for running container
+
+You can check the environment variables which your running container uses:
+
+```bash
+docker inspect -f \
+   '{{range $index, $value := .Config.Env}} {{$value}}{{println}}{{end}}' \
+   container_id
+```
+
+### viii. Debug
+
+- Run `docker ps` and check if the port mapping is correct, i.e. you should see `0.0.0.0:8000->8000`=`host_localip:host_port->docker_port`
+- Port mapping annotation for `docker run -p 8000:8000 ...`=`HOST:DOCKER`
+- For local development you need to use host port `8000` to be able to use the Google Authentication in the App
+- Set `AMPLICON_ENV_PORT` if you want to use another port on the host machine, then rebuild the docker image.
+- If you get the error `permission denied/read only database` please set the read-write permissions on your local machine to `777` for the following
+`sudo chmod 777 logs/ tmp/ .aws/ caper/caper.sqlite3 -R`
+- If you have an older version of docker `docker compose` may not be available and you will need to install `docker-compose` and use that, replacing `docker compose` with `docker-compose`.
+- Error: `unix /var/run/docker.sock: connect: permission denied` -> [see](https://stackoverflow.com/questions/48568172/docker-sock-permission-denied)
+- If you need to run as a non-root user (rare), please set `UID` and `GID` in your `.env` file to match the host `UID` `GID`, or run as so:
+  `env UID=${UID} GID=${GID} docker compose -f docker-compose-dev.yml up`
+- Make sure all folders which are mounted as volumes at runtime are created upfront (below for development):
+  `cd AmpliconRepository; mkdir -p logs tmp .aws .git`
+- My local `mongodb` instance is not running or you get `ampliconrepository-mongodb-1 exited with code 14`? Try do `cd AmpliconRepository; rm -rf data` and restart using `docker-compose`
+
+
+# Testing datasets <a name="test-datasets"></a> 
 [These datasets](https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=share_link) are ready to upload to the site for testing purposes.
 
-# Pushing changes to GitHub and merging PRs
+# Pushing changes to GitHub and merging PRs <a name="pr"></a> 
 - Work on branches and open pull requests to merge changes into main.
 - Please ensure that you do not commit `caper.sqlite3` along with your other changes. 
 - PR reviewers, please check that `caper.sqlite3` is not among the changed files in a PR.
@@ -101,13 +275,13 @@ export S3_FILE_DOWNLOADS='FALSE'
     - CCLE project page
     - load a random sample in CCLE
 
-# Using the development server
+# Using the development server <a name="dev-server"></a> 
 - Please see the [wiki page on using the development server](https://github.com/mesirovlab/AmpliconRepository/wiki/dev.ampliconrepository.org-instructions).
 
-# Logging in as admin
+# Logging in as admin <a name="admin-logging"></a> 
  - Please see the [wiki page on admin login](https://github.com/mesirovlab/AmpliconRepository/wiki/Becoming-Admin-on-a-development-server).
 
-# How to deploy and update the production server for AmpliconRepository
+# How to deploy and update the production server for AmpliconRepository <a name="deploy"></a> 
 The server is currently running on an EC2 instance through Docker. The ports active on HTTP and HTTPS through AWS Load Balancer. There are two main scripts to start and stop the server.
 
 **Note:** While we provide a Dockerfile, local deployment of the site using the docker will only properly work on AWS. Local deployment should be done with a local install using the steps above.

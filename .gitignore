@@ -1,4 +1,6 @@
 config.sh
+*.swp
+.env
 /caper/caper.sqlite3
 .DS_Store
 Dockerfile
@@ -16,4 +18,6 @@ pyvenv.cfg
 # pycharm IDE
 .idea/
 tmp/
+data/
+logs/
 .env
