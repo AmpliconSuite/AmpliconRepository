@@ -140,7 +140,7 @@ AUTHENTICATION_BACKENDS = [
 ACCOUNT_EMAIL_VERIFICATION = 'none'
 ACCOUNT_EMAIL_REQUIRED = False
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = True
+ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = os.environ['ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS']
 
 SECRET_KEY = 'c4nc3r'
 
@@ -153,7 +153,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Provider specific settings
 GOOGLE_SECRET_KEY = os.environ['GOOGLE_SECRET_KEY']
 GLOBUS_SECRET_KEY = os.environ['GLOBUS_SECRET_KEY']
-
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.getenv('ACCOUNT_DEFAULT_HTTP_PROTOCOL', default='https')
 
 # add a custom account adaptor to prevent having a username match an email in another user
@@ -439,7 +438,6 @@ else:
 DATA_UPLOAD_MAX_MEMORY_SIZE = 524288000
 DATA_UPLOAD_MAX_NUMBER_FIELDS = None
 
-
 ###########################
 # version info for footer #
 ###########################
@@ -457,3 +455,4 @@ with open("version.txt", 'r') as version_file:
             if "version" == key.lower():
                 SERVER_VERSION = value
                 break
+
