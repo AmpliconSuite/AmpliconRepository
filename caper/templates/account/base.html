@@ -66,12 +66,25 @@
         $(function () {
             $('[data-toggle="tooltip"]').tooltip()
           })
+
+
+        window.onload = function(){
+		$("input[type='submit']").addClass("btn btn-primary");
+	}
     </script>
     {% endblock %}
 
 
     <!-- Include Site Stylesheet -->
     <link rel="stylesheet" href="{{ STATIC_URL }}css/style.css" type="text/css" media="screen"/>
+    <style>
+	h1, .h1 {
+            font-size: 1.5rem !important;
+	}
+
+    </style>
+
+
 </head>
 
 
@@ -83,7 +96,7 @@
     
     <!-- Display the navigation header -->
     {% page_menu "includes/header.html" %}
-    
+    <br/> 
     {% block index %}
     <div class="row">
         <div class="container main-container" style="max-width:1400px; width:90%; margin:auto;">
