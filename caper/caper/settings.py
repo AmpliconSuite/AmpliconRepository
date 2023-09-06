@@ -2,6 +2,9 @@ import os
 from django.utils.translation import gettext_lazy as _
 import logging
 
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
+                    level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
+
 ######################
 # MEZZANINE SETTINGS #
 ######################
