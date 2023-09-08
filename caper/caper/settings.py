@@ -174,6 +174,7 @@ ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.getenv('ACCOUNT_DEFAULT_HTTP_PROTOCOL', defau
 # add a custom account adaptor to prevent having a username match an email in another user
 # account
 ACCOUNT_ADAPTER = "caper.utils.CustomAccountAdapter"
+SOCIALACCOUNT_ADAPTER = 'caper.utils.SocialAccountAdapter'
 
 SOCIALACCOUNT_EMAIL_REQUIRED=True
 SOCIALACCOUNT_PROVIDERS = {
