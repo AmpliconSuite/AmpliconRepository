@@ -194,6 +194,9 @@ def samples_to_dict(form_file):
 
 
 def form_to_dict(form):
+    print('*************************')
+    print('*************************')
+    # print(form)
     run = form.save(commit=False)
     form_dict = model_to_dict(run)
     return form_dict
@@ -1654,7 +1657,7 @@ def _create_project(form, request):
 
 
 ## make a create_project_helper for project creation code 
-def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex):
+def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex, from_api = False):
     """
     Creates a project dictionary from 
     
@@ -1683,7 +1686,11 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
             #    print('==== XXX uploaded to bucket')
         
     # extract contents of file
-    file_location = f'{project_data_path}/{request_file.name}'
+    if from_api:
+        file_location = request_file.name
+        print(file_location)
+    else:
+        file_location = f'{project_data_path}/{request_file.name}'
     with open(file_location, "rb") as tar_file:
         project_tar_id = fs_handle.put(tar_file)
 
@@ -1720,7 +1727,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     #                    id_var = "Not Provided"
     #
     #                feature[k] = id_var
-
+    print('creating project now')
     current_user = user
     project['creator'] = current_user
     project['project_name'] = form_dict['project_name']
@@ -1747,47 +1754,80 @@ class FileUploadView(APIView):
 
     def post(self, request, format= None):
         '''
-
         Post API
         '''
         file_serializer = FileSerializer(data = request.data)
-
-
-
+        
         if file_serializer.is_valid():
             file_serializer.save()
             form = RunForm(request.POST)
             form_dict = form_to_dict(form)
-            logging.debug(str(form_dict))
             proj_name = form_dict['project_name']
             request_file = request.FILES['file']
             # extract contents of file
             current_user = request.POST['project_members']
             logging.info(f'Creating project for user {current_user}')
-            api_id = uuid.uuid4().hex
-            os.system(f'mkdir -p tmp/{api_id}')
+            if 'MULTIPART' in proj_name:
+                api_id = proj_name.split('__')[1]
+                final_file = proj_name.split('__')[-1]
+            else:
+                api_id = uuid.uuid4().hex
+
+            if not os.path.exists(os.path.join('tmp', api_id)):
+                os.system(f'mkdir -p tmp/{api_id}')
             os.system(f'mv tmp/{request_file.name} tmp/{api_id}/{request_file.name}')
-            project, tmp_id = create_project_helper(form, current_user, request_file,save = False, tmp_id = api_id)
-            new_id = collection_handle.insert_one(project)
-            project_data_path = f"tmp/{api_id}"
-            # move the project location to a new name using the UUID to prevent name collisions
-            new_project_data_path = f"tmp/{new_id.inserted_id}"
-            os.rename(project_data_path, new_project_data_path)
-            project_data_path = new_project_data_path
-            file_location = f'{project_data_path}/{request_file.name}'
 
-             # extract the files async also
-            extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
-            extract_thread.start()
+            if 'MULTIPART' in proj_name:
+                if str(final_file) in str(request_file.name):
+                    ## we've reached the last file in the multifile upload, time to zip them up together
+                    print('reached the final file, creating reconstructed zip now. ')
+                    os.system(f'cat ./tmp/{api_id}/POST* > ./tmp/{api_id}/reconstructed.tar.gz')
+                    file = open(f'./tmp/{api_id}/reconstructed.tar.gz', 'rb')
+                    print('removing POST files now')
+                    os.system(f'rm -f ./tmp/{api_id}/POST*')
+                    helper_thread = Thread(target=self.api_helper, args=(form, current_user,file , api_id))
+                    helper_thread.start()
+            else:
+                ## no multipart, just run the api helper:
+                file = open(f'./tmp/{api_id}/{request_file.name}')
+                helper_thread = Thread(target=self.api_helper, args=(form, current_user,file , api_id))
+                helper_thread.start()
 
-            if settings.USE_S3_DOWNLOADS:
-                # load the zip asynch to S3 for later use
-                file_location = f'{project_data_path}/{request_file.name}'
-
-                s3_thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
-                s3_thread.start()
-
-            
+            print('hanging up now')
             return Response(file_serializer.data, status=status.HTTP_201_CREATED)
         else:
             return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+    def api_helper(self, form, current_user, request_file, api_id, multifile = False):
+        """
+        Helper function for API, to be run asynchronously 
+        """
+        print('starting api helper')
+        print('where am i')
+        project, tmp_id = create_project_helper(form, current_user, request_file, save = False, tmp_id = api_id, from_api = True)
+        print('i am in a cafe')
+        print('the project is here: ')
+        new_id = collection_handle.insert_one(project)
+        project_data_path = f"tmp/{api_id}"
+        # move the project location to a new name using the UUID to prevent name collisions
+        # new_project_data_path = f"tmp/{new_id.inserted_id}"
+        # os.rename(project_data_path, new_project_data_path)
+        # project_data_path = new_project_data_path
+        
+        file_location = f'{request_file.name}'
+        print(file_location)
+
+            # extract the files async also
+        extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
+        extract_thread.start()
+
+        if settings.USE_S3_DOWNLOADS:
+            # load the zip asynch to S3 for later use
+            file_location = f'{project_data_path}/{request_file.name}'
+
+            s3_thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
+            s3_thread.start()
+
+
