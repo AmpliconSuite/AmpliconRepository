@@ -1794,7 +1794,10 @@ class FileUploadView(APIView):
                 helper_thread.start()
 
             print('hanging up now')
-            return Response(file_serializer.data, status=status.HTTP_201_CREATED)
+            if 'MULTIPART':
+                return Response({'Message': 'Successfully uploaded. Project creation will take more than 2 mins. Upload may time-out.'}, status=status.HTTP_201_CREATED)
+            else:
+                return Response(file_serializer.data, status=status.HTTP_201_CREATED)
         else:
             return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
