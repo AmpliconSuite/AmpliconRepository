@@ -1807,11 +1807,8 @@ class FileUploadView(APIView):
         """
         Helper function for API, to be run asynchronously 
         """
-        print('starting api helper')
-        print('where am i')
+        logging.info('starting api helper')
         project, tmp_id = create_project_helper(form, current_user, request_file, save = False, tmp_id = api_id, from_api = True)
-        print('i am in a cafe')
-        print('the project is here: ')
         new_id = collection_handle.insert_one(project)
         project_data_path = f"tmp/{api_id}"
         # move the project location to a new name using the UUID to prevent name collisions
@@ -1820,7 +1817,8 @@ class FileUploadView(APIView):
         # project_data_path = new_project_data_path
         
         file_location = f'{request_file.name}'
-        print(file_location)
+        logging.debug('the project is here: ')
+        logging.debug(str(file_location))
 
             # extract the files async also
         extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
