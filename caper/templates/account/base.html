@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+{% load pages_tags mezzanine_tags i18n static %}
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta n`e="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0 shrink-to-fit=no">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+    <meta name="keywords" content="{% block meta_keywords %}amplicon architect{% endblock %}">
+    <meta name="description" content="{% block meta_description %}A Community Accessible Pipeline for ecDNA reconstruction{% endblock %}">
+
+    <title>{% block meta_title %}{% endblock %}{% if settings.SITE_TITLE %} | {{ settings.SITE_TITLE }}{% endif %}</title>
+
+    {# Load the tag library #}
+    {% load bootstrap4 %}
+
+    {# Load CSS and JavaScript #}
+    {% bootstrap_css %}
+    {% bootstrap_javascript jquery='full' %}
+
+    {# Display django.contrib.messages as Bootstrap alerts #}
+    {% bootstrap_messages %}
+
+    <!-- Include Mezzanine Resources -->
+    <link rel="stylesheet" href="{% static "css/mezzanine.css" %}">
+    <script src="{% static "mezzanine/js/"|add:settings.JQUERY_FILENAME %}"></script>
+
+    <!-- Include Bootstrap 4 -->
+    <!-- <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/smoothness/jquery-ui.css"> -->
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.2/css/all.css" integrity="sha384-oS3vJWv+0UjzBfQzYUhtDYW+Pj2yciDJxpsK1OYPAYjqT085Qq/1cq5FLXAZQ7Ay" crossorigin="anonymous">
+    <!-- <script src="https://code.jquery.com/jquery-1.12.4.min.js" integrity="sha256-ZosEbRLbNQzLpnKIkEdrPv7lOy9C27hHQ+Xp8a4MxAQ=" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js" integrity="sha256-VazP97ZCwtekAsvgPBSUwPFKdrwD3unUfSGVYrahUqU=" crossorigin="anonymous"></script> -->
+    <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script> -->
+    <!-- <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script> -->
+
+    <!-- Include favicon -->
+    <link rel="shortcut icon" href="{% static 'images/favicon.ico' %}" />
+
+    <!-- Include Js DataTables -->
+    <script src="https://code.jquery.com/jquery-3.5.1.js"></script>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.12.1/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/select/1.4.0/css/select.dataTables.min.css">
+    <script src="https://cdn.datatables.net/1.12.1/js/jquery.dataTables.min.js
+    "></script>
+    <script src="https://cdn.datatables.net/select/1.4.0/js/dataTables.select.min.js"></script>
+
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-RLJSFEY3H0"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+
+        gtag('config', 'G-RLJSFEY3H0');
+    </script>
+    
+    
+
+    {% block extra_css %}
+    {% endblock %}
+
+    {% block extra_js %}
+
+
+
+    <script>
+        $(function () {
+            $('[data-toggle="tooltip"]').tooltip()
+          })
+
+
+        window.onload = function(){
+		$("input[type='submit']").addClass("btn btn-primary");
+	}
+    </script>
+    {% endblock %}
+
+
+    <!-- Include Site Stylesheet -->
+    <link rel="stylesheet" href="{{ STATIC_URL }}css/style.css" type="text/css" media="screen"/>
+    <style>
+	h1, .h1 {
+            font-size: 1.5rem !important;
+	}
+
+    </style>
+
+
+</head>
+
+
+
+
+
+
+<body id="{% block body_id %}body{% endblock %}" class="{% block body_class %}{% endblock %}" style="padding-top: 0px">
+    
+    <!-- Display the navigation header -->
+    {% page_menu "includes/header.html" %}
+    <br/> 
+    {% block index %}
+    <div class="row">
+        <div class="container main-container" style="max-width:1400px; width:90%; margin:auto;">
+
+            <!-- Display the leading content -->
+            <!-- {% block lead %}
+            <h1 id="page-title">{% block title %}{% endblock %}</h1>
+            <h5 id="page-description">{% block description %}{% endblock %}</h5>
+            {% endblock %} -->
+            <!-- Display the main content -->
+            {% block main-container %}
+            <div>
+                {% block main %}{% endblock %}
+		 {% block content %}{% endblock %}
+            </div>
+            {% endblock main-container %}
+        </div>
+    </div>
+
+    {% endblock index %}
+    <!-- Display the footer -->
+    {% page_menu "includes/footer.html" %}
+    {% include "includes/footer_scripts.html" %}
+</body>
+
+
+</html>

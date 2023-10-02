@@ -1,5 +1,9 @@
 import os
 from django.utils.translation import gettext_lazy as _
+import logging
+
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
+                    level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
 ######################
 # MEZZANINE SETTINGS #
@@ -139,8 +143,20 @@ AUTHENTICATION_BACKENDS = [
 # turn off email authentication when a user registers an account
 ACCOUNT_EMAIL_VERIFICATION = 'none'
 ACCOUNT_EMAIL_REQUIRED = False
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = os.environ['ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS']
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+#ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = os.environ['ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS']
+
+EMAIL_HOST = 'smtp.gmail.com' #new
+EMAIL_PORT = 587 #new
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', default="")  #new
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', default="")
+EMAIL_USE_TLS = True #new
+
+logging.error("EMAIL ")
+logging.error( EMAIL_HOST_USER)
+
+#ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = os.environ['ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS']
 
 SECRET_KEY = 'c4nc3r'
 
@@ -158,6 +174,7 @@ ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.getenv('ACCOUNT_DEFAULT_HTTP_PROTOCOL', defau
 # add a custom account adaptor to prevent having a username match an email in another user
 # account
 ACCOUNT_ADAPTER = "caper.utils.CustomAccountAdapter"
+SOCIALACCOUNT_ADAPTER = 'caper.utils.SocialAccountAdapter'
 
 SOCIALACCOUNT_EMAIL_REQUIRED=True
 SOCIALACCOUNT_PROVIDERS = {
@@ -320,7 +337,6 @@ TEMPLATES = [
 ################
 
 INSTALLED_APPS = [
-    'caper',
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -341,6 +357,7 @@ INSTALLED_APPS = [
     "mezzanine.pages",
     "mezzanine.forms",
     "mezzanine.galleries",
+    "caper",
     # "mezzanine.twitter",
     # 'mezzanine.accounts',
     'allauth',
