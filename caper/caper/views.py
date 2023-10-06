@@ -1807,8 +1807,7 @@ class FileUploadView(APIView):
         """
         Helper function for API, to be run asynchronously 
         """
-        print('starting api helper')
-        print('where am i')
+        logging.info('starting api helper')
         project, tmp_id = create_project_helper(form, current_user, request_file, save = False, tmp_id = api_id, from_api = True)
         if multifile:
             project['project_name'] = actual_proj_name
@@ -1822,7 +1821,8 @@ class FileUploadView(APIView):
         # project_data_path = new_project_data_path
         
         file_location = f'{request_file.name}'
-        print(file_location)
+        logging.debug('the project is here: ')
+        logging.debug(str(file_location))
 
             # extract the files async also
         extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
