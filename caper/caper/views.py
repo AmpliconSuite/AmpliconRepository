@@ -1768,8 +1768,7 @@ class FileUploadView(APIView):
             current_user = request.POST['project_members']
             logging.info(f'Creating project for user {current_user}')
             if 'MULTIPART' in proj_name:
-                api_id = proj_name.split('__')[1]
-                final_file = proj_name.split('__')[-1]
+                _, api_id, final_file, actual_proj_name = proj_name.split('__')
             else:
                 api_id = uuid.uuid4().hex
 
@@ -1785,7 +1784,8 @@ class FileUploadView(APIView):
                     file = open(f'./tmp/{api_id}/reconstructed.tar.gz', 'rb')
                     print('removing POST files now')
                     os.system(f'rm -f ./tmp/{api_id}/POST*')
-                    helper_thread = Thread(target=self.api_helper, args=(form, current_user,file , api_id))
+
+                    helper_thread = Thread(target=self.api_helper, args=(form, current_user, file , api_id, actual_proj_name, True))
                     helper_thread.start()
             else:
                 ## no multipart, just run the api helper:
@@ -1803,13 +1803,15 @@ class FileUploadView(APIView):
 
 
 
-    def api_helper(self, form, current_user, request_file, api_id, multifile = False):
+    def api_helper(self, form, current_user, request_file, api_id,actual_proj_name, multifile = False):
         """
         Helper function for API, to be run asynchronously 
         """
         print('starting api helper')
         print('where am i')
         project, tmp_id = create_project_helper(form, current_user, request_file, save = False, tmp_id = api_id, from_api = True)
+        if multifile:
+            project['project_name'] = actual_proj_name
         print('i am in a cafe')
         print('the project is here: ')
         new_id = collection_handle.insert_one(project)
