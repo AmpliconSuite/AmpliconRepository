@@ -1550,7 +1550,11 @@ def admin_delete_project(request):
                 error_message = error_message + " Problem deleting project tar file from mongo."
 
             try:
-                project_data_path = f"tmp/{project_id}/"
+                if os.path.exists(f"../tmp/{project_id}/"):
+                    project_data_path = f"../tmp/{project_id}/"
+                else:
+                    project_data_path = f"tmp/{project_id}/"
+
                 shutil.rmtree(project_data_path)
             except:
                 logging.exception(f'Problem deleting tar file from local drive. {project_data_path}')
@@ -1811,9 +1815,9 @@ class FileUploadView(APIView):
         project, tmp_id = create_project_helper(form, current_user, request_file, save = False, tmp_id = api_id, from_api = True)
         if multifile:
             project['project_name'] = actual_proj_name
-        print('i am in a cafe')
-        print('the project is here: ')
+        logging.info('the project is here: ')
         new_id = collection_handle.insert_one(project)
+        logging.info(str(new_id))
         project_data_path = f"tmp/{api_id}"
         # move the project location to a new name using the UUID to prevent name collisions
         # new_project_data_path = f"tmp/{new_id.inserted_id}"
