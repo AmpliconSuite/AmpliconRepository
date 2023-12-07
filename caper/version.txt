@@ -1,4 +1,4 @@
-Version= v1.2.6_090623
-Creator= liefeld
-Date= Wed Sep  6 22:08:00 UTC 2023
-CommitID=0c867813fe2a0a2bfc9c4ecd7bdf3cf03e104bc1
+Version= v1.2.7_101223
+Creator= edwin5588
+Date= Thu Oct 12 20:42:20 UTC 2023
+CommitID=fd76ad88b22fa2303137de7da8f10729d598677b
