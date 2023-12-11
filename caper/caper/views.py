@@ -1794,7 +1794,8 @@ class FileUploadView(APIView):
             else:
                 ## no multipart, just run the api helper:
                 file = open(f'./tmp/{api_id}/{request_file.name}')
-                helper_thread = Thread(target=self.api_helper, args=(form, current_user,file , api_id))
+                actual_proj_name = request_file.name.split('.')[0]
+                helper_thread = Thread(target=self.api_helper, args=(form, current_user,file, api_id, actual_proj_name))
                 helper_thread.start()
 
             print('hanging up now')
