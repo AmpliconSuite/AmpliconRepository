@@ -23,6 +23,8 @@
         }
 
         function checkinputfield(){
+            var fileInput = document.getElementById('fileuploadfield');
+            var progressBar = document.getElementById('progressBar');
             if( document.getElementById("fileuploadfield").files.length == 0 ){
                 console.log("no files selected");
                 document.getElementById("upload_failed").style.display = "flex";
@@ -30,8 +32,41 @@
             } else{
                 console.log(document.getElementById("fileuploadfield").files);
                 console.log("file is uploaded");
+                var formData = new FormData();
+                formData.append('document', fileInput.files[0]);
+
+                fetch('./tmp/', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}',  // Include CSRF token if using Django
+                    },
+                    processData: false,
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Handle the response data
+                    console.log(data);
+
+                    // Update the progress bar
+                    progressBar.value = data.progress;
+
+                    // Check if the upload is complete
+                    if (data.progress === 100) {
+                        alert('Upload complete!');
+                        // Continue with any additional logic
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+
                 return true
             }
+        }
+        function showProgressBar() {
+            var progressBar = document.getElementById('progressBar');
+            progressBar.style.display = 'block';
         }
     </script>
 <h1>Create New Project</h1>
@@ -47,8 +82,10 @@
     {{ run|crispy }}
 
     <input type="file" name="document" id="fileuploadfield">
-    
-    <button class="btn btn-primary">Create Project</button>
+
+    <button class="btn btn-primary" onclick="showProgressBar()">Create Project</button>
+{#    <progress value="0" max="100" id="progressBar"></progress>#}
+
 </form>
     <br>
     <p><b>What file do I upload?</b> <br> A specially formatted .tar.gz of your AmpliconSuite-pipeline output files, including all samples in your project.
