@@ -93,7 +93,7 @@
             }
         </style>
             <div style="margin-top: 20px">
-                <h1 style="">Welcome to the AmpliconRepository</h1>
+                <h1 style="">Welcome to AmpliconRepository</h1>
                 <hr>
                 <div stlye="margin-top: 30px;">
                     <p style="font-size:18px;">An online repository of AmpliconArchitect outputs. Explore and download focal amplification predictions and annotations.</p>
@@ -152,22 +152,33 @@
                         <button type="submit" class="btn btn-outline-primary">Search all samples</button>
                     </form>
                 </div>
-                <div style="padding-top: 10px">
-                    <ul class="nav nav-tabs" role="tablist" >
-                        <li class="nav-item">
+                <div style="padding-top: 11px">
+                    <style>
+                        .nav-tabs .nav-item .nav-link {
+                            color: #007bff; /* Default text color */
+                            border: 1px solid transparent; /* Default border */
+                            border-radius: 0.25rem; /* Optional: rounded corners */
+                        }
 
+                        .nav-tabs .nav-item .nav-link.active {
+                            color: #000; /* Text color when tab is active */
+                            border-color: #ccc; /* Border color when tab is active */
+                            border-bottom-color: transparent; /* Remove the default underline */
+                        }
+                    </style>
+                    <ul class="nav nav-tabs" role="tablist">
+                        <li class="nav-item">
                             <a class="nav-link active" href="#tab-table0" data-toggle="tab">Featured Projects</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link " href="#tab-table1" data-toggle="tab">Public Projects</a>
+                            <a class="nav-link" href="#tab-table1" data-toggle="tab">Public Projects</a>
                         </li>
                         {% if user.is_authenticated %}
-                        <li class="nav-item">
-                            <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
-                        </li>
+                            <li class="nav-item">
+                                <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
+                            </li>
                         {% endif %}
                     </ul>
-
                     <div class="tab-content" style="padding-top: 30px;">
 
                         <div class="tab-pane active" id="tab-table0">
