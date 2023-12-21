@@ -344,6 +344,35 @@
               </div>
             </div>
         </div>
+        <div >
+            <h4 style="margin-top: 20px">AmpliconRepository Statistics</h4>
+            <div style="margin-left: 20%">
+            <table id='statsTable0' class="table" style="padding-top: 20px; width:60%">
+                <thead>
+                    <tr>
+                        <th> </th>
+                        <th>Public</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Projects</td>
+                        <td>{{ repo_stats.public_proj_count }}</td>
+                        <td>{{ repo_stats.all_private_proj_count }}</td>
+                    </tr>
+                    <tr>
+                        <td>Samples</td>
+                        <td>{{ repo_stats.public_sample_count }}</td>
+                        <td>{{ repo_stats.all_private_sample_count }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+
+        </div>
+
+
     </div>
 </div>
 </div>

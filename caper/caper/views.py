@@ -20,12 +20,13 @@ import csv
 from django.conf import settings
 # import pymongo
 import json
+
 # from .models import File
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm
 from .utils import get_db_handle, get_collection_handle, create_run_display
 from django.forms.models import model_to_dict
 import time
-import datetime
+
 import os
 import subprocess
 import shutil
@@ -53,6 +54,7 @@ import botocore
 from threading import Thread
 import os, fnmatch
 import uuid
+import datetime
 
 import time
 import math
@@ -64,6 +66,8 @@ db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), o
 
 # SET UP HANDLE
 collection_handle = get_collection_handle(db_handle,'projects')
+site_statistics_handle = get_collection_handle(db_handle,'site_statistics')
+
 fs_handle = gridfs.GridFS(db_handle)
 
 # Site-wide focal amp color scheme
@@ -385,9 +389,22 @@ def index(request):
     else:
         private_projects = []
 
+    # just get stats for all private
+    all_private_proj_count = 0
+    all_private_sample_count = 0
+    all_private_projects = list(collection_handle.find({'private': True, 'delete': False}))
+    for proj in all_private_projects:
+        all_private_proj_count = all_private_proj_count + 1
+        all_private_sample_count = all_private_sample_count + len(proj['runs'])
+    # end private stats
+
+    public_proj_count = 0
+    public_sample_count = 0
     public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
+        public_proj_count = public_proj_count + 1
+        public_sample_count = public_sample_count + len(proj['runs'])
 
     featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
     for proj in featured_projects:
@@ -398,7 +415,42 @@ def index(request):
     private_projects = modify_date(private_projects)
     featured_projects = modify_date(featured_projects)
 
-    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects})
+    regenerate_site_statistics()
+    # get the latest set of stats
+    repo_stats = site_statistics_handle.find().sort('_id',-1).limit(1).next()
+    print(repo_stats)
+
+    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects, 'repo_stats': repo_stats})
+
+
+def regenerate_site_statistics():
+    print(db_handle.list_collection_names())
+    # just get stats for all private
+    all_private_proj_count = 0
+    all_private_sample_count = 0
+    all_private_projects = list(collection_handle.find({'private': True, 'delete': False}))
+    for proj in all_private_projects:
+        all_private_proj_count = all_private_proj_count + 1
+        all_private_sample_count = all_private_sample_count + len(proj['runs'])
+    # end private stats
+
+    public_proj_count = 0
+    public_sample_count = 0
+    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    for proj in public_projects:
+        public_proj_count = public_proj_count + 1
+        public_sample_count = public_sample_count + len(proj['runs'])
+
+    # make it an array of name/values so we can add to it later
+    repo_stats = {}
+    repo_stats["public_proj_count"] = public_proj_count
+    repo_stats["public_sample_count"] = public_sample_count
+    repo_stats["all_private_proj_count"] = all_private_proj_count
+    repo_stats["all_private_sample_count"] = all_private_sample_count
+    repo_stats["date"] = datetime.datetime.today()
+    new_id = site_statistics_handle.insert_one(repo_stats)
+    print(site_statistics_handle.count_documents({}))
+    return repo_stats
 
 
 def profile(request):
@@ -1286,9 +1338,13 @@ def admin_featured_projects(request):
         collection_handle.update_one(query, new_val)
 
 
+
     public_projects = list(collection_handle.find({'private': False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
+
+
+    print(f"Proj count: {public_proj_count}      sample count: {public_sample_count}")
 
     return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
 
