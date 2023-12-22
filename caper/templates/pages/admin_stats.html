@@ -80,8 +80,36 @@
     <div class="col-md-12">
         <div>
             <h1 style="padding-top: 50px">Projects</h1>
-            <a class="btn btn-primary" href="/admin-stats/download/project/" style="color: white">Download Project Stats</a>
+            <a class="btn btn-primary" href="/admin-stats/download/project/" style="color: white">Download Project Details</a>
 
+            <a class="btn btn-primary" href="/admin-stats/site_statistics/regenerate" style="color: white">Regenerate Site Statisticss</a>
+<div >
+            <h4 style="margin-top: 20px">Site Statistics</h4>
+            <div style="margin-left: 20%">
+            <table id='statsTable0' class="table" style="padding-top: 20px; width:60%">
+                <thead>
+                    <tr>
+                        <th> </th>
+                        <th>Public</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Projects</td>
+                        <td>{{ site_stats.public_proj_count }}</td>
+                        <td>{{ site_stats.all_private_proj_count }}</td>
+                    </tr>
+                    <tr>
+                        <td>Samples</td>
+                        <td>{{ site_stats.public_sample_count }}</td>
+                        <td>{{ site_stats.all_private_sample_count }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+
+        </div>
 
             <hr>
         </div>

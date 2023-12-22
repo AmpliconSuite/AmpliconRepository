@@ -1,6 +1,6 @@
 # from asyncore import file_wrapper
 # from tkinter import E
-from django.http import HttpResponse, FileResponse, StreamingHttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect
 from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
@@ -8,9 +8,11 @@ from django.contrib.auth import get_user_model
 
 ## API framework packages
 from rest_framework.response import Response
+
+from .site_stats import regenerate_site_statistics, get_latest_site_statistics
 from  .serializers import FileSerializer
 from rest_framework.views import APIView
-from rest_framework.parsers import MultiPartParser, FormParser, FileUploadParser
+from rest_framework.parsers import MultiPartParser
 from rest_framework import status
 from pathlib import Path
 import csv
@@ -23,11 +25,9 @@ import json
 
 # from .models import File
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm
-from .utils import get_db_handle, get_collection_handle, create_run_display
+from .utils import get_db_handle, collection_handle, db_handle, fs_handle
 from django.forms.models import model_to_dict
-import time
 
-import os
 import subprocess
 import shutil
 import caper.sample_plot as sample_plot
@@ -40,7 +40,7 @@ import tarfile
 import pandas as pd
 # import numpy as np
 #import cv2
-import gridfs
+
 # import caper
 from bson.objectid import ObjectId
 # from django.utils.text import slugify
@@ -62,13 +62,9 @@ import logging
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
-db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI'])
 
 # SET UP HANDLE
-collection_handle = get_collection_handle(db_handle,'projects')
-site_statistics_handle = get_collection_handle(db_handle,'site_statistics')
 
-fs_handle = gridfs.GridFS(db_handle)
 
 # Site-wide focal amp color scheme
 fa_cmap = {
@@ -175,10 +171,10 @@ def get_one_feature(project_name, sample_name, feature_name):
 
 
 def check_project_exists(project_id):
-    if collection_handle.count_documents({ '_id': ObjectId(project_id) }, limit = 1):
+    if collection_handle.count_documents({'_id': ObjectId(project_id)}, limit = 1):
         return True
 
-    elif collection_handle.count_documents({ 'project_name': project_id }, limit = 1):
+    elif collection_handle.count_documents({'project_name': project_id}, limit = 1):
         return True
 
     else:
@@ -382,7 +378,7 @@ def index(request):
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
-        private_projects = list(collection_handle.find({ 'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
         for proj in private_projects:
             prepare_project_linkid(proj)
 
@@ -415,42 +411,10 @@ def index(request):
     private_projects = modify_date(private_projects)
     featured_projects = modify_date(featured_projects)
 
-    regenerate_site_statistics()
     # get the latest set of stats
-    repo_stats = site_statistics_handle.find().sort('_id',-1).limit(1).next()
-    print(repo_stats)
+    site_stats = get_latest_site_statistics()
 
-    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects, 'repo_stats': repo_stats})
-
-
-def regenerate_site_statistics():
-    print(db_handle.list_collection_names())
-    # just get stats for all private
-    all_private_proj_count = 0
-    all_private_sample_count = 0
-    all_private_projects = list(collection_handle.find({'private': True, 'delete': False}))
-    for proj in all_private_projects:
-        all_private_proj_count = all_private_proj_count + 1
-        all_private_sample_count = all_private_sample_count + len(proj['runs'])
-    # end private stats
-
-    public_proj_count = 0
-    public_sample_count = 0
-    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
-    for proj in public_projects:
-        public_proj_count = public_proj_count + 1
-        public_sample_count = public_sample_count + len(proj['runs'])
-
-    # make it an array of name/values so we can add to it later
-    repo_stats = {}
-    repo_stats["public_proj_count"] = public_proj_count
-    repo_stats["public_sample_count"] = public_sample_count
-    repo_stats["all_private_proj_count"] = all_private_proj_count
-    repo_stats["all_private_sample_count"] = all_private_sample_count
-    repo_stats["date"] = datetime.datetime.today()
-    new_id = site_statistics_handle.insert_one(repo_stats)
-    print(site_statistics_handle.count_documents({}))
-    return repo_stats
+    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects, 'site_stats': site_stats})
 
 
 def profile(request):
@@ -459,7 +423,7 @@ def profile(request):
     # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
-    projects = list(collection_handle.find({  "$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+    projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
 
     for proj in projects:
         prepare_project_linkid(proj)
@@ -1432,7 +1396,9 @@ def admin_stats(request):
     # Calculate stats
     # total_downloads = [project['project_downloads'] for project in public_projects]
 
-    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'users': users})
+    repo_stats = get_latest_site_statistics()
+
+    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'users': users, 'site_stats':repo_stats })
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def user_stats_download(request):
@@ -1463,6 +1429,11 @@ def user_stats_download(request):
         writer.writerow(output.values())
     
     return response
+
+# wrapper in views for site stats to keep the import of site_stats.py out of urls.py
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def site_stats_regenerate(request):
+    regenerate_site_statistics()
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def project_stats_download(request):

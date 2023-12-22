@@ -4,8 +4,10 @@ from django import forms
 from django.contrib.auth import get_user_model
 from allauth.account.models import EmailAddress
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
+import gridfs
 
-from django.conf import settings
+import os
+
 
 def get_db_handle(db_name, host):
     client = MongoClient(host
@@ -85,3 +87,11 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         # if it does, connect this new social login to the existing user
         user = email_address.user
         sociallogin.connect(request, user)
+
+
+
+db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI'])
+
+collection_handle = get_collection_handle(db_handle,'projects')
+
+fs_handle = gridfs.GridFS(db_handle)
