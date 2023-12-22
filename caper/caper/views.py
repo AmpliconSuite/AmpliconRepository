@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 ## API framework packages
 from rest_framework.response import Response
 
-from .site_stats import regenerate_site_statistics, get_latest_site_statistics
+from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics
 from  .serializers import FileSerializer
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
@@ -1182,6 +1182,7 @@ def project_delete(request, project_name):
         #query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
+        delete_project_from_site_statistics(project)
         return redirect('profile')
     else:
         return HttpResponse("Project does not exist")
@@ -1210,6 +1211,7 @@ def edit_project_page(request, project_name):
         if request_file is not None:
             # mark the current project as deleted
             del_ret = project_delete(request, project_name)
+
             # create a new one with the new form
             a_message, new_id = _create_project(form, request)
 
@@ -1434,6 +1436,7 @@ def user_stats_download(request):
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def site_stats_regenerate(request):
     regenerate_site_statistics()
+    return admin_stats(request)
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def project_stats_download(request):
@@ -1660,6 +1663,7 @@ def _create_project(form, request):
     project, tmp_id = create_project_helper(form, user, request_file)
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
+    add_project_to_site_statistics(project)
     # move the project location to a new name using the UUID to prevent name collisions
     new_project_data_path = f"tmp/{new_id.inserted_id}"
     os.rename(project_data_path, new_project_data_path)

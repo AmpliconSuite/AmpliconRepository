@@ -63,7 +63,7 @@ urlpatterns += [
     path('admin-stats/', views.admin_stats, name='admin_stats'),
     path('admin-stats/download/user/',views.user_stats_download,name="user_stats_download"),
     path('admin-stats/download/project/',views.project_stats_download,name="project_stats_download"),
-    path('admin-stats/site_statistics/regenerate/', views.project_stats_download, name="site_stats_regenerate"),
+    path('admin-stats/site_statistics/regenerate/', views.site_stats_regenerate, name="site_stats_regenerate"),
 
     path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
     path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),
