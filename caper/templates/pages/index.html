@@ -347,7 +347,7 @@
         <div >
             <h4 style="margin-top: 20px">AmpliconRepository Statistics</h4>
             <div style="margin-left: 20%">
-            <table id='statsTable0' class="table" style="padding-top: 20px; width:60%">
+            <table id='statsTable0' class="table" style="padding-top: 20px; width:80%">
                 <thead>
                     <tr>
                         <th> </th>
@@ -358,13 +358,38 @@
                 <tbody>
                     <tr>
                         <td>Projects</td>
-                        <td>{{ site_stats.public_proj_count }}</td>
-                        <td>{{ site_stats.all_private_proj_count }}</td>
+                        <td>{{ site_stats.public_proj_count|default:0 }}</td>
+                        <td>{{ site_stats.all_private_proj_count|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>Samples</td>
-                        <td>{{ site_stats.public_sample_count }}</td>
-                        <td>{{ site_stats.all_private_sample_count }}</td>
+                        <td>{{ site_stats.public_sample_count|default:0 }}</td>
+                        <td>{{ site_stats.all_private_sample_count|default:0 }}</td>
+                    </tr>
+                <tr>
+                        <td>ecDNA</td>
+                        <td>{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td>BFB</td>
+                        <td>{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td>Complex non-cyclic</td>
+                        <td>{{ site_stats.public_amplicon_classifications_count.Complex_non_cyclic|default:0 }}</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td>Linear amplification</td>
+                        <td>{{ site_stats.public_amplicon_classifications_count.Linear_amplification|default:0  }}</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td>unclassified</td>
+                        <td>{{ site_stats.public_amplicon_classifications_count.Unclassified|default:0 }}</td>
+                        <td></td>
                     </tr>
                 </tbody>
             </table>
