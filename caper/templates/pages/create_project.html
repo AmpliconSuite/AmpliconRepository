@@ -49,7 +49,11 @@
                     console.log(data);
 
                     // Update the progress bar
-                    progressBar.value = data.progress;
+                    if (progressBar) {
+                        progressBar.value = data.progress;
+                    } else {
+                        console.error("progress bar doesn't exist");
+                    }
 
                     // Check if the upload is complete
                     if (data.progress === 100) {
@@ -66,7 +70,11 @@
         }
         function showProgressBar() {
             var progressBar = document.getElementById('progressBar');
-            progressBar.style.display = 'block';
+            if (progressBar) {
+                progressBar.style.display = 'block';
+            } else {
+                console.error("progress bar doesn't exist")
+            }
         }
     </script>
 <h1>Create New Project</h1>
@@ -84,7 +92,7 @@
     <input type="file" name="document" id="fileuploadfield">
 
     <button class="btn btn-primary" onclick="showProgressBar()">Create Project</button>
-{#    <progress value="0" max="100" id="progressBar"></progress>#}
+    <progress id="progressBar" value="0" max="100" style="display: none;"></progress>
 
 </form>
     <br>
