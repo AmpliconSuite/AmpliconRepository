@@ -329,6 +329,16 @@
                         vertical-align: middle;
                     }
 
+                    .table-not-striped tbody tr:nth-of-type(odd) {
+                        background-color: transparent!important;
+                    }
+                    .table-not-striped  th {
+                        background-color: #E6EFFB;
+                        color: #696a6c
+                    }
+                    .table-not-striped td {
+                        color: #696a6c
+                    }
                 </style>
 
               <div class="card-header" id="headingOne" style="background:none;">
@@ -345,51 +355,47 @@
             </div>
         </div>
         <div >
-            <h4 style="margin-top: 20px">AmpliconRepository Statistics</h4>
-            <div style="margin-left: 20%">
-            <table id='statsTable0' class="table" style="padding-top: 20px; width:80%">
-                <thead>
-                    <tr>
-                        <th> </th>
-                        <th>Public</th>
-                        <th>Private</th>
-                    </tr>
+            <h4 style="margin-top: 20px">Data Summary</h4>
+            <div style="margin-left: 0%">
+            <table id='statsTable0' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
+                <thead class="">
+
                 </thead>
                 <tbody>
                     <tr>
                         <td>Projects</td>
                         <td>{{ site_stats.public_proj_count|default:0 }}</td>
-                        <td>{{ site_stats.all_private_proj_count|default:0 }}</td>
+
                     </tr>
                     <tr>
                         <td>Samples</td>
                         <td>{{ site_stats.public_sample_count|default:0 }}</td>
-                        <td>{{ site_stats.all_private_sample_count|default:0 }}</td>
+
                     </tr>
                 <tr>
                         <td>ecDNA</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</td>
-                        <td></td>
+
                     </tr>
                     <tr>
                         <td>BFB</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</td>
-                        <td></td>
+
                     </tr>
                     <tr>
                         <td>Complex non-cyclic</td>
-                        <td>{{ site_stats.public_amplicon_classifications_count.Complex_non_cyclic|default:0 }}</td>
-                        <td></td>
+                        <td>{{ site_stats.public_amplicon_classifications_count.Unclassified  }}</td>
+
                     </tr>
                     <tr>
                         <td>Linear amplification</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.Linear_amplification|default:0  }}</td>
-                        <td></td>
+
                     </tr>
                     <tr>
                         <td>unclassified</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.Unclassified|default:0 }}</td>
-                        <td></td>
+
                     </tr>
                 </tbody>
             </table>
