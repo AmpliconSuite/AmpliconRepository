@@ -329,6 +329,16 @@
                         vertical-align: middle;
                     }
 
+                    .table-not-striped tbody tr:nth-of-type(odd) {
+                        background-color: transparent!important;
+                    }
+                    .table-not-striped  th {
+                        background-color: #E6EFFB;
+                        color: #696a6c
+                    }
+                    .table-not-striped td {
+                        color: #696a6c
+                    }
                 </style>
 
               <div class="card-header" id="headingOne" style="background:none;">
@@ -344,6 +354,48 @@
               </div>
             </div>
         </div>
+        <div>
+            <h4 style="margin-top: 20px; font-size: 1.2em;">What's publicly available?</h4>
+            <hr style="max-width: 60%; margin-left: 0;">
+            <div style="margin-left: 0%;">
+                <table id='statsTable0' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
+                    <col width="50%">
+                    <col width="50%">
+                    <tbody>
+                        <tr>
+                            <td style="font-size: 1em;">Projects</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_proj_count|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 1em;">Samples</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_sample_count|default:0 }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <hr style="max-width: 60%; margin-left: 0;">
+                <p style="font-size: 1em;">Focal amplification counts</p>
+                <table id='statsTable1' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
+                    <col width="50%">
+                    <col width="50%">
+                    <tbody>
+                        <tr>
+                            <td style="font-size: 1em;">ecDNA</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 1em;">BFB</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 1em;">Other fsCNA</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.otherfscna }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+
     </div>
 </div>
 </div>
