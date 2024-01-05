@@ -33,7 +33,7 @@ class RunForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super(RunForm, self).__init__(*args, **kwargs)
         self.fields['publication_link'].widget.attrs.update({'placeholder': 'Optional: Provide a PMID or link to a publication'})
-        self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of email addresses or AmpliconRepository usernames separated by spaces or commas'})
+        self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of additional email addresses or AmpliconRepository usernames separated by spaces or commas'})
 
 class UpdateForm(forms.ModelForm):
     accept_license = forms.BooleanField(
@@ -63,7 +63,7 @@ class UpdateForm(forms.ModelForm):
         self.fields['publication_link'].required = False
         self.fields['publication_link'].widget.attrs.update({'placeholder': 'Optional: Provide a PMID or link to a publication'})
         self.fields['project_members'].required = False
-        self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of email addresses or AmpliconRepository usernames separated by spaces or commas'})
+        self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of additional email addresses or AmpliconRepository usernames separated by spaces or commas'})
 
 
         # self.fields['file'].required = False
