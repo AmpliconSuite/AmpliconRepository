@@ -358,9 +358,8 @@
             <h4 style="margin-top: 20px">Data Summary</h4>
             <div style="margin-left: 0%">
             <table id='statsTable0' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
-                <thead class="">
-
-                </thead>
+                <col width="50%">
+                <col width="50%">
                 <tbody>
                     <tr>
                         <td>Projects</td>
@@ -372,6 +371,13 @@
                         <td>{{ site_stats.public_sample_count|default:0 }}</td>
 
                     </tr>
+                </tbody>
+            </table>
+                <hr style="max-width:60%;margin-left:0"/>
+                <table id='statsTable1' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
+                    <col width="50%">
+                    <col width="50%">
+                <tbody>
                 <tr>
                         <td>ecDNA</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</td>
@@ -383,20 +389,11 @@
 
                     </tr>
                     <tr>
-                        <td>Complex non-cyclic</td>
-                        <td>{{ site_stats.public_amplicon_classifications_count.Unclassified  }}</td>
+                        <td>Other fsCNA</td>
+                        <td>{{ site_stats.public_amplicon_classifications_count.otherfscna  }}</td>
 
                     </tr>
-                    <tr>
-                        <td>Linear amplification</td>
-                        <td>{{ site_stats.public_amplicon_classifications_count.Linear_amplification|default:0  }}</td>
 
-                    </tr>
-                    <tr>
-                        <td>unclassified</td>
-                        <td>{{ site_stats.public_amplicon_classifications_count.Unclassified|default:0 }}</td>
-
-                    </tr>
                 </tbody>
             </table>
             </div>

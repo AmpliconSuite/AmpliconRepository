@@ -5,7 +5,16 @@ from .utils import get_collection_handle, collection_handle, db_handle, replace_
 site_statistics_handle = get_collection_handle(db_handle,'site_statistics')
 
 def get_latest_site_statistics():
-    return site_statistics_handle.find().sort('_id', -1).limit(1).next()
+    latest =  site_statistics_handle.find().sort('_id', -1).limit(1).next()
+    # for public display we want to collect these 3, this is a backstop for backwards compatibility
+    if latest['public_amplicon_classifications_count'].get('otherfscna') == None:
+       linear = latest['public_amplicon_classifications_count'].get('Linear_amplification',0)
+       unclassified = latest['public_amplicon_classifications_count'].get('Unclassified', 0)
+       cnc =latest['public_amplicon_classifications_count'].get('Complex_non_cyclic', 0)
+       latest['public_amplicon_classifications_count']['otherfscna'] = linear + unclassified + cnc
+
+
+    return latest
 
 
 def sum_amplicon_counts_by_classification(class_keys, class_values, sum_holder):
@@ -158,5 +167,12 @@ def get_project_amplicon_counts(project):
             if classification == 'Linear amplification':
                 amplicon_counts['Linear_amplification'] = amplicon_counts['Linear amplification']
                 class_keys.add('Linear_amplification')
+
+    # on the index page we will want to dispplay the sum of these 3 counts as other fsCNA
+    linear = amplicon_counts.get('Linear_amplification', 0)
+    unclassified = amplicon_counts.get('Unclassified', 0)
+    cnc = amplicon_counts.get('Complex_non_cyclic', 0)
+    amplicon_counts['otherfscna'] = linear + unclassified + cnc
+
 
     return class_keys, amplicon_counts
