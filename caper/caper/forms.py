@@ -1,4 +1,5 @@
 from django import forms
+from django.utils.html import format_html
 
 from .models import Run
 from .models import FeaturedProjectUpdate, AdminDeleteProject
@@ -10,17 +11,35 @@ from crispy_forms.layout import Submit, Layout, Field
 
 
 class RunForm(forms.ModelForm):
+    accept_license = forms.BooleanField(
+        label='I acknowledge and accept the terms of the license agreement',
+        required=True,
+        widget=forms.CheckboxInput(),
+        help_text=format_html(
+            "Data contributed to AmpliconRepository is licensed under the <a href='https://raw.githubusercontent.com/AmpliconSuite/AmpliconRepository/main/licenses/CCv4-BY.txt'>Creative Commons v4 license</a>."
+        ),
+    )
+
     class Meta:
         model = Run
-        fields = ('project_name','description','private','project_members')
+        fields = ('project_name','description','private','project_members', 'accept_license')
         labels = {
             'private': 'Visibility'
         }
 
 class UpdateForm(forms.ModelForm):
+    accept_license = forms.BooleanField(
+        label='I acknowledge and accept the terms of the license agreement',
+        required=True,
+        widget=forms.CheckboxInput(),
+        help_text=format_html(
+                        "Data contributed to AmpliconRepository is licensed under the <a href='https://raw.githubusercontent.com/AmpliconSuite/AmpliconRepository/main/licenses/CCv4-BY.txt'>Creative Commons v4 license</a>."
+        ),
+    )
+
     class Meta:
         model = Run
-        fields = ('project_name', 'description','private','project_members')
+        fields = ('project_name', 'description','private','project_members', 'accept_license')
         labels = {
             'private': 'Visibility'
         }
