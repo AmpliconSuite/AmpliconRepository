@@ -1114,9 +1114,6 @@ def admin_featured_projects(request):
     for proj in public_projects:
         prepare_project_linkid(proj)
 
-
-    print(f"Proj count: {public_proj_count}      sample count: {public_sample_count}")
-
     return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
