@@ -5,6 +5,11 @@ from .utils import get_collection_handle, collection_handle, db_handle, replace_
 site_statistics_handle = get_collection_handle(db_handle,'site_statistics')
 
 def get_latest_site_statistics():
+    # check to auto create the stats if needed
+    if site_statistics_handle.find().count()==0:
+        regenerate_site_statistics()
+
+
     latest =  site_statistics_handle.find().sort('_id', -1).limit(1).next()
     # for public display we want to collect these 3, this is a backstop for backwards compatibility
     if latest['public_amplicon_classifications_count'].get('otherfscna') == None:
