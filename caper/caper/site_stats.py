@@ -14,9 +14,10 @@ def get_latest_site_statistics():
     # for public display we want to collect these 3, this is a backstop for backwards compatibility
     if latest['public_amplicon_classifications_count'].get('otherfscna') == None:
        linear = latest['public_amplicon_classifications_count'].get('Linear_amplification',0)
-       unclassified = latest['public_amplicon_classifications_count'].get('Unclassified', 0)
+       # unclassified = latest['public_amplicon_classifications_count'].get('Unclassified', 0)
+       virus = latest['public_amplicon_classifications_count'].get('Virus', 0)
        cnc =latest['public_amplicon_classifications_count'].get('Complex_non_cyclic', 0)
-       latest['public_amplicon_classifications_count']['otherfscna'] = linear + unclassified + cnc
+       latest['public_amplicon_classifications_count']['otherfscna'] = linear + cnc + virus
 
 
     return latest
@@ -169,15 +170,22 @@ def get_project_amplicon_counts(project):
             if classification == 'Complex non-cyclic':
                 amplicon_counts['Complex_non_cyclic'] = amplicon_counts['Complex non-cyclic']
                 class_keys.add('Complex_non_cyclic')
+            if classification == "Complex-non-cyclic":
+                amplicon_counts['Complex_non_cyclic'] = amplicon_counts['Complex-non-cyclic']
+                class_keys.add('Complex_non_cyclic')
             if classification == 'Linear amplification':
                 amplicon_counts['Linear_amplification'] = amplicon_counts['Linear amplification']
+                class_keys.add('Linear_amplification')
+            if classification == 'Linear':
+                amplicon_counts['Linear_amplification'] = amplicon_counts['Linear']
                 class_keys.add('Linear_amplification')
 
     # on the index page we will want to dispplay the sum of these 3 counts as other fsCNA
     linear = amplicon_counts.get('Linear_amplification', 0)
-    unclassified = amplicon_counts.get('Unclassified', 0)
+    # unclassified = amplicon_counts.get('Unclassified', 0)
     cnc = amplicon_counts.get('Complex_non_cyclic', 0)
-    amplicon_counts['otherfscna'] = linear + unclassified + cnc
+    virus = amplicon_counts.get('Virus', 0)
+    amplicon_counts['otherfscna'] = linear + cnc + virus
 
 
     return class_keys, amplicon_counts

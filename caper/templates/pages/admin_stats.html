@@ -128,7 +128,12 @@
                         <td>{{ site_stats.all_private_amplicon_classifications_count.Linear_amplification|default:0 }}</td>
                     </tr>
                     <tr>
-                        <td>unclassified</td>
+                        <td>Virus</td>
+                        <td>{{ site_stats.public_amplicon_classifications_count.Virus|default:0  }}</td>
+                        <td>{{ site_stats.all_private_amplicon_classifications_count.Virus|default:0 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Samples with no focal amps</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.Unclassified|default:0 }}</td>
                         <td>{{ site_stats.all_private_amplicon_classifications_count.Unclassified|default:0 }}</td>
                     </tr>
