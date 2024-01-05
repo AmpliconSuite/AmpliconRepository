@@ -1223,7 +1223,7 @@ def edit_project_page(request, project_name):
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
-                                 'private': form_dict['private'], 'project_members': form_dict['project_members'],
+                                 'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
                                  'Oncogenes': get_project_oncogenes(current_runs)} }
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
@@ -1236,9 +1236,13 @@ def edit_project_page(request, project_name):
         project = get_one_project(project_name)
         # split up the project members and remove the empties
         members = project['project_members']
+        try:
+            publication_link = project['publication_link']
+        except KeyError:
+            publication_link = None
         members = [i for i in members if i]
         memberString = ', '.join(members)
-        form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString})
+        form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString,"publication_link": publication_link})
     return render(request, "pages/edit_project.html", {'project': project, 'run': form})
 
 def create_user_list(string, current_user):
@@ -1627,6 +1631,7 @@ def create_project(request):
 def _create_project(form, request):
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
+    publication_link = form_dict['publication_link']
     user = get_current_user(request)
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
@@ -1668,6 +1673,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     """
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
+    publication_link = form_dict['publication_link']
     project = dict()        
     # download_file(project_name, form_dict['file'])
     # runs = samples_to_dict(form_dict['file'])
@@ -1735,6 +1741,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     current_user = user
     project['creator'] = current_user
     project['project_name'] = form_dict['project_name']
+    project['publication_link'] = form_dict['publication_link']
     project['description'] = form_dict['description']
     project['tarfile'] = project_tar_id
     project['date_created'] = get_date()
