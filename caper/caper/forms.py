@@ -1,4 +1,5 @@
 from django import forms
+from django.utils.html import format_html
 
 from .models import Run
 from .models import FeaturedProjectUpdate, AdminDeleteProject
@@ -10,27 +11,61 @@ from crispy_forms.layout import Submit, Layout, Field
 
 
 class RunForm(forms.ModelForm):
+    accept_license = forms.BooleanField(
+        label=format_html(
+            "Data contributed to AmpliconRepository is licensed under the <a href='https://raw.githubusercontent.com/AmpliconSuite/AmpliconRepository/main/licenses/CCv4-BY.txt'>Creative Commons v4 license</a>."),
+        required=True,
+        widget=forms.CheckboxInput(),
+        help_text=
+            'Click checkbox to acknowledge and accept the terms of the license agreement.',
+    )
+
     class Meta:
         model = Run
-        fields = ('project_name','description','private','project_members')
+        fields = ('project_name','description','publication_link','private','project_members', 'accept_license')
         labels = {
             'private': 'Visibility'
         }
+        help_texts = {
+            'private': format_html('&nbsp;<b>Private</b>: Only you and project members can view the project.<br>&nbsp;<b>Public</b>: Anyone may view the project.<br>&nbsp;Only you and project members may edit the project. Visibility settings can be updated later.'),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super(RunForm, self).__init__(*args, **kwargs)
+        self.fields['publication_link'].widget.attrs.update({'placeholder': 'Optional: Provide a PMID or link to a publication'})
+        self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of additional email addresses or AmpliconRepository usernames separated by spaces or commas'})
 
 class UpdateForm(forms.ModelForm):
+    accept_license = forms.BooleanField(
+        label=format_html(
+            "Data contributed to AmpliconRepository is licensed under the <a href='https://raw.githubusercontent.com/AmpliconSuite/AmpliconRepository/main/licenses/CCv4-BY.txt'>Creative Commons v4 license</a>."),
+        required=True,
+        widget=forms.CheckboxInput(),
+        help_text=
+        'Click checkbox to acknowledge and accept the terms of the license agreement.',
+    )
+
     class Meta:
         model = Run
-        fields = ('project_name', 'description','private','project_members')
+        fields = ('project_name', 'description', 'publication_link', 'private', 'project_members', 'accept_license')
         labels = {
             'private': 'Visibility'
+        }
+        help_texts = {
+            'private': format_html(
+                '&nbsp;<b>Private</b>: Only you and project members can view the project.<br>&nbsp;<b>Public</b>: Anyone may view the project.<br>&nbsp;Only you and project members may edit the project.'),
         }
     
     def __init__(self, *args, **kwargs):
         super(UpdateForm, self).__init__(*args, **kwargs)
         self.fields['description'].required = False
         self.fields['private'].required = False
-
+        self.fields['publication_link'].required = False
+        self.fields['publication_link'].widget.attrs.update({'placeholder': 'Optional: Provide a PMID or link to a publication'})
         self.fields['project_members'].required = False
+        self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of additional email addresses or AmpliconRepository usernames separated by spaces or commas'})
+
+
         # self.fields['file'].required = False
 
 
