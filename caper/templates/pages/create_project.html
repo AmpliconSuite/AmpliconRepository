@@ -35,7 +35,6 @@
         }
     </script>
 <h1>Create New Project</h1>
-    <p>For files larger than 250Mb, please consider uploading with the AmpliconSuiteAggregator tool. It can be accessed via the <a href="https://genepattern.ucsd.edu/">GenePattern</a> interface, or by running the <a href="https://github.com/AmpliconSuite/AmpliconSuiteAggregator">command-line version</a> of the Aggregator.</p>
 
 <div class="alert alert-danger alert-dismissible" role="alert" id="upload_failed" style="display:none; flex;">
     No File Selected, Please select a file using the "Choose File" button at the bottom of the form and try again.
@@ -51,6 +50,21 @@
     
     <button class="btn btn-primary">Create Project</button>
 </form>
+    <br>
+    <p><b>What file do I upload?</b> <br> A specifically structured .tar.gz of your AmpliconSuite-pipeline output files, including all samples in your project.
+        To make this file, you must run <a href="https://github.com/AmpliconSuite/AmpliconSuiteAggregator">AmpliconSuiteAggregator</a>.
+        The aggregated .tar.gz file will contain organized output files, and a JSON index the site knows how to read. It will disinclude .fastq and .bam files from this packaging.
+        Please refer to the <a href="https://docs.ampliconrepository.org/en/latest/getting-started/">documentation</a> for more detailed instructions.</p>
+
+    <p><b>Quickest way to run the Aggregator on my files?</b> <br> AmpliconSuiteAggregator can be run via the <a href="https://genepattern.ucsd.edu/">GenePattern</a> interface.
+        Search for "AmpliconSuiteAggregator" after signing in, and upload a .tar.gz or .zip file containing the outputs produced by AmpliconSuite-pipeline.
+        Please make sure the .bam and .fastq files are not included when you make your initial .tar.gz or .zip.</p>
+
+    <p>For files larger than 250Mb, please consider uploading directly to the site with the AmpliconSuiteAggregator tool (no need to use this page in that event).</p>
+
+    <p><b>Need help?</b> <br> Please do not hesitate to <a href="https://github.com/AmpliconSuite/AmpliconRepository/issues">reach out</a>, we're very responsive.</p>
+
+
 
 
 {% else %}

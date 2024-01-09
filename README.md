@@ -4,7 +4,7 @@
 
 ---
 
-This is the main repository for the AmpliconRepository.
+This is the main repository for the AmpliconRepository website. The documentation below provides intsructions on deploying the site locally, for development purposes.
 
 - [How to install the development environment for AmpliconRepository](#aa-env-install)
 - [How to set up your development environment using docker compose](#dev-docker)
@@ -102,6 +102,9 @@ export S3_FILE_DOWNLOADS='FALSE'
 > `python manage.py runserver`
 - Open the application on a web browser (recommend using a private/incognito window for faster development):
 > https://localhost:8000
+
+- Troublshooting tip: If you face an error that says port 8000 is already in use, you can kill all tasks using that port by doing
+`sudo fuser -k 8000/tcp`
 
 # Option B - Local deployment with Docker: <a name="dev-docker"></a>
 

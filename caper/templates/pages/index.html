@@ -93,7 +93,7 @@
             }
         </style>
             <div style="margin-top: 20px">
-                <h1 style="">Welcome to the AmpliconRepository</h1>
+                <h1 style="">Welcome to AmpliconRepository</h1>
                 <hr>
                 <div stlye="margin-top: 30px;">
                     <p style="font-size:18px;">An online repository of AmpliconArchitect outputs. Explore and download focal amplification predictions and annotations.</p>
@@ -152,22 +152,33 @@
                         <button type="submit" class="btn btn-outline-primary">Search all samples</button>
                     </form>
                 </div>
-                <div style="padding-top: 10px">
-                    <ul class="nav nav-tabs" role="tablist" >
-                        <li class="nav-item">
+                <div style="padding-top: 11px">
+                    <style>
+                        .nav-tabs .nav-item .nav-link {
+                            color: #007bff; /* Default text color */
+                            border: 1px solid transparent; /* Default border */
+                            border-radius: 0.25rem; /* Optional: rounded corners */
+                        }
 
+                        .nav-tabs .nav-item .nav-link.active {
+                            color: #000; /* Text color when tab is active */
+                            border-color: #ccc; /* Border color when tab is active */
+                            border-bottom-color: transparent; /* Remove the default underline */
+                        }
+                    </style>
+                    <ul class="nav nav-tabs" role="tablist">
+                        <li class="nav-item">
                             <a class="nav-link active" href="#tab-table0" data-toggle="tab">Featured Projects</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link " href="#tab-table1" data-toggle="tab">Public Projects</a>
+                            <a class="nav-link" href="#tab-table1" data-toggle="tab">Public Projects</a>
                         </li>
                         {% if user.is_authenticated %}
-                        <li class="nav-item">
-                            <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
-                        </li>
+                            <li class="nav-item">
+                                <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
+                            </li>
                         {% endif %}
                     </ul>
-
                     <div class="tab-content" style="padding-top: 30px;">
 
                         <div class="tab-pane active" id="tab-table0">
@@ -273,6 +284,9 @@
 
         <ul>
             <li style="margin-bottom:10px">
+                <a href="https://www.nature.com/articles/s41588-023-01551-3" target="_blank">Study of ecDNA in medulloblastoma reveals intratumor heterogeneity of ecDNA <i class="fas fa-external-link-alt"></i></a>
+            </li>
+            <li style="margin-bottom:10px">
                 <a href="https://www.nature.com/articles/d41586-023-00982-6" target="_blank">Study of ecDNA in Barrett's esophagus patients shows ecDNA arises early in cancer development <i class="fas fa-external-link-alt"></i></a>
             </li>
             <li>
@@ -315,6 +329,16 @@
                         vertical-align: middle;
                     }
 
+                    .table-not-striped tbody tr:nth-of-type(odd) {
+                        background-color: transparent!important;
+                    }
+                    .table-not-striped  th {
+                        background-color: #E6EFFB;
+                        color: #696a6c
+                    }
+                    .table-not-striped td {
+                        color: #696a6c
+                    }
                 </style>
 
               <div class="card-header" id="headingOne" style="background:none;">
@@ -330,6 +354,48 @@
               </div>
             </div>
         </div>
+        <div>
+            <h4 style="margin-top: 20px; font-size: 1.2em;">What's publicly available?</h4>
+            <hr style="max-width: 60%; margin-left: 0;">
+            <div style="margin-left: 0%;">
+                <table id='statsTable0' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
+                    <col width="50%">
+                    <col width="50%">
+                    <tbody>
+                        <tr>
+                            <td style="font-size: 1em;">Projects</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_proj_count|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 1em;">Samples</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_sample_count|default:0 }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <hr style="max-width: 60%; margin-left: 0;">
+                <p style="font-size: 1em;">Focal amplification counts</p>
+                <table id='statsTable1' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
+                    <col width="50%">
+                    <col width="50%">
+                    <tbody>
+                        <tr>
+                            <td style="font-size: 1em;">ecDNA</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 1em;">BFB</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 1em;">Other fsCNA</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.otherfscna }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+
     </div>
 </div>
 </div>
