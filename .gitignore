@@ -1,4 +1,4 @@
-config.sh
+config.sh*
 *.swp
 .env
 /caper/caper.sqlite3

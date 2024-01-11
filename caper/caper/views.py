@@ -50,6 +50,7 @@ from collections import defaultdict
 from wsgiref.util import FileWrapper
 import boto3
 import botocore
+import threading
 from threading import Thread
 import os, fnmatch
 import uuid
@@ -619,12 +620,33 @@ def project_page(request, project_name, message=''):
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig})
 
 
+# this class is used by upload_file_to_s3 during the upload_file
+class ProgressPercentage(object):
+
+    def __init__(self, filename):
+        self._filename = filename
+        self._size = float(os.path.getsize(filename))
+        self._seen_so_far = 0
+        self._lock = threading.Lock()
+
+    def __call__(self, bytes_amount):
+        # To simplify, assume this is hooked up to a single filename
+        with self._lock:
+            self._seen_so_far += bytes_amount
+            percentage = (self._seen_so_far / self._size) * 100
+            logging.debug(
+                "\r%s  %s / %s  (%.2f%%)" % (
+                    self._filename, self._seen_so_far, self._size,
+                    percentage))
+            # sys.stdout.flush()
+
+
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
     session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
     s3client = session.client('s3')
     logging.info(f'==== XXX STARTING upload of {file_path_and_location_local} to s3://{settings.S3_DOWNLOADS_BUCKET}/{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
     s3client.upload_file(f'{file_path_and_location_local}', settings.S3_DOWNLOADS_BUCKET,
-                         f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
+                         f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}', Callback=ProgressPercentage(f'{file_path_and_location_local}'))
     logging.info('==== XXX uploaded to bucket ')
 
 
