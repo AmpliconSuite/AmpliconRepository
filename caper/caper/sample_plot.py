@@ -64,7 +64,7 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
               "reference genome across samples. Only the first will be used.\n")
 
     ref = potential_ref_genomes.pop()
-    cent_file = f'bed_files/{ref}_centromere.bed'
+    cent_file = f'/srv/bed_files/{ref}_centromere.bed'
 
     full_cent_dict = {}
     with open(cent_file) as infile:
