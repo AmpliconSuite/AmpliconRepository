@@ -38,7 +38,7 @@ class RunForm(forms.ModelForm):
 class UpdateForm(forms.ModelForm):
     accept_license = forms.BooleanField(
         label=format_html(
-            "Data contributed to AmpliconRepository is licensed under the <a href='https://raw.githubusercontent.com/AmpliconSuite/AmpliconRepository/main/licenses/CCv4-BY.txt'>Creative Commons v4 license</a>."),
+            "I acknowledge that the uploaded files will be released under a <a href='https://raw.githubusercontent.com/AmpliconSuite/AmpliconRepository/main/licenses/CCv4-BY.txt'>Creative Commons v4 license</a>."),
         required=True,
         widget=forms.CheckboxInput(),
         help_text=

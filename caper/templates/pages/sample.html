@@ -251,8 +251,6 @@
 {% endif %}
 
 
-
-
 <div style="margin-top:25px; padding: 25px; border: 0.5px solid grey">
         <table id='myTable2' class="table table-hover table-sm stripe no-border">
             <thead>
@@ -279,7 +277,7 @@
                             <img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}" width = '100px'>
                             <span><img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}"></span>
                         </a></td>
-                    <td><b>{{ feature.Feature_ID }}</b></td>
+                    <td display:flex onclick="handleTableRowClick('{{ feature.AA_amplicon_number }}', '{{ feature.Location|join:", " }}')"><b>{{ feature.Feature_ID }}</b></td>
                     <td>{{ feature.Classification }}</td>
 		            <td>{{ feature.Oncogenes|join:", " }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
