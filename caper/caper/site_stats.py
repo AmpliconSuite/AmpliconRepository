@@ -103,7 +103,7 @@ def add_project_to_site_statistics(project):
     if project['private'] == True:
         # private proj, don't change public stats
         updated_stats["public_proj_count"] = current_stats["public_proj_count"]
-        updated_stats["public_sample_count"] = current_stats["public_proj_count"]
+        updated_stats["public_sample_count"] = current_stats["public_sample_count"]
         priv_amplicon_counts = current_stats["all_private_amplicon_classifications_count"]
         class_keys, amplicon_counts = get_project_amplicon_counts(project)
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts)
