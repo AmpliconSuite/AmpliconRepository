@@ -15,6 +15,7 @@ pyvenv.cfg
 /bin*
 *caper.sqlite3
 /ampliconenv
+*.bkup
 # pycharm IDE
 .idea/
 tmp/
