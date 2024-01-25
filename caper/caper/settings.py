@@ -239,6 +239,9 @@ DATABASES = {
 #     }
 }
 
+# Formatting of numeric content on site (add commas in thousands places)
+USE_THOUSAND_SEPARATOR = True
+
 #########
 # PATHS #
 #########
