@@ -39,6 +39,7 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
 
 .footer {
     margin-top: 100px;
+    background: #5391F4;
 }
 
 .sample-link {
@@ -57,6 +58,10 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
     top: -30px;
     left: 0;
     right: 0;
+}
+
+.navbar-brand {
+    padding-bottom: 0px;
 }
 
 @media {
@@ -80,7 +85,7 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
 }
 
 .card-title {
-    font-weight: 200 !important;
+    font-weight: 400 !important;
 }
 
 .col-lg-3 {

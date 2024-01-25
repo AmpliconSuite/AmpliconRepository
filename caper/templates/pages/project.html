@@ -1,5 +1,8 @@
 {% extends 'base.html' %}
 
+{% load custom_filters %}
+
+
 {% block extra_js %}
 <script>
     $(document).ready( function () {
@@ -21,9 +24,6 @@
         }
 
     } );
-
-
-
 
 </script>
 {% endblock %}
@@ -49,13 +49,13 @@
          <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 24px"></i></a>
         {%  endif %}</h2>
         <br>
-        <h4>Description: <span style="font-weight: 200">{{ project.description }}</span></h4>
-        <h4>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h4>
-
-        
+        <h5>Description: <span style="font-weight: 200">{{ project.description }}</span></h5>
+        <h5>Publication link: <span style="font-weight: 200">{{ project.publication_link|escape|replace_urls|safe }}</span></h5>
+        <h5>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h5>
     </div>
+
     <div class="col-md-3">
-        <a class="btn btn-primary" href="/project/{{ project.linkid }}/download" style="color: white">Download All Project Data</a>
+        <a class="btn btn-primary" href="/project/{{ project.linkid }}/download" style="color: white; margin-bottom: 12px;">Download All Project Data</a>
         <!-- <p><b>Last Updated:</b> {{ project.date }}</p> -->
         <!-- <p><b>Private:</b> {{ project.private }}</p> -->
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}

@@ -129,7 +129,7 @@ DEBUG = True
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 
 SITE_ID = 1
-SITE_TITLE = 'AmpliconRepo'
+SITE_TITLE = 'AmpliconRepository'
 
 # If you set this to False, Django will make some optimizations so as not
 # to load the internationalization machinery.

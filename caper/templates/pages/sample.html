@@ -22,7 +22,7 @@
     }
     }
 
-    function create_igv(track, locus_selection,reference_genome){
+    function create_igv(track, locus_selection, reference_genome){
         // a function to create IGV.js tracks
 
         // reference genome parsing
@@ -115,6 +115,9 @@
         </div>          
         <!-- <button onclick="toggle_igv()" style="height:100px;display:none" id="show_igv">SHOW IGV VIEWER</button> -->
         <div class='col-lg-6' id="igv-div" style = "display: none;">
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -30px); text-align: center;">
+                <p style="margin: 0;">Click a feature to render IGV</p>
+            </div>
         </div>    
     </div>
     
@@ -176,15 +179,14 @@
             });
 
             var plot_element = document.getElementById("plotly_div");
-            plot_element.on('plotly_click', function(data){{
-{#                console.log('click');#}
+            plot_element.on('plotly_click', function(data){
                 var link = '';
-                for (let i = 0; i < data['points'].length; i++) {{
+                for (let i = 0; i < data['points'].length; i++) {
                     var name = data['points'][i]['data']['name'];
-                    if (name.includes('Amplicon')) {{
+                    if (name.includes('Amplicon')) {
                         var chromosome_num = data['points'][i]['customdata'][1];
 
-                        link = data['points'][i]['data']['hovertemplate'].split('"')[1];
+{#                        link = data['points'][i]['data']['hovertemplate'].split('"')[1];#}
                         var amplicon_num = name.replace("<b>", "").replace("</b>", "").split(" ")[1];
 
                         for (let j = 0; j < JSON.parse('{{ download_links|safe }}').length; j++){
@@ -201,7 +203,6 @@
                                 var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
                                 if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
                                     const tracks = [amplicon_selection];
-                                    const locus = locus_selection;
                                     if (reference_genome !== 'GRCh37'){
                                         chromosome_num = 'chr'+chromosome_num;
                                     }
@@ -213,12 +214,11 @@
                             }
                         }
                         break;
-                    }}
-                }}
+                    }
+                }
 
-                {#console.log(link == undefined);#}
 
-                if (link != '') {{
+                if (link != '') {
                     var link_window = document.getElementById("figure_download_window");
                     var link_elem = link_window.firstElementChild;
                     link_elem.href = link;
@@ -226,31 +226,29 @@
                     var preview_elem = link_elem.lastElementChild;
                     preview_elem.setAttribute('src', link);
 
-                    if (link_elem.firstElementChild.tagName != "B") {{
+                    if (link_elem.firstElementChild.tagName != "B") {
                         link_elem.innerHTML = '<b>Download ' + name.slice(3, -4) + ' PNG</b>' + link_elem.innerHTML;
-                    }}
-                    else {{
+                    }
+                    else {
                         link_elem.firstElementChild.innerHTML = 'Download ' + name.slice(3, -4) + ' PNG';
-                    }}
+                    }
                     link_window.setAttribute('style', 'display: flex; align-items: center; margin: auto; text-align: center; min-height: 300px; border: 0.5px solid grey; border-bottom: none;padding-top:5px;');
                     if (igv_toggle){
                         var x = document.getElementById("igv-div");
                         x.style.display = "flex";
                         x.setAttribute('style', 'display: flex; align-items: center; text-align: center; min-height: 300px; border: 0.5px solid grey; padding-top:5px; border-left:none; border-bottom:none;');
                     }
-                    
+
 
                     
-                }} else if (link == undefined){
+                } else if (link == undefined){
                     
                 }
-            }})
+            })
         </script>
         {% endblock %}
     </div>
 {% endif %}
-
-
 
 
 <div style="margin-top:25px; padding: 25px; border: 0.5px solid grey">
@@ -273,8 +271,13 @@
                 {% else %}
                 {% for feature in sample_data %}
                 <tr>
-                    <td display:flex><b>{{ feature.AA_amplicon_number }}</b><a class="thumbnail" href="#thumb"><img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}" width = '100px'><span><img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}"></span></a></td>
-                    <td><b>{{ feature.Feature_ID }}</b></a></td>
+                    <td display:flex onclick="handleTableRowClick('{{ feature.AA_amplicon_number }}', '{{ feature.Location|join:", " }}')">
+                        <b>{{ feature.AA_amplicon_number }}</b>
+                        <a class="thumbnail" href="#thumb">
+                            <img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}" width = '100px'>
+                            <span><img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}"></span>
+                        </a></td>
+                    <td display:flex onclick="handleTableRowClick('{{ feature.AA_amplicon_number }}', '{{ feature.Location|join:", " }}')"><b>{{ feature.Feature_ID }}</b></td>
                     <td>{{ feature.Classification }}</td>
 		            <td>{{ feature.Oncogenes|join:", " }}</td>
                     <td>{{ feature.Location|join:", " }}</td>
@@ -296,6 +299,62 @@
                 {% endif %}
             </tbody>
         </table>
+
+<script>
+    function handleTableRowClick(amplicon_num, featureLoc) {
+        var link = '';
+        var name = "<b>Amplicon " + amplicon_num + "</b>"
+        var chromosome_num = featureLoc.split(':')[0];
+        for (let j = 0; j < JSON.parse('{{ download_links|safe }}').length; j++){
+            var png = JSON.parse('{{ download_links|safe }}')[j];
+            if (png.aa_amplicon_number == amplicon_num){
+                link = png.download_link;
+            }
+        }
+
+        // if display IGV Viewer toggle is on:
+        if (igv_toggle) {
+            for (let k = 0; k < JSON.parse('{{ igv_tracks|safe }}').length; k++){
+                var reference_genome = JSON.parse('{{ reference_versions|safe }}')[k];
+                var amplicon_selection = JSON.parse('{{ igv_tracks|safe }}')[k];
+                if (amplicon_selection.name.includes(("amplicon" + String(amplicon_num)+"_"))) {
+                    const tracks = [amplicon_selection];
+                    if (reference_genome !== 'GRCh37'){
+                        chromosome_num = 'chr'+chromosome_num;
+                    }
+
+                    create_igv(tracks, featureLoc, reference_genome);
+                    break
+                }
+            }
+        }
+        if (link != '') {
+            var link_window = document.getElementById("figure_download_window");
+            var link_elem = link_window.firstElementChild;
+            link_elem.href = link;
+
+            var preview_elem = link_elem.lastElementChild;
+            preview_elem.setAttribute('src', link);
+
+            if (link_elem.firstElementChild.tagName != "B") {
+                link_elem.innerHTML = '<b>Download ' + name.slice(3, -4) + ' PNG</b>' + link_elem.innerHTML;
+            }
+            else {
+                link_elem.firstElementChild.innerHTML = 'Download ' + name.slice(3, -4) + ' PNG';
+            }
+            link_window.setAttribute('style', 'display: flex; align-items: center; margin: auto; text-align: center; min-height: 300px; border: 0.5px solid grey; border-bottom: none;padding-top:5px;');
+            if (igv_toggle){
+                var x = document.getElementById("igv-div");
+                x.style.display = "flex";
+                x.setAttribute('style', 'display: flex; align-items: center; text-align: center; min-height: 300px; border: 0.5px solid grey; padding-top:5px; border-left:none; border-bottom:none;');
+            }
+        }
+
+    }
+
+</script>
+
+
 
 </div>
 <style>

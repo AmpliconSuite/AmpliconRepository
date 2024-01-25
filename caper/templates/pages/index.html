@@ -93,7 +93,7 @@
             }
         </style>
             <div style="margin-top: 20px">
-                <h1 style="">Welcome to the AmpliconRepository</h1>
+                <img src="{{ STATIC_URL }}img/AmpliconRepository_Grey.png" width="100%">
                 <hr>
                 <div stlye="margin-top: 30px;">
                     <p style="font-size:18px;">An online repository of AmpliconArchitect outputs. Explore and download focal amplification predictions and annotations.</p>
@@ -103,7 +103,7 @@
                         <div class="card text-center" style="width:12rem; border:none;margin:auto; padding: 5px">
 				<img class="card-img-top" src="{{ STATIC_URL }}img/250w/exploration_cartoonAsset_1.png" style="max-height:20rem; max-width:10rem; margin:auto">
                             <div class="card-body" style="margin-top:5px">
-                                <p class="card-title" style="font-weight:200">Copy-number data exploration</p>
+                                <p class="card-title">Copy-number data exploration</p>
                             </div>
                         </div>
                     </div>
@@ -111,7 +111,7 @@
                         <div class="card text-center" style="width: 12rem; border:none;margin:auto; padding: 5px">
                             <img class="card-img-top" src="{{ STATIC_URL }}img/250w/aa_viz_cartoonAsset_1.png" style="max-height:20rem; max-width:10rem; margin:auto">
                             <div class="card-body" style="margin-top:18px">
-                                <p class="card-title" style="font-weight:200;">AmpliconArchitect output files</p>
+                                <p class="card-title">AmpliconArchitect output files</p>
                             </div>
                         </div>
                     </div>
@@ -119,7 +119,7 @@
                         <div class="card text-center" style="width: 12rem; border:none;margin:auto; padding: 5px">
                             <img class="card-img-top" src="{{ STATIC_URL }}img/250w/classes_cartoonAsset_1.png" style="max-height:20rem; max-width:10rem; margin:auto">
                             <div class="card-body" style="margin-top:18px">
-                                <p class="card-title" style="font-weight:200">Focal amplification classifications</p>
+                                <p class="card-title">Focal amplification classifications</p>
                             </div>
                         </div>
                     </div>
@@ -127,7 +127,7 @@
                         <div class="card text-center" style="width: 14rem; border:none;margin:auto; padding: 5px">
                             <img class="card-img-top" src="{{ STATIC_URL }}img/250w/gene_coords_cartoonAsset_1.png" style="max-height:20rem; max-width:6rem; margin:auto">
                             <div class="card-body" style="margin-top:3px">
-                                <p class="card-title" style="font-weight:200">Amplicon coordinates and gene contents</p>
+                                <p class="card-title">Amplicon coordinates and gene contents</p>
                             </div>
                         </div>
                     </div>
@@ -152,22 +152,33 @@
                         <button type="submit" class="btn btn-outline-primary">Search all samples</button>
                     </form>
                 </div>
-                <div style="padding-top: 10px">
-                    <ul class="nav nav-tabs" role="tablist" >
-                        <li class="nav-item">
+                <div style="padding-top: 11px">
+                    <style>
+                        .nav-tabs .nav-item .nav-link {
+                            color: #007bff; /* Default text color */
+                            border: 1px solid transparent; /* Default border */
+                            border-radius: 0.25rem; /* Optional: rounded corners */
+                        }
 
+                        .nav-tabs .nav-item .nav-link.active {
+                            color: #000; /* Text color when tab is active */
+                            border-color: #ccc; /* Border color when tab is active */
+                            border-bottom-color: transparent; /* Remove the default underline */
+                        }
+                    </style>
+                    <ul class="nav nav-tabs" role="tablist">
+                        <li class="nav-item">
                             <a class="nav-link active" href="#tab-table0" data-toggle="tab">Featured Projects</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link " href="#tab-table1" data-toggle="tab">Public Projects</a>
+                            <a class="nav-link" href="#tab-table1" data-toggle="tab">Public Projects</a>
                         </li>
                         {% if user.is_authenticated %}
-                        <li class="nav-item">
-                            <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
-                        </li>
+                            <li class="nav-item">
+                                <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
+                            </li>
                         {% endif %}
                     </ul>
-
                     <div class="tab-content" style="padding-top: 30px;">
 
                         <div class="tab-pane active" id="tab-table0">
@@ -260,12 +271,12 @@
     </div>
     <div class="col-md-4">
 {#        <figure class="figure">#}
-{#            <img src="/static/img/ff11_amplicon1.png" alt="" width="100%">#}
+{#            <img src="{{ STATIC_URL }}img/ff11_amplicon1.png" alt="" width="100%">#}
 {#            <figcaption class="figure-caption">Structural Variation view: show discordant edges, copy number segments and genomic coverage.</figcaption>#}
 {#        </figure>#}
 {#        <br>#}
 {#        <figure class="figure">#}
-{#            <img src="/static/img/exampleAR.png" alt="" width="100%">#}
+{#            <img src="{{ STATIC_URL }}img/exampleAR.png" alt="" width="100%">#}
 {#            <figcaption class="figure-caption">CycleViz view: circular visualization of focal amplifications detected by AmpliconArchitect.</figcaption>#}
 {#        </figure>#}
         <br>
@@ -318,6 +329,16 @@
                         vertical-align: middle;
                     }
 
+                    .table-not-striped tbody tr:nth-of-type(odd) {
+                        background-color: transparent!important;
+                    }
+                    .table-not-striped  th {
+                        background-color: #E6EFFB;
+                        color: #696a6c
+                    }
+                    .table-not-striped td {
+                        color: #696a6c
+                    }
                 </style>
 
               <div class="card-header" id="headingOne" style="background:none;">
@@ -333,6 +354,48 @@
               </div>
             </div>
         </div>
+        <div>
+            <h4 style="margin-top: 20px; font-size: 1.2em;">What's publicly available?</h4>
+            <hr style="max-width: 60%; margin-left: 0;">
+            <div style="margin-left: 0%;">
+                <table id='statsTable0' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
+                    <col width="50%">
+                    <col width="50%">
+                    <tbody>
+                        <tr>
+                            <td style="font-size: 1em;">Projects</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_proj_count|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 1em;">Samples</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_sample_count|default:0 }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <hr style="max-width: 60%; margin-left: 0;">
+                <p style="font-size: 1em;">Focal amplification counts</p>
+                <table id='statsTable1' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
+                    <col width="50%">
+                    <col width="50%">
+                    <tbody>
+                        <tr>
+                            <td style="font-size: 1em;">ecDNA</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 1em;">BFB</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 1em;">Other fsCNA</td>
+                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.otherfscna }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+
     </div>
 </div>
 </div>

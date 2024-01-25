@@ -1,6 +1,6 @@
 # from asyncore import file_wrapper
 # from tkinter import E
-from django.http import HttpResponse, FileResponse, StreamingHttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect
 from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
@@ -8,9 +8,11 @@ from django.contrib.auth import get_user_model
 
 ## API framework packages
 from rest_framework.response import Response
+
+from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics
 from  .serializers import FileSerializer
 from rest_framework.views import APIView
-from rest_framework.parsers import MultiPartParser, FormParser, FileUploadParser
+from rest_framework.parsers import MultiPartParser
 from rest_framework import status
 from pathlib import Path
 import csv
@@ -20,13 +22,14 @@ import csv
 from django.conf import settings
 # import pymongo
 import json
+
 # from .models import File
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm
-from .utils import get_db_handle, get_collection_handle, create_run_display
+from .utils import collection_handle, db_handle, fs_handle, replace_space_to_underscore, \
+    preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
+    prepare_project_linkid, replace_underscore_keys
 from django.forms.models import model_to_dict
-import time
-import datetime
-import os
+
 import subprocess
 import shutil
 import caper.sample_plot as sample_plot
@@ -39,7 +42,7 @@ import tarfile
 import pandas as pd
 # import numpy as np
 #import cv2
-import gridfs
+
 # import caper
 from bson.objectid import ObjectId
 # from django.utils.text import slugify
@@ -54,6 +57,7 @@ import threading
 from threading import Thread
 import os, fnmatch
 import uuid
+import datetime
 
 import time
 import math
@@ -61,11 +65,9 @@ import logging
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
-db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI'])
 
 # SET UP HANDLE
-collection_handle = get_collection_handle(db_handle,'projects')
-fs_handle = gridfs.GridFS(db_handle)
+
 
 # Site-wide focal amp color scheme
 fa_cmap = {
@@ -84,49 +86,6 @@ def get_date():
     # date = today.strftime('%Y-%m-%d')
     date = today.isoformat()
     return date
-
-
-def prepare_project_linkid(project):
-    project['linkid'] = project['_id']
-
-
-def get_one_project(project_name_or_uuid):
-    try:
-        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': False})[0]
-        prepare_project_linkid(project)
-        return project
-
-    except:
-        project = None    
-
-    # backstop using the name the old way
-    if project is None:
-        try:
-            project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
-            if project is not None:
-                logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
-                prepare_project_linkid(project)
-                return project
-        except:
-            project = None
-
-    # look for project that has been versioned by editing and giving it a new file.  This makes sure that
-    # the old links work
-    if project is None:
-        try:
-            project = collection_handle.find_one({'previous_project_ids': project_name_or_uuid, 'delete': False})
-            if project is not None:
-                prepare_project_linkid(project)
-                logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
-
-                return project
-        except:
-            project = None
-
-    if project is None:
-        logging.error(f"Project is None for {project_name_or_uuid}")
-
-    return project
 
 
 def get_one_deleted_project(project_name_or_uuid):
@@ -150,21 +109,6 @@ def get_one_deleted_project(project_name_or_uuid):
     return project
 
 
-def get_one_sample(project_name, sample_name):
-    project = validate_project(get_one_project(project_name), project_name)
-    # print("ID --- ", project['_id'])
-    runs = project['runs']
-    for sample_num in runs.keys():
-        current = runs[sample_num]
-        try:
-            if len(current) > 0 and current[0]['Sample_name'] == sample_name:
-                sample_out = current
-        except:
-            # should not get here but we do sometimes for new projects, issue 194
-            sample_out = None
-    return project, sample_out
-
-
 def get_one_feature(project_name, sample_name, feature_name):
     project, sample = get_one_sample(project_name, sample_name)
     feature = list(filter(lambda s: s['Feature_ID'] == feature_name, sample))
@@ -172,10 +116,10 @@ def get_one_feature(project_name, sample_name, feature_name):
 
 
 def check_project_exists(project_id):
-    if collection_handle.count_documents({ '_id': ObjectId(project_id) }, limit = 1):
+    if collection_handle.count_documents({'_id': ObjectId(project_id)}, limit = 1):
         return True
 
-    elif collection_handle.count_documents({ 'project_name': project_id }, limit = 1):
+    elif collection_handle.count_documents({'project_name': project_id}, limit = 1):
         return True
 
     else:
@@ -201,103 +145,6 @@ def form_to_dict(form):
     run = form.save(commit=False)
     form_dict = model_to_dict(run)
     return form_dict
-
-
-def flatten(nested, lst = True, sort = True):
-    """
-    recursive function to get elements in nested list
-    """
-    flat = []
-    def helper(nested):
-        for e in nested:
-            if isinstance(e, list):
-                helper(e)
-            else:
-                if e:
-                    e = e.replace("'",'')
-                    if len(e) > 0:
-                        flat.append(e)
-    helper(nested)
-    
-    if lst and sort:
-        return list(sorted(flat))
-    return flat
-
-
-def sample_data_from_feature_list(features_list):
-    """
-    extracts sample data from a list of features
-    """
-    # now = datetime.datetime.now()
-    df = pd.DataFrame(features_list)[['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID']]
-    sample_data = []
-    for sample_name, indices in df.groupby(['Sample_name']).groups.items():
-        sample_dict = dict()
-        subset = df.iloc[indices]
-        sample_dict['Sample_name'] = sample_name
-        sample_dict['Oncogenes'] = sorted(set(flatten(subset['Oncogenes'].values.tolist())))
-        sample_dict['Classifications'] = list(set(flatten(subset['Classification'].values.tolist())))
-        if len(sample_dict['Oncogenes']) == 0 and len(sample_dict['Classifications']) == 0:
-            sample_dict['Features'] = 0
-        else:
-            sample_dict['Features'] = len(subset['Feature_ID'])
-        sample_data.append(sample_dict)
-    # print(f'********** TOOK {datetime.datetime.now() - now}')
-    return sample_data
-
-
-def replace_space_to_underscore(runs):
-    '''
-    Replaces all spaces to underscores
-    '''
-        
-    if type(runs) == dict:
-        run_list = []
-        for run in runs:
-            for sample in runs[run]:
-                for key in list(sample.keys()):
-                    newkey = key.replace(" ", "_")
-                    sample[newkey] = sample.pop(key)
-                run_list.append(sample)
-        return run_list
-
-    else:
-        run_list = []
-        for sample in runs:
-            run_list.append({})
-            for key in list(sample.keys()):
-                newkey = key.replace(" ", "_")
-                run_list[-1][newkey] = sample[key]
-
-        return run_list
-
-def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
-    if copy:
-        sample_data = [feature.copy() for feature in sample_data]
-
-    # sample_data.sort(key=lambda x: (int(x['AA_amplicon_number']), x['Feature_ID']))
-    for feature in sample_data:
-        for key, value in feature.items():
-            if type(value) == float:
-                if key == 'AA_amplicon_number':
-                    feature[key] = int(value)
-
-                else:
-                    feature[key] = round(value, 1)
-
-            elif type(value) == str and value.startswith('['):
-                feature[key] = ', \n'.join(value[2:-2].split("', '"))
-
-            else:
-                feature[key] = value
-
-        locations = [i.replace("'","").strip() for i in feature['Location']]
-        feature['Location'] = locations
-        oncogenes = [i.replace("'","").strip() for i in feature['Oncogenes']]
-        feature['Oncogenes'] = oncogenes
-        
-    # print(sample_data[0])
-    return sample_data
 
 
 def get_project_oncogenes(runs):
@@ -379,16 +226,29 @@ def index(request):
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
-        private_projects = list(collection_handle.find({ 'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
         for proj in private_projects:
             prepare_project_linkid(proj)
 
     else:
         private_projects = []
 
+    # just get stats for all private
+    all_private_proj_count = 0
+    all_private_sample_count = 0
+    all_private_projects = list(collection_handle.find({'private': True, 'delete': False}))
+    for proj in all_private_projects:
+        all_private_proj_count = all_private_proj_count + 1
+        all_private_sample_count = all_private_sample_count + len(proj['runs'])
+    # end private stats
+
+    public_proj_count = 0
+    public_sample_count = 0
     public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
+        public_proj_count = public_proj_count + 1
+        public_sample_count = public_sample_count + len(proj['runs'])
 
     featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
     for proj in featured_projects:
@@ -399,7 +259,10 @@ def index(request):
     private_projects = modify_date(private_projects)
     featured_projects = modify_date(featured_projects)
 
-    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects})
+    # get the latest set of stats
+    site_stats = get_latest_site_statistics()
+
+    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects, 'site_stats': site_stats})
 
 
 def profile(request):
@@ -408,7 +271,7 @@ def profile(request):
     # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
-    projects = list(collection_handle.find({  "$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+    projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
 
     for proj in projects:
         prepare_project_linkid(proj)
@@ -487,48 +350,6 @@ def create_aggregate_df(project, samples):
     logging.info(f"Iteratively build project dataframe from samples in {diff} seconds")
     
     return aggregate, aggregate_save_fp
-
-
-def replace_underscore_keys(runs_from_proj_creation):
-    """
-    Replaces underscores in the keys from runs at proj creation step
-    """
-    new_run = {}
-    for sample in runs_from_proj_creation.keys():
-        features = []
-        for feature in runs_from_proj_creation[sample]:
-            new_feat = {}
-            for key in feature.keys():
-                new_feat[key.replace(" ", '_')] = feature[key]
-            features.append(new_feat)
-        new_run[sample] = features
-    return new_run
-
-
-def validate_project(project, project_name):
-    """
-    Checks the following for a project: 
-    1. if keys in project[runs] all contain underscores, if not, replace them with underscores, insert into db
-    """
-
-    ## check for 1
-    update = False
-    for sample in project['runs'].keys():
-        for feature in project['runs'][sample]:
-            for key in feature.keys():
-                if ' ' in key:
-                    runs = replace_underscore_keys(project['runs'])
-                    update = True
-                    break
-    if update:
-        new_values = {"$set": {
-            'runs': runs
-        }}
-        query = {'_id': project['_id'],
-                    'delete': False}
-        collection_handle.update(query, new_values)
-
-    return get_one_project(project_name)
 
 
 def project_page(request, project_name, message=''):
@@ -1188,6 +1009,7 @@ def project_delete(request, project_name):
         #query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
+        delete_project_from_site_statistics(project)
         return redirect('profile')
     else:
         return HttpResponse("Project does not exist")
@@ -1216,6 +1038,7 @@ def edit_project_page(request, project_name):
         if request_file is not None:
             # mark the current project as deleted
             del_ret = project_delete(request, project_name)
+
             # create a new one with the new form
             a_message, new_id = _create_project(form, request)
 
@@ -1245,7 +1068,7 @@ def edit_project_page(request, project_name):
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
-                                 'private': form_dict['private'], 'project_members': form_dict['project_members'],
+                                 'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
                                  'Oncogenes': get_project_oncogenes(current_runs)} }
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
@@ -1258,9 +1081,13 @@ def edit_project_page(request, project_name):
         project = get_one_project(project_name)
         # split up the project members and remove the empties
         members = project['project_members']
+        try:
+            publication_link = project['publication_link']
+        except KeyError:
+            publication_link = None
         members = [i for i in members if i]
         memberString = ', '.join(members)
-        form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString})
+        form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString,"publication_link": publication_link})
     return render(request, "pages/edit_project.html", {'project': project, 'run': form})
 
 def create_user_list(string, current_user):
@@ -1306,6 +1133,7 @@ def admin_featured_projects(request):
         query = {'_id': ObjectId(project_id)}
         new_val = {"$set": {'featured': featured}}
         collection_handle.update_one(query, new_val)
+
 
 
     public_projects = list(collection_handle.find({'private': False, 'delete': False}))
@@ -1398,7 +1226,9 @@ def admin_stats(request):
     # Calculate stats
     # total_downloads = [project['project_downloads'] for project in public_projects]
 
-    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'users': users})
+    repo_stats = get_latest_site_statistics()
+
+    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'users': users, 'site_stats':repo_stats })
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def user_stats_download(request):
@@ -1429,6 +1259,12 @@ def user_stats_download(request):
         writer.writerow(output.values())
     
     return response
+
+# wrapper in views for site stats to keep the import of site_stats.py out of urls.py
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def site_stats_regenerate(request):
+    regenerate_site_statistics()
+    return admin_stats(request)
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def project_stats_download(request):
@@ -1649,12 +1485,14 @@ def create_project(request):
 def _create_project(form, request):
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
+    publication_link = form_dict['publication_link']
     user = get_current_user(request)
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     project, tmp_id = create_project_helper(form, user, request_file)
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
+    add_project_to_site_statistics(project)
     # move the project location to a new name using the UUID to prevent name collisions
     new_project_data_path = f"tmp/{new_id.inserted_id}"
     os.rename(project_data_path, new_project_data_path)
@@ -1690,6 +1528,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     """
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
+    publication_link = form_dict['publication_link']
     project = dict()        
     # download_file(project_name, form_dict['file'])
     # runs = samples_to_dict(form_dict['file'])
@@ -1757,6 +1596,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     current_user = user
     project['creator'] = current_user
     project['project_name'] = form_dict['project_name']
+    project['publication_link'] = form_dict['publication_link']
     project['description'] = form_dict['description']
     project['tarfile'] = project_tar_id
     project['date_created'] = get_date()
