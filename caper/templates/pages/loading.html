@@ -2,14 +2,19 @@
 
 {% load custom_filters %}
 
-    
+{% load static%}
 
 {% block main %}
 
 <div style = "margin: auto; width: 100%; padding:200px; text-align:center;">
 
     
-    <img src= "{{ STATIC_URL }}img/loading-white.gif">
+    <div class="loader" style = "border: 16px solid #f3f3f3; /* Light grey */
+    border-top: 16px solid #3498db; /* Blue */
+    border-radius: 50%;
+    width: 120px;
+    height: 120px;
+    animation: spin 2s linear infinite; margin:auto"></div>
     
     <br><br>
     
