@@ -36,6 +36,7 @@ import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
+
 # from django.views.decorators.cache import cache_page
 # from zipfile import ZipFile
 import tarfile
@@ -441,33 +442,12 @@ def project_page(request, project_name, message=''):
     return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig})
 
 
-# this class is used by upload_file_to_s3 during the upload_file
-class ProgressPercentage(object):
-
-    def __init__(self, filename):
-        self._filename = filename
-        self._size = float(os.path.getsize(filename))
-        self._seen_so_far = 0
-        self._lock = threading.Lock()
-
-    def __call__(self, bytes_amount):
-        # To simplify, assume this is hooked up to a single filename
-        with self._lock:
-            self._seen_so_far += bytes_amount
-            percentage = (self._seen_so_far / self._size) * 100
-            logging.debug(
-                "\r%s  %s / %s  (%.2f%%)" % (
-                    self._filename, self._seen_so_far, self._size,
-                    percentage))
-            # sys.stdout.flush()
-
-
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
     session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
     s3client = session.client('s3')
     logging.info(f'==== XXX STARTING upload of {file_path_and_location_local} to s3://{settings.S3_DOWNLOADS_BUCKET}/{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
     s3client.upload_file(f'{file_path_and_location_local}', settings.S3_DOWNLOADS_BUCKET,
-                         f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}', Callback=ProgressPercentage(f'{file_path_and_location_local}'))
+                         f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
     logging.info('==== XXX uploaded to bucket ')
 
 
@@ -1474,7 +1454,6 @@ def create_project(request):
             raise Http404()
 
         a_message, new_id = _create_project(form, request)
-
         return redirect('project_page', project_name=new_id.inserted_id, message=a_message)
 
     else:
@@ -1489,6 +1468,8 @@ def _create_project(form, request):
     user = get_current_user(request)
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
+    logging.debug("request_file var:" + str(request.FILES['document'].name))
+    logging.debug("temporary file path before helper:" + str(request_file.temporary_file_path()))
     project, tmp_id = create_project_helper(form, user, request_file)
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
@@ -1498,10 +1479,13 @@ def _create_project(form, request):
     os.rename(project_data_path, new_project_data_path)
     project_data_path = new_project_data_path
     file_location = f'{project_data_path}/{request_file.name}'
+    logging.debug("file stats: " + str(os.stat(file_location).st_size))
+
     # extract the files async also
     extract_thread = Thread(target=extract_project_files,
                             args=(tarfile, file_location, project_data_path, new_id.inserted_id))
     extract_thread.start()
+
     if settings.USE_S3_DOWNLOADS:
         # load the zip asynch to S3 for later use
         file_location = f'{project_data_path}/{request_file.name}'
