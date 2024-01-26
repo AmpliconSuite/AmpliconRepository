@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+
+{% load custom_filters %}
+
+    
+
+{% block main %}
+
+<div style = "margin: auto; width: 100%; padding:200px; text-align:center;">
+
+    
+    <img src= "{{ STATIC_URL }}img/loading-white.gif">
+    
+    <br><br>
+    
+
+    The project {{ project_name }} is still loading... please check again later! 
+    <br>
+    <br>
+
+    In the mean time, check out other publicly accessible projects <a href = "/">here</a>
+
+    <br>
+    <br>
+
+    This page will refresh in 15 seconds ... 
+
+    <meta http-equiv="refresh" content="15;URL=''" />
+
+
+    
+</div>
+
+
+
+
+
+
+    
+{% endblock main %}
