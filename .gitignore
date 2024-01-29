@@ -22,3 +22,4 @@ tmp/
 data/
 logs/
 .env
+caper/caper.sqlite3
