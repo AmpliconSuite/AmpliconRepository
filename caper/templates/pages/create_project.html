@@ -6,6 +6,57 @@
     <title>Create Project</title>
 </head>
 
+{% block extra_js %}
+<script>
+
+    function clearFileInput() {
+        const ctrl = document.getElementById('fileuploadfield');
+        const progressBox = document.getElementById('progress-box')
+        progressBox.style.display = "none";
+
+        try {
+          ctrl.value = null;
+        } catch(ex) { }
+        if (ctrl.value) {
+          ctrl.parentNode.replaceChild(ctrl.cloneNode(true), ctrl);
+        }
+      }
+
+    
+    var _validFileExtensions = [".tar.gz"];    
+    function Validate(oForm) {
+        var arrInputs = oForm.getElementsByTagName("input");
+        for (var i = 0; i < arrInputs.length; i++) {
+            var oInput = arrInputs[i];
+            if (oInput.type == "file") {
+                var sFileName = oInput.value;
+                if (sFileName.length > 0) {
+                    var blnValid = false;
+                    for (var j = 0; j < _validFileExtensions.length; j++) {
+                        var sCurExtension = _validFileExtensions[j];
+                        if (sFileName.substr(sFileName.length - sCurExtension.length, sCurExtension.length).toLowerCase() == sCurExtension.toLowerCase()) {
+                            blnValid = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!blnValid) {
+                        alert("Sorry, " + sFileName + " is invalid, allowed extensions are: " + _validFileExtensions.join(", ") + "\n Please Re-Upload with the correct file.");
+                        return false;
+                    }
+                }
+            }
+        }
+    
+        return true;
+    }
+
+</script>
+
+    
+{% endblock extra_js %}
+    
+
 {% block main %}
 
 <h1>Create New Project</h1>
@@ -16,19 +67,27 @@
 
 {% if user.is_authenticated %}
     <div id="alert-box"></div>
-    <form method="post" enctype="multipart/form-data" id="upload-form">
+    <form method="post" enctype="multipart/form-data" id="upload-form" onsubmit="return Validate(this);">
         {% csrf_token %}
         {{ run|crispy }}
 
         <input type="file" name="document" id="fileuploadfield">
-        <br>
         <div id="progress-box" class="not-visible"></div>
+        <br>
+        <br>
+        <input type="button" onClick="clearFileInput();" value = "Remove Upload">
+        <br>
+
+        
 {#        <div id="cancel-box" class="not-visible">#}
 {#            <button id="cancel-btn" class="btn btn-danger">cancel</button>#}
 {#        </div>#}
         <br>
         <button id="createProjectBtn" class="btn btn-primary">Create Project</button>
+
     </form>
+
+
     <br>
     <p><b>What file do I upload?</b> <br> A specifically structured .tar.gz of your AmpliconSuite-pipeline output files, including all samples in your project.
         To make this file, you must run <a href="https://github.com/AmpliconSuite/AmpliconSuiteAggregator">AmpliconSuiteAggregator</a>.
@@ -61,6 +120,7 @@
 
     input.addEventListener('change', () => {
         progressBox.classList.remove('not-visible')
+        progressBox.style.display = "block";
         {#cancelBox.classList.remove('not-visible')#}
 
         const agg_file = input.files[0]
@@ -124,6 +184,10 @@
             processData: false,
         })
     })
+
+
+
+    
 </script>
 
 {% endblock %}
