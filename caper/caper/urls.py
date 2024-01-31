@@ -7,6 +7,8 @@ import mezzanine
 from mezzanine.conf import settings
 from . import views
 from django.conf.urls.static import static
+from django.shortcuts import render, redirect
+
 
 from rest_framework import routers
 
@@ -68,7 +70,8 @@ urlpatterns += [
     path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
     path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),
 
-    path('upload_api/', views.FileUploadView.as_view(), name = 'Document')
+    path('upload_api/', views.FileUploadView.as_view(), name = 'Document'),
+    path('loading/', views.loading)
 ]
 
 urlpatterns += static(settings.PROJECT_DATA_URL, document_root=settings.PROJECT_DATA_ROOT)

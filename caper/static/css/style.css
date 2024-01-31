@@ -106,3 +106,10 @@ table.dataTable.no-border tbody th,
 table.dataTable.no-border tbody td {
   border: 0;
 }
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  
