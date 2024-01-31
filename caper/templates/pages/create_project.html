@@ -6,87 +6,58 @@
     <title>Create Project</title>
 </head>
 
-{% block extra_js %}
-<script>
-
-    function clearFileInput() {
-        const ctrl = document.getElementById('fileuploadfield');
-        const progressBox = document.getElementById('progress-box')
-        progressBox.style.display = "none";
-
-        try {
-          ctrl.value = null;
-        } catch(ex) { }
-        if (ctrl.value) {
-          ctrl.parentNode.replaceChild(ctrl.cloneNode(true), ctrl);
-        }
-      }
-
-    
-    var _validFileExtensions = [".tar.gz"];    
-    function Validate(oForm) {
-        var arrInputs = oForm.getElementsByTagName("input");
-        for (var i = 0; i < arrInputs.length; i++) {
-            var oInput = arrInputs[i];
-            if (oInput.type == "file") {
-                var sFileName = oInput.value;
-                if (sFileName.length > 0) {
-                    var blnValid = false;
-                    for (var j = 0; j < _validFileExtensions.length; j++) {
-                        var sCurExtension = _validFileExtensions[j];
-                        if (sFileName.substr(sFileName.length - sCurExtension.length, sCurExtension.length).toLowerCase() == sCurExtension.toLowerCase()) {
-                            blnValid = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!blnValid) {
-                        alert("Sorry, " + sFileName + " is invalid, allowed extensions are: " + _validFileExtensions.join(", ") + "\n Please Re-Upload with the correct file.");
-                        return false;
-                    }
-                }
-            }
-        }
-    
-        return true;
+<style>
+    #upload-form {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
     }
 
-</script>
+    #fileuploadfield,
+    #progress-box,
+    #remove-upload-btn {
+        margin-bottom: 10px;
+    }
 
-    
-{% endblock extra_js %}
-    
+    #fileuploadfield {
+        order: 1;
+    }
+
+    #remove-upload-btn {
+        order: 2;
+        margin-left: 10px; /* Add margin for space between buttons */
+    }
+
+    #progress-box {
+        order: 3;
+    }
+
+    #createProjectBtn {
+        order: 4;
+    }
+</style>
 
 {% block main %}
 
 <h1>Create New Project</h1>
 
 <div class="alert alert-danger alert-dismissible" role="alert" id="upload_failed" style="display:none; flex;">
-    No File Selected, Please select a file using the "Choose File" button at the bottom of the form and try again.
+    No File Selected, Please select a file using the "Browse" button and try again.
 </div>
 
 {% if user.is_authenticated %}
     <div id="alert-box"></div>
-    <form method="post" enctype="multipart/form-data" id="upload-form" onsubmit="return Validate(this);">
+    <form method="post" enctype="multipart/form-data" id="upload-form">
         {% csrf_token %}
         {{ run|crispy }}
 
         <input type="file" name="document" id="fileuploadfield">
+        <input type="button" onClick="clearFileInput();" value="Remove Upload" id="remove-upload-btn">
+        <br>
         <div id="progress-box" class="not-visible"></div>
         <br>
-        <br>
-        <input type="button" onClick="clearFileInput();" value = "Remove Upload">
-        <br>
-
-        
-{#        <div id="cancel-box" class="not-visible">#}
-{#            <button id="cancel-btn" class="btn btn-danger">cancel</button>#}
-{#        </div>#}
-        <br>
         <button id="createProjectBtn" class="btn btn-primary">Create Project</button>
-
     </form>
-
 
     <br>
     <p><b>What file do I upload?</b> <br> A specifically structured .tar.gz of your AmpliconSuite-pipeline output files, including all samples in your project.
@@ -102,27 +73,29 @@
 
     <p><b>Need help?</b> <br> Please do not hesitate to <a href="https://github.com/AmpliconSuite/AmpliconRepository/issues">reach out</a>, we're very responsive.</p>
 
-
 {% else %}
     <p>Sign in to Upload Files</p>
 {% endif %}
+
+
 <script>
     const uploadForm = document.getElementById('upload-form')
     const input = document.getElementById('fileuploadfield')
     console.log(input)
-
     const alertBox = document.getElementById('alert-box')
     const progressBox = document.getElementById('progress-box')
-    {#const cancelBox = document.getElementById('cancel-box')#}
-    {#const cancelBtn = document.getElementById('cancel-btn')#}
-
     const csrf = document.getElementsByName('csrfmiddlewaretoken')
 
-    input.addEventListener('change', () => {
+    input.addEventListener('change', (event) => {
         progressBox.classList.remove('not-visible')
         progressBox.style.display = "block";
-        {#cancelBox.classList.remove('not-visible')#}
-
+        const validFileExtension = ".tar.gz";
+        const fileName = input.value.split('\\').pop().split('/').pop(); // Extract filename without path
+        console.log(fileName, "fname")
+        if (!fileName.toLowerCase().endsWith(validFileExtension)) {
+            alert("Sorry, " + fileName + " is not an invalid input.\n\nPlease select an aggregated .tar.gz file.\n\nSee bottom of page for instructions on how to generate an aggregated input file.");
+            throw new Error("Bad file extension!");
+        }
         const agg_file = input.files[0]
         const url = URL.createObjectURL(agg_file)
         console.log(agg_file, "agg_file")
@@ -138,13 +111,11 @@
             enctype: 'multipart/form-data',
             data: fd,
             beforeSend: function(){
-                console.log('before')
                 alertBox.innerHTML= ""
             },
             xhr: function(){
                 const xhr = new window.XMLHttpRequest();
                 xhr.upload.addEventListener('progress', (e) => {
-                    // console.log(e)
                     if (e.lengthComputable) {
                         const percent = e.loaded / e.total * 100
                         console.log(percent, "% up")
@@ -153,17 +124,7 @@
                                                 </div>
                                                 <p>${percent.toFixed(1)}%</p>`
                     }
-
                 })
-                {#cancelBtn.addEventListener('click', ()=>{#}
-                {#    xhr.abort()#}
-                {#    setTimeout(()=>{#}
-                {#        uploadForm.reset()#}
-                {#        progressBox.innerHTML=""#}
-                {#        alertBox.innerHTML = ""#}
-                {#        cancelBox.classList.add('not-visible')#}
-                {#    }, 2000)#}
-                {# })#}
                 return xhr
             },
             success: function(response){
@@ -171,13 +132,13 @@
                 alertBox.innerHTML = `<div class="alert alert-success" role="alert">
                                         Successfully uploaded file
                                     </div>`
-                {#cancelBox.classList.add('not-visible')#}
             },
             error: function(error){
                 console.log(error)
-                alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
-                                        Ups... something went wrong
-                                    </div>`
+                {#alertBox.innerHTML = `<div class="alert alert-danger" role="alert">#}
+                {#                    Something went wrong#}
+                {#                </div>`#}
+
             },
             cache: false,
             contentType: false,
@@ -185,9 +146,19 @@
         })
     })
 
+    function clearFileInput() {
+        const ctrl = document.getElementById('fileuploadfield');
+        const progressBox = document.getElementById('progress-box')
+        progressBox.style.display = "none";
 
+        try {
+          ctrl.value = null;
+        } catch(ex) { }
+        if (ctrl.value) {
+          ctrl.parentNode.replaceChild(ctrl.cloneNode(true), ctrl);
+        }
+    }
 
-    
 </script>
 
 {% endblock %}
