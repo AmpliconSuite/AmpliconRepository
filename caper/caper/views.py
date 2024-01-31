@@ -376,7 +376,7 @@ def project_page(request, project_name, message=''):
     ## if flag is unfinished, render a loading page: 
 
     project = validate_project(get_one_project(project_name), project_name)
-    if project['FINISHED?'] == False:
+    if 'FINISHED?' in project and project['FINISHED?'] == False:
         return render(request, "pages/loading.html", {"project_name":project_name})
 
     if project['private'] and not is_user_a_project_member(project, request):
