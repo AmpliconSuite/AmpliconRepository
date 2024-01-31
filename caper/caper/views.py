@@ -1006,6 +1006,7 @@ def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
         try:
+
             prev_ids = project['previous_project_ids']
         except:
             prev_ids = []
@@ -1705,3 +1706,11 @@ class FileUploadView(APIView):
             s3_thread.start()
 
 
+
+def robots(request):
+    """
+    View for robots.txt, will read the file from static root (depending on server), and show robots file. 
+    """
+
+    robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
+    return HttpResponse(robots_txt, content_type="text/plain")

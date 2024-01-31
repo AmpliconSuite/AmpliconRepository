@@ -69,9 +69,9 @@ urlpatterns += [
 
     path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
     path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),
-
-    path('upload_api/', views.FileUploadView.as_view(), name = 'Document'),
-    path('loading/', views.loading)
+    path('upload_api/', views.FileUploadView.as_view(), name = 'Document'), 
+    path('robots.txt', views.robots, name = "robots.txt"),
+    path('loading/', views.loading),
 ]
 
 urlpatterns += static(settings.PROJECT_DATA_URL, document_root=settings.PROJECT_DATA_ROOT)
