@@ -3,53 +3,62 @@
 {% load crispy_forms_tags%}
 
 <head>
-    <title>
-        Create Project
-    </title>
-
-
-
-
+    <title>Create Project</title>
 </head>
+
+<style>
+    #upload-form {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    #fileuploadfield,
+    #progress-box,
+    #remove-upload-btn {
+        margin-bottom: 10px;
+    }
+
+    #fileuploadfield {
+        order: 1;
+    }
+
+    #remove-upload-btn {
+        order: 2;
+        margin-left: 10px; /* Add margin for space between buttons */
+    }
+
+    #progress-box {
+        order: 3;
+    }
+
+    #createProjectBtn {
+        order: 4;
+    }
+</style>
+
 {% block main %}
 
-    <script>
-        function showWaitCursor() {
-            document.body.style.cursor = 'wait';
-            // force it on the button that is being clicked
-            checkinputfield();
-            $(".btn").css("cursor", "wait");
-            return false
-        }
-
-        function checkinputfield(){
-            if( document.getElementById("fileuploadfield").files.length == 0 ){
-                console.log("no files selected");
-                document.getElementById("upload_failed").style.display = "flex";
-                return false
-            } else{
-                console.log(document.getElementById("fileuploadfield").files);
-                console.log("file is uploaded");
-                return true
-            }
-        }
-    </script>
 <h1>Create New Project</h1>
 
 <div class="alert alert-danger alert-dismissible" role="alert" id="upload_failed" style="display:none; flex;">
-    No File Selected, Please select a file using the "Choose File" button at the bottom of the form and try again.
+    No File Selected, Please select a file using the "Browse" button and try again.
 </div>
 
-
 {% if user.is_authenticated %}
-<form method="post" enctype="multipart/form-data" onsubmit="return checkinputfield();">
-    {% csrf_token %}
-    {{ run|crispy }}
+    <div id="alert-box"></div>
+    <form method="post" enctype="multipart/form-data" id="upload-form">
+        {% csrf_token %}
+        {{ run|crispy }}
 
-    <input type="file" name="document" id="fileuploadfield">
-    
-    <button class="btn btn-primary">Create Project</button>
-</form>
+        <input type="file" name="document" id="fileuploadfield">
+        <input type="button" onClick="clearFileInput();" value="Remove Upload" id="remove-upload-btn">
+        <br>
+        <div id="progress-box" class="not-visible"></div>
+        <br>
+        <button id="createProjectBtn" class="btn btn-primary">Create Project</button>
+    </form>
+
     <br>
     <p><b>What file do I upload?</b> <br> A specifically structured .tar.gz of your AmpliconSuite-pipeline output files, including all samples in your project.
         To make this file, you must run <a href="https://github.com/AmpliconSuite/AmpliconSuiteAggregator">AmpliconSuiteAggregator</a>.
@@ -64,11 +73,92 @@
 
     <p><b>Need help?</b> <br> Please do not hesitate to <a href="https://github.com/AmpliconSuite/AmpliconRepository/issues">reach out</a>, we're very responsive.</p>
 
-
-
-
 {% else %}
-<p>Sign in to Upload Files</p>
+    <p>Sign in to Upload Files</p>
 {% endif %}
+
+
+<script>
+    const uploadForm = document.getElementById('upload-form')
+    const input = document.getElementById('fileuploadfield')
+    console.log(input)
+    const alertBox = document.getElementById('alert-box')
+    const progressBox = document.getElementById('progress-box')
+    const csrf = document.getElementsByName('csrfmiddlewaretoken')
+
+    input.addEventListener('change', (event) => {
+        progressBox.classList.remove('not-visible')
+        progressBox.style.display = "block";
+        const validFileExtension = ".tar.gz";
+        const fileName = input.value.split('\\').pop().split('/').pop(); // Extract filename without path
+        console.log(fileName, "fname")
+        if (!fileName.toLowerCase().endsWith(validFileExtension)) {
+            alert("Sorry, " + fileName + " is not an invalid input.\n\nPlease select an aggregated .tar.gz file.\n\nSee bottom of page for instructions on how to generate an aggregated input file.");
+            throw new Error("Bad file extension!");
+        }
+        const agg_file = input.files[0]
+        const url = URL.createObjectURL(agg_file)
+        console.log(agg_file, "agg_file")
+        console.log(url, "url")
+
+        const fd = new FormData()
+        fd.append('csrfmiddlewaretoken', csrf[0].value)
+        fd.append('document', agg_file)
+
+        $.ajax({
+            type:'POST',
+            url: uploadForm.action,
+            enctype: 'multipart/form-data',
+            data: fd,
+            beforeSend: function(){
+                alertBox.innerHTML= ""
+            },
+            xhr: function(){
+                const xhr = new window.XMLHttpRequest();
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percent = e.loaded / e.total * 100
+                        console.log(percent, "% up")
+                        progressBox.innerHTML = `<div class="progress">
+                                                    <div class="progress-bar" role="progressbar" style="width: ${percent}%" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"></div>
+                                                </div>
+                                                <p>${percent.toFixed(1)}%</p>`
+                    }
+                })
+                return xhr
+            },
+            success: function(response){
+                console.log(response)
+                alertBox.innerHTML = `<div class="alert alert-success" role="alert">
+                                        Successfully uploaded file
+                                    </div>`
+            },
+            error: function(error){
+                console.log(error)
+                {#alertBox.innerHTML = `<div class="alert alert-danger" role="alert">#}
+                {#                    Something went wrong#}
+                {#                </div>`#}
+
+            },
+            cache: false,
+            contentType: false,
+            processData: false,
+        })
+    })
+
+    function clearFileInput() {
+        const ctrl = document.getElementById('fileuploadfield');
+        const progressBox = document.getElementById('progress-box')
+        progressBox.style.display = "none";
+
+        try {
+          ctrl.value = null;
+        } catch(ex) { }
+        if (ctrl.value) {
+          ctrl.parentNode.replaceChild(ctrl.cloneNode(true), ctrl);
+        }
+    }
+
+</script>
 
 {% endblock %}
