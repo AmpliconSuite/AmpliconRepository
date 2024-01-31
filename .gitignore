@@ -1,4 +1,4 @@
-config.sh
+config.sh*
 *.swp
 .env
 /caper/caper.sqlite3
@@ -22,3 +22,4 @@ tmp/
 data/
 logs/
 .env
+caper/caper.sqlite3

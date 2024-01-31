@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% load custom_filters %}
+
+{% load static%}
+
+{% block main %}
+
+<div style = "margin: auto; width: 100%; padding:200px; text-align:center;">
+
+    
+    <div class="loader" style = "border: 16px solid #f3f3f3; /* Light grey */
+    border-top: 16px solid #3498db; /* Blue */
+    border-radius: 50%;
+    width: 120px;
+    height: 120px;
+    animation: spin 2s linear infinite; margin:auto"></div>
+    
+    <br><br>
+    
+
+    The project {{ project_name }} is still loading... please check again later! 
+    <br>
+    <br>
+
+    In the meantime, check out other publicly accessible projects <a href = "/">here</a>
+
+    <br>
+    <br>
+
+    This page will refresh in 15 seconds ... 
+
+    <meta http-equiv="refresh" content="15;URL=''" />
+
+
+    
+</div>
+
+
+
+
+
+
+    
+{% endblock main %}
