@@ -701,11 +701,18 @@ def sample_download(request, project_name, sample_name):
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     
     if check_if_db_field_exists(project, 'sample_downloads'):
-        sample_download_data = project['sample_downloads']
-        sample_download_data[str(get_date())] += 1
+        sample_download_data = project['sample_downloads']        
+        if isinstance(sample_download_data, int):
+            temp_data = sample_download_data
+            sample_download_data = dict()
+            sample_download_data[get_date()] = temp_data
+        elif get_date() in sample_download_data:
+            sample_download_data[get_date()] += 1
+        else:
+            sample_download_data[get_date()] = 1
     else: 
         sample_download_data = dict()
-        sample_download_data[str(get_date())] = 1
+        sample_download_data[get_date()] = 1
     
     query = {'_id': ObjectId(project_name)}
     new_val = { "$set": {'sample_downloads': sample_download_data} }
