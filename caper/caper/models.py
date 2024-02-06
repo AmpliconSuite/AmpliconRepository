@@ -31,7 +31,9 @@ class AdminSendEmail(models.Model):
     subject = models.CharField(max_length=200)
     body = models.CharField(max_length=4000)
 
-
+class UserPreferencesModel(models.Model):
+    onAddedToProjectTeam = models.BooleanField(default=False)
+    onRemovedFromProjectTeam = models.BooleanField(default=False)
 
 class UploadTarFile(models.Model):
     """

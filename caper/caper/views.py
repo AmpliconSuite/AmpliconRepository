@@ -13,6 +13,7 @@ from django.utils.html import strip_tags
 ## API framework packages
 from rest_framework.response import Response
 
+from .user_preferences import update_user_preferences, get_user_preferences
 from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics
 from  .serializers import FileSerializer
 from rest_framework.views import APIView
@@ -28,7 +29,7 @@ from django.conf import settings
 import json
 
 # from .models import File
-from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm
+from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
 from .utils import collection_handle, db_handle, fs_handle, replace_space_to_underscore, \
     preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
     prepare_project_linkid, replace_underscore_keys
@@ -271,7 +272,7 @@ def index(request):
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects, 'site_stats': site_stats})
 
 
-def profile(request):
+def profile(request, message_to_user=None):
     username = request.user.username
     useremail = request.user.email
     # prevent an absent/null email from matching on anything
@@ -282,7 +283,9 @@ def profile(request):
     for proj in projects:
         prepare_project_linkid(proj)
 
-    return render(request, "pages/profile.html", {'projects': projects})
+    prefs = get_user_preferences(request.user)
+    form = UserPreferencesForm(prefs)
+    return render(request, "pages/profile.html", {'projects': projects, 'SITE_TITLE':settings.SITE_TITLE, 'preferences': prefs, 'message_to_user': message_to_user})
 
 
 def login(request):
@@ -1104,6 +1107,16 @@ def clear_tmp(folder = 'tmp/'):
                 shutil.rmtree(file_path)
         except Exception as e:
             logging.exception('Failed to delete %s. Reason: %s' % (file_path, e))
+
+
+def update_notification_preferences(request):
+
+    if request.method == "POST":
+        form = UserPreferencesForm(request.POST)
+        form_dict = form_to_dict(form)
+        update_user_preferences(request.user, form_dict)
+
+    return profile(request, message_to_user="User preferences updated.")
 
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to 
 # deny that this might even be a valid URL

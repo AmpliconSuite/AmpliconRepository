@@ -42,6 +42,7 @@ urlpatterns += [
     path('create-project/', views.create_project, name='create_project'),
     path('accounts/', include('allauth.urls')),
     path("accounts/profile/", views.profile, name="profile"),
+    path("profile-update-notification-preferences/", views.update_notification_preferences , name="profile-update-notification-preferences"),
     #path("accounts/login/", views.login, name="login"),
     # path("accounts/login/", views.login, name="login"),
     # path("accounts/login/", views.login, name="login"),

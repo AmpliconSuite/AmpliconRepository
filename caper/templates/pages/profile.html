@@ -12,6 +12,17 @@
     $(document).ready( function () {
         $('#projectTable').DataTable(
         );
+        message_to_user = "{{ message_to_user }}";
+        if (message_to_user.length > 0){
+            $('#message_to_user').text(message_to_user)
+            if (message_to_user.includes("Problem")){
+                $("#message_dialog").addClass("alert-warning");
+                $("#message_dialog").removeClass("alert-success");
+            }
+            $("#message_dialog").show()
+        } else {
+            document.getElementById("message_dialog").style.display = "none";
+        }
     } );
 </script>
 {% endblock %}
@@ -22,7 +33,17 @@
     </title>
 </head>
 {% if user.is_authenticated %}
+
+
     <div class="container main-container" style="max-width:1600px; width:90%; margin:auto;">
+       <div id="message_dialog" class="alert alert-success" role="alert" style="display:none">
+        <span id="message_to_user">default text</span>
+            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+        <span aria-hidden="true">&times;</span>
+      </button>
+    </div>
+
+
         <div class="row">
             <div class="col-md-12">
                 <h2>
@@ -74,6 +95,39 @@
                 </tbody>
             </table>
         </div>
+
+        <div class="row" style="margin-top:20px">
+                <div class="col-md-9">
+                    <h3>Preferences</h3>
+                </div>
+        </div>
+        <div class="row">
+                <div class="col-md-9">
+                    <h4>Notifications</h4>
+                    Check the checkbox to have {{ SITE_TITLE }} send you emails when the following events happen:
+                </div>
+        </div>
+
+        <form id="form__submit" action="/profile-update-notification-preferences/" method="post">
+                       {% csrf_token %}
+
+            <div class="row" style="margin-top:15px"><div class="col-md-4">When <b><i>added</i></b> as a project member:</div>
+                <div class="col-md-4">   <input id="form__onAddedToProjectTeam" type="checkbox"
+                                              onchange="document.getElementById('updateNotificationsBtn').disabled = false"
+                                                name="onAddedToProjectTeam"  {% if preferences.onAddedToProjectTeam %} checked{% endif %}  /></div></div>
+             <div class="row" style="margin-top:15px"><div class="col-md-4">When <b><i>removed</i></b> as a project member:</div>
+                 <div class="col-md-4">   <input id="form__onRemovedFromProjectTeam" type="checkbox"
+                                              onchange="document.getElementById('updateNotificationsBtn').disabled = false"
+                                                 name="onRemovedFromProjectTeam"  {% if preferences.onRemovedFromProjectTeam %} checked{% endif %}  /></div></div>
+
+             <div class="row" style="margin-top: 25px">
+                <div class="col-md-9">
+                   <button id="updateNotificationsBtn" class="btn btn-primary" disabled="true">Update notification preferences</button>
+                </div>
+        </div>
+        </form>
+
+
     </div>
     {% endif %}
     {% if not user.is_authenticated %}
