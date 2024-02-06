@@ -27,7 +27,7 @@ jobs:
         COMMIT_ID=`git rev-parse HEAD`
         echo "CommitID=${COMMIT_ID}" >> caper/version.txt
         
-    - uses: stefanzweifel/git-auto-commit-action@v4
+    - uses: stefanzweifel/git-auto-commit-action@v5
       with:
         commit_message: Auto-Update version.txt on release
         push_options: '--force'
