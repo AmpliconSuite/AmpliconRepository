@@ -5,6 +5,7 @@ from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate
 
 ## API framework packages
 from rest_framework.response import Response
@@ -82,8 +83,8 @@ fa_cmap = {
 
 def get_date():
     today = datetime.datetime.now()
-    # date = today.strftime('%Y-%m-%d')
-    date = today.isoformat()
+    date = today.strftime('%Y-%m-%d')
+    # date = today.isoformat()
     return date
 
 
@@ -469,12 +470,21 @@ def project_download(request, project_name):
     project = get_one_project(project_name)
     
     if check_if_db_field_exists(project, 'project_downloads'):
-        updated_downloads = project['project_downloads'] + 1
+        project_download_data = project['project_downloads']
+        if isinstance(project_download_data, int):
+            temp_data = project_download_data
+            project_download_data = dict()
+            project_download_data[get_date()] = temp_data
+        elif get_date() in project_download_data:
+            project_download_data[get_date()] += 1
+        else:
+            project_download_data[get_date()] = 1
     else: 
-        updated_downloads = 1
+        project_download_data = dict()
+        project_download_data[get_date()] = 1
     
     query = {'_id': ObjectId(project_name)}
-    new_val = { "$set": {'project_downloads': updated_downloads} }
+    new_val = { "$set": {'project_downloads': project_download_data} }
     collection_handle.update_one(query, new_val)   
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     real_project_name = project['project_name']
@@ -691,12 +701,14 @@ def sample_download(request, project_name, sample_name):
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     
     if check_if_db_field_exists(project, 'sample_downloads'):
-        updated_downloads = project['sample_downloads'] + 1
-    else:
-        updated_downloads = 1
+        sample_download_data = project['sample_downloads']
+        sample_download_data[str(get_date())] += 1
+    else: 
+        sample_download_data = dict()
+        sample_download_data[str(get_date())] = 1
     
     query = {'_id': ObjectId(project_name)}
-    new_val = { "$set": {'sample_downloads': updated_downloads} }
+    new_val = { "$set": {'sample_downloads': sample_download_data} }
     collection_handle.update_one(query, new_val)   
 
     sample_data_path = f"tmp/{project_name}/{sample_name}"        
@@ -1200,7 +1212,23 @@ def admin_stats(request):
     public_projects = list(collection_handle.find({'private': False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
-        
+        if check_if_db_field_exists(proj, 'project_downloads'):
+            project_download_data = proj['project_downloads']
+            if isinstance(project_download_data, int):
+                temp_data = project_download_data
+                project_download_data = dict()
+                project_download_data[get_date()] = temp_data
+        if check_if_db_field_exists(proj, 'sample_downloads'):
+            sample_download_data = proj['sample_downloads']
+            if isinstance(sample_download_data, int):
+                if sample_download_data > 0:
+                    temp_data = sample_download_data
+                    sample_download_data = dict()
+                    sample_download_data[get_date()] = temp_data
+        proj_id = proj['_id']
+        query = {'_id': ObjectId(proj_id)}
+        new_val = { "$set": {'project_downloads': project_download_data, 'sample_downloads': sample_download_data} }
+        collection_handle.update_one(query, new_val)
     # Calculate stats
     # total_downloads = [project['project_downloads'] for project in public_projects]
 
@@ -1208,9 +1236,10 @@ def admin_stats(request):
 
     return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'users': users, 'site_stats':repo_stats })
 
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+# @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def user_stats_download(request):
-    if not request.user.is_staff:
+    user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
+    if not user.is_staff:
         return redirect('/accounts/logout')
 
     # Get all user data
@@ -1244,9 +1273,10 @@ def site_stats_regenerate(request):
     regenerate_site_statistics()
     return admin_stats(request)
 
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+# @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def project_stats_download(request):
-    if not request.user.is_staff:
+    user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
+    if not user.is_staff:
         return redirect('/accounts/logout')
     
     # Get public and private project data
@@ -1255,7 +1285,7 @@ def project_stats_download(request):
         prepare_project_linkid(proj)
     
     # Create the HttpResponse object with the appropriate CSV header.
-    today = datetime.date.today()
+    today = get_date()
     response = HttpResponse(
         content_type="text/csv",
     )
