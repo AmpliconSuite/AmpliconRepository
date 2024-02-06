@@ -5,7 +5,11 @@ from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
+from django.urls import reverse
 
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 ## API framework packages
 from rest_framework.response import Response
 
@@ -24,7 +28,7 @@ from django.conf import settings
 import json
 
 # from .models import File
-from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm
+from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm
 from .utils import collection_handle, db_handle, fs_handle, replace_space_to_underscore, \
     preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
     prepare_project_linkid, replace_underscore_keys
@@ -1193,6 +1197,44 @@ def admin_version_details(request):
     #settings_result = "Get settings call failed."
 
     return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result, 'django_settings': settings_result})
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_sendemail(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+    message_to_user = ""
+
+    if request.method == "POST":
+        form = SendEmailForm(request.POST)
+        form_dict = form_to_dict(form)
+        to = form_dict['to']
+        cc = form_dict['cc']
+        subject = form_dict['subject']
+        body = form_dict['body']
+        logging.debug(" FORM = " + str(form_dict))
+
+        # add details for the template
+        form_dict['SITE_TITLE'] = settings.SITE_TITLE
+        form_dict['SITE_URL'] = settings.SITE_URL
+        html_message = render_to_string('contacts/mail_template.html', form_dict)
+        plain_message = strip_tags(html_message)
+
+        #send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER, recipient_list = [settings.RECIPIENT_ADDRESS])
+        email = EmailMessage(
+            subject,
+            html_message,
+            settings.EMAIL_HOST_USER,
+            [to ],
+            [cc],
+            reply_to=[settings.EMAIL_HOST_USER]
+        )
+        email.content_subtype = "html"
+        email.send(fail_silently=True)
+
+        message_to_user= "Email sent"
+
+
+    return render(request, 'pages/admin_sendemail.html', {'message_to_user': message_to_user, 'user': request.user, 'SITE_TITLE': settings.SITE_TITLE })
 
 
 
