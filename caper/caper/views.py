@@ -1,10 +1,11 @@
 # from asyncore import file_wrapper
 # from tkinter import E
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect
 from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
+from django.template.defaulttags import register
 
 ## API framework packages
 from rest_framework.response import Response
@@ -353,6 +354,29 @@ def create_aggregate_df(project, samples):
     
     return aggregate, aggregate_save_fp
 
+def previous_versions(project_name):
+    """
+    Gets a list of previous versions
+    """
+    print(project_name)
+    query = {
+        '_id': ObjectId(project_name)
+    }
+    proj_name = collection_handle.find(query, {"project_name": 1})[0]['project_name']
+    query = {
+        "project_name" : proj_name
+    }
+
+    res = []
+    results = collection_handle.find(query, {'date':1, 'linkid':1})
+    for result in results:
+        
+        res.append({
+            'date':result['date'],
+            'linkid':result['_id']
+        })
+
+    return res
 
 def project_page(request, project_name, message=''):
     """
@@ -385,6 +409,8 @@ def project_page(request, project_name, message=''):
     # if we got here by an OLD project id (prior to edits) then we want to redirect to the new one
     if not project_name == str(project['linkid']):
         return redirect('project_page', project_name=project['linkid'])
+
+    prev_versions = previous_versions(project_name)
 
     if 'metadata_stored' not in project:
         #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
@@ -445,7 +471,7 @@ def project_page(request, project_name, message=''):
             else:
                 message = 'There was a problem extracting the results from the AmpliconAggregator .tar.gz file for this project.  Please notifiy the administrator so that they can help resolve the problem.'
 
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig})
+    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig, 'prev_versions' : prev_versions})
 
 
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
@@ -485,7 +511,10 @@ def project_download(request, project_name):
     new_val = { "$set": {'project_downloads': updated_downloads} }
     collection_handle.update_one(query, new_val)   
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
-    real_project_name = project['project_name']
+    try:
+        real_project_name = project['project_name']
+    except:
+        real_project_name = ""
 
     project_data_path = f"tmp/{project_name}"
 
@@ -1031,11 +1060,28 @@ def edit_project_page(request, project_name):
             prev_ids.append(str(project['linkid']))
            # Create a mapping so links to the old project id still work
             query = {'_id': ObjectId(new_id.inserted_id)}
-            new_val = {"$set": {'previous_project_ids': prev_ids}}
+
+
+            new_val = {"$set": {'previous_versions': 
+                                {"date": project['date']}}}
+            
+            
+            query2 = {'_id': ObjectId(new_id.inserted_id),
+                      "previous_versions": {"$exists" : True}
+                      }
+            to_db = json.dumps({'date':str(project['date']), 'link':str(project['linkid'])})
+            if collection_handle.find_one(query2):
+                print("hihihihihihih\n\n\n\n\n")
+                new_val = { "$push" : {"previous_versions":to_db}}
+            else:
+                print("i have came in here unfortunately")
+                new_val = { "$set" : {"previous_versions" : [to_db]}}
+
 
             collection_handle.update_one(query, new_val)
 
-            return redirect('project_page', project_name=new_id.inserted_id, message=a_message)
+
+            return redirect('project_page', project_name=new_id.inserted_id, message=a_message, )
             # go to the new project
 
 

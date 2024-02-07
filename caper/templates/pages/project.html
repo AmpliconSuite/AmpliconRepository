@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 
 {% load custom_filters %}
-
-
+{% load static %}
+    
 {% block extra_js %}
 <script>
     $(document).ready( function () {
@@ -49,6 +49,27 @@
         {% if project.current_user_may_edit  %}
          <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 24px"></i></a>
         {%  endif %}</h2>
+
+        {% if prev_versions %}
+        <div class = "table-responsive" style='max-height:300px;'>
+            <table class = "table">
+                <thead>
+                    <th scope = "col">Date</th>
+                    <th scope = "col">Version</th>
+                    <th scope="col">Download</th>
+                </thead>
+                {%for version in prev_versions %}
+                    <tr>
+                    <td scope='row'>Date: {{version.date}} </td>
+                    <td scope='row'>Link: {{version.linkid}} </td>
+                    <td scope='row'><a class="btn btn-primary" href="/project/{{ version.link }}/download" style="color: white; margin-bottom: 12px;">Download prev version</a></td>
+                    </tr>
+                {% endfor %}
+            </table>
+        </div>
+        {% endif %}
+
+
         <br>
         <h5>Description: <span style="font-weight: 200">{{ project.description }}</span></h5>
         <h5>Publication link: <span style="font-weight: 200">{{ project.publication_link|escape|replace_urls|safe }}</span></h5>
