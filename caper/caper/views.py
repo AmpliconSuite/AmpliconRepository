@@ -13,7 +13,7 @@ from django.utils.html import strip_tags
 ## API framework packages
 from rest_framework.response import Response
 
-from .user_preferences import update_user_preferences, get_user_preferences
+from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
 from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics
 from  .serializers import FileSerializer
 from rest_framework.views import APIView
@@ -1035,6 +1035,11 @@ def edit_project_page(request, project_name):
         form_dict = form_to_dict(form)
 
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
+
+        # lets notify users (if their preferences request it) if project membership has changed
+        new_membership = form_dict['project_members']
+        old_membership = project['project_members']
+        notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
 
         request_file = request.FILES['document'] if 'document' in request.FILES else None
         print(f"request file is {request_file}")
