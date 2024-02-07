@@ -12,8 +12,9 @@
     $(document).ready( function () {
         $('#projectTable').DataTable(
         );
+
         message_to_user = "{{ message_to_user }}";
-        if (message_to_user.length > 0){
+        if ((message_to_user != "None") && (message_to_user.length > 0)) {
             $('#message_to_user').text(message_to_user)
             if (message_to_user.includes("Problem")){
                 $("#message_dialog").addClass("alert-warning");
