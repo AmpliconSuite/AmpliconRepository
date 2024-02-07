@@ -375,7 +375,7 @@ def previous_versions(project_name):
             'date':result['date'],
             'linkid':result['_id']
         })
-
+    res.reverse()
     return res
 
 def project_page(request, project_name, message=''):
