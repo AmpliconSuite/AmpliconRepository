@@ -370,9 +370,9 @@ def previous_versions(project_name):
     res = []
     results = collection_handle.find(query, {'date':1, 'linkid':1})
     for result in results:
-        
+        date_obj = datetime.datetime.strptime(result['date'], r"%Y-%m-%dT%H:%M:%S.%f")
         res.append({
-            'date':result['date'],
+            'date':date_obj.strftime(r'%B %d, %Y, %I:%M:%S:%p'),
             'linkid':result['_id']
         })
     res.reverse()
