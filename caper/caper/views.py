@@ -5,7 +5,7 @@ from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
-from django.urls import reverse
+from django.contrib import messages
 
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
@@ -288,13 +288,13 @@ def profile(request, message_to_user=None):
     if (prefs == None):
         if (message_to_user == None):
             message_to_user = ""
-        message_to_user = message_to_user + " Email notification preferences can now be set on your profile page."
+        message_to_user = message_to_user + "Email notification preferences can now be set on your profile page."
         # cause the default empty prefs to be saved so that this message only appears once
         empty_prefs_dict = form_to_dict(form)
         update_user_preferences(request.user, empty_prefs_dict)
 
-
-    return render(request, "pages/profile.html", {'projects': projects, 'SITE_TITLE':settings.SITE_TITLE, 'preferences': prefs, 'message_to_user': message_to_user})
+    messages.add_message(request, messages.INFO, message_to_user)
+    return render(request, "pages/profile.html", {'projects': projects, 'SITE_TITLE':settings.SITE_TITLE, 'preferences': prefs})
 
 
 def login(request):
