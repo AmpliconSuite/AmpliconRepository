@@ -1,4 +1,4 @@
-config.sh
+config.sh*
 *.swp
 .env
 /caper/caper.sqlite3
@@ -15,9 +15,11 @@ pyvenv.cfg
 /bin*
 *caper.sqlite3
 /ampliconenv
+*.bkup
 # pycharm IDE
 .idea/
 tmp/
 data/
 logs/
 .env
+caper/caper.sqlite3

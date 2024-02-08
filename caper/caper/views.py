@@ -1,6 +1,6 @@
 # from asyncore import file_wrapper
 # from tkinter import E
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect
+from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, JsonResponse
 from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
@@ -37,6 +37,7 @@ import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
+
 # from django.views.decorators.cache import cache_page
 # from zipfile import ZipFile
 import tarfile
@@ -54,6 +55,7 @@ from collections import defaultdict
 from wsgiref.util import FileWrapper
 import boto3
 import botocore
+import threading
 from threading import Thread
 import os, fnmatch
 import uuid
@@ -67,7 +69,8 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
 
 
 # SET UP HANDLE
-
+def loading(request):
+    return render(request, "pages/loading.html")
 
 # Site-wide focal amp color scheme
 fa_cmap = {
@@ -371,7 +374,12 @@ def project_page(request, project_name, message=''):
     # collection_handle.update(query, val)
     # logging.warning('delete complete')
 
+    ## if flag is unfinished, render a loading page: 
+
     project = validate_project(get_one_project(project_name), project_name)
+    if 'FINISHED?' in project and project['FINISHED?'] == False:
+        return render(request, "pages/loading.html", {"project_name":project_name})
+
     if project['private'] and not is_user_a_project_member(project, request):
         return HttpResponse("Project does not exist")
 
@@ -1017,6 +1025,7 @@ def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
         try:
+
             prev_ids = project['previous_project_ids']
         except:
             prev_ids = []
@@ -1350,6 +1359,15 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
         collection_handle.update_one(query, new_val)
         t_sb = time.time()
         diff = t_sb - t_sa
+
+
+        finish_flag = {
+            "$set" : {
+                'FINISHED?' : True
+            }
+        }
+        collection_handle.update_one(query, finish_flag)
+
         logging.info(f"Finished extracting from tar in {str(diff)} seconds")
 
     except Exception as anError:
@@ -1364,6 +1382,13 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
             print(type(anError), file = fh)  # the exception type
             print(anError.args, file = fh )  # arguments stored in .args
             print(anError, file=fh)
+
+    finish_flag = f"{project_data_path}/results/finished_project_creation.txt"
+    with open(finish_flag, 'w') as finish_flag_file:
+        finish_flag_file.write("FINISHED")
+    finish_flag_file.close()
+
+
 
 
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to
@@ -1489,7 +1514,6 @@ def create_project(request):
             raise Http404()
 
         a_message, new_id = _create_project(form, request)
-
         return redirect('project_page', project_name=new_id.inserted_id, message=a_message)
 
     else:
@@ -1498,12 +1522,18 @@ def create_project(request):
 
 
 def _create_project(form, request):
+    """
+    Creates the project 
+    """
+
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
     publication_link = form_dict['publication_link']
     user = get_current_user(request)
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
+    logging.debug("request_file var:" + str(request.FILES['document'].name))
+    logging.debug("temporary file path before helper:" + str(request_file.temporary_file_path()))
     project, tmp_id = create_project_helper(form, user, request_file)
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
@@ -1513,10 +1543,13 @@ def _create_project(form, request):
     os.rename(project_data_path, new_project_data_path)
     project_data_path = new_project_data_path
     file_location = f'{project_data_path}/{request_file.name}'
+    logging.debug("file stats: " + str(os.stat(file_location).st_size))
+
     # extract the files async also
     extract_thread = Thread(target=extract_project_files,
                             args=(tarfile, file_location, project_data_path, new_id.inserted_id))
     extract_thread.start()
+
     if settings.USE_S3_DOWNLOADS:
         # load the zip asynch to S3 for later use
         file_location = f'{project_data_path}/{request_file.name}'
@@ -1584,29 +1617,20 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
         
     #get run.json 
     run_path =  f'{project_data_path}/results/run.json'
+
+    # Create a file at the run.json path to 
+    # serve as a flag to tell whether or not the file extraction process has finished. 
+    # if not finished and the user tries to go to the project, then render a loading screen. 
+
+    finish_flag = f"{project_data_path}/results/finished_project_creation.txt"
+    with open(finish_flag, 'w') as finish_flag_file:
+        finish_flag_file.write("NOT_FINISHED")
+    finish_flag_file.close()
+    
+
     with open(run_path, 'r') as run_json:
         runs = samples_to_dict(run_json)
-    # for filename in os.listdir(project_data_path):
-    #     if os.path.isdir(f'{project_data_path}/{filename}'):
 
-    ### Now do this in seperate thread using the extract_project_files: method
-    # get cnv, image, bed files
-    #for sample, features in runs.items():
-    #    for feature in features:
-    #        print(feature['Sample name'])
-    #        if len(feature) > 0:
-    #            # get paths
-    #            key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON','AA directory','cnvkit directory']
-    #            for k in key_names:
-    #                try:
-    #                    path_var = feature[k]
-    #                    with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
-    #                        id_var = fs_handle.put(file_var)
-    #
-    #                except:
-    #                    id_var = "Not Provided"
-    #
-    #                feature[k] = id_var
     print('creating project now')
     current_user = user
     project['creator'] = current_user
@@ -1623,6 +1647,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['runs'] = replace_underscore_keys(runs)
     project['Oncogenes'] = get_project_oncogenes(runs)
     project['Classification'] = get_project_classifications(runs)
+    project['FINISHED?'] = False
     return project, tmp_id
 
 class FileUploadView(APIView):
@@ -1718,3 +1743,11 @@ class FileUploadView(APIView):
             s3_thread.start()
 
 
+
+def robots(request):
+    """
+    View for robots.txt, will read the file from static root (depending on server), and show robots file. 
+    """
+
+    robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
+    return HttpResponse(robots_txt, content_type="text/plain")

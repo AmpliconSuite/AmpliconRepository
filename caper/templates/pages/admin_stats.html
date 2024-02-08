@@ -109,13 +109,13 @@
                     </tr>
                     <tr>
                         <td>ecDNA</td>
-                        <td>{{ site_stats.public_amplicon_classifications_count.ecDNA }}</td>
-                        <td>{{ site_stats.all_private_amplicon_classifications_count.ecDNA }}</td>
+                        <td>{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</td>
+                        <td>{{ site_stats.all_private_amplicon_classifications_count.ecDNA|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>BFB</td>
-                        <td>{{ site_stats.public_amplicon_classifications_count.BFB }}</td>
-                        <td>{{ site_stats.all_private_amplicon_classifications_count.BFB }}</td>
+                        <td>{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</td>
+                        <td>{{ site_stats.all_private_amplicon_classifications_count.BFB|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>Complex non-cyclic</td>
