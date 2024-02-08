@@ -1071,10 +1071,10 @@ def edit_project_page(request, project_name):
                       }
             to_db = json.dumps({'date':str(project['date']), 'link':str(project['linkid'])})
             if collection_handle.find_one(query2):
-                print("hihihihihihih\n\n\n\n\n")
+
                 new_val = { "$push" : {"previous_versions":to_db}}
             else:
-                print("i have came in here unfortunately")
+
                 new_val = { "$set" : {"previous_versions" : [to_db]}}
 
 
