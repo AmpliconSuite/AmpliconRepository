@@ -112,4 +112,10 @@ table.dataTable.no-border tbody td {
     100% { transform: rotate(360deg); }
   }
 
+.alert-dismissible .close
+{
+
+    padding-top: 0.25rem;
+
+}
   
