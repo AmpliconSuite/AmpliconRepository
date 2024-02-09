@@ -6,10 +6,15 @@ from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
 from django.contrib.auth import authenticate
+from django.contrib import messages
 
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 ## API framework packages
 from rest_framework.response import Response
 
+from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
 from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics
 from  .serializers import FileSerializer
 from rest_framework.views import APIView
@@ -25,7 +30,7 @@ from django.conf import settings
 import json
 
 # from .models import File
-from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm
+from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
 from .utils import collection_handle, db_handle, fs_handle, replace_space_to_underscore, \
     preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
     prepare_project_linkid, replace_underscore_keys
@@ -268,7 +273,7 @@ def index(request):
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects, 'site_stats': site_stats})
 
 
-def profile(request):
+def profile(request, message_to_user=None):
     username = request.user.username
     useremail = request.user.email
     # prevent an absent/null email from matching on anything
@@ -279,7 +284,18 @@ def profile(request):
     for proj in projects:
         prepare_project_linkid(proj)
 
-    return render(request, "pages/profile.html", {'projects': projects})
+    prefs = get_user_preferences(request.user)
+    form = UserPreferencesForm(prefs)
+    if (prefs == None):
+        if (message_to_user == None):
+            message_to_user = ""
+        message_to_user = message_to_user + "Email notification preferences can now be set on your profile page."
+        # cause the default empty prefs to be saved so that this message only appears once
+        empty_prefs_dict = form_to_dict(form)
+        update_user_preferences(request.user, empty_prefs_dict)
+
+    messages.add_message(request, messages.INFO, message_to_user)
+    return render(request, "pages/profile.html", {'projects': projects, 'SITE_TITLE':settings.SITE_TITLE, 'preferences': prefs})
 
 
 def login(request):
@@ -1039,6 +1055,11 @@ def edit_project_page(request, project_name):
 
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
 
+        # lets notify users (if their preferences request it) if project membership has changed
+        new_membership = form_dict['project_members']
+        old_membership = project['project_members']
+        notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
+
         request_file = request.FILES['document'] if 'document' in request.FILES else None
         print(f"request file is {request_file}")
         if request_file is not None:
@@ -1119,6 +1140,16 @@ def clear_tmp(folder = 'tmp/'):
                 shutil.rmtree(file_path)
         except Exception as e:
             logging.exception('Failed to delete %s. Reason: %s' % (file_path, e))
+
+
+def update_notification_preferences(request):
+
+    if request.method == "POST":
+        form = UserPreferencesForm(request.POST)
+        form_dict = form_to_dict(form)
+        update_user_preferences(request.user, form_dict)
+
+    return profile(request, message_to_user="User preferences updated.")
 
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to 
 # deny that this might even be a valid URL
@@ -1212,6 +1243,44 @@ def admin_version_details(request):
     #settings_result = "Get settings call failed."
 
     return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result, 'django_settings': settings_result})
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_sendemail(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+    message_to_user = ""
+
+    if request.method == "POST":
+        form = SendEmailForm(request.POST)
+        form_dict = form_to_dict(form)
+        to = form_dict['to']
+        cc = form_dict['cc']
+        subject = form_dict['subject']
+        body = form_dict['body']
+        logging.debug(" FORM = " + str(form_dict))
+
+        # add details for the template
+        form_dict['SITE_TITLE'] = settings.SITE_TITLE
+        form_dict['SITE_URL'] = settings.SITE_URL
+        html_message = render_to_string('contacts/mail_template.html', form_dict)
+        plain_message = strip_tags(html_message)
+
+        #send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER, recipient_list = [settings.RECIPIENT_ADDRESS])
+        email = EmailMessage(
+            subject,
+            html_message,
+            settings.EMAIL_HOST_USER,
+            [to ],
+            [cc],
+            reply_to=[settings.EMAIL_HOST_USER]
+        )
+        email.content_subtype = "html"
+        email.send(fail_silently=True)
+
+        message_to_user= "Email sent"
+
+
+    return render(request, 'pages/admin_sendemail.html', {'message_to_user': message_to_user, 'user': request.user, 'SITE_TITLE': settings.SITE_TITLE })
 
 
 

@@ -42,6 +42,7 @@ urlpatterns += [
     path('create-project/', views.create_project, name='create_project'),
     path('accounts/', include('allauth.urls')),
     path("accounts/profile/", views.profile, name="profile"),
+    path("profile-update-notification-preferences/", views.update_notification_preferences , name="profile-update-notification-preferences"),
     #path("accounts/login/", views.login, name="login"),
     # path("accounts/login/", views.login, name="login"),
     # path("accounts/login/", views.login, name="login"),
@@ -66,6 +67,7 @@ urlpatterns += [
     path('admin-stats/download/user/',views.user_stats_download,name="user_stats_download"),
     path('admin-stats/download/project/',views.project_stats_download,name="project_stats_download"),
     path('admin-stats/site_statistics/regenerate/', views.site_stats_regenerate, name="site_stats_regenerate"),
+    path('admin-sendemail/', views.admin_sendemail, name='admin_sendemail'),
 
     path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
     path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),

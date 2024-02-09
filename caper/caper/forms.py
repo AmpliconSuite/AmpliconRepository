@@ -2,7 +2,7 @@ from django import forms
 from django.utils.html import format_html
 
 from .models import Run
-from .models import FeaturedProjectUpdate, AdminDeleteProject
+from .models import FeaturedProjectUpdate, AdminDeleteProject, AdminSendEmail, UserPreferencesModel
 from allauth.account.forms import SignupForm
 from allauth.socialaccount.forms import SignupForm as SocialSignupForm
 
@@ -79,6 +79,17 @@ class DeletedProjectForm(forms.ModelForm):
         model = AdminDeleteProject
         fields = ('project_name','project_id','delete', 'action')
 
+class SendEmailForm(forms.ModelForm):
+
+    class Meta:
+        model = AdminSendEmail
+        fields = ('to','cc','subject', 'body')
+
+class UserPreferencesForm(forms.ModelForm):
+
+    class Meta:
+        model = UserPreferencesModel
+        fields = ('onAddedToProjectTeam', 'onRemovedFromProjectTeam')
 
 
 class MySignUpForm(SignupForm):
