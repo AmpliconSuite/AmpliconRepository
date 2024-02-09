@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4.1.1
       with:
         ref: ${{ github.head_ref }}
         token: ${{ secrets.TOKEN_FOR_ONCHANGE }}
@@ -27,7 +27,7 @@ jobs:
         COMMIT_ID=`git rev-parse HEAD`
         echo "CommitID=${COMMIT_ID}" >> caper/version.txt
         
-    - uses: stefanzweifel/git-auto-commit-action@v4
+    - uses: stefanzweifel/git-auto-commit-action@v5
       with:
         commit_message: Auto-Update version.txt on release
         push_options: '--force'

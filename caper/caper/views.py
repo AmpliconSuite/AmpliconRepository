@@ -6,10 +6,16 @@ from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
 from django.template.defaulttags import register
+from django.contrib.auth import authenticate
+from django.contrib import messages
 
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 ## API framework packages
 from rest_framework.response import Response
 
+from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
 from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics
 from  .serializers import FileSerializer
 from rest_framework.views import APIView
@@ -25,7 +31,7 @@ from django.conf import settings
 import json
 
 # from .models import File
-from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm
+from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
 from .utils import collection_handle, db_handle, fs_handle, replace_space_to_underscore, \
     preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
     prepare_project_linkid, replace_underscore_keys
@@ -86,8 +92,8 @@ fa_cmap = {
 
 def get_date():
     today = datetime.datetime.now()
-    # date = today.strftime('%Y-%m-%d')
-    date = today.isoformat()
+    date = today.strftime('%Y-%m-%d')
+    # date = today.isoformat()
     return date
 
 
@@ -268,7 +274,7 @@ def index(request):
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects, 'site_stats': site_stats})
 
 
-def profile(request):
+def profile(request, message_to_user=None):
     username = request.user.username
     useremail = request.user.email
     # prevent an absent/null email from matching on anything
@@ -279,7 +285,18 @@ def profile(request):
     for proj in projects:
         prepare_project_linkid(proj)
 
-    return render(request, "pages/profile.html", {'projects': projects})
+    prefs = get_user_preferences(request.user)
+    form = UserPreferencesForm(prefs)
+    if (prefs == None):
+        if (message_to_user == None):
+            message_to_user = ""
+        message_to_user = message_to_user + "Email notification preferences can now be set on your profile page."
+        # cause the default empty prefs to be saved so that this message only appears once
+        empty_prefs_dict = form_to_dict(form)
+        update_user_preferences(request.user, empty_prefs_dict)
+
+    messages.add_message(request, messages.INFO, message_to_user)
+    return render(request, "pages/profile.html", {'projects': projects, 'SITE_TITLE':settings.SITE_TITLE, 'preferences': prefs})
 
 
 def login(request):
@@ -503,12 +520,21 @@ def project_download(request, project_name):
     project = get_one_project(project_name)
     
     if check_if_db_field_exists(project, 'project_downloads'):
-        updated_downloads = project['project_downloads'] + 1
+        project_download_data = project['project_downloads']
+        if isinstance(project_download_data, int):
+            temp_data = project_download_data
+            project_download_data = dict()
+            project_download_data[get_date()] = temp_data
+        elif get_date() in project_download_data:
+            project_download_data[get_date()] += 1
+        else:
+            project_download_data[get_date()] = 1
     else: 
-        updated_downloads = 1
+        project_download_data = dict()
+        project_download_data[get_date()] = 1
     
     query = {'_id': ObjectId(project_name)}
-    new_val = { "$set": {'project_downloads': updated_downloads} }
+    new_val = { "$set": {'project_downloads': project_download_data} }
     collection_handle.update_one(query, new_val)   
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     try:
@@ -728,12 +754,21 @@ def sample_download(request, project_name, sample_name):
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
     
     if check_if_db_field_exists(project, 'sample_downloads'):
-        updated_downloads = project['sample_downloads'] + 1
-    else:
-        updated_downloads = 1
+        sample_download_data = project['sample_downloads']        
+        if isinstance(sample_download_data, int):
+            temp_data = sample_download_data
+            sample_download_data = dict()
+            sample_download_data[get_date()] = temp_data
+        elif get_date() in sample_download_data:
+            sample_download_data[get_date()] += 1
+        else:
+            sample_download_data[get_date()] = 1
+    else: 
+        sample_download_data = dict()
+        sample_download_data[get_date()] = 1
     
     query = {'_id': ObjectId(project_name)}
-    new_val = { "$set": {'sample_downloads': updated_downloads} }
+    new_val = { "$set": {'sample_downloads': sample_download_data} }
     collection_handle.update_one(query, new_val)   
 
     sample_data_path = f"tmp/{project_name}/{sample_name}"        
@@ -1035,6 +1070,7 @@ def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
         try:
+
             prev_ids = project['previous_project_ids']
         except:
             prev_ids = []
@@ -1047,6 +1083,11 @@ def edit_project_page(request, project_name):
         form_dict = form_to_dict(form)
 
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
+
+        # lets notify users (if their preferences request it) if project membership has changed
+        new_membership = form_dict['project_members']
+        old_membership = project['project_members']
+        notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
 
         request_file = request.FILES['document'] if 'document' in request.FILES else None
         print(f"request file is {request_file}")
@@ -1146,6 +1187,16 @@ def clear_tmp(folder = 'tmp/'):
         except Exception as e:
             logging.exception('Failed to delete %s. Reason: %s' % (file_path, e))
 
+
+def update_notification_preferences(request):
+
+    if request.method == "POST":
+        form = UserPreferencesForm(request.POST)
+        form_dict = form_to_dict(form)
+        update_user_preferences(request.user, form_dict)
+
+    return profile(request, message_to_user="User preferences updated.")
+
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to 
 # deny that this might even be a valid URL
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
@@ -1239,6 +1290,44 @@ def admin_version_details(request):
 
     return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result, 'django_settings': settings_result})
 
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_sendemail(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+    message_to_user = ""
+
+    if request.method == "POST":
+        form = SendEmailForm(request.POST)
+        form_dict = form_to_dict(form)
+        to = form_dict['to']
+        cc = form_dict['cc']
+        subject = form_dict['subject']
+        body = form_dict['body']
+        logging.debug(" FORM = " + str(form_dict))
+
+        # add details for the template
+        form_dict['SITE_TITLE'] = settings.SITE_TITLE
+        form_dict['SITE_URL'] = settings.SITE_URL
+        html_message = render_to_string('contacts/mail_template.html', form_dict)
+        plain_message = strip_tags(html_message)
+
+        #send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER, recipient_list = [settings.RECIPIENT_ADDRESS])
+        email = EmailMessage(
+            subject,
+            html_message,
+            settings.EMAIL_HOST_USER,
+            [to ],
+            [cc],
+            reply_to=[settings.EMAIL_HOST_USER]
+        )
+        email.content_subtype = "html"
+        email.send(fail_silently=True)
+
+        message_to_user= "Email sent"
+
+
+    return render(request, 'pages/admin_sendemail.html', {'message_to_user': message_to_user, 'user': request.user, 'SITE_TITLE': settings.SITE_TITLE })
+
 
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
@@ -1254,7 +1343,23 @@ def admin_stats(request):
     public_projects = list(collection_handle.find({'private': False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
-        
+        if check_if_db_field_exists(proj, 'project_downloads'):
+            project_download_data = proj['project_downloads']
+            if isinstance(project_download_data, int):
+                temp_data = project_download_data
+                project_download_data = dict()
+                project_download_data[get_date()] = temp_data
+        if check_if_db_field_exists(proj, 'sample_downloads'):
+            sample_download_data = proj['sample_downloads']
+            if isinstance(sample_download_data, int):
+                if sample_download_data > 0:
+                    temp_data = sample_download_data
+                    sample_download_data = dict()
+                    sample_download_data[get_date()] = temp_data
+        proj_id = proj['_id']
+        query = {'_id': ObjectId(proj_id)}
+        new_val = { "$set": {'project_downloads': project_download_data, 'sample_downloads': sample_download_data} }
+        collection_handle.update_one(query, new_val)
     # Calculate stats
     # total_downloads = [project['project_downloads'] for project in public_projects]
 
@@ -1262,9 +1367,10 @@ def admin_stats(request):
 
     return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'users': users, 'site_stats':repo_stats })
 
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+# @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def user_stats_download(request):
-    if not request.user.is_staff:
+    user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
+    if not user.is_staff:
         return redirect('/accounts/logout')
 
     # Get all user data
@@ -1298,9 +1404,10 @@ def site_stats_regenerate(request):
     regenerate_site_statistics()
     return admin_stats(request)
 
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+# @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def project_stats_download(request):
-    if not request.user.is_staff:
+    user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
+    if not user.is_staff:
         return redirect('/accounts/logout')
     
     # Get public and private project data
@@ -1309,7 +1416,7 @@ def project_stats_download(request):
         prepare_project_linkid(proj)
     
     # Create the HttpResponse object with the appropriate CSV header.
-    today = datetime.date.today()
+    today = get_date()
     response = HttpResponse(
         content_type="text/csv",
     )
@@ -1751,3 +1858,11 @@ class FileUploadView(APIView):
             s3_thread.start()
 
 
+
+def robots(request):
+    """
+    View for robots.txt, will read the file from static root (depending on server), and show robots file. 
+    """
+
+    robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
+    return HttpResponse(robots_txt, content_type="text/plain")

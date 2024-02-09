@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+        });
+
+        $('table.table').DataTable({
+            language: {
+                    searchPlaceholder: "Search deleted projects"
+                    }
+        });
+
+    message_to_user = "{{ message_to_user }}";
+    if (message_to_user.length > 0){
+        $('#message_to_user').text(message_to_user)
+        if (message_to_user.includes("Problem")){
+            $("#message_dialog").addClass("alert-warning");
+            $("#message_dialog").removeClass("alert-success");
+        }
+        $("#message_dialog").show()
+
+    } else {
+        //alert("Nothing to say")
+
+        document.getElementById("message_dialog").style.display = "none";
+    }
+
+    });
+</script>
+{% endblock %}
+
+{% block meta_title %} Home
+{% endblock %}
+
+{% block main %}
+<head>
+    <title>
+        {{ SITE_TITLE }}
+    </title>
+</head>
+
+<div id="message_dialog" class="alert alert-success" role="alert" style="display:none">
+<span id="message_to_user">default text</span>
+<button type="button" class="close" data-dismiss="alert" aria-label="Close">
+    <span aria-hidden="true">&times;</span>
+  </button>
+</div>
+<div class="row">
+    <div class="col-md-8">
+        <div>
+            <h1 style="padding-top: 50px">Admin Send Email</h1>
+
+            <hr>
+            <div style="margin-top: 30px">
+                <p>Send an email that will come from the {{ SITE_TITLE }} email. The {{ SITE_TITLE }} logo and link will appear at the top.</p>
+            </div>
+        </div>
+    </div>
+</div>
+    <div class="row">
+        <div class="col-md-12">
+        <div >
+            <div style="display:block">
+                 <form id="form__submit" action="/admin-sendemail/" method="post">
+                       {% csrf_token %}
+
+                     <div class="row" style="margin-top:15px"><div class="col-md-1">to:</div> <div class="col-md-10">   <input id="form__to_user" type="text" name="to" size="39"/></div></div>
+                     <div class="row" style="margin-top:15px"><div class="col-md-1">cc:</div> <div class="col-md-10">   <input id="form__to_user" type="text" name="cc" size="39" value="{{ user.email }} " /></div></div>
+                     <div class="row" style="margin-top:15px"><div class="col-md-1" >subject:</div> <div class="col-md-10">   <input id="form__to_user" type="text" name="subject"  size="39"/></div></div>
+                     <div class="row" style="margin-top:15px"><div class="col-md-1">body:</div>
+                     <div class="col-md-10">    <textarea id="gotm__body2" name="body" rows="10" cols="50"></textarea></div></div>
+                     <div class="row"><div class="col-md-12"> <button id="sendEmailBtn" class="btn btn-primary">Send Email</button></div></div>
+                     </form>
+            </div>
+        </div>
+        </div>
+    </div>
+
+</div>
+
+
+{% endblock %}
