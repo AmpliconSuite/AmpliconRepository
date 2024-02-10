@@ -1303,6 +1303,10 @@ def admin_stats(request):
                 temp_data = project_download_data
                 project_download_data = dict()
                 project_download_data[get_date()] = temp_data
+                proj_id = proj['_id']
+                query = {'_id': ObjectId(proj_id)}
+                new_val = { "$set": {'project_downloads': project_download_data} }
+                collection_handle.update_one(query, new_val)
         if check_if_db_field_exists(proj, 'sample_downloads'):
             sample_download_data = proj['sample_downloads']
             if isinstance(sample_download_data, int):
@@ -1310,10 +1314,10 @@ def admin_stats(request):
                     temp_data = sample_download_data
                     sample_download_data = dict()
                     sample_download_data[get_date()] = temp_data
-        proj_id = proj['_id']
-        query = {'_id': ObjectId(proj_id)}
-        new_val = { "$set": {'project_downloads': project_download_data, 'sample_downloads': sample_download_data} }
-        collection_handle.update_one(query, new_val)
+                    proj_id = proj['_id']
+                    query = {'_id': ObjectId(proj_id)}
+                    new_val = { "$set": {'sample_downloads': sample_download_data} }
+                    collection_handle.update_one(query, new_val)
     # Calculate stats
     # total_downloads = [project['project_downloads'] for project in public_projects]
 
@@ -1323,9 +1327,9 @@ def admin_stats(request):
 
 # @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def user_stats_download(request):
-    user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
-    if not user.is_staff:
-        return redirect('/accounts/logout')
+    # user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
+    # if not user.is_staff:
+    #     return redirect('/accounts/logout')
 
     # Get all user data
     User = get_user_model()
@@ -1360,9 +1364,9 @@ def site_stats_regenerate(request):
 
 # @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def project_stats_download(request):
-    user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
-    if not user.is_staff:
-        return redirect('/accounts/logout')
+    # user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
+    # if not user.is_staff:
+    #     return redirect('/accounts/logout')
     
     # Get public and private project data
     public_projects = list(collection_handle.find({'private': False, 'delete': False}))

@@ -25,7 +25,7 @@ server_port = os.getenv('AMPLICON_ENV_PORT')
 if server_base == 'dev':
     full_url = 'https://dev.ampliconrepository.org'
 elif server_base == 'prod':
-    full_url = 'https://dev.ampliconrepository.org'
+    full_url = 'https://ampliconrepository.org'
 else:
     full_url = f'http://localhost:{server_port}'
 
