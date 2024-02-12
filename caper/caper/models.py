@@ -25,6 +25,15 @@ class AdminDeleteProject(models.Model):
 
     delete = models.BooleanField(default=False)
 
+class AdminSendEmail(models.Model):
+    to = models.CharField(max_length=200)
+    cc = models.CharField(max_length=1000, blank=True)
+    subject = models.CharField(max_length=200)
+    body = models.CharField(max_length=4000)
+
+class UserPreferencesModel(models.Model):
+    onAddedToProjectTeam = models.BooleanField(default=False)
+    onRemovedFromProjectTeam = models.BooleanField(default=False)
 
 class UploadTarFile(models.Model):
     """

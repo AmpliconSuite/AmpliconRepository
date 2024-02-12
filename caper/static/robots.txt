@@ -1,2 +1,24 @@
 User-agent: *
-Disallow:
+Disallow: /accounts/
+Disallow: /admin-*
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: claritybot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: GPTBot
+Disallow: /
+
+User-Agent: omgili
+Disallow: /
+
+User-Agent: omgilibot
+Disallow: /
