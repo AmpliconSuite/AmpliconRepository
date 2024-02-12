@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 
 {% load custom_filters %}
-
-
+{% load static %}
+    
 {% block extra_js %}
 <script>
     $(document).ready( function () {
@@ -25,6 +25,17 @@
         }
 
     } );
+    function show_div() {
+        var x = document.getElementById("prev_versions_table");
+        if (x.style.display === "none") {
+          x.style.display = "block";
+          x.scrollIntoView();
+
+        } else {
+          x.style.display = "none";
+        }
+      }
+
 
 </script>
 {% endblock %}
@@ -49,6 +60,10 @@
         {% if project.current_user_may_edit  %}
          <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 24px"></i></a>
         {%  endif %}</h2>
+
+        
+
+
         <br>
         <h5>Description: <span style="font-weight: 200">{{ project.description }}</span></h5>
         <h5>Publication link: <span style="font-weight: 200">{{ project.publication_link|escape|replace_urls|safe }}</span></h5>
@@ -56,7 +71,7 @@
     </div>
 
     <div class="col-md-3">
-        <a class="btn btn-primary" href="/project/{{ project.linkid }}/download" style="color: white; margin-bottom: 12px;">Download All Project Data</a>
+        <a class="btn btn-primary" href="/project/{{ project.linkid }}/download" style="color: white; margin-bottom: 12px;">Download Project Data</a><br>
         <!-- <p><b>Last Updated:</b> {{ project.date }}</p> -->
         <!-- <p><b>Private:</b> {{ project.private }}</p> -->
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}
@@ -64,6 +79,8 @@
             {{ person }}
         {% endfor %}
         </p>
+
+
     </div>
     <div  style="margin:auto; border: 0.5px solid grey; padding: 0px">
         <span style="display:inline-block">{{ stackedbar_graph|safe }}
@@ -117,7 +134,103 @@
         </tbody>
     </table>
 </div>
+
+{% if prev_versions %}
+    <br>
+    <div id="accordion" >
+    <div class="card">
+        <style>
+            .btn-link:not([aria-expanded="false"]).collapsed::before {
+                content: "";
+                display: inline-block;
+                border-style: solid;
+                border-width: 0.4em 0 0.4em 0.4em;
+                border-color: transparent transparent transparent #000;
+                margin-right: 0.5em;
+                transform: rotate(0deg);
+                vertical-align: middle;
+            }
+
+            .btn-link[aria-expanded="true"]::before {
+                content: "";
+                display: inline-block;
+                border-style: solid;
+                border-width: 0.4em 0 0.4em 0.4em;
+                border-color: transparent transparent transparent #000;
+                margin-right: 0.5em;
+                transform: rotate(90deg);
+                vertical-align: middle;
+            }
+
+            .btn-link:not([aria-expanded="true"]).collapsed::before {
+                content: "";
+                display: inline-block;
+                border-style: solid;
+                border-width: 0.4em 0 0.4em 0.4em;
+                border-color: transparent transparent transparent #000;
+                margin-right: 0.5em;
+                transform: rotate(0deg);
+                vertical-align: middle;
+            }
+
+            .table-not-striped tbody tr:nth-of-type(odd) {
+                background-color: transparent!important;
+            }
+            .table-not-striped  th {
+                background-color: #E6EFFB;
+                color: #696a6c
+            }
+            .table-not-striped td {
+                color: #696a6c
+            }
+        </style>
+
+        <div class="card-header" id="headingPrevVersions">
+            <h4 class="mb-0">
+                <button class="btn btn-link collapsed" type="button" data-toggle="collapse" data-target="#collapsePrevVersions" aria-expanded="false" aria-controls="collapsePrevVersions" style="padding: 0.25rem 0.5rem; font-weight: bold;">
+                    Project History
+                </button>
+            </h4>
+        </div>
+
+        <div id="collapsePrevVersions" class="collapse" aria-labelledby="headingPrevVersions" data-parent="#accordion">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <th scope="col">Date Created</th>
+                            <th scope="col">Version</th>
+                            <th scope="col">Download</th>
+                        </thead>
+                        <tbody>
+                            {% for version in prev_versions %}
+                            <tr>
+                                <td scope="row">{{ version.date }}</td>
+                                <td scope="row">Project ID: {{ version.linkid }}
+                                    {% if version.linkid == project.linkid %}
+                                        <strong>(Current version)</strong>
+                                    {% endif %}
+                                </td>
+                                <td scope="row">
+                                    <a class="btn btn-primary" href="/project/{{ version.linkid }}/download" style="color: white; margin-bottom: 12px;">Download version</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+{% endif %}
+
+
 </div>
+
+
+
+
 
 
 {% endblock %}

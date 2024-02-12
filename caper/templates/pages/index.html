@@ -42,6 +42,18 @@
 
     });
 </script>
+
+<script>
+    window.addEventListener('DOMContentLoaded', function() {
+        var tabContent = document.getElementById('tab-table0');
+        if (tabContent.scrollWidth > tabContent.clientWidth) {
+            tabContent.style.overflowX = 'scroll';
+        } else {
+            tabContent.style.overflowX = 'hidden';
+        }
+    });
+</script>
+
 {% endblock %}
 
 {% block meta_title %} Home
@@ -181,7 +193,7 @@
                     </ul>
                     <div class="tab-content" style="padding-top: 30px;">
 
-                        <div class="tab-pane active" id="tab-table0">
+                        <div class="tab-pane active" id="tab-table0" style="overflow-x: auto;">
                             <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
                                 <thead>
                                     <tr>
@@ -206,7 +218,7 @@
                             </table>
                         </div>
 
-                        <div class="tab-pane " id="tab-table1">
+                        <div class="tab-pane " id="tab-table1" style="overflow-x: auto;">
                             <table name='projectTable1' id='projectTable1' class="table" style="padding-top: 20px; width:100%">
                                 <thead>
                                     <tr>
@@ -235,7 +247,7 @@
                             </table>
                         </div>
                         {% if user.is_authenticated %}
-                        <div class="tab-pane" id="tab-table2">
+                        <div class="tab-pane" id="tab-table2" style="overflow-x: auto;">
                             <table id='projectTable2' class="table" style="padding-top: 20px; width:100%">
                                 <thead>
                                     <tr>
