@@ -34,21 +34,36 @@ user_df = pd.read_csv(f"{full_url}/admin-stats/download/user/")
 projects_df = pd.read_csv(f"{full_url}/admin-stats/download/project/")
 
 # fix data type issue
-projects_df['project_downloads'] = projects_df['project_downloads'].apply(ast.literal_eval)
-projects_df['sample_downloads'] = projects_df['sample_downloads'].apply(ast.literal_eval)
+def literal_return(val):
+    try:
+        return ast.literal_eval(val)
+    except ValueError:
+        return val
+projects_df['project_downloads'] = projects_df['project_downloads'].apply(literal_return)
+projects_df['sample_downloads'] = projects_df['sample_downloads'].apply(literal_return)
 
 # create downloads columns
 def get_downloads_all_time(downloads):
-    total = downloads.values()
-    return sum(total)
-
-def get_downloads_past_week(downloads):
-    download_dates = [date for date in downloads.keys() if date > past_date]
-    if len(download_dates) > 0:
-        total = [downloads[i] for i in download_dates]
+    if type(downloads) == dict:
+        total = downloads.values()
         return sum(total)
     else:
-        return 0
+        return None
+
+def get_downloads_past_week(downloads):
+    if type(downloads) == dict:
+        download_dates = [date for date in downloads.keys() if date > past_date]
+        
+def get_downloads_past_week(downloads):
+    if type(downloads) == dict:
+        download_dates = [date for date in downloads.keys() if date > past_date]
+        if len(download_dates) > 0:
+            total = [downloads[i] for i in download_dates]
+            return sum(total)
+        else:
+            return 0
+    else:
+        return None
 
 def get_recent(date):
     if str(date) > past_date and str(date) != 'nan':
@@ -74,7 +89,7 @@ total_users = pd.DataFrame([('Total Users, all time',user_df.count().max())])
 # get login data
 user_df['New users, this week'] = user_df['date_joined'].apply(get_recent)
 user_df['Returning users, this week'] = user_df['last_login'].apply(get_recent)
-    
+
 user_logins = user_df[['New users, this week','Returning users, this week']].sum().to_frame()
 user_logins = user_logins.reset_index()
 user_logins.columns = [0, 1]
@@ -84,12 +99,12 @@ new_users = user_df[user_df['New users, this week'] == 1]
 new_users = new_users[['username','email']]
 
 # get project downloads
-project_downloads = projects_df[['Project Downloads, all time','Project Downloads, this week']].sum().to_frame()
+project_downloads = projects_df[['Project Downloads, all time','Project Downloads, this week']].sum().astype('int').to_frame()
 project_downloads = project_downloads.reset_index()
 project_downloads.columns = [0, 1]
 
 # get sample downloads
-sample_downloads = projects_df[['Sample Downloads, all time','Sample Downloads, this week']].sum().to_frame()
+sample_downloads = projects_df[['Sample Downloads, all time','Sample Downloads, this week']].sum().astype('int').to_frame()
 sample_downloads = sample_downloads.reset_index()
 sample_downloads.columns = [0, 1]
 
@@ -113,11 +128,12 @@ def get_collection_handle(db_handle,collection_name):
 
 db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI'])
 collection_handle = get_collection_handle(db_handle,'projects')
-stats = db_handle.command("dbstats")
-db_percent = stats['dataSize']/stats['fsTotalSize']*100
-db_used = stats['dataSize']/1000000000
-db_total = stats['fsTotalSize']/1000000000
-database_usage = pd.DataFrame([('Database usage percentage',f'{db_percent:.2f}%'),('Usad/Total Size',f'{db_used:.2f}/{db_total:.2f} GB')])
+stats = db_handle.command('dbstats', freeStorage=0)
+#db_percent = stats['dataSize']/stats['fs']*100
+#db_used = stats['dataSize']/1000000000
+db_total = stats['storageSize']/1000000000
+#database_usage = pd.DataFrame([('Database usage percentage',f'{db_percent:.2f}%'),('Used/Total Size',f'{db_used:.2f}/{db_total:.2f} GB')])
+database_usage = pd.DataFrame([('Total Size',f'{db_total:.2f} GB')])
 
 # convert data to html
 def df_to_table(title, df, header=False):
@@ -162,7 +178,7 @@ report_html.append(sample_downloads_html)
 report_html.append(new_projects_html)
 report_html.append(disk_usage_html)
 report_html.append(database_usage_html)
-report_html.append('</div></div>') 
+report_html.append('</div></div>')
 report_html.append('</html>')
 string = " ".join(report_html) # combine all html renders
 
@@ -171,7 +187,7 @@ string = " ".join(report_html) # combine all html renders
 server_login = os.getenv('MAILJET_API')
 server_key = os.getenv('MAILJET_SECRETKEY')
 server_from = os.getenv('MAILJET_EMAIL')
-server_to = ['forrest.kim@gmail.com','f1kim@ucsd.edu']
+server_to = ['gp-dev@broadinstitute.org','jensluebeck@gmail.com']
 
 html = f"<h2>AmpliconRepository Server Report ({full_url}), <br>week ending {current_date}</h2><br>{string}"
 subject = f'Amplicon Repository {server_base} Server ({full_url}) User Statistics: {past_date} to {current_date}'
@@ -195,26 +211,3 @@ data = {'Messages': [{
 result = mailjet.send.create(data=data)
 print(result.status_code)
 print(result.json())
-
-# # Send out exception email
-# from email.mime.multipart import MIMEMultipart
-# from email.mime.text import MIMEText
-# import smtplib
-
-# html = f"<h2>TIMEOUT EXCEPTION: AmpliconRepository Server Report ({full_url}), <br>week ending {current_date}</h2><br>{string}</h2><br>"
-# message = MIMEMultipart(
-# "alternative", None, [MIMEText(html,'html')])
-# message['Subject'] = f'TIMEOUT EXCEPTION: Amplicon Repository {server_base} Server ({full_url}) User Statistics: {past_date} to {current_date}'
-
-# # Define server and login information
-# smtp_server = smtplib.SMTP('%s' % (smtp_address),smtp_port)
-# smtp_server.ehlo()
-# smtp_server.starttls()
-# smtp_server.login('%s' % (server_login), '%s' % (server_key))
-# smtp_server.sendmail('%s' % (server_from), server_to, message.as_string())
-# smtp_server.quit()
-
-# # Validate the success of the command
-# end_time = time.monotonic()
-# print(timedelta(seconds=end_time - start_time))
-# print('Timeout exception. Email sent')
