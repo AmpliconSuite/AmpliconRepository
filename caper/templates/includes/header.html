@@ -20,7 +20,7 @@
         </div>
 
     {% if not user.is_authenticated %}
-    <div class="custom-bootstrap-menu navbar-collapse collapse w-200 order-2 dual-collapse2">
+    <div class="custom-bootstrap-menu navbar-collapse collapse w-200 order-2 dual-collapse2" id = "navbarTogglerDemo01">
             <ul class="navbar-nav ">
                 <li class="nav-item">
 
@@ -32,7 +32,7 @@
     </div>
     {% endif %}
     {% if user.is_staff %}
-      <div class="custom-bootstrap-menu navbar-collapse collapse w-200 order-2 dual-collapse2">
+      <div class="custom-bootstrap-menu navbar-collapse collapse w-200 order-2 dual-collapse2" id = "navbarTogglerDemo01">
             <ul class="navbar-nav ">
              <li class="dropdown">
                    <a href="#" class="nav-link dropdown-toggle " data-toggle="dropdown" role="button" aria-haspopup="false" >Admin</a>
@@ -49,13 +49,13 @@
             </ul>
         </div>
     {% endif %}
-        <div class="custom-bootstrap-menu navbar-collapse collapse w-200 order-2 dual-collapse2">
+        <div class="custom-bootstrap-menu navbar-collapse collapse w-200 order-2 dual-collapse2" id = "navbarTogglerDemo01">
             <ul class="navbar-nav ">
  {% if user.is_authenticated %}
                  
                 <li class="dropdown">
         {% if not user.email    %}
-        <a class="nav-link dropdown-toggle" role="button" aria-haspopup="true" data-toggle="dropdown"  >{% if user.is_authenticated %} {{ user.username }} {% endif %}</a>
+        <a class="nav-link dropdown-toggle" role="button" aria-haspopup="true" data-toggle="dropdown" >{% if user.is_authenticated %} {{ user.username }} {% endif %}</a>
         {% else %}
         <a href="#" class="nav-link dropdown-toggle " data-toggle="dropdown" role="button" aria-haspopup="false" >{% if user.is_authenticated %}  {{ user.email }} {% endif %}</a>
         {% endif %}
