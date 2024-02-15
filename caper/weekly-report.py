@@ -187,7 +187,7 @@ string = " ".join(report_html) # combine all html renders
 server_login = os.getenv('MAILJET_API')
 server_key = os.getenv('MAILJET_SECRETKEY')
 server_from = os.getenv('MAILJET_EMAIL')
-server_to = ['gp-dev@broadinstitute.org','jensluebeck@gmail.com']
+server_to = ['gp-dev@broadinstitute.org','jensluebeck@ucsd.edu']
 
 html = f"<h2>AmpliconRepository Server Report ({full_url}), <br>week ending {current_date}</h2><br>{string}"
 subject = f'Amplicon Repository {server_base} Server ({full_url}) User Statistics: {past_date} to {current_date}'
