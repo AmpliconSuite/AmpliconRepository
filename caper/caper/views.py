@@ -92,7 +92,7 @@ fa_cmap = {
 
 def get_date():
     today = datetime.datetime.now()
-    date = today.strftime('%Y-%m-%d')
+    date = today.strftime('%Y-%m-%dT%H:%M:%S.%f')
     # date = today.isoformat()
     return date
 
@@ -389,7 +389,7 @@ def previous_versions(project_name):
     for result in results:
         date_obj = datetime.datetime.strptime(result['date'], r"%Y-%m-%dT%H:%M:%S.%f")
         res.append({
-            'date':date_obj.strftime(r'%B %d, %Y, %I:%M:%S:%p'),
+            'date':date_obj.strftime(r'%B %d, %Y, %I:%M:%S %p'),
             'linkid':result['_id']
         })
     res.reverse()
