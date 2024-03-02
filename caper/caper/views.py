@@ -220,13 +220,15 @@ def modify_date(projects):
     """
 
     for project in projects:
-        try:
+        formats_to_try = [f"%Y-%m-%dT%H:%M:%S.%f", f"%B %d, %Y %I:%M:%S %p ", f"%Y-%m-%d"]
+        for fmt in formats_to_try:
+            try:
+                dt = datetime.datetime.strptime(project['date'], fmt)
+                project['date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
+            except Exception as e:
+                # logging.exception("Could not modify date for " + project['project_name'])
+                continue
 
-            dt = datetime.datetime.strptime(project['date'], f"%Y-%m-%dT%H:%M:%S.%f")
-            project['date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
-        except Exception as e:
-            logging.exception("Could not modify date for " + project['project_name'])
-            logging.exception(e)
 
     return projects
 
