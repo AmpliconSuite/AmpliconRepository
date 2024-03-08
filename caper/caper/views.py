@@ -148,8 +148,6 @@ def samples_to_dict(form_file):
 
 
 def form_to_dict(form):
-    print('*************************')
-    print('*************************')
     # print(form)
     run = form.save(commit=False)
     form_dict = model_to_dict(run)
@@ -375,29 +373,9 @@ def create_aggregate_df(project, samples):
 
 def previous_versions(project):
     """
-    Gets a list of previous versions
+    Gets a list of previous versions via UUID
     """
-    # print("IM HERE")
-    # print(project_name)
-    # query = {
-    #     '_id': ObjectId(project_name)
-    # }
-    # proj_name = collection_handle.find(query, {"project_name": 1})[0]['project_name']
-    # query = {
-    #     "project_name" : proj_name
-    # }
-
-    # res = []
-    # results = collection_handle.find(query, {'date':1, 'linkid':1})
-    # for result in results:
-    #     date_obj = datetime.datetime.strptime(result['date'], r"%Y-%m-%dT%H:%M:%S.%f")
-    #     res.append({
-    #         'date':date_obj.strftime(r'%B %d, %Y, %I:%M:%S %p'),
-    #         'linkid':result['_id']
-    #     })
-    # res.reverse()
     res = []
-    print()
     if "previous_versions" in project:
         for version in json.loads(project['previous_versions'][0]):
             date_obj = datetime.datetime.strptime(version['date'], r"%Y-%m-%dT%H:%M:%S.%f")
@@ -1103,9 +1081,7 @@ def edit_project_page(request, project_name):
         notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
 
         request_file = request.FILES['document'] if 'document' in request.FILES else None
-        print(f"request file is {request_file}")
         if request_file is not None:
-            print('***************** im here now')
             # mark the current project as deleted
             del_ret = project_delete(request, project_name)
 
@@ -1135,7 +1111,6 @@ def edit_project_page(request, project_name):
                 print(e)
 
             ## update for current 
-                
             new_prev_versions.append(
                 {
                     'date':str(project['date']),
@@ -1143,12 +1118,9 @@ def edit_project_page(request, project_name):
                 }
             )
 
-            print(new_prev_versions)
-
             to_db = json.dumps(new_prev_versions)
 
             if collection_handle.find_one(query2):
-                print("made it ")
                 new_val = { "$push" : {"previous_versions":to_db}}
             else:
                 new_val = { "$set" : {"previous_versions" : [to_db]}}
