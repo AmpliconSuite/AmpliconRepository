@@ -18,7 +18,9 @@
     {% bootstrap_javascript jquery='full' %}
 
     {# Display django.contrib.messages as Bootstrap alerts #}
-    {% bootstrap_messages %}
+
+    {% comment %} commented this out to allow messages ONLY when it is sent {% endcomment %}
+    {% comment %} {% bootstrap_messages %} {% endcomment %}
 
     <!-- Include Mezzanine Resources -->
     <link rel="stylesheet" href="{% static "css/mezzanine.css" %}">
