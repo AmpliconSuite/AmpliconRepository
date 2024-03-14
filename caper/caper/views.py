@@ -277,8 +277,19 @@ def index(request):
 
 
 def profile(request, message_to_user=None):
+
     username = request.user.username
-    useremail = request.user.email
+    try:
+        useremail = request.user.email
+    except:
+        # not logged in 
+        print(request.user)
+        ## if user is anonymous, then need to login
+        useremail = ""
+        ## redirect to login page
+        return redirect('account_login')
+
+    
     # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
