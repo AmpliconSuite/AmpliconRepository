@@ -73,9 +73,6 @@ import logging
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
-## Message framework
-from django.contrib import messages
-
 
 # SET UP HANDLE
 def loading(request):
@@ -381,17 +378,11 @@ def previous_versions(project):
     res = []
     if "previous_versions" in project:
         for version in json.loads(project['previous_versions'][0]):
-            print(version)
             date_obj = datetime.datetime.strptime(version['date'], r"%Y-%m-%dT%H:%M:%S.%f")
             res.append({
             'date':date_obj.strftime(r'%B %d, %Y, %I:%M:%S %p'),
             'linkid':version['link']
             })
-
-    current_date = datetime.datetime.strptime(project['date'], r"%Y-%m-%dT%H:%M:%S.%f")
-    res.append({'date':current_date.strftime(r'%B %d, %Y, %I:%M:%S %p'), 
-                'linkid':str(project['linkid'])})
-    print(res)
     res.reverse()
     return res
 
@@ -600,24 +591,18 @@ def project_download(request, project_name):
     ###### the following is used when S3 is not used for download
     chunk_size = 8192
     logging.info('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
-    try:
-        file_location = find('*.tar.gz', project_data_path)[0]
-        response = StreamingHttpResponse(
+    file_location = find('*.tar.gz', project_data_path)[0]
+    response = StreamingHttpResponse(
         FileWrapper(
             open(file_location, "rb"),
             chunk_size,
-            )
         )
-        filename = file_location.split('/')[-1]
-        response['Content-Type'] = f'application/tar+gzip'
-        response['Content-Disposition'] = f'attachment; filename={filename}'
-        # clear_tmp()
-        return response
-    except:
-        message = f"Project {project_name} is unavailable or deleted."
-        messages.error(request, message)
-        return redirect(request.META['HTTP_REFERER'])
-    
+    )
+    filename = file_location.split('/')[-1]
+    response['Content-Type'] = f'application/tar+gzip'
+    response['Content-Disposition'] = f'attachment; filename={filename}'
+    # clear_tmp()
+    return response
 
 
     #except:

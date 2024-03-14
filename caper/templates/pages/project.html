@@ -36,19 +36,6 @@
         }
       }
 
-      function function_name() {
-        var elem.getElementById("headingPrevVersions");
-        elem.scrollIntoView();
-    }
-
-
-<body onload="function_name()">
-    <p>hello</p>
-</body>
-
-
-
-
 
 </script>
 {% endblock %}
@@ -148,7 +135,7 @@
     </table>
 </div>
 
-
+{% if prev_versions %}
     <br>
     <div id="accordion" >
     <div class="card">
@@ -198,16 +185,6 @@
             }
         </style>
 
-        {% if messages %}
-            {% for message in messages %}
-
-                <div class="alert alert-danger" role="alert" id = "messages" >
-                    {{message}}
-                </div>
-            {% endfor %}
-        {% endif %}
-
-
         <div class="card-header" id="headingPrevVersions">
             <h4 class="mb-0">
                 <button class="btn btn-link collapsed" type="button" data-toggle="collapse" data-target="#collapsePrevVersions" aria-expanded="false" aria-controls="collapsePrevVersions" style="padding: 0.25rem 0.5rem; font-weight: bold;">
@@ -215,7 +192,6 @@
                 </button>
             </h4>
         </div>
-
 
         <div id="collapsePrevVersions" class="collapse" aria-labelledby="headingPrevVersions" data-parent="#accordion">
             <div class="card-body">
@@ -228,11 +204,10 @@
                         </thead>
                         <tbody>
                             {% for version in prev_versions %}
-                                
                             <tr>
                                 <td scope="row">{{ version.date }}</td>
                                 <td scope="row">Project ID: {{ version.linkid }}
-                                    {% if forloop.counter == 1 %}
+                                    {% if version.linkid == project.linkid %}
                                         <strong>(Current version)</strong>
                                     {% endif %}
                                 </td>
@@ -248,10 +223,14 @@
         </div>
     </div>
     </div>
-
+{% endif %}
 
 
 </div>
+
+
+
+
 
 
 {% endblock %}
