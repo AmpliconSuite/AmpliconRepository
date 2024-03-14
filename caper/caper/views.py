@@ -1665,7 +1665,6 @@ def _create_project(form, request):
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
-    logging.debug("temporary file path before helper:" + str(request_file.temporary_file_path()))
     project, tmp_id = create_project_helper(form, user, request_file)
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
