@@ -1247,7 +1247,7 @@ def admin_version_details(request):
     except:
         details = [{"name":"version","value":"unknown"},{"name":"creator","value":"unknown"},{"name": "date", "value":"unknown" }]
 
-    env_to_skip = ['DB_URI', "GOOGLE_SECRET", "GLOBUS_SECRET"]
+    env_to_skip = ['DB_URI_SECRET', "GOOGLE_SECRET", "GLOBUS_SECRET"]
     env=[]
     for key, value in os.environ.items():
         if not ("SECRET" in key) and not key in env_to_skip:
@@ -1313,14 +1313,14 @@ def admin_sendemail(request):
         html_message = render_to_string('contacts/mail_template.html', form_dict)
         plain_message = strip_tags(html_message)
 
-        #send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER, recipient_list = [settings.RECIPIENT_ADDRESS])
+        #send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER_SECRET, recipient_list = [settings.RECIPIENT_ADDRESS])
         email = EmailMessage(
             subject,
             html_message,
-            settings.EMAIL_HOST_USER,
+            settings.EMAIL_HOST_USER_SECRET,
             [to ],
             [cc],
-            reply_to=[settings.EMAIL_HOST_USER]
+            reply_to=[settings.EMAIL_HOST_USER_SECRET]
         )
         email.content_subtype = "html"
         email.send(fail_silently=True)
@@ -1375,7 +1375,7 @@ def admin_stats(request):
 
 # @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def user_stats_download(request):
-    # user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
+    # user = authenticate(username=os.getenv('ADMIN_USER_SECRET'),password=os.getenv('ADMIN_PASSWORD_SECRET'))
     # if not user.is_staff:
     #     return redirect('/accounts/logout')
 
@@ -1412,7 +1412,7 @@ def site_stats_regenerate(request):
 
 # @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def project_stats_download(request):
-    # user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
+    # user = authenticate(username=os.getenv('ADMIN_USER_SECRET'),password=os.getenv('ADMIN_PASSWORD_SECRET'))
     # if not user.is_staff:
     #     return redirect('/accounts/logout')
     
@@ -1654,7 +1654,7 @@ def _create_project(form, request):
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
-    logging.debug("temporary file path before helper:" + str(request_file.temporary_file_path()))
+    # logging.debug("temporary file path before helper:" + str(request_file.temporary_file_path()))
     project, tmp_id = create_project_helper(form, user, request_file)
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)

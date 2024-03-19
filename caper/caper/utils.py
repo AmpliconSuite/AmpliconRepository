@@ -94,7 +94,7 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
 
 
 
-db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI'])
+db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI_SECRET'])
 
 collection_handle = get_collection_handle(db_handle,'projects')
 
