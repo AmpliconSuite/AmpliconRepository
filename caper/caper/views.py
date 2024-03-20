@@ -66,6 +66,7 @@ from threading import Thread
 import os, fnmatch
 import uuid
 import datetime
+import dateutil.parser
 
 import time
 import math
@@ -93,9 +94,12 @@ fa_cmap = {
 def get_date():
     today = datetime.datetime.now()
     date = today.strftime('%Y-%m-%dT%H:%M:%S.%f')
-    # date = today.isoformat()
     return date
 
+def get_date_short():
+    today = datetime.datetime.now()
+    date = today.strftime('%Y-%m-%d')
+    return date
 
 def get_one_deleted_project(project_name_or_uuid):
     try:
@@ -228,10 +232,73 @@ def modify_date(projects):
             except Exception as e:
                 # logging.exception("Could not modify date for " + project['project_name'])
                 continue
-
-
+            
     return projects
 
+def data_qc(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    if request.user.is_authenticated:
+        username = request.user.username
+        useremail = request.user.email
+        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        for proj in private_projects:
+            prepare_project_linkid(proj)
+    else:
+        private_projects = []
+
+    public_proj_count = 0
+    public_sample_count = 0
+    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+        public_proj_count = public_proj_count + 1
+        public_sample_count = public_sample_count + len(proj['runs'])
+        
+    datetime_status = check_datetime(public_projects) + check_datetime(private_projects)
+    
+    return render(request, "pages/admin_quality_check.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'datetime_status': datetime_status})
+
+def check_datetime(projects):
+    errors = 0
+    for project in projects:
+        try:
+            change_to_standard_date(project['date'])
+        except:
+            errors += 1
+            
+    if errors == 0:
+        datetime_status = 1
+    else: 
+        datetime_status = 0
+        
+    return datetime_status
+
+def change_to_standard_date(date):
+    
+    date = dateutil.parser.parse(date)
+    date = date.strftime(f'%Y-%m-%dT%H:%M:%S')
+    return date
+
+def change_database_dates(request):
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    projects = list(collection_handle.find({'delete': False}))
+    
+    for project in projects:
+        recently_updated = change_to_standard_date(project['date'])
+        date_created = change_to_standard_date(project['date_created'])
+        new_values = {"$set" : {'date' : recently_updated, 
+                                'date_created' : date_created}}
+        query = {'_id' : project['_id'],
+                    'delete': False}
+        collection_handle.update(query, new_values)
+
+    response = redirect('/data-qc')
+    return response
+ 
 
 def index(request):
     if request.user.is_authenticated:
@@ -526,14 +593,14 @@ def project_download(request, project_name):
         if isinstance(project_download_data, int):
             temp_data = project_download_data
             project_download_data = dict()
-            project_download_data[get_date()] = temp_data
-        elif get_date() in project_download_data:
-            project_download_data[get_date()] += 1
+            project_download_data[get_date_short()] = temp_data
+        elif get_date_short() in project_download_data:
+            project_download_data[get_date_short()] += 1
         else:
-            project_download_data[get_date()] = 1
+            project_download_data[get_date_short()] = 1
     else: 
         project_download_data = dict()
-        project_download_data[get_date()] = 1
+        project_download_data[get_date_short()] = 1
     
     query = {'_id': ObjectId(project_name)}
     new_val = { "$set": {'project_downloads': project_download_data} }
@@ -760,14 +827,14 @@ def sample_download(request, project_name, sample_name):
         if isinstance(sample_download_data, int):
             temp_data = sample_download_data
             sample_download_data = dict()
-            sample_download_data[get_date()] = temp_data
-        elif get_date() in sample_download_data:
-            sample_download_data[get_date()] += 1
+            sample_download_data[get_date_short()] = temp_data
+        elif get_date_short() in sample_download_data:
+            sample_download_data[get_date_short()] += 1
         else:
-            sample_download_data[get_date()] = 1
+            sample_download_data[get_date_short()] = 1
     else: 
         sample_download_data = dict()
-        sample_download_data[get_date()] = 1
+        sample_download_data[get_date_short()] = 1
     
     query = {'_id': ObjectId(project_name)}
     new_val = { "$set": {'sample_downloads': sample_download_data} }
@@ -1350,7 +1417,7 @@ def admin_stats(request):
             if isinstance(project_download_data, int):
                 temp_data = project_download_data
                 project_download_data = dict()
-                project_download_data[get_date()] = temp_data
+                project_download_data[get_date_short()] = temp_data
                 proj_id = proj['_id']
                 query = {'_id': ObjectId(proj_id)}
                 new_val = { "$set": {'project_downloads': project_download_data} }
@@ -1361,7 +1428,7 @@ def admin_stats(request):
                 if sample_download_data > 0:
                     temp_data = sample_download_data
                     sample_download_data = dict()
-                    sample_download_data[get_date()] = temp_data
+                    sample_download_data[get_date_short()] = temp_data
                     proj_id = proj['_id']
                     query = {'_id': ObjectId(proj_id)}
                     new_val = { "$set": {'sample_downloads': sample_download_data} }
@@ -1384,7 +1451,7 @@ def user_stats_download(request):
     users = User.objects.all()
     
     # Create the HttpResponse object with the appropriate CSV header.
-    today = datetime.date.today()
+    today = get_date_short()
     response = HttpResponse(
         content_type="text/csv",
     )
@@ -1422,7 +1489,7 @@ def project_stats_download(request):
         prepare_project_linkid(proj)
     
     # Create the HttpResponse object with the appropriate CSV header.
-    today = get_date()
+    today = get_date_short()
     response = HttpResponse(
         content_type="text/csv",
     )

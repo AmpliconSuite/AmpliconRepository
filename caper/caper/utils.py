@@ -175,7 +175,6 @@ def sample_data_from_feature_list(features_list):
     """
     extracts sample data from a list of features
     """
-    # now = datetime.datetime.now()
     df = pd.DataFrame(features_list)[['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID']]
     sample_data = []
     for sample_name, indices in df.groupby(['Sample_name']).groups.items():

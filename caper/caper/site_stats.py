@@ -5,6 +5,11 @@ from .utils import get_collection_handle, collection_handle, db_handle, replace_
 site_statistics_handle = get_collection_handle(db_handle,'site_statistics')
 
 
+def get_date():
+    today = datetime.datetime.now()
+    date = today.strftime('%Y-%m-%dT%H:%M:%S.%f')
+    return date
+
 def get_latest_site_statistics():
     # check to auto create the stats if needed
     if site_statistics_handle.find().count()==0:
@@ -80,7 +85,7 @@ def regenerate_site_statistics():
     repo_stats["all_private_amplicon_classifications_count"] = priv_amplicon_counts
     repo_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
 
-    repo_stats["date"] = datetime.datetime.today()
+    repo_stats["date"] = get_date()
     new_id = site_statistics_handle.insert_one(repo_stats)
     #print(site_statistics_handle.count_documents({}))
     print(f"SITE STATS REGENERATED FROM SCRATCH    {pub_amplicon_counts} ")
@@ -119,7 +124,7 @@ def add_project_to_site_statistics(project):
         updated_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
         updated_stats["all_private_amplicon_classifications_count"] = current_stats["all_private_amplicon_classifications_count"]
 
-    updated_stats["date"] = datetime.datetime.today()
+    updated_stats["date"] = get_date()
     new_id = site_statistics_handle.insert_one(updated_stats)
 
 
@@ -150,7 +155,7 @@ def delete_project_from_site_statistics(project):
         updated_stats["all_private_amplicon_classifications_count"] = current_stats["all_private_amplicon_classifications_count"]
 
     print(f"DELETE                                 updated {updated_stats} ")
-    updated_stats["date"] = datetime.datetime.today()
+    updated_stats["date"] = get_date()
     new_id = site_statistics_handle.insert_one(updated_stats)
 
 
