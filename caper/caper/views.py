@@ -344,8 +344,19 @@ def index(request):
 
 
 def profile(request, message_to_user=None):
+
     username = request.user.username
-    useremail = request.user.email
+    try:
+        useremail = request.user.email
+    except:
+        # not logged in 
+        print(request.user)
+        ## if user is anonymous, then need to login
+        useremail = ""
+        ## redirect to login page
+        return redirect('account_login')
+
+    
     # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
@@ -1721,7 +1732,6 @@ def _create_project(form, request):
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
-    # logging.debug("temporary file path before helper:" + str(request_file.temporary_file_path()))
     project, tmp_id = create_project_helper(form, user, request_file)
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
