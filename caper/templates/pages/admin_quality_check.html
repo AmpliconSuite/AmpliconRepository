@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+        });
+
+        $('table.table').DataTable({
+            language: {
+                    searchPlaceholder: "Search projects"
+                    }
+        });
+
+
+    });
+    $('#myModal').on('shown.bs.modal', function () {
+        $('#myInput').trigger('focus')
+      })
+</script>
+{% endblock %}
+
+{% block meta_title %} Home
+{% endblock %}
+
+{% block main %}
+<head>
+    <title>
+        AmpliconRepository
+    </title>
+</head>
+
+<div class="row">
+    <div class="col-md-10">
+        <div>
+            <h1 style="padding-top: 50px">Data Quality Check</h1>
+            <hr>
+            <div stlye="margin-top: 30px">
+                <h3>Datetime bug: 
+                    {% if datetime_status > 0 %}<button type="button" class="btn btn-success" data-toggle="modal" data-target="#exampleModal"><i class="fa fa-check" aria-hidden="true"></i></button>{% else %}<button type="button" class="btn btn-danger" data-toggle="modal" data-target="#exampleModal"><i class="fa fa-times" aria-hidden="true"></i></button>{% endif %}
+                </h3> 
+                
+                <!-- Modal -->
+                <div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+                    <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                        <h5 class="modal-title" id="exampleModalLabel">Datetime bug</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                        </div>
+                        <div class="modal-body">
+                        Do you want to rerun the bug fix?
+                        </div>
+                        <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                        <a href="{% url 'change_database_dates' %}"><button type="button" class="btn btn-danger">Yes</button></a>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:none">
+
+
+            </div>
+
+
+        </div>
+</div>
+</div>
+
+
+
+
+
+{% endblock %}

@@ -107,13 +107,13 @@ def send_project_membership_changed_email(subject, template, to_email, sharing_u
     html_message = render_to_string(template, form_dict)
     plain_message = strip_tags(html_message)
 
-    # send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER, recipient_list = [settings.RECIPIENT_ADDRESS])
+    # send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER_SECRET, recipient_list = [settings.RECIPIENT_ADDRESS])
     email = EmailMessage(
         subject,
         html_message,
-        settings.EMAIL_HOST_USER,
+        settings.EMAIL_HOST_USER_SECRET,
         [to_email],
-        reply_to=[settings.EMAIL_HOST_USER]
+        reply_to=[settings.EMAIL_HOST_USER_SECRET]
     )
     email.content_subtype = "html"
     email.send(fail_silently=False)

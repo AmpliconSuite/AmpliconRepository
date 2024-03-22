@@ -71,6 +71,8 @@ urlpatterns += [
 
     path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
     path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),
+    path('data-qc/', views.data_qc, name='data_qc'),
+    path('data-qc/change-database-dates', views.change_database_dates, name='change_database_dates'),
     path('upload_api/', views.FileUploadView.as_view(), name = 'Document'), 
     path('robots.txt', views.robots, name = "robots.txt"),
     path('loading/', views.loading),

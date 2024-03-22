@@ -90,7 +90,7 @@ USE_MODELTRANSLATION = False
 
 # Hosts/domain names that are valid for this site; required if DEBUG is False
 # See https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = ["localhost", "127.0.0.1",'www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137', 'host.docker.internal', '172.31.85.178']
+ALLOWED_HOSTS = ["localhost", '127.0.0.1','www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137', 'host.docker.internal', '172.31.85.178']
 
 # Add CSRF trusted origins
 CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconrepository.org','https://dev.ampliconrepository.org', 'http://127.0.0.1:8888/']
@@ -123,7 +123,7 @@ LANGUAGES = (("en", _("English")),)
 # A boolean that turns on/off debug mode. When set to ``True``, stack traces
 # are displayed for error pages. Should always be set to ``False`` in
 # production. Best set to ``True`` in local_settings.py
-DEBUG = True
+DEBUG = False
 
 # Whether a user's session cookie expires when the Web browser is closed.
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
@@ -149,8 +149,8 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 
 EMAIL_HOST = 'smtp.gmail.com' #new
 EMAIL_PORT = 587 #new
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', default="")  #new
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', default="")
+EMAIL_HOST_USER_SECRET = os.getenv('EMAIL_HOST_USER_SECRET', default="")  #new
+EMAIL_HOST_PASSWORD_SECRET = os.getenv('EMAIL_HOST_PASSWORD_SECRET', default="")
 EMAIL_USE_TLS = True #new
 SITE_URL = os.environ.get("SITE_URL", default="http://127.0.0.1:8000/")
 

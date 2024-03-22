@@ -126,7 +126,7 @@ def get_db_handle(db_name, host):
 def get_collection_handle(db_handle,collection_name):
     return db_handle[collection_name]
 
-db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI'])
+db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI_SECRET'])
 collection_handle = get_collection_handle(db_handle,'projects')
 stats = db_handle.command('dbstats', freeStorage=0)
 #db_percent = stats['dataSize']/stats['fs']*100
