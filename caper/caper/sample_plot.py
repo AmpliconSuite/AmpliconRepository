@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 # db_handle, mongo_client = get_db_handle('caper', 'mongodb://localhost:27017')
 
 # FOR PRODUICTION
-# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI'])
+# db_handle, mongo_client = get_db_handle('caper', os.environ['DB_URI_SECRET'])
 
 
 # assumes 'location' is a string formatted like chr8:10-30 or 3:5903-6567 or hpv16ref_1:1-2342

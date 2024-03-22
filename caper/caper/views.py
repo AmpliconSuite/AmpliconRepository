@@ -66,6 +66,7 @@ from threading import Thread
 import os, fnmatch
 import uuid
 import datetime
+import dateutil.parser
 
 import time
 import math
@@ -96,9 +97,12 @@ fa_cmap = {
 def get_date():
     today = datetime.datetime.now()
     date = today.strftime('%Y-%m-%dT%H:%M:%S.%f')
-    # date = today.isoformat()
     return date
 
+def get_date_short():
+    today = datetime.datetime.now()
+    date = today.strftime('%Y-%m-%d')
+    return date
 
 def get_one_deleted_project(project_name_or_uuid):
     try:
@@ -229,10 +233,73 @@ def modify_date(projects):
             except Exception as e:
                 # logging.exception("Could not modify date for " + project['project_name'])
                 continue
-
-
+            
     return projects
 
+def data_qc(request):
+    if not  request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    if request.user.is_authenticated:
+        username = request.user.username
+        useremail = request.user.email
+        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        for proj in private_projects:
+            prepare_project_linkid(proj)
+    else:
+        private_projects = []
+
+    public_proj_count = 0
+    public_sample_count = 0
+    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+        public_proj_count = public_proj_count + 1
+        public_sample_count = public_sample_count + len(proj['runs'])
+        
+    datetime_status = check_datetime(public_projects) + check_datetime(private_projects)
+    
+    return render(request, "pages/admin_quality_check.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'datetime_status': datetime_status})
+
+def check_datetime(projects):
+    errors = 0
+    for project in projects:
+        try:
+            change_to_standard_date(project['date'])
+        except:
+            errors += 1
+            
+    if errors == 0:
+        datetime_status = 1
+    else: 
+        datetime_status = 0
+        
+    return datetime_status
+
+def change_to_standard_date(date):
+    
+    date = dateutil.parser.parse(date)
+    date = date.strftime(f'%Y-%m-%dT%H:%M:%S')
+    return date
+
+def change_database_dates(request):
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    projects = list(collection_handle.find({'delete': False}))
+    
+    for project in projects:
+        recently_updated = change_to_standard_date(project['date'])
+        date_created = change_to_standard_date(project['date_created'])
+        new_values = {"$set" : {'date' : recently_updated, 
+                                'date_created' : date_created}}
+        query = {'_id' : project['_id'],
+                    'delete': False}
+        collection_handle.update(query, new_values)
+
+    response = redirect('/data-qc')
+    return response
+ 
 
 def index(request):
     if request.user.is_authenticated:
@@ -535,14 +602,14 @@ def project_download(request, project_name):
         if isinstance(project_download_data, int):
             temp_data = project_download_data
             project_download_data = dict()
-            project_download_data[get_date()] = temp_data
-        elif get_date() in project_download_data:
-            project_download_data[get_date()] += 1
+            project_download_data[get_date_short()] = temp_data
+        elif get_date_short() in project_download_data:
+            project_download_data[get_date_short()] += 1
         else:
-            project_download_data[get_date()] = 1
+            project_download_data[get_date_short()] = 1
     else: 
         project_download_data = dict()
-        project_download_data[get_date()] = 1
+        project_download_data[get_date_short()] = 1
     
     query = {'_id': ObjectId(project_name)}
     new_val = { "$set": {'project_downloads': project_download_data} }
@@ -775,14 +842,14 @@ def sample_download(request, project_name, sample_name):
         if isinstance(sample_download_data, int):
             temp_data = sample_download_data
             sample_download_data = dict()
-            sample_download_data[get_date()] = temp_data
-        elif get_date() in sample_download_data:
-            sample_download_data[get_date()] += 1
+            sample_download_data[get_date_short()] = temp_data
+        elif get_date_short() in sample_download_data:
+            sample_download_data[get_date_short()] += 1
         else:
-            sample_download_data[get_date()] = 1
+            sample_download_data[get_date_short()] = 1
     else: 
         sample_download_data = dict()
-        sample_download_data[get_date()] = 1
+        sample_download_data[get_date_short()] = 1
     
     query = {'_id': ObjectId(project_name)}
     new_val = { "$set": {'sample_downloads': sample_download_data} }
@@ -1278,7 +1345,7 @@ def admin_version_details(request):
     except:
         details = [{"name":"version","value":"unknown"},{"name":"creator","value":"unknown"},{"name": "date", "value":"unknown" }]
 
-    env_to_skip = ['DB_URI', "GOOGLE_SECRET", "GLOBUS_SECRET"]
+    env_to_skip = ['DB_URI_SECRET', "GOOGLE_SECRET", "GLOBUS_SECRET"]
     env=[]
     for key, value in os.environ.items():
         if not ("SECRET" in key) and not key in env_to_skip:
@@ -1344,14 +1411,14 @@ def admin_sendemail(request):
         html_message = render_to_string('contacts/mail_template.html', form_dict)
         plain_message = strip_tags(html_message)
 
-        #send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER, recipient_list = [settings.RECIPIENT_ADDRESS])
+        #send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER_SECRET, recipient_list = [settings.RECIPIENT_ADDRESS])
         email = EmailMessage(
             subject,
             html_message,
-            settings.EMAIL_HOST_USER,
+            settings.EMAIL_HOST_USER_SECRET,
             [to ],
             [cc],
-            reply_to=[settings.EMAIL_HOST_USER]
+            reply_to=[settings.EMAIL_HOST_USER_SECRET]
         )
         email.content_subtype = "html"
         email.send(fail_silently=True)
@@ -1381,7 +1448,7 @@ def admin_stats(request):
             if isinstance(project_download_data, int):
                 temp_data = project_download_data
                 project_download_data = dict()
-                project_download_data[get_date()] = temp_data
+                project_download_data[get_date_short()] = temp_data
                 proj_id = proj['_id']
                 query = {'_id': ObjectId(proj_id)}
                 new_val = { "$set": {'project_downloads': project_download_data} }
@@ -1392,7 +1459,7 @@ def admin_stats(request):
                 if sample_download_data > 0:
                     temp_data = sample_download_data
                     sample_download_data = dict()
-                    sample_download_data[get_date()] = temp_data
+                    sample_download_data[get_date_short()] = temp_data
                     proj_id = proj['_id']
                     query = {'_id': ObjectId(proj_id)}
                     new_val = { "$set": {'sample_downloads': sample_download_data} }
@@ -1406,7 +1473,7 @@ def admin_stats(request):
 
 # @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def user_stats_download(request):
-    # user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
+    # user = authenticate(username=os.getenv('ADMIN_USER_SECRET'),password=os.getenv('ADMIN_PASSWORD_SECRET'))
     # if not user.is_staff:
     #     return redirect('/accounts/logout')
 
@@ -1415,7 +1482,7 @@ def user_stats_download(request):
     users = User.objects.all()
     
     # Create the HttpResponse object with the appropriate CSV header.
-    today = datetime.date.today()
+    today = get_date_short()
     response = HttpResponse(
         content_type="text/csv",
     )
@@ -1443,7 +1510,7 @@ def site_stats_regenerate(request):
 
 # @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def project_stats_download(request):
-    # user = authenticate(username=os.getenv('ADMIN_USER'),password=os.getenv('ADMIN_PASSWORD'))
+    # user = authenticate(username=os.getenv('ADMIN_USER_SECRET'),password=os.getenv('ADMIN_PASSWORD_SECRET'))
     # if not user.is_staff:
     #     return redirect('/accounts/logout')
     
@@ -1453,7 +1520,7 @@ def project_stats_download(request):
         prepare_project_linkid(proj)
     
     # Create the HttpResponse object with the appropriate CSV header.
-    today = get_date()
+    today = get_date_short()
     response = HttpResponse(
         content_type="text/csv",
     )
@@ -1685,7 +1752,6 @@ def _create_project(form, request):
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
-    logging.debug("temporary file path before helper:" + str(request_file.temporary_file_path()))
     project, tmp_id = create_project_helper(form, user, request_file)
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
