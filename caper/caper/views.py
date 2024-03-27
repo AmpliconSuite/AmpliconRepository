@@ -1395,13 +1395,13 @@ def admin_sendemail(request):
         email = EmailMessage(
             subject,
             html_message,
-            settings.EMAIL_HOST_USER_SECRET,
+            settings.EMAIL_HOST_USER,
             [to ],
             [cc],
-            reply_to=[settings.EMAIL_HOST_USER_SECRET]
+            reply_to=[settings.EMAIL_HOST_USER]
         )
         email.content_subtype = "html"
-        email.send(fail_silently=True)
+        email.send(fail_silently=False)
 
         message_to_user= "Email sent"
 
