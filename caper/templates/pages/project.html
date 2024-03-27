@@ -200,10 +200,14 @@
 
         {% if messages %}
             {% for message in messages %}
-
-                <div class="alert alert-danger" role="alert" id = "messages" >
-                    {{message}}
-                </div>
+                
+                {% if 'unavailable or deleted.' in message %}
+                    <div class="alert alert-danger" role="alert" id = "messages" >
+                        {{message}}
+                    </div>
+                {% endif %}
+                    
+                
             {% endfor %}
         {% endif %}
 
