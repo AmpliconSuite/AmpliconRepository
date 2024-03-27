@@ -565,8 +565,7 @@ def project_page(request, project_name, message=''):
                 os.rename(extraction_error, "_"+extraction_error)
             else:
                 message = 'There was a problem extracting the results from the AmpliconAggregator .tar.gz file for this project.  Please notifiy the administrator so that they can help resolve the problem.'
-
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig, 'prev_versions' : prev_versions, 'prev_versions_length' : len(prev_versions)})
+    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig, 'prev_versions' : prev_versions, 'prev_versions_length' : len(prev_versions), "proj_id":str(project['linkid'])})
 
 
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):

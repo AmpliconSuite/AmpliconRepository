@@ -232,8 +232,8 @@
                             <tr>
                                 <td scope="row">{{ version.date }}</td>
                                 <td scope="row">Project ID: {{ version.linkid }}
-                                    {% if forloop.counter == 1 %}
-                                        <strong>(Current version)</strong>
+                                    {% if version.linkid == proj_id %}
+                                        <strong>(Currently viewing)</strong>
                                     {% endif %}
                                 </td>
                                 <td scope="row">
