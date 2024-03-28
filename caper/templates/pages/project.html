@@ -198,20 +198,6 @@
             }
         </style>
 
-        {% if messages %}
-            {% for message in messages %}
-                
-                {% if 'unavailable or deleted.' in message %}
-                    <div class="alert alert-danger" role="alert" id = "messages" >
-                        {{message}}
-                    </div>
-                {% endif %}
-                    
-                
-            {% endfor %}
-        {% endif %}
-
-
         <div class="card-header" id="headingPrevVersions">
             <h4 class="mb-0">
                 <button class="btn btn-link collapsed" type="button" data-toggle="collapse" data-target="#collapsePrevVersions" aria-expanded="false" aria-controls="collapsePrevVersions" style="padding: 0.25rem 0.5rem; font-weight: bold;">
