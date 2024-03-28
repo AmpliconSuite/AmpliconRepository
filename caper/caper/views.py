@@ -296,6 +296,18 @@ def change_database_dates(request):
         query = {'_id' : project['_id'],
                     'delete': False}
         collection_handle.update(query, new_values)
+        
+        if "previous_versions" in project:
+            updated_versions = []
+            for version in json.loads(project['previous_versions'][0]):
+                re_up = change_to_standard_date(version['date'])
+                version['date'] = re_up
+                updated_versions.append(version)
+            # Update the previous_versions field with the updated versions
+            collection_handle.update(
+                {'_id': project['_id']},
+                {'$set': {'previous_versions': json.dumps(updated_versions)}}
+            )
 
     response = redirect('/data-qc')
     return response
