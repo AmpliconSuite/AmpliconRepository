@@ -225,7 +225,7 @@ def modify_date(projects):
     """
 
     for project in projects:
-        formats_to_try = [f"%Y-%m-%dT%H:%M:%S.%f", f"%B %d, %Y %I:%M:%S %p ", f"%Y-%m-%d"]
+        formats_to_try = [f"%Y-%m-%dT%H:%M:%S.%f", f"%B %d, %Y %I:%M:%S %p ", f"%Y-%m-%d", f"%Y-%m-%dT%H:%M:%S"]
         for fmt in formats_to_try:
             try:
                 dt = datetime.datetime.strptime(project['date'], fmt)
@@ -285,7 +285,8 @@ def change_to_standard_date(date):
 def change_database_dates(request):
     if not request.user.is_staff:
         return redirect('/accounts/logout')
-    
+
+    logging.debug('Starting to update timestamps...')
     projects = list(collection_handle.find({'delete': False}))
     
     for project in projects:
@@ -306,10 +307,11 @@ def change_database_dates(request):
             # Update the previous_versions field with the updated versions
             collection_handle.update(
                 {'_id': project['_id']},
-                {'$set': {'previous_versions': json.dumps(updated_versions)}}
+                {'$set': {'previous_versions': [json.dumps(updated_versions)]}}
             )
 
     response = redirect('/data-qc')
+    logging.info('Updated timestamps')
     return response
  
 
@@ -472,14 +474,14 @@ def previous_versions(project):
     if "previous_versions" in project:
         for version in json.loads(project['previous_versions'][0]):
             print(version)
-            date_obj = datetime.datetime.strptime(version['date'], r"%Y-%m-%dT%H:%M:%S.%f")
+            date_obj = version['date']
             res.append({
-            'date':date_obj.strftime(r'%B %d, %Y, %I:%M:%S %p'),
+            'date':date_obj,
             'linkid':version['link']
             })
 
-    current_date = datetime.datetime.strptime(project['date'], r"%Y-%m-%dT%H:%M:%S.%f")
-    res.append({'date':current_date.strftime(r'%B %d, %Y, %I:%M:%S %p'), 
+    current_date = get_date()
+    res.append({'date':current_date,
                 'linkid':str(project['linkid'])})
     print(res)
     res.reverse()
@@ -1720,7 +1722,7 @@ def admin_delete_project(request):
             tar_file_len = fs_handle.get(ObjectId(proj['tarfile'])).length
             proj['tar_file_len'] = sizeof_fmt(tar_file_len)
             if proj['delete_date']:
-                dt = datetime.datetime.strptime(proj['delete_date'], f"%Y-%m-%dT%H:%M:%S.%f")
+                dt = datetime.datetime.strptime(proj['delete_date'], f"%Y-%m-%dT%H:%M:%S")
                 proj['delete_date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
         except:
             #ignore missing date
