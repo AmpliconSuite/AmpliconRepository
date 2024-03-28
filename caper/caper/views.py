@@ -74,6 +74,9 @@ import logging
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
+## Message framework
+from django.contrib import messages
+
 
 # SET UP HANDLE
 def loading(request):
@@ -152,8 +155,6 @@ def samples_to_dict(form_file):
 
 
 def form_to_dict(form):
-    print('*************************')
-    print('*************************')
     # print(form)
     run = form.save(commit=False)
     form_dict = model_to_dict(run)
@@ -451,27 +452,24 @@ def create_aggregate_df(project, samples):
     
     return aggregate, aggregate_save_fp
 
-def previous_versions(project_name):
+def previous_versions(project):
     """
-    Gets a list of previous versions
+    Gets a list of previous versions via UUID
     """
-    print(project_name)
-    query = {
-        '_id': ObjectId(project_name)
-    }
-    proj_name = collection_handle.find(query, {"project_name": 1})[0]['project_name']
-    query = {
-        "project_name" : proj_name
-    }
-
     res = []
-    results = collection_handle.find(query, {'date':1, 'linkid':1})
-    for result in results:
-        date_obj = datetime.datetime.strptime(result['date'], r"%Y-%m-%dT%H:%M:%S.%f")
-        res.append({
+    if "previous_versions" in project:
+        for version in json.loads(project['previous_versions'][0]):
+            print(version)
+            date_obj = datetime.datetime.strptime(version['date'], r"%Y-%m-%dT%H:%M:%S.%f")
+            res.append({
             'date':date_obj.strftime(r'%B %d, %Y, %I:%M:%S %p'),
-            'linkid':result['_id']
-        })
+            'linkid':version['link']
+            })
+
+    current_date = datetime.datetime.strptime(project['date'], r"%Y-%m-%dT%H:%M:%S.%f")
+    res.append({'date':current_date.strftime(r'%B %d, %Y, %I:%M:%S %p'), 
+                'linkid':str(project['linkid'])})
+    print(res)
     res.reverse()
     return res
 
@@ -507,7 +505,7 @@ def project_page(request, project_name, message=''):
     if not project_name == str(project['linkid']):
         return redirect('project_page', project_name=project['linkid'])
 
-    prev_versions = previous_versions(project_name)
+    prev_versions = previous_versions(project)
 
     if 'metadata_stored' not in project:
         #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
@@ -567,8 +565,7 @@ def project_page(request, project_name, message=''):
                 os.rename(extraction_error, "_"+extraction_error)
             else:
                 message = 'There was a problem extracting the results from the AmpliconAggregator .tar.gz file for this project.  Please notifiy the administrator so that they can help resolve the problem.'
-
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig, 'prev_versions' : prev_versions})
+    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig, 'prev_versions' : prev_versions, 'prev_versions_length' : len(prev_versions), "proj_id":str(project['linkid'])})
 
 
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
@@ -680,18 +677,24 @@ def project_download(request, project_name):
     ###### the following is used when S3 is not used for download
     chunk_size = 8192
     logging.info('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
-    file_location = find('*.tar.gz', project_data_path)[0]
-    response = StreamingHttpResponse(
+    try:
+        file_location = find('*.tar.gz', project_data_path)[0]
+        response = StreamingHttpResponse(
         FileWrapper(
             open(file_location, "rb"),
             chunk_size,
+            )
         )
-    )
-    filename = file_location.split('/')[-1]
-    response['Content-Type'] = f'application/tar+gzip'
-    response['Content-Disposition'] = f'attachment; filename={filename}'
-    # clear_tmp()
-    return response
+        filename = file_location.split('/')[-1]
+        response['Content-Type'] = f'application/tar+gzip'
+        response['Content-Disposition'] = f'attachment; filename={filename}'
+        # clear_tmp()
+        return response
+    except:
+        message = f"Project {project_name} is unavailable or deleted."
+        messages.error(request, message)
+        return redirect(request.META['HTTP_REFERER'])
+    
 
 
     #except:
@@ -1170,7 +1173,6 @@ def edit_project_page(request, project_name):
         notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
 
         request_file = request.FILES['document'] if 'document' in request.FILES else None
-        print(f"request file is {request_file}")
         if request_file is not None:
             # mark the current project as deleted
             del_ret = project_delete(request, project_name)
@@ -1181,21 +1183,38 @@ def edit_project_page(request, project_name):
             prev_ids.append(str(project['linkid']))
            # Create a mapping so links to the old project id still work
             query = {'_id': ObjectId(new_id.inserted_id)}
-
-
             new_val = {"$set": {'previous_versions': 
                                 {"date": project['date']}}}
-            
-            
             query2 = {'_id': ObjectId(new_id.inserted_id),
                       "previous_versions": {"$exists" : True}
                       }
-            to_db = json.dumps({'date':str(project['date']), 'link':str(project['linkid'])})
-            if collection_handle.find_one(query2):
+            
+            ## maybe old projects have project history: 
+            new_prev_versions = []
+            try:
+                old_old_versions = json.loads(project['previous_versions'][0])
+                for version in old_old_versions:
+                    old_version = {
+                        'date':version['date'],
+                        'link':version['link']
+                    }
+                    new_prev_versions.append(old_version)
+            except Exception as e:
+                print(e)
 
+            ## update for current 
+            new_prev_versions.append(
+                {
+                    'date':str(project['date']),
+                    'link':str(project['linkid'])
+                }
+            )
+
+            to_db = json.dumps(new_prev_versions)
+
+            if collection_handle.find_one(query2):
                 new_val = { "$push" : {"previous_versions":to_db}}
             else:
-
                 new_val = { "$set" : {"previous_versions" : [to_db]}}
 
 
