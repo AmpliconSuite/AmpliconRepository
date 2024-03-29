@@ -1970,7 +1970,7 @@ class FileUploadView(APIView):
             # load the zip asynch to S3 for later use
             file_location = f'{project_data_path}/{request_file.name}'
 
-            s3_thread = Thread(target=upload_file_to_s3, args=(f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
+            s3_thread = Thread(target=upload_file_to_s3, args=(f'{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
             s3_thread.start()
 
 
