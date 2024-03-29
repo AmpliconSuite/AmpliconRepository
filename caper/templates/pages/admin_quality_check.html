@@ -40,7 +40,12 @@
             <hr>
             <div stlye="margin-top: 30px">
                 <h3>Datetime bug: 
-                    {% if datetime_status > 0 %}<button type="button" class="btn btn-success" data-toggle="modal" data-target="#exampleModal"><i class="fa fa-check" aria-hidden="true"></i></button>{% else %}<button type="button" class="btn btn-danger" data-toggle="modal" data-target="#exampleModal"><i class="fa fa-times" aria-hidden="true"></i></button>{% endif %}
+                    {% if datetime_status > 0 %}
+                        <button type="button" class="btn btn-success" data-toggle="modal" data-target="#exampleModal"><i class="fa fa-check" aria-hidden="true"></i></button>
+                    {% else %}
+                        <button type="button" class="btn btn-danger" data-toggle="modal" data-target="#exampleModal"><i class="fa fa-times" aria-hidden="true"></i></button>
+                    {% endif %}
+                    <span style="margin-left: 10px">Click the status icon to update timestamps</span>
                 </h3> 
                 
                 <!-- Modal -->
