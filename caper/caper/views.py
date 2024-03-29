@@ -348,9 +348,9 @@ def index(request):
         prepare_project_linkid(proj)
 
 
-    public_projects = modify_date(public_projects)
-    private_projects = modify_date(private_projects)
-    featured_projects = modify_date(featured_projects)
+    # public_projects = modify_date(public_projects)
+    # private_projects = modify_date(private_projects)
+    # featured_projects = modify_date(featured_projects)
 
     # get the latest set of stats
     site_stats = get_latest_site_statistics()
@@ -481,7 +481,7 @@ def previous_versions(project):
             })
 
     current_date = get_date()
-    res.append({'date':current_date,
+    res.append({'date': project['date'],
                 'linkid':str(project['linkid'])})
     print(res)
     res.reverse()
