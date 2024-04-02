@@ -609,7 +609,6 @@ def find(pattern, path):
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
-    
     if check_if_db_field_exists(project, 'project_downloads'):
         project_download_data = project['project_downloads']
         if isinstance(project_download_data, int):
@@ -636,8 +635,17 @@ def project_download(request, project_name):
     project_data_path = f"tmp/{project_name}"
 
     if settings.USE_S3_DOWNLOADS:
+        logging.debug("Download with USE_S3_DOWNLOADS True")
+        if '_id' in project:
+            project_linkid = project['_id']
+        elif 'linkid' in project:
+            project_linkid = project['linkid']
+        else:
+            logging.error("Could not create linkid for project!")
+            message = f"Project {project_name} is unavailable or deleted."
+            messages.error(request, message)
+            return redirect(request.META['HTTP_REFERER'])
 
-        project_linkid = project['_id']
         s3_file_location = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_linkid}/{project_linkid}.tar.gz'
         logging.info(f'==== XXX STARTING download for {s3_file_location} for project {real_project_name}')
 
