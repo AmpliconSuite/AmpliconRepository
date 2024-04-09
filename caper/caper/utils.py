@@ -13,7 +13,7 @@ import gridfs
 import os
 
 
-def get_db_handle(db_name, host, read_preference=ReadPreference.NEAREST
+def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED
                   ):
     client = MongoClient(host, read_preference=read_preference
                         )
