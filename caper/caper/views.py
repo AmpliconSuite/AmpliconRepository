@@ -1200,7 +1200,7 @@ def edit_project_page(request, project_name):
             del_ret = project_delete(request, project_name)
 
             # create a new one with the new form
-            a_message, new_id = _create_project(form, request)
+            new_id = _create_project(form, request)
 
             prev_ids.append(str(project['linkid']))
            # Create a mapping so links to the old project id still work
@@ -1243,7 +1243,7 @@ def edit_project_page(request, project_name):
             collection_handle.update_one(query, new_val)
 
 
-            return redirect('project_page', project_name=new_id.inserted_id, message=a_message, )
+            return redirect('project_page', project_name=new_id.inserted_id )
             # go to the new project
 
 
@@ -1753,8 +1753,8 @@ def create_project(request):
         if not form.is_valid():
             raise Http404()
 
-        a_message, new_id = _create_project(form, request)
-        return redirect('project_page', project_name=new_id.inserted_id, message=a_message)
+        new_id = _create_project(form, request)
+        return redirect('project_page', project_name=new_id.inserted_id)
 
     else:
         form = RunForm()
@@ -1796,15 +1796,8 @@ def _create_project(form, request):
         s3_thread = Thread(target=upload_file_to_s3, args=(
         f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
         s3_thread.start()
-    # estimate how long the extraction could take and round up
-    # CCLE was 3GB and took about 3 minutes
-    try:
-        file_size = os.path.getsize(file_location)
-        est_min_to_extract = max(2, 1 + math.ceil(file_size / (1024 ** 3)))
-    except:
-        est_min_to_extract = 5
-    a_message = f"Project creation is still in process.  It is estimated to take {est_min_to_extract} minutes before all samples and features are available."
-    return a_message, new_id
+
+    return new_id
 
 
 ## make a create_project_helper for project creation code 
