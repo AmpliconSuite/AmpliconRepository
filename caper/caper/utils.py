@@ -216,7 +216,7 @@ def get_one_project(project_name_or_uuid):
     # the old links work
     if project is None:
         try:
-            project = collection_handle.find_one({'previous_project_ids': project_name_or_uuid, 'delete': False})
+            project = collection_handle.find_one({'previous_versions': {'linkid':project_name_or_uuid}, 'delete': False})
             if project is not None:
                 prepare_project_linkid(project)
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")

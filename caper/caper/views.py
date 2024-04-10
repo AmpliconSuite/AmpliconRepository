@@ -299,15 +299,18 @@ def change_database_dates(request):
         collection_handle.update(query, new_values)
         
         if "previous_versions" in project:
-            updated_versions = []
-            for version in json.loads(project['previous_versions'][0]):
-                re_up = change_to_standard_date(version['date'])
-                version['date'] = re_up
-                updated_versions.append(version)
+            updated_versions = project.previous_versions.view()
+            #for version in json.loads(project['previous_versions'][0]):
+            #    re_up = change_to_standard_date(version['date'])
+            #    version['date'] = re_up
+            #    updated_versions.append(version)
+            another_update = {'date':recently_updated, 'link':str(project['linkid'])}
+            updated_versions.append(another_update)
+
             # Update the previous_versions field with the updated versions
             collection_handle.update(
                 {'_id': project['_id']},
-                {'$set': {'previous_versions': [json.dumps(updated_versions)]}}
+                {'$set': {'previous_versions': updated_versions}}
             )
 
     response = redirect('/data-qc')
@@ -472,14 +475,8 @@ def previous_versions(project):
     """
     res = []
     if "previous_versions" in project:
-        for version in json.loads(project['previous_versions'][0]):
-            print(version)
-            date_obj = version['date']
-            res.append({
-            'date':date_obj,
-            'linkid':version['link']
-            })
-
+        res = project['previous_versions'][:]
+    # add current main version to the list
     current_date = get_date()
     res.append({'date': project['date'],
                 'linkid':str(project['linkid'])})
@@ -1174,11 +1171,6 @@ def project_delete(request, project_name):
 def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
-        try:
-
-            prev_ids = project['previous_project_ids']
-        except:
-            prev_ids = []
 
         # no edits for non-project members
         if not is_user_a_project_member(project, request):
@@ -1202,7 +1194,7 @@ def edit_project_page(request, project_name):
             # create a new one with the new form
             a_message, new_id = _create_project(form, request)
 
-            prev_ids.append(str(project['linkid']))
+
            # Create a mapping so links to the old project id still work
             query = {'_id': ObjectId(new_id.inserted_id)}
             new_val = {"$set": {'previous_versions': 
@@ -1213,31 +1205,23 @@ def edit_project_page(request, project_name):
             
             ## maybe old projects have project history: 
             new_prev_versions = []
-            try:
-                old_old_versions = json.loads(project['previous_versions'][0])
-                for version in old_old_versions:
-                    old_version = {
-                        'date':version['date'],
-                        'link':version['link']
-                    }
-                    new_prev_versions.append(old_version)
-            except Exception as e:
-                print(e)
+            if 'previous_versions' in project:
+                new_prev_versions = project['previous_versions']
 
             ## update for current 
             new_prev_versions.append(
                 {
                     'date':str(project['date']),
-                    'link':str(project['linkid'])
+                    'linkid':str(project['linkid'])
                 }
             )
 
-            to_db = json.dumps(new_prev_versions)
+            to_db = new_prev_versions
 
             if collection_handle.find_one(query2):
                 new_val = { "$push" : {"previous_versions":to_db}}
             else:
-                new_val = { "$set" : {"previous_versions" : [to_db]}}
+                new_val = { "$set" : {"previous_versions" : to_db}}
 
 
             collection_handle.update_one(query, new_val)
