@@ -76,6 +76,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
 
 ## Message framework
 from django.contrib import messages
+from django.utils.safestring import mark_safe
 
 
 # SET UP HANDLE
@@ -474,15 +475,34 @@ def previous_versions(project):
     Gets a list of previous versions via UUID
     """
     res = []
-    if "previous_versions" in project:
-        res = project['previous_versions'][:]
-    # add current main version to the list
-    current_date = get_date()
-    res.append({'date': project['date'],
-                'linkid':str(project['linkid'])})
-    print(res)
-    res.reverse()
-    return res
+    msg = None
+    print(project['_id'])
+
+    ### Accessing a previous version of a project. 
+    ## looking for the old link in the previous project. Will output something if 
+    ## we are trying to access an older project
+    cursor = collection_handle.find(
+        {'current': True, 'previous_versions.linkid' : str(project['_id'])}, {'date': 1, 'previous_versions':1}).sort('date', -1)
+    data = list(cursor)
+    if len(data) == 1:
+        res = data[0]['previous_versions']
+        res.append({'date': data[0]['date'], 
+                    'linkid' : str(data[0]['_id'])})
+        res.reverse()
+        msg = f"Viewing an older version of the project. View latest version <a href = '/project/{str(data[0]['_id'])}'>here</a>"
+        
+
+    else:
+        ## accessing current version, getting list of previous versions
+        if "previous_versions" in project:
+            res = project['previous_versions']
+        # add current main version to the list
+
+        res.append({'date': project['date'],
+                    'linkid':str(project['linkid'])})
+        res.reverse()
+
+    return res, msg
 
 def project_page(request, project_name, message=''):
     """
@@ -516,7 +536,12 @@ def project_page(request, project_name, message=''):
     if not project_name == str(project['linkid']):
         return redirect('project_page', project_name=project['linkid'])
 
-    prev_versions = previous_versions(project)
+    prev_versions, prev_ver_msg = previous_versions(project)
+    if prev_ver_msg:
+        messages.error(request, mark_safe(prev_ver_msg))
+
+    ## if the project being loaded is stored in another project's previous versions, then load the previous_versions list of the latest project, 
+    ## and give a message saying: this is not the latest version, and link to latest version. 
 
     if 'metadata_stored' not in project:
         #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
@@ -576,7 +601,16 @@ def project_page(request, project_name, message=''):
                 os.rename(extraction_error, "_"+extraction_error)
             else:
                 message = 'There was a problem extracting the results from the AmpliconAggregator .tar.gz file for this project.  Please notifiy the administrator so that they can help resolve the problem.'
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig, 'prev_versions' : prev_versions, 'prev_versions_length' : len(prev_versions), "proj_id":str(project['linkid'])})
+    return render(request, "pages/project.html", {'project': project, 
+                                                  'sample_data': sample_data, 
+                                                  'message':message, 
+                                                  'reference_genome': reference_genome, 
+                                                  'stackedbar_graph': stackedbar_plot, 
+                                                  'piechart': pc_fig, 
+                                                  'prev_versions' : prev_versions, 
+                                                  'prev_versions_length' : len(prev_versions), 
+                                                  "proj_id":str(project['linkid']), 
+                                                  'prev_version_message': prev_ver_msg})
 
 
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
@@ -1167,6 +1201,23 @@ def project_delete(request, project_name):
         return HttpResponse("Project does not exist")
     # return redirect('profile')
 
+def project_update(request, project_name):
+    """
+    Updates the 'current' field for a project that has been updated
+    current = False when a project is edited. 
+    update_date will be changed after project has been updated. 
+    """
+    project = get_one_project(project_name)
+    if check_project_exists(project_name) and is_user_a_project_member(project, request):
+        query = {'_id': project['_id']}
+        ## 2 new fields: current, and update_date, $set will add a new field with the specified value. 
+        new_val = { "$set": {'current' : False, 'update_date': get_date()} }
+        collection_handle.update_one(query, new_val)
+        delete_project_from_site_statistics(project)
+        return redirect('profile')
+    else:
+        return HttpResponse("Project does not exist")
+
 
 def edit_project_page(request, project_name):
     if request.method == "POST":
@@ -1188,26 +1239,13 @@ def edit_project_page(request, project_name):
 
         request_file = request.FILES['document'] if 'document' in request.FILES else None
         if request_file is not None:
-            # mark the current project as deleted
-            del_ret = project_delete(request, project_name)
+            # mark the current project as updated
+            update_project = project_update(request, project_name)
 
-            # create a new one with the new form
-            a_message, new_id = _create_project(form, request)
-
-
-           # Create a mapping so links to the old project id still work
-            query = {'_id': ObjectId(new_id.inserted_id)}
-            new_val = {"$set": {'previous_versions': 
-                                {"date": project['date']}}}
-            query2 = {'_id': ObjectId(new_id.inserted_id),
-                      "previous_versions": {"$exists" : True}
-                      }
-            
-            ## maybe old projects have project history: 
+            ## get list of previous versions before this and insert it along with the _create project function . 
             new_prev_versions = []
             if 'previous_versions' in project:
                 new_prev_versions = project['previous_versions']
-
             ## update for current 
             new_prev_versions.append(
                 {
@@ -1215,17 +1253,8 @@ def edit_project_page(request, project_name):
                     'linkid':str(project['linkid'])
                 }
             )
-
-            to_db = new_prev_versions
-
-            if collection_handle.find_one(query2):
-                new_val = { "$push" : {"previous_versions":to_db}}
-            else:
-                new_val = { "$set" : {"previous_versions" : to_db}}
-
-
-            collection_handle.update_one(query, new_val)
-
+            # create a new one with the new form
+            a_message, new_id = _create_project(form, request, previous_versions = new_prev_versions)
 
             return redirect('project_page', project_name=new_id.inserted_id, message=a_message, )
             # go to the new project
@@ -1745,7 +1774,7 @@ def create_project(request):
     return render(request, 'pages/create_project.html', {'run' : form})
 
 
-def _create_project(form, request):
+def _create_project(form, request, previous_versions = []):
     """
     Creates the project 
     """
@@ -1757,7 +1786,7 @@ def _create_project(form, request):
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
-    project, tmp_id = create_project_helper(form, user, request_file)
+    project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions)
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
     add_project_to_site_statistics(project)
@@ -1792,7 +1821,7 @@ def _create_project(form, request):
 
 
 ## make a create_project_helper for project creation code 
-def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex, from_api = False):
+def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex, from_api = False, previous_versions = []):
     """
     Creates a project dictionary from 
     
@@ -1865,6 +1894,9 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['date'] = get_date()
     project['private'] = form_dict['private']
     project['delete'] = False
+    project['current'] = True
+    project['previous_versions'] = previous_versions
+    project['update_date'] = get_date()
     user_list = create_user_list(form_dict['project_members'], current_user)
     project['project_members'] = user_list
     project['runs'] = replace_underscore_keys(runs)

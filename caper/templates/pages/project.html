@@ -244,7 +244,8 @@
                                 
                             <tr>
                                 <td class="date">{{ version.date }}</td>
-                                <td scope="row">Project ID: {{ version.linkid }}
+                                <td scope="row">Project ID: 
+                                    <a href="/project/{{ version.linkid }}">{{ version.linkid }}</a>
                                     {% if version.linkid == proj_id %}
                                         <strong>(Currently viewing)</strong>
                                     {% endif %}
