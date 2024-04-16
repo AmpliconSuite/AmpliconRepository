@@ -2,7 +2,7 @@ import logging
 
 import pandas as pd
 from bson import ObjectId
-from pymongo import MongoClient
+from pymongo import MongoClient,ReadPreference
 from allauth.account.adapter import DefaultAccountAdapter
 from django import forms
 from django.contrib.auth import get_user_model
@@ -13,8 +13,9 @@ import gridfs
 import os
 
 
-def get_db_handle(db_name, host):
-    client = MongoClient(host
+def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED
+                  ):
+    client = MongoClient(host, read_preference=read_preference
                         )
     db_handle = client[db_name]
     return db_handle, client
@@ -95,8 +96,13 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
 
 
 db_handle, mongo_client = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI_SECRET'])
+db_handle_primary, mongo_client_primary = get_db_handle(os.getenv('DB_NAME', default='caper'), os.environ['DB_URI_SECRET'], read_preference=ReadPreference.PRIMARY)
+
+
+
 
 collection_handle = get_collection_handle(db_handle,'projects')
+collection_handle_primary = get_collection_handle(db_handle_primary,'projects')
 
 fs_handle = gridfs.GridFS(db_handle)
 

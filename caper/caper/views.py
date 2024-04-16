@@ -32,7 +32,7 @@ import json
 
 # from .models import File
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
-from .utils import collection_handle, db_handle, fs_handle, replace_space_to_underscore, \
+from .utils import collection_handle, collection_handle_primary, db_handle, fs_handle, replace_space_to_underscore, \
     preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
     prepare_project_linkid, replace_underscore_keys
 from django.forms.models import model_to_dict
@@ -1336,11 +1336,12 @@ def admin_featured_projects(request):
         project = get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
         new_val = {"$set": {'featured': featured}}
-        collection_handle.update_one(query, new_val)
+        collection_handle_primary.update_one(query, new_val)
 
 
 
-    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+
+    public_projects = list(collection_handle_primary.find({'private': False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
 
