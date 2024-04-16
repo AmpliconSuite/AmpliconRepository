@@ -537,8 +537,10 @@ def project_page(request, project_name, message=''):
         return redirect('project_page', project_name=project['linkid'])
 
     prev_versions, prev_ver_msg = previous_versions(project)
+    viewing_old_project = False
     if prev_ver_msg:
         messages.error(request, mark_safe(prev_ver_msg))
+        viewing_old_project = True
 
     ## if the project being loaded is stored in another project's previous versions, then load the previous_versions list of the latest project, 
     ## and give a message saying: this is not the latest version, and link to latest version. 
@@ -609,7 +611,8 @@ def project_page(request, project_name, message=''):
                                                   'piechart': pc_fig, 
                                                   'prev_versions' : prev_versions, 
                                                   'prev_versions_length' : len(prev_versions), 
-                                                  "proj_id":str(project['linkid'])})
+                                                  "proj_id":str(project['linkid']),
+                                                  'viewing_old_project': viewing_old_project})
 
 
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
@@ -1240,11 +1243,14 @@ def edit_project_page(request, project_name):
         if request_file is not None:
             # mark the current project as updated
             update_project = project_update(request, project_name)
+            # mark current project as deleted as well 
+            delete_project = project_delete(request, project_name)
 
             ## get list of previous versions before this and insert it along with the _create project function . 
             new_prev_versions = []
             if 'previous_versions' in project:
                 new_prev_versions = project['previous_versions']
+
             ## update for current 
             new_prev_versions.append(
                 {
@@ -1641,6 +1647,77 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
     finish_flag_file.close()
 
 
+def admin_permanent_delete_project(project_id, project, project_name):
+    """
+    This function permanently deletes a project from s3 and from the server. 
+    """
+    error_message = ""
+    query = {'_id': ObjectId(project_id)}
+    try:
+        # delete Samples & Features and feature files from mongo,
+        # Is this needed or will deleting the parent project delete the whole thing
+        current_runs = project['runs']
+        runs = project['runs']
+        for sample in runs:
+            for feature in sample:
+                key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'AA directory', 'cnvkit directory']
+                for k in key_names:
+                    try:
+                        fs_handle.delete(ObjectId(sample[k]))
+
+                    except:
+                        # DO NOTHING, its not there
+                        id_var = "Not Provided"
+    except:
+        logging.exception('Problem deleting sample files from Mongo.')
+        error_message="Problem deleting sample files from Mongo."
+
+    # delete project tar and files from mongo and local disk
+    #    - assume all feature and sample files are in this dir
+    try:
+        fs_handle.delete(ObjectId(project['tarfile']))
+    except KeyError:
+        logging.exception(f'Problem deleting project tar file from mongo. { project["project_name"]}')
+        error_message = error_message + " Problem deleting project tar file from mongo."
+
+    try:
+        if os.path.exists(f"../tmp/{project_id}/"):
+            project_data_path = f"../tmp/{project_id}/"
+        else:
+            project_data_path = f"tmp/{project_id}/"
+
+        shutil.rmtree(project_data_path)
+    except:
+        logging.exception(f'Problem deleting tar file from local drive. {project_data_path}')
+
+    if hasattr(settings, 'S3_DOWNLOADS_BUCKET_PATH'):
+        print("============= HAS ATTR  ================")
+        s3_file_path = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
+        try:
+            session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+            s3client = session.client('s3')
+            s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path)
+        except:
+            logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
+            error_message = error_message+" Problem deleting tar file from S3. "
+    else:
+
+        error_message = error_message + " No S3 bucket path set. No attempt made to delete the tar file from S3. "
+
+    # Final step, delete the project
+    try:
+        collection_handle.delete_one(query)
+    except:
+        logging.exception('Problem deleting Project document from Mongo.')
+        error_message = error_message + " Problem deleting Project document from Mongo. "
+
+    if error_message:
+        error_message = error_message + " Other project artifacts successfully deleted. Please refer to the application log files for details. "
+    else:
+        error_message = f"Project {project_name} deleted."
+
+    return error_message
+        
 
 
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to
@@ -1649,7 +1726,6 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
 def admin_delete_project(request):
     if not request.user.is_staff:
         return redirect('/accounts/logout')
-
     error_message = ""
     if request.method == "POST":
         form = DeletedProjectForm(request.POST)
@@ -1669,73 +1745,21 @@ def admin_delete_project(request):
             error_message = f"Project {project_name} restored."
 
         elif deleteit and (action == 'delete'):
+
             project = get_one_deleted_project(project_id)
-            query = {'_id': ObjectId(project_id)}
+            prev_ver_list, msg = previous_versions(project)
+            ## find all previous versions of the project we are trying to delete.
+            ## If this is an older version, do not delete
+            
+            if prev_ver_list:
+                for proj in prev_ver_list:
+                    p = get_one_deleted_project(proj['linkid'])
+                    admin_permanent_delete_project(proj['linkid'], p, p['project_name'])
 
-            try:
-                # delete Samples & Features and feature files from mongo,
-                # Is this needed or will deleting the parent project delete the whole thing
-                current_runs = project['runs']
-                runs = project['runs']
-                for sample in runs:
-                    for feature in sample:
-                        key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'AA directory', 'cnvkit directory']
-                        for k in key_names:
-                            try:
-                                fs_handle.delete(ObjectId(sample[k]))
+            error_message = admin_permanent_delete_project(project_id, project, project_name)
 
-                            except:
-                                # DO NOTHING, its not there
-                                id_var = "Not Provided"
-            except:
-                logging.exception('Problem deleting sample files from Mongo.')
-                error_message="Problem deleting sample files from Mongo."
 
-            # delete project tar and files from mongo and local disk
-            #    - assume all feature and sample files are in this dir
-            try:
-                fs_handle.delete(ObjectId(project['tarfile']))
-            except KeyError:
-                logging.exception(f'Problem deleting project tar file from mongo. { project["project_name"]}')
-                error_message = error_message + " Problem deleting project tar file from mongo."
-
-            try:
-                if os.path.exists(f"../tmp/{project_id}/"):
-                    project_data_path = f"../tmp/{project_id}/"
-                else:
-                    project_data_path = f"tmp/{project_id}/"
-
-                shutil.rmtree(project_data_path)
-            except:
-                logging.exception(f'Problem deleting tar file from local drive. {project_data_path}')
-
-            if hasattr(settings, 'S3_DOWNLOADS_BUCKET_PATH'):
-                print("============= HAS ATTR  ================")
-                s3_file_path = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
-                try:
-                    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
-                    s3client = session.client('s3')
-                    s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path)
-                except:
-                    logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
-                    error_message = error_message+" Problem deleting tar file from S3. "
-            else:
-
-                error_message = error_message + " No S3 bucket path set. No attempt made to delete the tar file from S3. "
-
-            # Final step, delete the project
-            try:
-                collection_handle.delete_one(query)
-            except:
-                logging.exception('Problem deleting Project document from Mongo.')
-                error_message = error_message + " Problem deleting Project document from Mongo. "
-
-            if error_message:
-                error_message = error_message + " Other project artifacts successfully deleted. Please refer to the application log files for details. "
-            else:
-                error_message = f"Project {project_name} deleted."
-
-    deleted_projects = list(collection_handle.find({'delete': True}))
+    deleted_projects = list(collection_handle.find({'delete': True, 'current' : True}))
     for proj in deleted_projects:
         prepare_project_linkid(proj)
         try:
