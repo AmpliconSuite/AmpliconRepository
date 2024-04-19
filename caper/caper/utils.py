@@ -218,11 +218,11 @@ def get_one_project(project_name_or_uuid):
         except:
             project = None
 
-    # look for project that has been versioned by editing and giving it a new file.  This makes sure that
-    # the old links work
+
+    ## Maybe we are looking for an updated project: look for it by checking for the "current = False" flag
     if project is None:
         try:
-            project = collection_handle.find_one({'previous_project_ids': project_name_or_uuid, 'delete': False})
+            project = collection_handle.find_one({'_id': ObjectId(project_name_or_uuid), 'current': False, 'delete': True})
             if project is not None:
                 prepare_project_linkid(project)
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
@@ -230,6 +230,19 @@ def get_one_project(project_name_or_uuid):
                 return project
         except:
             project = None
+
+    if project is None:
+        try:
+            project = collection_handle.find_one({'project_name': project_name_or_uuid, 'current': False, 'delete': True})
+            if project is not None:
+                prepare_project_linkid(project)
+                logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
+
+                return project
+        except:
+            project = None
+
+
 
     if project is None:
         logging.error(f"Project is None for {project_name_or_uuid}")

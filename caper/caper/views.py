@@ -76,6 +76,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
 
 ## Message framework
 from django.contrib import messages
+from django.utils.safestring import mark_safe
 
 
 # SET UP HANDLE
@@ -299,15 +300,18 @@ def change_database_dates(request):
         collection_handle.update(query, new_values)
         
         if "previous_versions" in project:
-            updated_versions = []
-            for version in json.loads(project['previous_versions'][0]):
-                re_up = change_to_standard_date(version['date'])
-                version['date'] = re_up
-                updated_versions.append(version)
+            updated_versions = project.previous_versions.view()
+            #for version in json.loads(project['previous_versions'][0]):
+            #    re_up = change_to_standard_date(version['date'])
+            #    version['date'] = re_up
+            #    updated_versions.append(version)
+            another_update = {'date':recently_updated, 'link':str(project['linkid'])}
+            updated_versions.append(another_update)
+
             # Update the previous_versions field with the updated versions
             collection_handle.update(
                 {'_id': project['_id']},
-                {'$set': {'previous_versions': [json.dumps(updated_versions)]}}
+                {'$set': {'previous_versions': updated_versions}}
             )
 
     response = redirect('/data-qc')
@@ -471,21 +475,34 @@ def previous_versions(project):
     Gets a list of previous versions via UUID
     """
     res = []
-    if "previous_versions" in project:
-        for version in json.loads(project['previous_versions'][0]):
-            print(version)
-            date_obj = version['date']
-            res.append({
-            'date':date_obj,
-            'linkid':version['link']
-            })
+    msg = None
+    print(project['_id'])
 
-    current_date = get_date()
-    res.append({'date': project['date'],
-                'linkid':str(project['linkid'])})
-    print(res)
-    res.reverse()
-    return res
+    ### Accessing a previous version of a project. 
+    ## looking for the old link in the previous project. Will output something if 
+    ## we are trying to access an older project
+    cursor = collection_handle.find(
+        {'current': True, 'previous_versions.linkid' : str(project['_id'])}, {'date': 1, 'previous_versions':1}).sort('date', -1)
+    data = list(cursor)
+    if len(data) == 1:
+        res = data[0]['previous_versions']
+        res.append({'date': data[0]['date'], 
+                    'linkid' : str(data[0]['_id'])})
+        res.reverse()
+        msg = f"Viewing an older version of the project. View latest version <a href = '/project/{str(data[0]['_id'])}'>here</a>"
+        
+
+    else:
+        ## accessing current version, getting list of previous versions
+        if "previous_versions" in project:
+            res = project['previous_versions']
+        # add current main version to the list
+
+        res.append({'date': project['date'],
+                    'linkid':str(project['linkid'])})
+        res.reverse()
+
+    return res, msg
 
 def project_page(request, project_name, message=''):
     """
@@ -519,7 +536,14 @@ def project_page(request, project_name, message=''):
     if not project_name == str(project['linkid']):
         return redirect('project_page', project_name=project['linkid'])
 
-    prev_versions = previous_versions(project)
+    prev_versions, prev_ver_msg = previous_versions(project)
+    viewing_old_project = False
+    if prev_ver_msg:
+        messages.error(request, mark_safe(prev_ver_msg))
+        viewing_old_project = True
+
+    ## if the project being loaded is stored in another project's previous versions, then load the previous_versions list of the latest project, 
+    ## and give a message saying: this is not the latest version, and link to latest version. 
 
     if 'metadata_stored' not in project:
         #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
@@ -579,7 +603,16 @@ def project_page(request, project_name, message=''):
                 os.rename(extraction_error, "_"+extraction_error)
             else:
                 message = 'There was a problem extracting the results from the AmpliconAggregator .tar.gz file for this project.  Please notifiy the administrator so that they can help resolve the problem.'
-    return render(request, "pages/project.html", {'project': project, 'sample_data': sample_data, 'message':message, 'reference_genome': reference_genome, 'stackedbar_graph': stackedbar_plot, 'piechart': pc_fig, 'prev_versions' : prev_versions, 'prev_versions_length' : len(prev_versions), "proj_id":str(project['linkid'])})
+    return render(request, "pages/project.html", {'project': project, 
+                                                  'sample_data': sample_data, 
+                                                  'message':message, 
+                                                  'reference_genome': reference_genome, 
+                                                  'stackedbar_graph': stackedbar_plot, 
+                                                  'piechart': pc_fig, 
+                                                  'prev_versions' : prev_versions, 
+                                                  'prev_versions_length' : len(prev_versions), 
+                                                  "proj_id":str(project['linkid']),
+                                                  'viewing_old_project': viewing_old_project})
 
 
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
@@ -1170,15 +1203,27 @@ def project_delete(request, project_name):
         return HttpResponse("Project does not exist")
     # return redirect('profile')
 
+def project_update(request, project_name):
+    """
+    Updates the 'current' field for a project that has been updated
+    current = False when a project is edited. 
+    update_date will be changed after project has been updated. 
+    """
+    project = get_one_project(project_name)
+    if check_project_exists(project_name) and is_user_a_project_member(project, request):
+        query = {'_id': project['_id']}
+        ## 2 new fields: current, and update_date, $set will add a new field with the specified value. 
+        new_val = { "$set": {'current' : False, 'update_date': get_date()} }
+        collection_handle.update_one(query, new_val)
+        delete_project_from_site_statistics(project)
+        return redirect('profile')
+    else:
+        return HttpResponse("Project does not exist")
+
 
 def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
-        try:
-
-            prev_ids = project['previous_project_ids']
-        except:
-            prev_ids = []
 
         # no edits for non-project members
         if not is_user_a_project_member(project, request):
@@ -1196,54 +1241,28 @@ def edit_project_page(request, project_name):
 
         request_file = request.FILES['document'] if 'document' in request.FILES else None
         if request_file is not None:
-            # mark the current project as deleted
-            del_ret = project_delete(request, project_name)
+            # mark the current project as updated
+            update_project = project_update(request, project_name)
+            # mark current project as deleted as well 
+            delete_project = project_delete(request, project_name)
 
-            # create a new one with the new form
-            new_id = _create_project(form, request)
-
-            prev_ids.append(str(project['linkid']))
-           # Create a mapping so links to the old project id still work
-            query = {'_id': ObjectId(new_id.inserted_id)}
-            new_val = {"$set": {'previous_versions': 
-                                {"date": project['date']}}}
-            query2 = {'_id': ObjectId(new_id.inserted_id),
-                      "previous_versions": {"$exists" : True}
-                      }
-            
-            ## maybe old projects have project history: 
+            ## get list of previous versions before this and insert it along with the _create project function . 
             new_prev_versions = []
-            try:
-                old_old_versions = json.loads(project['previous_versions'][0])
-                for version in old_old_versions:
-                    old_version = {
-                        'date':version['date'],
-                        'link':version['link']
-                    }
-                    new_prev_versions.append(old_version)
-            except Exception as e:
-                print(e)
+            if 'previous_versions' in project:
+                new_prev_versions = project['previous_versions']
 
             ## update for current 
             new_prev_versions.append(
                 {
                     'date':str(project['date']),
-                    'link':str(project['linkid'])
+                    'linkid':str(project['linkid'])
                 }
             )
-
-            to_db = json.dumps(new_prev_versions)
-
-            if collection_handle.find_one(query2):
-                new_val = { "$push" : {"previous_versions":to_db}}
-            else:
-                new_val = { "$set" : {"previous_versions" : [to_db]}}
+            # create a new one with the new form
+            new_id = _create_project(form, request, previous_versions = new_prev_versions)
 
 
-            collection_handle.update_one(query, new_val)
-
-
-            return redirect('project_page', project_name=new_id.inserted_id )
+            return redirect('project_page', project_name=new_id.inserted_id)
             # go to the new project
 
 
@@ -1630,6 +1649,77 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
     finish_flag_file.close()
 
 
+def admin_permanent_delete_project(project_id, project, project_name):
+    """
+    This function permanently deletes a project from s3 and from the server. 
+    """
+    error_message = ""
+    query = {'_id': ObjectId(project_id)}
+    try:
+        # delete Samples & Features and feature files from mongo,
+        # Is this needed or will deleting the parent project delete the whole thing
+        current_runs = project['runs']
+        runs = project['runs']
+        for sample in runs:
+            for feature in sample:
+                key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'AA directory', 'cnvkit directory']
+                for k in key_names:
+                    try:
+                        fs_handle.delete(ObjectId(sample[k]))
+
+                    except:
+                        # DO NOTHING, its not there
+                        id_var = "Not Provided"
+    except:
+        logging.exception('Problem deleting sample files from Mongo.')
+        error_message="Problem deleting sample files from Mongo."
+
+    # delete project tar and files from mongo and local disk
+    #    - assume all feature and sample files are in this dir
+    try:
+        fs_handle.delete(ObjectId(project['tarfile']))
+    except KeyError:
+        logging.exception(f'Problem deleting project tar file from mongo. { project["project_name"]}')
+        error_message = error_message + " Problem deleting project tar file from mongo."
+
+    try:
+        if os.path.exists(f"../tmp/{project_id}/"):
+            project_data_path = f"../tmp/{project_id}/"
+        else:
+            project_data_path = f"tmp/{project_id}/"
+
+        shutil.rmtree(project_data_path)
+    except:
+        logging.exception(f'Problem deleting tar file from local drive. {project_data_path}')
+
+    if hasattr(settings, 'S3_DOWNLOADS_BUCKET_PATH'):
+        print("============= HAS ATTR  ================")
+        s3_file_path = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
+        try:
+            session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+            s3client = session.client('s3')
+            s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path)
+        except:
+            logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
+            error_message = error_message+" Problem deleting tar file from S3. "
+    else:
+
+        error_message = error_message + " No S3 bucket path set. No attempt made to delete the tar file from S3. "
+
+    # Final step, delete the project
+    try:
+        collection_handle.delete_one(query)
+    except:
+        logging.exception('Problem deleting Project document from Mongo.')
+        error_message = error_message + " Problem deleting Project document from Mongo. "
+
+    if error_message:
+        error_message = error_message + " Other project artifacts successfully deleted. Please refer to the application log files for details. "
+    else:
+        error_message = f"Project {project_name} deleted."
+
+    return error_message
+        
 
 
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to
@@ -1638,7 +1728,6 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
 def admin_delete_project(request):
     if not request.user.is_staff:
         return redirect('/accounts/logout')
-
     error_message = ""
     if request.method == "POST":
         form = DeletedProjectForm(request.POST)
@@ -1658,73 +1747,21 @@ def admin_delete_project(request):
             error_message = f"Project {project_name} restored."
 
         elif deleteit and (action == 'delete'):
+
             project = get_one_deleted_project(project_id)
-            query = {'_id': ObjectId(project_id)}
+            prev_ver_list, msg = previous_versions(project)
+            ## find all previous versions of the project we are trying to delete.
+            ## If this is an older version, do not delete
+            
+            if prev_ver_list:
+                for proj in prev_ver_list:
+                    p = get_one_deleted_project(proj['linkid'])
+                    admin_permanent_delete_project(proj['linkid'], p, p['project_name'])
 
-            try:
-                # delete Samples & Features and feature files from mongo,
-                # Is this needed or will deleting the parent project delete the whole thing
-                current_runs = project['runs']
-                runs = project['runs']
-                for sample in runs:
-                    for feature in sample:
-                        key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'AA directory', 'cnvkit directory']
-                        for k in key_names:
-                            try:
-                                fs_handle.delete(ObjectId(sample[k]))
+            error_message = admin_permanent_delete_project(project_id, project, project_name)
 
-                            except:
-                                # DO NOTHING, its not there
-                                id_var = "Not Provided"
-            except:
-                logging.exception('Problem deleting sample files from Mongo.')
-                error_message="Problem deleting sample files from Mongo."
 
-            # delete project tar and files from mongo and local disk
-            #    - assume all feature and sample files are in this dir
-            try:
-                fs_handle.delete(ObjectId(project['tarfile']))
-            except KeyError:
-                logging.exception(f'Problem deleting project tar file from mongo. { project["project_name"]}')
-                error_message = error_message + " Problem deleting project tar file from mongo."
-
-            try:
-                if os.path.exists(f"../tmp/{project_id}/"):
-                    project_data_path = f"../tmp/{project_id}/"
-                else:
-                    project_data_path = f"tmp/{project_id}/"
-
-                shutil.rmtree(project_data_path)
-            except:
-                logging.exception(f'Problem deleting tar file from local drive. {project_data_path}')
-
-            if hasattr(settings, 'S3_DOWNLOADS_BUCKET_PATH'):
-                print("============= HAS ATTR  ================")
-                s3_file_path = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
-                try:
-                    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
-                    s3client = session.client('s3')
-                    s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path)
-                except:
-                    logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
-                    error_message = error_message+" Problem deleting tar file from S3. "
-            else:
-
-                error_message = error_message + " No S3 bucket path set. No attempt made to delete the tar file from S3. "
-
-            # Final step, delete the project
-            try:
-                collection_handle.delete_one(query)
-            except:
-                logging.exception('Problem deleting Project document from Mongo.')
-                error_message = error_message + " Problem deleting Project document from Mongo. "
-
-            if error_message:
-                error_message = error_message + " Other project artifacts successfully deleted. Please refer to the application log files for details. "
-            else:
-                error_message = f"Project {project_name} deleted."
-
-    deleted_projects = list(collection_handle.find({'delete': True}))
+    deleted_projects = list(collection_handle.find({'delete': True, 'current' : True}))
     for proj in deleted_projects:
         prepare_project_linkid(proj)
         try:
@@ -1762,7 +1799,7 @@ def create_project(request):
     return render(request, 'pages/create_project.html', {'run' : form})
 
 
-def _create_project(form, request):
+def _create_project(form, request, previous_versions = []):
     """
     Creates the project 
     """
@@ -1774,7 +1811,7 @@ def _create_project(form, request):
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
-    project, tmp_id = create_project_helper(form, user, request_file)
+    project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions)
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
     add_project_to_site_statistics(project)
@@ -1802,7 +1839,7 @@ def _create_project(form, request):
 
 
 ## make a create_project_helper for project creation code 
-def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex, from_api = False):
+def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex, from_api = False, previous_versions = []):
     """
     Creates a project dictionary from 
     
@@ -1875,6 +1912,9 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['date'] = get_date()
     project['private'] = form_dict['private']
     project['delete'] = False
+    project['current'] = True
+    project['previous_versions'] = previous_versions
+    project['update_date'] = get_date()
     user_list = create_user_list(form_dict['project_members'], current_user)
     project['project_members'] = user_list
     project['runs'] = replace_underscore_keys(runs)
