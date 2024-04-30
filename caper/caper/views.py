@@ -1887,8 +1887,6 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
         print(file_location)
     else:
         file_location = f'{project_data_path}/{request_file.name}'
-    with open(file_location, "rb") as tar_file:
-        project_tar_id = fs_handle.put(tar_file)
 
     # extract only run.json now because we will need it for project creation.
     # defer the rest to another thread to keep this faster
@@ -1899,14 +1897,24 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     #                         path=project_data_path)
 
     ti = time.time()
+    failed = False
     with tarfile.open(file_location, 'r') as tar:
         try:
             tar.extract('./results/run.json', path=project_data_path)
         except:
             logging.error(str(file_location) + " had an issue. could not place ./results/run.json into " + project_data_path)
-            return None, None
+            failed = True
+            # return None, None
+
+    if failed:
+        logging.debug("Deleting " + str(file_location))
+        os.remove(file_location)
+        return None, None
 
     logging.debug(str(time.time() - ti) + " seconds for extraction of run.json")
+
+    with open(file_location, "rb") as tar_file:
+        project_tar_id = fs_handle.put(tar_file)
 
 
     #get run.json
