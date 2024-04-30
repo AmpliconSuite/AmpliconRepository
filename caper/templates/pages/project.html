@@ -80,7 +80,6 @@
 {% endblock %}
 
 {% block main %}
-
 <div class="container">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
@@ -93,17 +92,12 @@
 <div class="container row" style="margin:auto; padding:0px; padding-top: 20px;">
     <div class="col-md-9">
         <h2>Project: <span style="font-weight: 200">{{ project.project_name }}</span>
-        
+
         {% if not viewing_old_project %}
             {% if project.current_user_may_edit  %}
             <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 24px"></i></a>
         {%  endif %}</h2>
         {% endif %}
-            
-        
-
-        
-
 
         <br>
         <h5>Description: <span style="font-weight: 200">{{ project.description }}</span></h5>
@@ -246,10 +240,10 @@
                         </thead>
                         <tbody>
                             {% for version in prev_versions %}
-                                
+
                             <tr>
                                 <td class="date">{{ version.date }}</td>
-                                <td scope="row">Project ID: 
+                                <td scope="row">Project ID:
                                     <a href="/project/{{ version.linkid }}">{{ version.linkid }}</a>
                                     {% if version.linkid == proj_id %}
                                         <strong>(Currently viewing)</strong>
@@ -271,6 +265,5 @@
 
 
 </div>
-
 
 {% endblock %}
