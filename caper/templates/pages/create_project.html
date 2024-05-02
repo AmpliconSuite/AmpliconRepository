@@ -41,6 +41,12 @@
 
 <h1>Create New Project</h1>
 
+{% if alert_message %}
+<div class="alert alert-danger" role="alert">
+    {{ alert_message }}
+</div>
+{% endif %}
+
 <div class="alert alert-danger alert-dismissible" role="alert" id="upload_failed" style="display:none; flex;">
     No File Selected, Please select a file using the "Browse" button and try again.
 </div>

@@ -530,7 +530,7 @@ def project_page(request, project_name, message=''):
         return render(request, "pages/loading.html", {"project_name":project_name})
 
     if project['private'] and not is_user_a_project_member(project, request):
-        return HttpResponse("Project does not exist")
+        return redirect('/accounts/login')
 
     # if we got here by an OLD project id (prior to edits) then we want to redirect to the new one
     if not project_name == str(project['linkid']):
@@ -832,6 +832,9 @@ def sample_page(request, project_name, sample_name):
     logging.info(f"Loading sample page for {sample_name}")
     project, sample_data = get_one_sample(project_name, sample_name)
     project_linkid = project['_id']
+    if project['private'] and not is_user_a_project_member(project, request):
+        return redirect('/accounts/login')
+
     sample_metadata = get_sample_metadata(sample_data)
     reference_genome = reference_genome_from_sample(sample_data)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
@@ -1260,10 +1263,13 @@ def edit_project_page(request, project_name):
             )
             # create a new one with the new form
             new_id = _create_project(form, request, previous_versions = new_prev_versions)
+            if new_id is not None:
+                # go to the new project
+                return redirect('project_page', project_name=new_id.inserted_id)
+            else:
+                alert_message = "The input file was not a valid aggregation. Please see site documentation."
+                return render(request, 'pages/edit_project.html', {'project': project, 'run': form, 'alert_message': alert_message})
 
-
-            return redirect('project_page', project_name=new_id.inserted_id)
-            # go to the new project
 
 
         # JTL 081823 Not sure what these next 4 lines are about?  An earlier plan to change the project file?
@@ -1792,7 +1798,11 @@ def create_project(request):
             raise Http404()
 
         new_id = _create_project(form, request)
-        return redirect('project_page', project_name=new_id.inserted_id)
+        if new_id is not None:
+            return redirect('project_page', project_name=new_id.inserted_id)
+        else:
+            alert_message = "The input file was not a valid aggregation. Please see site documentation."
+            return render(request, 'pages/create_project.html', {'run': form, 'alert_message': alert_message})
 
     else:
         form = RunForm()
@@ -1812,6 +1822,9 @@ def _create_project(form, request, previous_versions = []):
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
     project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions)
+    if project is None or tmp_id is None:
+        return None
+
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
     add_project_to_site_statistics(project)
@@ -1874,19 +1887,38 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
         print(file_location)
     else:
         file_location = f'{project_data_path}/{request_file.name}'
-    with open(file_location, "rb") as tar_file:
-        project_tar_id = fs_handle.put(tar_file)
 
     # extract only run.json now because we will need it for project creation.
     # defer the rest to another thread to keep this faster
-    with tarfile.open(file_location, "r:gz") as tar_file:
-        #tar_file.extractall(path=project_data_path)
-        files_i_want = ['./results/run.json']
-        tar_file.extractall(members=[x for x in tar_file.getmembers() if x.name in files_i_want],
-                            path=project_data_path)
-        
-    #get run.json 
-    run_path =  f'{project_data_path}/results/run.json'
+    # with tarfile.open(file_location, "r:gz") as tar_file:
+    #     #tar_file.extractall(path=project_data_path)
+    #     files_i_want = ['./results/run.json']
+    #     tar_file.extractall(members=[x for x in tar_file.getmembers() if x.name in files_i_want],
+    #                         path=project_data_path)
+
+    ti = time.time()
+    failed = False
+    with tarfile.open(file_location, 'r') as tar:
+        try:
+            tar.extract('./results/run.json', path=project_data_path)
+        except:
+            logging.error(str(file_location) + " had an issue. could not place ./results/run.json into " + project_data_path)
+            failed = True
+            # return None, None
+
+    if failed:
+        logging.debug("Deleting " + str(file_location))
+        os.remove(file_location)
+        return None, None
+
+    logging.debug(str(time.time() - ti) + " seconds for extraction of run.json")
+
+    with open(file_location, "rb") as tar_file:
+        project_tar_id = fs_handle.put(tar_file)
+
+
+    #get run.json
+    run_path = f'{project_data_path}/results/run.json'
 
     # Create a file at the run.json path to 
     # serve as a flag to tell whether or not the file extraction process has finished. 
