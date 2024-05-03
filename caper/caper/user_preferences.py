@@ -11,7 +11,14 @@ user_preferences_handle = get_collection_handle(db_handle,'user_preferences')
 
 def get_user_preferences(user):
     latest = user_preferences_handle.find_one({'email': user.email})
+    if latest == None:
+        return set_default_user_preferences(user)
     return latest
+
+def set_default_user_preferences(user):
+    prefs = {'onRemovedFromProjectTeam': True, 'onAddedToProjectTeam': True, 'email': user.email, 'welcomeMessage': True}
+    user_preferences_handle.insert_one(prefs)
+    return prefs
 
 def update_user_preferences(user, prefs_dict):
     old_prefs = get_user_preferences(user)
@@ -50,23 +57,30 @@ def notify_users_of_project_membership_change(user, old_membership, new_membersh
         user_obj = get_user_obj(add_user_id)
         # make sure we have email, not username since thats what the prefs are keyed on
         if user_obj is not None:
-            add_user_prefs = get_user_preferences(user_obj)
-            if add_user_prefs is not None:
-                emailOK = add_user_prefs['onAddedToProjectTeam']
-                if emailOK:
-                    print("send project add email to " + user_obj.email)
-                    send_added_to_project_membership_email( user_obj.email, user.email, project_name, project_id)
+            added_user_prefs = get_user_preferences(user_obj)
+            emailOK = True # default to sending email
+
+            if added_user_prefs is not None:
+                emailOK = added_user_prefs['onAddedToProjectTeam']
+
+            if emailOK:
+                print("send project add email to " + user_obj.email)
+                send_added_to_project_membership_email( user_obj.email, user.email, project_name, project_id)
+
+
 
     for remove_user_id in removed:
         user_obj = get_user_obj(remove_user_id)
         # make sure we have email, not username since thats what the prefs are keyed on
         if user_obj is not None:
-            remove_user_prefs = get_user_preferences(user_obj)
-            if remove_user_prefs is not None:
+            removed_user_prefs = get_user_preferences(user_obj)
+            emailOK = True # default to sending email
+            if removed_user_prefs is not None:
                 emailOK = remove_user_prefs['onRemovedFromProjectTeam']
-                if emailOK:
-                    print("send project remove email to " + user_obj.email)
-                    send_removed_from_project_membership_email( user_obj.email, user.email, project_name, project_id)
+
+            if emailOK:
+                print("send project remove email to " + user_obj.email)
+                send_removed_from_project_membership_email( user_obj.email, user.email, project_name, project_id)
 
 
 

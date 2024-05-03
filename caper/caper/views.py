@@ -386,13 +386,11 @@ def profile(request, message_to_user=None):
 
     prefs = get_user_preferences(request.user)
     form = UserPreferencesForm(prefs)
-    if (prefs == None):
+    if (prefs.pop('welcomeMessage', None)):
         if (message_to_user == None):
             message_to_user = ""
         message_to_user = message_to_user + "Email notification preferences can now be set on your profile page."
-        # cause the default empty prefs to be saved so that this message only appears once
-        empty_prefs_dict = form_to_dict(form)
-        update_user_preferences(request.user, empty_prefs_dict)
+
 
     messages.add_message(request, messages.INFO, message_to_user)
     return render(request, "pages/profile.html", {'projects': projects, 'SITE_TITLE':settings.SITE_TITLE, 'preferences': prefs})
