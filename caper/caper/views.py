@@ -1296,6 +1296,12 @@ def edit_project_page(request, project_name):
             return HttpResponse("Project does not exist")
     else:
         project = get_one_project(project_name)
+        prev_versions, prev_ver_msg = previous_versions(project)
+        if prev_ver_msg:
+            messages.error(request, "Redirected to latest version, editing of old versions not allowed. ")
+            return redirect('project_page', project_name = prev_versions[0]['linkid'])
+            
+        print(prev_ver_msg)
         # split up the project members and remove the empties
         members = project['project_members']
         try:
