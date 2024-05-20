@@ -93,11 +93,12 @@ def regenerate_site_statistics():
     return repo_stats
 
 #
-# shortcut for updating stats when a new project is added so that we don't have to go voer the whole
+# shortcut for updating stats when a new project is added so that we don't have to go over the whole
 # Db again to calculate.  We will have to do that when a project is updated with a new file though
 # since we are keeping summary stats, not per project stats and can't easily remove the old details
 # after the update.
 #
+
 def add_project_to_site_statistics(project):
     current_stats = get_latest_site_statistics()
     updated_stats = {}

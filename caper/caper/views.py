@@ -342,6 +342,7 @@ def index(request):
     public_proj_count = 0
     public_sample_count = 0
     public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+    print(len(public_projects))
     for proj in public_projects:
         prepare_project_linkid(proj)
         public_proj_count = public_proj_count + 1
@@ -1216,7 +1217,6 @@ def project_update(request, project_name):
         ## 2 new fields: current, and update_date, $set will add a new field with the specified value. 
         new_val = { "$set": {'current' : False, 'update_date': get_date()} }
         collection_handle.update_one(query, new_val)
-        delete_project_from_site_statistics(project)
         return redirect('profile')
     else:
         return HttpResponse("Project does not exist")
