@@ -16,13 +16,13 @@ def get_latest_site_statistics():
         regenerate_site_statistics()
 
     latest = site_statistics_handle.find().sort('_id', -1).limit(1).next()
+    print(latest)
     # for public display we want to collect these 3, this is a backstop for backwards compatibility
-    if latest['public_amplicon_classifications_count'].get('otherfscna') == None:
-       linear = latest['public_amplicon_classifications_count'].get('Linear_amplification',0)
-       # unclassified = latest['public_amplicon_classifications_count'].get('Unclassified', 0)
-       virus = latest['public_amplicon_classifications_count'].get('Virus', 0)
-       cnc =latest['public_amplicon_classifications_count'].get('Complex_non_cyclic', 0)
-       latest['public_amplicon_classifications_count']['otherfscna'] = linear + cnc + virus
+    linear = latest['public_amplicon_classifications_count'].get('Linear_amplification',0)
+    # unclassified = latest['public_amplicon_classifications_count'].get('Unclassified', 0)
+    virus = latest['public_amplicon_classifications_count'].get('Virus', 0)
+    cnc =latest['public_amplicon_classifications_count'].get('Complex_non_cyclic', 0)
+    latest['public_amplicon_classifications_count']['otherfscna'] = linear + cnc + virus
 
     return latest
 
