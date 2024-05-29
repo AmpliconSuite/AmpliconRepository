@@ -605,7 +605,7 @@ def project_page(request, project_name, message=''):
                 message = 'There was a problem extracting the results from the AmpliconAggregator .tar.gz file for this project.  Please notifiy the administrator so that they can help resolve the problem.'
                 
     ## download & view statistics
-    views, downloads = get_increment_view_and_download_statistics(project)
+    views, downloads = session_visit(request, project)
     return render(request, "pages/project.html", {'project': project, 
                                                   'sample_data': sample_data, 
                                                   'message':message, 
