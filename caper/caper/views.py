@@ -320,7 +320,6 @@ def change_database_dates(request):
  
 
 def index(request):
-    now = datetime.datetime.now()
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
@@ -360,7 +359,7 @@ def index(request):
 
     # get the latest set of stats
     site_stats = get_latest_site_statistics()
-    print(f'time to load homepage: {datetime.datetime.now() - now}')
+
     return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects, 'site_stats': site_stats})
 
 
