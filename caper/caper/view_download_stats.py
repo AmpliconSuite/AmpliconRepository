@@ -1,5 +1,24 @@
 from .utils import *
 
+def session_visit(request, project):
+    """
+    If the user session hasn't viewed that project page yet, then record it.
+    If it has visited, don't increment. 
+    
+    """
+    ## if the user session hasn't visited the project page yet, increment. 
+    proj_id = project['_id']
+    if (request.session.get(f'visited_{proj_id}') is None) or (request.session.get(f'visited_{proj_id}') == False):
+        ## increment:
+        
+        request.session[f'visited_{proj_id}'] = True
+        
+        return get_increment_view_and_download_statistics(project)
+    else:
+        ## only get current stats
+        query = {'_id':project['_id']}
+        res = collection_handle.find_one(query, {'views':1, 'downloads':1})
+        return [res.get('views'), res.get('downloads')]
 
 
 def get_increment_view_and_download_statistics(project):
