@@ -4,6 +4,7 @@
 {% load static %}
 
 {% block extra_js %}
+
 <script>
     $(document).ready( function () {
         $('#myTable1').DataTable({
@@ -72,6 +73,31 @@
 
     // Call the formatDates function when the page is loaded
     document.addEventListener('DOMContentLoaded', formatDates);
+
+    function downloadAndReload() {
+        // Create an invisible anchor element
+        const a = document.createElement('a');
+        // Set the href to the file URL
+        a.href = "/project/{{ project.linkid }}/download";
+        // Set the download attribute to the filename
+        // Append the anchor to the body
+        document.body.appendChild(a);
+        // Trigger the download by simulating a click
+        a.click();
+        // Remove the anchor from the body
+        document.body.removeChild(a);
+        // Reload the page after a short delay to ensure the download starts
+
+        //updating the number, this number will be increased automatically in database
+        var numberContainer = $('#downloads');
+        // Get the current number, parse it as an integer, and increment it
+        var currentNumber = parseInt(numberContainer.text(), 10);
+        var newNumber = currentNumber + 1;
+        // Update the element with the new number
+        numberContainer.text(newNumber);
+    }
+
+
 </script>
 
 {% endblock %}
@@ -106,7 +132,7 @@
     </div>
 
     <div class="col-md-3">
-        <a class="btn btn-primary" href="/project/{{ project.linkid }}/download" style="color: white; margin-bottom: 12px;">Download Project Data</a><br>
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px;" onclick = "downloadAndReload();" >Download Project Data</a><br>
         <!-- <p><b>Last Updated:</b> {{ project.date }}</p> -->
         <!-- <p><b>Private:</b> {{ project.private }}</p> -->
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}
@@ -115,7 +141,7 @@
         {% endfor %}
         </p>
 
-
+        <div id = "project_statistics"> Views: {{ views }} | Downloads: <span id = 'downloads'>{{downloads}}</span></div>
     </div>
     <div  style="margin:auto; border: 0.5px solid grey; padding: 0px">
         <span style="display:inline-block">{{ stackedbar_graph|safe }}

@@ -79,6 +79,8 @@ from django.contrib import messages
 from django.utils.safestring import mark_safe
 
 
+from .view_download_stats import * 
+
 # SET UP HANDLE
 def loading(request):
     return render(request, "pages/loading.html")
@@ -601,6 +603,9 @@ def project_page(request, project_name, message=''):
                 os.rename(extraction_error, "_"+extraction_error)
             else:
                 message = 'There was a problem extracting the results from the AmpliconAggregator .tar.gz file for this project.  Please notifiy the administrator so that they can help resolve the problem.'
+                
+    ## download & view statistics
+    views, downloads = session_visit(request, project)
     return render(request, "pages/project.html", {'project': project, 
                                                   'sample_data': sample_data, 
                                                   'message':message, 
@@ -610,7 +615,9 @@ def project_page(request, project_name, message=''):
                                                   'prev_versions' : prev_versions, 
                                                   'prev_versions_length' : len(prev_versions), 
                                                   "proj_id":str(project['linkid']),
-                                                  'viewing_old_project': viewing_old_project})
+                                                  'viewing_old_project': viewing_old_project, 
+                                                  'views' : views, 
+                                                  'downloads' : downloads})
 
 
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
@@ -656,7 +663,8 @@ def project_download(request, project_name):
     
     query = {'_id': ObjectId(project_name)}
     new_val = { "$set": {'project_downloads': project_download_data} }
-    collection_handle.update_one(query, new_val)   
+    collection_handle.update_one(query, new_val)
+    collection_handle.update_one(query, {'$inc':{'downloads':1}})
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     try:
         real_project_name = project['project_name']
@@ -724,7 +732,6 @@ def project_download(request, project_name):
         expiration=600
         # good for seconds, can move this to settings later
         presigned_url = s3client.generate_presigned_url('get_object', Params = {'Bucket': settings.S3_DOWNLOADS_BUCKET, 'Key': s3_file_location}, ExpiresIn = expiration)
-
         return HttpResponseRedirect(presigned_url)
 
     ###### the following is used when S3 is not used for download
@@ -747,8 +754,6 @@ def project_download(request, project_name):
         message = f"Project {project_name} is unavailable or deleted."
         messages.error(request, message)
         return redirect(request.META['HTTP_REFERER'])
-    
-
 
     #except:
        # raise Http404()
@@ -1259,8 +1264,11 @@ def edit_project_page(request, project_name):
                     'linkid':str(project['linkid'])
                 }
             )
+            
+            views = project['views']
+            downloads = project['downloads']
             # create a new one with the new form
-            new_id = _create_project(form, request, previous_versions = new_prev_versions)
+            new_id = _create_project(form, request, previous_versions = new_prev_versions, previous_views = [views, downloads])
             if new_id is not None:
                 # go to the new project
                 return redirect('project_page', project_name=new_id.inserted_id)
@@ -1813,7 +1821,7 @@ def create_project(request):
     return render(request, 'pages/create_project.html', {'run' : form})
 
 
-def _create_project(form, request, previous_versions = []):
+def _create_project(form, request, previous_versions = [], previous_views = [0, 0]):
     """
     Creates the project 
     """
@@ -1825,7 +1833,7 @@ def _create_project(form, request, previous_versions = []):
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
-    project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions)
+    project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions, previous_views = previous_views)
     if project is None or tmp_id is None:
         return None
 
@@ -1856,7 +1864,7 @@ def _create_project(form, request, previous_versions = []):
 
 
 ## make a create_project_helper for project creation code 
-def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex, from_api = False, previous_versions = []):
+def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex, from_api = False, previous_versions = [], previous_views = [0, 0]):
     """
     Creates a project dictionary from 
     
@@ -1957,6 +1965,8 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['Oncogenes'] = get_project_oncogenes(runs)
     project['Classification'] = get_project_classifications(runs)
     project['FINISHED?'] = False
+    project['views'] = previous_views[0]
+    project['downloads'] = previous_views[1]
     return project, tmp_id
 
 class FileUploadView(APIView):
