@@ -16,7 +16,7 @@ from django.utils.html import strip_tags
 from rest_framework.response import Response
 
 from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
-from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics
+from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
 from  .serializers import FileSerializer
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
@@ -525,6 +525,8 @@ def project_page(request, project_name, message=''):
     ## if flag is unfinished, render a loading page: 
 
     project = validate_project(get_one_project(project_name), project_name)
+    print(project.keys())
+    print(project['private'])
     if 'FINISHED?' in project and project['FINISHED?'] == False:
         return render(request, "pages/loading.html", {"project_name":project_name})
 
@@ -1217,6 +1219,7 @@ def project_update(request, project_name):
         ## 2 new fields: current, and update_date, $set will add a new field with the specified value. 
         new_val = { "$set": {'current' : False, 'update_date': get_date()} }
         collection_handle.update_one(query, new_val)
+        
         return redirect('profile')
     else:
         return HttpResponse("Project does not exist")
@@ -1238,8 +1241,10 @@ def edit_project_page(request, project_name):
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
         old_membership = project['project_members']
+        old_privacy = project['private']
+        new_privacy = form_dict['private']
         notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
-
+        edit_proj_privacy(project, old_privacy, new_privacy)
         request_file = request.FILES['document'] if 'document' in request.FILES else None
         if request_file is not None:
             # mark the current project as updated
@@ -1284,9 +1289,13 @@ def edit_project_page(request, project_name):
             if runs != 0:
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
-            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
+            proj = {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
-                                 'Oncogenes': get_project_oncogenes(current_runs)} }
+                                 'Oncogenes': get_project_oncogenes(current_runs)}
+            new_val = { "$set": proj }
+            
+            proj['_id'] = query['_id']
+            edit_proj_privacy(proj, old_privacy, new_privacy)
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
                 return redirect('project_page', project_name=project_name)
@@ -1294,6 +1303,8 @@ def edit_project_page(request, project_name):
                 raise Http404()
         else:
             return HttpResponse("Project does not exist")
+        
+        
     else:
         project = get_one_project(project_name)
         prev_versions, prev_ver_msg = previous_versions(project)
@@ -1311,6 +1322,10 @@ def edit_project_page(request, project_name):
         members = [i for i in members if i]
         memberString = ', '.join(members)
         form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString,"publication_link": publication_link})
+        
+        
+        
+        
     return render(request, "pages/edit_project.html", {'project': project, 'run': form})
 
 def create_user_list(string, current_user):

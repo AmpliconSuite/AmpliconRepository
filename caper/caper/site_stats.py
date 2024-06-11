@@ -97,7 +97,19 @@ def regenerate_site_statistics():
 # since we are keeping summary stats, not per project stats and can't easily remove the old details
 # after the update.
 #
-
+def edit_proj_privacy(project, old_privacy, new_privacy):
+    """
+    Edits site stats based on old and new project privacy settings. 
+    
+    
+    """
+    ## going from private to public: 
+    if (old_privacy == True) and (new_privacy == False):
+        add_project_to_site_statistics(project)
+    ## going from public to private:
+    elif (old_privacy == False) and (new_privacy == True):
+        delete_project_from_site_statistics(project)
+                    
 def add_project_to_site_statistics(project):
     current_stats = get_latest_site_statistics()
     updated_stats = {}
