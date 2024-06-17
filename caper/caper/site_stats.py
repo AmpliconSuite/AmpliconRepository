@@ -17,12 +17,11 @@ def get_latest_site_statistics():
 
     latest = site_statistics_handle.find().sort('_id', -1).limit(1).next()
     # for public display we want to collect these 3, this is a backstop for backwards compatibility
-    if latest['public_amplicon_classifications_count'].get('otherfscna') == None:
-       linear = latest['public_amplicon_classifications_count'].get('Linear_amplification',0)
-       # unclassified = latest['public_amplicon_classifications_count'].get('Unclassified', 0)
-       virus = latest['public_amplicon_classifications_count'].get('Virus', 0)
-       cnc =latest['public_amplicon_classifications_count'].get('Complex_non_cyclic', 0)
-       latest['public_amplicon_classifications_count']['otherfscna'] = linear + cnc + virus
+    linear = latest['public_amplicon_classifications_count'].get('Linear_amplification',0)
+    # unclassified = latest['public_amplicon_classifications_count'].get('Unclassified', 0)
+    virus = latest['public_amplicon_classifications_count'].get('Virus', 0)
+    cnc =latest['public_amplicon_classifications_count'].get('Complex_non_cyclic', 0)
+    latest['public_amplicon_classifications_count']['otherfscna'] = linear + cnc + virus
 
     return latest
 
@@ -93,11 +92,24 @@ def regenerate_site_statistics():
     return repo_stats
 
 #
-# shortcut for updating stats when a new project is added so that we don't have to go voer the whole
+# shortcut for updating stats when a new project is added so that we don't have to go over the whole
 # Db again to calculate.  We will have to do that when a project is updated with a new file though
 # since we are keeping summary stats, not per project stats and can't easily remove the old details
 # after the update.
 #
+def edit_proj_privacy(project, old_privacy, new_privacy):
+    """
+    Edits site stats based on old and new project privacy settings. 
+    
+    
+    """
+    ## going from private to public: 
+    if (old_privacy == True) and (new_privacy == False):
+        add_project_to_site_statistics(project)
+    ## going from public to private:
+    elif (old_privacy == False) and (new_privacy == True):
+        delete_project_from_site_statistics(project)
+                    
 def add_project_to_site_statistics(project):
     current_stats = get_latest_site_statistics()
     updated_stats = {}
