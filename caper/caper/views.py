@@ -1244,7 +1244,6 @@ def edit_project_page(request, project_name):
         old_privacy = project['private']
         new_privacy = form_dict['private']
         notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
-        edit_proj_privacy(project, old_privacy, new_privacy)
         request_file = request.FILES['document'] if 'document' in request.FILES else None
         if request_file is not None:
             # mark the current project as updated
