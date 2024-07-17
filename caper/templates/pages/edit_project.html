@@ -4,6 +4,7 @@
 
 <head>
     <title>Edit {{ project.project_name }}</title>
+    
 </head>
 
 <style>
@@ -38,7 +39,10 @@
 </style>
 
 {% block main %}
-    
+<script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit-icons.min.js"></script>
+
+
 <h1>Editing project: '{{ project.project_name }}'</h1>
 {% if alert_message %}
 <div class="alert alert-danger" role="alert">
@@ -55,6 +59,28 @@
     <form method="post" enctype="multipart/form-data" id="upload-form">
         {% csrf_token %}
         {{ run|crispy }}
+
+        {% comment %} 
+        
+        radio button here to select replace or add samples
+        and change the upload dialog
+        
+        {% endcomment %}
+        <div class="form-check">
+            <input class="form-check-input" type="radio" name="flexRadioDefault" id="flexRadioDefault1">
+            <label class="form-check-label" for="flexRadioDefault1">
+              Default radio
+            </label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="flexRadioDefault" id="flexRadioDefault2" checked>
+            <label class="form-check-label" for="flexRadioDefault2">
+              Default checked radio
+            </label>
+          </div>
+
+
+
         <label for="document">
             Replace AmpliconAggregator output file with: &nbsp;&nbsp;
         </label>

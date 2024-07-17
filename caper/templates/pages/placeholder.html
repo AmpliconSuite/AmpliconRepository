@@ -1,0 +1,153 @@
+
+
+  
+  // Handle file drop area
+  $("#file-drop-area").on("dragover", function (e) {
+    e.preventDefault();
+    $(this).addClass("uk-dragover");
+  });
+
+  $("#file-drop-area").on("dragleave drop", function (e) {
+    e.preventDefault();
+    $(this).removeClass("uk-dragover");
+  });
+
+  $("#file-drop-area").on("drop", function (e) {
+    e.preventDefault();
+    $(this).removeClass("uk-dragover");
+    var files = e.originalEvent.dataTransfer.files;
+    handleFiles(files);
+    e.target.value = '';
+  });
+
+  // Handle file input selection
+  $("#fileuploadfield").on("change", function (e) {
+    var files = e.target.files;
+    handleFiles(files);
+    e.target.value = '';
+  });
+
+  var fileSet = new Set();
+  var filenames = new Set();
+
+  // Function to remove a row by ID (filename)
+  function removeFileRow(rowId) {
+    console.log('removing ' + rowId)
+    $("#" + rowId).remove();
+    let filename = rowId; // Use the sanitized rowId directly
+    filenames.delete(filename);
+
+    fileSet.forEach(file => {
+      if (file.name === filename) {
+          fileSet.delete(file);
+          $("#" + filename).remove(); // Remove from UI
+          return;
+      }
+    });
+
+    if ($("#file-list").children().length === 0) {
+      $("#file-list-table").hide();
+    }
+  }
+
+  function sanitizeFileName(fileName) {
+    return fileName.replace(/[^a-zA-Z0-9-_]/g, '_');
+  }  
+
+  // Function to add a row for a file
+  function addFileRow(file) {
+    let filename = sanitizeFileName(file.name);
+    $("#file-list").append(`
+        <tr id="${filename}">
+          <td>${filename}</td>
+          <td>Pending</td>
+          <td><button class="uk-button uk-button-danger uk-button-small" id = "remove_btn" type ="button" onclick="removeFileRow('${filename}');">Remove</button></td>
+        </tr>
+      `);
+
+    $("#file-list-table").show();
+  }
+
+  function handleFiles(files) {
+    console.log(files.length);
+    console.log("Handling files now");
+
+    for (var i = 0; i < files.length; i++) {
+      var file = files[i];
+      let filename = sanitizeFileName(file.name);
+      if (!filenames.has(filename)) {
+        filenames.add(filename);
+        addFileRow(file);
+        fileSet.add(file); // Add file object to the Set
+        console.log(`Added ${filename} to filenames`);
+      } else {
+        console.log(`${filename} is already in filenames`);
+      }
+    }
+  }
+
+  // Function to clear file input and reset table
+  function clearFileInput() {
+    $('#fileuploadfield').val(''); // Reset file input (works in modern browsers)
+    filenames.clear();
+    $('#file-list').empty(); // Clear table rows
+    $('#file-list-table').hide(); // Hide table
+  }
+
+  function mocksend(){
+    const fd = new FormData()
+    const csrf = document.getElementsByName('csrfmiddlewaretoken');
+    fd.append('csrfmiddlewaretoken', csrf[0].value);
+    // Append each file
+    for (let i = 0; i < fileSet.length; i++) {
+      fd.append('document', fileSet[i]);
+    }
+
+    // Iterate through the FormData entries
+    for (let [key, value] of fd.entries()) {
+      console.log(`${key}: ${value}`);
+    }
+
+    console.log(fileSet)
+    
+  }
+
+  
+
+function sendFilesToServer() {
+    const uploadForm = document.getElementById('upload-form')
+
+
+    // AJAX request
+    const fd = new FormData();
+    const csrf = document.getElementsByName('csrfmiddlewaretoken');
+    fd.append('csrfmiddlewaretoken', csrf[0].value);
+
+    // Append each file from the Set to FormData
+    fileSet.forEach(file => {
+      fd.append('document', file);
+    });
+
+
+
+    $.ajax({
+      type: "POST",
+      url: uploadForm.action,
+      data: fd,
+      enctype: 'multipart/form-data',  // Ensure this matches your form enctype
+      processData: false,
+      contentType: false,
+      cache: false,
+      success: function(response) {
+          console.log("Files sent successfully:", response);
+          // Handle success if needed
+      },
+      error: function(error) {
+          console.error("Error sending files:", error);
+          // Handle error if needed
+      }
+  });
+
+    
+  }
+

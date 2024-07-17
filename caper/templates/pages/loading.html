@@ -4,7 +4,38 @@
 
 {% load static%}
 
+    
 {% block main %}
+
+{% if aggregator %}
+
+<div style = "margin: auto; width: 100%; padding:200px; text-align:center;">
+
+    
+    <div class="loader" style = "border: 16px solid #f3f3f3; /* Light grey */
+    border-top: 16px solid #3498db; /* Blue */
+    border-radius: 50%;
+    width: 120px;
+    height: 120px;
+    animation: spin 2s linear infinite; margin:auto"></div>
+    
+    <br><br>
+    
+
+    GenePattern is processing your files, please wait! 
+    <br>
+    <br>
+
+    In the meantime, check out other publicly accessible projects <a href = "/">here</a>.
+
+    <br>
+    <br>
+
+    You can safely leave this page if you wish and find it again on your Profile page.
+
+
+{% else %}
+
 
 <div style = "margin: auto; width: 100%; padding:200px; text-align:center;">
 
@@ -31,15 +62,8 @@
     You can safely leave this page if you wish and find it again on your Profile page.
 
     <meta http-equiv="refresh" content="15" />
-
-
     
 </div>
-
-
-
-
-
-
     
+{% endif %}
 {% endblock main %}

@@ -1,7 +1,6 @@
 # from asyncore import file_wrapper
 # from tkinter import E
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect
-from django.http import Http404
+from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect,JsonResponse,Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
@@ -80,6 +79,9 @@ from django.utils.safestring import mark_safe
 
 
 from .view_download_stats import * 
+
+## aggregator 
+from .aggregator import *
 
 # SET UP HANDLE
 def loading(request):
@@ -1806,18 +1808,51 @@ def sizeof_fmt(num, suffix="B"):
 def create_project(request):
     if request.method == "POST":
         form = RunForm(request.POST)
+        print('POST:')
+        print(request.POST)
+        print('FILES')
+        print(request.FILES.getlist('document'))
+        
         if not form.is_valid():
             raise Http404()
+        
+        ## check multi files, send files to GP and run aggregator there:
+        if len(request.FILES.getlist('document')) > 1:
+            ## run amplicon classifier
+            files = request.FILES.getlist('document')
+            temp_proj_id = "a1" ## to be changed
+            ## for each entry, peek if there is a run.json, if its there then  
+            print('running aggregator now')
+            
+            
+            ## run aggregator on a separate thread : 
+            GP_agg_thread = Thread(target = run_amplicon_suite_aggregator, 
+                                   args = (files, 
+                                           temp_proj_id, 
+                                           form_to_dict(form), 
+                                           get_current_user(request)))
+            GP_agg_thread.start()
+            # job = run_amplicon_suite_aggregator(files, temp_proj_id) ## should run on separate thread 
+            return render(request, 'pages/loading.html', context = {'aggregator' : True})
+
 
         new_id = _create_project(form, request)
         if new_id is not None:
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
-            alert_message = "The input file was not a valid aggregation. Please see site documentation."
+            ## TODO: run aggregator here 
+            GP_agg_thread = Thread(target = run_amplicon_suite_aggregator, 
+                                   args = (request.FILES.getlist('document'), 
+                                           'a1', 
+                                           form_to_dict(form), 
+                                           get_current_user(request)))
+            GP_agg_thread.start()
+            alert_message = "The input file was not a valid aggregation. AmpliconSuiteAggregator will be run to try to create a new project."
             return render(request, 'pages/create_project.html', {'run': form, 'alert_message': alert_message})
 
     else:
         form = RunForm()
+        
     return render(request, 'pages/create_project.html', {'run' : form})
 
 
