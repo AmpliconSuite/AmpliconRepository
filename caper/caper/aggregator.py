@@ -49,6 +49,10 @@ def run_amplicon_suite_aggregator(files, proj_id, form, user):
     file_fps = []
     proj_name = form['project_name']
     print(user)
+    try: 
+        email = user.email
+    except:
+        print('need user email')
     for file in files:
         
         fs = FileSystemStorage(location = project_data_path)
@@ -57,5 +61,5 @@ def run_amplicon_suite_aggregator(files, proj_id, form, user):
         fp = os.path.join(project_data_path, file.name)
         file_fps.append(fp)
         
-    job = run_aggregator(file_fps, proj_name, 'edh021@cloud.ucsd.edu')
+    job = run_aggregator(file_fps, proj_name, email)
     return job

@@ -1830,7 +1830,7 @@ def create_project(request):
                                    args = (files, 
                                            temp_proj_id, 
                                            form_to_dict(form), 
-                                           get_current_user(request)))
+                                           request.user))
             GP_agg_thread.start()
             # job = run_amplicon_suite_aggregator(files, temp_proj_id) ## should run on separate thread 
             return render(request, 'pages/loading.html', context = {'aggregator' : True})
