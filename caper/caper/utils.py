@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from allauth.account.models import EmailAddress
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 import gridfs
-
+import re
 import os
 
 
@@ -315,3 +315,18 @@ def replace_underscore_keys(runs_from_proj_creation):
             features.append(new_feat)
         new_run[sample] = features
     return new_run
+
+
+def create_user_list(string, current_user):
+    # user_list = str.split(',')
+    string = string + ',' + current_user
+    # issue 21
+    user_list = re.split(' |;|,|\t', string)
+    # drop empty strings
+    user_list =  [i for i in user_list if i]
+    # clean whitespace
+    user_list = [x.strip() for x in user_list]
+    # remove duplicates
+    user_list = list(set(user_list))
+    return user_list
+

@@ -33,7 +33,7 @@ import json
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
 from .utils import collection_handle, collection_handle_primary, db_handle, fs_handle, replace_space_to_underscore, \
     preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
-    prepare_project_linkid, replace_underscore_keys
+    prepare_project_linkid, replace_underscore_keys, create_user_list
 from django.forms.models import model_to_dict
 
 import subprocess
@@ -1323,18 +1323,7 @@ def edit_project_page(request, project_name):
         form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString,"publication_link": publication_link})
     return render(request, "pages/edit_project.html", {'project': project, 'run': form})
 
-def create_user_list(string, current_user):
-    # user_list = str.split(',')
-    string = string + ',' + current_user
-    # issue 21
-    user_list = re.split(' |;|,|\t', string)
-    # drop empty strings
-    user_list =  [i for i in user_list if i]
-    # clean whitespace
-    user_list = [x.strip() for x in user_list]
-    # remove duplicates
-    user_list = list(set(user_list))
-    return user_list
+
 
 def clear_tmp(folder = 'tmp/'):
     for filename in os.listdir(folder):
@@ -1806,6 +1795,8 @@ def sizeof_fmt(num, suffix="B"):
 
 
 def create_project(request):
+    print(os.getcwd())
+    print(os.listdir())
     if request.method == "POST":
         form = RunForm(request.POST)
         print('POST:')
@@ -1820,13 +1811,14 @@ def create_project(request):
         if len(request.FILES.getlist('document')) > 1:
             ## run amplicon classifier
             files = request.FILES.getlist('document')
-            temp_proj_id = "a1" ## to be changed
+            temp_proj_id = uuid.uuid4().hex ## to be changed
+            print(f'The temp proj id is: {temp_proj_id}')
             ## for each entry, peek if there is a run.json, if its there then  
-            print('running aggregator now')
+            print('starting aggregator thread')
             
             
             ## run aggregator on a separate thread : 
-            GP_agg_thread = Thread(target = run_amplicon_suite_aggregator, 
+            GP_agg_thread = Thread(target = run_local_aggregator, 
                                    args = (files, 
                                            temp_proj_id, 
                                            form_to_dict(form), 
@@ -1841,11 +1833,11 @@ def create_project(request):
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
             ## TODO: run aggregator here 
-            GP_agg_thread = Thread(target = run_amplicon_suite_aggregator, 
-                                   args = (request.FILES.getlist('document'), 
-                                           'a1', 
+            GP_agg_thread = Thread(target = run_local_aggregator, 
+                                   args = (files, 
+                                           temp_proj_id, 
                                            form_to_dict(form), 
-                                           get_current_user(request)))
+                                           request.user))
             GP_agg_thread.start()
             alert_message = "The input file was not a valid aggregation. AmpliconSuiteAggregator will be run to try to create a new project."
             return render(request, 'pages/create_project.html', {'run': form, 'alert_message': alert_message})
@@ -2025,7 +2017,7 @@ class FileUploadView(APIView):
             proj_name = form_dict['project_name']
             request_file = request.FILES['file']
             # extract contents of file
-            current_user = request.POST['project_members']
+            current_user = request.POST['project_members'][0]
             logging.info(f'Creating project for user {current_user}')
             if 'MULTIPART' in proj_name:
                 _, api_id, final_file, actual_proj_name = proj_name.split('__')
