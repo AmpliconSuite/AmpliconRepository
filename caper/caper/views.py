@@ -1833,6 +1833,8 @@ def create_project(request):
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
             ## TODO: run aggregator here 
+            files = request.FILES.getlist('document')
+            temp_proj_id = uuid.uuid4().hex
             GP_agg_thread = Thread(target = run_local_aggregator, 
                                    args = (files, 
                                            temp_proj_id, 
