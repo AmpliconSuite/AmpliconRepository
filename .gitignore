@@ -23,3 +23,5 @@ data/
 logs/
 .env
 caper/caper.sqlite3
+results/
+extracted_from_zips/
