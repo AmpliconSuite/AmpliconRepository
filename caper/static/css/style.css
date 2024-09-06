@@ -118,5 +118,7 @@ table.dataTable.no-border tbody td {
     padding-top: 0.25rem;
 
 }
-
-
+.custom-icon{
+    height:35px;
+    width:35px;
+}
