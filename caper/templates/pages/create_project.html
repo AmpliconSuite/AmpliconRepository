@@ -259,6 +259,10 @@
     const xhr = new XMLHttpRequest();
     xhr.open('POST', uploadForm.action, true);
     xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
+
+    alertBox.innerHTML = `<div class="alert alert-info" role="alert">
+      Uploading ... Will redirectly automatically in a few seconds. 
+        </div>`;
     
     xhr.upload.addEventListener('progress', (event) => {
         if (event.lengthComputable) {
@@ -288,7 +292,7 @@
                               </div>`;
     };
 
-    xhr.send(fd);
+   //xhr.send(fd);
   }
 </script>
 

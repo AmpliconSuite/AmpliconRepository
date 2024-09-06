@@ -5,6 +5,8 @@ import datetime
 from AmpliconSuiteAggregatorFunctions import *
 from .utils import create_user_list
 from ASA_POST import post_package
+import tarfile
+import numpy as np
 GP_SERVER = gp.GPServer('http://beta.genepattern.org/gp','edwin5588', 'edwin123')
 def upload_files(file_list, gpserver = GP_SERVER):
     
@@ -70,6 +72,10 @@ def run_amplicon_suite_aggregator(files, proj_id, form, user):
 def run_local_aggregator(files, proj_id, form, user):
     """
     Runs from an imported instance of aggregator. 
+    
+    runs aggregator then post to amprepo 
+    run aggregator then feeds file into aggregator????
+    
     """
     
     ## get user email: 
@@ -79,7 +85,7 @@ def run_local_aggregator(files, proj_id, form, user):
         print('need user email')
     print('Im in the local agg function now')
         
-    project_data_path =  f"tmp/{proj_id}"
+    project_data_path = f"tmp/a1"
     file_fps = []
     for file in files:
         fs = FileSystemStorage(location = project_data_path)
@@ -89,7 +95,7 @@ def run_local_aggregator(files, proj_id, form, user):
         file_fps.append(fp)
     user_list = create_user_list(form['project_members'], email)
     print(f'running aggregator now:')
-    agg = Aggregator(file_fps, '', project_data_path, 'No', "", 'python3')
+    agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = proj_id)
     data = {'project_name': form['project_name'],
             'description': form['description'],
             'publication_link':form['publication_link'],
@@ -100,3 +106,33 @@ def run_local_aggregator(files, proj_id, form, user):
     
     print(data)
     return f'{project_data_path}.tar.gz'
+
+def check_run_json(file, proj_id):
+    """
+    Checks if the file has a run.json 
+    
+    """
+    project_data_path = f"tmp/{proj_id}"
+    fs = FileSystemStorage(location = project_data_path)
+    saved = fs.save(file.name, file)
+    fp = os.path.join(project_data_path, file.name)
+    tar = tarfile.open(fp, 'r')
+    names = tar.getnames()
+    a = np.array(['run.json' in name for name in names])
+    tar.close()
+    
+    if sum(a) == 1:
+        return True
+    else:
+        return False
+
+def preprocess(request):
+    """
+    Preprocess a request and runs files through aggregator regardless
+    
+    if multiple files in the filelist -> run aggregator and replace with aggregated file 
+    if single unaggregated --> run aggregator and replace with aggregated file 
+    if single aggregated --> do nothing
+    """
+    files = request.FILES.getlist('document')
+
