@@ -158,7 +158,6 @@
 {% else %}
 <p>Sign in to Upload Files</p>
 {% endif %}
-
 <script>
   const uploadForm = document.getElementById('upload-form');
   const input = document.getElementById('fileuploadfield');
@@ -166,15 +165,13 @@
   const csrf = document.getElementsByName('csrfmiddlewaretoken');
   const fileList = document.getElementById('file-list');
   const fd = new FormData();
-  let fileSet = new Set();
-  fd.append('csrfmiddlewaretoken', csrf[0].value);
+  let filesArray = [];
 
   function addFilename(filename) {
-    if (fileSet.has(filename)) {
+    if (filesArray.some(file => file.name === filename)) {
         console.log(`Filename "${filename}" already exists.`);
         return true;
     } else {
-        fileSet.add(filename);
         console.log(`Filename "${filename}" added.`);
         return false;
     }
@@ -182,13 +179,12 @@
 
   input.addEventListener('change', (event) => {
     const validFileExtension = ".tar.gz";
-    const files = input.files;
+    const files = Array.from(input.files);
     let allFilesValid = true;
     let invalidFileNames = [];
-    var xhr = new XMLHttpRequest();
 
     // Validate all selected files
-    Array.from(files).forEach(file => {
+    files.forEach(file => {
         const fileName = file.name;
         console.log(fileName, "fname");
         if (!fileName.toLowerCase().endsWith(validFileExtension)) {
@@ -202,38 +198,26 @@
         throw new Error("Bad file extension!");
     }
 
-    // Append all files to FormData
-    Array.from(files).forEach(file => {
-        console.log(`Hi uploading: ${file.name}`)
-        fd.append('document', file);
+    // Append new files to the array
+    files.forEach(file => {
         if (!addFilename(file.name)) {
+            filesArray.push(file);
             addFileRow(file);
         }
     });
+
+    updateFileInput(); // Update the file input with the current filesArray
   });
 
   function clearFileInput() {
-    const ctrl = document.getElementById('fileuploadfield');
-    const progressBox = document.getElementById('progress-box');
-    progressBox.style.display = "none";
-
-    try {
-      ctrl.value = null;
-    } catch (ex) { }
-    if (ctrl.value) {
-      ctrl.parentNode.replaceChild(ctrl.cloneNode(true), ctrl);
-    }
+    filesArray = [];
+    fileList.innerHTML = '';
+    input.value = '';
+    document.getElementById('js-progressbar').hidden = true;
   }
 
   function addFileRow(file) {
-    // Check if the file already exists in the table
-    const existingRow = Array.from(fileList.querySelectorAll('tr')).find(row => 
-        row.querySelector('.filename').textContent === file.name
-    );
-    if (existingRow) return; // If file already exists, do not add a new row
-
     const row = document.createElement('tr');
-    const id = String(Math.floor(Math.random() * 3003030303));
     row.innerHTML = `
         <td class='filename'>${file.name}</td>
         <td class="filesize-cell">${(file.size / 1024 / 1024).toFixed(2)} MB</td>
@@ -244,18 +228,19 @@
     const removeBtn = row.querySelector('.remove-btn');
     removeBtn.addEventListener('click', () => {
         row.remove();
-        removeFileFromInput(file.name);
+        removeFileFromArray(file.name);
     });
-
-    return id;
   }
 
-  function removeFileFromInput(fileName) {
+  function removeFileFromArray(fileName) {
+    filesArray = filesArray.filter(file => file.name !== fileName);
+    updateFileInput();
+  }
+
+  function updateFileInput() {
     const dataTransfer = new DataTransfer();
-    Array.from(input.files).forEach(file => {
-        if (file.name !== fileName) {
-            dataTransfer.items.add(file);
-        }
+    filesArray.forEach(file => {
+        dataTransfer.items.add(file);
     });
     input.files = dataTransfer.files;
   }
@@ -263,7 +248,6 @@
   function updateProgress(fileName, percent) {
     const rows = fileList.querySelectorAll('tr');
     rows.forEach(row => {
-      console.log('hello');
       if (row.querySelector('.filename').textContent === fileName) {
         row.querySelector('.progress-cell').textContent = percent + '%';
       }
@@ -271,14 +255,24 @@
   }
 
   function uploadFiles() {
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', csrf[0].value);
+
+    filesArray.forEach(file => {
+      fd.append('document', file);
+    });
+
     const xhr = new XMLHttpRequest();
     xhr.open('POST', uploadForm.action, true);
     xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
+
+    alertBox.innerHTML = `<div class="alert alert-info" role="alert">
+      Uploading ... Will redirectly automatically in a few seconds. 
+        </div>`;
     
     xhr.upload.addEventListener('progress', (event) => {
         if (event.lengthComputable) {
             const percent = Math.round((event.loaded / event.total) * 100);
-            updateProgress(currentFileName, percent); // Assume `currentFileName` is the file being uploaded
             document.getElementById('js-progressbar').value = percent;
             document.getElementById('js-progressbar').hidden = false;
         }
@@ -287,9 +281,10 @@
     xhr.onload = function () {
         if (xhr.status >= 200 && xhr.status < 300) {
             alertBox.innerHTML = `<div class="alert alert-success" role="alert">
-                                    Successfully uploaded file
+                                    Successfully uploaded file(s)
                                   </div>`;
             document.getElementById('js-progressbar').hidden = true;
+            clearFileInput(); // Clear the input after successful upload
         } else {
             alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
                                     Something went wrong with the upload.
@@ -303,9 +298,10 @@
                               </div>`;
     };
 
-    xhr.send(fd);
+   //xhr.send(fd);
   }
-
 </script>
+
+
 
 {% endblock %}

@@ -42,6 +42,7 @@ import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 # from django.views.decorators.cache import cache_page
 # from zipfile import ZipFile
@@ -82,6 +83,10 @@ from .view_download_stats import *
 
 ## aggregator 
 from .aggregator import *
+from .aggregator_main import * 
+# from AmpliconSuiteAggregatorFunctions import *
+
+
 
 # SET UP HANDLE
 def loading(request):
@@ -1795,60 +1800,51 @@ def sizeof_fmt(num, suffix="B"):
 
 
 def create_project(request):
-    print(os.getcwd())
-    print(os.listdir())
     if request.method == "POST":
+        ## preprocess request
+        # request = preprocess(request)
+        
         form = RunForm(request.POST)
-        print('POST:')
-        print(request.POST)
-        print('FILES')
-        print(request.FILES.getlist('document'))
         
         if not form.is_valid():
             raise Http404()
-        
         ## check multi files, send files to GP and run aggregator there:
-        if len(request.FILES.getlist('document')) > 1:
-            ## run amplicon classifier
-            files = request.FILES.getlist('document')
-            temp_proj_id = uuid.uuid4().hex ## to be changed
-            print(f'The temp proj id is: {temp_proj_id}')
-            ## for each entry, peek if there is a run.json, if its there then  
-            print('starting aggregator thread')
-            
-            
-            ## run aggregator on a separate thread : 
-            GP_agg_thread = Thread(target = run_local_aggregator, 
-                                   args = (files, 
-                                           temp_proj_id, 
-                                           form_to_dict(form), 
-                                           request.user))
-            GP_agg_thread.start()
-            # job = run_amplicon_suite_aggregator(files, temp_proj_id) ## should run on separate thread 
-            return render(request, 'pages/loading.html', context = {'aggregator' : True})
-
-
+        file_fps = []
+        temp_proj_id = uuid.uuid4().hex ## to be changed
+        files = request.FILES.getlist('document')
+        project_data_path = f"tmp/{temp_proj_id}" ## to change
+        for file in files:
+            fs = FileSystemStorage(location = project_data_path)
+            saved = fs.save(file.name, file)
+            print(f'file: {file.name} is saved')
+            fp = os.path.join(project_data_path, file.name)
+            file_fps.append(file.name)
+            file.close()
+        agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = f'{temp_proj_id}')
+        
+        ## after running aggregator, replace the requests file with the aggregated file: 
+        with open(agg.aggregated_filename, 'rb') as f:
+            uploaded_file = SimpleUploadedFile(
+            name=os.path.basename(agg.aggregated_filename),
+            content=f.read(),
+            content_type='application/gzip'
+            )
+            request.FILES['document'] = uploaded_file
+        f.close()
+        
+        # return render(request, 'pages/loading.html')
         new_id = _create_project(form, request)
         if new_id is not None:
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
-            ## TODO: run aggregator here 
-            GP_agg_thread = Thread(target = run_local_aggregator, 
-                                   args = (files, 
-                                           temp_proj_id, 
-                                           form_to_dict(form), 
-                                           request.user))
-            GP_agg_thread.start()
-            alert_message = "The input file was not a valid aggregation. AmpliconSuiteAggregator will be run to try to create a new project."
+            alert_message = "The input file was not a valid aggregation. Please see site documentation."
             return render(request, 'pages/create_project.html', {'run': form, 'alert_message': alert_message})
-
     else:
         form = RunForm()
-        
     return render(request, 'pages/create_project.html', {'run' : form})
 
 
-def _create_project(form, request, previous_versions = [], previous_views = [0, 0]):
+def _create_project(form, request, previous_versions = [], previous_views = [0, 0], agg_fp = None):
     """
     Creates the project 
     """
@@ -1923,7 +1919,6 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     # extract contents of file
     if from_api:
         file_location = request_file.name
-        print(file_location)
     else:
         file_location = f'{project_data_path}/{request_file.name}'
 
@@ -1937,9 +1932,11 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
 
     ti = time.time()
     failed = False
+    print(f'{file_location}')
     with tarfile.open(file_location, 'r') as tar:
         try:
-            tar.extract('./results/run.json', path=project_data_path)
+            # run_location = [run for run in tar.getnames() if 'run.json' in run]
+            tar.extract('results/run.json', path=project_data_path)
         except:
             logging.error(str(file_location) + " had an issue. could not place ./results/run.json into " + project_data_path)
             failed = True
@@ -1947,7 +1944,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
 
     if failed:
         logging.debug("Deleting " + str(file_location))
-        os.remove(file_location)
+        # os.remove(file_location)
         return None, None
 
     logging.debug(str(time.time() - ti) + " seconds for extraction of run.json")
@@ -2094,6 +2091,5 @@ def robots(request):
     """
     View for robots.txt, will read the file from static root (depending on server), and show robots file. 
     """
-
     robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
     return HttpResponse(robots_txt, content_type="text/plain")
