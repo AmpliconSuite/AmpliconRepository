@@ -1,9 +1,19 @@
 {% extends 'base.html' %} 
 {% load crispy_forms_tags %}
 
+
+{% block extra_css %}
+  
+
+{% endblock extra_css %}
+  
 <head>
   <title>Create Project</title>
-  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <!-- <link rel="stylesheet" href="https://rsms.me/inter/inter.css" /> -->
+
+  
+
+  
 </head>
 
 <style>
@@ -35,23 +45,15 @@
   #createProjectBtn {
     order: 4;
   }
+
+  #icon{
+    height: 35px;
+  }
+
 </style>
 
 {% block main %}
 
-<!-- UIkit CSS -->
-<link
-  rel="stylesheet"
-  href="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/css/uikit.min.css"
-/>
-
-<!-- UIkit JS -->
-<script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit-icons.min.js"></script>
-
-{% comment %} dropzone js {% endcomment %}
-<script src="https://unpkg.com/dropzone@5/dist/min/dropzone.min.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/dropzone@5/dist/min/dropzone.min.css" type="text/css" />
 
 <h1>Create New Project</h1>
 
@@ -63,8 +65,7 @@
   class="alert alert-danger alert-dismissible"
   role="alert"
   id="upload_failed"
-  style="display:none; flex;"
->
+  style="display:none;">
   No File Selected, Please select a file using the "Browse" button and try again.
 </div>
 
@@ -83,6 +84,11 @@
     </div>
   </div>
   <table class="uk-table uk-table-divider" id="file-list-table">
+    <!-- UIkit JS -->
+  <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit-icons.min.js"></script>
+  <!-- UIkit CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/css/uikit.min.css"/>
     <thead>
       <tr>
         <th>File Name</th>
