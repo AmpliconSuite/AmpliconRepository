@@ -134,7 +134,7 @@ def delete_project_from_site_statistics(project):
     updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"]-1
     updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"] - len(project['runs'])
 
-    print(f"DELETE PRIVATE IS { project['private'] }     current {current_stats} ")
+    # print(f"DELETE PRIVATE IS { project['private'] }     current {current_stats} ")
     if project['private'] == True:
         # public stats unchanged deleting private
         updated_stats["public_proj_count"] = current_stats["public_proj_count"]
@@ -154,7 +154,7 @@ def delete_project_from_site_statistics(project):
         updated_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
         updated_stats["all_private_amplicon_classifications_count"] = current_stats["all_private_amplicon_classifications_count"]
 
-    print(f"DELETE                                 updated {updated_stats} ")
+    # print(f"DELETE                                 updated {updated_stats} ")
     updated_stats["date"] = get_date()
     new_id = site_statistics_handle.insert_one(updated_stats)
 

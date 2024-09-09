@@ -82,7 +82,6 @@ from django.utils.safestring import mark_safe
 from .view_download_stats import * 
 
 ## aggregator 
-from .aggregator import *
 from .aggregator_main import * 
 # from AmpliconSuiteAggregatorFunctions import *
 
@@ -1232,7 +1231,22 @@ def project_update(request, project_name):
         return redirect('profile')
     else:
         return HttpResponse("Project does not exist")
+    
 
+def download_file(url, save_path):
+    # Send a GET request to the URL
+    response = requests.get(url)
+    
+    # Raise an error for bad status codes
+    response.raise_for_status()
+    
+    # Write the content to the specified file location
+    with open(save_path, 'wb') as file:
+        file.write(response.content)
+    
+    print(f"File downloaded successfully and saved to {save_path}")
+    
+    
 
 def edit_project_page(request, project_name):
     if request.method == "POST":
@@ -1252,8 +1266,54 @@ def edit_project_page(request, project_name):
         old_membership = project['project_members']
         notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
 
-        request_file = request.FILES['document'] if 'document' in request.FILES else None
+        ## check multi files, send files to GP and run aggregator there:
+        file_fps = []
+        temp_proj_id = uuid.uuid4().hex ## to be changed
+        try:
+            files = request.FILES.getlist('document')
+            project_data_path = f"tmp/{temp_proj_id}" ## to change
+            for file in files:
+                fs = FileSystemStorage(location = project_data_path)
+                saved = fs.save(file.name, file)
+                print(f'file: {file.name} is saved')
+                fp = os.path.join(project_data_path, file.name)
+                file_fps.append(file.name)
+                file.close()
+                
+            ## download old project file here and run it through aggregator
+            ## build download URL 
+            url = f'http://127.0.0.1:8000/project/{project["linkid"]}/download'
+            download_path = project_data_path+'/download.tar.gz'
+
+            try:
+                ## try to download old project file
+                download = download_file(url, download_path)
+                print(f"PREVIOUS FILE FPS LIST: {file_fps}")
+                file_fps.append(os.path.join('download.tar.gz'))
+                print(f"AFTERS FILE FPS LIST: {file_fps}")
+                
+                print(f'aggregating on: {file_fps}')
+                agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = f'{temp_proj_id}')
+                ## after running aggregator, replace the requests file with the aggregated file: 
+                with open(agg.aggregated_filename, 'rb') as f:
+                    uploaded_file = SimpleUploadedFile(
+                    name=os.path.basename(agg.aggregated_filename),
+                    content=f.read(),
+                    content_type='application/gzip'
+                    )
+                    request.FILES['document'] = uploaded_file
+                f.close()
+            except:
+                ## download failed, don't run aggregator 
+                print(f'download failed ... ')
+        except:
+            print('no file uploaded')
+        try:
+            request_file = request.FILES['document']
+        except:
+            request_file = None
         if request_file is not None:
+            ## save all files, run through aggregator. 
             # mark the current project as updated
             update_project = project_update(request, project_name)
             # mark current project as deleted as well 
@@ -1301,7 +1361,7 @@ def edit_project_page(request, project_name):
             query = {'_id': ObjectId(project_name)}
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
-                                 'Oncogenes': get_project_oncogenes(current_runs)} }
+                                 'Oncogenes': get_project_oncogenes(current_runs)}}
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
                 return redirect('project_page', project_name=project_name)
