@@ -34,7 +34,7 @@ import json
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
 from .utils import collection_handle, collection_handle_primary, db_handle, fs_handle, replace_space_to_underscore, \
     preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
-    prepare_project_linkid, replace_underscore_keys
+    prepare_project_linkid, replace_underscore_keys, get_projects_close_cursor
 from django.forms.models import model_to_dict
 
 import subprocess
@@ -109,7 +109,12 @@ def get_date_short():
 
 def get_one_deleted_project(project_name_or_uuid):
     try:
-        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
+        
+        # old cursor
+        # project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]        
+        project = get_projects_close_cursor({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
+        
+        
         prepare_project_linkid(project)
         return project
 
@@ -246,7 +251,9 @@ def data_qc(request):
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        
+        private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
+        # private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
         for proj in private_projects:
             prepare_project_linkid(proj)
     else:
@@ -254,7 +261,10 @@ def data_qc(request):
 
     public_proj_count = 0
     public_sample_count = 0
-    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+
+    
+    public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
+    # public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
         public_proj_count = public_proj_count + 1
@@ -290,7 +300,8 @@ def change_database_dates(request):
         return redirect('/accounts/logout')
 
     logging.debug('Starting to update timestamps...')
-    projects = list(collection_handle.find({'delete': False}))
+    # projects = list(collection_handle.find({'delete': False}))
+    projects = get_projects_close_cursor({'delete': False})
     
     for project in projects:
         recently_updated = change_to_standard_date(project['date'])
@@ -325,7 +336,9 @@ def index(request):
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        # private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
+        
         for proj in private_projects:
             prepare_project_linkid(proj)
 
@@ -335,7 +348,8 @@ def index(request):
     # just get stats for all private
     all_private_proj_count = 0
     all_private_sample_count = 0
-    all_private_projects = list(collection_handle.find({'private': True, 'delete': False}))
+    # all_private_projects = list(collection_handle.find({'private': True, 'delete': False}))
+    all_private_projects = get_projects_close_cursor({'private': True, 'delete': False})
     for proj in all_private_projects:
         all_private_proj_count = all_private_proj_count + 1
         all_private_sample_count = all_private_sample_count + len(proj['runs'])
@@ -343,14 +357,16 @@ def index(request):
 
     public_proj_count = 0
     public_sample_count = 0
-    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+    # public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+    public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
     print(len(public_projects))
     for proj in public_projects:
         prepare_project_linkid(proj)
         public_proj_count = public_proj_count + 1
         public_sample_count = public_sample_count + len(proj['runs'])
 
-    featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
+    # featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
+    featured_projects = get_projects_close_cursor({'private' : False, 'delete': False, 'featured': True})
     for proj in featured_projects:
         prepare_project_linkid(proj)
 
@@ -382,7 +398,8 @@ def profile(request, message_to_user=None):
     # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
-    projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+    # projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+    projects = get_projects_close_cursor({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False})
 
     for proj in projects:
         prepare_project_linkid(proj)
@@ -485,6 +502,7 @@ def previous_versions(project):
     cursor = collection_handle.find(
         {'current': True, 'previous_versions.linkid' : str(project['_id'])}, {'date': 1, 'previous_versions':1}).sort('date', -1)
     data = list(cursor)
+    cursor.close()
     if len(data) == 1:
         res = data[0]['previous_versions']
         res.append({'date': data[0]['date'], 
@@ -1089,11 +1107,13 @@ def gene_search_page(request):
         useremail = request.user.email
         query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
 
-        private_projects = list(collection_handle.find(query_obj))
+        # private_projects = list(collection_handle.find(query_obj))
+        private_projects = get_projects_close_cursor(query_obj)
     else:
         private_projects = []
     
-    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False}))
+    # public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False}))
+    public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
 
     for proj in private_projects:
         prepare_project_linkid(proj)    
@@ -1392,7 +1412,8 @@ def admin_featured_projects(request):
 
 
 
-    public_projects = list(collection_handle_primary.find({'private': False, 'delete': False}))
+    # public_projects = list(collection_handle_primary.find({'private': False, 'delete': False}))
+    public_projects = get_projects_close_cursor({'private': False, 'delete': False})
     for proj in public_projects:
         prepare_project_linkid(proj)
 
@@ -1513,7 +1534,8 @@ def admin_stats(request):
     users = User.objects.all()
     
     # Get public and private project data
-    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    # public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    public_projects = get_projects_close_cursor({'private': False, 'delete': False})
     for proj in public_projects:
         prepare_project_linkid(proj)
         if check_if_db_field_exists(proj, 'project_downloads'):
@@ -1588,7 +1610,8 @@ def project_stats_download(request):
     #     return redirect('/accounts/logout')
     
     # Get public and private project data
-    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    # public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    public_projects = get_projects_close_cursor({'private': False, 'delete': False})
     for proj in public_projects:
         prepare_project_linkid(proj)
     
@@ -1793,7 +1816,8 @@ def admin_delete_project(request):
             error_message = admin_permanent_delete_project(project_id, project, project_name)
 
 
-    deleted_projects = list(collection_handle.find({'delete': True, 'current' : True}))
+    # deleted_projects = list(collection_handle.find({'delete': True, 'current' : True}))
+    deleted_projects = get_projects_close_cursor({'delete': True, 'current' : True})
     for proj in deleted_projects:
         prepare_project_linkid(proj)
         try:
