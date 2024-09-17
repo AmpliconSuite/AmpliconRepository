@@ -10,6 +10,9 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Layout, Field
 
 
+from django.utils.safestring import mark_safe
+
+
 class RunForm(forms.ModelForm):
     accept_license = forms.BooleanField(
         label=format_html(
@@ -22,7 +25,7 @@ class RunForm(forms.ModelForm):
 
     class Meta:
         model = Run
-        fields = ('project_name','description','publication_link','private','project_members', 'accept_license')
+        fields = ('project_name','description','publication_link','private','project_members', 'accept_license', 'alias')
         labels = {
             'private': 'Visibility'
         }
@@ -36,6 +39,7 @@ class RunForm(forms.ModelForm):
         self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of additional email addresses or AmpliconRepository usernames separated by spaces or commas'})
 
 class UpdateForm(forms.ModelForm):
+    
     accept_license = forms.BooleanField(
         label=format_html(
             "I acknowledge that the uploaded files will be released under a <a href='https://raw.githubusercontent.com/AmpliconSuite/AmpliconRepository/main/licenses/CCv4-BY.txt'>Creative Commons v4 license</a>."),
@@ -47,7 +51,7 @@ class UpdateForm(forms.ModelForm):
 
     class Meta:
         model = Run
-        fields = ('project_name', 'description', 'publication_link', 'private', 'project_members', 'accept_license')
+        fields = ('project_name', 'description', 'publication_link', 'private', 'project_members', 'accept_license', 'alias')
         labels = {
             'private': 'Visibility'
         }

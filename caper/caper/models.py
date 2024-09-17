@@ -11,6 +11,7 @@ class Run(models.Model):
     BOOL_CHOICES = ((True, 'Private'), (False, 'Public'))
     private = models.BooleanField(choices=BOOL_CHOICES,default=True)
     project_members = models.CharField(max_length=1000, blank = True)
+    alias = models.CharField(max_length = 300, blank =True, null = True)
 
 
 class FeaturedProjectUpdate(models.Model):
