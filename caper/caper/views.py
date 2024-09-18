@@ -1369,7 +1369,7 @@ def edit_project_page(request, project_name):
         
         
         
-    print(json.dumps(get_all_alias()))
+    print(project['alias_name'])
     return render(request, "pages/edit_project.html",
                   {'project': project, 
                    'run': form, 

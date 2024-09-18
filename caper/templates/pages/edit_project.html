@@ -57,11 +57,16 @@
         {% for field in run %}
             
             {% if field.name == 'alias' %}
-            <p>Enter an unique alias for this project. It can be used to access this project.</p> <p></p>
-                <div style='display:flex;'>
+            <p>Enter an unique alias for this project. It can be used to access this project.</p>
+                
+                {% if project.alias_name != None %}
+                    <p> Current alias name is: <b>{{ project.alias_name }}</b>. The project can be accessed at <a href="">ampliconrepository.org/project/{{project.alias_name}}</a></p>
+                {% endif %}
                     
-                    <span> ampliconrepository.org/project/</span>
-                    <div style = 'width:200px'>{{ field }}</div>
+
+                <div style='display:flex; align-items:center;'>
+                    <span>ampliconrepository.org/project/</span>
+                    <span style='width:200px;'>{{ field }}</span>
                     <span>/</span>
                 </div>
                 <div id='result'></div>
