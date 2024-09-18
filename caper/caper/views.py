@@ -34,7 +34,7 @@ import json
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
 from .utils import collection_handle, collection_handle_primary, db_handle, fs_handle, replace_space_to_underscore, \
     preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
-    prepare_project_linkid, replace_underscore_keys, get_projects_close_cursor
+    prepare_project_linkid, replace_underscore_keys, get_projects_close_cursor, get_all_alias
 from django.forms.models import model_to_dict
 
 import subprocess
@@ -166,6 +166,14 @@ def form_to_dict(form):
     # print(form)
     run = form.save(commit=False)
     form_dict = model_to_dict(run)
+    
+    if "alias" in form_dict:
+        try:
+            form_dict['alias'] = form_dict['alias'].replace(' ', '_')
+            print(f'alias for this project is: {form_dict["alias"]}')
+        except:
+            print('No alias provided, probably Null')
+            print(type(form_dict['alias']))
     return form_dict
 
 
@@ -1260,7 +1268,7 @@ def edit_project_page(request, project_name):
 
         form = UpdateForm(request.POST, request.FILES)
         form_dict = form_to_dict(form)
-
+        
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
 
         # lets notify users (if their preferences request it) if project membership has changed
@@ -1298,10 +1306,11 @@ def edit_project_page(request, project_name):
                 return redirect('project_page', project_name=new_id.inserted_id)
             else:
                 alert_message = "The input file was not a valid aggregation. Please see site documentation."
-                return render(request, 'pages/edit_project.html', {'project': project, 'run': form, 'alert_message': alert_message})
-
-
-
+                return render(request, 'pages/edit_project.html', 
+                              {'project': project, 
+                               'run': form, 
+                               'alert_message': alert_message,
+                               'all_alias' :get_all_alias()})
         # JTL 081823 Not sure what these next 4 lines are about?  An earlier plan to change the project file?
         # leaving them alone for now but they smell like dead code
         if 'file' in form_dict:
@@ -1311,19 +1320,27 @@ def edit_project_page(request, project_name):
 
         if check_project_exists(project_name):
             new_project_name = form_dict['project_name']
+            
             logging.info(f"project name: {project_name}  change to {new_project_name}")
             current_runs = project['runs']
             if runs != 0:
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
-            proj = {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
-                                 'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
-                                 'Oncogenes': get_project_oncogenes(current_runs)}
+            proj = {'project_name':new_project_name, 
+                    'runs' : current_runs, 
+                    'description': form_dict['description'],
+                    'date': get_date(),
+                    'private': form_dict['private'], 
+                    'project_members': form_dict['project_members'], 
+                    'publication_link': form_dict['publication_link'],
+                    'Oncogenes': get_project_oncogenes(current_runs),
+                    'alias_name':form_dict['alias'],}
             new_val = { "$set": proj }
             
             proj['_id'] = query['_id']
             edit_proj_privacy(proj, old_privacy, new_privacy)
             if form.is_valid():
+                print('im here')
                 collection_handle.update_one(query, new_val)
                 return redirect('project_page', project_name=project_name)
             else:
@@ -1352,8 +1369,11 @@ def edit_project_page(request, project_name):
         
         
         
-        
-    return render(request, "pages/edit_project.html", {'project': project, 'run': form})
+    print(project['alias_name'])
+    return render(request, "pages/edit_project.html",
+                  {'project': project, 
+                   'run': form, 
+                   'all_alias' :json.dumps(get_all_alias())})
 
 def create_user_list(string, current_user):
     # user_list = str.split(',')
@@ -1852,11 +1872,15 @@ def create_project(request):
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
             alert_message = "The input file was not a valid aggregation. Please see site documentation."
-            return render(request, 'pages/create_project.html', {'run': form, 'alert_message': alert_message})
+            return render(request, 'pages/create_project.html', 
+                          {'run': form, 
+                           'alert_message': alert_message, 
+                           'all_alias' : json.dumps(get_all_alias())})
 
     else:
         form = RunForm()
-    return render(request, 'pages/create_project.html', {'run' : form})
+    return render(request, 'pages/create_project.html', {'run' : form, 
+                                                         'all_alias' : json.dumps(get_all_alias())})
 
 
 def _create_project(form, request, previous_versions = [], previous_views = [0, 0]):
@@ -2005,6 +2029,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['FINISHED?'] = False
     project['views'] = previous_views[0]
     project['downloads'] = previous_views[1]
+    project['alias_name'] = form_dict['alias']
     return project, tmp_id
 
 class FileUploadView(APIView):
