@@ -58,10 +58,9 @@
         {% for field in run %}
             {% if field.name == 'alias' %}
             <p>Enter an unique alias for this project. It can be used to access this project.</p> <p></p>
-                <div style='display:flex;'>
-                        
+                <div style='display:flex; gap:5px; align-items:center;'>
                     <span> ampliconrepository.org/project/</span>
-                    <div style = 'width:200px'>{{ field }}</div>
+                    <div style = 'width:200px; padding:2px; font-size:15px border:1px;'>{{ field }}</div>
                     <span>/</span>
                 </div>
                 <div id='result'></div>
