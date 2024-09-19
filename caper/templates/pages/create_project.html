@@ -1,19 +1,11 @@
 {% extends 'base.html' %} 
 {% load crispy_forms_tags %}
 
-
 {% block extra_css %}
-  
-
 {% endblock extra_css %}
   
 <head>
   <title>Create Project</title>
-  <!-- <link rel="stylesheet" href="https://rsms.me/inter/inter.css" /> -->
-
-  
-
-  
 </head>
 
 <style>
@@ -46,14 +38,12 @@
     order: 4;
   }
 
-  #icon{
+  #icon {
     height: 35px;
   }
-
 </style>
 
 {% block main %}
-
 
 <h1>Create New Project</h1>
 
@@ -71,6 +61,7 @@
 
 {% if user.is_authenticated %}
 <div id="alert-box"></div>
+
 <form method="post" enctype="multipart/form-data" id="upload-form">
   {% csrf_token %} {{ run | crispy }}
   <div class="uk-margin">
@@ -83,12 +74,13 @@
       </div>
     </div>
   </div>
+
   <table class="uk-table uk-table-divider" id="file-list-table">
     <!-- UIkit JS -->
-  <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit-icons.min.js"></script>
-  <!-- UIkit CSS -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/css/uikit.min.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit-icons.min.js"></script>
+    <!-- UIkit CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/css/uikit.min.css" />
     <thead>
       <tr>
         <th>File Name</th>
@@ -99,10 +91,12 @@
     <tbody id="file-list"></tbody>
   </table>
 
-  <br />
-  <br />
+  <br /><br />
 
-  <progress id="js-progressbar" class="uk-progress" value="0" max="100" hidden></progress>
+  <!-- Ensure the progress bar is visible initially -->
+  <div id="progress-container">
+    <progress id="upload-progressbar" class="uk-progress" value="0" max="100" hidden></progress>
+  </div>
 
   <input
     type="button"
@@ -115,7 +109,9 @@
     Submit
   </button>
 </form>
+
 <br />
+
 <p>
   <b>What file do I upload?</b> <br />
   A specifically structured .tar.gz of your AmpliconSuite-pipeline output files,
@@ -158,118 +154,173 @@
 {% else %}
 <p>Sign in to Upload Files</p>
 {% endif %}
+
 <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const input = document.getElementById("fileuploadfield");
-        const createProjectBtn = document.getElementById("createProjectBtn");
-        const alertBox = document.getElementById("alert-box");
-        const fileList = document.getElementById("file-list");
-        const form = document.getElementById("upload-form");
-      
-        let filesArray = [];
-      
-        function validateForm() {
-          // Add form validation logic here
-          // This function should return `true` if all form fields are valid, `false` otherwise.
-          // For simplicity, let's assume the form is always valid (you can adjust this as needed).
-          return true;
+  document.addEventListener("DOMContentLoaded", function () {
+    const input = document.getElementById("fileuploadfield");
+    const createProjectBtn = document.getElementById("createProjectBtn");
+    const alertBox = document.getElementById("alert-box");
+    const fileList = document.getElementById("file-list");
+    const progressBar = document.getElementById("upload-progressbar");
+    const form = document.getElementById("upload-form");
+
+    let filesArray = [];
+
+    function validateForm() {
+      // Add form validation logic here
+      return true;
+    }
+
+    function validateFiles() {
+      return filesArray.length > 0; // Ensure at least one valid file is selected
+    }
+
+    function updateSubmitButtonState() {
+      if (validateForm() && validateFiles()) {
+        createProjectBtn.disabled = false; // Enable button if both are valid
+      } else {
+        createProjectBtn.disabled = true; // Keep button disabled otherwise
+      }
+    }
+
+    function addFilename(filename) {
+      return filesArray.some(file => file.name === filename);
+    }
+
+    input.addEventListener("change", (event) => {
+      const validFileExtension = ".tar.gz";
+      const files = Array.from(input.files);
+      let allFilesValid = true;
+      let invalidFileNames = [];
+
+      // Validate all selected files
+      files.forEach((file) => {
+        const fileName = file.name;
+        if (!fileName.toLowerCase().endsWith(validFileExtension)) {
+          allFilesValid = false;
+          invalidFileNames.push(fileName);
         }
-      
-        function validateFiles() {
-          return filesArray.length > 0; // Ensure at least one valid file is selected
-        }
-      
-        function updateSubmitButtonState() {
-          if (validateForm() && validateFiles()) {
-            createProjectBtn.disabled = false; // Enable button if both are valid
-          } else {
-            createProjectBtn.disabled = true; // Keep button disabled otherwise
-          }
-        }
-      
-        function addFilename(filename) {
-          return filesArray.some(file => file.name === filename);
-        }
-      
-        input.addEventListener("change", (event) => {
-          const validFileExtension = ".tar.gz";
-          const files = Array.from(input.files);
-          let allFilesValid = true;
-          let invalidFileNames = [];
-      
-          // Validate all selected files
-          files.forEach((file) => {
-            const fileName = file.name;
-            if (!fileName.toLowerCase().endsWith(validFileExtension)) {
-              allFilesValid = false;
-              invalidFileNames.push(fileName);
-            }
-          });
-      
-          if (!allFilesValid) {
-            alert("Sorry, the following files are invalid inputs:\n\n" + invalidFileNames.join(", ") + "\n\nPlease select .tar.gz files only.");
-            throw new Error("Bad file extension!");
-          }
-      
-          // Append new files to the array
-          files.forEach((file) => {
-            if (!addFilename(file.name)) {
-              filesArray.push(file);
-              addFileRow(file);
-            }
-          });
-      
-          updateFileInput(); // Update the file input with the current filesArray
-          updateSubmitButtonState(); // Revalidate and update button state after files are selected
-        });
-      
-        function clearFileInput() {
-          filesArray = [];
-          fileList.innerHTML = "";
-          input.value = "";
-          updateSubmitButtonState(); // Revalidate after clearing
-          document.getElementById("js-progressbar").hidden = true;
-        }
-      
-        function addFileRow(file) {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td class='filename'>${file.name}</td>
-            <td class="filesize-cell">${(file.size / 1024 / 1024).toFixed(2)} MB</td>
-            <td><button class="remove-btn">Remove</button></td>
-          `;
-          fileList.appendChild(row);
-      
-          const removeBtn = row.querySelector(".remove-btn");
-          removeBtn.addEventListener("click", () => {
-            row.remove();
-            removeFileFromArray(file.name);
-          });
-        }
-      
-        function removeFileFromArray(fileName) {
-          filesArray = filesArray.filter(file => file.name !== fileName);
-          updateFileInput();
-          updateSubmitButtonState(); // Revalidate after removing a file
-        }
-      
-        function updateFileInput() {
-          const dataTransfer = new DataTransfer();
-          filesArray.forEach(file => {
-            dataTransfer.items.add(file);
-          });
-          input.files = dataTransfer.files;
-        }
-      
-        // Initial check to disable submit button
-        updateSubmitButtonState();
-      
-        // You can also add form field listeners if needed to check validation for other form inputs
-        form.addEventListener("input", updateSubmitButtonState);
       });
+
+      if (!allFilesValid) {
+        alert("Sorry, the following files are invalid inputs:\n\n" + invalidFileNames.join(", ") + "\n\nPlease select .tar.gz files only.");
+        throw new Error("Bad file extension!");
+      }
+
+      // Append new files to the array
+      files.forEach((file) => {
+        if (!addFilename(file.name)) {
+          filesArray.push(file);
+          addFileRow(file);
+        }
+      });
+
+      updateFileInput(); // Update the file input with the current filesArray
+      updateSubmitButtonState(); // Revalidate and update button state after files are selected
+    });
+
+    function clearFileInput() {
+      filesArray = [];
+      fileList.innerHTML = "";
+      input.value = "";
+      updateSubmitButtonState(); // Revalidate after clearing
+      progressBar.hidden = true;
+    }
+
+    function addFileRow(file) {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td class='filename'>${file.name}</td>
+        <td class="filesize-cell">${(file.size / 1024 / 1024).toFixed(2)} MB</td>
+        <td><button class="remove-btn">Remove</button></td>
+      `;
+      fileList.appendChild(row);
+
+      const removeBtn = row.querySelector(".remove-btn");
+      removeBtn.addEventListener("click", () => {
+        row.remove();
+        removeFileFromArray(file.name);
+      });
+    }
+
+    function removeFileFromArray(fileName) {
+      filesArray = filesArray.filter(file => file.name !== fileName);
+      updateFileInput();
+      updateSubmitButtonState(); // Revalidate after removing a file
+    }
+
+    function updateFileInput() {
+      const dataTransfer = new DataTransfer();
+      filesArray.forEach(file => {
+        dataTransfer.items.add(file);
+      });
+      input.files = dataTransfer.files;
+    }
+
+    function uploadFiles() {
+      const fd = new FormData();
+      fd.append('csrfmiddlewaretoken', csrf[0].value);
+
       
+
+      // Append each file to the FormData
+      filesArray.forEach(file => {
+        fd.append('document', file);
+      });
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', uploadForm.action, true);  // Assuming the form has the correct action URL
+      xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
+
+      // Show the "Uploading" message when the upload starts
+      alertBox.innerHTML = `<div class="alert alert-info" role="alert">
+                              Uploading to site, please wait...
+                            </div>`;
+
+      // Show the progress bar during upload
+      progressBar.hidden = false;
+
+      // Track the upload progress and update the progress bar
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          progressBar.value = percent;
+
+          if (percent === 100) {
+            alertBox.innerHTML = `<div class="alert alert-info" role="alert">
+                                    Processing upload, almost done...
+                                  </div>`;
+          }
+        }
+      });
+
+      // Handle the response after the upload is complete
+      xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          alertBox.innerHTML = `<div class="alert alert-success" role="alert">
+                                  Successfully uploaded file(s)!
+                                </div>`;
+          progressBar.hidden = true;  // Hide the progress bar
+          clearFileInput();  // Clear the input after successful upload
+        } else {
+          alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
+                                  Something went wrong with the upload.
+                                </div>`;
+          progressBar.hidden = true;  // Hide the progress bar on error
+        }
+      };
+
+      xhr.onerror = function () {
+        alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
+                                Upload failed, please try again.
+                              </div>`;
+        progressBar.hidden = true;  // Hide the progress bar on error
+      };
+
+      // Actually send the request
+      xhr.send(fd);
+    }
+  });
 </script>
 
-
-
-{% endblock %}
+{% endblock main %}
