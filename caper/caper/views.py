@@ -1581,6 +1581,10 @@ def admin_stats(request):
                     collection_handle.update_one(query, new_val)
     # Calculate stats
     # total_downloads = [project['project_downloads'] for project in public_projects]
+    
+    for project in public_projects:
+        project['project_downloads_sum'] = sum(project['project_downloads'].values())
+        project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
 
     repo_stats = get_latest_site_statistics()
 
@@ -1632,6 +1636,9 @@ def project_stats_download(request):
     # Get public and private project data
     # public_projects = list(collection_handle.find({'private': False, 'delete': False}))
     public_projects = get_projects_close_cursor({'private': False, 'delete': False})
+    for project in public_projects:
+        project['project_downloads_sum'] = sum(project['project_downloads'].values())
+        project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
     for proj in public_projects:
         prepare_project_linkid(proj)
     
@@ -1643,7 +1650,7 @@ def project_stats_download(request):
     response['Content-Disposition'] = f'attachment; filename="projects_{today}.csv"'
 
     writer = csv.writer(response)
-    keys = ['project_name','description','project_members','date_created','project_downloads','sample_downloads']
+    keys = ['project_name','description','project_members','date_created','project_downloads','project_downloads_sum','sample_downloads','sample_downloads_sum']
     writer.writerow(keys)
     for dictionary in public_projects:
         output = {k: dictionary.get(k, None) for k in keys}
