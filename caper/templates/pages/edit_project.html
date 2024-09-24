@@ -4,6 +4,7 @@
 
 <head>
     <title>Edit {{ project.project_name }}</title>
+    
 </head>
 
 <style>
@@ -38,7 +39,10 @@
 </style>
 
 {% block main %}
-    
+<script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit-icons.min.js"></script>
+
+
 <h1>Editing project: '{{ project.project_name }}'</h1>
 {% if alert_message %}
 <div class="alert alert-danger" role="alert">
@@ -53,7 +57,8 @@
 {% if user.is_authenticated %}
     <div id="alert-box"></div>
     <form method="post" enctype="multipart/form-data" id="upload-form">
-        {% csrf_token %}
+
+        {% csrf_token %} 
         {% for field in run %}
             
             {% if field.name == 'alias' %}
@@ -76,100 +81,197 @@
             
             {% endif %}
         {% endfor %}
-        
-        <label for="document">
-            Replace AmpliconAggregator output file with: &nbsp;&nbsp;
-        </label>
-
-        <input type="file" name="document" id="fileuploadfield">
-        <input type="button" onClick="clearFileInput();" value="Remove Upload" id="remove-upload-btn">
-        <br> <br>
-        <div id="progress-box" class="not-visible"></div>
-        <button id="createProjectBtn" class="btn btn-primary">Update Project</button>
-    </form>
+        <div class="uk-margin">
+          <div id="file-drop-area" class="uk-placeholder uk-text-center js-upload">
+            <span uk-icon="icon: cloud-upload"></span>
+            <span class="uk-text-middle">To add samples to the project, drag files here or</span>
+            <div uk-form-custom>
+              <input id="fileuploadfield" type="file" name="document" multiple />
+              <span class="uk-link">select files</span>
+            </div>
+          </div>
+        </div>
+        <table class="uk-table uk-table-divider" id="file-list-table">
+          <!-- UIkit JS -->
+        <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit-icons.min.js"></script>
+        <!-- UIkit CSS -->
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/css/uikit.min.css"/>
+          <thead>
+            <tr>
+              <th>File Name</th>
+              <th>File Size</th>
+              <th>Remove</th>
+            </tr>
+          </thead>
+          <tbody id="file-list"></tbody>
+        </table>
+      
+        <br />
+        <br />
+      
+        <progress id="js-progressbar" class="uk-progress" value="0" max="100" hidden></progress>
+      
+        <input
+          type="button"
+          onClick="clearFileInput();"
+          value="Remove Upload"
+          id="remove-upload-btn"
+        />
+      
+        <button id="createProjectBtn" class="uk-button uk-button-primary" onClick="uploadFiles();">
+          Submit
+        </button>
+      </form>
 
 {% else %}
     <h1>Please sign in to edit projects</h1>
 {% endif %}
-
 <script>
     const uploadForm = document.getElementById('upload-form');
     const input = document.getElementById('fileuploadfield');
-    const alertBox = document.getElementById('alert-box')
-    const progressBox = document.getElementById('progress-box');
+    const alertBox = document.getElementById('alert-box');
     const csrf = document.getElementsByName('csrfmiddlewaretoken');
-
+    const fileList = document.getElementById('file-list');
+    const fd = new FormData();
+    let filesArray = [];
+  
+    function addFilename(filename) {
+      if (filesArray.some(file => file.name === filename)) {
+          console.log(`Filename "${filename}" already exists.`);
+          return true;
+      } else {
+          console.log(`Filename "${filename}" added.`);
+          return false;
+      }
+    }
+  
     input.addEventListener('change', (event) => {
-        progressBox.classList.remove('not-visible');
-        progressBox.style.display = "block";
-        const validFileExtension = ".tar.gz";
-        const fileName = input.value.split('\\').pop().split('/').pop(); // Extract filename without path
-
-        if (!fileName.toLowerCase().endsWith(validFileExtension)) {
-            alert("Sorry, " + fileName + " is not an invalid input.\n\nPlease select an aggregated .tar.gz file.\n\nSee bottom of page for instructions on how to generate an aggregated input file.");
-            throw new Error("Bad file extension!");
-        }
-
-        const agg_file = input.files[0];
-        const url = URL.createObjectURL(agg_file)
-        console.log(agg_file, "agg_file")
-        console.log(url, "url")
-
-        const fd = new FormData();
-        fd.append('csrfmiddlewaretoken', csrf[0].value);
-        fd.append('document', agg_file);
-
-        $.ajax({
-            type: 'POST',
-            url: uploadForm.action,
-            enctype: 'multipart/form-data',
-            data: fd,
-            beforeSend: function () {
-                // Clear previous alerts
-                alertBox.innerHTML = "";
-            },
-            xhr: function () {
-                const xhr = new window.XMLHttpRequest();
-                xhr.upload.addEventListener('progress', (e) => {
-                    if (e.lengthComputable) {
-                        const percent = e.loaded / e.total * 100;
-                        progressBox.innerHTML = `<div class="progress">
-                                                    <div class="progress-bar" role="progressbar" style="width: ${percent}%" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"></div>
-                                                </div>
-                                                <p>${percent.toFixed(1)}%</p>`;
-                    }
-                });
-                return xhr;
-            },
-            success: function (response) {
-                console.log(response);
-                alertBox.innerHTML = `<div class="alert alert-success" role="alert">
-                                        Successfully uploaded file
-                                    </div>`;
-            },
-            error: function (error) {
-                console.log(error);
-                // Handle error
-            },
-            cache: false,
-            contentType: false,
-            processData: false,
-        });
+      const validFileExtension = ".tar.gz";
+      const files = Array.from(input.files);
+      let allFilesValid = true;
+      let invalidFileNames = [];
+  
+      // Validate all selected files
+      files.forEach(file => {
+          const fileName = file.name;
+          console.log(fileName, "fname");
+          if (!fileName.toLowerCase().endsWith(validFileExtension)) {
+              allFilesValid = false;
+              invalidFileNames.push(fileName);
+          }
+      });
+  
+      if (!allFilesValid) {
+          alert("Sorry, the following files are invalid inputs:\n\n" + invalidFileNames.join(', ') + "\n\nPlease select .tar.gz files only.\n\nSee bottom of page for instructions on how to generate an aggregated input file.");
+          throw new Error("Bad file extension!");
+      }
+  
+      // Append new files to the array
+      files.forEach(file => {
+          if (!addFilename(file.name)) {
+              filesArray.push(file);
+              addFileRow(file);
+          }
+      });
+  
+      updateFileInput(); // Update the file input with the current filesArray
     });
-
+  
     function clearFileInput() {
-        const ctrl = document.getElementById('fileuploadfield');
-        const progressBox = document.getElementById('progress-box')
-        progressBox.style.display = "none";
-
-        try {
-          ctrl.value = null;
-        } catch(ex) { }
-        if (ctrl.value) {
-          ctrl.parentNode.replaceChild(ctrl.cloneNode(true), ctrl);
+      filesArray = [];
+      fileList.innerHTML = '';
+      input.value = '';
+      document.getElementById('js-progressbar').hidden = true;
+    }
+  
+    function addFileRow(file) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+          <td class='filename'>${file.name}</td>
+          <td class="filesize-cell">${(file.size / 1024 / 1024).toFixed(2)} MB</td>
+          <td><button class="remove-btn">Remove</button></td>
+      `;
+      fileList.appendChild(row);
+  
+      const removeBtn = row.querySelector('.remove-btn');
+      removeBtn.addEventListener('click', () => {
+          row.remove();
+          removeFileFromArray(file.name);
+      });
+    }
+  
+    function removeFileFromArray(fileName) {
+      filesArray = filesArray.filter(file => file.name !== fileName);
+      updateFileInput();
+    }
+  
+    function updateFileInput() {
+      const dataTransfer = new DataTransfer();
+      filesArray.forEach(file => {
+          dataTransfer.items.add(file);
+      });
+      input.files = dataTransfer.files;
+    }
+  
+    function updateProgress(fileName, percent) {
+      const rows = fileList.querySelectorAll('tr');
+      rows.forEach(row => {
+        if (row.querySelector('.filename').textContent === fileName) {
+          row.querySelector('.progress-cell').textContent = percent + '%';
         }
+      });
     }
 
+  
+    function uploadFiles() {
+      const fd = new FormData();
+      fd.append('csrfmiddlewaretoken', csrf[0].value);
+  
+      filesArray.forEach(file => {
+        fd.append('document', file);
+      });
+  
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', uploadForm.action, true);
+      xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
+  
+      alertBox.innerHTML = `<div class="alert alert-info" role="alert">
+        Uploading ... Will redirectly automatically in a few seconds. 
+          </div>`;
+      
+      xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              document.getElementById('js-progressbar').value = percent;
+              document.getElementById('js-progressbar').hidden = false;
+          }
+      });
+  
+      xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 300) {
+              alertBox.innerHTML = `<div class="alert alert-success" role="alert">
+                                      Successfully uploaded file(s)
+                                    </div>`;
+              document.getElementById('js-progressbar').hidden = true;
+              clearFileInput(); // Clear the input after successful upload
+          } else {
+              alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
+                                      Something went wrong with the upload.
+                                    </div>`;
+          }
+      };
+  
+      xhr.onerror = function () {
+          alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
+                                  Something went wrong with the upload.
+                                </div>`;
+      };
+  
+     //xhr.send(fd);
+    }
+  </script>
+ 
     document.addEventListener('DOMContentLoaded', function() {
         // Pass the alias names from Django context to JavaScript
         var aliasNames = JSON.parse("{{ all_alias | escapejs}}");

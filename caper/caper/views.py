@@ -1,7 +1,6 @@
 # from asyncore import file_wrapper
 # from tkinter import E
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect
-from django.http import Http404
+from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect,JsonResponse,Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
@@ -43,6 +42,7 @@ import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 # from django.views.decorators.cache import cache_page
 # from zipfile import ZipFile
@@ -80,6 +80,12 @@ from django.utils.safestring import mark_safe
 
 
 from .view_download_stats import * 
+
+## aggregator 
+from .aggregator_main import * 
+# from AmpliconSuiteAggregatorFunctions import *
+
+
 
 # SET UP HANDLE
 def loading(request):
@@ -1256,7 +1262,22 @@ def project_update(request, project_name):
         return redirect('profile')
     else:
         return HttpResponse("Project does not exist")
+    
 
+def download_file(url, save_path):
+    # Send a GET request to the URL
+    response = requests.get(url)
+    
+    # Raise an error for bad status codes
+    response.raise_for_status()
+    
+    # Write the content to the specified file location
+    with open(save_path, 'wb') as file:
+        file.write(response.content)
+    
+    print(f"File downloaded successfully and saved to {save_path}")
+    
+    
 
 def edit_project_page(request, project_name):
     if request.method == "POST":
@@ -1277,8 +1298,54 @@ def edit_project_page(request, project_name):
         old_privacy = project['private']
         new_privacy = form_dict['private']
         notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
-        request_file = request.FILES['document'] if 'document' in request.FILES else None
+        ## check multi files, send files to GP and run aggregator there:
+        file_fps = []
+        temp_proj_id = uuid.uuid4().hex ## to be changed
+        try:
+            files = request.FILES.getlist('document')
+            project_data_path = f"tmp/{temp_proj_id}" ## to change
+            for file in files:
+                fs = FileSystemStorage(location = project_data_path)
+                saved = fs.save(file.name, file)
+                print(f'file: {file.name} is saved')
+                fp = os.path.join(project_data_path, file.name)
+                file_fps.append(file.name)
+                file.close()
+                
+            ## download old project file here and run it through aggregator
+            ## build download URL 
+            url = f'http://127.0.0.1:8000/project/{project["linkid"]}/download'
+            download_path = project_data_path+'/download.tar.gz'
+
+            try:
+                ## try to download old project file
+                download = download_file(url, download_path)
+                print(f"PREVIOUS FILE FPS LIST: {file_fps}")
+                file_fps.append(os.path.join('download.tar.gz'))
+                print(f"AFTERS FILE FPS LIST: {file_fps}")
+                
+                print(f'aggregating on: {file_fps}')
+                agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = f'{temp_proj_id}')
+                ## after running aggregator, replace the requests file with the aggregated file: 
+                with open(agg.aggregated_filename, 'rb') as f:
+                    uploaded_file = SimpleUploadedFile(
+                    name=os.path.basename(agg.aggregated_filename),
+                    content=f.read(),
+                    content_type='application/gzip'
+                    )
+                    request.FILES['document'] = uploaded_file
+                f.close()
+            except:
+                ## download failed, don't run aggregator 
+                print(f'download failed ... ')
+        except:
+            print('no file uploaded')
+        try:
+            request_file = request.FILES['document']
+        except:
+            request_file = None
         if request_file is not None:
+            ## save all files, run through aggregator. 
             # mark the current project as updated
             update_project = project_update(request, project_name)
             # mark current project as deleted as well 
@@ -1326,19 +1393,9 @@ def edit_project_page(request, project_name):
             if runs != 0:
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
-            proj = {'project_name':new_project_name, 
-                    'runs' : current_runs, 
-                    'description': form_dict['description'],
-                    'date': get_date(),
-                    'private': form_dict['private'], 
-                    'project_members': form_dict['project_members'], 
-                    'publication_link': form_dict['publication_link'],
-                    'Oncogenes': get_project_oncogenes(current_runs),
-                    'alias_name':form_dict['alias'],}
-            new_val = { "$set": proj }
-            
-            proj['_id'] = query['_id']
-            edit_proj_privacy(proj, old_privacy, new_privacy)
+            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
+                                 'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
+                                 'Oncogenes': get_project_oncogenes(current_runs)}}
             if form.is_valid():
                 print('im here')
                 collection_handle.update_one(query, new_val)
@@ -1375,18 +1432,7 @@ def edit_project_page(request, project_name):
                    'run': form, 
                    'all_alias' :json.dumps(get_all_alias())})
 
-def create_user_list(string, current_user):
-    # user_list = str.split(',')
-    string = string + ',' + current_user
-    # issue 21
-    user_list = re.split(' |;|,|\t', string)
-    # drop empty strings
-    user_list =  [i for i in user_list if i]
-    # clean whitespace
-    user_list = [x.strip() for x in user_list]
-    # remove duplicates
-    user_list = list(set(user_list))
-    return user_list
+
 
 def clear_tmp(folder = 'tmp/'):
     for filename in os.listdir(folder):
@@ -1863,27 +1909,55 @@ def sizeof_fmt(num, suffix="B"):
 
 def create_project(request):
     if request.method == "POST":
+        ## preprocess request
+        # request = preprocess(request)
+        
         form = RunForm(request.POST)
+        
         if not form.is_valid():
             raise Http404()
-
+        ## check multi files, send files to GP and run aggregator there:
+        file_fps = []
+        temp_proj_id = uuid.uuid4().hex ## to be changed
+        files = request.FILES.getlist('document')
+        project_data_path = f"tmp/{temp_proj_id}" ## to change
+        for file in files:
+            fs = FileSystemStorage(location = project_data_path)
+            saved = fs.save(file.name, file)
+            print(f'file: {file.name} is saved')
+            fp = os.path.join(project_data_path, file.name)
+            file_fps.append(file.name)
+            file.close()
+        agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = f'{temp_proj_id}')
+        
+        ## after running aggregator, replace the requests file with the aggregated file: 
+        with open(agg.aggregated_filename, 'rb') as f:
+            uploaded_file = SimpleUploadedFile(
+            name=os.path.basename(agg.aggregated_filename),
+            content=f.read(),
+            content_type='application/gzip'
+            )
+            request.FILES['document'] = uploaded_file
+        f.close()
+        
+        # return render(request, 'pages/loading.html')
         new_id = _create_project(form, request)
         if new_id is not None:
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
             alert_message = "The input file was not a valid aggregation. Please see site documentation."
+
             return render(request, 'pages/create_project.html', 
                           {'run': form, 
                            'alert_message': alert_message, 
                            'all_alias' : json.dumps(get_all_alias())})
-
     else:
         form = RunForm()
     return render(request, 'pages/create_project.html', {'run' : form, 
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
-def _create_project(form, request, previous_versions = [], previous_views = [0, 0]):
+def _create_project(form, request, previous_versions = [], previous_views = [0, 0], agg_fp = None):
     """
     Creates the project 
     """
@@ -1958,7 +2032,6 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     # extract contents of file
     if from_api:
         file_location = request_file.name
-        print(file_location)
     else:
         file_location = f'{project_data_path}/{request_file.name}'
 
@@ -1972,9 +2045,11 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
 
     ti = time.time()
     failed = False
+    print(f'{file_location}')
     with tarfile.open(file_location, 'r') as tar:
         try:
-            tar.extract('./results/run.json', path=project_data_path)
+            # run_location = [run for run in tar.getnames() if 'run.json' in run]
+            tar.extract('results/run.json', path=project_data_path)
         except:
             logging.error(str(file_location) + " had an issue. could not place ./results/run.json into " + project_data_path)
             failed = True
@@ -1982,7 +2057,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
 
     if failed:
         logging.debug("Deleting " + str(file_location))
-        os.remove(file_location)
+        # os.remove(file_location)
         return None, None
 
     logging.debug(str(time.time() - ti) + " seconds for extraction of run.json")
@@ -2053,7 +2128,7 @@ class FileUploadView(APIView):
             proj_name = form_dict['project_name']
             request_file = request.FILES['file']
             # extract contents of file
-            current_user = request.POST['project_members']
+            current_user = request.POST['project_members'][0]
             logging.info(f'Creating project for user {current_user}')
             if 'MULTIPART' in proj_name:
                 _, api_id, final_file, actual_proj_name = proj_name.split('__')
@@ -2130,6 +2205,5 @@ def robots(request):
     """
     View for robots.txt, will read the file from static root (depending on server), and show robots file. 
     """
-
     robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
     return HttpResponse(robots_txt, content_type="text/plain")

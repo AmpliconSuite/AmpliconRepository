@@ -2,13 +2,12 @@ from django import forms
 from django.utils.html import format_html
 
 from .models import Run
-from .models import FeaturedProjectUpdate, AdminDeleteProject, AdminSendEmail, UserPreferencesModel
+from .models import FeaturedProjectUpdate, AdminDeleteProject, AdminSendEmail, UserPreferencesModel, UploadTarFile
 from allauth.account.forms import SignupForm
 from allauth.socialaccount.forms import SignupForm as SocialSignupForm
 
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Layout, Field
-
 
 from django.utils.safestring import mark_safe
 
@@ -37,6 +36,7 @@ class RunForm(forms.ModelForm):
         super(RunForm, self).__init__(*args, **kwargs)
         self.fields['publication_link'].widget.attrs.update({'placeholder': 'Optional: Provide a PMID or link to a publication'})
         self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of additional email addresses or AmpliconRepository usernames separated by spaces or commas'})
+        self.helper = FormHelper()
 
 class UpdateForm(forms.ModelForm):
     
@@ -68,8 +68,6 @@ class UpdateForm(forms.ModelForm):
         self.fields['publication_link'].widget.attrs.update({'placeholder': 'Optional: Provide a PMID or link to a publication'})
         self.fields['project_members'].required = False
         self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of additional email addresses or AmpliconRepository usernames separated by spaces or commas'})
-
-
         # self.fields['file'].required = False
 
 
@@ -123,10 +121,6 @@ class MySocialSignUpForm(SocialSignupForm):
         # and then the rest as usual:
         self.helper.form_show_labels = True
         self.helper.add_input(Submit('signup', 'Create My Account'))
-
-    
-
-
 # class RunForm(forms.ModelForm):
 #     class Meta:
 #         model = Run

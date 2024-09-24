@@ -3,7 +3,7 @@
         <span class="navbar-toggler-icon"></span>
     </button>
     {% comment %} <div class="collapse navbar-collapse" id = "navbarTogglerDemo01"> {% endcomment %}
-        <a class="navbar-brand" href="/"><img src="{{ STATIC_URL }}img/AmpliconSuiteIconCirc.png" height="35px"> AmpliconRepository
+        <a class="navbar-brand" href="/"><img class = "custom-icon" src="{{ STATIC_URL }}img/AmpliconSuiteIconCirc.png" width="35px"> AmpliconRepository
         </a>
         <div class="navbar-collapse collapse w-100 order-1 order-md-0 dual-collapse2" id = "navbarTogglerDemo01">
             <ul class="navbar-nav mr-auto mt-2 mt-lg-0">
@@ -63,10 +63,13 @@
                      
                 <ul class="dropdown-menu dropdown-menu-right" style="margin-top:0px;">
                     <li class="dropdown-item "><a href="/accounts/profile">Profile</a></li>
-                    <li class="dropdown-item "><a href="/create-project">New Project</a></li>
+                    <li class="dropdown-item"> <a href="/create-project">New Project</a></li>
+
+
                     <li class="dropdown-item "><a href="/accounts/email">Change Email</a></li>
                     <li class="dropdown-item "><a href="/accounts/logout">Logout</a></li>
-<a href=""></a>
+
+                    
                 </ul>
                    
                 </li>
@@ -74,3 +77,33 @@
             </ul>
         </div>
 </nav>
+
+
+<script>
+
+    // Script to handle nested dropdowns
+    $('.dropdown-submenu .dropdown-toggle').on("click", function(e) {
+        $(this).next('ul').toggle();
+        e.stopPropagation();
+        e.preventDefault();
+    });
+</script>
+
+<style>
+    /* Custom styles for nested dropdowns */
+    .dropdown-submenu {
+        position: relative;
+    }
+
+    .dropdown-submenu .dropdown-menu {
+        top: 0;
+        left: -100%;
+        margin-top: -1px;
+    }
+
+    .dropdown:hover>.dropdown-menu,
+    .dropdown-submenu:hover>.dropdown-menu {
+        display: block;
+    }
+</style>
+

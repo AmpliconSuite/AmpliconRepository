@@ -1,40 +1,46 @@
-{% extends 'base.html' %}
+{% extends 'base.html' %} 
+{% load crispy_forms_tags %}
 
-{% load crispy_forms_tags%}
-
+{% block extra_css %}
+{% endblock extra_css %}
+  
 <head>
-    <title>Create Project</title>
+  <title>Create Project</title>
 </head>
 
 <style>
-    #upload-form {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-    }
+  #upload-form {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
 
-    #fileuploadfield,
-    #progress-box,
-    #remove-upload-btn {
-        margin-bottom: 10px;
-    }
+  #fileuploadfield,
+  #progress-box,
+  #remove-upload-btn {
+    margin-bottom: 10px;
+  }
 
-    #fileuploadfield {
-        order: 1;
-    }
+  #fileuploadfield {
+    order: 1;
+  }
 
-    #remove-upload-btn {
-        order: 2;
-        margin-left: 10px; /* Add margin for space between buttons */
-    }
+  #remove-upload-btn {
+    order: 2;
+    margin-left: 10px; /* Add margin for space between buttons */
+  }
 
-    #progress-box {
-        order: 3;
-    }
+  #progress-box {
+    order: 3;
+  }
 
-    #createProjectBtn {
-        order: 4;
-    }
+  #createProjectBtn {
+    order: 4;
+  }
+
+  #icon {
+    height: 35px;
+  }
 </style>
 
 {% block main %}
@@ -42,144 +48,297 @@
 <h1>Create New Project</h1>
 
 {% if alert_message %}
-<div class="alert alert-danger" role="alert">
-    {{ alert_message }}
-</div>
+<div class="alert alert-danger" role="alert">{{ alert_message }}</div>
 {% endif %}
 
-<div class="alert alert-danger alert-dismissible" role="alert" id="upload_failed" style="display:none; flex;">
-    No File Selected, Please select a file using the "Browse" button and try again.
+<div
+  class="alert alert-danger alert-dismissible"
+  role="alert"
+  id="upload_failed"
+  style="display:none;">
+  No File Selected, Please select a file using the "Browse" button and try again.
 </div>
 
 {% if user.is_authenticated %}
-    <div id="alert-box"></div>
-    <form method="post" enctype="multipart/form-data" id="upload-form">
-        {% csrf_token %}
-        {% for field in run %}
-            {% if field.name == 'alias' %}
-            <p>Enter an unique alias for this project. It can be used to access this project.</p> <p></p>
-                <div style='display:flex; gap:5px; align-items:center;'>
-                    <span> ampliconrepository.org/project/</span>
-                    <div style = 'width:200px; padding:2px; font-size:15px border:1px;'>{{ field }}</div>
-                    <span>/</span>
-                </div>
-                <div id='result'></div>
-                <br>
-                <br>
-                
-            {% else %}
-                {{field | as_crispy_field }}
-        
-            {% endif %}
-        {% endfor %}
-    
+<div id="alert-box"></div>
 
-        <input type="file" name="document" id="fileuploadfield">
-        <input type="button" onClick="clearFileInput();" value="Remove Upload" id="remove-upload-btn">
-        <br> <br>
-        <div id="progress-box" class="not-visible"></div>
-        <button id="createProjectBtn" class="btn btn-primary">Create Project</button>
-    </form>
+<form method="post" enctype="multipart/form-data" id="upload-form">
+  {% csrf_token %} 
+  
+      {% for field in run %}
+          {% if field.name == 'alias' %}
+          <p>Enter an unique alias for this project. It can be used to access this project.</p> <p></p>
+              <div style='display:flex; gap:5px; align-items:center;'>
+                  <span> ampliconrepository.org/project/</span>
+                  <div style = 'width:200px; padding:2px; font-size:15px border:1px;'>{{ field }}</div>
+                  <span>/</span>
+              </div>
+              <div id='result'></div>
+              <br>
+              <br>
 
-    <br>
-    <p><b>What file do I upload?</b> <br> A specifically structured .tar.gz of your AmpliconSuite-pipeline output files, including all samples in your project.
-        To make this file, you must run <a href="https://github.com/AmpliconSuite/AmpliconSuiteAggregator">AmpliconSuiteAggregator</a>.
-        The aggregated .tar.gz file will contain organized output files, and a JSON index the site knows how to read. It will disinclude .fastq and .bam files from this packaging.
-        Please refer to the <a href="https://docs.ampliconrepository.org/en/latest/getting-started/">documentation</a> for more detailed instructions.</p>
+          {% else %}
+              {{field | as_crispy_field }}
 
-    <p><b>Quickest way to run the Aggregator on my files?</b> <br> AmpliconSuiteAggregator can be run via the <a href="https://genepattern.ucsd.edu/">GenePattern</a> interface.
-        Search for "AmpliconSuiteAggregator" after signing in, and upload a .tar.gz or .zip file containing the outputs produced by AmpliconSuite-pipeline.
-        Please make sure the .bam and .fastq files are not included when you make your initial .tar.gz or .zip.</p>
+          {% endif %}
+      {% endfor %}
+  <div class="uk-margin">
+    <div id="file-drop-area" class="uk-placeholder uk-text-center js-upload">
+      <span uk-icon="icon: cloud-upload"></span>
+      <span class="uk-text-middle">Drag files here or</span>
+      <div uk-form-custom>
+        <input id="fileuploadfield" type="file" name="document" multiple />
+        <span class="uk-link">select files</span>
+      </div>
+    </div>
+  </div>
 
-    <p>For files larger than 250Mb, please consider uploading directly to the site with the AmpliconSuiteAggregator tool (no need to use this page in that event).</p>
+  <table class="uk-table uk-table-divider" id="file-list-table">
+    <!-- UIkit JS -->
+    <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit-icons.min.js"></script>
+    <!-- UIkit CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/css/uikit.min.css" />
+    <thead>
+      <tr>
+        <th>File Name</th>
+        <th>File Size</th>
+        <th>Remove</th>
+      </tr>
+    </thead>
+    <tbody id="file-list"></tbody>
+  </table>
 
-    <p><b>Need help?</b> <br> Please do not hesitate to <a href="https://github.com/AmpliconSuite/AmpliconRepository/issues">reach out</a>, we're very responsive.</p>
+  <br /><br />
+
+  <!-- Ensure the progress bar is visible initially -->
+  <div id="progress-container">
+    <progress id="upload-progressbar" class="uk-progress" value="0" max="100" hidden></progress>
+  </div>
+  
+  <input
+    type="button"
+    onClick="clearFileInput();"
+    value="Remove Upload"
+    id="remove-upload-btn"
+  />
+
+  <button id="createProjectBtn" class="uk-button uk-button-primary" onClick="uploadFiles();" disabled>
+    Submit
+  </button>
+</form>
+
+<br />
+
+<p>
+  <b>What file do I upload?</b> <br />
+  A specifically structured .tar.gz of your AmpliconSuite-pipeline output files,
+  including all samples in your project. To make this file, you must run
+  <a href="https://github.com/AmpliconSuite/AmpliconSuiteAggregator"
+    >AmpliconSuiteAggregator</a
+  >. The aggregated .tar.gz file will contain organized output files, and a JSON
+  index the site knows how to read. It will disinclude .fastq and .bam files
+  from this packaging. Please refer to the
+  <a href="https://docs.ampliconrepository.org/en/latest/getting-started/"
+    >documentation</a
+  >
+  for more detailed instructions.
+</p>
+
+<p>
+  <b>Quickest way to run the Aggregator on my files?</b> <br />
+  AmpliconSuiteAggregator can be run via the
+  <a href="https://genepattern.ucsd.edu/">GenePattern</a> interface. Search for
+  "AmpliconSuiteAggregator" after signing in, and upload a .tar.gz or .zip file
+  containing the outputs produced by AmpliconSuite-pipeline. Please make sure
+  the .bam and .fastq files are not included when you make your initial .tar.gz
+  or .zip.
+</p>
+
+<p>
+  For files larger than 250Mb, please consider uploading directly to the site
+  with the AmpliconSuiteAggregator tool (no need to use this page in that
+  event).
+</p>
+
+<p>
+  <b>Need help?</b> <br />
+  Please do not hesitate to
+  <a href="https://github.com/AmpliconSuite/AmpliconRepository/issues"
+    >reach out</a
+  >, we're very responsive.
+</p>
 
 {% else %}
-    <p>Sign in to Upload Files</p>
+<p>Sign in to Upload Files</p>
 {% endif %}
 
-
 <script>
-    const uploadForm = document.getElementById('upload-form')
-    const input = document.getElementById('fileuploadfield')
-    console.log(input)
-    const alertBox = document.getElementById('alert-box')
-    const progressBox = document.getElementById('progress-box')
-    const csrf = document.getElementsByName('csrfmiddlewaretoken')
+  document.addEventListener("DOMContentLoaded", function () {
+    const input = document.getElementById("fileuploadfield");
+    const createProjectBtn = document.getElementById("createProjectBtn");
+    const alertBox = document.getElementById("alert-box");
+    const fileList = document.getElementById("file-list");
+    const progressBar = document.getElementById("upload-progressbar");
+    const form = document.getElementById("upload-form");
 
-    input.addEventListener('change', (event) => {
-        progressBox.classList.remove('not-visible')
-        progressBox.style.display = "block";
-        const validFileExtension = ".tar.gz";
-        const fileName = input.value.split('\\').pop().split('/').pop(); // Extract filename without path
-        console.log(fileName, "fname")
+    let filesArray = [];
+
+    function validateForm() {
+      // Add form validation logic here
+      return true;
+    }
+
+    function validateFiles() {
+      return filesArray.length > 0; // Ensure at least one valid file is selected
+    }
+
+    function updateSubmitButtonState() {
+      if (validateForm() && validateFiles()) {
+        createProjectBtn.disabled = false; // Enable button if both are valid
+      } else {
+        createProjectBtn.disabled = true; // Keep button disabled otherwise
+      }
+    }
+
+    function addFilename(filename) {
+      return filesArray.some(file => file.name === filename);
+    }
+
+    input.addEventListener("change", (event) => {
+      const validFileExtension = ".tar.gz";
+      const files = Array.from(input.files);
+      let allFilesValid = true;
+      let invalidFileNames = [];
+
+      // Validate all selected files
+      files.forEach((file) => {
+        const fileName = file.name;
         if (!fileName.toLowerCase().endsWith(validFileExtension)) {
-            alert("Sorry, " + fileName + " is not an invalid input.\n\nPlease select an aggregated .tar.gz file.\n\nSee bottom of page for instructions on how to generate an aggregated input file.");
-            throw new Error("Bad file extension!");
+          allFilesValid = false;
+          invalidFileNames.push(fileName);
         }
-        const agg_file = input.files[0]
-        const url = URL.createObjectURL(agg_file)
-        console.log(agg_file, "agg_file")
-        console.log(url, "url")
+      });
 
-        const fd = new FormData()
-        fd.append('csrfmiddlewaretoken', csrf[0].value)
-        fd.append('document', agg_file)
+      if (!allFilesValid) {
+        alert("Sorry, the following files are invalid inputs:\n\n" + invalidFileNames.join(", ") + "\n\nPlease select .tar.gz files only.");
+        throw new Error("Bad file extension!");
+      }
 
-        $.ajax({
-            type:'POST',
-            url: uploadForm.action,
-            enctype: 'multipart/form-data',
-            data: fd,
-            beforeSend: function(){
-                alertBox.innerHTML= ""
-            },
-            xhr: function(){
-                const xhr = new window.XMLHttpRequest();
-                xhr.upload.addEventListener('progress', (e) => {
-                    if (e.lengthComputable) {
-                        const percent = e.loaded / e.total * 100
-                        console.log(percent, "% up")
-                        progressBox.innerHTML = `<div class="progress">
-                                                    <div class="progress-bar" role="progressbar" style="width: ${percent}%" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"></div>
-                                                </div>
-                                                <p>${percent.toFixed(1)}%</p>`
-                    }
-                })
-                return xhr
-            },
-            success: function(response){
-                console.log(response)
-                alertBox.innerHTML = `<div class="alert alert-success" role="alert">
-                                        Successfully uploaded file
-                                    </div>`
-            },
-            error: function(error){
-                console.log(error)
-                {#alertBox.innerHTML = `<div class="alert alert-danger" role="alert">#}
-                {#                    Something went wrong#}
-                {#                </div>`#}
+      // Append new files to the array
+      files.forEach((file) => {
+        if (!addFilename(file.name)) {
+          filesArray.push(file);
+          addFileRow(file);
+        }
+      });
 
-            },
-            cache: false,
-            contentType: false,
-            processData: false,
-        })
-    })
+      updateFileInput(); // Update the file input with the current filesArray
+      updateSubmitButtonState(); // Revalidate and update button state after files are selected
+    });
 
     function clearFileInput() {
-        const ctrl = document.getElementById('fileuploadfield');
-        const progressBox = document.getElementById('progress-box')
-        progressBox.style.display = "none";
-
-        try {
-          ctrl.value = null;
-        } catch(ex) { }
-        if (ctrl.value) {
-          ctrl.parentNode.replaceChild(ctrl.cloneNode(true), ctrl);
-        }
+      filesArray = [];
+      fileList.innerHTML = "";
+      input.value = "";
+      updateSubmitButtonState(); // Revalidate after clearing
+      progressBar.hidden = true;
     }
+
+    function addFileRow(file) {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td class='filename'>${file.name}</td>
+        <td class="filesize-cell">${(file.size / 1024 / 1024).toFixed(2)} MB</td>
+        <td><button class="remove-btn">Remove</button></td>
+      `;
+      fileList.appendChild(row);
+
+      const removeBtn = row.querySelector(".remove-btn");
+      removeBtn.addEventListener("click", () => {
+        row.remove();
+        removeFileFromArray(file.name);
+      });
+    }
+
+    function removeFileFromArray(fileName) {
+      filesArray = filesArray.filter(file => file.name !== fileName);
+      updateFileInput();
+      updateSubmitButtonState(); // Revalidate after removing a file
+    }
+
+    function updateFileInput() {
+      const dataTransfer = new DataTransfer();
+      filesArray.forEach(file => {
+        dataTransfer.items.add(file);
+      });
+      input.files = dataTransfer.files;
+    }
+
+    function uploadFiles() {
+      const fd = new FormData();
+      fd.append('csrfmiddlewaretoken', csrf[0].value);
+
+      
+
+      // Append each file to the FormData
+      filesArray.forEach(file => {
+        fd.append('document', file);
+      });
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', uploadForm.action, true);  // Assuming the form has the correct action URL
+      xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
+
+      // Show the "Uploading" message when the upload starts
+      alertBox.innerHTML = `<div class="alert alert-info" role="alert">
+                              Uploading to site, please wait...
+                            </div>`;
+
+      // Show the progress bar during upload
+      progressBar.hidden = false;
+
+      // Track the upload progress and update the progress bar
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          progressBar.value = percent;
+
+          if (percent === 100) {
+            alertBox.innerHTML = `<div class="alert alert-info" role="alert">
+                                    Processing upload, almost done...
+                                  </div>`;
+          }
+        }
+      });
+
+      // Handle the response after the upload is complete
+      xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          alertBox.innerHTML = `<div class="alert alert-success" role="alert">
+                                  Successfully uploaded file(s)!
+                                </div>`;
+          progressBar.hidden = true;  // Hide the progress bar
+          clearFileInput();  // Clear the input after successful upload
+        } else {
+          alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
+                                  Something went wrong with the upload.
+                                </div>`;
+          progressBar.hidden = true;  // Hide the progress bar on error
+        }
+      };
+
+      xhr.onerror = function () {
+        alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
+                                Upload failed, please try again.
+                              </div>`;
+        progressBar.hidden = true;  // Hide the progress bar on error
+      };
+
+      // Actually send the request
+      xhr.send(fd);
+    }
+  });
 
     document.addEventListener('DOMContentLoaded', function() {
         // Pass the alias names from Django context to JavaScript
@@ -204,6 +363,7 @@
 
 
 
+
 </script>
 
-{% endblock %}
+{% endblock main %}
