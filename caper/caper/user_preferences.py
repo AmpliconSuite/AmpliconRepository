@@ -76,7 +76,7 @@ def notify_users_of_project_membership_change(user, old_membership, new_membersh
             removed_user_prefs = get_user_preferences(user_obj)
             emailOK = True # default to sending email
             if removed_user_prefs is not None:
-                emailOK = remove_user_prefs['onRemovedFromProjectTeam']
+                emailOK = removed_user_prefs['onRemovedFromProjectTeam']
 
             if emailOK:
                 print("send project remove email to " + user_obj.email)

@@ -9,6 +9,7 @@ from allauth.socialaccount.forms import SignupForm as SocialSignupForm
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Layout, Field
 
+from django.utils.safestring import mark_safe
 
 
 class RunForm(forms.ModelForm):
@@ -23,7 +24,7 @@ class RunForm(forms.ModelForm):
 
     class Meta:
         model = Run
-        fields = ('project_name','description','publication_link','private','project_members', 'accept_license')
+        fields = ('project_name','description','publication_link','private','project_members', 'accept_license', 'alias')
         labels = {
             'private': 'Visibility'
         }
@@ -38,6 +39,7 @@ class RunForm(forms.ModelForm):
         self.helper = FormHelper()
 
 class UpdateForm(forms.ModelForm):
+    
     accept_license = forms.BooleanField(
         label=format_html(
             "I acknowledge that the uploaded files will be released under a <a href='https://raw.githubusercontent.com/AmpliconSuite/AmpliconRepository/main/licenses/CCv4-BY.txt'>Creative Commons v4 license</a>."),
@@ -49,7 +51,7 @@ class UpdateForm(forms.ModelForm):
 
     class Meta:
         model = Run
-        fields = ('project_name', 'description', 'publication_link', 'private', 'project_members', 'accept_license')
+        fields = ('project_name', 'description', 'publication_link', 'private', 'project_members', 'accept_license', 'alias')
         labels = {
             'private': 'Visibility'
         }

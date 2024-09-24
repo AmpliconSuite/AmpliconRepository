@@ -4,7 +4,7 @@
 {% load static %}
 
 {% block extra_js %}
-
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 <script>
     $(document).ready( function () {
         $('#myTable1').DataTable({
@@ -98,6 +98,41 @@
     }
 
 
+    function copyToClipboard() {
+        // Get the anchor element with the URL
+        var copyText = document.getElementById("aliaslink");
+
+        // Create a range and select the text
+        var range = document.createRange();
+        range.selectNode(copyText);
+
+        // Get the selection object and add the range to it
+        var selection = window.getSelection();
+        selection.removeAllRanges(); // Clear any existing selections
+        selection.addRange(range);
+
+        // Copy the selected text to the clipboard
+        try {
+            var successful = document.execCommand('copy');
+            var message = successful ? 'Copied to clipboard!' : 'Unable to copy.';
+            document.getElementById("message").innerHTML = message;
+            // Remove the message after 5 seconds (5000 milliseconds)
+            setTimeout(function() {
+                document.getElementById("message").innerHTML = '';
+            }, 3000);
+
+
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
+
+        // Clear the selection for better user experience
+        selection.removeAllRanges();
+    }
+
+
+
+
 </script>
 
 {% endblock %}
@@ -129,6 +164,13 @@
         <h5>Description: <span style="font-weight: 200">{{ project.description }}</span></h5>
         <h5>Publication link: <span style="font-weight: 200">{{ project.publication_link|escape|replace_urls|safe }}</span></h5>
         <h5>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h5>
+        
+        {% if project.alias_name %}
+            <h5>Project Link: <a id='aliaslink' href="">ampliconrepository.org/project/{{project.alias_name}}  </a><i class="fas fa-link chain-icon" style = 'cursor:pointer;'onclick="copyToClipboard()"></i></h5>
+            <p id="message"></p>
+        {% endif %}
+            
+        
     </div>
 
     <div class="col-md-3">

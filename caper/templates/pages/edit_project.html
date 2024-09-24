@@ -57,7 +57,30 @@
 {% if user.is_authenticated %}
     <div id="alert-box"></div>
     <form method="post" enctype="multipart/form-data" id="upload-form">
-        {% csrf_token %} {{ run | crispy }}
+
+        {% csrf_token %} 
+        {% for field in run %}
+            
+            {% if field.name == 'alias' %}
+            <p>Enter an unique alias for this project. It can be used to access this project.</p>
+                
+                {% if project.alias_name != None %}
+                    <p> Current alias name is: <b>{{ project.alias_name }}</b>. The project can be accessed at <a href="">ampliconrepository.org/project/{{project.alias_name}}</a></p>
+                {% endif %}
+                    
+
+                <div style='display:flex; gap:5px; align-items:center;'>
+                    <span> ampliconrepository.org/project/</span>
+                    <div style = 'width:200px; padding:2px; font-size:15px border:1px;'>{{ field }}</div>
+                    <span>/</span>
+                </div>
+                <div id='result'></div>
+                <br>
+            {% else %}
+                {{field | as_crispy_field }}
+            
+            {% endif %}
+        {% endfor %}
         <div class="uk-margin">
           <div id="file-drop-area" class="uk-placeholder uk-text-center js-upload">
             <span uk-icon="icon: cloud-upload"></span>
@@ -199,6 +222,7 @@
         }
       });
     }
+
   
     function uploadFiles() {
       const fd = new FormData();
@@ -247,6 +271,30 @@
      //xhr.send(fd);
     }
   </script>
-  
+ 
+    document.addEventListener('DOMContentLoaded', function() {
+        // Pass the alias names from Django context to JavaScript
+        var aliasNames = JSON.parse("{{ all_alias | escapejs}}");
+        console.log(aliasNames);
+        
+        var inputField = document.getElementById('id_alias');
+        var result = document.getElementById('result');
+        
+        inputField.addEventListener('input', function() {
+            var userInput = inputField.value;
+            
+            if (aliasNames.includes(userInput) ) {
+                result.textContent = 'Alias already taken ...';
+                result.style.color = 'red';
+            } else {
+                result.textContent = 'This alias works!';
+                result.style.color = 'green';
+            }
+        });
+    });
+
+
+
+</script>
 
 {% endblock %}

@@ -197,8 +197,22 @@ def sample_data_from_feature_list(features_list):
     # print(f'********** TOOK {datetime.datetime.now() - now}')
     return sample_data
 
+def get_all_alias():
+    """
+    Gets all alias names in the db
+    """
+    return collection_handle.distinct('alias_name')
+    
+
 
 def get_one_project(project_name_or_uuid):
+    """
+    Gets one project from name or UUID. 
+    
+    if name, then checks the DB for an "alias" field, then gets that project if it has one 
+    
+    """
+    
     try:
         project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': False})[0]
         prepare_project_linkid(project)
@@ -209,6 +223,15 @@ def get_one_project(project_name_or_uuid):
 
     # backstop using the name the old way
     if project is None:
+        ## first try finding the alias name
+        try:
+            project = collection_handle.find({'alias_name' : project_name_or_uuid, 'delete':False})[0]
+            prepare_project_linkid(project)
+            return project
+        except:
+            project = None
+            
+        ## then find project via project name
         try:
             project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
             if project is not None:
@@ -329,4 +352,21 @@ def create_user_list(string, current_user):
     # remove duplicates
     user_list = list(set(user_list))
     return user_list
+
+
+def get_projects_close_cursor(query):
+    """
+    Querys the mongo database and closes the cursor after query is complete. 
+    Returns a list of projects of the query. 
+    
+    A cursor is a pointer to the result set of a query in MongoDb 
+    https://stackoverflow.com/questions/36766956/what-is-a-cursor-in-mongodb
+    
+    """
+    
+    with collection_handle.find(query) as cursor: 
+        projs = [proj for proj in cursor]
+    cursor.close()
+    
+    return projs 
 

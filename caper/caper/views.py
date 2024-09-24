@@ -15,7 +15,7 @@ from django.utils.html import strip_tags
 from rest_framework.response import Response
 
 from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
-from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics
+from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
 from  .serializers import FileSerializer
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
@@ -33,7 +33,7 @@ import json
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
 from .utils import collection_handle, collection_handle_primary, db_handle, fs_handle, replace_space_to_underscore, \
     preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
-    prepare_project_linkid, replace_underscore_keys, create_user_list
+    prepare_project_linkid, replace_underscore_keys, get_projects_close_cursor, get_all_alias
 from django.forms.models import model_to_dict
 
 import subprocess
@@ -115,7 +115,12 @@ def get_date_short():
 
 def get_one_deleted_project(project_name_or_uuid):
     try:
-        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
+        
+        # old cursor
+        # project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]        
+        project = get_projects_close_cursor({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
+        
+        
         prepare_project_linkid(project)
         return project
 
@@ -167,6 +172,14 @@ def form_to_dict(form):
     # print(form)
     run = form.save(commit=False)
     form_dict = model_to_dict(run)
+    
+    if "alias" in form_dict:
+        try:
+            form_dict['alias'] = form_dict['alias'].replace(' ', '_')
+            print(f'alias for this project is: {form_dict["alias"]}')
+        except:
+            print('No alias provided, probably Null')
+            print(type(form_dict['alias']))
     return form_dict
 
 
@@ -252,7 +265,9 @@ def data_qc(request):
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        
+        private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
+        # private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
         for proj in private_projects:
             prepare_project_linkid(proj)
     else:
@@ -260,7 +275,10 @@ def data_qc(request):
 
     public_proj_count = 0
     public_sample_count = 0
-    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+
+    
+    public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
+    # public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
         public_proj_count = public_proj_count + 1
@@ -296,7 +314,8 @@ def change_database_dates(request):
         return redirect('/accounts/logout')
 
     logging.debug('Starting to update timestamps...')
-    projects = list(collection_handle.find({'delete': False}))
+    # projects = list(collection_handle.find({'delete': False}))
+    projects = get_projects_close_cursor({'delete': False})
     
     for project in projects:
         recently_updated = change_to_standard_date(project['date'])
@@ -331,7 +350,9 @@ def index(request):
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        # private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
+        
         for proj in private_projects:
             prepare_project_linkid(proj)
 
@@ -341,7 +362,8 @@ def index(request):
     # just get stats for all private
     all_private_proj_count = 0
     all_private_sample_count = 0
-    all_private_projects = list(collection_handle.find({'private': True, 'delete': False}))
+    # all_private_projects = list(collection_handle.find({'private': True, 'delete': False}))
+    all_private_projects = get_projects_close_cursor({'private': True, 'delete': False})
     for proj in all_private_projects:
         all_private_proj_count = all_private_proj_count + 1
         all_private_sample_count = all_private_sample_count + len(proj['runs'])
@@ -349,13 +371,16 @@ def index(request):
 
     public_proj_count = 0
     public_sample_count = 0
-    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+    # public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+    public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
+    print(len(public_projects))
     for proj in public_projects:
         prepare_project_linkid(proj)
         public_proj_count = public_proj_count + 1
         public_sample_count = public_sample_count + len(proj['runs'])
 
-    featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
+    # featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
+    featured_projects = get_projects_close_cursor({'private' : False, 'delete': False, 'featured': True})
     for proj in featured_projects:
         prepare_project_linkid(proj)
 
@@ -387,7 +412,8 @@ def profile(request, message_to_user=None):
     # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
-    projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+    # projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+    projects = get_projects_close_cursor({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False})
 
     for proj in projects:
         prepare_project_linkid(proj)
@@ -490,6 +516,7 @@ def previous_versions(project):
     cursor = collection_handle.find(
         {'current': True, 'previous_versions.linkid' : str(project['_id'])}, {'date': 1, 'previous_versions':1}).sort('date', -1)
     data = list(cursor)
+    cursor.close()
     if len(data) == 1:
         res = data[0]['previous_versions']
         res.append({'date': data[0]['date'], 
@@ -532,6 +559,8 @@ def project_page(request, project_name, message=''):
     ## if flag is unfinished, render a loading page: 
 
     project = validate_project(get_one_project(project_name), project_name)
+    print(project.keys())
+    print(project['private'])
     if 'FINISHED?' in project and project['FINISHED?'] == False:
         return render(request, "pages/loading.html", {"project_name":project_name})
 
@@ -1092,11 +1121,13 @@ def gene_search_page(request):
         useremail = request.user.email
         query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
 
-        private_projects = list(collection_handle.find(query_obj))
+        # private_projects = list(collection_handle.find(query_obj))
+        private_projects = get_projects_close_cursor(query_obj)
     else:
         private_projects = []
     
-    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False}))
+    # public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False}))
+    public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
 
     for proj in private_projects:
         prepare_project_linkid(proj)    
@@ -1227,7 +1258,7 @@ def project_update(request, project_name):
         ## 2 new fields: current, and update_date, $set will add a new field with the specified value. 
         new_val = { "$set": {'current' : False, 'update_date': get_date()} }
         collection_handle.update_one(query, new_val)
-        delete_project_from_site_statistics(project)
+        
         return redirect('profile')
     else:
         return HttpResponse("Project does not exist")
@@ -1258,14 +1289,15 @@ def edit_project_page(request, project_name):
 
         form = UpdateForm(request.POST, request.FILES)
         form_dict = form_to_dict(form)
-
+        
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
 
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
         old_membership = project['project_members']
+        old_privacy = project['private']
+        new_privacy = form_dict['private']
         notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
-
         ## check multi files, send files to GP and run aggregator there:
         file_fps = []
         temp_proj_id = uuid.uuid4().hex ## to be changed
@@ -1341,10 +1373,11 @@ def edit_project_page(request, project_name):
                 return redirect('project_page', project_name=new_id.inserted_id)
             else:
                 alert_message = "The input file was not a valid aggregation. Please see site documentation."
-                return render(request, 'pages/edit_project.html', {'project': project, 'run': form, 'alert_message': alert_message})
-
-
-
+                return render(request, 'pages/edit_project.html', 
+                              {'project': project, 
+                               'run': form, 
+                               'alert_message': alert_message,
+                               'all_alias' :get_all_alias()})
         # JTL 081823 Not sure what these next 4 lines are about?  An earlier plan to change the project file?
         # leaving them alone for now but they smell like dead code
         if 'file' in form_dict:
@@ -1354,6 +1387,7 @@ def edit_project_page(request, project_name):
 
         if check_project_exists(project_name):
             new_project_name = form_dict['project_name']
+            
             logging.info(f"project name: {project_name}  change to {new_project_name}")
             current_runs = project['runs']
             if runs != 0:
@@ -1363,12 +1397,15 @@ def edit_project_page(request, project_name):
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
                                  'Oncogenes': get_project_oncogenes(current_runs)}}
             if form.is_valid():
+                print('im here')
                 collection_handle.update_one(query, new_val)
                 return redirect('project_page', project_name=project_name)
             else:
                 raise Http404()
         else:
             return HttpResponse("Project does not exist")
+        
+        
     else:
         project = get_one_project(project_name)
         prev_versions, prev_ver_msg = previous_versions(project)
@@ -1386,7 +1423,14 @@ def edit_project_page(request, project_name):
         members = [i for i in members if i]
         memberString = ', '.join(members)
         form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString,"publication_link": publication_link})
-    return render(request, "pages/edit_project.html", {'project': project, 'run': form})
+        
+        
+        
+    print(project['alias_name'])
+    return render(request, "pages/edit_project.html",
+                  {'project': project, 
+                   'run': form, 
+                   'all_alias' :json.dumps(get_all_alias())})
 
 
 
@@ -1434,7 +1478,8 @@ def admin_featured_projects(request):
 
 
 
-    public_projects = list(collection_handle_primary.find({'private': False, 'delete': False}))
+    # public_projects = list(collection_handle_primary.find({'private': False, 'delete': False}))
+    public_projects = get_projects_close_cursor({'private': False, 'delete': False})
     for proj in public_projects:
         prepare_project_linkid(proj)
 
@@ -1555,7 +1600,8 @@ def admin_stats(request):
     users = User.objects.all()
     
     # Get public and private project data
-    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    # public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    public_projects = get_projects_close_cursor({'private': False, 'delete': False})
     for proj in public_projects:
         prepare_project_linkid(proj)
         if check_if_db_field_exists(proj, 'project_downloads'):
@@ -1630,7 +1676,8 @@ def project_stats_download(request):
     #     return redirect('/accounts/logout')
     
     # Get public and private project data
-    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    # public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    public_projects = get_projects_close_cursor({'private': False, 'delete': False})
     for proj in public_projects:
         prepare_project_linkid(proj)
     
@@ -1835,7 +1882,8 @@ def admin_delete_project(request):
             error_message = admin_permanent_delete_project(project_id, project, project_name)
 
 
-    deleted_projects = list(collection_handle.find({'delete': True, 'current' : True}))
+    # deleted_projects = list(collection_handle.find({'delete': True, 'current' : True}))
+    deleted_projects = get_projects_close_cursor({'delete': True, 'current' : True})
     for proj in deleted_projects:
         prepare_project_linkid(proj)
         try:
@@ -1898,10 +1946,15 @@ def create_project(request):
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
             alert_message = "The input file was not a valid aggregation. Please see site documentation."
-            return render(request, 'pages/create_project.html', {'run': form, 'alert_message': alert_message})
+
+            return render(request, 'pages/create_project.html', 
+                          {'run': form, 
+                           'alert_message': alert_message, 
+                           'all_alias' : json.dumps(get_all_alias())})
     else:
         form = RunForm()
-    return render(request, 'pages/create_project.html', {'run' : form})
+    return render(request, 'pages/create_project.html', {'run' : form, 
+                                                         'all_alias' : json.dumps(get_all_alias())})
 
 
 def _create_project(form, request, previous_versions = [], previous_views = [0, 0], agg_fp = None):
@@ -2051,6 +2104,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['FINISHED?'] = False
     project['views'] = previous_views[0]
     project['downloads'] = previous_views[1]
+    project['alias_name'] = form_dict['alias']
     return project, tmp_id
 
 class FileUploadView(APIView):

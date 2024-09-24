@@ -151,6 +151,7 @@ EMAIL_HOST = 'smtp.gmail.com' #new
 EMAIL_PORT = 587 #new
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', default="")  #new
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', default="")
+EMAIL_HOST_USER_SECRET = EMAIL_HOST_USER
 EMAIL_USE_TLS = True #new
 SITE_URL = os.environ.get("SITE_URL", default="http://127.0.0.1:8000/")
 
