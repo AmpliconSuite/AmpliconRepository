@@ -1316,7 +1316,6 @@ def edit_project_page(request, project_name):
             ## build download URL 
             url = f'http://127.0.0.1:8000/project/{project["linkid"]}/download'
             download_path = project_data_path+'/download.tar.gz'
-
             try:
                 ## try to download old project file
                 download = download_file(url, download_path)
@@ -1716,7 +1715,6 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
             for feature in features:
                 # logging.debug(feature['Sample name'])
                 if len(feature) > 0:
-
                     # get paths
                     key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON',
                                  'AA directory', 'cnvkit directory']
@@ -1725,10 +1723,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
                             path_var = feature[k]
                             with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
                                 id_var = fs_handle.put(file_var)
-
                         except:
                             id_var = "Not Provided"
-
                         feature[k] = id_var
 
         # Now update the project with the updated runs

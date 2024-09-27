@@ -67,12 +67,10 @@ def unzip_file(fp, dest_root):
     Ensures proper extraction of all files, including nested directories.
     """
     try:
-        print('hello')
         if fp.endswith(".tar.gz"):
             zip_name = os.path.basename(fp).replace(".tar.gz", "")
             destination = os.path.join(dest_root, zip_name)
             os.makedirs(destination, exist_ok=True)  # Ensure destination exists
-            
             # Open and extract tar.gz
             with tarfile.open(fp, 'r:gz') as tar_ref:
                 for member in tar_ref.getmembers():
@@ -84,7 +82,6 @@ def unzip_file(fp, dest_root):
             zip_name = os.path.basename(fp).replace(".zip", "")
             destination = os.path.join(dest_root, zip_name)
             os.makedirs(destination, exist_ok=True)  # Ensure destination exists
-            
             # Open and extract zip
             with zipfile.ZipFile(fp, 'r') as zip_ref:
                 zip_ref.extractall(destination)
@@ -147,7 +144,6 @@ class Aggregator:
         Unzips the zip files, and get directories for files within
 
         """
-        print('hello im here')
         for zip_fp in self.zip_paths:
             fp = os.path.join(self.root, zip_fp)
             try:
@@ -175,7 +171,6 @@ class Aggregator:
         ## find samples and move files
         # samples = []
         aa_samples_found = 0
-        print(f'*************************************************{self.DEST_ROOT}')
         print("Crawling files for AA, classification, and CN data...")
         for root, dirs, files in os.walk(self.DEST_ROOT, topdown = True):
             for dir in dirs: 
@@ -472,6 +467,8 @@ class Aggregator:
                     if feature in sample_dct and sample_dct[feature]:
                         feat_basename = os.path.basename(sample_dct[feature])
                         feat_file = f'{self.sample_to_ac_location_dct[sample]}/files/{feat_basename}'
+                        if not os.path.exists(feat_file):
+                            feat_file = f'{self.sample_to_ac_location_dct[sample]}/{feat_basename}'
                         if feature == "CNV BED file" and any([feat_file.endswith(x) for x in ["AA_CNV_SEEDS.bed", "CNV_CALLS_pre_filtered.bed", "Not provided", "Not Provided"]]):
                             cnvkit_dir = self.samp_ckit_dct[sample_dct['Sample name']]
                             if cnvkit_dir:
@@ -550,7 +547,6 @@ class Aggregator:
             subprocess.call(cmd, shell=True)
             # except FileNotFoundError:
             #     pass
-
 
 # TODO: VALIDATE IS NEVER USED!
 def validate():
