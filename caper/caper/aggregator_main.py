@@ -63,24 +63,36 @@ def read_name_remap(name_remap_file):
 
 def unzip_file(fp, dest_root):
     """
-    unzips file based on zip type
+    Unzips file based on zip type.
+    Ensures proper extraction of all files, including nested directories.
     """
     try:
+        print('hello')
         if fp.endswith(".tar.gz"):
             zip_name = os.path.basename(fp).replace(".tar.gz", "")
-            destination = f'{dest_root}/{zip_name}'
-            with tarfile.open(fp, 'r') as output_zip:
-                output_zip.extractall(destination)
-            output_zip.close()
+            destination = os.path.join(dest_root, zip_name)
+            os.makedirs(destination, exist_ok=True)  # Ensure destination exists
+            
+            # Open and extract tar.gz
+            with tarfile.open(fp, 'r:gz') as tar_ref:
+                for member in tar_ref.getmembers():
+                    if member.isreg():
+                        member.name = os.path.basename(member.name)
+                        tar_ref.extract(member, destination)
+        
         elif fp.endswith(".zip"):
             zip_name = os.path.basename(fp).replace(".zip", "")
-            destination = f'{dest_root}/{zip_name}'
+            destination = os.path.join(dest_root, zip_name)
+            os.makedirs(destination, exist_ok=True)  # Ensure destination exists
+            
+            # Open and extract zip
             with zipfile.ZipFile(fp, 'r') as zip_ref:
                 zip_ref.extractall(destination)
-            zip_ref.close()
+        
+        print(f'Just extracted: {fp} to {destination}!')
 
     except Exception as e:
-        print(e)
+        print(f"Error occurred while extracting {fp}: {e}")
 
 
 def clean_dirs(dlist):
@@ -135,6 +147,7 @@ class Aggregator:
         Unzips the zip files, and get directories for files within
 
         """
+        print('hello im here')
         for zip_fp in self.zip_paths:
             fp = os.path.join(self.root, zip_fp)
             try:
@@ -162,6 +175,7 @@ class Aggregator:
         ## find samples and move files
         # samples = []
         aa_samples_found = 0
+        print(f'*************************************************{self.DEST_ROOT}')
         print("Crawling files for AA, classification, and CN data...")
         for root, dirs, files in os.walk(self.DEST_ROOT, topdown = True):
             for dir in dirs: 
@@ -365,7 +379,6 @@ class Aggregator:
         """
         Zips the aggregate results, and deletes files for cleanup
         """
-        print(self.samp_AA_dct.values())
         clean_dirs(self.samp_AA_dct.values())
         # self.clean_files(self.samp_ckit_dct.values())
         print("Creating tar.gz...")
@@ -373,7 +386,6 @@ class Aggregator:
         self.tardir(f'{self.ROOT_FP}/results', f'{self.output_name}.tar.gz')
         print('cleaning directories now ... ')
         clean_dirs([f'{self.ROOT_FP}/results']) # ./extracted_from_zips
-        
 
 
     # def find_file(self, basename):
