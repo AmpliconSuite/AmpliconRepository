@@ -189,7 +189,8 @@ SOCIALACCOUNT_PROVIDERS = {
         ],
         'AUTH_PARAMS': {'access_type': 'online'},
         'APP': {
-            'client_id': '789453891819-hk9q466oq5ba8i2ur4pk8d0of2f056sc.apps.googleusercontent.com',
+            #'client_id': '789453891819-hk9q466oq5ba8i2ur4pk8d0of2f056sc.apps.googleusercontent.com',
+            'client_id': '715102420712-3c11l0918iers60ca8eifnnpuihu88sm.apps.googleusercontent.com',
             'secret': GOOGLE_SECRET_KEY,
         }
     },
@@ -204,7 +205,7 @@ SOCIALACCOUNT_PROVIDERS = {
             'urn:globus:auth:scope:transfer.api.globus.org:all'
         ],
         'APP': {
-            'client_id': '6524a9d1-a235-4c4f-9e20-c70e77f6e34b',
+            'client_id': '61af67c2-8697-4afd-a5df-2a46a8ef17df',
             'secret': GLOBUS_SECRET_KEY,
         }
     }
