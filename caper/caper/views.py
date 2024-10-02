@@ -1392,9 +1392,14 @@ def edit_project_page(request, project_name):
             if runs != 0:
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
+            try:
+                alias_name = form_dict['alias']
+                print(alias_name)
+            except:
+                print('no alias to be found')
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
-                                 'Oncogenes': get_project_oncogenes(current_runs)}}
+                                 'Oncogenes': get_project_oncogenes(current_runs), 'alias_name' : alias_name}}
             if form.is_valid():
                 print('im here')
                 collection_handle.update_one(query, new_val)
