@@ -1423,9 +1423,6 @@ def edit_project_page(request, project_name):
         memberString = ', '.join(members)
         form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString,"publication_link": publication_link})
         
-        
-        
-    print(project['alias_name'])
     return render(request, "pages/edit_project.html",
                   {'project': project, 
                    'run': form, 
