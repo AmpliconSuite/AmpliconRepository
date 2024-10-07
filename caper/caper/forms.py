@@ -48,6 +48,15 @@ class UpdateForm(forms.ModelForm):
         help_text=
         'Click checkbox to acknowledge and accept the terms of the license agreement.',
     )
+    
+    replace_project = forms.BooleanField(
+        label = format_html(
+            "Replace Project? If ticked, will replace the entire project with the file you upload."
+        ), 
+        required = False, 
+        widget = forms.CheckboxInput(),
+        help_text = 'Click Checkbox to replace project with a new project.'
+    )
 
     class Meta:
         model = Run

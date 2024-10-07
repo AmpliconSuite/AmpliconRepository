@@ -1282,16 +1282,13 @@ def download_file(url, save_path):
 def edit_project_page(request, project_name):
     if request.method == "POST":
         project = get_one_project(project_name)
-
         # no edits for non-project members
         if not is_user_a_project_member(project, request):
             return HttpResponse("Project does not exist")
 
         form = UpdateForm(request.POST, request.FILES)
         form_dict = form_to_dict(form)
-        
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
-
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
         old_membership = project['project_members']
@@ -1318,13 +1315,25 @@ def edit_project_page(request, project_name):
             download_path = project_data_path+'/download.tar.gz'
             try:
                 ## try to download old project file
-                download = download_file(url, download_path)
                 print(f"PREVIOUS FILE FPS LIST: {file_fps}")
-                file_fps.append(os.path.join('download.tar.gz'))
+                ### if replace project, don't download old project
+                try:
+                    if request.POST['replace_project'] == 'on':
+                        print('Replacing project with new uploaded file')
+                except:
+                    download = download_file(url, download_path)
+                    file_fps.append(os.path.join('download.tar.gz'))
                 print(f"AFTERS FILE FPS LIST: {file_fps}")
-                
                 print(f'aggregating on: {file_fps}')
                 agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = f'{temp_proj_id}')
+                if agg.complete != True:
+                    ## redirect to edit page if aggregator fails
+                    alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
+                    return render(request, 'pages/edit_project.html', 
+                              {'project': project, 
+                               'run': form, 
+                               'alert_message': alert_message,
+                               'all_alias' :get_all_alias()})
                 ## after running aggregator, replace the requests file with the aggregated file: 
                 with open(agg.aggregated_filename, 'rb') as f:
                     uploaded_file = SimpleUploadedFile(
@@ -1376,7 +1385,7 @@ def edit_project_page(request, project_name):
                               {'project': project, 
                                'run': form, 
                                'alert_message': alert_message,
-                               'all_alias' :get_all_alias()})
+                               'all_alias' :json.dumps(get_all_alias())})
         # JTL 081823 Not sure what these next 4 lines are about?  An earlier plan to change the project file?
         # leaving them alone for now but they smell like dead code
         if 'file' in form_dict:
@@ -1927,7 +1936,13 @@ def create_project(request):
             file_fps.append(file.name)
             file.close()
         agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = f'{temp_proj_id}')
-        
+        if agg.complete != True:
+            ## redirect to edit page if aggregator fails
+            alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
+            return render(request, 'pages/create_project.html', 
+                        {'run': form, 
+                        'alert_message': alert_message,
+                        'all_alias':json.dumps(get_all_alias())})
         ## after running aggregator, replace the requests file with the aggregated file: 
         with open(agg.aggregated_filename, 'rb') as f:
             uploaded_file = SimpleUploadedFile(

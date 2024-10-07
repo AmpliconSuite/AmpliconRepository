@@ -136,8 +136,13 @@ class Aggregator:
         self.samp_mdata_dct, self.run_mdata_dct = defaultdict(str), defaultdict(str)
         self.locate_dirs_and_metadata_jsons()
         self.sample_to_ac_location_dct = self.aggregate_tables()
-        self.json_modifications()
+        complete = self.json_modifications()
         self.cleanup()
+        
+        if complete:
+            self.complete = True
+        else:
+            self.complete = False
 
     def unzip(self):
         """
@@ -420,7 +425,9 @@ class Aggregator:
                     sys.stderr.write(str(ref_genomes) + "\n")
                     sys.stderr.write("ERROR! Multiple reference genomes detected in project.\n AmpliconRepository only "
                                      "supports single-reference projects currently. Exiting.\n")
-                    sys.exit(1)
+                    # sys.exit(1)
+                    return None
+                    
 
                 potential_str_lsts = [
                     'Location',
@@ -536,6 +543,8 @@ class Aggregator:
         aggregate = pd.DataFrame.from_records(flattened_samples)
         aggregate.to_csv(f'{self.ROOT_FP}/results/aggregated_results.csv')
         aggregate.to_html(f'{self.ROOT_FP}/results/aggregated_results.html')
+        
+        return 'Completed json mods'
 
     def clean_by_suffix(self, suffix, dir):
         if suffix and dir and not dir == "/" and not suffix == "*":
