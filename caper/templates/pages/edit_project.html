@@ -62,6 +62,8 @@
         {% for field in run %}
             
             {% if field.name == 'alias' %}
+            <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
+
             <p>Enter an unique alias for this project. It can be used to access this project.</p>
                 
                 {% if project.alias_name != None %}
@@ -71,53 +73,75 @@
 
                 <div style='display:flex; gap:5px; align-items:center;'>
                     <span> ampliconrepository.org/project/</span>
-                    <div style = 'width:200px; padding:2px; font-size:15px border:1px;'>{{ field }}</div>
+                    <div style = 'width:200px; padding:2p; font-size:15px; border:1px;'>{{ field }}</div>
                     <span>/</span>
                 </div>
                 <div id='result'></div>
+                <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
+
                 <br>
             {% else %}
-                {{field | as_crispy_field }}
+                {% if field.name != 'accept_license' and field.name != 'replace_project' %}
+                  {{field | as_crispy_field }}
+                {% endif %}
+                
             {% endif %}
         {% endfor %}
-        <div class="uk-margin">
-          <div id="file-drop-area" class="uk-placeholder uk-text-center js-upload">
-            <span uk-icon="icon: cloud-upload"></span>
-            <span class="uk-text-middle">To add samples to the project, drag files here or</span>
-            <div uk-form-custom>
-              <input id="fileuploadfield" type="file" name="document" multiple />
-              <span class="uk-link">select files</span>
+
+        <div id="accordion">
+          <div class="card">
+            <div class="card-header" id="headingOne">
+              <h5 class="mb-0">
+                <button type="button" class="btn btn-link" data-toggle="collapse" data-target="#collapseOne" aria-expanded="false" aria-controls="collapseOne">
+                    Add more samples to project / Replace project file? 
+                </button>
+            </h5>
+            </div>
+            <div id="collapseOne" class="collapse" aria-labelledby="headingOne" data-parent="#accordion">
+              <div class="card-body">
+                {{ run.replace_project | as_crispy_field }}
+                <div class="uk-margin">
+                  <div id="file-drop-area" class="uk-placeholder uk-text-center js-upload">
+                    <span uk-icon="icon: cloud-upload"></span>
+                    <span class="uk-text-middle">To add samples to the project, drag files here or</span>
+                    <div uk-form-custom>
+                      <input id="fileuploadfield" type="file" name="document" multiple />
+                      <span class="uk-link">select files</span>
+                    </div>
+                  </div>
+                </div>
+                <table class="uk-table uk-table-divider" id="file-list-table">
+                  <!-- UIkit JS -->
+                <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit.min.js"></script>
+                <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit-icons.min.js"></script>
+                <!-- UIkit CSS -->
+                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/css/uikit.min.css"/>
+                  <thead>
+                    <tr>
+                      <th>File Name</th>
+                      <th>File Size</th>
+                      <th>Remove</th>
+                    </tr>
+                  </thead>
+                  <tbody id="file-list"></tbody>
+                </table>
+              </div>
             </div>
           </div>
+          </div>
         </div>
-        <table class="uk-table uk-table-divider" id="file-list-table">
-          <!-- UIkit JS -->
-        <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/js/uikit-icons.min.js"></script>
-        <!-- UIkit CSS -->
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.21.5/dist/css/uikit.min.css"/>
-          <thead>
-            <tr>
-              <th>File Name</th>
-              <th>File Size</th>
-              <th>Remove</th>
-            </tr>
-          </thead>
-          <tbody id="file-list"></tbody>
-        </table>
-      
-        <br />
-        <br />
-      
+
         <progress id="js-progressbar" class="uk-progress" value="0" max="100" hidden></progress>
-      
+        <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
+        {{ run.accept_license | as_crispy_field }}
+        
         <input
           type="button"
           onClick="clearFileInput();"
           value="Remove Upload"
           id="remove-upload-btn"
         />
-      
+
         <button id="createProjectBtn" class="uk-button uk-button-primary" onClick="uploadFiles();">
           Submit
         </button>
@@ -290,6 +314,42 @@
             }
         });
     });
+
+
+    $(document).ready(function() {
+    // Get references to the checkbox, file input, and submit button
+    const $checkbox = $('#custom_id_replace_project');
+    const $fileInput = $('#fileuploadfield');
+    const $submitButton = $('#createProjectBtn');
+
+    // Function to toggle the submit button based on checkbox and file input status
+    function toggleSubmitButton() {
+        const isChecked = $checkbox.is(':checked'); // Check if checkbox is checked
+        const filesUploaded = $fileInput[0].files.length; // Get the number of uploaded files
+
+        console.log('Checkbox checked:', isChecked);
+        console.log('Files uploaded:', filesUploaded);
+
+        if (isChecked && filesUploaded === 0) {
+            $submitButton.prop('disabled', true); // Disable submit button
+            console.log('Submit button disabled');
+        } else {
+            $submitButton.prop('disabled', false); // Enable submit button
+            console.log('Submit button enabled');
+        }
+    }
+
+    // Event listener for checkbox change
+    $checkbox.change(toggleSubmitButton);
+
+    // Event listener for file input change
+    $fileInput.change(toggleSubmitButton);
+});
+
+
+
+
+
 
 
 

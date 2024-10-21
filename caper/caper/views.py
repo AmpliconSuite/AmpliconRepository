@@ -559,8 +559,6 @@ def project_page(request, project_name, message=''):
     ## if flag is unfinished, render a loading page: 
 
     project = validate_project(get_one_project(project_name), project_name)
-    print(project.keys())
-    print(project['private'])
     if 'FINISHED?' in project and project['FINISHED?'] == False:
         return render(request, "pages/loading.html", {"project_name":project_name})
 
@@ -1277,17 +1275,38 @@ def download_file(url, save_path):
     
     print(f"File downloaded successfully and saved to {save_path}")
     
-    
+
 
 def edit_project_page(request, project_name):
+
     if request.method == "POST":
         project = get_one_project(project_name)
+        old_alias_name = None
+        if 'alias_name' in project:
+
+            old_alias_name = project['alias_name']
+            print(f'THE OLD ALIAS NAME SHOULD BE: {old_alias_name}')
         # no edits for non-project members
         if not is_user_a_project_member(project, request):
             return HttpResponse("Project does not exist")
 
         form = UpdateForm(request.POST, request.FILES)
+        ## give the new project the old project alias. 
+        if form.data['alias'] == '':
+            if old_alias_name:
+                mutable_data = form.data.copy()  # Make a mutable copy of the form's data
+                mutable_data['alias'] = old_alias_name  # Set the alias to the new value
+                form.data = mutable_data
+                ## update old project so its alias is set to None, and the alias is set to the new project
+                query = {'_id': ObjectId(project_name)}
+                new_val = { "$set": {'alias_name' : None}}
+                collection_handle.update_one(query, new_val)
+                
         form_dict = form_to_dict(form)
+        print('UPDATED FORM ALIAS')
+        print(form_dict['alias'])
+        print(form.data)
+
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
@@ -1406,6 +1425,7 @@ def edit_project_page(request, project_name):
                 print(alias_name)
             except:
                 print('no alias to be found')
+
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
                                  'Oncogenes': get_project_oncogenes(current_runs), 'alias_name' : alias_name}}
@@ -1417,8 +1437,6 @@ def edit_project_page(request, project_name):
                 raise Http404()
         else:
             return HttpResponse("Project does not exist")
-        
-        
     else:
         project = get_one_project(project_name)
         prev_versions, prev_ver_msg = previous_versions(project)
@@ -1426,7 +1444,6 @@ def edit_project_page(request, project_name):
             messages.error(request, "Redirected to latest version, editing of old versions not allowed. ")
             return redirect('project_page', project_name = prev_versions[0]['linkid'])
             
-        print(prev_ver_msg)
         # split up the project members and remove the empties
         members = project['project_members']
         try:

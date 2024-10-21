@@ -77,6 +77,7 @@ class UpdateForm(forms.ModelForm):
         self.fields['publication_link'].widget.attrs.update({'placeholder': 'Optional: Provide a PMID or link to a publication'})
         self.fields['project_members'].required = False
         self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of additional email addresses or AmpliconRepository usernames separated by spaces or commas'})
+        self.fields['replace_project'].widget.attrs.update({'id': 'custom_id_replace_project'})
         # self.fields['file'].required = False
 
 
