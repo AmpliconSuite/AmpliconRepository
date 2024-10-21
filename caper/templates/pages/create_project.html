@@ -174,15 +174,149 @@
 {% endif %}
 
 <script>
-  document.addEventListener("DOMContentLoaded", function () {
-    const input = document.getElementById("fileuploadfield");
-    const createProjectBtn = document.getElementById("createProjectBtn");
-    const alertBox = document.getElementById("alert-box");
-    const fileList = document.getElementById("file-list");
-    const progressBar = document.getElementById("upload-progressbar");
-    const form = document.getElementById("upload-form");
-
+ const uploadForm = document.getElementById('upload-form');
+    const input = document.getElementById('fileuploadfield');
+    const alertBox = document.getElementById('alert-box');
+    const csrf = document.getElementsByName('csrfmiddlewaretoken');
+    const fileList = document.getElementById('file-list');
+    const fd = new FormData();
     let filesArray = [];
+  
+    function addFilename(filename) {
+      if (filesArray.some(file => file.name === filename)) {
+          console.log(`Filename "${filename}" already exists.`);
+          return true;
+      } else {
+          console.log(`Filename "${filename}" added.`);
+          return false;
+      }
+    }
+  
+    input.addEventListener('change', (event) => {
+      const validFileExtension = ".tar.gz";
+      const files = Array.from(input.files);
+      let allFilesValid = true;
+      let invalidFileNames = [];
+  
+      // Validate all selected files
+      files.forEach(file => {
+          const fileName = file.name;
+          console.log(fileName, "fname");
+          if (!fileName.toLowerCase().endsWith(validFileExtension)) {
+              allFilesValid = false;
+              invalidFileNames.push(fileName);
+          }
+      });
+  
+      if (!allFilesValid) {
+          alert("Sorry, the following files are invalid inputs:\n\n" + invalidFileNames.join(', ') + "\n\nPlease select .tar.gz files only.\n\nSee bottom of page for instructions on how to generate an aggregated input file.");
+          throw new Error("Bad file extension!");
+      }
+  
+      // Append new files to the array
+      files.forEach(file => {
+          if (!addFilename(file.name)) {
+              filesArray.push(file);
+              addFileRow(file);
+          }
+      });
+  
+      updateFileInput(); // Update the file input with the current filesArray
+      updateSubmitButtonState(); // Revalidate and update button state after files are selected
+    });
+  
+    function clearFileInput() {
+      filesArray = [];
+      fileList.innerHTML = '';
+      input.value = '';
+      document.getElementById('js-progressbar').hidden = true;
+    }
+  
+    function addFileRow(file) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+          <td class='filename'>${file.name}</td>
+          <td class="filesize-cell">${(file.size / 1024 / 1024).toFixed(2)} MB</td>
+          <td><button class="remove-btn">Remove</button></td>
+      `;
+      fileList.appendChild(row);
+  
+      const removeBtn = row.querySelector('.remove-btn');
+      removeBtn.addEventListener('click', () => {
+          row.remove();
+          removeFileFromArray(file.name);
+      });
+    }
+  
+    function removeFileFromArray(fileName) {
+      filesArray = filesArray.filter(file => file.name !== fileName);
+      updateFileInput();
+    }
+  
+    function updateFileInput() {
+      const dataTransfer = new DataTransfer();
+      filesArray.forEach(file => {
+          dataTransfer.items.add(file);
+      });
+      input.files = dataTransfer.files;
+    }
+  
+    function updateProgress(fileName, percent) {
+      const rows = fileList.querySelectorAll('tr');
+      rows.forEach(row => {
+        if (row.querySelector('.filename').textContent === fileName) {
+          row.querySelector('.progress-cell').textContent = percent + '%';
+        }
+      });
+    }
+
+  
+    function uploadFiles() {
+      const fd = new FormData();
+      fd.append('csrfmiddlewaretoken', csrf[0].value);
+  
+      filesArray.forEach(file => {
+        fd.append('document', file);
+      });
+  
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', uploadForm.action, true);
+      xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
+  
+      alertBox.innerHTML = `<div class="alert alert-info" role="alert">
+        Uploading ... Will redirectly automatically in a few seconds. 
+          </div>`;
+      
+      xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              document.getElementById('js-progressbar').value = percent;
+              document.getElementById('js-progressbar').hidden = false;
+          }
+      });
+  
+      xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 300) {
+              alertBox.innerHTML = `<div class="alert alert-success" role="alert">
+                                      Successfully uploaded file(s)
+                                    </div>`;
+              document.getElementById('js-progressbar').hidden = true;
+              clearFileInput(); // Clear the input after successful upload
+          } else {
+              alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
+                                      Something went wrong with the upload.
+                                    </div>`;
+          }
+      };
+  
+      xhr.onerror = function () {
+          alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
+                                  Something went wrong with the upload.
+                                </div>`;
+      };
+  
+     //xhr.send(fd);
+    }
 
     function validateForm() {
       // Add form validation logic here
@@ -201,144 +335,6 @@
       }
     }
 
-    function addFilename(filename) {
-      return filesArray.some(file => file.name === filename);
-    }
-
-    input.addEventListener("change", (event) => {
-      const validFileExtension = ".tar.gz";
-      const files = Array.from(input.files);
-      let allFilesValid = true;
-      let invalidFileNames = [];
-
-      // Validate all selected files
-      files.forEach((file) => {
-        const fileName = file.name;
-        if (!fileName.toLowerCase().endsWith(validFileExtension)) {
-          allFilesValid = false;
-          invalidFileNames.push(fileName);
-        }
-      });
-
-      if (!allFilesValid) {
-        alert("Sorry, the following files are invalid inputs:\n\n" + invalidFileNames.join(", ") + "\n\nPlease select .tar.gz files only.");
-        throw new Error("Bad file extension!");
-      }
-
-      // Append new files to the array
-      files.forEach((file) => {
-        if (!addFilename(file.name)) {
-          filesArray.push(file);
-          addFileRow(file);
-        }
-      });
-
-      updateFileInput(); // Update the file input with the current filesArray
-      updateSubmitButtonState(); // Revalidate and update button state after files are selected
-    });
-
-    function clearFileInput() {
-      filesArray = [];
-      fileList.innerHTML = "";
-      input.value = "";
-      updateSubmitButtonState(); // Revalidate after clearing
-      progressBar.hidden = true;
-    }
-
-    function addFileRow(file) {
-      const row = document.createElement("tr");
-      row.innerHTML = `
-        <td class='filename'>${file.name}</td>
-        <td class="filesize-cell">${(file.size / 1024 / 1024).toFixed(2)} MB</td>
-        <td><button class="remove-btn">Remove</button></td>
-      `;
-      fileList.appendChild(row);
-
-      const removeBtn = row.querySelector(".remove-btn");
-      removeBtn.addEventListener("click", () => {
-        row.remove();
-        removeFileFromArray(file.name);
-      });
-    }
-
-    function removeFileFromArray(fileName) {
-      filesArray = filesArray.filter(file => file.name !== fileName);
-      updateFileInput();
-      updateSubmitButtonState(); // Revalidate after removing a file
-    }
-
-    function updateFileInput() {
-      const dataTransfer = new DataTransfer();
-      filesArray.forEach(file => {
-        dataTransfer.items.add(file);
-      });
-      input.files = dataTransfer.files;
-    }
-
-    function uploadFiles() {
-      const fd = new FormData();
-      fd.append('csrfmiddlewaretoken', csrf[0].value);
-
-      
-
-      // Append each file to the FormData
-      filesArray.forEach(file => {
-        fd.append('document', file);
-      });
-
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', uploadForm.action, true);  // Assuming the form has the correct action URL
-      xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
-
-      // Show the "Uploading" message when the upload starts
-      alertBox.innerHTML = `<div class="alert alert-info" role="alert">
-                              Uploading to site, please wait...
-                            </div>`;
-
-      // Show the progress bar during upload
-      progressBar.hidden = false;
-
-      // Track the upload progress and update the progress bar
-      xhr.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100);
-          progressBar.value = percent;
-
-          if (percent === 100) {
-            alertBox.innerHTML = `<div class="alert alert-info" role="alert">
-                                    Processing upload, almost done...
-                                  </div>`;
-          }
-        }
-      });
-
-      // Handle the response after the upload is complete
-      xhr.onload = function () {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          alertBox.innerHTML = `<div class="alert alert-success" role="alert">
-                                  Successfully uploaded file(s)!
-                                </div>`;
-          progressBar.hidden = true;  // Hide the progress bar
-          clearFileInput();  // Clear the input after successful upload
-        } else {
-          alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
-                                  Something went wrong with the upload.
-                                </div>`;
-          progressBar.hidden = true;  // Hide the progress bar on error
-        }
-      };
-
-      xhr.onerror = function () {
-        alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
-                                Upload failed, please try again.
-                              </div>`;
-        progressBar.hidden = true;  // Hide the progress bar on error
-      };
-
-      // Actually send the request
-      xhr.send(fd);
-    }
-  });
 
     document.addEventListener('DOMContentLoaded', function() {
         // Pass the alias names from Django context to JavaScript
@@ -360,6 +356,7 @@
             }
         });
     });
+
 
 
 
