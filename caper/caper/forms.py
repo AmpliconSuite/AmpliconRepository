@@ -55,7 +55,7 @@ class UpdateForm(forms.ModelForm):
         ), 
         required = False, 
         widget = forms.CheckboxInput(),
-        help_text = 'Click Checkbox to replace project with a new project.'
+        help_text = 'The default behavior is to add samples to the current project.'
     )
 
     class Meta:

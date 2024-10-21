@@ -67,6 +67,7 @@
   
       {% for field in run %}
           {% if field.name == 'alias' %}
+          <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
           <p>Enter an unique alias for this project. It can be used to access this project.</p> <p></p>
               <div style='display:flex; gap:5px; align-items:center;'>
                   <span> ampliconrepository.org/project/</span>
@@ -76,10 +77,11 @@
               <div id='result'></div>
               <br>
               <br>
-
+              <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
           {% else %}
+            {% if field.name != 'accept_license' %}
               {{field | as_crispy_field }}
-
+            {% endif %}
           {% endif %}
       {% endfor %}
   <div class="uk-margin">
@@ -116,6 +118,10 @@
     <progress id="upload-progressbar" class="uk-progress" value="0" max="100" hidden></progress>
   </div>
   
+  <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
+  {{run.accept_license | as_crispy_field }}
+
+
   <input
     type="button"
     onClick="clearFileInput();"
