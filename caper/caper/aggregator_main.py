@@ -129,6 +129,8 @@ class Aggregator:
         self.py3_path = py3_path
         self.name_remap = read_name_remap(name_remap_file)
 
+        self.feature_beds = defaultdict(str)
+
         self.unzip()
         if self.run_classifier == "Yes":
             self.run_amp_classifier()
@@ -138,6 +140,7 @@ class Aggregator:
         self.sample_to_ac_location_dct = self.aggregate_tables()
         complete = self.json_modifications()
         self.cleanup()
+
         
         if complete:
             self.complete = True
@@ -231,6 +234,9 @@ class Aggregator:
                     elif f.endswith("_sample_metadata.json"):
                         implied_sname = rchop(f, "_sample_metadata.json")
                         self.samp_mdata_dct[implied_sname] = fp + "/" + f
+                    elif f.endswith("_intervals.bed"):
+                        self.feature_beds[f] = os.path.join(fp, f)
+                
 
     def run_amp_classifier(self):
         """
@@ -454,15 +460,17 @@ class Aggregator:
                         feat_file = feat_file.replace(f'{self.ROOT_FP}/results/', "")
                         sample_dct['Feature BED file'] = feat_file
                     else:
+                        
                         if not feat_file.endswith("/NA"):
                             print(f'Feature: "Feature BED file" {feat_file} doesnt exist for sample {sample_dct["Sample name"]}')
 
                         sample_dct['Feature BED file'] = "Not Provided"
+                        
 
                 else:
-                    fp_finding = find_file_by_basename(self.ROOT_FP, feat_basename)
-                    if os.path.exists(fp_finding):
-                        sample_dct['Feature BED file'] = fp_finding
+                    fp_finding = self.feature_beds[feat_basename]
+                    if fp_finding and os.path.exists(fp_finding):
+                            sample_dct['Feature BED file'] = fp_finding
                     else:
                         sample_dct['Feature BED file'] = "Not Provided"
 
@@ -570,7 +578,6 @@ def find_file_by_basename(directory, basename):
         # Check if any file matches the given basename
         for file in files:
             if os.path.basename(file) == basename:
-                
                 return os.path.join(root, file)
     return None
 
