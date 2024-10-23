@@ -48,6 +48,15 @@ class UpdateForm(forms.ModelForm):
         help_text=
         'Click checkbox to acknowledge and accept the terms of the license agreement.',
     )
+    
+    replace_project = forms.BooleanField(
+        label = format_html(
+            "Replace Project? If ticked, will replace the entire project with the file you upload."
+        ), 
+        required = False, 
+        widget = forms.CheckboxInput(),
+        help_text = 'The default behavior is to add samples to the current project.'
+    )
 
     class Meta:
         model = Run
@@ -68,6 +77,7 @@ class UpdateForm(forms.ModelForm):
         self.fields['publication_link'].widget.attrs.update({'placeholder': 'Optional: Provide a PMID or link to a publication'})
         self.fields['project_members'].required = False
         self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of additional email addresses or AmpliconRepository usernames separated by spaces or commas'})
+        self.fields['replace_project'].widget.attrs.update({'id': 'custom_id_replace_project'})
         # self.fields['file'].required = False
 
 

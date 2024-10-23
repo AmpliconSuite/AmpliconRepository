@@ -559,8 +559,6 @@ def project_page(request, project_name, message=''):
     ## if flag is unfinished, render a loading page: 
 
     project = validate_project(get_one_project(project_name), project_name)
-    print(project.keys())
-    print(project['private'])
     if 'FINISHED?' in project and project['FINISHED?'] == False:
         return render(request, "pages/loading.html", {"project_name":project_name})
 
@@ -974,7 +972,7 @@ def sample_download(request, project_name, sample_name):
             png_id = feature['AA_PNG_file']
         else:
             png_id = False
-        if feature['AA_PNG_file'] != 'Not Provided':
+        if feature['AA_directory'] != 'Not Provided':
             aa_directory_id = feature['AA_directory']
         else:
             aa_directory_id = False
@@ -1277,21 +1275,39 @@ def download_file(url, save_path):
     
     print(f"File downloaded successfully and saved to {save_path}")
     
-    
+
 
 def edit_project_page(request, project_name):
+
     if request.method == "POST":
         project = get_one_project(project_name)
+        old_alias_name = None
+        if 'alias_name' in project:
 
+            old_alias_name = project['alias_name']
+            print(f'THE OLD ALIAS NAME SHOULD BE: {old_alias_name}')
         # no edits for non-project members
         if not is_user_a_project_member(project, request):
             return HttpResponse("Project does not exist")
 
         form = UpdateForm(request.POST, request.FILES)
+        ## give the new project the old project alias. 
+        if form.data['alias'] == '':
+            if old_alias_name:
+                mutable_data = form.data.copy()  # Make a mutable copy of the form's data
+                mutable_data['alias'] = old_alias_name  # Set the alias to the new value
+                form.data = mutable_data
+                ## update old project so its alias is set to None, and the alias is set to the new project
+                query = {'_id': ObjectId(project_name)}
+                new_val = { "$set": {'alias_name' : None}}
+                collection_handle.update_one(query, new_val)
+                
         form_dict = form_to_dict(form)
-        
-        form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
+        print('UPDATED FORM ALIAS')
+        print(form_dict['alias'])
+        print(form.data)
 
+        form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
         old_membership = project['project_members']
@@ -1316,16 +1332,27 @@ def edit_project_page(request, project_name):
             ## build download URL 
             url = f'http://127.0.0.1:8000/project/{project["linkid"]}/download'
             download_path = project_data_path+'/download.tar.gz'
-
             try:
                 ## try to download old project file
-                download = download_file(url, download_path)
                 print(f"PREVIOUS FILE FPS LIST: {file_fps}")
-                file_fps.append(os.path.join('download.tar.gz'))
+                ### if replace project, don't download old project
+                try:
+                    if request.POST['replace_project'] == 'on':
+                        print('Replacing project with new uploaded file')
+                except:
+                    download = download_file(url, download_path)
+                    file_fps.append(os.path.join('download.tar.gz'))
                 print(f"AFTERS FILE FPS LIST: {file_fps}")
-                
                 print(f'aggregating on: {file_fps}')
                 agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = f'{temp_proj_id}')
+                if agg.complete != True:
+                    ## redirect to edit page if aggregator fails
+                    alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
+                    return render(request, 'pages/edit_project.html', 
+                              {'project': project, 
+                               'run': form, 
+                               'alert_message': alert_message,
+                               'all_alias' :get_all_alias()})
                 ## after running aggregator, replace the requests file with the aggregated file: 
                 with open(agg.aggregated_filename, 'rb') as f:
                     uploaded_file = SimpleUploadedFile(
@@ -1377,7 +1404,7 @@ def edit_project_page(request, project_name):
                               {'project': project, 
                                'run': form, 
                                'alert_message': alert_message,
-                               'all_alias' :get_all_alias()})
+                               'all_alias' :json.dumps(get_all_alias())})
         # JTL 081823 Not sure what these next 4 lines are about?  An earlier plan to change the project file?
         # leaving them alone for now but they smell like dead code
         if 'file' in form_dict:
@@ -1393,9 +1420,15 @@ def edit_project_page(request, project_name):
             if runs != 0:
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
+            try:
+                alias_name = form_dict['alias']
+                print(alias_name)
+            except:
+                print('no alias to be found')
+
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
-                                 'Oncogenes': get_project_oncogenes(current_runs)}}
+                                 'Oncogenes': get_project_oncogenes(current_runs), 'alias_name' : alias_name}}
             if form.is_valid():
                 print('im here')
                 collection_handle.update_one(query, new_val)
@@ -1404,8 +1437,6 @@ def edit_project_page(request, project_name):
                 raise Http404()
         else:
             return HttpResponse("Project does not exist")
-        
-        
     else:
         project = get_one_project(project_name)
         prev_versions, prev_ver_msg = previous_versions(project)
@@ -1413,7 +1444,6 @@ def edit_project_page(request, project_name):
             messages.error(request, "Redirected to latest version, editing of old versions not allowed. ")
             return redirect('project_page', project_name = prev_versions[0]['linkid'])
             
-        print(prev_ver_msg)
         # split up the project members and remove the empties
         members = project['project_members']
         try:
@@ -1424,9 +1454,6 @@ def edit_project_page(request, project_name):
         memberString = ', '.join(members)
         form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString,"publication_link": publication_link})
         
-        
-        
-    print(project['alias_name'])
     return render(request, "pages/edit_project.html",
                   {'project': project, 
                    'run': form, 
@@ -1716,7 +1743,6 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
             for feature in features:
                 # logging.debug(feature['Sample name'])
                 if len(feature) > 0:
-
                     # get paths
                     key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON',
                                  'AA directory', 'cnvkit directory']
@@ -1725,10 +1751,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
                             path_var = feature[k]
                             with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
                                 id_var = fs_handle.put(file_var)
-
                         except:
                             id_var = "Not Provided"
-
                         feature[k] = id_var
 
         # Now update the project with the updated runs
@@ -1929,7 +1953,13 @@ def create_project(request):
             file_fps.append(file.name)
             file.close()
         agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = f'{temp_proj_id}')
-        
+        if agg.complete != True:
+            ## redirect to edit page if aggregator fails
+            alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
+            return render(request, 'pages/create_project.html', 
+                        {'run': form, 
+                        'alert_message': alert_message,
+                        'all_alias':json.dumps(get_all_alias())})
         ## after running aggregator, replace the requests file with the aggregated file: 
         with open(agg.aggregated_filename, 'rb') as f:
             uploaded_file = SimpleUploadedFile(

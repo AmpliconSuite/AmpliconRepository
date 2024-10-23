@@ -63,24 +63,33 @@ def read_name_remap(name_remap_file):
 
 def unzip_file(fp, dest_root):
     """
-    unzips file based on zip type
+    Unzips file based on zip type.
+    Ensures proper extraction of all files, including nested directories.
     """
     try:
         if fp.endswith(".tar.gz"):
             zip_name = os.path.basename(fp).replace(".tar.gz", "")
-            destination = f'{dest_root}/{zip_name}'
-            with tarfile.open(fp, 'r') as output_zip:
-                output_zip.extractall(destination)
-            output_zip.close()
+            destination = os.path.join(dest_root, zip_name)
+            os.makedirs(destination, exist_ok=True)  # Ensure destination exists
+            # Open and extract tar.gz
+            with tarfile.open(fp, 'r:gz') as tar_ref:
+                for member in tar_ref.getmembers():
+                    if member.isreg():
+                        member.name = os.path.basename(member.name)
+                        tar_ref.extract(member, destination)
+        
         elif fp.endswith(".zip"):
             zip_name = os.path.basename(fp).replace(".zip", "")
-            destination = f'{dest_root}/{zip_name}'
+            destination = os.path.join(dest_root, zip_name)
+            os.makedirs(destination, exist_ok=True)  # Ensure destination exists
+            # Open and extract zip
             with zipfile.ZipFile(fp, 'r') as zip_ref:
                 zip_ref.extractall(destination)
-            zip_ref.close()
+        
+        print(f'Just extracted: {fp} to {destination}!')
 
     except Exception as e:
-        print(e)
+        print(f"Error occurred while extracting {fp}: {e}")
 
 
 def clean_dirs(dlist):
@@ -120,6 +129,8 @@ class Aggregator:
         self.py3_path = py3_path
         self.name_remap = read_name_remap(name_remap_file)
 
+        self.feature_beds = defaultdict(str)
+
         self.unzip()
         if self.run_classifier == "Yes":
             self.run_amp_classifier()
@@ -127,8 +138,14 @@ class Aggregator:
         self.samp_mdata_dct, self.run_mdata_dct = defaultdict(str), defaultdict(str)
         self.locate_dirs_and_metadata_jsons()
         self.sample_to_ac_location_dct = self.aggregate_tables()
-        self.json_modifications()
+        complete = self.json_modifications()
         self.cleanup()
+
+        
+        if complete:
+            self.complete = True
+        else:
+            self.complete = False
 
     def unzip(self):
         """
@@ -217,6 +234,9 @@ class Aggregator:
                     elif f.endswith("_sample_metadata.json"):
                         implied_sname = rchop(f, "_sample_metadata.json")
                         self.samp_mdata_dct[implied_sname] = fp + "/" + f
+                    elif f.endswith("_intervals.bed"):
+                        self.feature_beds[f] = os.path.join(fp, f)
+                
 
     def run_amp_classifier(self):
         """
@@ -365,7 +385,6 @@ class Aggregator:
         """
         Zips the aggregate results, and deletes files for cleanup
         """
-        print(self.samp_AA_dct.values())
         clean_dirs(self.samp_AA_dct.values())
         # self.clean_files(self.samp_ckit_dct.values())
         print("Creating tar.gz...")
@@ -373,7 +392,6 @@ class Aggregator:
         self.tardir(f'{self.ROOT_FP}/results', f'{self.output_name}.tar.gz')
         print('cleaning directories now ... ')
         clean_dirs([f'{self.ROOT_FP}/results']) # ./extracted_from_zips
-        
 
 
     # def find_file(self, basename):
@@ -413,7 +431,9 @@ class Aggregator:
                     sys.stderr.write(str(ref_genomes) + "\n")
                     sys.stderr.write("ERROR! Multiple reference genomes detected in project.\n AmpliconRepository only "
                                      "supports single-reference projects currently. Exiting.\n")
-                    sys.exit(1)
+                    # sys.exit(1)
+                    return None
+                    
 
                 potential_str_lsts = [
                     'Location',
@@ -429,6 +449,7 @@ class Aggregator:
                 # update each path in run.json by finding them in outputs folder
                 # separately for feature bed file because location is different
                 feat_basename = os.path.basename(sample_dct['Feature BED file'])
+                
                 cfiles = os.listdir(self.sample_to_ac_location_dct[sample])
                 cbf_hits = [x for x in cfiles if x.endswith("_classification_bed_files") and not x.startswith("._")]
                 if cbf_hits:
@@ -439,13 +460,19 @@ class Aggregator:
                         feat_file = feat_file.replace(f'{self.ROOT_FP}/results/', "")
                         sample_dct['Feature BED file'] = feat_file
                     else:
+                        
                         if not feat_file.endswith("/NA"):
                             print(f'Feature: "Feature BED file" {feat_file} doesnt exist for sample {sample_dct["Sample name"]}')
 
                         sample_dct['Feature BED file'] = "Not Provided"
+                        
 
                 else:
-                    sample_dct['Feature BED file'] = "Not Provided"
+                    fp_finding = self.feature_beds[feat_basename]
+                    if fp_finding and os.path.exists(fp_finding):
+                            sample_dct['Feature BED file'] = fp_finding
+                    else:
+                        sample_dct['Feature BED file'] = "Not Provided"
 
                 features_of_interest = [
                     'CNV BED file',
@@ -454,12 +481,15 @@ class Aggregator:
                     'AA summary file',
                     'Run metadata JSON',
                     'Sample metadata JSON',
+                    'Feature BED file',
                 ]
 
                 for feature in features_of_interest:
                     if feature in sample_dct and sample_dct[feature]:
                         feat_basename = os.path.basename(sample_dct[feature])
                         feat_file = f'{self.sample_to_ac_location_dct[sample]}/files/{feat_basename}'
+                        if not os.path.exists(feat_file):
+                            feat_file = f'{self.sample_to_ac_location_dct[sample]}/{feat_basename}'
                         if feature == "CNV BED file" and any([feat_file.endswith(x) for x in ["AA_CNV_SEEDS.bed", "CNV_CALLS_pre_filtered.bed", "Not provided", "Not Provided"]]):
                             cnvkit_dir = self.samp_ckit_dct[sample_dct['Sample name']]
                             if cnvkit_dir:
@@ -527,6 +557,8 @@ class Aggregator:
         aggregate = pd.DataFrame.from_records(flattened_samples)
         aggregate.to_csv(f'{self.ROOT_FP}/results/aggregated_results.csv')
         aggregate.to_html(f'{self.ROOT_FP}/results/aggregated_results.html')
+        
+        return 'Completed json mods'
 
     def clean_by_suffix(self, suffix, dir):
         if suffix and dir and not dir == "/" and not suffix == "*":
@@ -538,6 +570,16 @@ class Aggregator:
             subprocess.call(cmd, shell=True)
             # except FileNotFoundError:
             #     pass
+
+def find_file_by_basename(directory, basename):
+    # Walk through the directory
+    print(f'file to find: {basename}')
+    for root, dirs, files in os.walk(directory, topdown=True):
+        # Check if any file matches the given basename
+        for file in files:
+            if os.path.basename(file) == basename:
+                return os.path.join(root, file)
+    return None
 
 
 # TODO: VALIDATE IS NEVER USED!
