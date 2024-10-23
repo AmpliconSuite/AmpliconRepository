@@ -443,6 +443,7 @@ class Aggregator:
                 # update each path in run.json by finding them in outputs folder
                 # separately for feature bed file because location is different
                 feat_basename = os.path.basename(sample_dct['Feature BED file'])
+                
                 cfiles = os.listdir(self.sample_to_ac_location_dct[sample])
                 cbf_hits = [x for x in cfiles if x.endswith("_classification_bed_files") and not x.startswith("._")]
                 if cbf_hits:
@@ -459,7 +460,11 @@ class Aggregator:
                         sample_dct['Feature BED file'] = "Not Provided"
 
                 else:
-                    sample_dct['Feature BED file'] = "Not Provided"
+                    fp_finding = find_file_by_basename(self.ROOT_FP, feat_basename)
+                    if os.path.exists(fp_finding):
+                        sample_dct['Feature BED file'] = fp_finding
+                    else:
+                        sample_dct['Feature BED file'] = "Not Provided"
 
                 features_of_interest = [
                     'CNV BED file',
@@ -468,6 +473,7 @@ class Aggregator:
                     'AA summary file',
                     'Run metadata JSON',
                     'Sample metadata JSON',
+                    'Feature BED file',
                 ]
 
                 for feature in features_of_interest:
@@ -556,6 +562,18 @@ class Aggregator:
             subprocess.call(cmd, shell=True)
             # except FileNotFoundError:
             #     pass
+
+def find_file_by_basename(directory, basename):
+    # Walk through the directory
+    print(f'file to find: {basename}')
+    for root, dirs, files in os.walk(directory, topdown=True):
+        # Check if any file matches the given basename
+        for file in files:
+            if os.path.basename(file) == basename:
+                
+                return os.path.join(root, file)
+    return None
+
 
 # TODO: VALIDATE IS NEVER USED!
 def validate():

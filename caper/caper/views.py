@@ -972,7 +972,7 @@ def sample_download(request, project_name, sample_name):
             png_id = feature['AA_PNG_file']
         else:
             png_id = False
-        if feature['AA_PNG_file'] != 'Not Provided':
+        if feature['AA_directory'] != 'Not Provided':
             aa_directory_id = feature['AA_directory']
         else:
             aa_directory_id = False
