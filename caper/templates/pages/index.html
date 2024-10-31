@@ -219,7 +219,6 @@
                                         <th>Name</th>
                                         <th>Description</th>
                                         <th>Last Updated</th>
-                                        <th>Project Members</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -228,9 +227,6 @@
                                         <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                         <td>{{ project.description }}</td>
                                         <td class="date">{{ project.date }}</td>
-                                        <td>{% for person in project.project_members %}
-                                            {{ person }}<br>
-                                        {% endfor%}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -244,7 +240,6 @@
                                         <th>Name</th>
                                         <th>Description</th>
                                         <th>Last Updated</th>
-                                        <th>Project Members</th>
 
                                     </tr>
                                 </thead>
@@ -254,9 +249,6 @@
                                         <td ><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                         <td>{{ project.description }}</td>
                                         <td class="date">{{ project.date }}</td>
-                                        <td>{% for person in project.project_members %}
-                                            {{ person }}<br>
-                                        {% endfor%}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>

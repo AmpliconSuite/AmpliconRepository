@@ -1583,8 +1583,15 @@ def admin_stats(request):
     # total_downloads = [project['project_downloads'] for project in public_projects]
     
     for project in public_projects:
-        project['project_downloads_sum'] = sum(project['project_downloads'].values())
-        project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
+        if 'project_downloads' in project:
+            project['project_downloads_sum'] = sum(project['project_downloads'].values())
+        else:
+            project['project_downloads_sum'] = 0
+
+        if 'sample_downloads' in project:
+            project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
+        else:
+            project['sample_downloads_sum'] = 0
 
     repo_stats = get_latest_site_statistics()
 
