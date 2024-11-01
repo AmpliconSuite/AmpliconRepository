@@ -219,6 +219,7 @@
                                         <th>Name</th>
                                         <th>Description</th>
                                         <th>Last Updated</th>
+                                        <th>Sample count</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -227,6 +228,7 @@
                                         <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                         <td>{{ project.description }}</td>
                                         <td class="date">{{ project.date }}</td>
+                                        <td>{{ project.sample_count }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -240,6 +242,7 @@
                                         <th>Name</th>
                                         <th>Description</th>
                                         <th>Last Updated</th>
+                                        <th>Sample count</th>
 
                                     </tr>
                                 </thead>
@@ -249,6 +252,8 @@
                                         <td ><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                         <td>{{ project.description }}</td>
                                         <td class="date">{{ project.date }}</td>
+                                        <td>{{ project.sample_count }}</td>
+
                                     </tr>
                                     {% endfor %}
                                 </tbody>

@@ -232,6 +232,8 @@ def get_files(fs_id):
     # response =  StreamingHttpResponse(FileWrapper(wrapper),content_type=file_['contentType'])
     return wrapper
 
+
+# This function appears to be unused
 def modify_date(projects):
     """
     Modifies the date to this format: 
@@ -251,6 +253,7 @@ def modify_date(projects):
                 continue
             
     return projects
+
 
 def data_qc(request):
     if not  request.user.is_staff:
@@ -279,8 +282,9 @@ def data_qc(request):
         public_sample_count = public_sample_count + len(proj['runs'])
         
     datetime_status = check_datetime(public_projects) + check_datetime(private_projects)
+    sample_count_status = check_sample_count_status(private_projects) + check_sample_count_status(public_projects)
     
-    return render(request, "pages/admin_quality_check.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'datetime_status': datetime_status})
+    return render(request, "pages/admin_quality_check.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'datetime_status': datetime_status, 'sample_count_status': sample_count_status})
 
 def check_datetime(projects):
     errors = 0
@@ -296,6 +300,14 @@ def check_datetime(projects):
         datetime_status = 0
         
     return datetime_status
+
+
+def check_sample_count_status(projects):
+    for project in projects:
+        if not 'sample_count' in project:
+            return 1
+
+    return 0
 
 def change_to_standard_date(date):
     
@@ -320,25 +332,45 @@ def change_database_dates(request):
                     'delete': False}
         collection_handle.update(query, new_values)
         
-        if "previous_versions" in project:
-            updated_versions = project.previous_versions.view()
-            #for version in json.loads(project['previous_versions'][0]):
-            #    re_up = change_to_standard_date(version['date'])
-            #    version['date'] = re_up
-            #    updated_versions.append(version)
-            another_update = {'date':recently_updated, 'link':str(project['linkid'])}
-            updated_versions.append(another_update)
-
-            # Update the previous_versions field with the updated versions
-            collection_handle.update(
-                {'_id': project['_id']},
-                {'$set': {'previous_versions': updated_versions}}
-            )
+        # if "previous_versions" in project:
+        #     updated_versions = project.previous_versions.view()
+        #     #for version in json.loads(project['previous_versions'][0]):
+        #     #    re_up = change_to_standard_date(version['date'])
+        #     #    version['date'] = re_up
+        #     #    updated_versions.append(version)
+        #     another_update = {'date':recently_updated, 'link':str(project['linkid'])}
+        #     updated_versions.append(another_update)
+        #
+        #     # Update the previous_versions field with the updated versions
+        #     collection_handle.update(
+        #         {'_id': project['_id']},
+        #         {'$set': {'previous_versions': updated_versions}}
+        #     )
 
     response = redirect('/data-qc')
     logging.info('Updated timestamps')
     return response
- 
+
+
+def update_sample_counts(request):
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    logging.debug('Starting to update sample count for each project...')
+    projects = get_projects_close_cursor({'delete': False})
+
+    for project in projects:
+        # Update current project sample count
+        sample_count = len(project['runs'])
+        new_values = {"$set": {'sample_count': sample_count}}
+        query = {'_id': project['_id'], 'delete': False}
+        collection_handle.update(query, new_values)
+
+
+    response = redirect('/data-qc')
+    logging.info('Updated sample counts for each project and their previous versions')
+    return response
+
 
 def index(request):
     if request.user.is_authenticated:
@@ -2044,6 +2076,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['views'] = previous_views[0]
     project['downloads'] = previous_views[1]
     project['alias_name'] = form_dict['alias']
+    project['sample_count'] = len(runs)
     return project, tmp_id
 
 class FileUploadView(APIView):
