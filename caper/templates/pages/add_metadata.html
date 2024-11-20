@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block meta_title %}Add Metadata{% endblock %}
+
+{% block main %}
+<div class="container">
+    <h1>Add Metadata</h1>
+    <p>Upload a CSV file containing metadata for your project. The CSV file should have the following columns:</p>
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>Column Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><b>sample_name</b></td><td>Unique identifier for the sample.</td></tr>
+            <tr><td><b>cancer_type</b></td><td>The type of cancer associated with the sample.</td></tr>
+            <tr><td><b>sample_type</b></td><td>Classification of the sample (e.g., normal, tumor).</td></tr>
+            <tr><td><b>tissue_source_site</b></td><td>Site from which the tissue was sourced.</td></tr>
+            <tr><td><b>race</b></td><td>Race of the patient associated with the sample.</td></tr>
+            <tr><td><b>ethnicity</b></td><td>Ethnicity of the patient.</td></tr>
+            <tr><td><b>tumor_stage</b></td><td>Stage of the tumor.</td></tr>
+            <tr><td><b>days_to_death</b></td><td>Number of days from sample acquisition to the patient's death.</td></tr>
+            <tr><td><b>days_to_last_follow_up</b></td><td>Days since last recorded follow-up for the patient.</td></tr>
+            <tr><td><b>primary_tumor_site</b></td><td>Primary site of the tumor.</td></tr>
+            <tr><td><b>pathologic_stage</b></td><td>Pathologic stage of the tumor.</td></tr>
+            <tr><td><b>smoking_history</b></td><td>Patient's smoking history (e.g., never, former, current).</td></tr>
+            <tr><td><b>patient_sex</b></td><td>Sex of the patient (e.g., male, female).</td></tr>
+            <tr><td><b>aa_sample_name</b></td><td>Alternative sample name provided by the analysis.</td></tr>
+            <tr><td><b>provider_sample_name</b></td><td>Sample name provided by the data provider.</td></tr>
+        </tbody>
+    </table>
+    <h4>Note: Make sure the file you upload is a comma-delimited .csv file! Learn more about this file format 
+        <a href="https://flatfile.com/blog/what-is-a-csv-file-guide-to-uses-and-benefits/#:~:text=%E2%80%9CCSV%E2%80%9D%20refers%20to%20the%20CSV,as%20data%20separated%20by%20commas." target="_blank">here</a>.
+        </h4>
+    <hr>
+    <form method="post" enctype="multipart/form-data" action="{% url 'process_metadata' project_id=project_id %}">
+        {% csrf_token %}
+        <div class="form-group">
+            <label for="metadataFile"><b>Select CSV File:</b></label>
+            <input type="file" class="form-control-file" id="metadataFile" name="metadataFile" accept=".csv" required>
+        </div>
+        <button type="submit" class="btn btn-primary mt-3">Upload</button>
+    </form>
+</div>
+{% endblock %}

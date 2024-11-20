@@ -841,7 +841,10 @@ def get_sample_metadata(sample_data):
         sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
         sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
         sample_metadata = json.loads(sample_metadata.decode())
-
+        # Add metadata from the `extra_metadata_from_csv` field
+        extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
+        if isinstance(extra_metadata, dict):
+            sample_metadata.update(extra_metadata)
     except Exception as e:
         logging.exception(e)
         sample_metadata = defaultdict(str)
@@ -863,6 +866,71 @@ def sample_metadata_download(request, project_name, sample_name):
         logging.exception(e)
         return HttpResponse()
 
+def add_metadata(request, project_id):
+    return render(request, 'pages/add_metadata.html', {'project_id': project_id})
+
+def process_metadata(request, project_id):
+    if request.method == 'POST':
+        print(f"Project ID from URL: {project_id}")
+        uploaded_file = request.FILES.get('metadataFile')
+        if not uploaded_file:
+            return HttpResponse("No file uploaded", status=400)
+
+        try:
+            # Decode and parse the CSV
+            file_data = uploaded_file.read().decode('utf-8').splitlines()
+            csv_reader = csv.DictReader(file_data)
+
+            # Retrieve the project using project_id
+            project = collection_handle.find_one({'_id': ObjectId(project_id)})
+            if not project:
+                return HttpResponse("Project not found", status=404)
+
+            # Access the 'runs' field of the project
+            runs = project.get('runs', {})
+
+            # Iterate through the CSV and update metadata
+            for row in csv_reader:
+                sample_name = row.get('sample_name')
+                if not sample_name:
+                    continue  # Skip rows without a sample_name
+
+                # Find the corresponding sample in the runs
+                sample_found = False
+                for sample_key, sample_list in runs.items():
+                    for sample in sample_list:
+                        if sample.get('Sample_name') == sample_name:
+                            sample_found = True
+                            # Add metadata fields into `extra_metadata_from_csv`
+                            if "extra_metadata_from_csv" not in sample:
+                                sample["extra_metadata_from_csv"] = {}
+
+                            for key, value in row.items():
+                                if key != 'sample_name':  # Skip sample_name column
+                                    sample["extra_metadata_from_csv"][key] = value
+                            break
+                    if sample_found:
+                        break
+
+                if not sample_found:
+                    print(f"Sample {sample_name} not found in project {project_id}")
+
+            # Update the project document in the database
+            collection_handle.update_one(
+                {'_id': ObjectId(project_id)},
+                {'$set': {'runs': runs}}
+            )
+
+            return redirect('project_page', project_name=project_id)
+
+        except Exception as e:
+            logging.exception("Error processing metadata")
+            return HttpResponse(f"Error processing file: {str(e)}", status=400)
+
+    else:
+        return HttpResponse("Invalid request method", status=405)
+    
+
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
     logging.info(f"Loading sample page for {sample_name}")
@@ -870,7 +938,6 @@ def sample_page(request, project_name, sample_name):
     project_linkid = project['_id']
     if project['private'] and not is_user_a_project_member(project, request):
         return redirect('/accounts/login')
-
     sample_metadata = get_sample_metadata(sample_data)
     reference_genome = reference_genome_from_sample(sample_data)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
