@@ -5,7 +5,14 @@
 {% block main %}
 <div class="container">
     <h1>Add Metadata</h1>
-    <p>Upload a CSV file containing metadata for your project. The CSV file should have the following columns:</p>
+    <p>
+        Please upload a CSV file where:
+        <ul>
+            <li><strong>The first column</strong> is the <b>Sample Name</b> (e.g., "Sample_001").</li>
+            <li><strong>All other columns</strong> are considered as metadata fields associated with the respective sample.</li>
+        </ul>
+    </p>
+
     <table class="table table-bordered">
         <thead>
             <tr>
@@ -14,23 +21,64 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><b>sample_name</b></td><td>Unique identifier for the sample.</td></tr>
-            <tr><td><b>cancer_type</b></td><td>The type of cancer associated with the sample.</td></tr>
-            <tr><td><b>sample_type</b></td><td>Classification of the sample (e.g., normal, tumor).</td></tr>
-            <tr><td><b>tissue_source_site</b></td><td>Site from which the tissue was sourced.</td></tr>
-            <tr><td><b>race</b></td><td>Race of the patient associated with the sample.</td></tr>
-            <tr><td><b>ethnicity</b></td><td>Ethnicity of the patient.</td></tr>
-            <tr><td><b>tumor_stage</b></td><td>Stage of the tumor.</td></tr>
-            <tr><td><b>days_to_death</b></td><td>Number of days from sample acquisition to the patient's death.</td></tr>
-            <tr><td><b>days_to_last_follow_up</b></td><td>Days since last recorded follow-up for the patient.</td></tr>
-            <tr><td><b>primary_tumor_site</b></td><td>Primary site of the tumor.</td></tr>
-            <tr><td><b>pathologic_stage</b></td><td>Pathologic stage of the tumor.</td></tr>
-            <tr><td><b>smoking_history</b></td><td>Patient's smoking history (e.g., never, former, current).</td></tr>
-            <tr><td><b>patient_sex</b></td><td>Sex of the patient (e.g., male, female).</td></tr>
-            <tr><td><b>aa_sample_name</b></td><td>Alternative sample name provided by the analysis.</td></tr>
-            <tr><td><b>provider_sample_name</b></td><td>Sample name provided by the data provider.</td></tr>
+            <h3>Example format:</h3>
+            <tr><td><b>First Column: sample_name</b></td><td>Unique identifier for the sample.</td></tr>
+            <tr><td><b>rest of the columns ... </b></td><td>Metadata and their value</td></tr>
         </tbody>
     </table>
+    <table class="table table-bordered table-striped">
+        <thead class="thead-dark">
+            <tr>
+                <th>sample_name</th>
+                <th>cancer_type</th>
+                <th>sample_type</th>
+                <th>tissue_source_site</th>
+                <th>race</th>
+                <th>ethnicity</th>
+                <th>tumor_stage</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Sample_001</td>
+                <td>Lung Cancer</td>
+                <td>Tumor</td>
+                <td>Lung</td>
+                <td>Asian</td>
+                <td>Hispanic</td>
+                <td>Stage II</td>
+            </tr>
+            <tr>
+                <td>Sample_002</td>
+                <td>Breast Cancer</td>
+                <td>Normal</td>
+                <td>Breast</td>
+                <td>White</td>
+                <td>Non-Hispanic</td>
+                <td>Stage I</td>
+            </tr>
+            <tr>
+                <td>Sample_003</td>
+                <td>Colon Cancer</td>
+                <td>Tumor</td>
+                <td>Colon</td>
+                <td>Black</td>
+                <td>Hispanic</td>
+                <td>Stage III</td>
+            </tr>
+            <tr>
+                <td>Sample_004</td>
+                <td>Prostate Cancer</td>
+                <td>Tumor</td>
+                <td>Prostate</td>
+                <td>Asian</td>
+                <td>Non-Hispanic</td>
+                <td>Stage IV</td>
+            </tr>
+        </tbody>
+    </table>
+
+    
     <h4>Note: Make sure the file you upload is a comma-delimited .csv file! Learn more about this file format 
         <a href="https://flatfile.com/blog/what-is-a-csv-file-guide-to-uses-and-benefits/#:~:text=%E2%80%9CCSV%E2%80%9D%20refers%20to%20the%20CSV,as%20data%20separated%20by%20commas." target="_blank">here</a>.
         </h4>
