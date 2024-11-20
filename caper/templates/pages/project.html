@@ -157,6 +157,7 @@
         {% if not viewing_old_project %}
             {% if project.current_user_may_edit  %}
             <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 24px"></i></a>
+            <a class="btn btn-secondary" style="color: white; margin-bottom: 12px;" href="/project/{{ project.linkid }}/add_metadata">Add Metadata</a><br>
         {%  endif %}</h2>
         {% endif %}
 
@@ -175,7 +176,6 @@
 
     <div class="col-md-3">
         <a class="btn btn-primary" style="color: white; margin-bottom: 12px;" onclick = "downloadAndReload();" >Download Project Data</a><br>
-        <a class="btn btn-secondary" style="color: white; margin-bottom: 12px;" href="/project/{{ project.linkid }}/add_metadata">Add Metadata</a><br>
         <!-- <p><b>Last Updated:</b> {{ project.date }}</p> -->
         <!-- <p><b>Private:</b> {{ project.private }}</p> -->
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}
