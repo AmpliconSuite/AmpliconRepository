@@ -6,11 +6,19 @@
 <div class="container">
     <h1>Add Metadata</h1>
     <p>
-        Please upload a CSV file where:
+        Please upload a file in one of the following formats:
         <ul>
-            <li><strong>The first column</strong> must be the <b>"sample_name"</b> (e.g., "Sample_001").</li>
-            <li><strong>The second column</strong> must be the <b>"sample_type"</b> (e.g., "Lung Cancer").</li>
-            <li><strong>All other columns</strong> are considered as metadata fields associated with the respective sample.</li>
+            <li><strong>CSV:</strong> Comma-separated values file.</li>
+            <li><strong>TSV:</strong> Tab-separated values file.</li>
+            <li><strong>XLSX:</strong> Excel spreadsheet file.</li>
+        </ul>
+    </p>
+    <p>
+        Ensure that:
+        <ul>
+            <li><strong>The first column</strong> is <b>"sample_name"</b> (e.g., "Sample_001").</li>
+            <li><strong>The second column</strong> is <b>"cancer_type"</b> (e.g., "Lung Cancer").</li>
+            <li><strong>All other columns</strong> are metadata fields associated with the sample.</li>
         </ul>
     </p>
 
@@ -24,7 +32,7 @@
                 <th>race</th>
                 <th>ethnicity</th>
                 <th>tumor_stage</th>
-                <th>... (more metadata columns)</th>
+                <th>... (additional columns)</th>
             </tr>
         </thead>
         <tbody>
@@ -48,40 +56,20 @@
                 <td>Stage I</td>
                 <td>...</td>
             </tr>
-            <tr>
-                <td>Sample_003</td>
-                <td>Colon Cancer</td>
-                <td>Tumor</td>
-                <td>Colon</td>
-                <td>Black</td>
-                <td>Hispanic</td>
-                <td>Stage III</td>
-                <td>...</td>
-            </tr>
-            <tr>
-                <td>Sample_004</td>
-                <td>Prostate Cancer</td>
-                <td>Tumor</td>
-                <td>Prostate</td>
-                <td>Asian</td>
-                <td>Non-Hispanic</td>
-                <td>Stage IV</td>
-                <td>...</td>
-            </tr>
         </tbody>
     </table>
 
-    <h4>Note: Make sure the file you upload is a comma-delimited .csv file! Learn more about this file format 
-        <a href="https://flatfile.com/blog/what-is-a-csv-file-guide-to-uses-and-benefits/#:~:text=%E2%80%9CCSV%E2%80%9D%20refers%20to%20the%20CSV,as%20data%20separated%20by%20commas." target="_blank">here</a>.
-        </h4>
+    <h4>Note: Supported file types are <b>.csv</b>, <b>.tsv</b>, and <b>.xlsx</b>. Ensure your file is properly formatted!</h4>
     <hr>
     <form method="post" enctype="multipart/form-data" action="{% url 'process_metadata' project_id=project_id %}">
         {% csrf_token %}
         <div class="form-group">
-            <label for="metadataFile"><b>Select CSV File:</b></label>
-            <input type="file" class="form-control-file" id="metadataFile" name="metadataFile" accept=".csv" required>
+            <label for="metadataFile"><strong>Select File:</strong></label>
+            <input type="file" class="form-control-file" id="metadataFile" name="metadataFile" accept=".csv,.tsv,.xlsx" required>
         </div>
-        <button type="submit" class="btn btn-primary mt-3">Upload</button>
+        <button type="submit" class="btn btn-primary mt-3">
+            <i class="fas fa-upload" style="margin-right: 8px;"></i> Upload Metadata
+        </button>
     </form>
 </div>
 {% endblock %}
