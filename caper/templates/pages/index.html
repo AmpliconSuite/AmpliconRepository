@@ -219,7 +219,7 @@
                                         <th>Name</th>
                                         <th>Description</th>
                                         <th>Last Updated</th>
-                                        <th>Project Members</th>
+                                        <th>Sample count</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -228,9 +228,7 @@
                                         <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                         <td>{{ project.description }}</td>
                                         <td class="date">{{ project.date }}</td>
-                                        <td>{% for person in project.project_members %}
-                                            {{ person }}<br>
-                                        {% endfor%}</td>
+                                        <td>{{ project.sample_count }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -244,7 +242,7 @@
                                         <th>Name</th>
                                         <th>Description</th>
                                         <th>Last Updated</th>
-                                        <th>Project Members</th>
+                                        <th>Sample count</th>
 
                                     </tr>
                                 </thead>
@@ -254,9 +252,8 @@
                                         <td ><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                         <td>{{ project.description }}</td>
                                         <td class="date">{{ project.date }}</td>
-                                        <td>{% for person in project.project_members %}
-                                            {{ person }}<br>
-                                        {% endfor%}</td>
+                                        <td>{{ project.sample_count }}</td>
+
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -310,6 +307,9 @@
         <h4 style="margin-top: 20px">News & Updates</h4>
 
         <ul>
+            <li style="margin-bottom:10px">
+                <a href="https://www.nature.com/articles/s41588-024-01949-7" target="_blank">Leveraging large-scale genomic datasets to track extrachromosomal DNA across cancer stages <i class="fas fa-external-link-alt"></i></a>
+            </li>
             <li style="margin-bottom:10px">
                 <a href="https://www.nature.com/articles/s41588-023-01551-3" target="_blank">Study of ecDNA in medulloblastoma reveals intratumor heterogeneity of ecDNA <i class="fas fa-external-link-alt"></i></a>
             </li>

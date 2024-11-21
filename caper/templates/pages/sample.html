@@ -12,6 +12,37 @@
     } );
 </script>
 <script src="https://cdn.jsdelivr.net/npm/igv@2.13.7/dist/igv.min.js"></script>
+
+<script>
+    function rename_ref(reference_genome) {
+        var genome = reference_genome;
+        if (reference_genome === 'GRCh38') {
+            genome = 'hg38';
+        } else if (reference_genome === 'hg19') {
+            genome = 'hg19';
+        } else if (reference_genome === 'GRCh37') {
+            genome = 'hg19';
+        } else if (reference_genome === 'GRCh38_viral') {
+            genome = 'hg38';
+        } else if (reference_genome === 'mm10') {
+            genome = 'mm10';
+        }
+        return genome;
+    }
+    var genome = rename_ref("{{ reference_genome }}");
+
+    // Function to update the UCSC Genome Browser URLs
+    function updateGenomeLinks() {
+        var genomeLinks = document.querySelectorAll('.genome-link');
+        genomeLinks.forEach(function (link) {
+            var position = link.getAttribute('data-position');
+            link.href = `https://genome.ucsc.edu/cgi-bin/hgTracks?db=${genome}&position=${position}`;
+        });
+    }
+
+    document.addEventListener("DOMContentLoaded", updateGenomeLinks);
+</script>
+
 <script type="text/javascript">
     function toggle_igv() {
     var x = document.getElementById("igv-div");
@@ -29,18 +60,6 @@
         
         const version = igv.version()
         const igvDiv = document.getElementById("igv-div")
-        var genome = "";
-        if (reference_genome === 'GRCh38'){
-            genome = 'hg38';
-        } else if (reference_genome === 'hg19'){
-            genome = 'hg19';
-        } else if (reference_genome === 'GRCh37'){
-            genome = 'hg19';
-        } else if (reference_genome === 'GRCh38_viral'){
-            genome = 'hg38'
-        } else if (reference_genome === 'mm10'){
-            genome = 'mm10'
-        }
         const options =
             { 
                 locus: locus_selection,
@@ -252,53 +271,61 @@
 
 
 <div style="margin-top:25px; padding: 25px; border: 0.5px solid grey">
-        <table id='myTable2' class="table table-hover table-sm stripe no-border">
-            <thead>
-                <tr>
-                    <th>Amplicon</th>
-                    <th>Feature ID</th>
-                    <th>Classification</th>
-                    <th>Oncogenes</th>
-                    <th>Location</th>
-                    <th>Downloads</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% if  sample_data|length == 1 and sample_data.0.Feature_ID|slice:"-3:" == "_NA"   %}
+    <table id='myTable2' class="table table-hover table-sm stripe no-border">
+        <thead>
+            <tr>
+                <th>Amplicon</th>
+                <th>Feature ID</th>
+                <th>Classification</th>
+                <th>Oncogenes</th>
+                <th>Location</th>
+                <th>Downloads</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if  sample_data|length == 1 and sample_data.0.Feature_ID|slice:"-3:" == "_NA"   %}
 
 
-                       <!-- placeholder in case we want something other than the default 'no data available in table' message -->
-                {% else %}
-                {% for feature in sample_data %}
-                <tr>
-                    <td display:flex onclick="handleTableRowClick('{{ feature.AA_amplicon_number }}', '{{ feature.Location|join:", " }}')">
-                        <b>{{ feature.AA_amplicon_number }}</b>
-                        <a class="thumbnail" href="#thumb">
-                            <img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}" width = '100px'>
-                            <span><img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}"></span>
-                        </a></td>
-                    <td display:flex onclick="handleTableRowClick('{{ feature.AA_amplicon_number }}', '{{ feature.Location|join:", " }}')"><b>{{ feature.Feature_ID }}</b></td>
-                    <td>{{ feature.Classification }}</td>
-		            <td>{{ feature.Oncogenes|join:", " }}</td>
-                    <td>{{ feature.Location|join:", " }}</td>
-                    <td>
-                        {% if not  feature.BED_file  == 'Not Provided' %}
-                        <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a>
-                        {% endif %}
-                        {% if not  feature.AA_PDF_file  == 'Not Provided' %}
-                        | <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a>
-                        {% endif %}
-                        {% if not  feature.AA_PNG_file  == 'Not Provided' %}
-                        |
-                        <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a>
-                        {% endif %}
-                        <br>
-                    </td>
-                </tr>
-                {% endfor %}
-                {% endif %}
-            </tbody>
-        </table>
+                   <!-- placeholder in case we want something other than the default 'no data available in table' message -->
+            {% else %}
+            {% for feature in sample_data %}
+            <tr>
+                <td display:flex onclick="handleTableRowClick('{{ feature.AA_amplicon_number }}', '{{ feature.Location|join:", " }}')">
+                    <b>{{ feature.AA_amplicon_number }}</b>
+                    <a class="thumbnail" href="#thumb">
+                        <img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}" width = '100px'>
+                        <span><img src="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}"></span>
+                    </a></td>
+                <td display:flex onclick="handleTableRowClick('{{ feature.AA_amplicon_number }}', '{{ feature.Location|join:", " }}')"><b>{{ feature.Feature_ID }}</b></td>
+                <td>{{ feature.Classification }}</td>
+                <td>{{ feature.Oncogenes|join:", " }}</td>
+                <td>
+                    {% for coord in feature.Location %}
+                        {% if not forloop.first %}, {% endif %}
+                        <a class="genome-link" data-position="{{ coord }}" href="#"> <!-- href will be set by JS -->
+                            {{ coord }}
+                        </a>
+                    {% endfor %}
+                </td>
+
+                <td>
+                    {% if not  feature.BED_file  == 'Not Provided' %}
+                    <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/{{ feature.Feature_BED_file }}">BED</a>
+                    {% endif %}
+                    {% if not  feature.AA_PDF_file  == 'Not Provided' %}
+                    | <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/pdf/{{ feature.AA_PDF_file }}">PDF</a>
+                    {% endif %}
+                    {% if not  feature.AA_PNG_file  == 'Not Provided' %}
+                    |
+                    <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/feature/{{ feature.Feature_ID }}/download/png/{{ feature.AA_PNG_file }}">PNG</a>
+                    {% endif %}
+                    <br>
+                </td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+        </tbody>
+    </table>
 
 <script>
     function handleTableRowClick(amplicon_num, featureLoc) {
@@ -353,10 +380,8 @@
     }
 
 </script>
-
-
-
 </div>
+
 <style>
     .thumbnail img{
         border: 1px solid white;
