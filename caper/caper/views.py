@@ -1676,8 +1676,16 @@ def project_stats_download(request):
     # public_projects = list(collection_handle.find({'private': False, 'delete': False}))
     public_projects = get_projects_close_cursor({'private': False, 'delete': False})
     for project in public_projects:
-        project['project_downloads_sum'] = sum(project['project_downloads'].values())
-        project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
+        if not 'project_downloads' in project:
+            project['project_downloads_sum'] = 0
+        else:
+            project['project_downloads_sum'] = sum(project['project_downloads'].values())
+
+        if not 'sample_downloads' in project:
+            project['sample_downloads_sum'] = 0
+        else:
+            project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
+
     for proj in public_projects:
         prepare_project_linkid(proj)
     
