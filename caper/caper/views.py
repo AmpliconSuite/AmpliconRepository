@@ -883,7 +883,7 @@ def process_metadata(request, project_id):
             # Determine the file type and read the file into a Pandas DataFrame
             file_name = uploaded_file.name
             if file_name.endswith('.xlsx'):
-                df = pd.read_excel(uploaded_file)  # Read Excel file
+                df = pd.read_excel(uploaded_file.open())  # Read Excel file
             elif file_name.endswith('.csv') or file_name.endswith('.tsv'):
                 delimiter = '\t' if file_name.endswith('.tsv') else ','
                 df = pd.read_csv(uploaded_file, delimiter=delimiter)  # Read CSV/TSV file
