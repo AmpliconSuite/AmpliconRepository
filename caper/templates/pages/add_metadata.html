@@ -8,8 +8,8 @@
     <p>
         Please upload a CSV file where:
         <ul>
-            <li><strong>The first column</strong> must be the <b>Sample Name</b> (e.g., "Sample_001").</li>
-            <li><strong>The second column</strong> must be the <b>Cancer Type</b> (e.g., "Lung Cancer").</li>
+            <li><strong>The first column</strong> must be the <b>"sample_name"</b> (e.g., "Sample_001").</li>
+            <li><strong>The second column</strong> must be the <b>"sample_type"</b> (e.g., "Lung Cancer").</li>
             <li><strong>All other columns</strong> are considered as metadata fields associated with the respective sample.</li>
         </ul>
     </p>
@@ -24,6 +24,7 @@
                 <th>race</th>
                 <th>ethnicity</th>
                 <th>tumor_stage</th>
+                <th>... (more metadata columns)</th>
             </tr>
         </thead>
         <tbody>
@@ -35,6 +36,7 @@
                 <td>Asian</td>
                 <td>Hispanic</td>
                 <td>Stage II</td>
+                <td>...</td>
             </tr>
             <tr>
                 <td>Sample_002</td>
@@ -44,6 +46,7 @@
                 <td>White</td>
                 <td>Non-Hispanic</td>
                 <td>Stage I</td>
+                <td>...</td>
             </tr>
             <tr>
                 <td>Sample_003</td>
@@ -53,6 +56,7 @@
                 <td>Black</td>
                 <td>Hispanic</td>
                 <td>Stage III</td>
+                <td>...</td>
             </tr>
             <tr>
                 <td>Sample_004</td>
@@ -62,6 +66,7 @@
                 <td>Asian</td>
                 <td>Non-Hispanic</td>
                 <td>Stage IV</td>
+                <td>...</td>
             </tr>
         </tbody>
     </table>
