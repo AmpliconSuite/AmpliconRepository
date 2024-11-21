@@ -869,6 +869,9 @@ def sample_metadata_download(request, project_name, sample_name):
 def add_metadata(request, project_id):
     return render(request, 'pages/add_metadata.html', {'project_id': project_id})
 
+import pandas as pd
+import csv
+
 def process_metadata(request, project_id):
     if request.method == 'POST':
         print(f"Project ID from URL: {project_id}")
@@ -877,9 +880,18 @@ def process_metadata(request, project_id):
             return HttpResponse("No file uploaded", status=400)
 
         try:
-            # Decode and parse the CSV
-            file_data = uploaded_file.read().decode('utf-8').splitlines()
-            csv_reader = csv.DictReader(file_data)
+            # Determine the file type and read the file into a Pandas DataFrame
+            file_name = uploaded_file.name
+            if file_name.endswith('.xlsx'):
+                df = pd.read_excel(uploaded_file)  # Read Excel file
+            elif file_name.endswith('.csv') or file_name.endswith('.tsv'):
+                delimiter = '\t' if file_name.endswith('.tsv') else ','
+                df = pd.read_csv(uploaded_file, delimiter=delimiter)  # Read CSV/TSV file
+            else:
+                return HttpResponse("Unsupported file type. Please upload a .csv, .tsv, or .xlsx file.", status=400)
+
+            # Convert DataFrame to a list of dictionaries
+            records = df.to_dict(orient='records')
 
             # Retrieve the project using project_id
             project = collection_handle.find_one({'_id': ObjectId(project_id)})
@@ -889,8 +901,8 @@ def process_metadata(request, project_id):
             # Access the 'runs' field of the project
             runs = project.get('runs', {})
 
-            # Iterate through the CSV and update metadata
-            for row in csv_reader:
+            # Iterate through the records and update metadata
+            for row in records:
                 sample_name = row.get('sample_name')
                 if not sample_name:
                     continue  # Skip rows without a sample_name
