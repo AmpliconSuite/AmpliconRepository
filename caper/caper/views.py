@@ -34,6 +34,7 @@ from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm,
 from .utils import collection_handle, collection_handle_primary, db_handle, fs_handle, replace_space_to_underscore, \
     preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
     prepare_project_linkid, replace_underscore_keys, get_projects_close_cursor, get_all_alias
+from .extra_metadata import *
 from django.forms.models import model_to_dict
 
 import subprocess
@@ -869,79 +870,6 @@ def sample_metadata_download(request, project_name, sample_name):
 def add_metadata(request, project_id):
     return render(request, 'pages/add_metadata.html', {'project_id': project_id})
 
-import pandas as pd
-import csv
-
-def process_metadata(request, project_id):
-    if request.method == 'POST':
-        print(f"Project ID from URL: {project_id}")
-        uploaded_file = request.FILES.get('metadataFile')
-        if not uploaded_file:
-            return HttpResponse("No file uploaded", status=400)
-
-        try:
-            # Determine the file type and read the file into a Pandas DataFrame
-            file_name = uploaded_file.name
-            if file_name.endswith('.xlsx'):
-                df = pd.read_excel(uploaded_file.open())  # Read Excel file
-            elif file_name.endswith('.csv') or file_name.endswith('.tsv'):
-                delimiter = '\t' if file_name.endswith('.tsv') else ','
-                df = pd.read_csv(uploaded_file, delimiter=delimiter)  # Read CSV/TSV file
-            else:
-                return HttpResponse("Unsupported file type. Please upload a .csv, .tsv, or .xlsx file.", status=400)
-
-            # Convert DataFrame to a list of dictionaries
-            records = df.to_dict(orient='records')
-
-            # Retrieve the project using project_id
-            project = collection_handle.find_one({'_id': ObjectId(project_id)})
-            if not project:
-                return HttpResponse("Project not found", status=404)
-
-            # Access the 'runs' field of the project
-            runs = project.get('runs', {})
-
-            # Iterate through the records and update metadata
-            for row in records:
-                sample_name = row.get('sample_name')
-                if not sample_name:
-                    continue  # Skip rows without a sample_name
-
-                # Find the corresponding sample in the runs
-                sample_found = False
-                for sample_key, sample_list in runs.items():
-                    for sample in sample_list:
-                        if sample.get('Sample_name') == sample_name:
-                            sample_found = True
-                            # Add metadata fields into `extra_metadata_from_csv`
-                            if "extra_metadata_from_csv" not in sample:
-                                sample["extra_metadata_from_csv"] = {}
-
-                            for key, value in row.items():
-                                if key != 'sample_name':  # Skip sample_name column
-                                    sample["extra_metadata_from_csv"][key] = value
-                            break
-                    if sample_found:
-                        break
-
-                if not sample_found:
-                    print(f"Sample {sample_name} not found in project {project_id}")
-
-            # Update the project document in the database
-            collection_handle.update_one(
-                {'_id': ObjectId(project_id)},
-                {'$set': {'runs': runs}}
-            )
-
-            return redirect('project_page', project_name=project_id)
-
-        except Exception as e:
-            logging.exception("Error processing metadata")
-            return HttpResponse(f"Error processing file: {str(e)}", status=400)
-
-    else:
-        return HttpResponse("Invalid request method", status=405)
-    
 
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
@@ -1357,18 +1285,21 @@ def download_file(url, save_path):
 
 
 def edit_project_page(request, project_name):
-
     if request.method == "POST":
+        
+        try:
+            metadata_file = request.FILES.get("metadataFile")
+        except Exception as e:
+            print(f'Failed to get the metadata file from the form')
+            print(e)
         project = get_one_project(project_name)
         old_alias_name = None
         if 'alias_name' in project:
-
             old_alias_name = project['alias_name']
             print(f'THE OLD ALIAS NAME SHOULD BE: {old_alias_name}')
         # no edits for non-project members
         if not is_user_a_project_member(project, request):
             return HttpResponse("Project does not exist")
-
         form = UpdateForm(request.POST, request.FILES)
         ## give the new project the old project alias. 
         if form.data['alias'] == '':
@@ -1382,9 +1313,6 @@ def edit_project_page(request, project_name):
                 collection_handle.update_one(query, new_val)
                 
         form_dict = form_to_dict(form)
-        print('UPDATED FORM ALIAS')
-        print(form_dict['alias'])
-        print(form.data)
 
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
         # lets notify users (if their preferences request it) if project membership has changed
@@ -1450,6 +1378,7 @@ def edit_project_page(request, project_name):
             request_file = request.FILES['document']
         except:
             request_file = None
+            
         if request_file is not None:
             ## save all files, run through aggregator. 
             # mark the current project as updated
@@ -1496,6 +1425,7 @@ def edit_project_page(request, project_name):
             
             logging.info(f"project name: {project_name}  change to {new_project_name}")
             current_runs = project['runs']
+            
             if runs != 0:
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
@@ -1504,7 +1434,12 @@ def edit_project_page(request, project_name):
                 print(alias_name)
             except:
                 print('no alias to be found')
-
+            
+            ## try to get metadata file:
+            
+            if metadata_file:
+                current_runs = process_metadata_no_request(current_runs, metadata_file)
+                print(current_runs)
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
                                  'Oncogenes': get_project_oncogenes(current_runs), 'alias_name' : alias_name}}
@@ -2084,6 +2019,11 @@ def _create_project(form, request, previous_versions = [], previous_views = [0, 
 
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
+    status = process_metadata(request, new_id)
+    if status == "complete":
+        print("Metadata processing completed successfully.")
+    else:
+        print(f"Error: {status}")
     add_project_to_site_statistics(project)
     # move the project location to a new name using the UUID to prevent name collisions
     new_project_data_path = f"tmp/{new_id.inserted_id}"

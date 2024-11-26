@@ -157,7 +157,6 @@
         {% if not viewing_old_project %}
             {% if project.current_user_may_edit  %}
             <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 24px"></i></a>
-            <a class="btn btn-secondary" style="color: white; margin-bottom: 12px;" href="/project/{{ project.linkid }}/add_metadata">Add Metadata</a><br>
         {%  endif %}</h2>
         {% endif %}
 
