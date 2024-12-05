@@ -1,0 +1,70 @@
+
+<div class="container">
+    <h1>Add Metadata</h1>
+    <p>
+        Please upload a file in one of the following formats:
+        <ul>
+            <li><strong>CSV:</strong> Comma-separated values file.</li>
+            <li><strong>TSV:</strong> Tab-separated values file.</li>
+            <li><strong>XLSX:</strong> Excel spreadsheet file.</li>
+        </ul>
+    </p>
+    <p>
+        Ensure that:
+        <ul>
+            <li><strong>The first column</strong> is <b>"sample_name"</b> (e.g., "Sample_001").</li>
+            <li><strong>The second column</strong> is <b>"cancer_type"</b> (e.g., "Lung Cancer").</li>
+            <li><strong>All other columns</strong> are metadata fields associated with the sample.</li>
+        </ul>
+    </p>
+
+    <table class="table table-bordered table-striped">
+        <thead class="thead-dark">
+            <tr>
+                <th>sample_name</th>
+                <th>cancer_type</th>
+                <th>sample_type</th>
+                <th>tissue_source_site</th>
+                <th>race</th>
+                <th>ethnicity</th>
+                <th>tumor_stage</th>
+                <th>... (additional columns)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Sample_001</td>
+                <td>Lung Cancer</td>
+                <td>Tumor</td>
+                <td>Lung</td>
+                <td>Asian</td>
+                <td>Hispanic</td>
+                <td>Stage II</td>
+                <td>...</td>
+            </tr>
+            <tr>
+                <td>Sample_002</td>
+                <td>Breast Cancer</td>
+                <td>Normal</td>
+                <td>Breast</td>
+                <td>White</td>
+                <td>Non-Hispanic</td>
+                <td>Stage I</td>
+                <td>...</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>Note: Supported file types are <b>.csv</b>, <b>.tsv</b>, and <b>.xlsx</b>. Ensure your file is properly formatted!</h4>
+    <hr>
+    <form method="post" enctype="multipart/form-data" action="{% url 'process_metadata' project_id=project_id %}">
+        {% csrf_token %}
+        <div class="form-group">
+            <label for="metadataFile"><strong>Select File:</strong></label>
+            <input type="file" class="form-control-file" id="metadataFile" name="metadataFile" accept=".csv,.tsv,.xlsx" required>
+        </div>
+        <button type="submit" class="btn btn-primary mt-3">
+            <i class="fas fa-upload" style="margin-right: 8px;"></i> Upload Metadata
+        </button>
+    </form>
+</div>

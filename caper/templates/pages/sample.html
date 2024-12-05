@@ -107,11 +107,26 @@
         <h4>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h4>
         <button class="btn btn-primary" type="button" data-toggle="collapse" data-target="#collapseExample" aria-expanded="false" aria-controls="collapseExample"><a style="color: white">View Metadata</a></button>
         <div class="collapse" id="collapseExample" style="padding-top:10px">
-          <div class="card card-body">
-            {% for key, item in sample_metadata.items %}
-                <p><b>{{ key }}:</b> {{ item }}</p>
-            {% endfor %}
-          </div>
+            <div class="card card-body">
+                <div style="overflow-y: auto; max-height: 400px;">
+                    <table class="table table-bordered table-striped">
+                        <thead class="thead-dark">
+                            <tr>
+                                <th>Field</th>
+                                <th>Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for key, item in sample_metadata.items %}
+                            <tr>
+                                <td>{{ key }}</td>
+                                <td>{{ item }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
     <div class="col-md-3" style='text-align:right'>
