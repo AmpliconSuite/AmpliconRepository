@@ -1768,7 +1768,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         # Now update the project with the updated runs
         get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
-        runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath)
+        if extra_metadata_filepath:
+            runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath)
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
 

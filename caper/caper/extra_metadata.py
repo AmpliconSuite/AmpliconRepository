@@ -194,7 +194,8 @@ def save_metadata_file(request, project_data_path):
     # Get the 'metadataFile' from the request
     metadata_file = request.FILES.get("metadataFile")
     if not metadata_file:
-        raise ValueError("No 'metadataFile' found in the request.")
+        print("No 'metadataFile' found in the request.")
+        return None
 
     # Ensure the target directory exists
     os.makedirs(project_data_path, exist_ok=True)
