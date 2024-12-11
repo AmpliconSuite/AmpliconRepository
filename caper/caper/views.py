@@ -861,7 +861,7 @@ def sample_metadata_download(request, project_name, sample_name):
     try:
         sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
         ##combining 
-        combination = json.dumps({**json.loads(sample_metadata), **extra_metadata}).encode('utf-8')
+        combination = json.dumps({**json.loads(sample_metadata), **extra_metadata}, indent=2).encode('utf-8')
         response = HttpResponse(combination)
         response['Content-Type'] = 'application/json'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
