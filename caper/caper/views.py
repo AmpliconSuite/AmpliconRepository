@@ -34,6 +34,7 @@ from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm,
 from .utils import collection_handle, collection_handle_primary, db_handle, fs_handle, replace_space_to_underscore, \
     preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
     prepare_project_linkid, replace_underscore_keys, get_projects_close_cursor, get_all_alias
+from .extra_metadata import *
 from django.forms.models import model_to_dict
 
 import subprocess
@@ -179,7 +180,6 @@ def form_to_dict(form):
             print(f'alias for this project is: {form_dict["alias"]}')
         except:
             print('No alias provided, probably Null')
-            print(type(form_dict['alias']))
     return form_dict
 
 
@@ -405,7 +405,6 @@ def index(request):
     public_sample_count = 0
     # public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
     public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
-    print(len(public_projects))
     for proj in public_projects:
         prepare_project_linkid(proj)
         public_proj_count = public_proj_count + 1
@@ -434,7 +433,7 @@ def profile(request, message_to_user=None):
         useremail = request.user.email
     except:
         # not logged in 
-        print(request.user)
+        # print(request.user)
         ## if user is anonymous, then need to login
         useremail = ""
         ## redirect to login page
@@ -540,7 +539,7 @@ def previous_versions(project):
     """
     res = []
     msg = None
-    print(project['_id'])
+    # print(project['_id'])
 
     ### Accessing a previous version of a project. 
     ## looking for the old link in the previous project. Will output something if 
@@ -873,7 +872,10 @@ def get_sample_metadata(sample_data):
         sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
         sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
         sample_metadata = json.loads(sample_metadata.decode())
-
+        # Add metadata from the `extra_metadata_from_csv` field
+        extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
+        if isinstance(extra_metadata, dict):
+            sample_metadata.update(extra_metadata)
     except Exception as e:
         logging.exception(e)
         sample_metadata = defaultdict(str)
@@ -884,16 +886,28 @@ def sample_metadata_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
     try:
+        extra_metadata = sample_data[0]['extra_metadata_from_csv']
+    except:
+        ## incase extra metadata doesn't exist
+        extra_metadata = {}
+    try:
         sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
-        response = HttpResponse(sample_metadata)
+        ##combining 
+        combination = json.dumps({**json.loads(sample_metadata), **extra_metadata}, indent=2).encode('utf-8')
+        response = HttpResponse(combination)
         response['Content-Type'] = 'application/json'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
+        print('im here')
         # clear_tmp()
         return response
 
     except Exception as e:
         logging.exception(e)
         return HttpResponse()
+
+def add_metadata(request, project_id):
+    return render(request, 'pages/add_metadata.html', {'project_id': project_id})
+
 
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
@@ -902,7 +916,6 @@ def sample_page(request, project_name, sample_name):
     project_linkid = project['_id']
     if project['private'] and not is_user_a_project_member(project, request):
         return redirect('/accounts/login')
-
     sample_metadata = get_sample_metadata(sample_data)
     reference_genome = reference_genome_from_sample(sample_data)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
@@ -1310,18 +1323,20 @@ def download_file(url, save_path):
 
 
 def edit_project_page(request, project_name):
-
     if request.method == "POST":
+        try:
+            metadata_file = request.FILES.get("metadataFile")
+        except Exception as e:
+            print(f'Failed to get the metadata file from the form')
+            print(e)
         project = get_one_project(project_name)
         old_alias_name = None
         if 'alias_name' in project:
-
             old_alias_name = project['alias_name']
             print(f'THE OLD ALIAS NAME SHOULD BE: {old_alias_name}')
         # no edits for non-project members
         if not is_user_a_project_member(project, request):
             return HttpResponse("Project does not exist")
-
         form = UpdateForm(request.POST, request.FILES)
         ## give the new project the old project alias. 
         if form.data['alias'] == '':
@@ -1335,9 +1350,6 @@ def edit_project_page(request, project_name):
                 collection_handle.update_one(query, new_val)
                 
         form_dict = form_to_dict(form)
-        print('UPDATED FORM ALIAS')
-        print(form_dict['alias'])
-        print(form.data)
 
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
         # lets notify users (if their preferences request it) if project membership has changed
@@ -1374,8 +1386,8 @@ def edit_project_page(request, project_name):
                 except:
                     download = download_file(url, download_path)
                     file_fps.append(os.path.join('download.tar.gz'))
-                print(f"AFTERS FILE FPS LIST: {file_fps}")
-                print(f'aggregating on: {file_fps}')
+                # print(f"AFTERS FILE FPS LIST: {file_fps}")
+                # print(f'aggregating on: {file_fps}')
                 agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = f'{temp_proj_id}')
                 if agg.complete != True:
                     ## redirect to edit page if aggregator fails
@@ -1403,6 +1415,7 @@ def edit_project_page(request, project_name):
             request_file = request.FILES['document']
         except:
             request_file = None
+            
         if request_file is not None:
             ## save all files, run through aggregator. 
             # mark the current project as updated
@@ -1426,7 +1439,8 @@ def edit_project_page(request, project_name):
             views = project['views']
             downloads = project['downloads']
             # create a new one with the new form
-            new_id = _create_project(form, request, previous_versions = new_prev_versions, previous_views = [views, downloads])
+            extra_metadata_file_fp = save_metadata_file(request, project_data_path)
+            new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions = new_prev_versions, previous_views = [views, downloads])
             if new_id is not None:
                 # go to the new project
                 return redirect('project_page', project_name=new_id.inserted_id)
@@ -1449,15 +1463,20 @@ def edit_project_page(request, project_name):
             
             logging.info(f"project name: {project_name}  change to {new_project_name}")
             current_runs = project['runs']
+            
             if runs != 0:
                 current_runs.update(runs)
             query = {'_id': ObjectId(project_name)}
             try:
                 alias_name = form_dict['alias']
-                print(alias_name)
+                # print(alias_name)
             except:
                 print('no alias to be found')
-
+            
+            ## try to get metadata file:
+            
+            if metadata_file:
+                current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file)
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
                                  'Oncogenes': get_project_oncogenes(current_runs), 'alias_name' : alias_name}}
@@ -1779,7 +1798,7 @@ def project_stats_download(request):
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
-def extract_project_files(tarfile, file_location, project_data_path, project_id):
+def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath):
     t_sa = time.time()
     logging.debug("Extracting files from tar")
     try:
@@ -1790,7 +1809,6 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
         run_path = f'{project_data_path}/results/run.json'
         with open(run_path, 'r') as run_json:
            runs = samples_to_dict(run_json)
-
         # get cnv, image, bed files
         for sample, features in runs.items():
             logging.debug(f"Extracting {str(len(features))} features from {features[0]['Sample name']}")
@@ -1812,6 +1830,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
         # Now update the project with the updated runs
         get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
+        if extra_metadata_filepath:
+            runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath)
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
 
@@ -1826,7 +1846,6 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id)
             }
         }
         collection_handle.update_one(query, finish_flag)
-
         logging.info(f"Finished extracting from tar in {str(diff)} seconds")
 
     except Exception as anError:
@@ -1991,7 +2010,6 @@ def create_project(request):
         # request = preprocess(request)
         
         form = RunForm(request.POST)
-        
         if not form.is_valid():
             raise Http404()
         ## check multi files, send files to GP and run aggregator there:
@@ -1999,6 +2017,7 @@ def create_project(request):
         temp_proj_id = uuid.uuid4().hex ## to be changed
         files = request.FILES.getlist('document')
         project_data_path = f"tmp/{temp_proj_id}" ## to change
+        extra_metadata_file_fp = save_metadata_file(request, project_data_path)
         for file in files:
             fs = FileSystemStorage(location = project_data_path)
             saved = fs.save(file.name, file)
@@ -2025,7 +2044,7 @@ def create_project(request):
         f.close()
         
         # return render(request, 'pages/loading.html')
-        new_id = _create_project(form, request)
+        new_id = _create_project(form, request, extra_metadata_file_fp)
         if new_id is not None:
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
@@ -2041,7 +2060,7 @@ def create_project(request):
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
-def _create_project(form, request, previous_versions = [], previous_views = [0, 0], agg_fp = None):
+def _create_project(form, request, extra_metadata_file_fp = None, previous_versions = [], previous_views = [0, 0], agg_fp = None):
     """
     Creates the project 
     """
@@ -2053,6 +2072,7 @@ def _create_project(form, request, previous_versions = [], previous_views = [0, 
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
+    ## try to get metadata file
     project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions, previous_views = previous_views)
     if project is None or tmp_id is None:
         return None
@@ -2069,7 +2089,7 @@ def _create_project(form, request, previous_versions = [], previous_views = [0, 
 
     # extract the files async also
     extract_thread = Thread(target=extract_project_files,
-                            args=(tarfile, file_location, project_data_path, new_id.inserted_id))
+                            args=(tarfile, file_location, project_data_path, new_id.inserted_id, extra_metadata_file_fp))
     extract_thread.start()
 
     if settings.USE_S3_DOWNLOADS:
@@ -2079,7 +2099,6 @@ def _create_project(form, request, previous_versions = [], previous_views = [0, 
         s3_thread = Thread(target=upload_file_to_s3, args=(
         f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
         s3_thread.start()
-
     return new_id
 
 
@@ -2129,7 +2148,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
 
     ti = time.time()
     failed = False
-    print(f'{file_location}')
+    # print(f'{file_location}')
     with tarfile.open(file_location, 'r') as tar:
         try:
             # run_location = [run for run in tar.getnames() if 'run.json' in run]

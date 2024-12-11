@@ -65,7 +65,8 @@ urlpatterns += [
     path('admin-stats/download/project/',views.project_stats_download,name="project_stats_download"),
     path('admin-stats/site_statistics/regenerate/', views.site_stats_regenerate, name="site_stats_regenerate"),
     path('admin-sendemail/', views.admin_sendemail, name='admin_sendemail'),
-
+    path('project/<str:project_id>/add_metadata', views.add_metadata, name='add_metadata'),
+    path('project/<str:project_id>/process_metadata', views.process_metadata, name='process_metadata'),
     path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
     path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),
     path('data-qc/', views.data_qc, name='data_qc'),
@@ -74,6 +75,7 @@ urlpatterns += [
     path('upload_api/', views.FileUploadView.as_view(), name = 'Document'), 
     path('robots.txt', views.robots, name = "robots.txt"),
     path('loading/', views.loading),
+    
 ]
 
 urlpatterns += static(settings.PROJECT_DATA_URL, document_root=settings.PROJECT_DATA_ROOT)

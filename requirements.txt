@@ -79,3 +79,4 @@ Werkzeug==2.2.2
 zipp==3.10.0
 genepattern-python==24.1
 AmpliconSuiteAggregator==1
+openpyxl
