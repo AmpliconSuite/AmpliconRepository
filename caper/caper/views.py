@@ -854,10 +854,18 @@ def sample_metadata_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
     try:
+        extra_metadata = sample_data[0]['extra_metadata_from_csv']
+    except:
+        ## incase extra metadata doesn't exist
+        extra_metadata = {}
+    try:
         sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
-        response = HttpResponse(sample_metadata)
+        ##combining 
+        combination = json.dumps({**json.loads(sample_metadata), **extra_metadata}).encode('utf-8')
+        response = HttpResponse(combination)
         response['Content-Type'] = 'application/json'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
+        print('im here')
         # clear_tmp()
         return response
 

@@ -67,8 +67,6 @@ urlpatterns += [
     path('admin-sendemail/', views.admin_sendemail, name='admin_sendemail'),
     path('project/<str:project_id>/add_metadata', views.add_metadata, name='add_metadata'),
     path('project/<str:project_id>/process_metadata', views.process_metadata, name='process_metadata'),
-    
-    
     path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
     path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),
     path('data-qc/', views.data_qc, name='data_qc'),
