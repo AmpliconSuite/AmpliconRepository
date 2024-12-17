@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+<!--
+{% for project in public_projects %}
+<tr>
+    <td ><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+    <td>{{ project.description }}</td>
+    <td class="date">{{ project.date }}</td>
+    <td>{{ project.sample_count }}</td>
+
+</tr>
+{% endfor %}-->
+
+{% block main %}
+<form method="post">
+    {% csrf_token %}
+    <fieldset>
+        <legend>Select Projects</legend>
+        <p>The number of projects is: {{ public_projects|length }}</p>
+        {% for project in public_projects %}
+        <div>
+            <input type="checkbox" id="project_{{ forloop.counter }}" name="selected_projects" value="{{ project.project_name }}">
+            <label for="project_{{ forloop.counter }}">{{ project.project_name }}</label>
+        </div>
+        {% endfor %}
+    </fieldset>
+    <button type="submit">Submit</button>
+</form>
+{% endblock %}

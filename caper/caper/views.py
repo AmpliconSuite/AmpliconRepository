@@ -2311,3 +2311,11 @@ def robots(request):
     """
     robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
     return HttpResponse(robots_txt, content_type="text/plain")
+
+def coamplification_graph(request):
+    public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
+    return render(request, 'pages/coamplification_graph.html', {'public_projects': public_projects})
+
+def coamplification_graph_visualizer(request):
+    selected_projects = "" #get_projects_close_cursor({'private' : False, 'delete': False})
+    return render(request, 'pages/coamplification_graph.html') #, {'public_projects': public_projects})

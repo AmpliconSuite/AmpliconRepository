@@ -39,6 +39,8 @@ urlpatterns += [
     # path('single-run/', views.single_run, name='single-run'),
     path('', views.index, name='index'),
     # path('runs/', views.run_list, name='run_list'),
+    path('coamplification-graph/', views.coamplification_graph, name='coamplification_graph'),
+    path('coamplification-graph/visualizer', views.coamplification_graph_visualizer, name='coamplification_graph_visualizer'),
     path('create-project/', views.create_project, name='create_project'),
     path('accounts/', include('allauth.urls')),
     path("accounts/profile/", views.profile, name="profile"),
