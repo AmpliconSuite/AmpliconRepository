@@ -2313,9 +2313,35 @@ def robots(request):
     return HttpResponse(robots_txt, content_type="text/plain")
 
 def coamplification_graph(request):
+    if request.method == 'POST':
+        # get list of selected projects
+        selected_projects = request.POST.getlist('selected_projects')
+        # store in session - best practice?
+        request.session['selected_projects'] = selected_projects
+        return redirect('visualizer')  # Redirect to the visualizer page
+
     public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
     return render(request, 'pages/coamplification_graph.html', {'public_projects': public_projects})
 
-def coamplification_graph_visualizer(request):
-    selected_projects = "" #get_projects_close_cursor({'private' : False, 'delete': False})
-    return render(request, 'pages/coamplification_graph.html') #, {'public_projects': public_projects})
+def visualizer(request):
+    selected_projects = request.session.get('selected_projects', [])
+    # code to get projects by name and create the aggregated df (aggregatation of AA output) from the selected projects
+    t_sa = time.time()
+    dfl = []
+    log = []
+    for project_name in selected_projects:
+        project = validate_project(get_one_project(project_name), project_name)
+        runs = project['runs']
+        for sample in runs.values():
+            log.append(sample)
+            df = pd.DataFrame(sample)
+            df['project_id'] = project['_id']  # add project id
+            dfl.append(df) 
+    aggregate = pd.concat(dfl)
+
+    t_sb = time.time()
+    diff = t_sb - t_sa
+
+    # later: call graph_utils.create_nodes_and_edges from aggregated df
+
+    return render(request, 'pages/visualizer.html', {'log': log,'test_size': len(aggregate), 'diff': diff})

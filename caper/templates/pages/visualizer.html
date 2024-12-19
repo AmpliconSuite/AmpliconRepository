@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+
+{% block main %}
+<!-- <p>The number of projects is: {{ selected_projects|length }}</p> -->
+<p>It took {{ diff }} seconds to concatenate the projects</p>
+<p>There are {{ test_size }} features across the selected projects</p>
+<!-- <p>You selected:</p>
+    {% for project in selected_projects %}
+            <div>
+                <label for="project_{{ forloop.counter }}">{{ project }}</label>
+            </div>
+    {% endfor %} -->
+
+    <!-- {% for l in log %}
+            <div>
+                <label for="project_{{ forloop.counter }}">{{ l }}/n</label>
+            </div>
+    {% endfor %} -->
+{% endblock %}
