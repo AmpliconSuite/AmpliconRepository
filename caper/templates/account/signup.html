@@ -9,19 +9,33 @@
 {% block main %}
 {% block content %}
 <h4>{% trans "Create new account" %}</h4>
-
+<style>
+#id_captcha {
+    color: #ffffff;
+    border: 0px white;
+    margin-bottom: 60px;
+}
+</style>
 <p>{% blocktrans %}Already have an account? Then please <a href="{{ login_url }}">sign in here</a>.{% endblocktrans %}</p>
+
+
+
 
 <form class="signup" id="signup_form" method="post" action="{% url 'account_signup' %}">
   {% csrf_token %}
-
-{% crispy form %}
+  {% crispy form %}
+  {{ form.email|as_crispy_field }}
+  {{ form.password1|as_crispy_field }}
+  {{ form.password2|as_crispy_field }}
+  {{ form.captcha|as_crispy_field }}
 
   {% if redirect_field_value %}
   <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
   {% endif %}
 
+  <button type="submit">{% trans "Sign up" %}</button>
 </form>
+
 
 {% endblock %}
 {% endblock %}
