@@ -23,7 +23,7 @@
 
 <form class="signup" id="signup_form" method="post" action="{% url 'account_signup' %}">
   {% csrf_token %}
-  {% crispy form %}
+ 
   {{ form.email|as_crispy_field }}
   {{ form.password1|as_crispy_field }}
   {{ form.password2|as_crispy_field }}

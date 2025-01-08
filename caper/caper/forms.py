@@ -6,7 +6,7 @@ from .models import FeaturedProjectUpdate, AdminDeleteProject, AdminSendEmail, U
 from allauth.account.forms import SignupForm
 from allauth.socialaccount.forms import SignupForm as SocialSignupForm
 from django_recaptcha.widgets import ReCaptchaV2Checkbox
-
+from django_recaptcha.fields import ReCaptchaField
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Layout, Field
 
