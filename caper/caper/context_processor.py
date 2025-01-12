@@ -6,3 +6,7 @@ def context_processor(request):
     return context   
 
 
+def server_identification_banner(request):
+    return {
+        'SERVER_IDENTIFICATION_BANNER': settings.SERVER_IDENTIFICATION_BANNER
+    }

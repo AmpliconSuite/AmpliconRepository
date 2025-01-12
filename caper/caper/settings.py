@@ -155,6 +155,10 @@ EMAIL_HOST_USER_SECRET = EMAIL_HOST_USER
 EMAIL_USE_TLS = True #new
 SITE_URL = os.environ.get("SITE_URL", default="http://127.0.0.1:8000/")
 
+SERVER_IDENTIFICATION_BANNER=os.getenv('SERVER_IDENTIFICATION_BANNER', default=None)
+
+logging.error(f"SERVER_IDENTIFICATION_BANNER: {SERVER_IDENTIFICATION_BANNER}")
+
 #ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = os.environ['ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS']
 
 SECRET_KEY = 'c4nc3r'
@@ -324,7 +328,9 @@ TEMPLATES = [
                 "mezzanine.conf.context_processors.settings",
                 "mezzanine.pages.context_processors.page",
                 # 'caper.context_processors.get_files'
-                "caper.context_processor.context_processor"
+                "caper.context_processor.context_processor",
+                "caper.context_processor.server_identification_banner",
+
             ],
             "loaders": [
                 "mezzanine.template.loaders.host_themes.Loader",
