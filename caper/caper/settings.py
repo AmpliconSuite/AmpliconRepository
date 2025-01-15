@@ -155,6 +155,10 @@ EMAIL_HOST_USER_SECRET = EMAIL_HOST_USER
 EMAIL_USE_TLS = True #new
 SITE_URL = os.environ.get("SITE_URL", default="http://127.0.0.1:8000/")
 
+SERVER_IDENTIFICATION_BANNER=os.getenv('SERVER_IDENTIFICATION_BANNER', default=None)
+
+logging.error(f"SERVER_IDENTIFICATION_BANNER: {SERVER_IDENTIFICATION_BANNER}")
+
 #ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = os.environ['ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS']
 
 SECRET_KEY = 'c4nc3r'
@@ -169,6 +173,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 GOOGLE_SECRET_KEY = os.environ['GOOGLE_SECRET_KEY']
 GLOBUS_SECRET_KEY = os.environ['GLOBUS_SECRET_KEY']
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.getenv('ACCOUNT_DEFAULT_HTTP_PROTOCOL', default='https')
+
+RECAPTCHA_PRIVATE_KEY = os.environ['RECAPTCHA_PRIVATE_KEY']
+RECAPTCHA_PUBLIC_KEY =  os.environ['RECAPTCHA_PUBLIC_KEY']
 
 # add a custom account adaptor to prevent having a username match an email in another user
 # account
@@ -324,7 +331,9 @@ TEMPLATES = [
                 "mezzanine.conf.context_processors.settings",
                 "mezzanine.pages.context_processors.page",
                 # 'caper.context_processors.get_files'
-                "caper.context_processor.context_processor"
+                "caper.context_processor.context_processor",
+                "caper.context_processor.server_identification_banner",
+
             ],
             "loaders": [
                 "mezzanine.template.loaders.host_themes.Loader",
@@ -348,6 +357,7 @@ INSTALLED_APPS = [
     "django.contrib.sites",
     "django.contrib.sitemaps",
     "django.contrib.messages",
+    "django_recaptcha",
     # "django_extensions",
     # "sslserver",
     "django.contrib.staticfiles",

@@ -120,7 +120,7 @@
                     <tr>
                         <td>Complex non-cyclic</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.Complex_non_cyclic|default:0 }}</td>
-                        <td>{{ ssite_stats.all_private_amplicon_classifications_count.Complex_non_cyclic|default:0 }}</td>
+                        <td>{{ site_stats.all_private_amplicon_classifications_count.Complex_non_cyclic|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>Linear amplification</td>
@@ -212,12 +212,11 @@
                                 <td>{{ project.date }}</td>
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
-                                {% endfor%}</td>
-                                <td>
-                                    {{ project.project_downloads }}
+                                {% endfor %}</td>
+                                <td>{{ project.project_downloads_sum }}
                                 </td>
                                 <td>
-                                    {{ project.sample_downloads }}
+                                    {{ project.sample_downloads_sum }}
                                 </td>
                             </tr>
                             {% endfor %}

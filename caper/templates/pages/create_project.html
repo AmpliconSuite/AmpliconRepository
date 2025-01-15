@@ -372,7 +372,7 @@
       xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
   
       alertBox.innerHTML = `<div class="alert alert-info" role="alert">
-        Uploading ... Will redirectly automatically in a few seconds. 
+        Uploading ... Will redirect automatically in a few seconds. 
           </div>`;
       
       xhr.upload.addEventListener('progress', (event) => {

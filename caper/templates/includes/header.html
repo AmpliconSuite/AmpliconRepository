@@ -1,10 +1,16 @@
+{% if SERVER_IDENTIFICATION_BANNER %}
+<div style="width: 100%; background-color: yellow; text-align: center; padding: 10px;">
+    {{ SERVER_IDENTIFICATION_BANNER | safe }}
+</div>
+{% else %}
+
+{% endif %}
 <nav class="navbar navbar-expand-lg navbar-light bg-light">
     <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarTogglerDemo01" aria-controls="navbarTogglerDemo01" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
     </button>
     {% comment %} <div class="collapse navbar-collapse" id = "navbarTogglerDemo01"> {% endcomment %}
-        <a class="navbar-brand" href="/"><img class = "custom-icon" src="{{ STATIC_URL }}img/AmpliconSuiteIconCirc.png" width="35px"> AmpliconRepository
-        </a>
+        <a class="navbar-brand" href="/"><img class = "custom-icon" src="{{ STATIC_URL }}img/AmpliconSuiteIconCirc.png" width="35px"> AmpliconRepository</a>
         <div class="navbar-collapse collapse w-100 order-1 order-md-0 dual-collapse2" id = "navbarTogglerDemo01">
             <ul class="navbar-nav mr-auto mt-2 mt-lg-0">
                 <li class="nav-item active">

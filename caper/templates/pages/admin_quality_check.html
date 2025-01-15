@@ -38,22 +38,22 @@
         <div>
             <h1 style="padding-top: 50px">Data Quality Check</h1>
             <hr>
-            <div stlye="margin-top: 30px">
-                <h3>Datetime bug: 
-                    {% if datetime_status > 0 %}
-                        <button type="button" class="btn btn-success" data-toggle="modal" data-target="#exampleModal"><i class="fa fa-check" aria-hidden="true"></i></button>
+            <div style="margin-top: 30px">
+                <h3>Datetime bug:
+                    {% if datetime_status == 0 %}
+                        <button type="button" class="btn btn-success" data-toggle="modal" data-target="#datetimeModal"><i class="fa fa-check" aria-hidden="true"></i></button>
                     {% else %}
-                        <button type="button" class="btn btn-danger" data-toggle="modal" data-target="#exampleModal"><i class="fa fa-times" aria-hidden="true"></i></button>
+                        <button type="button" class="btn btn-danger" data-toggle="modal" data-target="#datetimeModal"><i class="fa fa-times" aria-hidden="true"></i></button>
                     {% endif %}
                     <span style="margin-left: 10px">Click the status icon to update timestamps</span>
-                </h3> 
-                
-                <!-- Modal -->
-                <div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+                </h3>
+
+                <!-- Datetime Modal -->
+                <div class="modal fade" id="datetimeModal" tabindex="-1" role="dialog" aria-labelledby="datetimeModalLabel" aria-hidden="true">
                     <div class="modal-dialog" role="document">
                     <div class="modal-content">
                         <div class="modal-header">
-                        <h5 class="modal-title" id="exampleModalLabel">Datetime bug</h5>
+                        <h5 class="modal-title" id="datetimeModalLabel">Datetime bug</h5>
                         <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                             <span aria-hidden="true">&times;</span>
                         </button>
@@ -70,15 +70,41 @@
                 </div>
             </div>
 
-            <div style="display:none">
+            <div style="margin-top: 30px">
+                <h3>Sample count per project:
+                    {% if sample_count_status == 0 %}
+                        <button type="button" class="btn btn-success" data-toggle="modal" data-target="#sampleCountModal"><i class="fa fa-check" aria-hidden="true"></i></button>
+                    {% else %}
+                        <button type="button" class="btn btn-danger" data-toggle="modal" data-target="#sampleCountModal"><i class="fa fa-times" aria-hidden="true"></i></button>
+                    {% endif %}
+                    <span style="margin-left: 10px">Click the status icon to update project sample counts</span>
+                </h3>
 
-
+                <!-- Sample Count Modal -->
+                <div class="modal fade" id="sampleCountModal" tabindex="-1" role="dialog" aria-labelledby="sampleCountModalLabel" aria-hidden="true">
+                    <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                        <h5 class="modal-title" id="sampleCountModalLabel">Project sample count</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                        </div>
+                        <div class="modal-body">
+                        Do you want to rerun the bug fix?
+                        </div>
+                        <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                        <a href="{% url 'update_sample_counts' %}"><button type="button" class="btn btn-danger">Yes</button></a>
+                        </div>
+                    </div>
+                    </div>
+                </div>
             </div>
-
-
         </div>
+    </div>
 </div>
-</div>
+
 
 
 
