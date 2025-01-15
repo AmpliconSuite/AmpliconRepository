@@ -123,16 +123,61 @@
   {% comment %} Accordion for the add metadata stuff {% endcomment %}
   <div id="accordion">
     <div class="card">
+        <style>
+            .btn-link:not([aria-expanded="false"]).collapsed::before {
+                content: "";
+                display: inline-block;
+                border-style: solid;
+                border-width: 0.4em 0 0.4em 0.4em;
+                border-color: transparent transparent transparent #000;
+                margin-right: 0.5em;
+                transform: rotate(0deg);
+                vertical-align: middle;
+            }
+
+            .btn-link[aria-expanded="true"]::before {
+                content: "";
+                display: inline-block;
+                border-style: solid;
+                border-width: 0.4em 0 0.4em 0.4em;
+                border-color: transparent transparent transparent #000;
+                margin-right: 0.5em;
+                transform: rotate(90deg);
+                vertical-align: middle;
+            }
+
+            .btn-link:not([aria-expanded="true"]).collapsed::before {
+                content: "";
+                display: inline-block;
+                border-style: solid;
+                border-width: 0.4em 0 0.4em 0.4em;
+                border-color: transparent transparent transparent #000;
+                margin-right: 0.5em;
+                transform: rotate(0deg);
+                vertical-align: middle;
+            }
+
+            .table-not-striped tbody tr:nth-of-type(odd) {
+                background-color: transparent!important;
+            }
+            .table-not-striped  th {
+                background-color: #E6EFFB;
+                color: #696a6c
+            }
+            .table-not-striped td {
+                color: #696a6c
+            }
+        </style>
         <div class="card-header" id="addMetadataHeader">
             <h5 class="mb-0">
-                <button type="button" class="btn btn-link" data-toggle="collapse" data-target="#addMetadataContent" aria-expanded="false" aria-controls="addMetadataContent">
+                <button class="btn btn-link collapsed" data-toggle="collapse" data-target="#addMetadataContent" aria-expanded="false" aria-controls="addMetadataContent" style="padding: 0.25rem 0.5rem;">
                     Add Metadata (optional)
                 </button>
             </h5>
         </div>
+
         <div id="addMetadataContent" class="collapse" aria-labelledby="addMetadataHeader" data-parent="#accordion">
             <div class="card-body">
-                <h1>Add Metadata</h1>
                 <p>
                     Please upload a file in one of the following formats:
                     <ul>
