@@ -5,8 +5,6 @@ import numpy as np
 import warnings
 from plotly.subplots import make_subplots
 from pylab import cm
-import os
-from .utils import get_db_handle, get_collection_handle
 import gridfs
 from bson.objectid import ObjectId
 from io import StringIO

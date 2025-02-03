@@ -1,12 +1,6 @@
-# from asyncore import file_wrapper
-# from tkinter import E
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect,JsonResponse,Http404
+from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
-from django.contrib.auth import get_user_model
-from django.template.defaulttags import register
-from django.contrib.auth import authenticate
-from django.contrib import messages
 
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
@@ -16,61 +10,38 @@ from rest_framework.response import Response
 
 from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
 from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
-from  .serializers import FileSerializer
+from .serializers import FileSerializer
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
 from rest_framework import status
 from pathlib import Path
-import csv
 
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
 from django.conf import settings
-# import pymongo
-import json
+
 
 # from .models import File
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
-from .utils import collection_handle, collection_handle_primary, db_handle, fs_handle, replace_space_to_underscore, \
-    preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
-    prepare_project_linkid, replace_underscore_keys, get_projects_close_cursor, get_all_alias
 from .extra_metadata import *
 from django.forms.models import model_to_dict
 
-import subprocess
-import shutil
+
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 
-# from django.views.decorators.cache import cache_page
-# from zipfile import ZipFile
-import tarfile
-import pandas as pd
-# import numpy as np
-#import cv2
-
-# import caper
-from bson.objectid import ObjectId
-# from django.utils.text import slugify
-# from bson.json_util import dumps
-import re
-# from tqdm import tqdm
-from collections import defaultdict
 from wsgiref.util import FileWrapper
 import boto3
 import botocore
-import threading
 from threading import Thread
-import os, fnmatch
+import fnmatch
 import uuid
 import datetime
 import dateutil.parser
-
 import time
-import math
 import logging
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -109,10 +80,12 @@ def get_date():
     date = today.strftime('%Y-%m-%dT%H:%M:%S.%f')
     return date
 
+
 def get_date_short():
     today = datetime.datetime.now()
     date = today.strftime('%Y-%m-%d')
     return date
+
 
 def get_one_deleted_project(project_name_or_uuid):
     try:
@@ -158,15 +131,7 @@ def check_project_exists(project_id):
 
 
 def samples_to_dict(form_file):
-    file_json = json.load(form_file)
-    runs = dict()
-    all_samples = file_json['runs']
-    for key, value in all_samples.items():
-        sample_name = key
-        # logging.debug(f'in samples_to_dict {sample_name}')
-        runs[sample_name] = value
-
-    return runs
+    return json.load(form_file)['runs']
 
 
 def form_to_dict(form):
@@ -184,52 +149,44 @@ def form_to_dict(form):
 
 
 def get_project_oncogenes(runs):
-    oncogenes = set()
-    for sample in runs:
-        for feature in runs[sample]:
-            if feature['Oncogenes']:
-                for gene in feature['Oncogenes']:
-                    if len(gene) != 0:
-                        oncogene = gene.strip().replace("'",'')
-                        oncogenes.add(oncogene)
-
-    return list(oncogenes)
+    return list({
+        gene.strip().replace("'", '')
+        for sample in runs
+        for feature in runs[sample]
+        if feature['Oncogenes']
+        for gene in feature['Oncogenes']
+        if gene
+    })
 
 
 def get_project_classifications(runs):
-    classes = set()
-    for sample in runs:
-        for feature in runs[sample]:
-            if feature['Classification']:
-                uppercase = feature['Classification'].upper()
-                classes.add(uppercase)
-
-    return list(classes)
+    return list({
+        feature['Classification'].upper()
+        for sample in runs
+        for feature in runs[sample]
+        if feature['Classification']
+    })
 
 
 def get_sample_oncogenes(feature_list, sample_name):
     """
     Finds the oncogenes for a given sample_name
     """
-    oncogenes = set()
-    for feature in feature_list:
-        if feature['Sample_name'] == sample_name and feature['Oncogenes']:
-            for gene in feature['Oncogenes']:
-                if len(gene) != 0:
-                    oncogenes.add(gene.strip().replace("'",''))
-
-    return sorted(list(oncogenes))
+    return sorted({
+        gene.strip().replace("'", '')
+        for feature in feature_list
+        if feature['Sample_name'] == sample_name and feature['Oncogenes']
+        for gene in feature['Oncogenes']
+        if gene
+    })
 
 
 def get_sample_classifications(feature_list, sample_name):
-    classes = set()
-    for feature in feature_list:
-        if feature['Sample_name'] == sample_name:
-            if feature['Classification']:
-                uppercase = feature['Classification'].upper()
-                classes.add(uppercase)
-
-    return list(classes)
+    return list({
+        feature['Classification'].upper()
+        for feature in feature_list
+        if feature['Sample_name'] == sample_name and feature['Classification']
+    })
 
 
 # @caper.context_processor
@@ -292,6 +249,7 @@ def data_qc(request):
     
     return render(request, "pages/admin_quality_check.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'datetime_status': datetime_status, 'sample_count_status': sample_count_status})
 
+
 def check_datetime(projects):
     errors = 0
     for project in projects:
@@ -315,11 +273,12 @@ def check_sample_count_status(projects):
 
     return 0
 
+
 def change_to_standard_date(date):
-    
     date = dateutil.parser.parse(date)
     date = date.strftime(f'%Y-%m-%dT%H:%M:%S')
     return date
+
 
 def change_database_dates(request):
     if not request.user.is_staff:
@@ -379,51 +338,48 @@ def update_sample_counts(request):
 
 
 def index(request):
+    t_sa = time.time()
+
+    # Base query for non-deleted projects
+    base_query = {'delete': False}
+    projection = {'runs': 0}  # Exclude runs field from all queries
+
+    # Get public projects (including featured) in one query
+    public_query = {**base_query, 'private': False}
+    public_projects = list(collection_handle.find(public_query, projection))
+
+    # Extract featured projects from public projects
+    featured_projects = [proj for proj in public_projects if proj.get('featured')]
+
+    # Process project links
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+
+    # Handle private projects for authenticated users
     if request.user.is_authenticated:
-        username = request.user.username
-        useremail = request.user.email
-        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
-        # private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
-        
+        private_query = {
+            **base_query,
+            'private': True,
+            '$or': [
+                {'project_members': request.user.username},
+                {'project_members': request.user.email}
+            ]
+        }
+        private_projects = list(collection_handle.find(private_query, projection))
+
         for proj in private_projects:
             prepare_project_linkid(proj)
-
     else:
         private_projects = []
 
-    # just get stats for all private
-    all_private_proj_count = 0
-    all_private_sample_count = 0
-    all_private_projects = list(collection_handle.find({'private': True, 'delete': False}))
-    # all_private_projects = get_projects_close_cursor({'private': True, 'delete': False})
-    for proj in all_private_projects:
-        all_private_proj_count = all_private_proj_count + 1
-        all_private_sample_count = all_private_sample_count + len(proj['runs'])
-    # end private stats
-
-    public_proj_count = 0
-    public_sample_count = 0
-    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
-    # public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
-    for proj in public_projects:
-        prepare_project_linkid(proj)
-        public_proj_count = public_proj_count + 1
-        public_sample_count = public_sample_count + len(proj['runs'])
-
-    featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
-    # featured_projects = get_projects_close_cursor({'private' : False, 'delete': False, 'featured': True})
-    for proj in featured_projects:
-        prepare_project_linkid(proj)
-
-
-    # public_projects = modify_date(public_projects)
-    # private_projects = modify_date(private_projects)
-    # featured_projects = modify_date(featured_projects)
-
-    # get the latest set of stats
     site_stats = get_latest_site_statistics()
-
-    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects, 'site_stats': site_stats})
+    logging.info(f"Retrieved info for index page in {time.time() - t_sa} seconds")
+    return render(request, "pages/index.html", {
+        'public_projects': public_projects,
+        'private_projects': private_projects,
+        'featured_projects': featured_projects,
+        'site_stats': site_stats
+    })
 
 
 def profile(request, message_to_user=None):
@@ -503,6 +459,7 @@ def is_user_a_project_member(project, request):
     if current_user_email in project['project_members']:
         return True
     return False
+
 
 def set_project_edit_OK_flag(project, request):
     if (is_user_a_project_member(project, request)):
@@ -701,13 +658,14 @@ def check_if_db_field_exists(project, field):
         return False
 
 
-def find(pattern, path):
-    result = []
+def find_one(pattern, path):
     for root, dirs, files in os.walk(path):
         for name in files:
             if fnmatch.fnmatch(name, pattern):
-                result.append(os.path.join(root, name))
-    return result
+                return os.path.join(root, name)
+
+    return None
+
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
@@ -802,7 +760,7 @@ def project_download(request, project_name):
     chunk_size = 8192
     logging.info('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
     try:
-        file_location = find('*.tar.gz', project_data_path)[0]
+        file_location = find_one('*.tar.gz', project_data_path)
         response = StreamingHttpResponse(
         FileWrapper(
             open(file_location, "rb"),
@@ -1283,7 +1241,7 @@ def project_delete(request, project_name):
         #query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
-        delete_project_from_site_statistics(project)
+        delete_project_from_site_statistics(project, project['private'])
         return redirect('profile')
     else:
         return HttpResponse("Project does not exist")
@@ -1358,6 +1316,7 @@ def edit_project_page(request, project_name):
         old_privacy = project['private']
         new_privacy = form_dict['private']
         notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
+
         ## check multi files, send files to GP and run aggregator there:
         file_fps = []
         temp_proj_id = uuid.uuid4().hex ## to be changed
@@ -1477,15 +1436,18 @@ def edit_project_page(request, project_name):
             
             if metadata_file:
                 current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file)
+
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
                                  'Oncogenes': get_project_oncogenes(current_runs), 'alias_name' : alias_name}}
             if form.is_valid():
-                print('im here')
                 collection_handle.update_one(query, new_val)
+                edit_proj_privacy(project, old_privacy, new_privacy)
+                logging.debug("Updated collection_handle with new data")
                 return redirect('project_page', project_name=project_name)
             else:
                 raise Http404()
+
         else:
             return HttpResponse("Project does not exist")
     else:
@@ -2081,7 +2043,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, previous_versi
 
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
-    add_project_to_site_statistics(project)
+    add_project_to_site_statistics(project, project['private'])
     # move the project location to a new name using the UUID to prevent name collisions
     new_project_data_path = f"tmp/{new_id.inserted_id}"
     os.rename(project_data_path, new_project_data_path)

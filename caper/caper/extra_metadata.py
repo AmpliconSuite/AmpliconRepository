@@ -1,8 +1,6 @@
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect,JsonResponse,Http404
 from .utils import *
 import pandas as pd
 import csv
-from django.shortcuts import render, redirect
 
 
 
