@@ -10,6 +10,7 @@ def get_date():
     date = today.strftime('%Y-%m-%dT%H:%M:%S.%f')
     return date
 
+
 def get_latest_site_statistics():
     # check to auto create the stats if needed
     if site_statistics_handle.find().count()==0:
@@ -91,84 +92,114 @@ def regenerate_site_statistics():
 
     return repo_stats
 
-#
-# shortcut for updating stats when a new project is added so that we don't have to go over the whole
-# Db again to calculate.  We will have to do that when a project is updated with a new file though
-# since we are keeping summary stats, not per project stats and can't easily remove the old details
-# after the update.
-#
-def edit_proj_privacy(project, old_privacy, new_privacy):
+
+def add_project_to_site_statistics(project, is_private=False):
     """
-    Edits site stats based on old and new project privacy settings. 
-    
-    
+    Adds a project's statistics to the site-wide statistics.
+
+    Args:
+        project (dict): Project dictionary
+        is_private (bool): If True, add to private stats; if False, add to public stats
     """
-    ## going from private to public: 
-    if (old_privacy == True) and (new_privacy == False):
-        add_project_to_site_statistics(project)
-    ## going from public to private:
-    elif (old_privacy == False) and (new_privacy == True):
-        delete_project_from_site_statistics(project)
-                    
-def add_project_to_site_statistics(project):
     current_stats = get_latest_site_statistics()
     updated_stats = {}
-    updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"]+1
-    updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"] + len(project['runs'])
 
-    print(f"ADD     PRIVATE IS {  project['private']  }")
-    if project['private'] == True:
-        # private proj, don't change public stats
-        updated_stats["public_proj_count"] = current_stats["public_proj_count"]
-        updated_stats["public_sample_count"] = current_stats["public_sample_count"]
+    if is_private:
+        # Adding to private stats
+        updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"] + 1
+        updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"] + len(project['runs'])
+
+        # Get amplicon counts for private stats
         priv_amplicon_counts = current_stats["all_private_amplicon_classifications_count"]
         class_keys, amplicon_counts = get_project_amplicon_counts(project)
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts)
         updated_stats["all_private_amplicon_classifications_count"] = priv_amplicon_counts
-        updated_stats["public_amplicon_classifications_count"]=current_stats["public_amplicon_classifications_count"]
+
+        # Public stats remain unchanged
+        updated_stats["public_proj_count"] = current_stats["public_proj_count"]
+        updated_stats["public_sample_count"] = current_stats["public_sample_count"]
+        updated_stats["public_amplicon_classifications_count"] = current_stats["public_amplicon_classifications_count"]
     else:
-        # change to public
+        # Adding to public stats
         updated_stats["public_proj_count"] = current_stats["public_proj_count"] + 1
         updated_stats["public_sample_count"] = current_stats["public_sample_count"] + len(project['runs'])
+
+        # Get amplicon counts for public stats
         pub_amplicon_counts = current_stats["public_amplicon_classifications_count"]
         class_keys, amplicon_counts = get_project_amplicon_counts(project)
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, pub_amplicon_counts)
         updated_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
-        updated_stats["all_private_amplicon_classifications_count"] = current_stats["all_private_amplicon_classifications_count"]
+
+        # Private stats remain unchanged
+        updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"]
+        updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"]
+        updated_stats["all_private_amplicon_classifications_count"] = current_stats[
+            "all_private_amplicon_classifications_count"]
 
     updated_stats["date"] = get_date()
     new_id = site_statistics_handle.insert_one(updated_stats)
 
 
-def delete_project_from_site_statistics(project):
+def delete_project_from_site_statistics(project, is_private):
+    """
+    Removes a project's statistics from the site-wide statistics.
+
+    Args:
+        project (dict): Project dictionary
+        is_private (bool): If True, remove from private stats; if False, remove from public stats
+    """
     current_stats = get_latest_site_statistics()
     updated_stats = {}
-    updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"]-1
-    updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"] - len(project['runs'])
 
-    # print(f"DELETE PRIVATE IS { project['private'] }     current {current_stats} ")
-    if project['private'] == True:
-        # public stats unchanged deleting private
-        updated_stats["public_proj_count"] = current_stats["public_proj_count"]
-        updated_stats["public_sample_count"] = current_stats["public_sample_count"]
+    if is_private:
+        # Removing from private stats
+        updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"] - 1
+        updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"] - len(project['runs'])
+
+        # Get amplicon counts to subtract from private stats
         priv_amplicon_counts = current_stats["all_private_amplicon_classifications_count"]
         class_keys, amplicon_counts = get_project_amplicon_counts(project)
-        sum_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts, sum_sign=-1)
+        subtract_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts)
         updated_stats["all_private_amplicon_classifications_count"] = priv_amplicon_counts
-        updated_stats["public_amplicon_classifications_count"]=current_stats["public_amplicon_classifications_count"]
+
+        # Public stats remain unchanged
+        updated_stats["public_proj_count"] = current_stats["public_proj_count"]
+        updated_stats["public_sample_count"] = current_stats["public_sample_count"]
+        updated_stats["public_amplicon_classifications_count"] = current_stats["public_amplicon_classifications_count"]
     else:
-        #  public stats updated
+        # Removing from public stats
         updated_stats["public_proj_count"] = current_stats["public_proj_count"] - 1
         updated_stats["public_sample_count"] = current_stats["public_sample_count"] - len(project['runs'])
+
+        # Get amplicon counts to subtract from public stats
         pub_amplicon_counts = current_stats["public_amplicon_classifications_count"]
         class_keys, amplicon_counts = get_project_amplicon_counts(project)
-        sum_amplicon_counts_by_classification(class_keys, amplicon_counts, pub_amplicon_counts, sum_sign=-1)
+        subtract_amplicon_counts_by_classification(class_keys, amplicon_counts, pub_amplicon_counts)
         updated_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
-        updated_stats["all_private_amplicon_classifications_count"] = current_stats["all_private_amplicon_classifications_count"]
 
-    # print(f"DELETE                                 updated {updated_stats} ")
+        # Private stats remain unchanged
+        updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"]
+        updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"]
+        updated_stats["all_private_amplicon_classifications_count"] = current_stats[
+            "all_private_amplicon_classifications_count"]
+
     updated_stats["date"] = get_date()
     new_id = site_statistics_handle.insert_one(updated_stats)
+
+
+def edit_proj_privacy(project, old_privacy, new_privacy):
+    """
+    Edits site stats based on old and new project privacy settings.
+    """
+    ## going from private to public:
+    if (old_privacy == True) and (new_privacy == False):
+        delete_project_from_site_statistics(project, is_private=True)  # Remove from private stats
+        add_project_to_site_statistics(project, is_private=False)  # Add to public stats
+
+    ## going from public to private:
+    elif (old_privacy == False) and (new_privacy == True):
+        delete_project_from_site_statistics(project, is_private=False)  # Remove from public stats
+        add_project_to_site_statistics(project, is_private=True)  # Add to private stats
 
 
 def get_project_amplicon_counts(project):

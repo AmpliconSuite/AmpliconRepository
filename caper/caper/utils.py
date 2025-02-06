@@ -3,6 +3,7 @@ import logging
 import pandas as pd
 from bson import ObjectId
 from pymongo import MongoClient,ReadPreference
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from allauth.account.adapter import DefaultAccountAdapter
 from django import forms
 from django.contrib.auth import get_user_model
@@ -13,26 +14,57 @@ import re
 import os
 
 
-def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED
-                  ):
-    client = MongoClient(host, read_preference=read_preference
-                        )
-    db_handle = client[db_name]
-    return db_handle, client
+# def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED
+#                   ):
+#     client = MongoClient(host, read_preference=read_preference
+#                         )
+#     db_handle = client[db_name]
+#     return db_handle, client
+
+
+def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED):
+    try:
+        client = MongoClient(
+            host,
+            read_preference=read_preference,
+            maxPoolSize=50,
+            minPoolSize=10,
+            maxIdleTimeMS=45000,
+            connectTimeoutMS=5000,
+            socketTimeoutMS=5000,
+            serverSelectionTimeoutMS=5000,
+            waitQueueTimeoutMS=2500,  # Wait max 2.5 seconds for available connection
+            retryWrites=True,
+            retryReads=True,
+            w='majority',
+            wtimeoutMS=5000
+        )
+
+        # Verify connection is working
+        client.admin.command('ismaster')
+
+        db_handle = client[db_name]
+        return db_handle, client
+
+    except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+        logging.error(f"Could not connect to MongoDB: {str(e)}")
+        raise
+
 
 def get_collection_handle(db_handle,collection_name):
     return db_handle[collection_name]
 
+
 def create_run_display(project):
-    runs = project['runs']
-    run_list = []
-    for run in runs:
-        for sample in runs[run]:
-            for key in list(sample.keys()):
-                newkey = key.replace(" ", "_")
-                sample[newkey] = sample.pop(key)
-            run_list.append(sample)
-    return run_list
+    """
+    Creates a flattened list of samples with underscores replacing spaces in keys.
+    """
+    return [
+        {key.replace(" ", "_"): value for key, value in sample.items()}
+        for run in project['runs']
+        for sample in project['runs'][run]
+    ]
+
 
 # since we use email and/or username to control project visibility,
 # we don't want a new, unknown user to come in and register an account
@@ -197,13 +229,13 @@ def sample_data_from_feature_list(features_list):
     # print(f'********** TOOK {datetime.datetime.now() - now}')
     return sample_data
 
+
 def get_all_alias():
     """
     Gets all alias names in the db
     """
     return collection_handle.distinct('alias_name')
     
-
 
 def get_one_project(project_name_or_uuid):
     """
@@ -273,25 +305,31 @@ def get_one_project(project_name_or_uuid):
     return project
 
 
-def flatten(nested, lst = True, sort = True):
+def flatten(nested, lst=True, sort=True):
     """
-    recursive function to get elements in nested list
-    """
-    flat = []
-    def helper(nested):
-        for e in nested:
-            if isinstance(e, list):
-                helper(e)
-            else:
-                if e:
-                    e = e.replace("'",'')
-                    if len(e) > 0:
-                        flat.append(e)
-    helper(nested)
+    Recursively flattens a nested list and optionally sorts the result.
+    Removes empty strings and single quotes from elements.
 
-    if lst and sort:
-        return list(sorted(flat))
-    return flat
+    Args:
+        nested: A potentially nested list structure
+        lst: Whether to return a list (if False, returns the internal working list)
+        sort: Whether to sort the final result (only applies if lst=True)
+
+    Returns:
+        A flattened list of non-empty strings with quotes removed
+    """
+
+    def helper(items):
+        for item in items:
+            if isinstance(item, list):
+                yield from helper(item)
+            elif item:  # Checks for non-empty strings
+                cleaned = item.replace("'", '')
+                if cleaned:  # Check again after cleaning
+                    yield cleaned
+
+    result = list(helper(nested))
+    return sorted(result) if lst and sort else result
 
 
 def validate_project(project, project_name):
@@ -326,18 +364,16 @@ def prepare_project_linkid(project):
 
 def replace_underscore_keys(runs_from_proj_creation):
     """
-    Replaces underscores in the keys from runs at proj creation step
+    Replaces spaces with underscores in the keys from runs at project creation step.
+    Returns a new dictionary with transformed keys.
     """
-    new_run = {}
-    for sample in runs_from_proj_creation.keys():
-        features = []
-        for feature in runs_from_proj_creation[sample]:
-            new_feat = {}
-            for key in feature.keys():
-                new_feat[key.replace(" ", '_')] = feature[key]
-            features.append(new_feat)
-        new_run[sample] = features
-    return new_run
+    return {
+        sample: [
+            {key.replace(" ", "_"): value for key, value in feature.items()}
+            for feature in features
+        ]
+        for sample, features in runs_from_proj_creation.items()
+    }
 
 
 def create_user_list(string, current_user):
