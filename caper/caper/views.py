@@ -37,6 +37,10 @@ from .utils import collection_handle, collection_handle_primary, db_handle, fs_h
 from .extra_metadata import *
 from django.forms.models import model_to_dict
 
+# imports for coamp graph
+from .coamp_graph import Graph
+from .neo4j_utils import load_graph
+
 import subprocess
 import shutil
 import caper.sample_plot as sample_plot
@@ -2325,7 +2329,7 @@ def coamplification_graph(request):
 
 def visualizer(request):
     selected_projects = request.session.get('selected_projects', [])
-    # code to get projects by name and create the aggregated df (aggregatation of AA output) from the selected projects
+    # create aggregated data frame from the selected projects
     t_sa = time.time()
     dfl = []
     log = []
@@ -2335,13 +2339,29 @@ def visualizer(request):
         for sample in runs.values():
             log.append(sample)
             df = pd.DataFrame(sample)
-            df['project_id'] = project['_id']  # add project id
+            # add project id to distinguish samples by project
+            df['project_id'] = project['_id']  
             dfl.append(df) 
     aggregate = pd.concat(dfl)
 
     t_sb = time.time()
     diff = t_sb - t_sa
 
-    # later: call graph_utils.create_nodes_and_edges from aggregated df
+    # construct graph nodes and edges
+    
+    # amp_repo_datasets_dir = "/Users/michael/Downloads/amplicon_repo_datasets/"
+    # ccle = pd.read_csv(amp_repo_datasets_dir + "ccle_aggregated_results.csv")
+    graph = Graph(aggregate)
+    nodes = graph.NumNodes()
+    edges = graph.NumEdges()
+    
+    # call graph_utils.create_nodes_and_edges from aggregated df
+    load_graph(aggregate)
 
-    return render(request, 'pages/visualizer.html', {'log': log,'test_size': len(aggregate), 'diff': diff})
+
+    return render(request, 'pages/visualizer.html', {'log': log,
+                                                     'test_size': len(aggregate), 
+                                                     'diff': diff, 
+                                                     'test_edges': edges, 
+                                                     'test_nodes': nodes,                                   
+                                                     })

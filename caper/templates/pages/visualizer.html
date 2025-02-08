@@ -1,9 +1,41 @@
 {% extends 'base.html' %}
+{% load static %}
+
+{% block extra_js %}
+<script>
+    // Update graph with button click
+    $('#storeButton').on('click', loadGraph);
+    $('#textBox').on('keydown', function(event) {
+    if (event.key === "Enter") {
+        event.preventDefault(); // Prevent default newline behavior
+        $('#storeButton').click(); // Simulate button click
+        }
+    });
+    // Update graph with all-edges checked
+    //$('#all_edges').on('change', loadGraph);
+    // Update graph with filter
+    $('#filterButton').on('click', loadGraph);
+    // Update slider value displays
+    document.getElementById('edgeWeight').addEventListener('input', function() {
+        document.getElementById('sliderValue').textContent = this.value;
+    });
+    document.getElementById('numSamples').addEventListener('input', function() {
+        document.getElementById('sampleValue').textContent = this.value;
+    });
+</script>
+{% endblock %}
+
+{% block extra_css %}
+    <!-- <link rel="stylesheet" href="{{ STATIC_URL }}css/coamp.css"> -->
+    <link rel="stylesheet" href="{% static 'css/coamp.css' %}">
+{% endblock %}
 
 {% block main %}
 <!-- <p>The number of projects is: {{ selected_projects|length }}</p> -->
 <p>It took {{ diff }} seconds to concatenate the projects</p>
 <p>There are {{ test_size }} features across the selected projects</p>
+<p>Graph constructed with ccle contains {{ test_nodes }} nodes</p>
+<p>Graph constructed with ccle contains {{ test_edges }} edges</p>
 <!-- <p>You selected:</p>
     {% for project in selected_projects %}
             <div>
@@ -16,4 +48,87 @@
                 <label for="project_{{ forloop.counter }}">{{ l }}/n</label>
             </div>
     {% endfor %} -->
+
+<div class="header" id="titleText">ecDNA Coamplification Tool</div>
+<!-- gene input button -->
+<div class="text-storage">
+    <textarea id="textBox" placeholder="Enter gene"></textarea>
+    <button id="storeButton">→</button>
+    <p id="storedText"></p>
+</div>
+
+<div class="settings">
+    <!-- edge slider -->
+    <div class="edge-slider">
+        Coamplification frequency &ge; 
+        <span id="sliderValue">0.1</span>
+        <div class="slider-info">
+            <div class="value-left">0.1</div>
+            <!-- should we allow 0? -->
+            <input type="range" id="edgeWeight" class="slider" min="0.1" max="1" step="0.01" value="0.1"> 
+            <div class="value-right">1</div>
+        </div>
+    </div>
+    <!-- samples slider -->
+    <div class="edge-slider">
+        Coamplified in &ge;
+        <span id="sampleValue">1</span> samples
+        <div class="slider-info">
+            <div class="value-left">1</div>
+            <input type="range" id="numSamples" class="slider" min="1" max="10" step="1" value="1">
+            <div class="value-right" id="sampleMaxText">10</div>
+        </div>
+    </div>
+    <!-- oncogene button -->
+    <div class="edge-slider">
+        <span>Oncogenes only</span>
+        <input type="checkbox" id="oncogenes_only">
+    </div>
+    <!-- show all edges between nodes checkbox -->
+    <div class="edge-slider">
+        <span>Show all edges</span>
+        <input type="checkbox" id="all_edges">
+    </div>
+    <!-- filter button -->
+    <div class="edge-slider">
+        <button id="filterButton">Filter</button>
+    </div>
+</div>
+
+<!-- container for cytoscape graph -->
+<div class="container">
+    <div id="cy" class="cy-container"></div>
+    <div class="table-wrapper">
+    <button id="download-btn">Download CSV</button>
+    <table id="data-table">
+        <thead>
+            <tr>
+                <th>Gene</th>
+                <th>Oncogene</th>
+                <th onclick="sortTable(2)">Coamplification Frequency</th>
+            </tr>
+        </thead>
+        <tbody id="data-container">
+            <tr class="no-data">
+                <td colspan="3">No data available</td>
+            </tr>
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<!-- Hidden tooltip templates -->
+<div id="node-template" style="display: none;">
+    <strong>Gene:</strong> <span id="ntip-name"></span><br>
+    <strong>Oncogene:</strong> <span id="ntip-oncogene"></span><br>
+    <strong>Amplified in:</strong> <span id="ntip-nsamples"></span> sample(s)
+</div>
+<div id="edge-template" style="display: none;">
+    <strong>Relationship:</strong> <span id="etip-name"></span><br>
+    <strong>Coamplification frequency:</strong> <span id="etip-weight"></span><br>
+    <strong>Coamplification fraction:</strong> <span id="etip-frac"></span><br>
+    <strong>Coamplified in:</strong> <span id="etip-nsamples"></span> sample(s)<br>
+    <strong>Sample(s):</strong> <span id="etip-samples"></span>
+</div>
+
 {% endblock %}

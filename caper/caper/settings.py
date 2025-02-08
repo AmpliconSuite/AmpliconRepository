@@ -123,7 +123,7 @@ LANGUAGES = (("en", _("English")),)
 # A boolean that turns on/off debug mode. When set to ``True``, stack traces
 # are displayed for error pages. Should always be set to ``False`` in
 # production. Best set to ``True`` in local_settings.py
-DEBUG = False
+DEBUG = True # False
 
 # Whether a user's session cookie expires when the Web browser is closed.
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
@@ -257,7 +257,7 @@ PROJECT_ROOT = BASE_DIR = os.path.dirname(PROJECT_APP_PATH)
 CACHE_MIDDLEWARE_KEY_PREFIX = PROJECT_APP
 
 
-USE_S3 = os.getenv('S3_STATIC_FILES') == 'TRUE'
+USE_S3 = False # os.getenv('S3_STATIC_FILES') == 'TRUE'
 
 if USE_S3:
     # s3 static settings
