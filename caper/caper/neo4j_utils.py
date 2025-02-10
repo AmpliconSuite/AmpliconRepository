@@ -18,7 +18,7 @@ def get_driver():
         neo4j_driver = GraphDatabase.driver(uri, auth=("neo4j", "password"))
     return neo4j_driver
 
-def fetch_subgraph(driver, name, min_weight, min_samples, oncogenes, all_edges):
+def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_edges):
     print("From fetch_subgraph: ")
     print(name)
     print(min_weight)
@@ -48,7 +48,7 @@ def fetch_subgraph(driver, name, min_weight, min_samples, oncogenes, all_edges):
     else:
         if oncogenes:
             query = """
-            MATCH (n)-[r WHERE r.weight >= {mw} and SIZE(r.union) >= {ms}]-(m WHERE m.oncogene = 1)
+            MATCH (n)-[r WHERE r.weight >= {mw} and SIZE(r.union) >= {ms}]-(m WHERE m.oncogene = "True")
             WHERE n.label = $name
             RETURN n, r, m
             """.format(mw = min_weight, ms = min_samples)
@@ -189,30 +189,42 @@ def fetch_subgraph(driver, name, min_weight, min_samples, oncogenes, all_edges):
     print("Number of records: ", record_counter)
     return list(nodes.values()), list(edges.values())
 
-# CREATE ROUTE with csrf_exempt (optional?)
-def get_node_data(request):
+def fetch_subgraph(gene_name, min_weight, min_samples, oncogenes, all_edges):
     driver = get_driver()
-    if request.method == "GET":
-        node_id = request.GET.get('name')
-        min_weight = request.GET.get('min_weight')
-        min_samples = request.GET.get('min_samples')
-        oncogenes = request.GET.get('oncogenes', 'false').lower() == 'true'
-        all_edges = request.GET.get('all_edges', 'false').lower() == 'true'
-
-    # Create a session and run fetch_subgraph
+    # Create a session and run fetch_subgraph_helper
     with driver.session() as session:
-        nodes, edges = session.execute_read(fetch_subgraph, node_id, min_weight, min_samples, oncogenes, all_edges)
+        nodes, edges = session.execute_read(fetch_subgraph_helper, 
+                                            gene_name, 
+                                            min_weight, 
+                                            min_samples, 
+                                            oncogenes, 
+                                            all_edges)
+    return nodes, edges
 
-        # print(f"\nNodes:\n{nodes}\n\nEdges:\n{edges}")
-        print(f"\nNumber of nodes: {len(nodes)}\nNumber of edges: {len(edges)}\n")
+# # CREATE ROUTE with csrf_exempt (optional?)
+# def fetch_subgraph(request):
+#     driver = get_driver()
+#     if request.method == "GET":
+#         node_id = request.GET.get('name')
+#         min_weight = request.GET.get('min_weight')
+#         min_samples = request.GET.get('min_samples')
+#         oncogenes = request.GET.get('oncogenes', 'false').lower() == 'true'
+#         all_edges = request.GET.get('all_edges', 'false').lower() == 'true'
 
-        if nodes:
-            return JsonResponse({
-                'nodes': nodes,
-                'edges': edges
-            })
-        else:
-            return JsonResponse({"error": "Node not found"}), 404
+#     # Create a session and run fetch_subgraph_helper
+#     with driver.session() as session:
+#         nodes, edges = session.execute_read(fetch_subgraph_helper, node_id, min_weight, min_samples, oncogenes, all_edges)
+
+#         # print(f"\nNodes:\n{nodes}\n\nEdges:\n{edges}")
+#         print(f"\nNumber of nodes: {len(nodes)}\nNumber of edges: {len(edges)}\n")
+
+#         if nodes:
+#             return JsonResponse({
+#                 'nodes': nodes,
+#                 'edges': edges
+#             })
+#         else:
+#             return JsonResponse({"error": "Node not found"}), 404
 
 # CREATE ROUTE with csrf_exempt (optional?)
 def load_graph(dataset=None):

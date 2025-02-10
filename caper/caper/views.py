@@ -38,8 +38,7 @@ from .extra_metadata import *
 from django.forms.models import model_to_dict
 
 # imports for coamp graph
-from .coamp_graph import Graph
-from .neo4j_utils import load_graph
+from .neo4j_utils import load_graph, fetch_subgraph
 
 import subprocess
 import shutil
@@ -2316,6 +2315,7 @@ def robots(request):
     robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
     return HttpResponse(robots_txt, content_type="text/plain")
 
+# redirect to visualizer upon project selection
 def coamplification_graph(request):
     if request.method == 'POST':
         # get list of selected projects
@@ -2327,41 +2327,47 @@ def coamplification_graph(request):
     public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
     return render(request, 'pages/coamplification_graph.html', {'public_projects': public_projects})
 
+# concatenate projects specified by project_list into a single data frame
+def concat_projects(project_list):
+    rows = []
+    for project_name in project_list:
+        project = validate_project(get_one_project(project_name), project_name)
+        for sample in project['runs'].values():
+            row = pd.DataFrame(sample)
+            # [optional] add project_id to distinguish samples by project
+            row['project_id'] = project['_id']  
+            rows.append(row) 
+    df = pd.concat(rows)
+    return df
+
 def visualizer(request):
     selected_projects = request.session.get('selected_projects', [])
-    # create aggregated data frame from the selected projects
-    t_sa = time.time()
-    dfl = []
-    log = []
-    for project_name in selected_projects:
-        project = validate_project(get_one_project(project_name), project_name)
-        runs = project['runs']
-        for sample in runs.values():
-            log.append(sample)
-            df = pd.DataFrame(sample)
-            # add project id to distinguish samples by project
-            df['project_id'] = project['_id']  
-            dfl.append(df) 
-    aggregate = pd.concat(dfl)
+    # combine selected projects
+    CONCAT_START = time.time()
+    projects_df = concat_projects(selected_projects)
+    CONCAT_END = time.time()
+    # construct graph and load into neo4j
+    load_graph(projects_df)
+    IMPORT_END = time.time()
 
-    t_sb = time.time()
-    diff = t_sb - t_sa
-
-    # construct graph nodes and edges
-    
-    # amp_repo_datasets_dir = "/Users/michael/Downloads/amplicon_repo_datasets/"
-    # ccle = pd.read_csv(amp_repo_datasets_dir + "ccle_aggregated_results.csv")
-    graph = Graph(aggregate)
-    nodes = graph.NumNodes()
-    edges = graph.NumEdges()
-    
-    # call graph_utils.create_nodes_and_edges from aggregated df
-    load_graph(aggregate)
-
-
-    return render(request, 'pages/visualizer.html', {'log': log,
-                                                     'test_size': len(aggregate), 
-                                                     'diff': diff, 
-                                                     'test_edges': edges, 
-                                                     'test_nodes': nodes,                                   
+    return render(request, 'pages/visualizer.html', {'test_size': len(projects_df), 
+                                                     'diff': CONCAT_END-CONCAT_START, 
+                                                     'import_time': IMPORT_END-CONCAT_END               
                                                      })
+
+def fetch_graph(request, gene_name):
+    min_weight = request.GET.get('min_weight')
+    min_samples = request.GET.get('min_samples')
+    oncogenes = request.GET.get('oncogenes', 'false').lower() == 'true'
+    all_edges = request.GET.get('all_edges', 'false').lower() == 'true'
+
+    try:
+        nodes, edges = fetch_subgraph(gene_name, min_weight, min_samples, oncogenes, all_edges)
+        # print(f"\nNumber of nodes: {len(nodes)}\nNumber of edges: {len(edges)}\n")
+        return JsonResponse({
+                'nodes': nodes,
+                'edges': edges
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
