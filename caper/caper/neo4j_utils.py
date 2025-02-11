@@ -14,7 +14,7 @@ def get_driver():
     # Connect to Neo4j instance
     global neo4j_driver
     if neo4j_driver is None:
-        uri = "bolt://localhost:7687"
+        uri = "bolt://localhost:8000"
         neo4j_driver = GraphDatabase.driver(uri, auth=("neo4j", "password"))
     return neo4j_driver
 
