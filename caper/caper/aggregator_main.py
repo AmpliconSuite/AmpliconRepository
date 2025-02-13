@@ -3,19 +3,8 @@
 # This script takes in completed AmpliconArchitect and
 # AmpliconClassifier results and aggregates the results.
 ###
-import sys
-import tarfile
-import os
-import re
-import pandas as pd
-import tarfile
-import shutil
-import json
-import subprocess
-import ast
-import zipfile
+import sys, tarfile, os, pandas as pd, shutil, json, subprocess, zipfile
 from collections import defaultdict
-import requests
 
 ROOT_FP = "."
 DEST_ROOT = os.path.join(f"{ROOT_FP}/extracted_from_zips")
@@ -65,6 +54,7 @@ def unzip_file(fp, dest_root):
     """
     Unzips file based on zip type.
     Ensures proper extraction of all files, including nested directories.
+    Deletes the original zip file after extraction.
     """
     try:
         if fp.endswith(".tar.gz"):
@@ -77,7 +67,7 @@ def unzip_file(fp, dest_root):
                     if member.isreg():
                         member.name = os.path.basename(member.name)
                         tar_ref.extract(member, destination)
-        
+
         elif fp.endswith(".zip"):
             zip_name = os.path.basename(fp).replace(".zip", "")
             destination = os.path.join(dest_root, zip_name)
@@ -85,12 +75,15 @@ def unzip_file(fp, dest_root):
             # Open and extract zip
             with zipfile.ZipFile(fp, 'r') as zip_ref:
                 zip_ref.extractall(destination)
-        
+
         print(f'Just extracted: {fp} to {destination}!')
+
+        # Delete the original zip file after extraction
+        os.remove(fp)
+        print(f'Deleted original file: {fp}')
 
     except Exception as e:
         print(f"Error occurred while extracting {fp}: {e}")
-
 
 def clean_dirs(dlist):
     for d in dlist:
@@ -140,8 +133,8 @@ class Aggregator:
         self.sample_to_ac_location_dct = self.aggregate_tables()
         complete = self.json_modifications()
         self.cleanup()
-
         
+
         if complete:
             self.complete = True
         else:
