@@ -1,4 +1,4 @@
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, Http404
+from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, Http404, JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 
@@ -20,11 +20,11 @@ from pathlib import Path
 # from pymongo import MongoClient
 from django.conf import settings
 
-
 # from .models import File
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
 from .extra_metadata import *
 from django.forms.models import model_to_dict
+
 
 
 import caper.sample_plot as sample_plot
@@ -32,17 +32,13 @@ import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
+from .search import perform_search
 
 from wsgiref.util import FileWrapper
-import boto3
-import botocore
+import boto3, botocore, fnmatch, uuid, datetime, time, logging
 from threading import Thread
-import fnmatch
-import uuid
-import datetime
 import dateutil.parser
-import time
-import logging
+
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -1111,6 +1107,8 @@ def gene_search_page(request):
     genequery = request.GET.get("genequery")
     genequery = genequery.upper()
     gen_query = {'$regex': genequery }
+    
+    print('am i here?/')
 
     classquery = request.GET.get("classquery")
     classquery = classquery.upper()
@@ -2275,3 +2273,43 @@ def robots(request):
     """
     robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
     return HttpResponse(robots_txt, content_type="text/plain")
+
+
+# from django.shortcuts import render
+# from .search import perform_search
+
+def search_results(request):
+    """Handles user queries and renders search results."""
+
+    if request.method == "POST":
+        # Extract search parameters from POST request
+        gene_search = request.POST.get("genequery", "").upper()
+        project_name = request.POST.get("project_name", "").upper()
+        classifications = request.POST.get("classquery", "").upper()
+        sample_name = request.POST.get("sample_name", "").upper()
+        metadata = request.POST.get("metadata", "").upper()
+
+        # Debugging logs
+        print(f'search terms: {gene_search}, {project_name}, {classifications}, {sample_name}, {metadata}')
+        
+        # Run the search function
+        search_results = perform_search(
+            gene_search=gene_search,
+            project_name=project_name,
+            classifications=classifications,
+            sample_name=sample_name,
+            metadata=metadata,
+            user=request.user
+        )
+
+        # Return results to the template
+        return render(request, "pages/gene_search.html", {
+            "gene_query": gene_search,
+            "class_query": classifications if classifications else "all amplicon types",
+            "public_projects": search_results["public_projects"],
+            "private_projects": search_results["private_projects"],
+            "public_sample_data": search_results["public_sample_data"],
+            "private_sample_data": search_results["private_sample_data"],
+        })
+    else:
+        return redirect("gene_search_page")  # Redirect if accessed incorrectly

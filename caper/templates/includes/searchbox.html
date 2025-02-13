@@ -1,0 +1,146 @@
+{% load static %}
+
+<head>
+    <style>
+        #searchDropdown {
+            display: none;
+            background: white;
+            border: 1px solid #ddd;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 1rem;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            min-width: 300px;
+            z-index: 1000;
+        }
+
+        #searchDropdown.is-hidden {
+            display: none !important;
+        }
+        
+        /* Ensure dropdown moves left if it overflows */
+        @media (max-width: 768px) {
+            #searchDropdown {
+                left: auto;
+                right: 5px; /* Add padding from the right */
+                max-width: 85vw; /* Prevent full screen width */
+            }
+        }
+        
+        /* Keep dropdown aligned properly */
+        .navbar-item.has-dropdown:hover .navbar-dropdown {
+            left: auto;
+            right: 0; /* Align to right edge */
+            display: block;
+        }
+
+        
+    </style>
+</head>
+
+
+  
+<form id="searchForm" action="{% url 'search_results' %}" method="POST" class="box">
+    {% csrf_token %}
+
+    <div class="field">
+        <label class="label">Gene Search</label>
+        <div class="control">
+            <input type="query" class="input" placeholder="Gene Name (e.g. MYC)" aria-label="Search by gene" aria-describedby="search-addon" name="genequery" id="genequery"/>
+        </div>
+    </div>
+
+    <div class="field">
+        <label class="label">Project Name</label>
+        <div class="control">
+            <input class="input" type="text" name="project_name" id="project_name" placeholder="Enter project name...">
+        </div>
+    </div>
+
+    <div class="field">
+        <label class="label">Classifications</label>
+        <div class="control">
+            <input type="text" autocomplete="off" list="ecDNAclassificationDefaults" class="input" placeholder="Limit to classification type" aria-label="Search by classification" aria-describedby="search-addon" name="classquery" id="classquery"/>
+            <datalist id="ecDNAclassificationDefaults">
+                <option value="ecDNA">ecDNA</option>
+                <option value="linear amplification">linear amplification</option>
+                <option value="BFB">breakage-fusion-bridge (BFB)</option>
+                <option value="complex non-cyclic">complex non-cyclic</option>
+            </datalist>
+        </div>
+    </div>
+
+    <div class="field">
+        <label class="label">Metadata</label>
+        <div class="control">
+            <input class="input" type="text" name="metadata" id="metadata" placeholder="Metadata keywords...">
+        </div>
+    </div>
+
+    <div class="control">
+        <button type="submit" class="button is-primary is-fullwidth">Search</button>
+    </div>
+</form>
+{% comment %} <!-- Include new JS file -->
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const searchForm = document.getElementById("searchForm");
+    
+        searchForm.addEventListener("submit", function (event) {
+            event.preventDefault(); // Prevent default form submission
+    
+            let formData = new FormData(searchForm);
+    
+            fetch(searchForm.action, {
+                method: "POST",
+                body: formData,
+                headers: {
+                    "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+                }
+            })
+            .then(response => {
+                if (response.redirected) {
+                    window.location.href = response.url; // Redirect to the search results page
+                }
+            })
+            .catch(error => console.error("Error:", error));
+        });
+    });
+
+
+
+</script> {% endcomment %}
+
+<script>
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const searchButton = document.getElementById("toggleSearchDropdown");
+        const searchDropdown = document.getElementById("searchDropdown");
+    
+        searchButton.addEventListener("click", function (event) {
+            event.preventDefault();
+            // Toggle visibility
+            if (searchDropdown.style.display === "none" || searchDropdown.style.display === "") {
+                searchDropdown.style.display = "block";
+    
+                // Ensure dropdown stays within viewport
+                const rect = searchDropdown.getBoundingClientRect();
+                if (rect.right > window.innerWidth) {
+                    searchDropdown.style.left = "auto";
+                    searchDropdown.style.right = "0"; // Align to the right edge of the screen
+                }
+            } else {
+                searchDropdown.style.display = "none";
+            }
+        });
+    
+        // Close dropdown when clicking outside
+        document.addEventListener("click", function (event) {
+            if (!searchDropdown.contains(event.target) && !searchButton.contains(event.target)) {
+                searchDropdown.style.display = "none";
+            }
+        });
+    });
+    
+</script>
