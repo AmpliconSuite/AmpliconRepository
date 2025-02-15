@@ -65,19 +65,19 @@ class Graph:
 			all_genes = self.ExtractGenes(str(row['All_genes']))
 			for gene in all_genes:
 				feature = row['Feature_ID']
-				cell_line = feature.split("_")[0]
+				sample = feature.split("_amplicon")[0]
 				# if the gene has been seen, add feature and cell line to info
 				if gene in gene_index:
 					index = gene_index[gene]
 					self.nodes[index]['features'].append(feature)
-					self.nodes[index]['cell_lines'].append(cell_line)
+					self.nodes[index]['samples'].append(sample)
 				# otherwise add the gene to self.nodes as a new row
 				else:
 					node_info = {
 						'label': gene,
 						'oncogene': str(gene in oncogenes),
 						'features': [feature],
-						'cell_lines': [cell_line]
+						'samples': [sample]
                 	}
 					self.nodes.append(node_info)
 					gene_index[gene] = len(self.nodes) - 1
@@ -85,7 +85,7 @@ class Graph:
 		# remove potential duplicate features or cell lines
 		for node_info in self.nodes:
 			node_info['features'] = list(set(node_info['features']))
-			node_info['cell_lines'] = list(set(node_info['cell_lines']))
+			node_info['samples'] = list(set(node_info['samples']))
 	
 		# concatenate all nodes as rows in df
 		self.nodes_df = pd.DataFrame(self.nodes)
@@ -127,6 +127,12 @@ class Graph:
 		src_features = [features[i] for i in src_indices]
 		tgt_features = [features[j] for j in tgt_indices]
 		
+		# remove id information from feature labels
+		for feature_list in src_features:
+			feature_list = [f.split("_amplicon")[0] for f in feature_list]
+		for feature_list in tgt_features:
+			feature_list = [f.split("_amplicon")[0] for f in feature_list]
+
 		# calculate all intersections and unions
 		inters = [list(set(s) & set(t)) for s,t in zip(src_features, tgt_features)]
 		unions = [list(set(s) | set(t)) for s,t in zip(src_features, tgt_features)]

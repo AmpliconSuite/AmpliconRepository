@@ -14,6 +14,7 @@ def get_driver():
     # Connect to Neo4j instance
     global neo4j_driver
     if neo4j_driver is None:
+        # uri = "bolt://localhost:8000"
         uri = "bolt://localhost:7687"
         neo4j_driver = GraphDatabase.driver(uri, auth=("neo4j", "password"))
     return neo4j_driver
@@ -247,7 +248,7 @@ def load_graph(dataset=None):
         # add nodes
         session.run("""
             UNWIND $nodes AS row
-            CREATE (n:Node {label: row.label, oncogene: row.oncogene, features: row.features, cell_lines: row.cell_lines})
+            CREATE (n:Node {label: row.label, oncogene: row.oncogene, features: row.samples})
             """, nodes=nodes
         )
         # add index on label (can be done once)
