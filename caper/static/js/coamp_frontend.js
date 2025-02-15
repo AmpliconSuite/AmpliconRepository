@@ -5,6 +5,7 @@ window.addEventListener('DOMContentLoaded', function () {
     let allTooltips = {};
     let inputNode = null
     let total_data = 0;
+    console.log(document.styleSheets)
 
     cytoscape.use( cytoscapePopper(tippyFactory) );
     
@@ -28,9 +29,6 @@ window.addEventListener('DOMContentLoaded', function () {
         const limit = parseInt($('#limit').val());
         const allEdgesChecked = false;
         // const allEdgesChecked = $('#all_edges').is(':checked');
-
-        // print vars
-        document.getElementById('storedText').textContent = String([minWeight, sampleMinimum, oncogenesChecked, allEdgesChecked]);
         
         // alert
         if (!inputNode) {
@@ -51,7 +49,6 @@ window.addEventListener('DOMContentLoaded', function () {
 
             const data = await response.json();
             total_data = data.nodes.length;
-            console.log("hello")
             // const filtered_data = filterData(data, limit)
             // Initialize Cytoscape with fetched data
             cy = cytoscape({
@@ -82,6 +79,13 @@ window.addEventListener('DOMContentLoaded', function () {
             layout(cy, inputNode);
             // Make tooltips for all elements
             makeTips(cy);
+
+            // Ensure the graph is fully visible and expanded
+            cy.ready(() => {
+                cy.fit();  // Adjusts the viewport to fit all elements
+                cy.zoom(1); // Optionally set zoom level (1 = default)
+                cy.resize();
+            });
 
             // Initialize Gene Data Column with fetched data
             const datacontainer = document.getElementById('data-container');
@@ -312,8 +316,15 @@ window.addEventListener('DOMContentLoaded', function () {
     document.getElementById('numSamples').addEventListener('input', function() {
         document.getElementById('sampleValue').textContent = this.value;
     });
-    document.getElementById('limit').addEventListener('input', function() {
-        document.getElementById('sliderTooltip').textContent = this.value;
+    const slider = document.getElementById('limit');
+    const tooltip = document.getElementById('sliderTooltip');
+
+    slider.addEventListener('input', function () {
+        // Calculate percentage position
+        const value = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
+
+        // Update tooltip text
+        tooltip.textContent = slider.value;
     });
 
     // update max values
@@ -336,6 +347,7 @@ window.addEventListener('DOMContentLoaded', function () {
             document.getElementById('queryResult').textContent = total_data;
             document.getElementById('limit').max = total_data;
             document.getElementById('limitMaxText').textContent = total_data;
+            document.getElementById('sliderTooltip').textContent = total_data;
         }
     }
 
