@@ -10,10 +10,6 @@
 {% endblock %}
 
 {% block main %}
-<p>It took {{ diff }} seconds to concatenate the projects and {{ import_time }} seconds to load graph</p>
-<p>There are {{ test_size }} features across the selected projects</p>
-<!-- <p>Graph constructed with ccle contains {{ test_nodes }} nodes</p>
-<p>Graph constructed with ccle contains {{ test_edges }} edges</p> -->
 
 <!-- <p>You selected:</p>
     {% for project in selected_projects %}
@@ -85,9 +81,10 @@
         <div class="edge-slider">
             <button id="filterButton">Filter</button>
         </div>
+
+        <button id="download-btn">Download CSV</button>
     </div>
 
-    <button id="download-btn">Download CSV</button>
     <!-- container for cytoscape graph -->
     <div class="container">
         <div id="cy" class="cy-container"></div>
