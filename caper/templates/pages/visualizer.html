@@ -32,14 +32,14 @@
         <p id="storedText"></p>
         <div class="slider-box">
             <div class="slider-header">
-                Query Returned <span id="queryResult">_ _</span> Genes
+                Show <span id="sliderTooltip">0</span> of <span id="queryResult">0</span> Coamplified Genes
             </div>
             <div class="slider-separator"></div>
             <div class="slider-container">
-                <div class="value-left">10</div>
-                <div class="slider-tooltip" id="sliderTooltip">50</div>
-                <input type="range" id="limit" class="slider" min="10" max="50" step="1" value="50">
-                <div class="value-right" id="limitMaxText">50</div>
+                <div class="value-left" id="limitMinText">0</div>
+                <!-- <div class="slider-tooltip" id="sliderTooltip">50</div> -->
+                <input type="range" id="limit" class="slider" min="1" max="50" step="1" value="50">
+                <div class="value-right" id="limitMaxText">0</div>
             </div>
         </div>
     </div>
@@ -111,7 +111,7 @@
     <div id="node-template" style="display: none;">
         <strong>Gene:</strong> <span id="ntip-name"></span><br>
         <strong>Oncogene:</strong> <span id="ntip-oncogene"></span><br>
-        <strong>Amplified in:</strong> <span id="ntip-nsamples"></span> sample(s)
+        <strong>Amplified in:</strong> <span id="ntip-nsamples"></span> sample(s)<br>
         <strong>Sample(s):</strong> <span id="ntip-samples"></span>
     </div>
     <div id="edge-template" style="display: none;">

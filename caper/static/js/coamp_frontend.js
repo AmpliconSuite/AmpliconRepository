@@ -49,11 +49,11 @@ window.addEventListener('DOMContentLoaded', function () {
 
             const data = await response.json();
             total_data = data.nodes.length;
-            // const filtered_data = filterData(data, limit)
+            const filtered_data = filterData(data, limit)
             // Initialize Cytoscape with fetched data
             cy = cytoscape({
                 container: document.getElementById('cy'),
-                elements: data,  // Use the data from the server
+                elements: filtered_data,  // Use the data from the server
                 style: [
                     { selector: 'node', style: { 'background-color': '#A7C6ED', 'label': '' } },
                     { selector: `node[label="${inputNode}"], node.highlighted`, style: {'z-index': 100, 'label': 'data(label)' } }, //, 'border-width': 2, 'border-color': 'black', 'border-style': 'solid' } },
@@ -316,15 +316,11 @@ window.addEventListener('DOMContentLoaded', function () {
     document.getElementById('numSamples').addEventListener('input', function() {
         document.getElementById('sampleValue').textContent = this.value;
     });
-    const slider = document.getElementById('limit');
-    const tooltip = document.getElementById('sliderTooltip');
+    document.getElementById('limit').addEventListener('input', function () {
+        document.getElementById('sliderTooltip').textContent = this.value;
+        // // Calculate percentage position
+        // const value = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
 
-    slider.addEventListener('input', function () {
-        // Calculate percentage position
-        const value = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
-
-        // Update tooltip text
-        tooltip.textContent = slider.value;
     });
 
     // update max values
@@ -344,10 +340,11 @@ window.addEventListener('DOMContentLoaded', function () {
 
     function updateLimitMax(cy) {
         if (cy) {
-            document.getElementById('queryResult').textContent = total_data;
-            document.getElementById('limit').max = total_data;
-            document.getElementById('limitMaxText').textContent = total_data;
-            document.getElementById('sliderTooltip').textContent = total_data;
+            document.getElementById('queryResult').textContent = total_data-1;
+            document.getElementById('limit').max = total_data-1;
+            document.getElementById('limitMaxText').textContent = total_data-1;
+            document.getElementById('limitMinText').textContent = 1;
+            document.getElementById('sliderTooltip').textContent = cy.nodes().length-1;
         }
     }
 
