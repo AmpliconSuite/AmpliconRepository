@@ -45,6 +45,17 @@
     </div>
     
     <div class="settings">
+        <!-- probability slider -->
+        <div class="edge-slider">
+            Significance Threshold &ge; 
+            <span id="qValue">0.05</span>
+            <div class="slider-info">
+                <div class="value-left">0</div>
+                <!-- should we allow 0? -->
+                <input type="range" id="sigThreshold" class="slider" min="0" max="1" step="0.01" value="0.05"> 
+                <div class="value-right">1</div>
+            </div>
+        </div>
         <!-- edge slider -->
         <div class="edge-slider">
             Coamplification frequency &ge; 
