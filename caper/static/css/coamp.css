@@ -186,8 +186,9 @@ button:hover {
 #download-btn {
     font-size: 0.9rem; /* Smaller font size */
     padding: 2px 5px; /* Adjust padding for smaller size */
-    position: absolute; /* Position it absolutely within .table-wrapper */
-    right: 5px;
+    margin-right: 5px;
+    margin-top: 5px;
+    margin-left: 5px;
     background-color: #ff4757; /* Retain the same background color */
     color: white;
     border-radius: 4px;
@@ -203,7 +204,7 @@ button:hover {
 .container {
     display: flex;
     width: 100%;
-    max-width: 1300px;
+    max-width: 1200px;
     align-items: stretch; /* Ensures both children stretch to the same height */
     height: 50%;
 }
@@ -216,9 +217,8 @@ button:hover {
     border: 1px solid #eaeaea; /* Light border for a minimal feel */
     border-radius: 8px; /* Slightly larger radius for elegance */
     box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1); /* Subtle shadow for depth */
-    padding: 20px; /* Add some padding inside the container */
+    padding: 7px; /* Add some padding inside the container */
     margin-top: 2px;
-    margin-left: 10px
  }
 
  .cy-container {
@@ -231,7 +231,7 @@ button:hover {
 
  .data-container {
     width: 2%; /* Adjust width as needed */
-    padding: 20px;
+    padding: 15px;
     border-left: 4px solid #ccc; /* Optional: for separation */
  }
  .table-wrapper {
@@ -241,7 +241,7 @@ button:hover {
     overflow-y: auto; /* Enable vertical scrolling */
     overflow-x: auto;
     margin-left: 10px;
-    margin-right: 20px; /* More space on the right */
+    margin-right: 15px; /* More space on the right */
  }
  
  table {
