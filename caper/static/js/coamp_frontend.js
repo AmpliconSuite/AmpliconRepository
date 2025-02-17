@@ -23,6 +23,7 @@ window.addEventListener('DOMContentLoaded', function () {
         inputNode = $('#textBox').val().trim().toUpperCase();
 
         // filters
+        const qvalueThreshold = parseFloat($('#significanceThreshold').val());
         const minWeight = parseFloat($('#edgeWeight').val());
         const sampleMinimum = parseFloat($('#numSamples').val());
         const oncogenesChecked = $('#oncogenes_only').is(':checked');
@@ -58,7 +59,8 @@ window.addEventListener('DOMContentLoaded', function () {
                     { selector: 'node', style: { 'background-color': '#A7C6ED', 'label': '' } },
                     { selector: `node[label="${inputNode}"], node.highlighted`, style: {'z-index': 100, 'label': 'data(label)' } }, //, 'border-width': 2, 'border-color': 'black', 'border-style': 'solid' } },
                     { selector: `node[oncogene="True"]`, style: { 'background-color': '#ff4757', 'z-index': 10, 'label': 'data(label)' } },
-                    { selector: 'edge', style: { 'width': 2, 'line-color': '#ccc' } },
+                    { selector: 'edge', style: { 'width': 1, 'line-color': 'green' } },  // Default for edges
+                    { selector: 'edge[qvalue <= ' + qvalueThreshold + ']', style: { 'width': 3, 'line-color': 'red' } }, // Highlight significant edges
                     { selector: '.highlighted', style: {'z-index': 100, 'background-color': '#ffd500', 'line-color': '#ffd500' } }
                 ]
             });
@@ -310,6 +312,9 @@ window.addEventListener('DOMContentLoaded', function () {
     $('#filterButton').on('click', fetchSubgraph);
 
     // update sliders
+    document.getElementById('sigThreshold').addEventListener('input', function() {
+        document.getElementById('qValue').textContent = this.value;
+    });
     document.getElementById('edgeWeight').addEventListener('input', function() {
         document.getElementById('sliderValue').textContent = this.value;
     });
@@ -318,11 +323,7 @@ window.addEventListener('DOMContentLoaded', function () {
     });
     document.getElementById('limit').addEventListener('input', function () {
         document.getElementById('sliderTooltip').textContent = this.value;
-        // // Calculate percentage position
-        // const value = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
-
     });
-
     // update max values
     function updateSampleMax(cy) {
         if (cy) {
