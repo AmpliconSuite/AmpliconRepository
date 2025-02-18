@@ -60,7 +60,7 @@ window.addEventListener('DOMContentLoaded', function () {
                     { selector: `node[label="${inputNode}"], node.highlighted`, style: {'z-index': 100, 'label': 'data(label)' } }, //, 'border-width': 2, 'border-color': 'black', 'border-style': 'solid' } },
                     { selector: `node[oncogene="True"]`, style: { 'background-color': '#ff4757', 'z-index': 10, 'label': 'data(label)' } },
                     { selector: 'edge', style: { 'width': 1, 'line-color': 'green' } },  // Default for edges
-                    { selector: 'edge[qvalue <= ' + qvalueThreshold + ']', style: { 'width': 3, 'line-color': 'red' } }, // Highlight significant edges
+                    //{ selector: 'edge[qvalue <= ' + qvalueThreshold + ']', style: { 'width': 3, 'line-color': 'red' } }, // Highlight significant edges
                     { selector: '.highlighted', style: {'z-index': 100, 'background-color': '#ffd500', 'line-color': '#ffd500' } }
                 ]
             });
