@@ -8,7 +8,14 @@ window.addEventListener('DOMContentLoaded', function () {
     console.log(document.styleSheets)
 
     cytoscape.use( cytoscapePopper(tippyFactory) );
-    
+
+    try {
+        cytoscape.use(cytoscapeSvg);
+        console.log("Cytoscape SVG extension loaded");
+    } catch (e) {
+        console.error("Failed to load cytoscape-svg:", e);
+    }
+
     // ----------------------------- Neo4j interaction -----------------------------
     async function fetchSubgraph() {
         console.log("Load graph pressed");
@@ -30,7 +37,7 @@ window.addEventListener('DOMContentLoaded', function () {
         const limit = parseInt($('#limit').val());
         const allEdgesChecked = false;
         // const allEdgesChecked = $('#all_edges').is(':checked');
-        
+
         // alert
         if (!inputNode) {
             alert("Please enter a gene name.");
@@ -64,7 +71,7 @@ window.addEventListener('DOMContentLoaded', function () {
                     { selector: '.highlighted', style: {'z-index': 100, 'background-color': '#ffd500', 'line-color': '#ffd500' } }
                 ]
             });
-            
+
 
             // Dictionary to access node ids by name
             cy.nodes().forEach(node => {
@@ -72,7 +79,7 @@ window.addEventListener('DOMContentLoaded', function () {
             });
             console.log('Number of nodes:', Object.keys(nodeID).length);
             console.log(nodeID[inputNode] + ': ' + cy.$(nodeID[inputNode]).data('label'));
-            
+
             // Update sample slider max
             updateSampleMax(cy);
             // Updata limit slider
@@ -89,6 +96,74 @@ window.addEventListener('DOMContentLoaded', function () {
                 cy.resize();
             });
 
+            // Create or update the SVG download button
+            let downloadSvgBtn = document.getElementById('download-svg-btn');
+            if (!downloadSvgBtn) {
+                downloadSvgBtn = document.createElement('button');
+                downloadSvgBtn.id = 'download-svg-btn';
+                downloadSvgBtn.className = 'download-svg-btn';
+                downloadSvgBtn.innerHTML = 'Download SVG';
+                document.querySelector('.cy-container').appendChild(downloadSvgBtn);
+            }
+
+            // Remove any existing event listeners by cloning and replacing the button
+            const newButton = downloadSvgBtn.cloneNode(true);
+            downloadSvgBtn.parentNode.replaceChild(newButton, downloadSvgBtn);
+            downloadSvgBtn = newButton;
+
+            // Add click handler for SVG download (with proper access to cy and inputNode)
+            downloadSvgBtn.addEventListener('click', function(e) {
+                console.log("SVG download button clicked");
+                e.stopPropagation(); // Prevent event from bubbling to cy container
+
+                if (!cy) {
+                    console.error("Error: Cytoscape instance not available");
+                    alert('No graph is currently displayed.');
+                    return;
+                }
+
+                try {
+                    // Create a new blob with the SVG content
+                    const svgContent = cy.svg({
+                        full: true,  // Export the full rendered image
+                        scale: 2,    // Higher quality export
+                        bg: '#ffffff'  // White background
+                    });
+
+                    console.log("SVG content created");
+
+                    // Create a Blob with the SVG content
+                    const blob = new Blob([svgContent], {
+                        type: 'image/svg+xml;charset=utf-8'
+                    });
+
+                    // Create a download link
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+
+                    // Generate filename with timestamp
+                    const now = new Date();
+                    const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
+                    const filename = `AACoampGraph_${inputNode}_${formattedDate}.svg`;
+                    link.download = filename;
+
+                    console.log("Triggering download: " + filename);
+
+                    // Trigger download
+                    document.body.appendChild(link);
+                    link.click();
+
+                    // Cleanup
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(link.href);
+
+                    console.log("Download completed");
+                } catch (error) {
+                    console.error("Error in SVG download:", error);
+                    alert("Error creating SVG: " + error.message);
+                }
+            });
+
             // Initialize Gene Data Column with fetched data
             const datacontainer = document.getElementById('data-container');
             datacontainer.innerHTML = ''; // Clear previous rows
@@ -97,28 +172,28 @@ window.addEventListener('DOMContentLoaded', function () {
 
             cy.nodes().forEach(node => {
                 row = document.createElement('tr');
-        
+
                 rownumber_element = document.createElement('td');
                 rownumber_element.textContent = rownumber;
 
                 const cellName = document.createElement('td');
                 const geneName = node.data('label');
                 const link = document.createElement('a');
-                
+
                 // Set the href attribute to the desired URL (customize this URL as needed)
                 link.href = `https://depmap.org/portal/gene/${geneName}?tab=overview`;
                 link.textContent = geneName; // Set the text to the gene name
                 link.target = '_blank'; // Open the link in a new tab (optional)
 
                 cellName.appendChild(link);
-        
+
                 cellStatus = document.createElement('td');
                 cellStatus.textContent = node.data('oncogene');
-        
+
                 cellWeight = document.createElement('td');
                 edges = node.edgesWith(cy.$(nodeID[inputNode]));
                 cellWeight.textContent = String(edges[0]?.data('weight').toFixed(3) ?? 'N/A');
-                
+
                 row.appendChild(rownumber_element);
                 row.appendChild(cellName);
                 row.appendChild(cellStatus);
@@ -176,7 +251,7 @@ window.addEventListener('DOMContentLoaded', function () {
     function tippyFactory(ref, content, theme) {
         // tippy constructor requires DOM element/elements so create a placeholder
         var dummyDomEle = document.createElement('div');
-    
+
         var tip = tippy( dummyDomEle, {
             getReferenceClientRect: ref.getBoundingClientRect,
             trigger: 'manual', // mandatory
@@ -189,18 +264,14 @@ window.addEventListener('DOMContentLoaded', function () {
             sticky: "reference",
             theme: theme,
             allowHTML: true,
-    
+
             // if interactive:
             interactive: true,
             appendTo: document.body
         } );
-    
+
         return tip;
     }
-
-    // document.addEventListener('DOMContentLoaded', function () {
-    //     cytoscape.use( cytoscapePopper(tippyFactory) );
-    // });
 
     // Set tooltip content
     function createTooltipContent(ele) {
@@ -352,20 +423,20 @@ window.addEventListener('DOMContentLoaded', function () {
     function filterData(data, topN) {
         // Sort edges by weight in descending order
         const sortedEdges = data.edges.sort((a, b) => b.data.weight - a.data.weight);
-    
+
         // Select the top N edges
         const topEdges = sortedEdges.slice(0, topN);
-    
+
         // Get the set of node IDs referenced in the top edges
         const nodeIds = new Set();
         topEdges.forEach(edge => {
         nodeIds.add(edge.data.source);
         nodeIds.add(edge.data.target);
         });
-    
+
         // Filter nodes to include only those in the nodeIds set
         const filteredNodes = data.nodes.filter(node => nodeIds.has(node.data.id));
-    
+
         // Return the filtered dataset
         return {
         edges: topEdges,
@@ -416,13 +487,13 @@ window.addEventListener('DOMContentLoaded', function () {
     function formatCell(cellContent) {
         if (cellContent.startsWith('[') && cellContent.endsWith(']')) {
             // For formatting, need lists to be formatted as lists in csv and not a string
-            return `"${cellContent.replace(/"/g, '""')}"`; 
+            return `"${cellContent.replace(/"/g, '""')}"`;
         }
         return cellContent;
     }
 
     // Function to generate CSV
-    function generateCSV(datacontainercsv) {    
+    function generateCSV(datacontainercsv) {
         if (!datacontainercsv) {
             alert('Data container is not available.');
             return '';
@@ -434,7 +505,7 @@ window.addEventListener('DOMContentLoaded', function () {
         const header = ['Gene Name', 'Oncogene', 'Coamplification Frequency', 'Intersection Samples', 'Union Samples'];
         csv.push(header.join(',')); // Join column labels with commas
 
-        
+
         // Separate the first row
         const firstRow = rows.shift(); // Remove the first row (query gene needs to be at top for reference)
         const firstRowData = Array.from(firstRow.querySelectorAll('td')).map(cell => {
@@ -457,7 +528,7 @@ window.addEventListener('DOMContentLoaded', function () {
             csv.push(cols.join(','));
         });
 
-        return csv.join('\n'); 
+        return csv.join('\n');
     }
 
     // Add event listener for the download button
@@ -485,10 +556,10 @@ window.addEventListener('DOMContentLoaded', function () {
             cellWeight.textContent = String(edgeData.weight?.toFixed(3) ?? 'N/A');
             const unionList = edgeData.union ? `["${edgeData.union.join('", "')}"]` : 'N/A';
             cellUnion.textContent = unionList;
-            
+
             const interList = edgeData.inter ? `["${edgeData.inter.join('", "')}"]` : 'N/A';
             cellInter.textContent = interList;
-            
+
             row.appendChild(cellName);
             row.appendChild(cellStatus);
             row.appendChild(cellWeight);
