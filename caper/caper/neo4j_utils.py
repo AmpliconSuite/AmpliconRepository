@@ -1,3 +1,4 @@
+import os
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
@@ -16,7 +17,7 @@ def get_driver():
     if neo4j_driver is None:
         # uri = "bolt://localhost:8000"
         uri = "bolt://localhost:7687"
-        neo4j_driver = GraphDatabase.driver(uri, auth=("neo4j", "password"))
+        neo4j_driver = GraphDatabase.driver(uri, auth=("neo4j", os.environ['NEO4J_PASSWORD_SECRET']))
     return neo4j_driver
 
 def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_edges):

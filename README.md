@@ -102,7 +102,28 @@ The environment is now set up. Ensure that neo4j is running before querying the 
 
 ### Ubuntu (or Windows via WSL/WSL2)
 
-Please follow this documentation to set up the latest version of Neo4j Community Edition: https://debian.neo4j.com/
+Please follow this documentation to set up the latest version of [Neo4j Community Edition](https://neo4j.com/docs/operations-manual/2025.01/installation/linux/debian/)
+
+In brief, you can do
+
+```
+wget -O - https://debian.neo4j.com/neotechnology.gpg.key | sudo apt-key add -
+echo 'deb https://debian.neo4j.com stable latest' | sudo tee /etc/apt/sources.list.d/neo4j.list
+sudo apt-get update
+sudo apt-get install neo4j
+```
+
+Register for an account at [Neo4j Aura Console](https://console.neo4j.io/)
+
+Then launch it by running
+```
+sudo neo4j start
+```
+
+Visit http://localhost:7474 and login with neo4j as both the user and password. You will be prompted to set a password for future use. 
+You must set the updated password to the value in your `config.sh` file (value of NEO4J_PASSWORD_SECRET) 
+
+For shutdown at the end of your session, you can do `sudo neo4j stop`
 
 ## 5. Set up secret keys for OAuth2 and other environment variables
 - Make sure you have the `config.sh` file from another developer (this contains secret key information)
