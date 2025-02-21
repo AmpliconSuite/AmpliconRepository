@@ -40,8 +40,14 @@
 {% endblock %}
 
 {% block main %}
-<h1>Search Results: {{ gene_query }} : {{ class_query }}</h1>
-
+<h2>Search Query Information</h2>
+<ul>
+    {% for key, value in query_info.items %}
+        {% if value %}
+            <li><strong>{{ key|title }}:</strong> {{ value }}</li>
+        {% endif %}
+    {% endfor %}
+</ul>
 <div class="search-container">
     <!-- Embedded Search Box from search.html -->
     <div class="search-box">
@@ -57,10 +63,19 @@
             <li class="nav-item">
                 <a class="nav-link" href="#samples-tab" data-toggle="tab">Samples</a>
             </li>
+
+            {% if user.is_authenticated %}
+            <li class="nav-item">
+                <a class="nav-link" href="#private-projects-tab" data-toggle="tab">Private Projects</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#private-samples-tab" data-toggle="tab">Private Samples</a>
+            </li>
+            {% endif %}
         </ul>
 
         <div class="tab-content" style="padding-top: 20px;">
-            <!-- Projects Tab -->
+            <!-- Public Projects Tab -->
             <div class="tab-pane active" id="projects-tab">
                 <table class="table">
                     <thead>
@@ -86,7 +101,7 @@
                 </table>
             </div>
 
-            <!-- Samples Tab -->
+            <!-- Public Samples Tab -->
             <div class="tab-pane" id="samples-tab">
                 <table class="table">
                     <thead>
@@ -111,6 +126,60 @@
                     </tbody>
                 </table>
             </div>
+
+            {% if user.is_authenticated %}
+            <!-- Private Projects Tab -->
+            <div class="tab-pane" id="private-projects-tab">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Last Updated</th>
+                            <th>Project Members</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for project in private_projects %}
+                        <tr>
+                            <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                            <td>{{ project.description }}</td>
+                            <td>{{ project.date }}</td>
+                            <td>{% for person in project.project_members %}
+                                {{ person }}<br>
+                            {% endfor %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Private Samples Tab -->
+            <div class="tab-pane" id="private-samples-tab">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Project Name</th>
+                            <th>Sample Name</th>
+                            <th>Feature Count</th>
+                            <th>Oncogenes</th>
+                            <th>Classifications</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sample in private_sample_data %}
+                        <tr>
+                            <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
+                            <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
+                            <td>{{ sample.Features }}</td>
+                            <td>{{ sample.Oncogenes|join:", " }}</td>
+                            <td>{{ sample.Classifications|join:", " }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>

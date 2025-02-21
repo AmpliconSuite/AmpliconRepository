@@ -2277,7 +2277,6 @@ def robots(request):
 
 # from django.shortcuts import render
 # from .search import perform_search
-
 def search_results(request):
     """Handles user queries and renders search results."""
 
@@ -2294,18 +2293,24 @@ def search_results(request):
         
         # Run the search function
         search_results = perform_search(
-            gene_search=gene_search,
+            genequery=gene_search,
             project_name=project_name,
-            classifications=classifications,
+            classquery=classifications,
             sample_name=sample_name,
             metadata=metadata,
             user=request.user
         )
 
-        # Return results to the template
+        query_info = {
+            "Gene Query": gene_search,
+            "Project Name": project_name,
+            "Class Query": classifications,
+            "Sample Name": sample_name,
+            "Metadata": metadata
+        }
+        
         return render(request, "pages/gene_search.html", {
-            "gene_query": gene_search,
-            "class_query": classifications if classifications else "all amplicon types",
+            "query_info": {k: v for k, v in query_info.items() if v},  # Filters out empty values
             "public_projects": search_results["public_projects"],
             "private_projects": search_results["private_projects"],
             "public_sample_data": search_results["public_sample_data"],

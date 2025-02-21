@@ -1,68 +1,81 @@
 from pymongo import MongoClient
 from .utils import *
-def perform_search(gene_search=None, project_name=None, classifications=None, sample_name=None, metadata=None, user=None):
-    query = {"delete": False}  # Exclude deleted projects
+def perform_search(genequery=None, project_name=None, classquery=None, sample_name=None, metadata=None, user=None):
 
+    gen_query = {'$regex': genequery }
+    class_query = {'$regex': classquery}
+    # Gene Search
+    if user.is_authenticated:
+        username = user.username
+        useremail = user.email
+        query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
+
+        private_projects = list(collection_handle.find(query_obj))
+    else:
+        private_projects = []
+    
     if project_name:
-        query["project_name"] = {"$regex": project_name, "$options": "i"}
-    if gene_search:
-        query["sample_data.Oncogenes"] = {"$regex": gene_search, "$options": "i"}
-    if classifications:
-        query["sample_data.Classifications"] = {"$regex": classifications, "$options": "i"}
-    if sample_name:
-        query["sample_data.Sample_name"] = {"$regex": sample_name, "$options": "i"}
-    if metadata:
-        query["sample_data.extra_metadata_from_csv"] = {"$regex": metadata, "$options": "i"}
+        public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False, 'project_name' : {'$regex' : project_name, '$options' : 'i'}}))
+    else:
+        public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False}))
 
-    print('query:', query)
-    print('gene_search:', gene_search)
-    # **Retrieve Public Projects**
-    public_projects = list(collection_handle.find(
-        {**query, "private": False},
-        {"_id": 1, "project_name": 1, "description": 1, "date": 1, "project_members": 1, "sample_data": 1}
-    ))
+    for proj in private_projects:
+        prepare_project_linkid(proj)    
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+        
+    
 
-    # **Retrieve Private Projects (only for authenticated users)**
-    private_projects = []
-    if user and user.is_authenticated:
-        private_query = {
-            **query,
-            "private": True,
-            "$or": [{"project_members": user.username}, {"project_members": user.email}]
-        }
-        private_projects = list(collection_handle.find(
-            private_query,
-            {"_id": 1, "project_name": 1, "description": 1, "date": 1, "project_members": 1, "sample_data": 1}
-        ))
-
-    # **Ensure `linkid` Exists**
-    def add_linkid(projects):
-        for project in projects:
-            project["linkid"] = str(project["_id"])  # Use MongoDB `_id` as `linkid`
-            if "project_name" not in project or not project["project_name"]:
-                project["project_name"] = "Unknown Project"  # Prevent empty project names
-        return projects
-
-    public_projects = add_linkid(public_projects)
-    private_projects = add_linkid(private_projects)
-
-    # **Extract Sample Data for Display**
-    def collect_sample_data(projects):
+    def collect_class_data(projects):
+        """
+        Collects data based on the user queries that were given. 
+        """
         sample_data = []
         for project in projects:
-            for sample in project.get("sample_data", []):
-                sample_data.append({
-                    "project_name": project["project_name"],
-                    "project_linkid": project["linkid"],  # Now guaranteed to exist
-                    "Sample_name": sample["Sample_name"],
-                    "Features": sample.get("Features", 0),
-                    "Oncogenes": sample["Oncogenes"],
-                    "Classifications": sample["Classifications"]
-                })
-        return sample_data
+            project_name = project['project_name']
+            project_linkid = project['_id']
+            features = project['runs']
+            features_list = replace_space_to_underscore(features)
+            data = sample_data_from_feature_list(features_list)
+            for sample in data:
+                sample['project_name'] = project_name
+                sample['project_linkid'] = project_linkid
+                if genequery in sample['Oncogenes']:
+                    upperclass =  map(str.upper, sample['Classifications'])
+                    classmatch =(classquery in upperclass)
+                    classempty = (len(classquery) == 0)
+                    # keep the sample if we have matched on both oncogene and classification or oncogene and classification is empty
+                    if classmatch or classempty:
+                        sample_data.append(sample)
+                elif len(genequery) == 0:
+                    upperclass = map(str.upper, sample['Classifications'])
+                    classmatch = (classquery in upperclass)
+                    classempty = (len(classquery) == 0)
+                    # keep the sample if we have matched on classification and oncogene is empty
+                    if classmatch or classempty:
+                        sample_data.append(sample)
+                
+                ## metadata_filtering:
+                if metadata:
+                    if metadata.lower() in [val.lower() for val in sample.values() if type(val) == str]:
+                        sample_data.append(sample)
 
-    public_sample_data = collect_sample_data(public_projects)
-    private_sample_data = collect_sample_data(private_projects)
+        return sample_data
+    
+    
+    
+
+    public_sample_data = collect_class_data(public_projects)
+    private_sample_data = collect_class_data(private_projects)
+    
+    
+    
+    if metadata:
+        try:
+            logging.info('hi')
+            public_sample_data = collect_metadata_samples(public_sample_data, metadata)
+        except Exception as e:
+            logging.info(e)
 
     return {
         "public_projects": public_projects,
@@ -70,3 +83,21 @@ def perform_search(gene_search=None, project_name=None, classifications=None, sa
         "public_sample_data": public_sample_data,
         "private_sample_data": private_sample_data
     }
+    
+    
+def collect_metadata_samples(sample_data, metadata_to_find):
+    """
+    collects the samples with matching metadata to find
+    """
+    samples_to_return = []
+    fields_to_search_in = ['Sample_type','Tissue_of_origin']
+    for sample in sample_data:
+        for field in fields_to_search_in:
+            if metadata_to_find.lower() == sample[field].lower():
+                samples_to_return.append(sample)
+        if metadata_to_find.lower() in [val.lower() for val in sample['extra_metadata_from_csv'].values()]:
+            samples_to_return.append(sample)
+            
+    logging.info(samples_to_return)
+    return samples_to_return
+    

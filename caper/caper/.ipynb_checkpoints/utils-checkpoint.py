@@ -212,17 +212,11 @@ def get_one_sample(project_name, sample_name):
 def sample_data_from_feature_list(features_list):
     """
     extracts sample data from a list of features
-    
-    ## only these fields are returned in the sample data for search!! ##
-    [['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Tissue_of_origin', 'extra_metadata_from_csv']]
     """
-    df = pd.DataFrame(features_list)
-    cols = [col for col in ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Tissue_of_origin', 'extra_metadata_from_csv'] if col in df.columns]
-    df= df[cols]
+    df = pd.DataFrame(features_list)[['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID']]
     sample_data = []
     for sample_name, indices in df.groupby(['Sample_name']).groups.items():
         sample_dict = dict()
-        extra_metadata = dict()
         subset = df.iloc[indices]
         sample_dict['Sample_name'] = sample_name
         sample_dict['Oncogenes'] = sorted(set(flatten(subset['Oncogenes'].values.tolist())))
@@ -231,12 +225,6 @@ def sample_data_from_feature_list(features_list):
             sample_dict['Features'] = 0
         else:
             sample_dict['Features'] = len(subset['Feature_ID'])
-        
-        if 'extra_metadata_from_csv' in subset.columns:
-            sample_dict = sample_dict | subset['extra_metadata_from_csv'].values[0]
-        sample_dict['Sample_type'] = subset['Sample_type'].values[0]
-        sample_dict['Tissue_of_origin'] = subset['Tissue_of_origin'].values[0]
-        sample_dict['Sample_name'] = sample_name
         sample_data.append(sample_dict)
     # print(f'********** TOOK {datetime.datetime.now() - now}')
     return sample_data
