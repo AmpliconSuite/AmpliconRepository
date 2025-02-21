@@ -113,6 +113,7 @@ def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_
                                    'inter': record['r']['inter'],
                                    'lenunion': len(record['r']['union']),
                                    'union': record['r']['union'],
+                                   'qval': record['r']['qval'],
                                    'interaction': 'interacts with'
                                    }})
         
@@ -203,31 +204,6 @@ def fetch_subgraph(gene_name, min_weight, min_samples, oncogenes, all_edges):
                                             all_edges)
     return nodes, edges
 
-# # CREATE ROUTE with csrf_exempt (optional?)
-# def fetch_subgraph(request):
-#     driver = get_driver()
-#     if request.method == "GET":
-#         node_id = request.GET.get('name')
-#         min_weight = request.GET.get('min_weight')
-#         min_samples = request.GET.get('min_samples')
-#         oncogenes = request.GET.get('oncogenes', 'false').lower() == 'true'
-#         all_edges = request.GET.get('all_edges', 'false').lower() == 'true'
-
-#     # Create a session and run fetch_subgraph_helper
-#     with driver.session() as session:
-#         nodes, edges = session.execute_read(fetch_subgraph_helper, node_id, min_weight, min_samples, oncogenes, all_edges)
-
-#         # print(f"\nNodes:\n{nodes}\n\nEdges:\n{edges}")
-#         print(f"\nNumber of nodes: {len(nodes)}\nNumber of edges: {len(edges)}\n")
-
-#         if nodes:
-#             return JsonResponse({
-#                 'nodes': nodes,
-#                 'edges': edges
-#             })
-#         else:
-#             return JsonResponse({"error": "Node not found"}), 404
-
 # CREATE ROUTE with csrf_exempt (optional?)
 def load_graph(dataset=None):
     driver = get_driver()
@@ -261,7 +237,7 @@ def load_graph(dataset=None):
         session.run("""
             UNWIND $edges AS row
             MATCH (a:Node {label: row.source}), (b:Node {label: row.target})
-            MERGE (a)-[:COAMP {weight: toFloat(row.weight), inter: row.inter, union: row.union}]->(b)
+            MERGE (a)-[:COAMP {qval: toFloat(row.qval), weight: toFloat(row.weight), inter: row.inter, union: row.union}]->(b)
             """, edges=edges
         )
     IMPORT_TIME = time.process_time()
