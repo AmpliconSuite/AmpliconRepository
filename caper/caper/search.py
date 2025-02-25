@@ -40,24 +40,21 @@ def perform_search(genequery=None, project_name=None, classquery=None, sample_na
             for sample in data:
                 sample['project_name'] = project_name
                 sample['project_linkid'] = project_linkid
-                if genequery in sample['Oncogenes']:
-                    upperclass =  map(str.upper, sample['Classifications'])
-                    classmatch =(classquery in upperclass)
-                    classempty = (len(classquery) == 0)
-                    # keep the sample if we have matched on both oncogene and classification or oncogene and classification is empty
-                    if classmatch or classempty:
-                        sample_data.append(sample)
-                elif len(genequery) == 0:
-                    upperclass = map(str.upper, sample['Classifications'])
-                    classmatch = (classquery in upperclass)
-                    classempty = (len(classquery) == 0)
-                    # keep the sample if we have matched on classification and oncogene is empty
-                    if classmatch or classempty:
-                        sample_data.append(sample)
-                
-                ## metadata_filtering:
+
+                # Ensure genequery exists in Oncogenes
+                gene_match = genequery in sample['Oncogenes']
+
+                # Ensure classquery exists in Classifications
+                upperclass = list(map(str.upper, sample['Classifications']))
+                class_match = classquery in upperclass if classquery else True  # If no class query, accept all
+
+                # Ensure both conditions are met for an AND search
+                if gene_match and class_match:
+                    sample_data.append(sample)
+
+                ## Metadata filtering: Ensure metadata exists in sample
                 if metadata:
-                    if metadata.lower() in [val.lower() for val in sample.values() if type(val) == str]:
+                    if metadata.lower() in [val.lower() for val in sample.values() if isinstance(val, str)]:
                         sample_data.append(sample)
 
         return sample_data

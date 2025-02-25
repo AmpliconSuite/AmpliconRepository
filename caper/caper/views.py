@@ -2302,7 +2302,7 @@ def search_results(request):
         )
 
         query_info = {
-            "Gene Query": gene_search,
+            "Gene Name Query": gene_search,
             "Project Name": project_name,
             "Class Query": classifications,
             "Sample Name": sample_name,
