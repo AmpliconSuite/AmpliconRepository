@@ -40,26 +40,22 @@
 </head>
 
 
-  
 <form id="searchForm" action="{% url 'search_results' %}" method="POST" class="box">
     {% csrf_token %}
 
-    <div class="field">
-        <label class="label">Gene Search</label>
+    <div class="field mb-4">
         <div class="control">
             <input type="query" class="input" placeholder="Gene Name (e.g. MYC)" aria-label="Search by gene" aria-describedby="search-addon" name="genequery" id="genequery"/>
         </div>
     </div>
 
-    <div class="field">
-        <label class="label">Project Name</label>
+    <div class="field mb-4">
         <div class="control">
             <input class="input" type="text" name="project_name" id="project_name" placeholder="Enter project name...">
         </div>
     </div>
 
-    <div class="field">
-        <label class="label">Classifications</label>
+    <div class="field mb-4">
         <div class="control">
             <input type="text" autocomplete="off" list="ecDNAclassificationDefaults" class="input" placeholder="Limit to classification type" aria-label="Search by classification" aria-describedby="search-addon" name="classquery" id="classquery"/>
             <datalist id="ecDNAclassificationDefaults">
@@ -71,8 +67,7 @@
         </div>
     </div>
 
-    <div class="field">
-        <label class="label">Metadata</label>
+    <div class="field mb-4">
         <div class="control">
             <input class="input" type="text" name="metadata" id="metadata" placeholder="Metadata keywords...">
         </div>
@@ -82,6 +77,7 @@
         <button type="submit" class="button is-primary is-fullwidth">Search</button>
     </div>
 </form>
+
 {% comment %} <!-- Include new JS file -->
 <script>
     document.addEventListener("DOMContentLoaded", function () {

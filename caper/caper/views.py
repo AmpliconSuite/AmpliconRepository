@@ -2296,10 +2296,10 @@ def search_results(request):
             genequery=gene_search,
             project_name=project_name,
             classquery=classifications,
-            sample_name=sample_name,
             metadata=metadata,
             user=request.user
         )
+        
 
         query_info = {
             "Gene Name Query": gene_search,

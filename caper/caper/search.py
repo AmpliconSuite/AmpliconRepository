@@ -1,6 +1,6 @@
 from pymongo import MongoClient
 from .utils import *
-def perform_search(genequery=None, project_name=None, classquery=None, sample_name=None, metadata=None, user=None):
+def perform_search(genequery=None, project_name=None, classquery=None, metadata=None, user=None):
 
     gen_query = {'$regex': genequery }
     class_query = {'$regex': classquery}
@@ -13,7 +13,7 @@ def perform_search(genequery=None, project_name=None, classquery=None, sample_na
         private_projects = list(collection_handle.find(query_obj))
     else:
         private_projects = []
-    
+
     if project_name:
         public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False, 'project_name' : {'$regex' : project_name, '$options' : 'i'}}))
     else:
@@ -25,7 +25,7 @@ def perform_search(genequery=None, project_name=None, classquery=None, sample_na
         prepare_project_linkid(proj)
         
     
-
+    
     def collect_class_data(projects):
         """
         Collects data based on the user queries that were given. 
@@ -37,35 +37,47 @@ def perform_search(genequery=None, project_name=None, classquery=None, sample_na
             features = project['runs']
             features_list = replace_space_to_underscore(features)
             data = sample_data_from_feature_list(features_list)
+
             for sample in data:
-                sample['project_name'] = project_name
-                sample['project_linkid'] = project_linkid
+                match_found = True  # Assume match unless proven otherwise
 
                 # Ensure genequery exists in Oncogenes
-                gene_match = genequery in sample['Oncogenes']
+                if genequery and genequery not in sample.get('Oncogenes', []):
+                    match_found = False
 
                 # Ensure classquery exists in Classifications
-                upperclass = list(map(str.upper, sample['Classifications']))
-                class_match = classquery in upperclass if classquery else True  # If no class query, accept all
+                if classquery:
+                    upperclass = list(map(str.upper, sample.get('Classifications', [])))
+                    if classquery.upper() not in upperclass:
+                        match_found = False
 
-                # Ensure both conditions are met for an AND search
-                if gene_match and class_match:
+                # Ensure metadata exists in sample
+                if metadata:
+                    metadata_values = [val.lower() for val in sample.values() if isinstance(val, str)]
+                    if metadata.lower() not in metadata_values:
+                        match_found = False
+
+                if match_found:
+                    sample['project_name'] = project_name
+                    sample['project_linkid'] = project_linkid
                     sample_data.append(sample)
 
-                ## Metadata filtering: Ensure metadata exists in sample
-                if metadata:
-                    if metadata.lower() in [val.lower() for val in sample.values() if isinstance(val, str)]:
-                        sample_data.append(sample)
+            return sample_data
 
-        return sample_data
-    
-    
-    
 
+    # Collect sample data
     public_sample_data = collect_class_data(public_projects)
     private_sample_data = collect_class_data(private_projects)
     
-    
+    print(public_sample_data)
+
+    # Extract project names from sample data
+    public_project_names = {sample["project_name"] for sample in public_sample_data}
+    private_project_names = {sample["project_name"] for sample in private_sample_data}
+
+    # Filter projects to only include those found in sample data
+    public_projects = [proj for proj in public_projects if proj["project_name"] in public_project_names]
+    private_projects = [proj for proj in private_projects if proj["project_name"] in private_project_names]
     
     if metadata:
         try:
