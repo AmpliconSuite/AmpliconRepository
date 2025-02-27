@@ -2287,6 +2287,14 @@ def search_results(request):
         classifications = request.POST.get("classquery", "").upper()
         sample_name = request.POST.get("sample_name", "").upper()
         metadata = request.POST.get("metadata", "").upper()
+        user_query = {
+            "genequery": request.POST.get("genequery", "").upper(),
+            "project_name": request.POST.get("project_name", "").upper(),
+            "classquery": request.POST.get("classquery", "").upper(),
+            "sample_name": request.POST.get("sample_name", "").upper(),
+            "metadata": request.POST.get("metadata", "").upper(),
+        }
+        
 
         # Debugging logs
         logging.info(f'search terms: {gene_search}, {project_name}, {classifications}, {sample_name}, {metadata}')
@@ -2316,6 +2324,7 @@ def search_results(request):
         
         return render(request, "pages/gene_search.html", {
             "query_info": {k: v for k, v in query_info.items() if v},  # Filters out empty values
+            "user_query": user_query,  # Pass user query to the template
             "public_projects": search_results["public_projects"],
             "private_projects": search_results["private_projects"],
             "public_sample_data": search_results["public_sample_data"],
