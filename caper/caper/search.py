@@ -7,7 +7,10 @@ def perform_search(genequery=None, project_name=None, classquery=None, metadata=
     if user.is_authenticated:
         username = user.username
         useremail = user.email
-        query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
+        if project_name:
+            query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False, 'project_name' : {'$regex' : project_name, '$options' : 'i'}}
+        else:
+            query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
 
         private_projects = list(collection_handle.find(query_obj))
     else:
