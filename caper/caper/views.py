@@ -2300,6 +2300,11 @@ def search_results(request):
             user=request.user
         )
         
+        # Count the number of matches for each category
+        public_projects_count = len(search_results["public_projects"])
+        private_projects_count = len(search_results["private_projects"])
+        public_samples_count = len(search_results["public_sample_data"])
+        private_samples_count = len(search_results["private_sample_data"])
 
         query_info = {
             "Gene Name Query": gene_search,
@@ -2315,6 +2320,10 @@ def search_results(request):
             "private_projects": search_results["private_projects"],
             "public_sample_data": search_results["public_sample_data"],
             "private_sample_data": search_results["private_sample_data"],
+            "public_projects_count": public_projects_count,
+            "private_projects_count": private_projects_count,
+            "public_samples_count": public_samples_count,
+            "private_samples_count": private_samples_count,
         })
     else:
         return redirect("gene_search_page")  # Redirect if accessed incorrectly

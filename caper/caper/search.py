@@ -22,11 +22,7 @@ def perform_search(genequery=None, project_name=None, classquery=None, metadata=
         prepare_project_linkid(proj)    
     for proj in public_projects:
         prepare_project_linkid(proj)
-        
-    
-    
-    
-    
+
     def collect_class_data(projects):
         """
         Collects data based on the user queries that were given. 
@@ -68,8 +64,6 @@ def perform_search(genequery=None, project_name=None, classquery=None, metadata=
     # Collect sample data
     public_sample_data = collect_class_data(public_projects)
     private_sample_data = collect_class_data(private_projects)
-    
-    print(public_sample_data)
 
     # Extract project names from sample data
     public_project_names = {sample["project_name"] for sample in public_sample_data}

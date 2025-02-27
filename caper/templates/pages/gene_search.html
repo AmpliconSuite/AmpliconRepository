@@ -15,6 +15,16 @@
     .results-container {
         width: 60%;
     }
+
+    mark {
+        background-color: #ffeb3b !important; /* Brighter yellow */
+        color: black; /* Ensures readability */
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-weight: bold;
+    }
+
+    
 </style>
 {% endblock %}
 
@@ -37,17 +47,61 @@
         $('table.table').DataTable();
     });
 </script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Extract search terms from the query info table
+        let searchTerms = [];
+        document.querySelectorAll(".card-body table tbody tr").forEach(row => {
+            let key = row.cells[0].textContent.trim().replace(":", "");
+            let value = row.cells[1].textContent.trim();
+            if (value) {
+                searchTerms.push(value.toLowerCase());
+            }
+        });
+
+        // Function to highlight text
+        function highlightText(element, term) {
+            let regex = new RegExp(`(${term})`, "gi");
+            element.innerHTML = element.innerHTML.replace(regex, `<mark>$1</mark>`);
+        }
+
+        // Loop through all table rows and highlight matches
+        document.querySelectorAll(".results-container table tbody tr").forEach(row => {
+            row.querySelectorAll("td").forEach(cell => {
+                searchTerms.forEach(term => {
+                    if (cell.textContent.toLowerCase().includes(term)) {
+                        highlightText(cell, term);
+                    }
+                });
+            });
+        });
+    });
+</script>
+
+
+
 {% endblock %}
 
 {% block main %}
-<h2>Search Query Information</h2>
-<ul>
-    {% for key, value in query_info.items %}
-        {% if value %}
-            <li><strong>{{ key|title }}:</strong> {{ value }}</li>
-        {% endif %}
-    {% endfor %}
-</ul>
+<h2 class="mt-4">Search Query Information</h2>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <table class="table table-borderless mb-0">
+            <tbody>
+                {% for key, value in query_info.items %}
+                    {% if value %}
+                        <tr>
+                            <td class="fw-bold text-primary">{{ key|title }}:</td>
+                            <td>{{ value }}</td>
+                        </tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
 <div class="search-container">
     <!-- Embedded Search Box from search.html -->
     <div class="search-box">
@@ -58,18 +112,26 @@
     <div class="results-container">
         <ul class="nav nav-tabs">
             <li class="nav-item">
-                <a class="nav-link active" href="#projects-tab" data-toggle="tab">Projects</a>
+                <a class="nav-link active" href="#projects-tab" data-toggle="tab">
+                    Projects <span class="badge badge-primary">{{ public_projects_count }}</span>
+                </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#samples-tab" data-toggle="tab">Samples</a>
+                <a class="nav-link" href="#samples-tab" data-toggle="tab">
+                    Samples <span class="badge badge-primary">{{ public_samples_count }}</span>
+                </a>
             </li>
-
+        
             {% if user.is_authenticated %}
             <li class="nav-item">
-                <a class="nav-link" href="#private-projects-tab" data-toggle="tab">Private Projects</a>
+                <a class="nav-link" href="#private-projects-tab" data-toggle="tab">
+                    Private Projects <span class="badge badge-primary">{{ private_projects_count }}</span>
+                </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#private-samples-tab" data-toggle="tab">Private Samples</a>
+                <a class="nav-link" href="#private-samples-tab" data-toggle="tab">
+                    Private Samples <span class="badge badge-primary">{{ private_samples_count }}</span>
+                </a>
             </li>
             {% endif %}
         </ul>

@@ -40,41 +40,37 @@
 </head>
 
 
-<form id="searchForm" action="{% url 'search_results' %}" method="POST" class="box">
+<form id="searchForm" action="{% url 'search_results' %}" method="POST" class="p-4 border rounded bg-light">
     {% csrf_token %}
 
-    <div class="field mb-4">
-        <div class="control">
-            <input type="query" class="input" placeholder="Gene Name (e.g. MYC)" aria-label="Search by gene" aria-describedby="search-addon" name="genequery" id="genequery"/>
-        </div>
+    <div class="mb-3">
+        <label for="genequery" class="form-label">Gene Name</label>
+        <input type="text" class="form-control" placeholder="Gene Name (e.g. MYC)" name="genequery" id="genequery">
     </div>
 
-    <div class="field mb-4">
-        <div class="control">
-            <input class="input" type="text" name="project_name" id="project_name" placeholder="Enter project name...">
-        </div>
+    <div class="mb-3">
+        <label for="project_name" class="form-label">Project Name</label>
+        <input type="text" class="form-control" name="project_name" id="project_name" placeholder="Enter project name...">
     </div>
 
-    <div class="field mb-4">
-        <div class="control">
-            <input type="text" autocomplete="off" list="ecDNAclassificationDefaults" class="input" placeholder="Limit to classification type" aria-label="Search by classification" aria-describedby="search-addon" name="classquery" id="classquery"/>
-            <datalist id="ecDNAclassificationDefaults">
-                <option value="ecDNA">ecDNA</option>
-                <option value="linear amplification">linear amplification</option>
-                <option value="BFB">breakage-fusion-bridge (BFB)</option>
-                <option value="complex non-cyclic">complex non-cyclic</option>
-            </datalist>
-        </div>
+    <div class="mb-3">
+        <label for="classquery" class="form-label">Classification Type</label>
+        <input type="text" autocomplete="off" list="ecDNAclassificationDefaults" class="form-control" placeholder="Limit to classification type" name="classquery" id="classquery">
+        <datalist id="ecDNAclassificationDefaults">
+            <option value="ecDNA">ecDNA</option>
+            <option value="linear amplification">linear amplification</option>
+            <option value="BFB">Breakage-Fusion-Bridge (BFB)</option>
+            <option value="complex non-cyclic">Complex Non-Cyclic</option>
+        </datalist>
     </div>
 
-    <div class="field mb-4">
-        <div class="control">
-            <input class="input" type="text" name="metadata" id="metadata" placeholder="Metadata keywords...">
-        </div>
+    <div class="mb-3">
+        <label for="metadata" class="form-label">Metadata Keywords</label>
+        <input type="text" class="form-control" name="metadata" id="metadata" placeholder="Metadata keywords...">
     </div>
 
-    <div class="control">
-        <button type="submit" class="button is-primary is-fullwidth">Search</button>
+    <div class="d-grid">
+        <button type="submit" class="btn btn-primary">Search</button>
     </div>
 </form>
 
