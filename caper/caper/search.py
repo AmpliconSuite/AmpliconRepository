@@ -3,7 +3,6 @@ from .utils import *
 def perform_search(genequery=None, project_name=None, classquery=None, metadata=None, user=None):
 
     gen_query = {'$regex': genequery }
-    class_query = {'$regex': classquery}
     # Gene Search
     if user.is_authenticated:
         username = user.username
@@ -26,6 +25,8 @@ def perform_search(genequery=None, project_name=None, classquery=None, metadata=
         
     
     
+    
+    
     def collect_class_data(projects):
         """
         Collects data based on the user queries that were given. 
@@ -37,7 +38,6 @@ def perform_search(genequery=None, project_name=None, classquery=None, metadata=
             features = project['runs']
             features_list = replace_space_to_underscore(features)
             data = sample_data_from_feature_list(features_list)
-
             for sample in data:
                 match_found = True  # Assume match unless proven otherwise
 
@@ -62,7 +62,7 @@ def perform_search(genequery=None, project_name=None, classquery=None, metadata=
                     sample['project_linkid'] = project_linkid
                     sample_data.append(sample)
 
-            return sample_data
+        return sample_data
 
 
     # Collect sample data
@@ -78,13 +78,6 @@ def perform_search(genequery=None, project_name=None, classquery=None, metadata=
     # Filter projects to only include those found in sample data
     public_projects = [proj for proj in public_projects if proj["project_name"] in public_project_names]
     private_projects = [proj for proj in private_projects if proj["project_name"] in private_project_names]
-    
-    if metadata:
-        try:
-            logging.info('hi')
-            public_sample_data = collect_metadata_samples(public_sample_data, metadata)
-        except Exception as e:
-            logging.info(e)
 
     return {
         "public_projects": public_projects,

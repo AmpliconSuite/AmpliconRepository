@@ -232,9 +232,13 @@ def sample_data_from_feature_list(features_list):
         else:
             sample_dict['Features'] = len(subset['Feature_ID'])
         
-        if 'extra_metadata_from_csv' in subset.columns:
-            if subset['extra_metadata_from_csv'].values[0] != 'Not Provided':
-                sample_dict = sample_dict | subset['extra_metadata_from_csv'].values[0]
+        # if 'extra_metadata_from_csv' in subset.columns:
+        #     try:
+        #         for k, v in subset['extra_metadata_from_csv']:
+        #             sample_dict[k] = v
+        #     except Exception as e:
+        #         logging.info(subset['extra_metadata_from_csv'])
+        #         logging.info(e)
         sample_dict['Sample_type'] = subset['Sample_type'].values[0]
         sample_dict['Tissue_of_origin'] = subset['Tissue_of_origin'].values[0]
         sample_dict['Sample_name'] = sample_name

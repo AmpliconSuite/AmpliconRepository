@@ -2289,7 +2289,7 @@ def search_results(request):
         metadata = request.POST.get("metadata", "").upper()
 
         # Debugging logs
-        print(f'search terms: {gene_search}, {project_name}, {classifications}, {sample_name}, {metadata}')
+        logging.info(f'search terms: {gene_search}, {project_name}, {classifications}, {sample_name}, {metadata}')
         
         # Run the search function
         search_results = perform_search(
