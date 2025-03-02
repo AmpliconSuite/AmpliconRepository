@@ -17,7 +17,7 @@ models = {
 
 class Graph:
 
-	def __init__(self, dataset=None, amp_type="ecDNA", loc_type="feature"):
+	def __init__(self, dataset=None, col_format=None, amp_type="ecDNA", loc_type="feature"):
 		"""
 		Parameters:
 			self (Graph) : Graph object 
@@ -36,10 +36,10 @@ class Graph:
 			self.edges = []
 			self.locs = self.ImportLocs(os.environ['CAPER_ROOT'] + '/caper/bed_files/hg38_genes.bed')
 
-			self.CreateNodes(dataset)
+			self.CreateNodes(dataset, col_format)
 			self.CreateEdges()
 
-	def CreateNodes(self, dataset):
+	def CreateNodes(self, dataset, col_format):
 		"""
 		# OUTDATED DESC
 		Create a nodes_df by iterating through the dataset, adding new genes to 
@@ -52,6 +52,10 @@ class Graph:
 		Return: 
 			None
 		"""
+		
+		ALL_GENES = 'All genes' if col_format == 'space' else 'All_genes'
+		FEATURE_ID = 'Feature ID' if col_format == 'space' else 'Feature_ID'
+
 		# dictionary for fast lookups of gene labels
 		gene_index = {}
 
@@ -62,9 +66,9 @@ class Graph:
 		for __, row in all_features.iterrows():
 			# get the genes in this feature
 			oncogenes = set(self.ExtractGenes(str(row['Oncogenes'])))
-			all_genes = self.ExtractGenes(str(row['All_genes']))
+			all_genes = self.ExtractGenes(str(row[ALL_GENES]))
 			for gene in all_genes:
-				feature = row['Feature_ID']
+				feature = row[FEATURE_ID]
 				sample = feature.split("_amplicon")[0]
 				# if the gene has been seen, add feature and cell line to info
 				if gene in gene_index:
@@ -151,7 +155,7 @@ class Graph:
 		weights = [len(i) / len(u) for i,u in zip(inters_filtered, unions_filtered)]
 
 		# compute p and q values
-		p_values = [self.PVal(self.Distance(a, b)) for a,b in zip(src_filtered, tgt_filtered)]
+		p_values = [self.PVal(labels[a], labels[b]) for a,b in zip(src_filtered, tgt_filtered)]
 		q_values = self.QVal(p_values)
 
 		# create edges dict and df
@@ -195,17 +199,21 @@ class Graph:
 		return locs
 	
 	def Distance(self, a, b):
+		# not in gene dict
+		if not a in self.locs or not b in self.locs:
+			return 'N/A'
 		# multi chr
 		if self.locs[a][0] != self.locs[b][0]:
 			return 'N/A'
 		# single chr
 		return abs(self.locs[a][1] - self.locs[b][1])
 
-	def PVal(d, model='gamma_random_breakage'):
+	def PVal(self, gene_a, gene_b, model='gamma_random_breakage'):
 		"""
 		generate p_val based on naive random breakage model, considering distance
 		but not number of incidents of co-amplification
 		"""
+		d = self.Distance(gene_a, gene_b)
 		if d == 'N/A': return d
 		params = models[model]
 		cdf = gamma.cdf(d, a=params[0], loc=params[1], scale=params[2])
@@ -216,7 +224,7 @@ class Graph:
 		# 		cdf = expon.cdf(d, loc=params[0], scale=params[1])
 		# 		return 1-cdf
 	
-	def QVal(p_values, alpha=0.05):
+	def QVal(self, p_values, alpha=0.05):
 		# extract valid p-values
 		valid_mask = [p != 'N/A' for p in p_values]
 		valid_p_values = [p for p in p_values if p != 'N/A']
@@ -226,7 +234,7 @@ class Graph:
 
 		# reconstruct q_values with 'N/A' in the appropriate positions
 		valid_q_iter = iter(valid_q_values)
-		q_values = [next(valid_q_iter) if valid else 'N/A' for valid in valid_mask]
+		q_values = [next(valid_q_iter) if valid else -1 for valid in valid_mask]
 
 		return q_values
 		# q_values = ['N/A'] * len(p_values)
@@ -238,6 +246,8 @@ class Graph:
 
 	# get functions
 	# -------------
+	def Locs(self):
+		return self.locs
 	def NumNodes(self):
 		try:
 			return len(self.nodes)

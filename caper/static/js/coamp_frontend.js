@@ -30,7 +30,6 @@ window.addEventListener('DOMContentLoaded', function () {
         inputNode = $('#textBox').val().trim().toUpperCase();
 
         // filters
-        const qvalueThreshold = parseFloat($('#significanceThreshold').val());
         const minWeight = parseFloat($('#edgeWeight').val());
         const sampleMinimum = parseFloat($('#numSamples').val());
         const oncogenesChecked = $('#oncogenes_only').is(':checked');
@@ -67,7 +66,7 @@ window.addEventListener('DOMContentLoaded', function () {
                     { selector: `node[label="${inputNode}"], node.highlighted`, style: {'z-index': 100, 'label': 'data(label)' } }, //, 'border-width': 2, 'border-color': 'black', 'border-style': 'solid' } },
                     { selector: `node[oncogene="True"]`, style: { 'background-color': '#ff4757', 'z-index': 10, 'label': 'data(label)' } },
                     { selector: 'edge', style: { 'width': 1, 'line-color': 'green' } },  // Default for edges
-                    //{ selector: 'edge[qvalue <= ' + qvalueThreshold + ']', style: { 'width': 3, 'line-color': 'red' } }, // Highlight significant edges
+                    { selector: 'edge.significant', style: { 'width': 3, 'line-color': 'red' } }, // Highlight significant edges
                     { selector: '.highlighted', style: {'z-index': 100, 'background-color': '#ffd500', 'line-color': '#ffd500' } }
                 ]
             });
@@ -80,6 +79,8 @@ window.addEventListener('DOMContentLoaded', function () {
             console.log('Number of nodes:', Object.keys(nodeID).length);
             console.log(nodeID[inputNode] + ': ' + cy.$(nodeID[inputNode]).data('label'));
 
+            // Update significant class
+            document.getElementById('sigThreshold').dispatchEvent(new Event('input'));
             // Update sample slider max
             updateSampleMax(cy);
             // Updata limit slider
@@ -291,6 +292,7 @@ window.addEventListener('DOMContentLoaded', function () {
             template.querySelector('#etip-frac').textContent = ele.data('leninter') + '/' + ele.data('lenunion');
             template.querySelector('#etip-nsamples').textContent = ele.data('leninter') || 'N/A';
             template.querySelector('#etip-samples').textContent = ele.data('inter').join(', ') || 'N/A';
+            template.querySelector('#etip-qval').textContent = ele.data('qval') < 0 ? 'N/A' : ele.data('qval').toFixed(3);
             content = template.innerHTML;
         }
         return content;
@@ -384,7 +386,18 @@ window.addEventListener('DOMContentLoaded', function () {
 
     // update sliders
     document.getElementById('sigThreshold').addEventListener('input', function() {
-        document.getElementById('qValue').textContent = this.value;
+        const qvalueThreshold = parseFloat(this.value);
+        document.getElementById('qValue').textContent = qvalueThreshold;
+        if (cy) {
+            cy.edges().forEach(edge => {
+                qval = parseFloat(edge.data('qval'));
+                if (qval <= qvalueThreshold && qval >= 0) {
+                    edge.addClass('significant');
+                } else {
+                    edge.removeClass('significant');
+                }
+            });
+        }
     });
     document.getElementById('edgeWeight').addEventListener('input', function() {
         document.getElementById('sliderValue').textContent = this.value;
