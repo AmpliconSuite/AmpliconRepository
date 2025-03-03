@@ -57,15 +57,13 @@
 
     <div class="mb-3">
         <label for="classquery" class="form-label">Classification Type</label>
-        <input type="text" autocomplete="off" list="ecDNAclassificationDefaults"
-               class="form-control" name="classquery" id="classquery"
-               placeholder="Limit to classification type" value="{{ user_query.classquery|default:'' }}">
-        <datalist id="ecDNAclassificationDefaults">
-            <option value="ecDNA">ecDNA</option>
-            <option value="linear amplification">linear amplification</option>
-            <option value="BFB">Breakage-Fusion-Bridge (BFB)</option>
-            <option value="complex non-cyclic">Complex Non-Cyclic</option>
-        </datalist>
+        <select class="form-control" name="classquery" id="classquery">
+            <option value="" selected disabled>Select a classification type</option>
+            <option value="ecDNA" {% if user_query.classquery == "ecDNA" %}selected{% endif %}>ecDNA</option>
+            <option value="linear amplification" {% if user_query.classquery == "linear amplification" %}selected{% endif %}>Linear Amplification</option>
+            <option value="BFB" {% if user_query.classquery == "BFB" %}selected{% endif %}>Breakage-Fusion-Bridge (BFB)</option>
+            <option value="complex non-cyclic" {% if user_query.classquery == "complex non-cyclic" %}selected{% endif %}>Complex Non-Cyclic</option>
+        </select>
     </div>
 
     <div class="mb-3">

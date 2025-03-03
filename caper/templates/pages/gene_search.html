@@ -79,6 +79,33 @@
     });
 </script>
 
+<script>
+    $(document).ready(function () {
+        // Ensure DataTables is initialized properly
+        $('table.table').each(function () {
+            if (!$.fn.DataTable.isDataTable(this)) {
+                $(this).DataTable({
+                    "paging": true,       // Enables pagination
+                    "pageLength": 10,     // Default rows per page
+                    "lengthMenu": [10, 25, 50, 100],  // Rows per page options
+                    "ordering": true,     // Enables column sorting
+                    "info": true,         // Shows table info (e.g., "Showing 1-10 of 50")
+                    "searching": true,    // Enables table-wide search box
+                    "autoWidth": false,   // Prevents incorrect column sizing
+                    "responsive": true    // Makes the table mobile-friendly
+                });
+            }
+        });
+
+        // Adjust column widths when switching tabs
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function () {
+            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+        });
+    });
+</script>
+
+
+
 
 
 {% endblock %}
@@ -109,7 +136,7 @@
     </div>
 
     <!-- Results (Right) -->
-    <div class="results-container">
+    <div class="results-container" >
         <ul class="nav nav-tabs">
             <li class="nav-item">
                 <a class="nav-link active" href="#projects-tab" data-toggle="tab">
@@ -136,7 +163,7 @@
             {% endif %}
         </ul>
 
-        <div class="tab-content" style="padding-top: 20px;">
+        <div class="tab-content" style="padding-top: 20px; overflow-x: auto;">
             <!-- Public Projects Tab -->
             <div class="tab-pane active" id="projects-tab">
                 <table class="table">
@@ -170,9 +197,11 @@
                         <tr>
                             <th>Project Name</th>
                             <th>Sample Name</th>
-                            <th>Feature Count</th>
+                            <th>Feature ID</th>
                             <th>Oncogenes</th>
-                            <th>Classifications</th>
+                            <th>Classification</th>
+                            <th>Sample Type</th>
+                            <th>Tissue of Origin</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -180,9 +209,11 @@
                         <tr>
                             <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
                             <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
-                            <td>{{ sample.Features }}</td>
+                            <td><code>{{ sample.Feature_ID }}</code></td>
                             <td>{{ sample.Oncogenes|join:", " }}</td>
-                            <td>{{ sample.Classifications|join:", " }}</td>
+                            <td>{{ sample.Classification}}</td>
+                            <td>{{ sample.Sample_type}}</td>
+                            <td>{{ sample.Tissue_of_origin}}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -223,9 +254,11 @@
                         <tr>
                             <th>Project Name</th>
                             <th>Sample Name</th>
-                            <th>Feature Count</th>
+                            <th>Feature ID</th>
                             <th>Oncogenes</th>
-                            <th>Classifications</th>
+                            <th>Classification</th>
+                            <th>Sample Type</th>
+                            <th>Tissue of Origin</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -233,9 +266,11 @@
                         <tr>
                             <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
                             <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
-                            <td>{{ sample.Features }}</td>
+                            <td><code>{{ sample.Feature_ID }}</code></td>
                             <td>{{ sample.Oncogenes|join:", " }}</td>
-                            <td>{{ sample.Classifications|join:", " }}</td>
+                            <td>{{ sample.Classification}}</td>
+                            <td>{{ sample.Sample_type}}</td>
+                            <td>{{ sample.Tissue_of_origin}}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

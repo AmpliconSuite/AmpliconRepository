@@ -222,7 +222,6 @@ def sample_data_from_feature_list(features_list):
     sample_data = []
     for sample_name, indices in df.groupby(['Sample_name']).groups.items():
         sample_dict = dict()
-        extra_metadata = dict()
         subset = df.iloc[indices]
         sample_dict['Sample_name'] = sample_name
         sample_dict['Oncogenes'] = sorted(set(flatten(subset['Oncogenes'].values.tolist())))
@@ -245,6 +244,7 @@ def sample_data_from_feature_list(features_list):
         sample_data.append(sample_dict)
     # print(f'********** TOOK {datetime.datetime.now() - now}')
     return sample_data
+
 
 
 def get_all_alias():
