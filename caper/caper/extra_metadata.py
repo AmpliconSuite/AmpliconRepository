@@ -175,7 +175,7 @@ def get_metadata_file_from_request(request):
 
 import os
 
-def save_metadata_file(request, project_data_path, old_project_extra_metadata):
+def save_metadata_file(request, project_data_path, old_project_extra_metadata = None):
     """
     Saves the 'metadataFile' from the request to the specified project data path.
 
