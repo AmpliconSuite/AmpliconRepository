@@ -1279,6 +1279,9 @@ def download_file(url, save_path):
 
 
 def edit_project_page(request, project_name):
+    if request.method == "GET":
+        project = get_one_project(project_name)
+        print(get_extra_metadata_from_project(project))
     if request.method == "POST":
         try:
             metadata_file = request.FILES.get("metadataFile")
@@ -1286,6 +1289,7 @@ def edit_project_page(request, project_name):
             print(f'Failed to get the metadata file from the form')
             print(e)
         project = get_one_project(project_name)
+        logging.info(get_extra_metadata_from_project(project))
         old_alias_name = None
         if 'alias_name' in project:
             old_alias_name = project['alias_name']
@@ -1304,9 +1308,8 @@ def edit_project_page(request, project_name):
                 query = {'_id': ObjectId(project_name)}
                 new_val = { "$set": {'alias_name' : None}}
                 collection_handle.update_one(query, new_val)
-                
+        ## new project information is stored in form_dict
         form_dict = form_to_dict(form)
-
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
@@ -1397,6 +1400,7 @@ def edit_project_page(request, project_name):
             downloads = project['downloads']
             # create a new one with the new form
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
+            ## get extra metadata from csv first (if exists in old project), add it to the new proj
             new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions = new_prev_versions, previous_views = [views, downloads])
             if new_id is not None:
                 # go to the new project
@@ -1434,10 +1438,13 @@ def edit_project_page(request, project_name):
             
             if metadata_file:
                 current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file)
-
-            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
-                                 'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
-                                 'Oncogenes': get_project_oncogenes(current_runs), 'alias_name' : alias_name}}
+            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 
+                                 'description': form_dict['description'], 'date': get_date(),
+                                 'private': form_dict['private'], 
+                                 'project_members': form_dict['project_members'], 
+                                 'publication_link': form_dict['publication_link'],
+                                 'Oncogenes': get_project_oncogenes(current_runs), 
+                                 'alias_name' : alias_name}}
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
                 edit_proj_privacy(project, old_privacy, new_privacy)
@@ -2277,37 +2284,51 @@ def robots(request):
 
 # from django.shortcuts import render
 # from .search import perform_search
+from django.shortcuts import render, redirect
+import logging
+from .search import perform_search
+
 def search_results(request):
     """Handles user queries and renders search results."""
-
+    
     if request.method == "POST":
         # Extract search parameters from POST request
         gene_search = request.POST.get("genequery", "").upper()
         project_name = request.POST.get("project_name", "").upper()
         classifications = request.POST.get("classquery", "").upper()
-        sample_name = request.POST.get("sample_name", "").upper()
-        metadata = request.POST.get("metadata", "").upper()
+        sample_name = request.POST.get("metadata_sample_name", "").upper()
+        sample_type = request.POST.get("metadata_sample_type", "").upper()
+        tissue_origin = request.POST.get("metadata_tissue_origin", "").upper()
+        extra_metadata = request.POST.get('metadata_extra', "").upper()
+
+        # Store user query for persistence in the form
         user_query = {
-            "genequery": request.POST.get("genequery", "").upper(),
-            "project_name": request.POST.get("project_name", "").upper(),
-            "classquery": request.POST.get("classquery", "").upper(),
-            "sample_name": request.POST.get("sample_name", "").upper(),
-            "metadata": request.POST.get("metadata", "").upper(),
+            "genequery": gene_search,
+            "project_name": project_name,
+            "classquery": classifications,
+            "metadata_sample_name": sample_name,
+            "metadata_sample_type": sample_type,
+            "metadata_tissue_origin": tissue_origin,
+            'extra_metadata': extra_metadata
         }
-        
 
         # Debugging logs
-        logging.info(f'search terms: {gene_search}, {project_name}, {classifications}, {sample_name}, {metadata}')
-        
+        logging.info(f'Search terms: Gene={gene_search}, Project={project_name}, Class={classifications}, '
+                     f'Sample Name={sample_name}, Sample Type={sample_type}, Tissue={tissue_origin}, Extra Metadata={extra_metadata}')
+
         # Run the search function
         search_results = perform_search(
             genequery=gene_search,
             project_name=project_name,
             classquery=classifications,
-            metadata=metadata,
+            metadata_sample_name=sample_name,
+            metadata_sample_type=sample_type,
+            metadata_tissue_origin=tissue_origin,
+            extra_metadata = extra_metadata,
+            
             user=request.user
         )
-        
+
         # Count the number of matches for each category
         public_projects_count = len(search_results["public_projects"])
         private_projects_count = len(search_results["private_projects"])
@@ -2315,13 +2336,14 @@ def search_results(request):
         private_samples_count = len(search_results["private_sample_data"])
 
         query_info = {
-            "Gene Name Query": gene_search,
+            "Gene Name": gene_search,
             "Project Name": project_name,
-            "Class Query": classifications,
+            "Classification": classifications,
             "Sample Name": sample_name,
-            "Metadata": metadata
+            "Sample Type": sample_type,
+            "Tissue of Origin": tissue_origin,
         }
-        
+
         return render(request, "pages/gene_search.html", {
             "query_info": {k: v for k, v in query_info.items() if v},  # Filters out empty values
             "user_query": user_query,  # Pass user query to the template
@@ -2334,5 +2356,6 @@ def search_results(request):
             "public_samples_count": public_samples_count,
             "private_samples_count": private_samples_count,
         })
+    
     else:
         return redirect("gene_search_page")  # Redirect if accessed incorrectly

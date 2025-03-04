@@ -67,9 +67,38 @@
     </div>
 
     <div class="mb-3">
-        <label for="metadata" class="form-label">Metadata Keywords</label>
-        <input type="text" class="form-control" name="metadata" id="metadata"
-               placeholder="Metadata keywords..." value="{{ user_query.metadata|default:'' }}">
+        <button class="btn btn-secondary w-100 dropdown-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#metadataCollapse"
+            aria-expanded="false" aria-controls="metadataCollapse">
+            Metadata Search Options
+        </button>
+    </div>
+    
+    <div class="collapse" id="metadataCollapse">
+        <div class="card card-body">
+            <div class="mb-3">
+                <label for="metadata_sample_name" class="form-label">Sample Name</label>
+                <input type="text" class="form-control" name="metadata_sample_name" id="metadata_sample_name"
+                    placeholder="Enter Sample Name" value="{{ user_query.metadata_sample_name|default:'' }}">
+            </div>
+    
+            <div class="mb-3">
+                <label for="metadata_sample_type" class="form-label">Sample Type</label>
+                <input type="text" class="form-control" name="metadata_sample_type" id="metadata_sample_type"
+                    placeholder="Enter Sample Type" value="{{ user_query.metadata_sample_type|default:'' }}">
+            </div>
+    
+            <div class="mb-3">
+                <label for="metadata_tissue_origin" class="form-label">Tissue of Origin</label>
+                <input type="text" class="form-control" name="metadata_tissue_origin" id="metadata_tissue_origin"
+                    placeholder="Enter Tissue of Origin" value="{{ user_query.metadata_tissue_origin|default:'' }}">
+            </div>
+
+            {% comment %} <div class="mb-3">
+                <label for="metadata_extra" class="form-label">Extra metadata</label>
+                <input type="text" class="form-control" name="metadata_extra" id="metadata_extra"
+                    placeholder="Enter Extra Metadata" value="{{ user_query.metadata_extra|default:'' }}">
+            </div> {% endcomment %}
+        </div>
     </div>
 
     <div class="d-grid">

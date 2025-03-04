@@ -175,7 +175,7 @@ def get_metadata_file_from_request(request):
 
 import os
 
-def save_metadata_file(request, project_data_path):
+def save_metadata_file(request, project_data_path, old_project_extra_metadata):
     """
     Saves the 'metadataFile' from the request to the specified project data path.
 
@@ -194,7 +194,8 @@ def save_metadata_file(request, project_data_path):
     if not metadata_file:
         print("No 'metadataFile' found in the request.")
         return None
-
+    
+    
     # Ensure the target directory exists
     os.makedirs(project_data_path, exist_ok=True)
 
@@ -211,3 +212,23 @@ def save_metadata_file(request, project_data_path):
 
     except Exception as e:
         raise IOError(f"Failed to save metadata file: {str(e)}")
+    
+    
+def get_extra_metadata_from_project(project):
+    """
+    Retrieves the extra metadata from the project's runs.
+
+    Args:
+        project (dict): The project dictionary.
+
+    Returns:
+        dict: A dictionary containing the extra metadata from the project's runs.
+    """
+    extra_metadata = {}
+    for sample_list in project.get('runs', {}).values():
+        for sample in sample_list:
+            extra_metadata_from_csv = sample.get('extra_metadata_from_csv', {})
+            if extra_metadata_from_csv:
+                extra_metadata[sample['Sample_name']] = extra_metadata_from_csv
+
+    return extra_metadata

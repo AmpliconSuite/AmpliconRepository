@@ -1,74 +1,58 @@
 from pymongo import MongoClient
 from .utils import *
-def perform_search(genequery=None, project_name=None, classquery=None, metadata=None, user=None):
 
-    gen_query = {'$regex': genequery }
+def perform_search(genequery=None, 
+                   project_name=None, 
+                   classquery=None, 
+                   metadata_sample_name=None,
+                   metadata_sample_type=None, 
+                   metadata_tissue_origin=None, 
+                   extra_metadata=None,
+                   user=None):
+
+    gen_query = {'$regex': genequery } if genequery else None
+
     # Gene Search
     if user.is_authenticated:
         username = user.username
         useremail = user.email
+        query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}], 'delete': False}
+
         if project_name:
-            query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False, 'project_name' : {'$regex' : project_name, '$options' : 'i'}}
-        else:
-            query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
+            query_obj['project_name'] = {'$regex': project_name, '$options': 'i'}
+        if genequery:
+            query_obj['Oncogenes'] = gen_query
 
         private_projects = list(collection_handle.find(query_obj))
     else:
         private_projects = []
 
+    public_query = {'private': False, 'delete': False}
+    
     if project_name:
-        public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False, 'project_name' : {'$regex' : project_name, '$options' : 'i'}}))
-    else:
-        public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False}))
+        public_query['project_name'] = {'$regex': project_name, '$options': 'i'}
+    if genequery:
+        public_query['Oncogenes'] = gen_query
+
+    public_projects = list(collection_handle.find(public_query))
 
     for proj in private_projects:
-        prepare_project_linkid(proj)    
+        prepare_project_linkid(proj)
     for proj in public_projects:
         prepare_project_linkid(proj)
 
-    # def collect_class_data(projects):
-    #     """
-    #     Collects data based on the user queries that were given. 
-    #     """
-    #     sample_data = []
-    #     for project in projects:
-    #         project_name = project['project_name']
-    #         project_linkid = project['_id']
-    #         features = project['runs']
-    #         features_list = replace_space_to_underscore(features)
-    #         data = sample_data_from_feature_list(features_list)
-            
-    #         for sample in data:
-    #             match_found = True  # Assume match unless proven otherwise
+    # Fetch sample data based on new metadata fields
+    public_sample_data = get_samples_from_features(
+        public_projects, genequery=genequery, classquery=classquery,
+        metadata_sample_name=metadata_sample_name, metadata_sample_type=metadata_sample_type,
+        metadata_tissue_origin=metadata_tissue_origin, extra_metadata = extra_metadata
+    )
 
-    #             # Ensure genequery exists in Oncogenes
-    #             if genequery and genequery not in sample.get('Oncogenes', []):
-    #                 match_found = False
-
-    #             # Ensure classquery exists in Classifications
-    #             if classquery:
-    #                 upperclass = list(map(str.upper, sample.get('Classifications', [])))
-    #                 if classquery.upper() not in upperclass:
-    #                     match_found = False
-
-    #             # Ensure metadata exists in sample
-    #             if metadata:
-    #                 metadata_values = [val.lower() for val in sample.values() if isinstance(val, str)]
-    #                 if metadata.lower() not in metadata_values:
-    #                     match_found = False
-
-    #             if match_found:
-    #                 sample['project_name'] = project_name
-    #                 sample['project_linkid'] = project_linkid
-    #                 sample_data.append(sample)
-            
-
-    #     return sample_data
-
-
-    # Collect sample data
-    public_sample_data = get_samples_from_features(public_projects, genequery=genequery, classquery=classquery, metadata=metadata)
-    private_sample_data = get_samples_from_features(private_projects, genequery=genequery, classquery=classquery, metadata=metadata)
+    private_sample_data = get_samples_from_features(
+        private_projects, genequery=genequery, classquery=classquery,
+        metadata_sample_name=metadata_sample_name, metadata_sample_type=metadata_sample_type,
+        metadata_tissue_origin=metadata_tissue_origin, extra_metadata = extra_metadata
+    )
 
     # Extract project names from sample data
     public_project_names = {sample["project_name"] for sample in public_sample_data}
@@ -100,7 +84,32 @@ def collect_metadata_samples(sample_data, metadata_to_find):
             samples_to_return.append(sample)
     return samples_to_return
 
-def get_samples_from_features(projects, genequery, classquery, metadata):
+def add_extra_metadata(df):
+    '''
+    adds extra metadata to df
+    '''
+    if 'extra_metadata_from_csv' in df.columns:
+        ## metadata filtering:
+        corresponding_sample = df[df.extra_metadata_from_csv.notnull()].iloc[0].Sample_name
+        extra_metadata_from_csv = df[df.extra_metadata_from_csv.notnull()].iloc[0].extra_metadata_from_csv
+        for k, v in extra_metadata_from_csv.items():
+            if k == 'sample_name':
+                df.loc[df.Sample_name == corresponding_sample,'Sample_name' ]= v
+            elif k == 'sample_type':
+                df.loc[df.Sample_name == corresponding_sample, 'Sample_type'] = v
+            elif k == 'tissue_of_origin':
+                df.loc[df.Sample_name == corresponding_sample, 'Tissue_of_origin'] = v
+            else:
+                df.loc[df.Sample_name == corresponding_sample, k] = v
+                
+
+        return df, extra_metadata_from_csv
+    return df, None
+
+
+def get_samples_from_features(projects, genequery, classquery,
+                            metadata_sample_name, metadata_sample_type,
+                            metadata_tissue_origin, extra_metadata):
     """
     Takes in a features_list dict, and finds matches for samples for some: 
     
@@ -120,20 +129,28 @@ def get_samples_from_features(projects, genequery, classquery, metadata):
         df = pd.DataFrame(features_list)
         cols = ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Tissue_of_origin', 'extra_metadata_from_csv']
         df = df[[col for col in cols if col in df.columns]]
-
+        df, extra_metadata_from_csv = add_extra_metadata(df)
         if genequery:
             df = df[df['Oncogenes'].apply(lambda x: genequery in [oncogene.replace("'", "") for oncogene in x])]
 
         if classquery:
             df = df[df['Classification'].str.contains(classquery, case=False, na=False)]
 
-        if metadata:
-            df = df[
-                df['Sample_name'].str.contains(metadata, case=False, na=False) |
-                df['Sample_type'].str.contains(metadata, case=False, na=False) |
-                df['Tissue_of_origin'].str.contains(metadata, case=False, na=False)
-            ]
-            
+        if metadata_sample_name:
+            df = df[df['Sample_name'].str.contains(metadata_sample_name, case=False, na=False)]
+        if metadata_sample_type:
+            df = df[df['Sample_type'].str.contains(metadata_sample_type, case=False, na=False)]
+        if metadata_tissue_origin:
+            df = df[df['Tissue_of_origin'].str.contains(metadata_tissue_origin, case=False, na=False)]
+        
+        if extra_metadata and ('extra_metadata_from_csv' in df.columns):
+            for key in extra_metadata_from_csv.keys():
+                if key != 'sample_name' and key != 'sample_type' and key != 'tissue_of_origin':
+                    query = df[df[key].str.contains(extra_metadata, case=False, na=False)]
+                    if len(query) > 0:
+                        df = query
+            ## base case, will always have Sample name, Sample type, Tissue of origin
+            ## if extra metadata is not present
         for _, row in df.iterrows():
             sample_dict = row.to_dict()
             sample_dict['project_name'] = project_name
@@ -142,3 +159,4 @@ def get_samples_from_features(projects, genequery, classquery, metadata):
             sample_data.append(sample_dict)
 
     return sample_data
+
