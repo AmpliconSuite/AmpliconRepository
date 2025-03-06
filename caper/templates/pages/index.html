@@ -225,8 +225,10 @@
                                 <tbody>
                                     {% for project in featured_projects %}
                                     <tr>
-                                        <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
-                                        <td>{{ project.description }}</td>
+                                        <td style="word-break: break-all; overflow-wrap: break-word;">
+                                          <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                                        </td>
+                                        <td>{{ project.description|truncatechars:100 }}</td>
                                         <td class="date">{{ project.date }}</td>
                                         <td>{{ project.sample_count }}</td>
                                     </tr>
@@ -249,8 +251,10 @@
                                 <tbody>
                                     {% for project in public_projects %}
                                     <tr>
-                                        <td ><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
-                                        <td>{{ project.description }}</td>
+                                        <td style="word-break: break-all; overflow-wrap: break-word;">
+                                          <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                                        </td>
+                                        <td>{{ project.description|truncatechars:100 }}</td>
                                         <td class="date">{{ project.date }}</td>
                                         <td>{{ project.sample_count }}</td>
 
@@ -274,8 +278,10 @@
                                 <tbody>
                                     {% for project in private_projects %}
                                     <tr>
-                                        <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
-                                        <td>{{ project.description }}</td>
+                                        <td style="word-break: break-all; overflow-wrap: break-word;">
+                                          <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                                        </td>
+                                        <td>{{ project.description|truncatechars:100 }}</td>
                                         <td class="date" >{{ project.date }}</td>
                                         <td>{% for person in project.project_members %}
                                             {{ person }}<br>

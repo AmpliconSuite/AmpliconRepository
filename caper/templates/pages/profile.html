@@ -70,8 +70,10 @@
                 <tbody>
                     {% for project in projects %}
                     <tr>
-                        <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
-                        <td>{{ project.description }}</td>
+                        <td style="word-break: break-all; overflow-wrap: break-word;">
+                          <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                        </td>
+                        <td>{{ project.description|truncatechars:100 }}</td>
                         <td>{{ project.date }}</td>
                         <td>{% if  project.private %}private{%  else  %}public{% endif %}</td>
                         <td>{% for person in project.project_members %}
