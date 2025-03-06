@@ -25,14 +25,17 @@ from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm,
 from .extra_metadata import *
 from django.forms.models import model_to_dict
 
+# search imports
+from django.shortcuts import render, redirect
+import logging
+import caper.search
 
-
+# vis imports
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
-from .search import perform_search
 
 from wsgiref.util import FileWrapper
 import boto3, botocore, fnmatch, uuid, datetime, time, logging
@@ -1108,7 +1111,7 @@ def gene_search_page(request):
     genequery = genequery.upper()
     gen_query = {'$regex': genequery }
     
-    print('am i here?/')
+    logging.debug("Performing gene search")
 
     classquery = request.GET.get("classquery")
     classquery = classquery.upper()
@@ -2273,7 +2276,6 @@ class FileUploadView(APIView):
             s3_thread.start()
 
 
-
 def robots(request):
     """
     View for robots.txt, will read the file from static root (depending on server), and show robots file. 
@@ -2281,12 +2283,6 @@ def robots(request):
     robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
     return HttpResponse(robots_txt, content_type="text/plain")
 
-
-# from django.shortcuts import render
-# from .search import perform_search
-from django.shortcuts import render, redirect
-import logging
-from .search import perform_search
 
 def search_results(request):
     """Handles user queries and renders search results."""
@@ -2298,6 +2294,7 @@ def search_results(request):
         classifications = request.POST.get("classquery", "").upper()
         sample_name = request.POST.get("metadata_sample_name", "").upper()
         sample_type = request.POST.get("metadata_sample_type", "").upper()
+        cancer_type = request.POST.get("metadata_cancer_type", "").upper()
         tissue_origin = request.POST.get("metadata_tissue_origin", "").upper()
         extra_metadata = request.POST.get('metadata_extra', "").upper()
 
@@ -2308,21 +2305,24 @@ def search_results(request):
             "classquery": classifications,
             "metadata_sample_name": sample_name,
             "metadata_sample_type": sample_type,
+            "metadata_cancer_type": cancer_type,
             "metadata_tissue_origin": tissue_origin,
             'extra_metadata': extra_metadata
         }
 
         # Debugging logs
         logging.info(f'Search terms: Gene={gene_search}, Project={project_name}, Class={classifications}, '
-                     f'Sample Name={sample_name}, Sample Type={sample_type}, Tissue={tissue_origin}, Extra Metadata={extra_metadata}')
+                     f'Sample Name={sample_name}, Sample Type={sample_type}, Cancer={cancer_type}, Tissue={tissue_origin},'
+                     f' Extra Metadata={extra_metadata}')
 
         # Run the search function
-        search_results = perform_search(
+        search_results = caper.search.perform_search(
             genequery=gene_search,
             project_name=project_name,
             classquery=classifications,
             metadata_sample_name=sample_name,
             metadata_sample_type=sample_type,
+            metadata_cancer_type=cancer_type,
             metadata_tissue_origin=tissue_origin,
             extra_metadata = extra_metadata,
             
@@ -2341,6 +2341,7 @@ def search_results(request):
             "Classification": classifications,
             "Sample Name": sample_name,
             "Sample Type": sample_type,
+            "Cancer Type": cancer_type,
             "Tissue of Origin": tissue_origin,
         }
 

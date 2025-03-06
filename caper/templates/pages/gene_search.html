@@ -200,6 +200,7 @@
                             <th>Oncogenes</th>
                             <th>Classification</th>
                             <th>Sample Type</th>
+                            <th>Cancer Type</th>
                             <th>Tissue of Origin</th>
                         </tr>
                     </thead>
@@ -212,6 +213,7 @@
                             <td>{{ sample.Oncogenes|join:", " }}</td>
                             <td>{{ sample.Classification}}</td>
                             <td>{{ sample.Sample_type}}</td>
+                            <td>{{ sample.Cancer_type}}</td>
                             <td>{{ sample.Tissue_of_origin}}</td>
                         </tr>
                         {% endfor %}
@@ -257,6 +259,7 @@
                             <th>Oncogenes</th>
                             <th>Classification</th>
                             <th>Sample Type</th>
+                            <th>Cancer Type</th>
                             <th>Tissue of Origin</th>
                         </tr>
                     </thead>
@@ -269,6 +272,7 @@
                             <td>{{ sample.Oncogenes|join:", " }}</td>
                             <td>{{ sample.Classification}}</td>
                             <td>{{ sample.Sample_type}}</td>
+                            <td>{{ sample.Cancer_type}}</td>
                             <td>{{ sample.Tissue_of_origin}}</td>
                         </tr>
                         {% endfor %}

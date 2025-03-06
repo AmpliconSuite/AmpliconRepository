@@ -5,7 +5,8 @@ def perform_search(genequery=None,
                    project_name=None, 
                    classquery=None, 
                    metadata_sample_name=None,
-                   metadata_sample_type=None, 
+                   metadata_sample_type=None,
+                   metadata_cancer_type=None,
                    metadata_tissue_origin=None, 
                    extra_metadata=None,
                    user=None):
@@ -44,13 +45,13 @@ def perform_search(genequery=None,
     # Fetch sample data based on new metadata fields
     public_sample_data = get_samples_from_features(
         public_projects, genequery=genequery, classquery=classquery,
-        metadata_sample_name=metadata_sample_name, metadata_sample_type=metadata_sample_type,
+        metadata_sample_name=metadata_sample_name, metadata_sample_type=metadata_sample_type, metadata_cancer_type=metadata_cancer_type,
         metadata_tissue_origin=metadata_tissue_origin, extra_metadata = extra_metadata
     )
 
     private_sample_data = get_samples_from_features(
         private_projects, genequery=genequery, classquery=classquery,
-        metadata_sample_name=metadata_sample_name, metadata_sample_type=metadata_sample_type,
+        metadata_sample_name=metadata_sample_name, metadata_sample_type=metadata_sample_type, metadata_cancer_type=metadata_cancer_type,
         metadata_tissue_origin=metadata_tissue_origin, extra_metadata = extra_metadata
     )
 
@@ -75,7 +76,7 @@ def collect_metadata_samples(sample_data, metadata_to_find):
     collects the samples with matching metadata to find
     """
     samples_to_return = []
-    fields_to_search_in = ['Sample_type','Tissue_of_origin']
+    fields_to_search_in = ['Sample_type', 'Cancer_type', 'Tissue_of_origin']
     for sample in sample_data:
         for field in fields_to_search_in:
             if metadata_to_find.lower() == sample[field].lower():
@@ -99,6 +100,8 @@ def add_extra_metadata(df):
                 df.loc[df.Sample_name == corresponding_sample, 'Sample_type'] = v
             elif k == 'tissue_of_origin':
                 df.loc[df.Sample_name == corresponding_sample, 'Tissue_of_origin'] = v
+            elif k == 'cancer_type':
+                df.loc[df.Sample_name == corresponding_sample, 'Cancer_type'] = v
             else:
                 df.loc[df.Sample_name == corresponding_sample, k] = v
                 
@@ -107,9 +110,8 @@ def add_extra_metadata(df):
     return df, None
 
 
-def get_samples_from_features(projects, genequery, classquery,
-                            metadata_sample_name, metadata_sample_type,
-                            metadata_tissue_origin, extra_metadata):
+def get_samples_from_features(projects, genequery, classquery, metadata_sample_name, metadata_sample_type,
+                            metadata_cancer_type, metadata_tissue_origin, extra_metadata):
     """
     Takes in a features_list dict, and finds matches for samples for some: 
     
@@ -122,14 +124,21 @@ def get_samples_from_features(projects, genequery, classquery,
     
     sample_data = []
     for project in projects:
+        print("keys:", project.keys())
         project_name = project['project_name']
+        logging.debug("getting samples from " + str(project_name))
         project_linkid = project['_id']
         features = project['runs']
         features_list = replace_space_to_underscore(features)
         df = pd.DataFrame(features_list)
-        cols = ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Tissue_of_origin', 'extra_metadata_from_csv']
+        print("init df")
+        cols = ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Cancer_type', 'Tissue_of_origin', 'extra_metadata_from_csv']
+        logging.debug(str(df.head()))
+        print("df init cols" + str(df.columns))
         df = df[[col for col in cols if col in df.columns]]
         df, extra_metadata_from_csv = add_extra_metadata(df)
+        logging.debug(str(df.head()))
+
         if genequery:
             df = df[df['Oncogenes'].apply(lambda x: genequery in [oncogene.replace("'", "") for oncogene in x])]
 
@@ -140,12 +149,14 @@ def get_samples_from_features(projects, genequery, classquery,
             df = df[df['Sample_name'].str.contains(metadata_sample_name, case=False, na=False)]
         if metadata_sample_type:
             df = df[df['Sample_type'].str.contains(metadata_sample_type, case=False, na=False)]
+        if metadata_cancer_type:
+            df = df[df['Cancer_type'].str.contains(metadata_cancer_type, case=False, na=False)]
         if metadata_tissue_origin:
             df = df[df['Tissue_of_origin'].str.contains(metadata_tissue_origin, case=False, na=False)]
         
         if extra_metadata and ('extra_metadata_from_csv' in df.columns):
             for key in extra_metadata_from_csv.keys():
-                if key != 'sample_name' and key != 'sample_type' and key != 'tissue_of_origin':
+                if key != 'sample_name' and key != 'sample_type' and key != 'tissue_of_origin' and key != "cancer_type":
                     query = df[df[key].str.contains(extra_metadata, case=False, na=False)]
                     if len(query) > 0:
                         df = query
