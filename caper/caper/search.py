@@ -81,7 +81,7 @@ def collect_metadata_samples(sample_data, metadata_to_find):
         for field in fields_to_search_in:
             if metadata_to_find.lower() == sample[field].lower():
                 samples_to_return.append(sample)
-        if metadata_to_find.lower() in [val.lower() for val in sample['extra_metadata_from_csv'].values()]:
+        if metadata_to_find.lower() in [val.lower() for val in sample.get('extra_metadata_from_csv', {}).values()]:
             samples_to_return.append(sample)
     return samples_to_return
 

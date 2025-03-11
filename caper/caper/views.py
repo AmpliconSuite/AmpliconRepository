@@ -842,10 +842,7 @@ def sample_metadata_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
     try:
-        extra_metadata = sample_data[0]['extra_metadata_from_csv']
-    except:
-        ## incase extra metadata doesn't exist
-        extra_metadata = {}
+        extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
     try:
         sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
         ##combining 
