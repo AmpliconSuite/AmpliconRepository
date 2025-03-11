@@ -98,8 +98,6 @@ def add_extra_metadata(df):
                 df.loc[df.Sample_name == corresponding_sample,'Sample_name' ]= v
             elif k == 'sample_type':
                 df.loc[df.Sample_name == corresponding_sample, 'Sample_type'] = v
-            elif k == 'tissue_of_origin':
-                df.loc[df.Sample_name == corresponding_sample, 'Tissue_of_origin'] = v
             elif k == 'cancer_type':
                 df.loc[df.Sample_name == corresponding_sample, 'Cancer_type'] = v
             else:
@@ -124,24 +122,21 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
     
     sample_data = []
     for project in projects:
-        print("keys:", project.keys())
         project_name = project['project_name']
         logging.debug("getting samples from " + str(project_name))
         project_linkid = project['_id']
         features = project['runs']
         features_list = replace_space_to_underscore(features)
+
         df = pd.DataFrame(features_list)
-        print("init df")
-        cols = ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Cancer_type', 'Tissue_of_origin', 'extra_metadata_from_csv']
-        logging.debug(str(df.head()))
-        print("df init cols" + str(df.columns))
-        df = df[[col for col in cols if col in df.columns]]
+        print(df)
+        # cols = ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Cancer_type', 'Tissue_of_origin', 'extra_metadata_from_csv']
+        # df = df[[col for col in cols if col in df.columns]]
         df, extra_metadata_from_csv = add_extra_metadata(df)
-        logging.debug(str(df.head()))
+
 
         if genequery:
             df = df[df['Oncogenes'].apply(lambda x: genequery in [oncogene.replace("'", "") for oncogene in x])]
-
         if classquery:
             df = df[df['Classification'].str.contains(classquery, case=False, na=False)]
 
@@ -150,7 +145,8 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         if metadata_sample_type:
             df = df[df['Sample_type'].str.contains(metadata_sample_type, case=False, na=False)]
         if metadata_cancer_type:
-            df = df[df['Cancer_type'].str.contains(metadata_cancer_type, case=False, na=False)]
+            if 'Cancer_type' in df.columns:
+                df = df[df['Cancer_type'].str.contains(metadata_cancer_type, case=False, na=False)]
         if metadata_tissue_origin:
             df = df[df['Tissue_of_origin'].str.contains(metadata_tissue_origin, case=False, na=False)]
         

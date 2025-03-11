@@ -218,7 +218,7 @@ def modify_date(projects):
 
 
 def data_qc(request):
-    if not  request.user.is_staff:
+    if not request.user.is_staff:
         return redirect('/accounts/logout')
     
     if request.user.is_authenticated:
@@ -235,7 +235,6 @@ def data_qc(request):
     public_proj_count = 0
     public_sample_count = 0
 
-    
     # public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
     public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
     for proj in public_projects:
@@ -1284,7 +1283,6 @@ def download_file(url, save_path):
 def edit_project_page(request, project_name):
     if request.method == "GET":
         project = get_one_project(project_name)
-        print(get_extra_metadata_from_project(project))
     if request.method == "POST":
         try:
             metadata_file = request.FILES.get("metadataFile")
@@ -1292,7 +1290,6 @@ def edit_project_page(request, project_name):
             print(f'Failed to get the metadata file from the form')
             print(e)
         project = get_one_project(project_name)
-        logging.info(get_extra_metadata_from_project(project))
         old_alias_name = None
         if 'alias_name' in project:
             old_alias_name = project['alias_name']
@@ -1803,7 +1800,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
         if extra_metadata_filepath:
+            print('hello')
             runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath)
+            
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
 

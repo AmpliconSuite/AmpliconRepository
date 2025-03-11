@@ -356,6 +356,7 @@ def validate_project(project, project_name):
     """
     Checks the following for a project:
     1. if keys in project[runs] all contain underscores, if not, replace them with underscores, insert into db
+    2. Checks if Cancer_type exists. if not, initialize to None
     """
 
     ## check for 1
