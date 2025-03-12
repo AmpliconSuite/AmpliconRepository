@@ -197,7 +197,7 @@
                             <th>Project Name</th>
                             <th>Sample Name</th>
                             <th>Feature ID</th>
-                            <th>Oncogenes</th>
+                            <th>Genes</th>
                             <th>Classification</th>
                             <th>Sample Type</th>
                             <th>Cancer Type</th>
@@ -210,7 +210,7 @@
                             <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
                             <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
                             <td><code>{{ sample.Feature_ID }}</code></td>
-                            <td>{{ sample.Oncogenes|join:", " }}</td>
+                            <td>{{ sample.All_genes|join:", " }}</td>
                             <td>{{ sample.Classification}}</td>
                             <td>{{ sample.Sample_type}}</td>
                             <td>{{ sample.Cancer_type}}</td>
@@ -256,7 +256,7 @@
                             <th>Project Name</th>
                             <th>Sample Name</th>
                             <th>Feature ID</th>
-                            <th>Oncogenes</th>
+                            <th>Genes</th>
                             <th>Classification</th>
                             <th>Sample Type</th>
                             <th>Cancer Type</th>
@@ -269,7 +269,7 @@
                             <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
                             <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
                             <td><code>{{ sample.Feature_ID }}</code></td>
-                            <td>{{ sample.Oncogenes|join:", " }}</td>
+                            <td>{{ sample.All_genes|join:", " }}</td>
                             <td>{{ sample.Classification}}</td>
                             <td>{{ sample.Sample_type}}</td>
                             <td>{{ sample.Cancer_type}}</td>

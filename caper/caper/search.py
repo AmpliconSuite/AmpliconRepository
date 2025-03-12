@@ -21,8 +21,6 @@ def perform_search(genequery=None,
 
         if project_name:
             query_obj['project_name'] = {'$regex': project_name, '$options': 'i'}
-        if genequery:
-            query_obj['Oncogenes'] = gen_query
 
         private_projects = list(collection_handle.find(query_obj))
     else:
@@ -32,8 +30,6 @@ def perform_search(genequery=None,
     
     if project_name:
         public_query['project_name'] = {'$regex': project_name, '$options': 'i'}
-    if genequery:
-        public_query['Oncogenes'] = gen_query
 
     public_projects = list(collection_handle.find(public_query))
 
@@ -134,7 +130,7 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
 
 
         if genequery:
-            df = df[df['Oncogenes'].apply(lambda x: genequery in [oncogene.replace("'", "") for oncogene in x])]
+            df = df[df['All_genes'].apply(lambda x: genequery in [gene.replace("'", "") for gene in x])]
 
         if classquery:
             df = df[df['Classification'].str.contains(classquery, case=False, na=False)]
