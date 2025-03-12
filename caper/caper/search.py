@@ -162,7 +162,7 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
             sample_dict = row.to_dict()
             sample_dict['project_name'] = project_name
             sample_dict['project_linkid'] = project_linkid
-            sample_dict['Oncogenes'] = [i.replace("'", "").strip() for i in sample_dict['Oncogenes']]
+            sample_dict['All_genes'] = [i.replace("'", "").strip() for i in sample_dict['All_genes']]
             sample_data.append(sample_dict)
 
     return sample_data
