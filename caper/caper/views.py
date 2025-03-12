@@ -1,4 +1,4 @@
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, Http404
+from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, Http404, JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 
@@ -20,13 +20,17 @@ from pathlib import Path
 # from pymongo import MongoClient
 from django.conf import settings
 
-
 # from .models import File
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
 from .extra_metadata import *
 from django.forms.models import model_to_dict
 
+# search imports
+from django.shortcuts import render, redirect
+import logging
+import caper.search
 
+# vis imports
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
@@ -34,15 +38,10 @@ from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from wsgiref.util import FileWrapper
-import boto3
-import botocore
+import boto3, botocore, fnmatch, uuid, datetime, time, logging
 from threading import Thread
-import fnmatch
-import uuid
-import datetime
 import dateutil.parser
-import time
-import logging
+
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -219,7 +218,7 @@ def modify_date(projects):
 
 
 def data_qc(request):
-    if not  request.user.is_staff:
+    if not request.user.is_staff:
         return redirect('/accounts/logout')
     
     if request.user.is_authenticated:
@@ -236,7 +235,6 @@ def data_qc(request):
     public_proj_count = 0
     public_sample_count = 0
 
-    
     # public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
     public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
     for proj in public_projects:
@@ -843,11 +841,7 @@ def get_sample_metadata(sample_data):
 def sample_metadata_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
-    try:
-        extra_metadata = sample_data[0]['extra_metadata_from_csv']
-    except:
-        ## incase extra metadata doesn't exist
-        extra_metadata = {}
+    extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
     try:
         sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
         ##combining 
@@ -1111,6 +1105,8 @@ def gene_search_page(request):
     genequery = request.GET.get("genequery")
     genequery = genequery.upper()
     gen_query = {'$regex': genequery }
+    
+    logging.debug("Performing gene search")
 
     classquery = request.GET.get("classquery")
     classquery = classquery.upper()
@@ -1281,6 +1277,8 @@ def download_file(url, save_path):
 
 
 def edit_project_page(request, project_name):
+    if request.method == "GET":
+        project = get_one_project(project_name)
     if request.method == "POST":
         try:
             metadata_file = request.FILES.get("metadataFile")
@@ -1306,9 +1304,8 @@ def edit_project_page(request, project_name):
                 query = {'_id': ObjectId(project_name)}
                 new_val = { "$set": {'alias_name' : None}}
                 collection_handle.update_one(query, new_val)
-                
+        ## new project information is stored in form_dict
         form_dict = form_to_dict(form)
-
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
@@ -1399,6 +1396,7 @@ def edit_project_page(request, project_name):
             downloads = project['downloads']
             # create a new one with the new form
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
+            ## get extra metadata from csv first (if exists in old project), add it to the new proj
             new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions = new_prev_versions, previous_views = [views, downloads])
             if new_id is not None:
                 # go to the new project
@@ -1436,10 +1434,13 @@ def edit_project_page(request, project_name):
             
             if metadata_file:
                 current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file)
-
-            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
-                                 'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
-                                 'Oncogenes': get_project_oncogenes(current_runs), 'alias_name' : alias_name}}
+            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 
+                                 'description': form_dict['description'], 'date': get_date(),
+                                 'private': form_dict['private'], 
+                                 'project_members': form_dict['project_members'], 
+                                 'publication_link': form_dict['publication_link'],
+                                 'Oncogenes': get_project_oncogenes(current_runs), 
+                                 'alias_name' : alias_name}}
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
                 edit_proj_privacy(project, old_privacy, new_privacy)
@@ -1795,7 +1796,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
         if extra_metadata_filepath:
+            print('hello')
             runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath)
+            
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
 
@@ -2268,10 +2271,87 @@ class FileUploadView(APIView):
             s3_thread.start()
 
 
-
 def robots(request):
     """
     View for robots.txt, will read the file from static root (depending on server), and show robots file. 
     """
     robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
     return HttpResponse(robots_txt, content_type="text/plain")
+
+
+def search_results(request):
+    """Handles user queries and renders search results."""
+    
+    if request.method == "POST":
+        # Extract search parameters from POST request
+        gene_search = request.POST.get("genequery", "").upper()
+        project_name = request.POST.get("project_name", "").upper()
+        classifications = request.POST.get("classquery", "").upper()
+        sample_name = request.POST.get("metadata_sample_name", "").upper()
+        sample_type = request.POST.get("metadata_sample_type", "").upper()
+        cancer_type = request.POST.get("metadata_cancer_type", "").upper()
+        tissue_origin = request.POST.get("metadata_tissue_origin", "").upper()
+        extra_metadata = request.POST.get('metadata_extra', "").upper()
+
+        # Store user query for persistence in the form
+        user_query = {
+            "genequery": gene_search,
+            "project_name": project_name,
+            "classquery": classifications,
+            "metadata_sample_name": sample_name,
+            "metadata_sample_type": sample_type,
+            "metadata_cancer_type": cancer_type,
+            "metadata_tissue_origin": tissue_origin,
+            'extra_metadata': extra_metadata
+        }
+
+        # Debugging logs
+        logging.info(f'Search terms: Gene={gene_search}, Project={project_name}, Class={classifications}, '
+                     f'Sample Name={sample_name}, Sample Type={sample_type}, Cancer={cancer_type}, Tissue={tissue_origin},'
+                     f' Extra Metadata={extra_metadata}')
+
+        # Run the search function
+        search_results = caper.search.perform_search(
+            genequery=gene_search,
+            project_name=project_name,
+            classquery=classifications,
+            metadata_sample_name=sample_name,
+            metadata_sample_type=sample_type,
+            metadata_cancer_type=cancer_type,
+            metadata_tissue_origin=tissue_origin,
+            extra_metadata = extra_metadata,
+            
+            user=request.user
+        )
+
+        # Count the number of matches for each category
+        public_projects_count = len(search_results["public_projects"])
+        private_projects_count = len(search_results["private_projects"])
+        public_samples_count = len(search_results["public_sample_data"])
+        private_samples_count = len(search_results["private_sample_data"])
+
+        query_info = {
+            "Gene Name": gene_search,
+            "Project Name": project_name,
+            "Classification": classifications,
+            "Sample Name": sample_name,
+            "Sample Type": sample_type,
+            "Cancer Type": cancer_type,
+            "Tissue of Origin": tissue_origin,
+        }
+
+        return render(request, "pages/gene_search.html", {
+            "query_info": {k: v for k, v in query_info.items() if v},  # Filters out empty values
+            "user_query": user_query,  # Pass user query to the template
+            "public_projects": search_results["public_projects"],
+            "private_projects": search_results["private_projects"],
+            "public_sample_data": search_results["public_sample_data"],
+            "private_sample_data": search_results["private_sample_data"],
+            "public_projects_count": public_projects_count,
+            "private_projects_count": private_projects_count,
+            "public_samples_count": public_samples_count,
+            "private_samples_count": private_samples_count,
+        })
+    
+    else:
+        return redirect("gene_search_page")  # Redirect if accessed incorrectly

@@ -1,174 +1,287 @@
 {% extends 'base.html' %}
 
+{% block extra_css %}
+<style>
+    .search-container {
+        display: flex;
+        gap: 20px;
+        width: 100%; /* Expand fully to match container width above */
+    }
+    .search-box {
+        width: 30%;
+        padding: 20px;
+        background-color: #f8f9fa;
+        border-radius: 5px;
+    }
+    .results-container {
+        width: 100%;
+    }
+
+    mark {
+        background-color: #ffeb3b !important; /* Brighter yellow */
+        color: black; /* Ensures readability */
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-weight: bold;
+    }
+
+    
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script>
     $(document).ready(function () {
-        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function () {
             $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
         });
-     
-        $('table.table').DataTable({
+
+        // Live search filter
+        $("#searchInput").on("keyup", function () {
+            let value = $(this).val().toLowerCase();
+            $(".results-container table tbody tr").filter(function () {
+                $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1);
+            });
+        });
+
+        // Initialize DataTables
+        $('table.table').DataTable();
+    });
+</script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Extract search terms from the query info table
+        let searchTerms = [];
+        document.querySelectorAll(".card-body table tbody tr").forEach(row => {
+            let key = row.cells[0].textContent.trim().replace(":", "");
+            let value = row.cells[1].textContent.trim();
+            if (value) {
+                searchTerms.push(value.toLowerCase());
+            }
+        });
+
+        // Function to highlight text
+        function highlightText(element, term) {
+            let regex = new RegExp(`(${term})`, "gi");
+            element.innerHTML = element.innerHTML.replace(regex, `<mark>$1</mark>`);
+        }
+
+        // Loop through all table rows and highlight matches
+        document.querySelectorAll(".results-container table tbody tr").forEach(row => {
+            row.querySelectorAll("td").forEach(cell => {
+                searchTerms.forEach(term => {
+                    if (cell.textContent.toLowerCase().includes(term)) {
+                        highlightText(cell, term);
+                    }
+                });
+            });
         });
     });
 </script>
+
+<script>
+    $(document).ready(function () {
+        // Ensure DataTables is initialized properly
+        $('table.table').each(function () {
+            if (!$.fn.DataTable.isDataTable(this)) {
+                $(this).DataTable({
+                    "paging": true,       // Enables pagination
+                    "pageLength": 10,     // Default rows per page
+                    "lengthMenu": [10, 25, 50, 100],  // Rows per page options
+                    "ordering": true,     // Enables column sorting
+                    "info": true,         // Shows table info (e.g., "Showing 1-10 of 50")
+                    "searching": true,    // Enables table-wide search box
+                    "autoWidth": false,   // Prevents incorrect column sizing
+                    "responsive": true    // Makes the table mobile-friendly
+                });
+            }
+        });
+
+        // Adjust column widths when switching tabs
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function () {
+            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+        });
+    });
+</script>
+
+
+
+
+
 {% endblock %}
 
 {% block main %}
+<h2 class="mt-4">Search Query Information</h2>
 
-<h1>Search Results: {{ gene_query }} : {{ class_query }}  </h1>
-
-
-<h3>Projects</h3>
-<div>
-    <ul class="nav nav-tabs" role="tablist" >
-        <li class="nav-item">
-            <a class="nav-link active" href="#tab-table1" data-toggle="tab">Public Projects</a>
-        </li>
-        {% if user.is_authenticated %}
-        <li class="nav-item"> 
-            <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
-        </li>
-        {% endif %}
-    </ul>
-    <div class="tab-content" style="padding-top: 30px;">
-        <div class="tab-pane active" id="tab-table1">
-            <table id='projectTable1' class="table" style="padding-top: 20px; width:100%">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                        <th>Last Updated</th>
-                        <th>Project Members</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for project in public_projects %}
-                    <tr>
-                        <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
-                        <td>{{ project.description }}</td>
-                        <td>{{ project.date }}</td>
-                        <td>{% for person in project.project_members %}
-                            {{ person }}<br>
-                        {% endfor%}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% if user.is_authenticated %}
-        <div class="tab-pane" id="tab-table2">
-            <table id='projectTable2' class="table" style="padding-top: 20px; width:100%">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                        <th>Last Updated</th>
-                        <th>Project Members</th>
-                        <th>Edit Project</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for project in private_projects %}
-                    <tr>
-                        <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
-                        <td>{{ project.description }}</td>
-                        <td>{{ project.date }}</td>
-                        <td>{% for person in project.project_members %}
-                            {{ person }}<br>
-                        {% endfor%}</td>
-                        <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.linkid %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% endif %}
-    </div>
-</div>
-<br>
-<h3>Samples</h3>
-<h3>Samples</h3>
-<div>
-    <ul class="nav nav-tabs" role="tablist" >
-        <li class="nav-item">
-            <a class="nav-link active" href="#tab-table3" data-toggle="tab">Public Projects</a>
-        </li>
-        {% if user.is_authenticated %}
-        <li class="nav-item">
-            <a class='nav-link' href="#tab-table4" data-toggle="tab">Private Projects</a>
-        </li>
-        {% endif %}
-    </ul>
-    <div class="tab-content" style="padding-top: 30px;">
-        <div class="tab-pane active" id="tab-table3">
-            <table id='sampleTable1' class="table" style="padding-top: 20px; width:100%">
-                <thead>
-                    <tr>
-                        <th>Project Name</th>
-                        <th>Sample Name</th>
-                        <th>Feature Count</th>
-                        <th>Oncogenes</th>
-                        <th>Classifications</th>
-                        <!-- <th>Sample Page</th> -->
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for sample in public_sample_data %}
+<div class="card mb-4">
+    <div class="card-body">
+        <table class="table table-borderless mb-0">
+            <tbody>
+                {% for key, value in query_info.items %}
+                    {% if value %}
                         <tr>
-                            <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
-                            <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
-                            <td>{{ sample.Features }}</td>
-                            <td>{{ sample.Oncogenes|join:", " }}</td>
-                            <td>{{ sample.Classifications|join:", " }}</td>
-                            <!-- <td>{% for gene in sample.Oncogenes %}
-                                {{ gene|wordwrap:5 }}
-                            {% endfor %} -->
-                            </td>
-                            <!-- <td><a target="_blank" href="/project/{{project.linkid}}/sample/{{sample.Sample_name}}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td> -->
+                            <td class="fw-bold text-primary">{{ key|title }}:</td>
+                            <td>{{ value }}</td>
                         </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% if user.is_authenticated %}
-        <div class="tab-pane" id="tab-table4">
-            <table id='sampleTable2' class="table" style="padding-top: 20px; width:100%">
-                <thead>
-                    <tr>
-                        <th>Project Name</th>
-                        <th>Sample Name</th>
-                        <th>Feature Count</th>
-                        <th>Oncogenes</th>
-                        <th>Classifications</th>
-                        <!-- <th>Sample Page</th> -->
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for sample in private_sample_data %}
-                        <tr>
-                            <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
-                            <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
-                            <td>{{ sample.Features }}</td>
-                            <td>{{ sample.Oncogenes|join:", " }}</td>
-                            <td>{{ sample.Classifications|join:", " }}</td>
-                            <!-- <td>{% for gene in sample.Oncogenes %}
-                                {{ gene|wordwrap:5 }}
-                            {% endfor %} -->
-                            </td>
-                            <!-- <td><a target="_blank" href="/project/{{project.linkid}}/sample/{{sample.Sample_name}}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td> -->
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% endif %}
-    </div>
-    <div class="table-responsive">
-        <table id='myTable1' class="table table-hover table-sm">
-
+                    {% endif %}
+                {% endfor %}
+            </tbody>
         </table>
     </div>
 </div>
+<div class="search-container">
+    <!-- Embedded Search Box from search.html -->
+    <div class="search-box">
+        {% include 'includes/searchbox.html' %}
+    </div>
 
+    <!-- Results (Right) -->
+    <div class="results-container" >
+        <ul class="nav nav-tabs">
+            <li class="nav-item">
+                <a class="nav-link active" href="#projects-tab" data-toggle="tab">
+                    Projects <span class="badge badge-primary">{{ public_projects_count }}</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#samples-tab" data-toggle="tab">
+                    Samples <span class="badge badge-primary">{{ public_samples_count }} </span>
+                </a>
+            </li>
+            {% if user.is_authenticated %}
+            <li class="nav-item">
+                <a class="nav-link" href="#private-projects-tab" data-toggle="tab">
+                    Private Projects <span class="badge badge-primary">{{ private_projects_count }}</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#private-samples-tab" data-toggle="tab">
+                    Private Samples <span class="badge badge-primary">{{ private_samples_count }}</span>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
 
+        <div class="tab-content" style="padding-top: 20px; overflow-x: auto;">
+            <!-- Public Projects Tab -->
+            <div class="tab-pane active" id="projects-tab">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Last Updated</th>
+                            <th>Project Members</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for project in public_projects %}
+                        <tr>
+                            <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                            <td>{{ project.description }}</td>
+                            <td>{{ project.date }}</td>
+                            <td>{% for person in project.project_members %}
+                                {{ person }}<br>
+                            {% endfor %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Public Samples Tab -->
+            <div class="tab-pane" id="samples-tab">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Project Name</th>
+                            <th>Sample Name</th>
+                            <th>Feature ID</th>
+                            <th>Genes</th>
+                            <th>Classification</th>
+                            <th>Sample Type</th>
+                            <th>Cancer Type</th>
+                            <th>Tissue of Origin</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sample in public_sample_data %}
+                        <tr>
+                            <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
+                            <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
+                            <td><code>{{ sample.Feature_ID }}</code></td>
+                            <td>{{ sample.All_genes|join:", " }}</td>
+                            <td>{{ sample.Classification}}</td>
+                            <td>{{ sample.Sample_type}}</td>
+                            <td>{{ sample.Cancer_type}}</td>
+                            <td>{{ sample.Tissue_of_origin}}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if user.is_authenticated %}
+            <!-- Private Projects Tab -->
+            <div class="tab-pane" id="private-projects-tab">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Last Updated</th>
+                            <th>Project Members</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for project in private_projects %}
+                        <tr>
+                            <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                            <td>{{ project.description }}</td>
+                            <td>{{ project.date }}</td>
+                            <td>{% for person in project.project_members %}
+                                {{ person }}<br>
+                            {% endfor %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Private Samples Tab -->
+            <div class="tab-pane" id="private-samples-tab">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Project Name</th>
+                            <th>Sample Name</th>
+                            <th>Feature ID</th>
+                            <th>Genes</th>
+                            <th>Classification</th>
+                            <th>Sample Type</th>
+                            <th>Cancer Type</th>
+                            <th>Tissue of Origin</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sample in private_sample_data %}
+                        <tr>
+                            <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
+                            <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
+                            <td><code>{{ sample.Feature_ID }}</code></td>
+                            <td>{{ sample.All_genes|join:", " }}</td>
+                            <td>{{ sample.Classification}}</td>
+                            <td>{{ sample.Sample_type}}</td>
+                            <td>{{ sample.Cancer_type}}</td>
+                            <td>{{ sample.Tissue_of_origin}}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
 {% endblock %}

@@ -212,8 +212,15 @@ def get_one_sample(project_name, sample_name):
 def sample_data_from_feature_list(features_list):
     """
     extracts sample data from a list of features
+    
+    ## only these fields are returned in the sample data for search!! ##
+    [['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Tissue_of_origin', 'extra_metadata_from_csv']]
     """
-    df = pd.DataFrame(features_list)[['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID']]
+    df = pd.DataFrame(features_list)
+    print("sample_data_from_feature_list df")
+    print(df.head())
+    cols = [col for col in ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', "Cancer_type", 'Tissue_of_origin', 'extra_metadata_from_csv'] if col in df.columns]
+    df= df[cols]
     sample_data = []
     for sample_name, indices in df.groupby(['Sample_name']).groups.items():
         sample_dict = dict()
@@ -225,9 +232,22 @@ def sample_data_from_feature_list(features_list):
             sample_dict['Features'] = 0
         else:
             sample_dict['Features'] = len(subset['Feature_ID'])
+        
+        # if 'extra_metadata_from_csv' in subset.columns:
+        #     try:
+        #         for k, v in subset['extra_metadata_from_csv']:
+        #             sample_dict[k] = v
+        #     except Exception as e:
+        #         logging.info(subset['extra_metadata_from_csv'])
+        #         logging.info(e)
+        sample_dict['Sample_type'] = subset['Sample_type'].values[0]
+        sample_dict['Cancer_type'] = subset['Cancer_type'].values[0]
+        sample_dict['Tissue_of_origin'] = subset['Tissue_of_origin'].values[0]
+        sample_dict['Sample_name'] = sample_name
         sample_data.append(sample_dict)
     # print(f'********** TOOK {datetime.datetime.now() - now}')
     return sample_data
+
 
 
 def get_all_alias():
@@ -336,6 +356,7 @@ def validate_project(project, project_name):
     """
     Checks the following for a project:
     1. if keys in project[runs] all contain underscores, if not, replace them with underscores, insert into db
+    2. Checks if Cancer_type exists. if not, initialize to None
     """
 
     ## check for 1
