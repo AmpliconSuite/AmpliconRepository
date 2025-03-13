@@ -240,9 +240,12 @@ def sample_data_from_feature_list(features_list):
         #     except Exception as e:
         #         logging.info(subset['extra_metadata_from_csv'])
         #         logging.info(e)
-        sample_dict['Sample_type'] = subset['Sample_type'].values[0]
-        sample_dict['Cancer_type'] = subset['Cancer_type'].values[0]
-        sample_dict['Tissue_of_origin'] = subset['Tissue_of_origin'].values[0]
+        if 'Sample_type' in subset.columns:
+            sample_dict['Sample_type'] = subset['Sample_type'].values[0]
+        if 'Cancer_type' in subset.columns:
+            sample_dict['Cancer_type'] = subset['Cancer_type'].values[0]
+        if 'Tissue_of_origin' in subset.columns:
+            sample_dict['Tissue_of_origin'] = subset['Tissue_of_origin'].values[0]
         sample_dict['Sample_name'] = sample_name
         sample_data.append(sample_dict)
     # print(f'********** TOOK {datetime.datetime.now() - now}')
