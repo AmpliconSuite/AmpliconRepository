@@ -83,6 +83,13 @@ Periodically, you will want to purge old or excessively large accumulated data f
 
 ## 4. Neo4j Download Instructions
 
+### Docker
+
+the easiest way... edit the path at the end to the local drive you want it to use
+
+```docker run -d --name neo4j -p 7474:7474 -p 7687:7687 --env NEO4J_AUTH=neo4j/$NEO4J_PASSWORD_SECRET -v /home/ubuntu/AmpliconRepository-dev/neo4j neo4j```<br>
+
+
 ### macOS
 
 Download and unzip the tar file:<br>
