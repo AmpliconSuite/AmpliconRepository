@@ -65,8 +65,8 @@ window.addEventListener('DOMContentLoaded', function () {
                     { selector: 'node', style: { 'background-color': '#A7C6ED', 'label': '' } },
                     { selector: `node[label="${inputNode}"], node.highlighted`, style: {'z-index': 100, 'label': 'data(label)' } }, //, 'border-width': 2, 'border-color': 'black', 'border-style': 'solid' } },
                     { selector: `node[oncogene="True"]`, style: { 'background-color': '#ff4757', 'z-index': 10, 'label': 'data(label)' } },
-                    { selector: 'edge', style: { 'width': 1, 'line-color': 'green' } },  // Default for edges
-                    { selector: 'edge.significant', style: { 'width': 3, 'line-color': 'red' } }, // Highlight significant edges
+                    { selector: 'edge', style: { 'width': 1, 'line-color': 'gray' } },  // Default for edges
+                    { selector: 'edge.significant', style: { 'width': 3, 'line-color': 'orange' } }, // Highlight significant edges
                     { selector: '.highlighted', style: {'z-index': 100, 'background-color': '#ffd500', 'line-color': '#ffd500' } }
                 ]
             });

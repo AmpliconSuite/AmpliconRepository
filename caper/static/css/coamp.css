@@ -12,9 +12,9 @@ body {
 
 .header {
     text-align: center;
-    font-size: 2.5rem; /* Larger font size for emphasis */
+    font-size: 1.8rem; /* Larger font size for emphasis */
     top: 20px; 
-    padding: 30px 0;
+    padding: 20px 0;
     color: #2c3e50; /* Darker shade for professionalism */
 }
 
@@ -27,15 +27,19 @@ body {
 }
 
 textarea {
-    width: 250px; /* Wider for better usability */
-    height: 60px; /* Taller for better visibility */
-    padding: 15px; /* Ample padding for comfort */
-    font-size: 2rem; /* Responsive font size */
-    border: 1px solid #66aaff; /* Soft blue border for clarity */
-    border-radius: 4px; /* Rounded corners */
+    width: 250px;
+    height: 60px;
+    padding-left: 15px;
+    padding-top: 10px;
+    font-size: 1.8rem;
+    border: 1px solid #66aaff;
+    border-radius: 4px;
     outline: none;
+    overflow: hidden;
     resize: none;
-    transition: border-color 0.3s; /* Smooth transition */
+    transition: border-color 0.3s;
+    white-space: nowrap;
+    /* text-align: center; Optional: Center horizontally */
 }
 
 textarea:focus {
@@ -64,7 +68,7 @@ button:hover {
     background-color: white; /* White background */
     border: 1px solid #e0e0e0; /* Black border */
     border-radius: 8px; /* Rounded corners for a modern look */
-    max-width: 260px; /* Adjust the width as needed */
+    max-width: 300px; /* Adjust the width as needed */
     padding: 10px; /* Padding inside the box */
     text-align: center; /* Center-align text */
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Add subtle shadow for depth */
@@ -116,7 +120,7 @@ button:hover {
 
 /* Slider styling */
 .slider {
-    width: 100%; /* Slider width */
+    width: 100%;
     margin-top: 10px; 
     height: 5px; /* Thicker slider */
     background: #ddd; /* Light gray background */
