@@ -472,13 +472,24 @@ def reference_genome_from_project(samples):
     reference_genomes = list()
     for sample, features in samples.items():
         for feature in features:
-            reference_genomes.append(feature['Reference_version'])
-    if len(set(reference_genomes)) > 1:
-        reference_genome = 'Multiple'
-    else:
-        reference_genome = reference_genomes[0]
-    return reference_genome
+            # Check if Reference_version exists before accessing
+            if 'Reference_version' in feature:
+                reference_genomes.append(feature['Reference_version'])
+            else:
+                # If not found, add a placeholder or default value
+                print(f"Warning: Missing Reference_version in feature from sample {sample}")
+                reference_genomes.append('Unknown')
 
+    # Handle case with no reference genomes found
+    if not reference_genomes:
+        return 'Unknown'
+
+    # Handle multiple reference genomes
+    if len(set(reference_genomes)) > 1:
+        return 'Multiple'
+
+    # Return the single reference genome
+    return reference_genomes[0]
 
 def reference_genome_from_sample(sample_data):
     reference_genomes = list()
@@ -2307,7 +2318,6 @@ class FileUploadView(APIView):
             s3_thread.start()
 
 
-
 def robots(request):
     """
     View for robots.txt, will read the file from static root (depending on server), and show robots file. 
@@ -2315,45 +2325,168 @@ def robots(request):
     robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
     return HttpResponse(robots_txt, content_type="text/plain")
 
+
 # redirect to visualizer upon project selection
 def coamplification_graph(request):
     if request.method == 'POST':
         # get list of selected projects
         selected_projects = request.POST.getlist('selected_projects')
-        # store in session - best practice?
+        # store in session
         request.session['selected_projects'] = selected_projects
         return redirect('visualizer')  # Redirect to the visualizer page
 
-    public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
-    return render(request, 'pages/coamplification_graph.html', {'public_projects': public_projects})
+    # Get projects the same way profile.html does
+    username = request.user.username
+    try:
+        useremail = request.user.email
+    except:
+        # not logged in
+        useremail = ""
+        # For unauthenticated users, just get public projects
+        public_projects = get_projects_close_cursor({'private': False, 'delete': False})
+
+        # Filter out mm10, Unknown, and Multiple reference genome projects
+        filtered_projects = []
+        for proj in public_projects:
+            prepare_project_linkid(proj)
+            # Check reference genome for this project
+            if 'runs' in proj and proj['runs']:
+                ref_genome = reference_genome_from_project(proj['runs'])
+                if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
+                    # Add reference genome to project object
+                    proj['reference_genome'] = ref_genome
+                    filtered_projects.append(proj)
+            else:
+                # Skip projects without runs info
+                continue
+
+        return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
+
+    # Prevent an absent/null email from matching on anything
+    if not useremail:
+        useremail = username
+
+    # Get all projects user has access to
+    all_projects = get_projects_close_cursor({"$or": [
+        # Projects where user is a member
+        {"project_members": username},
+        {"project_members": useremail},
+        # Public projects
+        {"private": False}
+    ], 'delete': False})
+
+    # Filter out mm10, Unknown, and Multiple reference genome projects
+    filtered_projects = []
+    for proj in all_projects:
+        prepare_project_linkid(proj)
+        # Check reference genome for this project
+        if 'runs' in proj and proj['runs']:
+            ref_genome = reference_genome_from_project(proj['runs'])
+            if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
+                # Add reference genome to project object
+                proj['reference_genome'] = ref_genome
+                filtered_projects.append(proj)
+        else:
+            # Skip projects without runs info
+            continue
+
+    return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
+
 
 # concatenate projects specified by project_list into a single data frame
 def concat_projects(project_list):
-    rows = []
+    start_time = time.time()
+
+    # Pre-allocate lists for efficiency
+    all_samples = []
+    sample_count = 0
+
     for project_name in project_list:
+        project_start = time.time()
         project = validate_project(get_one_project(project_name), project_name)
-        for sample in project['runs'].values():
-            row = pd.DataFrame(sample)
-            # [optional] add project_id to distinguish samples by project
-            row['project_id'] = project['_id']  
-            rows.append(row) 
-    df = pd.concat(rows)
+
+        # Get reference genome for this project - do this once per project
+        ref_genome = reference_genome_from_project(project['runs'])
+
+        # Get the project ID once
+        project_id = project['_id']
+
+        # Process all samples for this project in one batch
+        project_samples = []
+        for sample_data in project['runs'].values():
+            # Convert to DataFrame once for each sample
+            sample_df = pd.DataFrame(sample_data)
+
+            # Add project_id and Reference_version columns efficiently
+            sample_df['project_id'] = project_id
+
+            # Only set Reference_version if it's missing
+            if 'Reference_version' not in sample_df.columns:
+                sample_df['Reference_version'] = ref_genome
+
+            project_samples.append(sample_df)
+            sample_count += 1
+
+        # Batch concatenate all samples for this project
+        if project_samples:
+            project_df = pd.concat(project_samples, ignore_index=True)
+            all_samples.append(project_df)
+
+        project_time = time.time() - project_start
+        logging.debug(
+            f"Processed project {project_name} with {len(project_samples)} samples in {project_time:.3f} seconds")
+
+    # If no valid projects, return empty DataFrame
+    if not all_samples:
+        logging.debug("No samples found in selected projects")
+        return pd.DataFrame()
+
+    # Final concatenation of all project DataFrames
+    concat_start = time.time()
+    df = pd.concat(all_samples, ignore_index=True)
+    concat_time = time.time() - concat_start
+
+    total_time = time.time() - start_time
+    logging.debug(
+        f"Concatenated {sample_count} samples from {len(project_list)} projects into DataFrame with {len(df)} rows in {total_time:.3f} seconds")
+    logging.debug(f"Final concatenation took {concat_time:.3f} seconds")
+
     return df
+
 
 def visualizer(request):
     selected_projects = request.session.get('selected_projects', [])
+
+    # If no projects selected, redirect back
+    if not selected_projects:
+        messages.error(request, "No projects selected for visualization.")
+        return redirect('coamplification_graph')
+
     # combine selected projects
     CONCAT_START = time.time()
     projects_df = concat_projects(selected_projects)
     CONCAT_END = time.time()
+
+    # If no data, redirect back
+    if projects_df.empty:
+        messages.error(request, "No valid data found in selected projects.")
+        return redirect('coamplification_graph')
+
     # construct graph and load into neo4j
     load_graph(projects_df)
     IMPORT_END = time.time()
 
-    return render(request, 'pages/visualizer.html', {'test_size': len(projects_df), 
-                                                     'diff': CONCAT_END-CONCAT_START, 
-                                                     'import_time': IMPORT_END-CONCAT_END               
-                                                     })
+    # Get reference genomes information for display
+    ref_genomes = projects_df[
+        'Reference_version'].unique().tolist() if 'Reference_version' in projects_df.columns else ["Unknown"]
+
+    return render(request, 'pages/visualizer.html', {
+        'test_size': len(projects_df),
+        'diff': CONCAT_END - CONCAT_START,
+        'import_time': IMPORT_END - CONCAT_END,
+        'reference_genomes': ref_genomes
+    })
+
 
 def fetch_graph(request, gene_name):
     min_weight = request.GET.get('min_weight')
@@ -2365,8 +2498,8 @@ def fetch_graph(request, gene_name):
         nodes, edges = fetch_subgraph(gene_name, min_weight, min_samples, oncogenes, all_edges)
         # print(f"\nNumber of nodes: {len(nodes)}\nNumber of edges: {len(edges)}\n")
         return JsonResponse({
-                'nodes': nodes,
-                'edges': edges
+            'nodes': nodes,
+            'edges': edges
         })
 
     except Exception as e:

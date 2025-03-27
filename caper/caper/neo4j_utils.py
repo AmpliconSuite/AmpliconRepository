@@ -21,13 +21,13 @@ def get_driver():
     return neo4j_driver
 
 def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_edges):
-    print("From fetch_subgraph: ")
-    print(name)
-    print(min_weight)
-    print(min_samples)
-    print(oncogenes)
-    print(all_edges)
-    print()
+    # print("From fetch_subgraph: ")
+    # print(name)
+    # print(min_weight)
+    # print(min_samples)
+    # print(oncogenes)
+    # print(all_edges)
+    # print()
     # ------------------------------- not active -------------------------------
     if all_edges:
         if oncogenes:
@@ -184,8 +184,8 @@ def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_
         # ----------------------------------------------------------------------
         #print()
         #print("CURRENT:")
-        print(nodes)
-        print(edges)
+        # print(nodes)
+        # print(edges)
         #print()
     record_end = time.process_time() # time
     print("Record parse runtime: ", record_end - record_start, " seconds") # time

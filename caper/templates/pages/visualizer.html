@@ -27,46 +27,46 @@
     <div class="header" id="titleText">ecDNA Coamplification Tool</div>
     <!-- gene input button -->
     <div class="text-storage">
-        <textarea id="textBox" placeholder="Enter gene"></textarea>
+        <textarea id="textBox" placeholder="Enter gene name"></textarea>
         <button id="storeButton">→</button>
         <p id="storedText"></p>
         <div class="slider-box">
             <div class="slider-header">
-                Show <span id="sliderTooltip">0</span> of <span id="queryResult">0</span> Coamplified Genes
+                Showing <span id="sliderTooltip">0</span> of <span id="queryResult">0</span> genes
             </div>
-            <!-- <div class="slider-separator"></div> -->
+            <!-- Ensure all sliders use the same structure -->
             <div class="slider-container">
                 <div class="value-left" id="limitMinText">0</div>
-                <!-- <div class="slider-tooltip" id="sliderTooltip">50</div> -->
                 <input type="range" id="limit" class="slider" min="1" max="50" step="1" value="50">
                 <div class="value-right" id="limitMaxText">0</div>
             </div>
         </div>
     </div>
     
+    <!-- Updated settings section with proper grouping -->
     <div class="settings">
         <!-- probability slider -->
         <div class="edge-slider">
-            Significance Threshold &ge; 
+            Significance Threshold &ge;
             <span id="qValue">0.05</span>
             <div class="slider-info">
                 <div class="value-left">0</div>
-                <!-- should we allow 0? -->
-                <input type="range" id="sigThreshold" class="slider" min="0" max="1" step="0.01" value="0.05"> 
+                <input type="range" id="sigThreshold" class="slider" min="0" max="1" step="0.01" value="0.05">
                 <div class="value-right">1</div>
             </div>
         </div>
+
         <!-- edge slider -->
         <div class="edge-slider">
-            Coamplification frequency &ge; 
+            Coamplification frequency &ge;
             <span id="sliderValue">0.1</span>
             <div class="slider-info">
                 <div class="value-left">0.1</div>
-                <!-- should we allow 0? -->
-                <input type="range" id="edgeWeight" class="slider" min="0.1" max="1" step="0.01" value="0.1"> 
+                <input type="range" id="edgeWeight" class="slider" min="0.1" max="1" step="0.01" value="0.1">
                 <div class="value-right">1</div>
             </div>
         </div>
+
         <!-- samples slider -->
         <div class="edge-slider">
             Coamplified in &ge;
@@ -77,23 +77,21 @@
                 <div class="value-right" id="sampleMaxText">10</div>
             </div>
         </div>
-        <!-- oncogene button -->
-        <div class="edge-slider">
-            <span>Oncogenes only</span>
-            <input type="checkbox" id="oncogenes_only">
-        </div>
-        <!-- show all edges between nodes checkbox (hidden until further notice) -->
-        <!-- <div class="edge-slider">
-            <span>Show all edges</span>
-            <input type="checkbox" id="all_edges">
-        </div> -->
 
-        <!-- filter button -->
-        <div class="edge-slider">
+        <!-- filter button and oncogenes grouped -->
+        <div class="filter-container">
+            <div class="oncogene-option">
+                <span>Oncogenes only</span>
+                <input type="checkbox" id="oncogenes_only">
+            </div>
             <button id="filterButton">Filter</button>
         </div>
 
-        <button id="download-btn">Download CSV</button>
+        <!-- Download buttons in separate container -->
+        <div class="button-container">
+            <button id="download-btn">Download CSV</button>
+            <!-- SVG button will be added by JavaScript -->
+        </div>
     </div>
 
     <!-- container for cytoscape graph -->

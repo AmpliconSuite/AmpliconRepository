@@ -62,9 +62,42 @@ window.addEventListener('DOMContentLoaded', function () {
                 container: document.getElementById('cy'),
                 elements: filtered_data,  // Use the data from the server
                 style: [
-                    { selector: 'node', style: { 'background-color': '#A7C6ED', 'label': '' } },
-                    { selector: `node[label="${inputNode}"], node.highlighted`, style: {'z-index': 100, 'label': 'data(label)' } }, //, 'border-width': 2, 'border-color': 'black', 'border-style': 'solid' } },
-                    { selector: `node[oncogene="True"]`, style: { 'background-color': '#ff4757', 'z-index': 10, 'label': 'data(label)' } },
+                    {
+                        selector: 'node',
+                        style: {
+                            'background-color': '#A7C6ED',
+                            'label': 'data(label)',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'color': '#333',
+                            'font-size': '12px',
+                            'text-outline-width': 2,
+                            'text-outline-color': '#fff'
+                        }
+                    },
+                    {
+                        selector: `node[label="${inputNode}"]`,
+                        style: {
+                            'z-index': 100,
+                            'background-color': '#ff4757',
+                            'color': '#fff', // Changed back to white
+                            'font-weight': 'bold',
+                            'font-size': '14px',
+                            'text-outline-width': 2,
+                            'text-outline-color': '#ff4757'
+                        }
+                    },
+                    {
+                        selector: `node[oncogene="True"]`,
+                        style: {
+                            'background-color': '#ff4757',
+                            'z-index': 10,
+                            'color': '#fff', // Changed back to white
+                            'font-weight': 'bold',
+                            'text-outline-width': 2,
+                            'text-outline-color': '#ff4757'
+                        }
+                    },
                     { selector: 'edge', style: { 'width': 1, 'line-color': 'gray' } },  // Default for edges
                     { selector: 'edge.significant', style: { 'width': 3, 'line-color': 'orange' } }, // Highlight significant edges
                     { selector: '.highlighted', style: {'z-index': 100, 'background-color': '#ffd500', 'line-color': '#ffd500' } }
@@ -97,20 +130,20 @@ window.addEventListener('DOMContentLoaded', function () {
                 cy.resize();
             });
 
-            // Create or update the SVG download button
-            let downloadSvgBtn = document.getElementById('download-svg-btn');
-            if (!downloadSvgBtn) {
-                downloadSvgBtn = document.createElement('button');
-                downloadSvgBtn.id = 'download-svg-btn';
-                downloadSvgBtn.className = 'download-svg-btn';
-                downloadSvgBtn.innerHTML = 'Download SVG';
-                document.querySelector('.cy-container').appendChild(downloadSvgBtn);
+            // Remove existing SVG button if it exists
+            const existingSvgBtn = document.getElementById('download-svg-btn');
+            if (existingSvgBtn) {
+                existingSvgBtn.remove();
             }
 
-            // Remove any existing event listeners by cloning and replacing the button
-            const newButton = downloadSvgBtn.cloneNode(true);
-            downloadSvgBtn.parentNode.replaceChild(newButton, downloadSvgBtn);
-            downloadSvgBtn = newButton;
+            // Create SVG download button
+            const buttonContainer = document.querySelector('.button-container');
+            const downloadSvgBtn = document.createElement('button');
+            downloadSvgBtn.id = 'download-svg-btn';
+            downloadSvgBtn.innerHTML = 'Download SVG';
+
+            // Add the button to the button container
+            buttonContainer.appendChild(downloadSvgBtn);
 
             // Add click handler for SVG download (with proper access to cy and inputNode)
             downloadSvgBtn.addEventListener('click', function(e) {
@@ -335,38 +368,47 @@ window.addEventListener('DOMContentLoaded', function () {
     function layout(cy, input) {
         if (!cy) { return }
         const radius = 40;
-        // const center = cy.nodes(`[name = "${input}"]`);
+
+        // Set node sizes based on their relationship to the input node
         cy.nodes().forEach(node => {
             if (node.data('label') === input) {
-                const size = radius*(1.5);
+                const size = radius * 1.5;
                 node.style({ 'width': size, 'height': size });
                 node.data('size', size);
             }
             else {
                 const edges = node.edgesWith(cy.$(nodeID[input]));
                 const scale = edges.reduce((sum, edge) => sum + edge.data('weight'), 0);
-                const size = radius*(scale);
+                const size = radius * (0.8 + scale);
                 node.style({ 'width': size, 'height': size });
                 node.data('size', size);
             }
         });
+
+        // Improved layout settings
         cy.layout({
             name: 'fcose',
-            gravity: 1.5,               // Higher gravity pulls larger nodes more centrally
-            gravityRange: 1.0,          // Smaller range keeps nodes closer to center
+            animate: true,
+            animationDuration: 800,
+            fit: true,
+            padding: 30,
+            gravity: 1.5,
+            gravityRange: 1.2,
             idealEdgeLength: (edge) => {
-            // Larger nodes = edge length, closer to the center
-            const sourceSize = edge.source().data('size');
-            const targetSize = edge.target().data('size');
-            return 100 - 1.5*Math.min(sourceSize, targetSize);
+                const sourceSize = edge.source().data('size');
+                const targetSize = edge.target().data('size');
+                return 100 - Math.min(sourceSize, targetSize) * 0.5;
             },
             nodeRepulsion: (node) => {
-            // Larger nodes have lower repulsion to stay closer
-            return 4500 - 100*node.data('size');
-            },
-            animate: true,
-            animationDuration: 700
+                return 4500 - node.data('size') * 50;
+            }
         }).run();
+
+        // Ensure the graph is properly centered and sized
+        setTimeout(() => {
+            cy.fit();
+            cy.center();
+        }, 500);
     }
 
     // ------------------------------ Filter elements -------------------------------
@@ -545,33 +587,46 @@ window.addEventListener('DOMContentLoaded', function () {
     }
 
     // Add event listener for the download button
-    document.getElementById('download-btn').addEventListener('click', () => {
+    // First, remove any existing event listeners to prevent multiple downloads
+    const downloadBtn = document.getElementById('download-btn');
+    const newDownloadBtn = downloadBtn.cloneNode(true);
+    downloadBtn.parentNode.replaceChild(newDownloadBtn, downloadBtn);
+
+    // Add a single event listener with a proper closure around the necessary variables
+    newDownloadBtn.addEventListener('click', function() {
         const datacontainercsv = document.createElement('table');
+
+        // Make sure cy and inputNode are available
+        if (!cy || !inputNode) {
+            alert('No graph data available. Please load a graph first.');
+            return;
+        }
+
         // Generate a table from cytoscape graph for export
         cy.nodes().forEach(node => {
-            row = document.createElement('tr');
+            const row = document.createElement('tr');
 
             const cellName = document.createElement('td');
             const geneName = node.data('label');
-            cellName.textContent = geneName
+            cellName.textContent = geneName;
 
-            cellStatus = document.createElement('td');
+            const cellStatus = document.createElement('td');
             cellStatus.textContent = node.data('oncogene');
 
-            cellWeight = document.createElement('td');
-            cellUnion = document.createElement('td');
-            cellInter = document.createElement('td');
+            const cellWeight = document.createElement('td');
+            const cellInter = document.createElement('td');
+            const cellUnion = document.createElement('td');
 
             const edges = node.edgesWith(cy.$(nodeID[inputNode]));
-
             const edgeData = edges[0]?.data() || {};
 
             cellWeight.textContent = String(edgeData.weight?.toFixed(3) ?? 'N/A');
-            const unionList = edgeData.union ? `["${edgeData.union.join('", "')}"]` : 'N/A';
-            cellUnion.textContent = unionList;
 
             const interList = edgeData.inter ? `["${edgeData.inter.join('", "')}"]` : 'N/A';
             cellInter.textContent = interList;
+
+            const unionList = edgeData.union ? `["${edgeData.union.join('", "')}"]` : 'N/A';
+            cellUnion.textContent = unionList;
 
             row.appendChild(cellName);
             row.appendChild(cellStatus);
@@ -579,6 +634,7 @@ window.addEventListener('DOMContentLoaded', function () {
             row.appendChild(cellInter);
             row.appendChild(cellUnion);
             datacontainercsv.appendChild(row);
+        });
 
         const csvContent = generateCSV(datacontainercsv);
         const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -591,9 +647,15 @@ window.addEventListener('DOMContentLoaded', function () {
         // Format date and time (e.g., YYYY-MM-DD_HH-MM-SS)
         const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
         link.download = `AACoampGraph_${inputNode}_${formattedDate}.csv`;
+
+        // Add to DOM, click, and remove (all in one go)
         document.body.appendChild(link);
         link.click();
-        document.body.removeChild(link);
-        });
-    })
+
+        // Clean up - remove link and revoke object URL
+        setTimeout(() => {
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }, 100);
+    });
 });
