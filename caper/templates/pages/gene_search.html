@@ -25,6 +25,16 @@
         font-weight: bold;
     }
 
+    .table td, .table th {
+        white-space: normal !important;
+        word-wrap: break-word;
+        max-width: 200px; /* Adjust this value as needed */
+    }
+
+    /* Special treatment for the genes column which typically has long content */
+    .table td:nth-child(4) {
+        max-width: 250px; /* Give more space to the genes column */
+    }
     
 </style>
 {% endblock %}

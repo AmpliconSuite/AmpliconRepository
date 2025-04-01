@@ -1103,73 +1103,98 @@ def png_download(request, project_name, sample_name, feature_name, feature_id):
 
 def gene_search_page(request):
     genequery = request.GET.get("genequery")
-    genequery = genequery.upper()
-    gen_query = {'$regex': genequery }
-    
+    if genequery:
+        genequery = genequery.upper()
+        gen_query = {'$regex': genequery}
+    else:
+        genequery = ""
+        gen_query = {'$regex': ''}
+
     logging.debug("Performing gene search")
 
-    classquery = request.GET.get("classquery")
-    classquery = classquery.upper()
-    class_query = {'$regex': classquery}
+    classquery = request.GET.get("classquery", "")
+    if classquery:
+        classquery = classquery.upper()
+        class_query = {'$regex': classquery}
+    else:
+        class_query = {'$regex': ''}
+
+    # Get the combined cancer/tissue field
+    metadata_cancer_tissue = request.GET.get("metadata_cancer_tissue", "")
 
     # Gene Search
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
-        query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
+        query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}],
+                     'Oncogenes': gen_query, 'delete': False}
 
         private_projects = list(collection_handle.find(query_obj))
         # private_projects = get_projects_close_cursor(query_obj)
     else:
         private_projects = []
-    
-    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False}))
+
+    public_projects = list(collection_handle.find({'private': False, 'Oncogenes': gen_query, 'delete': False}))
     # public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
 
     for proj in private_projects:
-        prepare_project_linkid(proj)    
+        prepare_project_linkid(proj)
     for proj in public_projects:
         prepare_project_linkid(proj)
 
     def collect_class_data(projects):
         sample_data = []
         for project in projects:
-
             project_name = project['project_name']
             project_linkid = project['_id']
             features = project['runs']
             features_list = replace_space_to_underscore(features)
             data = sample_data_from_feature_list(features_list)
+
             for sample in data:
                 sample['project_name'] = project_name
                 sample['project_linkid'] = project_linkid
-                if genequery in sample['Oncogenes']:
-                    upperclass =  map(str.upper, sample['Classifications'])
-                    classmatch =(classquery in upperclass)
-                    classempty = (len(classquery) == 0)
-                    # keep the sample if we have matched on both oncogene and classification or oncogene and classification is empty
-                    if classmatch or classempty:
-                        sample_data.append(sample)
-                elif len(genequery) == 0:
-                    upperclass = map(str.upper, sample['Classifications'])
-                    classmatch = (classquery in upperclass)
-                    classempty = (len(classquery) == 0)
-                    # keep the sample if we have matched on classification and oncogene is empty
-                    if classmatch or classempty:
-                        sample_data.append(sample)
+
+                # Gene and classification checks
+                gene_match = (genequery in sample['Oncogenes'] or len(genequery) == 0)
+                upperclass = list(map(str.upper, sample['Classifications']))
+                class_match = (classquery in upperclass or len(classquery) == 0)
+
+                # Cancer type or tissue of origin check
+                cancer_tissue_match = True  # Default to True if no filter
+                if metadata_cancer_tissue:
+                    cancer_type = sample.get('Cancer_type', '').lower()
+                    tissue_origin = sample.get('Tissue_of_origin', '').lower()
+                    cancer_tissue_match = (
+                            metadata_cancer_tissue.lower() in cancer_type or
+                            metadata_cancer_tissue.lower() in tissue_origin
+                    )
+
+                # Only add the sample if all filters match
+                if gene_match and class_match and cancer_tissue_match:
+                    sample_data.append(sample)
 
         return sample_data
-    
+
     public_sample_data = collect_class_data(public_projects)
     private_sample_data = collect_class_data(private_projects)
 
     # for display on the results page
     if len(classquery) == 0:
         classquery = "all amplicon types"
+
     return render(request, "pages/gene_search.html",
-                  {'public_projects': public_projects, 'private_projects' : private_projects,
+                  {'public_projects': public_projects, 'private_projects': private_projects,
                    'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data,
-                   'gene_query': genequery, 'class_query': classquery})
+                   'gene_query': genequery, 'class_query': classquery,
+                   'query_info': {
+                       "Project Name": request.GET.get("project_name", ""),
+                       "Sample Name": request.GET.get("metadata_sample_name", ""),
+                       "Gene": genequery,
+                       "Classification": classquery,
+                       "Sample Type": request.GET.get("metadata_sample_type", ""),
+                       "Cancer Type or Tissue": metadata_cancer_tissue
+                   }})
 
 
 def gene_search_download(request, project_name):
@@ -2281,7 +2306,7 @@ def robots(request):
 
 def search_results(request):
     """Handles user queries and renders search results."""
-    
+
     if request.method == "POST":
         # Extract search parameters from POST request
         gene_search = request.POST.get("genequery", "").upper()
@@ -2289,8 +2314,14 @@ def search_results(request):
         classifications = request.POST.get("classquery", "").upper()
         sample_name = request.POST.get("metadata_sample_name", "").upper()
         sample_type = request.POST.get("metadata_sample_type", "").upper()
-        cancer_type = request.POST.get("metadata_cancer_type", "").upper()
-        tissue_origin = request.POST.get("metadata_tissue_origin", "").upper()
+
+        # Get the combined cancer/tissue field
+        cancer_tissue = request.POST.get("metadata_cancer_tissue", "").upper()
+
+        # We'll set both parameters to the same value for the backend search
+        cancer_type = cancer_tissue
+        tissue_origin = ""  # Leave empty to avoid duplicate filtering
+
         extra_metadata = request.POST.get('metadata_extra', "").upper()
 
         # Store user query for persistence in the form
@@ -2300,14 +2331,13 @@ def search_results(request):
             "classquery": classifications,
             "metadata_sample_name": sample_name,
             "metadata_sample_type": sample_type,
-            "metadata_cancer_type": cancer_type,
-            "metadata_tissue_origin": tissue_origin,
+            "metadata_cancer_tissue": cancer_tissue,  # New field
             'extra_metadata': extra_metadata
         }
 
         # Debugging logs
         logging.info(f'Search terms: Gene={gene_search}, Project={project_name}, Class={classifications}, '
-                     f'Sample Name={sample_name}, Sample Type={sample_type}, Cancer={cancer_type}, Tissue={tissue_origin},'
+                     f'Sample Name={sample_name}, Sample Type={sample_type}, Cancer/Tissue={cancer_tissue},'
                      f' Extra Metadata={extra_metadata}')
 
         # Run the search function
@@ -2317,10 +2347,9 @@ def search_results(request):
             classquery=classifications,
             metadata_sample_name=sample_name,
             metadata_sample_type=sample_type,
-            metadata_cancer_type=cancer_type,
-            metadata_tissue_origin=tissue_origin,
-            extra_metadata = extra_metadata,
-            
+            metadata_cancer_type=cancer_tissue,  # Use the combined term
+            metadata_tissue_origin=tissue_origin,  # Leave this empty
+            extra_metadata=extra_metadata,
             user=request.user
         )
 
@@ -2336,8 +2365,7 @@ def search_results(request):
             "Classification": classifications,
             "Sample Name": sample_name,
             "Sample Type": sample_type,
-            "Cancer Type": cancer_type,
-            "Tissue of Origin": tissue_origin,
+            "Cancer Type or Tissue": cancer_tissue,  # Combined field in display
         }
 
         return render(request, "pages/gene_search.html", {
@@ -2352,6 +2380,6 @@ def search_results(request):
             "public_samples_count": public_samples_count,
             "private_samples_count": private_samples_count,
         })
-    
+
     else:
         return redirect("gene_search_page")  # Redirect if accessed incorrectly
