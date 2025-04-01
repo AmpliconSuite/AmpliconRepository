@@ -31,11 +31,18 @@
         max-width: 200px; /* Adjust this value as needed */
     }
 
-    /* Special treatment for the genes column which typically has long content */
-    .table td:nth-child(4) {
-        max-width: 250px; /* Give more space to the genes column */
+    /* Make sure these styles don't interfere with our custom rendering */
+    .gene-content.expanded {
+        white-space: normal !important;
+        word-wrap: break-word;
     }
-    
+
+    /* Ensure search matches are highlighted */
+    .table td mark {
+      background-color: #ffeb3b;
+      padding: 0 2px;
+      border-radius: 2px;
+    }
 </style>
 {% endblock %}
 
@@ -54,71 +61,109 @@
             });
         });
 
-        // Initialize DataTables
-        $('table.table').DataTable();
-    });
-</script>
-
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        // Extract search terms from the query info table
-        let searchTerms = [];
+        // Get search terms for gene highlighting
+        const searchTerms = [];
         document.querySelectorAll(".card-body table tbody tr").forEach(row => {
-            let key = row.cells[0].textContent.trim().replace(":", "");
-            let value = row.cells[1].textContent.trim();
-            if (value) {
-                searchTerms.push(value.toLowerCase());
+            const key = row.cells[0].textContent.trim().replace(":", "");
+            const value = row.cells[1].textContent.trim();
+            if (key === "Gene Name" && value) {
+                searchTerms.push(value.toUpperCase());
             }
         });
 
-        // Function to highlight text
-        function highlightText(element, term) {
-            let regex = new RegExp(`(${term})`, "gi");
-            element.innerHTML = element.innerHTML.replace(regex, `<mark>$1</mark>`);
+        // Initialize DataTables with custom gene column rendering
+        function initializeTable(tableSelector) {
+            const table = $(tableSelector);
+            if ($.fn.DataTable.isDataTable(table)) return;
+
+            // Find the Genes column index
+            let genesColumnIndex = -1;
+            table.find('thead th').each(function(index) {
+                if ($(this).text().trim() === 'Genes') {
+                    genesColumnIndex = index;
+                }
+            });
+
+            // Initialize DataTable with custom rendering for the genes column
+            table.DataTable({
+                "paging": true,
+                "pageLength": 10,
+                "lengthMenu": [10, 25, 50, 100],
+                "ordering": true,
+                "info": true,
+                "searching": true,
+                "autoWidth": false,
+                "responsive": true,
+                "columnDefs": [{
+                    "targets": genesColumnIndex !== -1 ? genesColumnIndex : [], // Only apply to Genes column
+                    "render": function(data, type, row) {
+                        if (type !== 'display' || genesColumnIndex === -1) return data;
+
+                        // For display rendering, create expandable content
+                        const genes = data.split(', ');
+                        if (genes.length <= 5) return data; // No need for expansion
+
+                        // Reorganize genes if any match the search term
+                        let reorganizedGenes = [...genes];
+                        if (searchTerms.length > 0) {
+                            const matchedGenes = [];
+                            const otherGenes = [];
+
+                            genes.forEach(gene => {
+                                if (searchTerms.some(term => gene.toUpperCase().includes(term))) {
+                                    matchedGenes.push(`<mark>${gene}</mark>`);
+                                } else {
+                                    otherGenes.push(gene);
+                                }
+                            });
+
+                            if (matchedGenes.length > 0) {
+                                reorganizedGenes = [...matchedGenes, ...otherGenes];
+                            }
+                        }
+
+                        // Create HTML for expandable content
+                        return `
+                            <div class="gene-container">
+                                <div class="gene-content collapsed">${reorganizedGenes.slice(0, 5).join(', ')}</div>
+                                <div class="gene-content expanded" style="display:none">${reorganizedGenes.join(', ')}</div>
+                                <button class="btn btn-sm btn-link p-0 gene-toggle" style="margin-left:5px;color:blue;">
+                                    Show all ${genes.length} genes
+                                </button>
+                            </div>
+                        `;
+                    }
+                }]
+            });
         }
 
-        // Loop through all table rows and highlight matches
-        document.querySelectorAll(".results-container table tbody tr").forEach(row => {
-            row.querySelectorAll("td").forEach(cell => {
-                searchTerms.forEach(term => {
-                    if (cell.textContent.toLowerCase().includes(term)) {
-                        highlightText(cell, term);
-                    }
-                });
-            });
-        });
-    });
-</script>
+        // Initialize all tables
+        $('#projects-tab table.table').each(function() { initializeTable(this); });
+        $('#samples-tab table.table').each(function() { initializeTable(this); });
+        $('#private-projects-tab table.table').each(function() { initializeTable(this); });
+        $('#private-samples-tab table.table').each(function() { initializeTable(this); });
 
-<script>
-    $(document).ready(function () {
-        // Ensure DataTables is initialized properly
-        $('table.table').each(function () {
-            if (!$.fn.DataTable.isDataTable(this)) {
-                $(this).DataTable({
-                    "paging": true,       // Enables pagination
-                    "pageLength": 10,     // Default rows per page
-                    "lengthMenu": [10, 25, 50, 100],  // Rows per page options
-                    "ordering": true,     // Enables column sorting
-                    "info": true,         // Shows table info (e.g., "Showing 1-10 of 50")
-                    "searching": true,    // Enables table-wide search box
-                    "autoWidth": false,   // Prevents incorrect column sizing
-                    "responsive": true    // Makes the table mobile-friendly
-                });
+        // Handle click on the toggle button
+        $(document).on('click', '.gene-toggle', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const container = $(this).closest('.gene-container');
+            const collapsedContent = container.find('.gene-content.collapsed');
+            const expandedContent = container.find('.gene-content.expanded');
+
+            if (collapsedContent.is(':visible')) {
+                collapsedContent.hide();
+                expandedContent.show();
+                $(this).text('Show less');
+            } else {
+                expandedContent.hide();
+                collapsedContent.show();
+                $(this).text(`Show all ${expandedContent.text().split(',').length} genes`);
             }
         });
-
-        // Adjust column widths when switching tabs
-        $('a[data-toggle="tab"]').on('shown.bs.tab', function () {
-            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
-        });
     });
 </script>
-
-
-
-
-
 {% endblock %}
 
 {% block main %}
