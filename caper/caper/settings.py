@@ -276,7 +276,8 @@ if USE_S3:
     # defined in config.sh so like this https://amprepobucket.s3.amazonaws.com/dev/static/
     AMPLICON_ENV = os.getenv('AMPLICON_ENV', default='')
     S3_DEFAULT_STATIC_PATH = f"{AMPLICON_ENV}/static/"
-    S3_STATIC_PATH = os.getenv('S3_STATIC_PATH', default=S3_DEFAULT_STATIC_PATH)
+    # it has to end with a '/' so lets make sure it does
+    S3_STATIC_PATH = f"{os.getenv('S3_STATIC_PATH', default=S3_DEFAULT_STATIC_PATH).rstrip('/')}/"
 
 
     STATIC_URL = f"https://amprepobucket.s3.amazonaws.com/{S3_STATIC_PATH}"
