@@ -105,17 +105,17 @@ def add_extra_metadata(df):
 
 
 def get_samples_from_features(projects, genequery, classquery, metadata_sample_name, metadata_sample_type,
-                            metadata_cancer_type, metadata_tissue_origin, extra_metadata):
+                              metadata_cancer_type, metadata_tissue_origin, extra_metadata):
     """
     Takes in a features_list dict, and finds matches for samples for some: 
-    
+
     genequery: str
     classquery: str
     metadata: str
-    
+
     returns a list of samples and feature_ids
     """
-    
+
     sample_data = []
     for project in projects:
         project_name = project['project_name']
@@ -124,10 +124,7 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         features_list = replace_space_to_underscore(features)
 
         df = pd.DataFrame(features_list)
-        # cols = ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Cancer_type', 'Tissue_of_origin', 'extra_metadata_from_csv']
-        # df = df[[col for col in cols if col in df.columns]]
         df, extra_metadata_from_csv = add_extra_metadata(df)
-
 
         if genequery:
             df = df[df['All_genes'].apply(lambda x: genequery in [gene.replace("'", "") for gene in x])]
@@ -141,23 +138,34 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         if metadata_sample_type:
             df = df[df['Sample_type'].str.contains(metadata_sample_type, case=False, na=False)]
 
+        # Combined search for Cancer Type or Tissue
         if metadata_cancer_type:
+            # Create a mask for Cancer_type matches (if column exists)
+            cancer_mask = pd.Series(False, index=df.index)
             if 'Cancer_type' in df.columns:
-                df = df[df['Cancer_type'].str.contains(metadata_cancer_type, case=False, na=False)]
-            else:
-                df = df.iloc[0:0]
+                cancer_mask = df['Cancer_type'].str.contains(metadata_cancer_type, case=False, na=False)
 
+            # Create a mask for Tissue_of_origin matches
+            tissue_mask = pd.Series(False, index=df.index)
+            if 'Tissue_of_origin' in df.columns:
+                tissue_mask = df['Tissue_of_origin'].str.contains(metadata_cancer_type, case=False, na=False)
+
+            # Combine both masks with OR logic
+            combined_mask = cancer_mask | tissue_mask
+            df = df[combined_mask]
+
+        # The original tissue_origin filter is not needed since we combined it above
+        # Only keep this if you need backward compatibility with existing code
         if metadata_tissue_origin:
             df = df[df['Tissue_of_origin'].str.contains(metadata_tissue_origin, case=False, na=False)]
-        
+
         if extra_metadata and ('extra_metadata_from_csv' in df.columns):
             for key in extra_metadata_from_csv.keys():
                 if key != 'sample_name' and key != 'sample_type' and key != 'tissue_of_origin' and key != "cancer_type":
                     query = df[df[key].str.contains(extra_metadata, case=False, na=False)]
                     if len(query) > 0:
                         df = query
-            ## base case, will always have Sample name, Sample type, Tissue of origin
-            ## if extra metadata is not present
+
         for _, row in df.iterrows():
             sample_dict = row.to_dict()
             sample_dict['project_name'] = project_name

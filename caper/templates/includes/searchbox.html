@@ -1,45 +1,5 @@
 {% load static %}
 
-<head>
-    <style>
-        #searchDropdown {
-            display: none;
-            background: white;
-            border: 1px solid #ddd;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            padding: 1rem;
-            position: absolute;
-            top: 100%;
-            right: 0;
-            min-width: 300px;
-            z-index: 1000;
-        }
-
-        #searchDropdown.is-hidden {
-            display: none !important;
-        }
-        
-        /* Ensure dropdown moves left if it overflows */
-        @media (max-width: 768px) {
-            #searchDropdown {
-                left: auto;
-                right: 5px; /* Add padding from the right */
-                max-width: 85vw; /* Prevent full screen width */
-            }
-        }
-        
-        /* Keep dropdown aligned properly */
-        .navbar-item.has-dropdown:hover .navbar-dropdown {
-            left: auto;
-            right: 0; /* Align to right edge */
-            display: block;
-        }
-
-        
-    </style>
-</head>
-
-
 <form id="searchForm" action="{% url 'search_results' %}" method="POST" class="p-4 border rounded bg-light">
     {% csrf_token %}
 
@@ -73,12 +33,12 @@
     </div>
 
     <div class="mb-3">
-        <button class="btn btn-secondary w-100 dropdown-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#metadataCollapse"
+        <button class="btn btn-secondary w-100" type="button" data-toggle="collapse" data-target="#metadataCollapse"
             aria-expanded="false" aria-controls="metadataCollapse">
             Metadata Search Options
         </button>
     </div>
-    
+
     <div class="collapse" id="metadataCollapse">
         <div class="card card-body">
             <div class="mb-3">
@@ -88,22 +48,10 @@
             </div>
 
             <div class="mb-3">
-                <label for="metadata_cancer_type" class="form-label">Cancer Type</label>
-                <input type="text" class="form-control" name="metadata_cancer_type" id="metadata_cancer_type"
-                    placeholder="Cancer type" value="{{ user_query.metadata_cancer_type|default:'' }}">
+                <label for="metadata_cancer_tissue" class="form-label">Cancer Type or Tissue</label>
+                <input type="text" class="form-control" name="metadata_cancer_tissue" id="metadata_cancer_tissue"
+                    placeholder="Enter cancer type or tissue of origin" value="{{ user_query.metadata_cancer_tissue|default:'' }}">
             </div>
-    
-            <div class="mb-3">
-                <label for="metadata_tissue_origin" class="form-label">Tissue of Origin</label>
-                <input type="text" class="form-control" name="metadata_tissue_origin" id="metadata_tissue_origin"
-                    placeholder="Tissue of origin" value="{{ user_query.metadata_tissue_origin|default:'' }}">
-            </div>
-
-            {% comment %} <div class="mb-3">
-                <label for="metadata_extra" class="form-label">Extra metadata</label>
-                <input type="text" class="form-control" name="metadata_extra" id="metadata_extra"
-                    placeholder="Enter extra metadata" value="{{ user_query.metadata_extra|default:'' }}">
-            </div> {% endcomment %}
         </div>
     </div>
 
@@ -111,66 +59,3 @@
         <button type="submit" class="btn btn-primary">Search</button>
     </div>
 </form>
-
-{% comment %} <!-- Include new JS file -->
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const searchForm = document.getElementById("searchForm");
-    
-        searchForm.addEventListener("submit", function (event) {
-            event.preventDefault(); // Prevent default form submission
-    
-            let formData = new FormData(searchForm);
-    
-            fetch(searchForm.action, {
-                method: "POST",
-                body: formData,
-                headers: {
-                    "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
-                }
-            })
-            .then(response => {
-                if (response.redirected) {
-                    window.location.href = response.url; // Redirect to the search results page
-                }
-            })
-            .catch(error => console.error("Error:", error));
-        });
-    });
-
-
-
-</script> {% endcomment %}
-
-<script>
-
-    document.addEventListener("DOMContentLoaded", function () {
-        const searchButton = document.getElementById("toggleSearchDropdown");
-        const searchDropdown = document.getElementById("searchDropdown");
-    
-        searchButton.addEventListener("click", function (event) {
-            event.preventDefault();
-            // Toggle visibility
-            if (searchDropdown.style.display === "none" || searchDropdown.style.display === "") {
-                searchDropdown.style.display = "block";
-    
-                // Ensure dropdown stays within viewport
-                const rect = searchDropdown.getBoundingClientRect();
-                if (rect.right > window.innerWidth) {
-                    searchDropdown.style.left = "auto";
-                    searchDropdown.style.right = "0"; // Align to the right edge of the screen
-                }
-            } else {
-                searchDropdown.style.display = "none";
-            }
-        });
-    
-        // Close dropdown when clicking outside
-        document.addEventListener("click", function (event) {
-            if (!searchDropdown.contains(event.target) && !searchButton.contains(event.target)) {
-                searchDropdown.style.display = "none";
-            }
-        });
-    });
-    
-</script>
