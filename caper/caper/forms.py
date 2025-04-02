@@ -5,7 +5,8 @@ from .models import Run
 from .models import FeaturedProjectUpdate, AdminDeleteProject, AdminSendEmail, UserPreferencesModel, UploadTarFile
 from allauth.account.forms import SignupForm
 from allauth.socialaccount.forms import SignupForm as SocialSignupForm
-
+from django_recaptcha.widgets import ReCaptchaV2Checkbox
+from django_recaptcha.fields import ReCaptchaField
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Layout, Field
 
@@ -105,7 +106,7 @@ class UserPreferencesForm(forms.ModelForm):
 
 
 class MySignUpForm(SignupForm):
-
+    captcha = ReCaptchaField(widget=ReCaptchaV2Checkbox)
     def __init__(self, *args, **kwargs):
         super(MySignUpForm, self).__init__(*args, **kwargs)
 

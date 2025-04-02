@@ -1,12 +1,6 @@
-# from asyncore import file_wrapper
-# from tkinter import E
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect,JsonResponse,Http404
+from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, Http404, JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
-from django.contrib.auth import get_user_model
-from django.template.defaulttags import register
-from django.contrib.auth import authenticate
-from django.contrib import messages
 
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
@@ -16,24 +10,18 @@ from rest_framework.response import Response
 
 from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
 from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
-from  .serializers import FileSerializer
+from .serializers import FileSerializer
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
 from rest_framework import status
 from pathlib import Path
-import csv
 
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
 from django.conf import settings
-# import pymongo
-import json
 
 # from .models import File
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
-from .utils import collection_handle, collection_handle_primary, db_handle, fs_handle, replace_space_to_underscore, \
-    preprocess_sample_data, get_one_sample, sample_data_from_feature_list, get_one_project, validate_project, \
-    prepare_project_linkid, replace_underscore_keys, get_projects_close_cursor, get_all_alias
 from .extra_metadata import *
 from django.forms.models import model_to_dict
 
@@ -48,33 +36,11 @@ import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 
-# from django.views.decorators.cache import cache_page
-# from zipfile import ZipFile
-import tarfile
-import pandas as pd
-# import numpy as np
-#import cv2
-
-# import caper
-from bson.objectid import ObjectId
-# from django.utils.text import slugify
-# from bson.json_util import dumps
-import re
-# from tqdm import tqdm
-from collections import defaultdict
 from wsgiref.util import FileWrapper
-import boto3
-import botocore
-import threading
+import boto3, botocore, fnmatch, uuid, datetime, time, logging
 from threading import Thread
-import os, fnmatch
-import uuid
-import datetime
 import dateutil.parser
 
-import time
-import math
-import logging
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -112,17 +78,19 @@ def get_date():
     date = today.strftime('%Y-%m-%dT%H:%M:%S.%f')
     return date
 
+
 def get_date_short():
     today = datetime.datetime.now()
     date = today.strftime('%Y-%m-%d')
     return date
 
+
 def get_one_deleted_project(project_name_or_uuid):
     try:
         
         # old cursor
-        # project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]        
-        project = get_projects_close_cursor({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
+        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]        
+        # project = get_projects_close_cursor({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
         
         
         prepare_project_linkid(project)
@@ -161,15 +129,7 @@ def check_project_exists(project_id):
 
 
 def samples_to_dict(form_file):
-    file_json = json.load(form_file)
-    runs = dict()
-    all_samples = file_json['runs']
-    for key, value in all_samples.items():
-        sample_name = key
-        # logging.debug(f'in samples_to_dict {sample_name}')
-        runs[sample_name] = value
-
-    return runs
+    return json.load(form_file)['runs']
 
 
 def form_to_dict(form):
@@ -187,52 +147,44 @@ def form_to_dict(form):
 
 
 def get_project_oncogenes(runs):
-    oncogenes = set()
-    for sample in runs:
-        for feature in runs[sample]:
-            if feature['Oncogenes']:
-                for gene in feature['Oncogenes']:
-                    if len(gene) != 0:
-                        oncogene = gene.strip().replace("'",'')
-                        oncogenes.add(oncogene)
-
-    return list(oncogenes)
+    return list({
+        gene.strip().replace("'", '')
+        for sample in runs
+        for feature in runs[sample]
+        if feature['Oncogenes']
+        for gene in feature['Oncogenes']
+        if gene
+    })
 
 
 def get_project_classifications(runs):
-    classes = set()
-    for sample in runs:
-        for feature in runs[sample]:
-            if feature['Classification']:
-                uppercase = feature['Classification'].upper()
-                classes.add(uppercase)
-
-    return list(classes)
+    return list({
+        feature['Classification'].upper()
+        for sample in runs
+        for feature in runs[sample]
+        if feature['Classification']
+    })
 
 
 def get_sample_oncogenes(feature_list, sample_name):
     """
     Finds the oncogenes for a given sample_name
     """
-    oncogenes = set()
-    for feature in feature_list:
-        if feature['Sample_name'] == sample_name and feature['Oncogenes']:
-            for gene in feature['Oncogenes']:
-                if len(gene) != 0:
-                    oncogenes.add(gene.strip().replace("'",''))
-
-    return sorted(list(oncogenes))
+    return sorted({
+        gene.strip().replace("'", '')
+        for feature in feature_list
+        if feature['Sample_name'] == sample_name and feature['Oncogenes']
+        for gene in feature['Oncogenes']
+        if gene
+    })
 
 
 def get_sample_classifications(feature_list, sample_name):
-    classes = set()
-    for feature in feature_list:
-        if feature['Sample_name'] == sample_name:
-            if feature['Classification']:
-                uppercase = feature['Classification'].upper()
-                classes.add(uppercase)
-
-    return list(classes)
+    return list({
+        feature['Classification'].upper()
+        for feature in feature_list
+        if feature['Sample_name'] == sample_name and feature['Classification']
+    })
 
 
 # @caper.context_processor
@@ -265,15 +217,15 @@ def modify_date(projects):
 
 
 def data_qc(request):
-    if not  request.user.is_staff:
+    if not request.user.is_staff:
         return redirect('/accounts/logout')
     
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
         
-        private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
-        # private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        # private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
+        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
         for proj in private_projects:
             prepare_project_linkid(proj)
     else:
@@ -282,9 +234,8 @@ def data_qc(request):
     public_proj_count = 0
     public_sample_count = 0
 
-    
-    public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
-    # public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+    # public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
+    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
     for proj in public_projects:
         prepare_project_linkid(proj)
         public_proj_count = public_proj_count + 1
@@ -294,6 +245,7 @@ def data_qc(request):
     sample_count_status = check_sample_count_status(private_projects) + check_sample_count_status(public_projects)
     
     return render(request, "pages/admin_quality_check.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'datetime_status': datetime_status, 'sample_count_status': sample_count_status})
+
 
 def check_datetime(projects):
     errors = 0
@@ -318,19 +270,20 @@ def check_sample_count_status(projects):
 
     return 0
 
+
 def change_to_standard_date(date):
-    
     date = dateutil.parser.parse(date)
     date = date.strftime(f'%Y-%m-%dT%H:%M:%S')
     return date
+
 
 def change_database_dates(request):
     if not request.user.is_staff:
         return redirect('/accounts/logout')
 
     logging.debug('Starting to update timestamps...')
-    # projects = list(collection_handle.find({'delete': False}))
-    projects = get_projects_close_cursor({'delete': False})
+    projects = list(collection_handle.find({'delete': False}))
+    # projects = get_projects_close_cursor({'delete': False})
     
     for project in projects:
         recently_updated = change_to_standard_date(project['date'])
@@ -382,51 +335,48 @@ def update_sample_counts(request):
 
 
 def index(request):
+    t_sa = time.time()
+
+    # Base query for non-deleted projects
+    base_query = {'delete': False}
+    projection = {'runs': 0}  # Exclude runs field from all queries
+
+    # Get public projects (including featured) in one query
+    public_query = {**base_query, 'private': False}
+    public_projects = list(collection_handle.find(public_query, projection))
+
+    # Extract featured projects from public projects
+    featured_projects = [proj for proj in public_projects if proj.get('featured')]
+
+    # Process project links
+    for proj in public_projects:
+        prepare_project_linkid(proj)
+
+    # Handle private projects for authenticated users
     if request.user.is_authenticated:
-        username = request.user.username
-        useremail = request.user.email
-        # private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
-        private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
-        
+        private_query = {
+            **base_query,
+            'private': True,
+            '$or': [
+                {'project_members': request.user.username},
+                {'project_members': request.user.email}
+            ]
+        }
+        private_projects = list(collection_handle.find(private_query, projection))
+
         for proj in private_projects:
             prepare_project_linkid(proj)
-
     else:
         private_projects = []
 
-    # just get stats for all private
-    all_private_proj_count = 0
-    all_private_sample_count = 0
-    # all_private_projects = list(collection_handle.find({'private': True, 'delete': False}))
-    all_private_projects = get_projects_close_cursor({'private': True, 'delete': False})
-    for proj in all_private_projects:
-        all_private_proj_count = all_private_proj_count + 1
-        all_private_sample_count = all_private_sample_count + len(proj['runs'])
-    # end private stats
-
-    public_proj_count = 0
-    public_sample_count = 0
-    # public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
-    public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
-    for proj in public_projects:
-        prepare_project_linkid(proj)
-        public_proj_count = public_proj_count + 1
-        public_sample_count = public_sample_count + len(proj['runs'])
-
-    # featured_projects = list(collection_handle.find({'private' : False, 'delete': False, 'featured': True}))
-    featured_projects = get_projects_close_cursor({'private' : False, 'delete': False, 'featured': True})
-    for proj in featured_projects:
-        prepare_project_linkid(proj)
-
-
-    # public_projects = modify_date(public_projects)
-    # private_projects = modify_date(private_projects)
-    # featured_projects = modify_date(featured_projects)
-
-    # get the latest set of stats
     site_stats = get_latest_site_statistics()
-
-    return render(request, "pages/index.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'featured_projects': featured_projects, 'site_stats': site_stats})
+    logging.info(f"Retrieved info for index page in {time.time() - t_sa} seconds")
+    return render(request, "pages/index.html", {
+        'public_projects': public_projects,
+        'private_projects': private_projects,
+        'featured_projects': featured_projects,
+        'site_stats': site_stats
+    })
 
 
 def profile(request, message_to_user=None):
@@ -446,8 +396,8 @@ def profile(request, message_to_user=None):
     # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
-    # projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
-    projects = get_projects_close_cursor({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False})
+    projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+    # projects = get_projects_close_cursor({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False})
 
     for proj in projects:
         prepare_project_linkid(proj)
@@ -517,6 +467,7 @@ def is_user_a_project_member(project, request):
     if current_user_email in project['project_members']:
         return True
     return False
+
 
 def set_project_edit_OK_flag(project, request):
     if (is_user_a_project_member(project, request)):
@@ -715,13 +666,14 @@ def check_if_db_field_exists(project, field):
         return False
 
 
-def find(pattern, path):
-    result = []
+def find_one(pattern, path):
     for root, dirs, files in os.walk(path):
         for name in files:
             if fnmatch.fnmatch(name, pattern):
-                result.append(os.path.join(root, name))
-    return result
+                return os.path.join(root, name)
+
+    return None
+
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
@@ -816,7 +768,7 @@ def project_download(request, project_name):
     chunk_size = 8192
     logging.info('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
     try:
-        file_location = find('*.tar.gz', project_data_path)[0]
+        file_location = find_one('*.tar.gz', project_data_path)
         response = StreamingHttpResponse(
         FileWrapper(
             open(file_location, "rb"),
@@ -899,11 +851,7 @@ def get_sample_metadata(sample_data):
 def sample_metadata_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
-    try:
-        extra_metadata = sample_data[0]['extra_metadata_from_csv']
-    except:
-        ## incase extra metadata doesn't exist
-        extra_metadata = {}
+    extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
     try:
         sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
         ##combining 
@@ -1165,71 +1113,98 @@ def png_download(request, project_name, sample_name, feature_name, feature_id):
 
 def gene_search_page(request):
     genequery = request.GET.get("genequery")
-    genequery = genequery.upper()
-    gen_query = {'$regex': genequery }
+    if genequery:
+        genequery = genequery.upper()
+        gen_query = {'$regex': genequery}
+    else:
+        genequery = ""
+        gen_query = {'$regex': ''}
 
-    classquery = request.GET.get("classquery")
-    classquery = classquery.upper()
-    class_query = {'$regex': classquery}
+    logging.debug("Performing gene search")
+
+    classquery = request.GET.get("classquery", "")
+    if classquery:
+        classquery = classquery.upper()
+        class_query = {'$regex': classquery}
+    else:
+        class_query = {'$regex': ''}
+
+    # Get the combined cancer/tissue field
+    metadata_cancer_tissue = request.GET.get("metadata_cancer_tissue", "")
 
     # Gene Search
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
-        query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
+        query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}],
+                     'Oncogenes': gen_query, 'delete': False}
 
-        # private_projects = list(collection_handle.find(query_obj))
-        private_projects = get_projects_close_cursor(query_obj)
+        private_projects = list(collection_handle.find(query_obj))
+        # private_projects = get_projects_close_cursor(query_obj)
     else:
         private_projects = []
-    
-    # public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False}))
-    public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
+
+    public_projects = list(collection_handle.find({'private': False, 'Oncogenes': gen_query, 'delete': False}))
+    # public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
 
     for proj in private_projects:
-        prepare_project_linkid(proj)    
+        prepare_project_linkid(proj)
     for proj in public_projects:
         prepare_project_linkid(proj)
 
     def collect_class_data(projects):
         sample_data = []
         for project in projects:
-
             project_name = project['project_name']
             project_linkid = project['_id']
             features = project['runs']
             features_list = replace_space_to_underscore(features)
             data = sample_data_from_feature_list(features_list)
+
             for sample in data:
                 sample['project_name'] = project_name
                 sample['project_linkid'] = project_linkid
-                if genequery in sample['Oncogenes']:
-                    upperclass =  map(str.upper, sample['Classifications'])
-                    classmatch =(classquery in upperclass)
-                    classempty = (len(classquery) == 0)
-                    # keep the sample if we have matched on both oncogene and classification or oncogene and classification is empty
-                    if classmatch or classempty:
-                        sample_data.append(sample)
-                elif len(genequery) == 0:
-                    upperclass = map(str.upper, sample['Classifications'])
-                    classmatch = (classquery in upperclass)
-                    classempty = (len(classquery) == 0)
-                    # keep the sample if we have matched on classification and oncogene is empty
-                    if classmatch or classempty:
-                        sample_data.append(sample)
+
+                # Gene and classification checks
+                gene_match = (genequery in sample['Oncogenes'] or len(genequery) == 0)
+                upperclass = list(map(str.upper, sample['Classifications']))
+                class_match = (classquery in upperclass or len(classquery) == 0)
+
+                # Cancer type or tissue of origin check
+                cancer_tissue_match = True  # Default to True if no filter
+                if metadata_cancer_tissue:
+                    cancer_type = sample.get('Cancer_type', '').lower()
+                    tissue_origin = sample.get('Tissue_of_origin', '').lower()
+                    cancer_tissue_match = (
+                            metadata_cancer_tissue.lower() in cancer_type or
+                            metadata_cancer_tissue.lower() in tissue_origin
+                    )
+
+                # Only add the sample if all filters match
+                if gene_match and class_match and cancer_tissue_match:
+                    sample_data.append(sample)
 
         return sample_data
-    
+
     public_sample_data = collect_class_data(public_projects)
     private_sample_data = collect_class_data(private_projects)
 
     # for display on the results page
     if len(classquery) == 0:
         classquery = "all amplicon types"
+
     return render(request, "pages/gene_search.html",
-                  {'public_projects': public_projects, 'private_projects' : private_projects,
+                  {'public_projects': public_projects, 'private_projects': private_projects,
                    'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data,
-                   'gene_query': genequery, 'class_query': classquery})
+                   'gene_query': genequery, 'class_query': classquery,
+                   'query_info': {
+                       "Project Name": request.GET.get("project_name", ""),
+                       "Sample Name": request.GET.get("metadata_sample_name", ""),
+                       "Gene": genequery,
+                       "Classification": classquery,
+                       "Sample Type": request.GET.get("metadata_sample_type", ""),
+                       "Cancer Type or Tissue": metadata_cancer_tissue
+                   }})
 
 
 def gene_search_download(request, project_name):
@@ -1297,7 +1272,7 @@ def project_delete(request, project_name):
         #query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
-        delete_project_from_site_statistics(project)
+        delete_project_from_site_statistics(project, project['private'])
         return redirect('profile')
     else:
         return HttpResponse("Project does not exist")
@@ -1337,6 +1312,8 @@ def download_file(url, save_path):
 
 
 def edit_project_page(request, project_name):
+    if request.method == "GET":
+        project = get_one_project(project_name)
     if request.method == "POST":
         try:
             metadata_file = request.FILES.get("metadataFile")
@@ -1362,9 +1339,8 @@ def edit_project_page(request, project_name):
                 query = {'_id': ObjectId(project_name)}
                 new_val = { "$set": {'alias_name' : None}}
                 collection_handle.update_one(query, new_val)
-                
+        ## new project information is stored in form_dict
         form_dict = form_to_dict(form)
-
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
@@ -1372,6 +1348,7 @@ def edit_project_page(request, project_name):
         old_privacy = project['private']
         new_privacy = form_dict['private']
         notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
+
         ## check multi files, send files to GP and run aggregator there:
         file_fps = []
         temp_proj_id = uuid.uuid4().hex ## to be changed
@@ -1454,6 +1431,7 @@ def edit_project_page(request, project_name):
             downloads = project['downloads']
             # create a new one with the new form
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
+            ## get extra metadata from csv first (if exists in old project), add it to the new proj
             new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions = new_prev_versions, previous_views = [views, downloads])
             if new_id is not None:
                 # go to the new project
@@ -1491,15 +1469,21 @@ def edit_project_page(request, project_name):
             
             if metadata_file:
                 current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file)
-            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 'description': form_dict['description'], 'date': get_date(),
-                                 'private': form_dict['private'], 'project_members': form_dict['project_members'], 'publication_link': form_dict['publication_link'],
-                                 'Oncogenes': get_project_oncogenes(current_runs), 'alias_name' : alias_name}}
+            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs, 
+                                 'description': form_dict['description'], 'date': get_date(),
+                                 'private': form_dict['private'], 
+                                 'project_members': form_dict['project_members'], 
+                                 'publication_link': form_dict['publication_link'],
+                                 'Oncogenes': get_project_oncogenes(current_runs), 
+                                 'alias_name' : alias_name}}
             if form.is_valid():
-                print('im here')
                 collection_handle.update_one(query, new_val)
+                edit_proj_privacy(project, old_privacy, new_privacy)
+                logging.debug("Updated collection_handle with new data")
                 return redirect('project_page', project_name=project_name)
             else:
                 raise Http404()
+
         else:
             return HttpResponse("Project does not exist")
     else:
@@ -1570,8 +1554,8 @@ def admin_featured_projects(request):
 
 
 
-    # public_projects = list(collection_handle_primary.find({'private': False, 'delete': False}))
-    public_projects = get_projects_close_cursor({'private': False, 'delete': False})
+    public_projects = list(collection_handle_primary.find({'private': False, 'delete': False}))
+    # public_projects = get_projects_close_cursor({'private': False, 'delete': False})
     for proj in public_projects:
         prepare_project_linkid(proj)
 
@@ -1692,8 +1676,8 @@ def admin_stats(request):
     users = User.objects.all()
     
     # Get public and private project data
-    # public_projects = list(collection_handle.find({'private': False, 'delete': False}))
-    public_projects = get_projects_close_cursor({'private': False, 'delete': False})
+    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    # public_projects = get_projects_close_cursor({'private': False, 'delete': False})
     for proj in public_projects:
         prepare_project_linkid(proj)
         if check_if_db_field_exists(proj, 'project_downloads'):
@@ -1779,8 +1763,10 @@ def project_stats_download(request):
     #     return redirect('/accounts/logout')
     
     # Get public and private project data
+
+    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
     # public_projects = list(collection_handle.find({'private': False, 'delete': False}))
-    public_projects = get_projects_close_cursor({'private': False, 'delete': False})
+    # public_projects = get_projects_close_cursor({'private': False, 'delete': False})
     for project in public_projects:
         if not 'project_downloads' in project:
             project['project_downloads_sum'] = 0
@@ -1791,7 +1777,7 @@ def project_stats_download(request):
             project['sample_downloads_sum'] = 0
         else:
             project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
-
+            
     for proj in public_projects:
         prepare_project_linkid(proj)
     
@@ -1845,7 +1831,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
         if extra_metadata_filepath:
+            print('hello')
             runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath)
+            
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
 
@@ -1993,8 +1981,8 @@ def admin_delete_project(request):
             error_message = admin_permanent_delete_project(project_id, project, project_name)
 
 
-    # deleted_projects = list(collection_handle.find({'delete': True, 'current' : True}))
-    deleted_projects = get_projects_close_cursor({'delete': True, 'current' : True})
+    deleted_projects = list(collection_handle.find({'delete': True, 'current' : True}))
+    # deleted_projects = get_projects_close_cursor({'delete': True, 'current' : True})
     for proj in deleted_projects:
         prepare_project_linkid(proj)
         try:
@@ -2093,7 +2081,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, previous_versi
 
     project_data_path = f"tmp/{tmp_id}"
     new_id = collection_handle.insert_one(project)
-    add_project_to_site_statistics(project)
+    add_project_to_site_statistics(project, project['private'])
     # move the project location to a new name using the UUID to prevent name collisions
     new_project_data_path = f"tmp/{new_id.inserted_id}"
     os.rename(project_data_path, new_project_data_path)
@@ -2504,3 +2492,84 @@ def fetch_graph(request, gene_name):
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+      
+def search_results(request):
+    """Handles user queries and renders search results."""
+
+    if request.method == "POST":
+        # Extract search parameters from POST request
+        gene_search = request.POST.get("genequery", "").upper()
+        project_name = request.POST.get("project_name", "").upper()
+        classifications = request.POST.get("classquery", "").upper()
+        sample_name = request.POST.get("metadata_sample_name", "").upper()
+        sample_type = request.POST.get("metadata_sample_type", "").upper()
+
+        # Get the combined cancer/tissue field
+        cancer_tissue = request.POST.get("metadata_cancer_tissue", "").upper()
+
+        # We'll set both parameters to the same value for the backend search
+        cancer_type = cancer_tissue
+        tissue_origin = ""  # Leave empty to avoid duplicate filtering
+
+        extra_metadata = request.POST.get('metadata_extra', "").upper()
+
+        # Store user query for persistence in the form
+        user_query = {
+            "genequery": gene_search,
+            "project_name": project_name,
+            "classquery": classifications,
+            "metadata_sample_name": sample_name,
+            "metadata_sample_type": sample_type,
+            "metadata_cancer_tissue": cancer_tissue,  # New field
+            'extra_metadata': extra_metadata
+        }
+
+        # Debugging logs
+        logging.info(f'Search terms: Gene={gene_search}, Project={project_name}, Class={classifications}, '
+                     f'Sample Name={sample_name}, Sample Type={sample_type}, Cancer/Tissue={cancer_tissue},'
+                     f' Extra Metadata={extra_metadata}')
+
+        # Run the search function
+        search_results = caper.search.perform_search(
+            genequery=gene_search,
+            project_name=project_name,
+            classquery=classifications,
+            metadata_sample_name=sample_name,
+            metadata_sample_type=sample_type,
+            metadata_cancer_type=cancer_tissue,  # Use the combined term
+            metadata_tissue_origin=tissue_origin,  # Leave this empty
+            extra_metadata=extra_metadata,
+            user=request.user
+        )
+
+        # Count the number of matches for each category
+        public_projects_count = len(search_results["public_projects"])
+        private_projects_count = len(search_results["private_projects"])
+        public_samples_count = len(search_results["public_sample_data"])
+        private_samples_count = len(search_results["private_sample_data"])
+
+        query_info = {
+            "Gene Name": gene_search,
+            "Project Name": project_name,
+            "Classification": classifications,
+            "Sample Name": sample_name,
+            "Sample Type": sample_type,
+            "Cancer Type or Tissue": cancer_tissue,  # Combined field in display
+        }
+
+        return render(request, "pages/gene_search.html", {
+            "query_info": {k: v for k, v in query_info.items() if v},  # Filters out empty values
+            "user_query": user_query,  # Pass user query to the template
+            "public_projects": search_results["public_projects"],
+            "private_projects": search_results["private_projects"],
+            "public_sample_data": search_results["public_sample_data"],
+            "private_sample_data": search_results["private_sample_data"],
+            "public_projects_count": public_projects_count,
+            "private_projects_count": private_projects_count,
+            "public_samples_count": public_samples_count,
+            "private_samples_count": private_samples_count,
+        })
+
+    else:
+        return redirect("gene_search_page")  # Redirect if accessed incorrectly

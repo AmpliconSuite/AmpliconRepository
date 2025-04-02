@@ -1,8 +1,6 @@
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect,JsonResponse,Http404
 from .utils import *
 import pandas as pd
 import csv
-from django.shortcuts import render, redirect
 
 
 
@@ -66,7 +64,6 @@ def process_metadata(request, project_id):
                 {'_id': ObjectId(project_id)},
                 {'$set': {'runs': runs}}
             )
-
             return "complete"
 
         except Exception as e:
@@ -91,6 +88,7 @@ def process_metadata_no_request(project_runs, metadata_file=None, file_path=None
     Raises:
         ValueError: If neither `metadata_file` nor `file_path` is provided or there is an error in processing.
     """
+    
     print('*****************************')
     print(metadata_file)
     print(file_path)
@@ -131,29 +129,28 @@ def process_metadata_no_request(project_runs, metadata_file=None, file_path=None
             if not sample_name:
                 continue  # Skip rows without a sample_name
 
-            # Find the corresponding sample in the runs
-            sample_found = False
+            # Find and update all corresponding samples in the runs
             for sample_key, sample_list in project_runs.items():
                 for sample in sample_list:
                     if sample.get('Sample_name') == sample_name:
-                        sample_found = True
-                        # Add metadata fields into `extra_metadata_from_csv`
                         if "extra_metadata_from_csv" not in sample:
                             sample["extra_metadata_from_csv"] = {}
-
                         for key, value in row.items():
-                            if key != 'sample_name':  # Skip sample_name column
+                            if key != 'sample_name':
                                 sample["extra_metadata_from_csv"][key] = value
-                        break
-                if sample_found:
-                    break
-
-            if not sample_found:
-                print(f"Sample {sample_name} not found in the provided runs data.")
+                            if key.lower() == 'sample_name':
+                                sample["Sample_name"] = value
+                            if key.lower() == 'cancer_type':
+                                sample["Cancer_type"] = value
+                            if key.lower() == 'sample_type':
+                                sample["Sample_type"] = value
+                            if key.lower() == 'tissue_of_origin':
+                                sample["Tissue_of_origin"] = value
 
         return project_runs
 
     except Exception as e:
+        print('hello i am here')
         logging.exception("Error processing metadata")
         raise ValueError(f"Error processing file: {str(e)}")
 
@@ -177,7 +174,7 @@ def get_metadata_file_from_request(request):
 
 import os
 
-def save_metadata_file(request, project_data_path):
+def save_metadata_file(request, project_data_path, old_project_extra_metadata = None):
     """
     Saves the 'metadataFile' from the request to the specified project data path.
 
@@ -196,7 +193,8 @@ def save_metadata_file(request, project_data_path):
     if not metadata_file:
         print("No 'metadataFile' found in the request.")
         return None
-
+    
+    
     # Ensure the target directory exists
     os.makedirs(project_data_path, exist_ok=True)
 
@@ -213,3 +211,23 @@ def save_metadata_file(request, project_data_path):
 
     except Exception as e:
         raise IOError(f"Failed to save metadata file: {str(e)}")
+    
+    
+def get_extra_metadata_from_project(project):
+    """
+    Retrieves the extra metadata from the project's runs.
+
+    Args:
+        project (dict): The project dictionary.
+
+    Returns:
+        dict: A dictionary containing the extra metadata from the project's runs.
+    """
+    extra_metadata = {}
+    for sample_list in project.get('runs', {}).values():
+        for sample in sample_list:
+            extra_metadata_from_csv = sample.get('extra_metadata_from_csv', {})
+            if extra_metadata_from_csv:
+                extra_metadata[sample['Sample_name']] = extra_metadata_from_csv
+
+    return extra_metadata

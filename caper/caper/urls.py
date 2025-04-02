@@ -78,6 +78,7 @@ urlpatterns += [
     path('upload_api/', views.FileUploadView.as_view(), name = 'Document'), 
     path('robots.txt', views.robots, name = "robots.txt"),
     path('loading/', views.loading),
+    path('search_results/', views.search_results, name='search_results'),
     
 ]
 

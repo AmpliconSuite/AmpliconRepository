@@ -1,0 +1,61 @@
+{% load static %}
+
+<form id="searchForm" action="{% url 'search_results' %}" method="POST" class="p-4 border rounded bg-light">
+    {% csrf_token %}
+
+    <div class="mb-3">
+        <label for="project_name" class="form-label">Project Name</label>
+        <input type="text" class="form-control" name="project_name" id="project_name"
+               placeholder="Enter project name..." value="{{ user_query.project_name|default:'' }}">
+    </div>
+
+    <div class="mb-3">
+        <label for="metadata_sample_name" class="form-label">Sample Name</label>
+        <input type="text" class="form-control" name="metadata_sample_name" id="metadata_sample_name"
+            placeholder="Enter sample name" value="{{ user_query.metadata_sample_name|default:'' }}">
+    </div>
+
+    <div class="mb-3">
+        <label for="genequery" class="form-label">Gene Name</label>
+        <input type="text" class="form-control" name="genequery" id="genequery"
+               placeholder="Gene name (e.g. MYC)" value="{{ user_query.genequery|default:'' }}">
+    </div>
+
+    <div class="mb-3">
+        <label for="classquery" class="form-label">Classification Type</label>
+        <select class="form-control" name="classquery" id="classquery">
+            <option value="" selected disabled>Select a classification type</option>
+            <option value="ecDNA" {% if user_query.classquery == "ecDNA" %}selected{% endif %}>ecDNA</option>
+            <option value="linear amplification" {% if user_query.classquery == "linear amplification" %}selected{% endif %}>Linear Amplification</option>
+            <option value="BFB" {% if user_query.classquery == "BFB" %}selected{% endif %}>Breakage-Fusion-Bridge (BFB)</option>
+            <option value="complex non-cyclic" {% if user_query.classquery == "complex non-cyclic" %}selected{% endif %}>Complex Non-Cyclic</option>
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <button class="btn btn-secondary w-100" type="button" data-toggle="collapse" data-target="#metadataCollapse"
+            aria-expanded="false" aria-controls="metadataCollapse">
+            Metadata Search Options
+        </button>
+    </div>
+
+    <div class="collapse" id="metadataCollapse">
+        <div class="card card-body">
+            <div class="mb-3">
+                <label for="metadata_sample_type" class="form-label">Sample Type</label>
+                <input type="text" class="form-control" name="metadata_sample_type" id="metadata_sample_type"
+                    placeholder="e.g. cell line or primary tumor" value="{{ user_query.metadata_sample_type|default:'' }}">
+            </div>
+
+            <div class="mb-3">
+                <label for="metadata_cancer_tissue" class="form-label">Cancer Type or Tissue</label>
+                <input type="text" class="form-control" name="metadata_cancer_tissue" id="metadata_cancer_tissue"
+                    placeholder="Enter cancer type or tissue of origin" value="{{ user_query.metadata_cancer_tissue|default:'' }}">
+            </div>
+        </div>
+    </div>
+
+    <div class="d-grid">
+        <button type="submit" class="btn btn-primary">Search</button>
+    </div>
+</form>

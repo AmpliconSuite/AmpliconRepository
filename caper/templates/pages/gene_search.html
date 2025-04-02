@@ -1,174 +1,342 @@
 {% extends 'base.html' %}
 
+{% block extra_css %}
+<style>
+    .search-container {
+        display: flex;
+        gap: 20px;
+        width: 100%; /* Expand fully to match container width above */
+    }
+    .search-box {
+        width: 30%;
+        padding: 20px;
+        background-color: #f8f9fa;
+        border-radius: 5px;
+    }
+    .results-container {
+        width: 100%;
+    }
+
+    mark {
+        background-color: #ffeb3b !important; /* Brighter yellow */
+        color: black; /* Ensures readability */
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-weight: bold;
+    }
+
+    .table td, .table th {
+        white-space: normal !important;
+        word-wrap: break-word;
+        max-width: 200px; /* Adjust this value as needed */
+    }
+
+    /* Make sure these styles don't interfere with our custom rendering */
+    .gene-content.expanded {
+        white-space: normal !important;
+        word-wrap: break-word;
+    }
+
+    /* Ensure search matches are highlighted */
+    .table td mark {
+      background-color: #ffeb3b;
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script>
     $(document).ready(function () {
-        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function () {
             $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
         });
-     
-        $('table.table').DataTable({
+
+        // Live search filter
+        $("#searchInput").on("keyup", function () {
+            let value = $(this).val().toLowerCase();
+            $(".results-container table tbody tr").filter(function () {
+                $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1);
+            });
+        });
+
+        // Get search terms for gene highlighting
+        const searchTerms = [];
+        document.querySelectorAll(".card-body table tbody tr").forEach(row => {
+            const key = row.cells[0].textContent.trim().replace(":", "");
+            const value = row.cells[1].textContent.trim();
+            if (key === "Gene Name" && value) {
+                searchTerms.push(value.toUpperCase());
+            }
+        });
+
+        // Initialize DataTables with custom gene column rendering
+        function initializeTable(tableSelector) {
+            const table = $(tableSelector);
+            if ($.fn.DataTable.isDataTable(table)) return;
+
+            // Find the Genes column index
+            let genesColumnIndex = -1;
+            table.find('thead th').each(function(index) {
+                if ($(this).text().trim() === 'Genes') {
+                    genesColumnIndex = index;
+                }
+            });
+
+            // Initialize DataTable with custom rendering for the genes column
+            table.DataTable({
+                "paging": true,
+                "pageLength": 10,
+                "lengthMenu": [10, 25, 50, 100],
+                "ordering": true,
+                "info": true,
+                "searching": true,
+                "autoWidth": false,
+                "responsive": true,
+                "columnDefs": [{
+                    "targets": genesColumnIndex !== -1 ? genesColumnIndex : [], // Only apply to Genes column
+                    "render": function(data, type, row) {
+                        if (type !== 'display' || genesColumnIndex === -1) return data;
+
+                        // For display rendering, create expandable content
+                        const genes = data.split(', ');
+                        if (genes.length <= 5) return data; // No need for expansion
+
+                        // Reorganize genes if any match the search term
+                        let reorganizedGenes = [...genes];
+                        if (searchTerms.length > 0) {
+                            const matchedGenes = [];
+                            const otherGenes = [];
+
+                            genes.forEach(gene => {
+                                if (searchTerms.some(term => gene.toUpperCase().includes(term))) {
+                                    matchedGenes.push(`<mark>${gene}</mark>`);
+                                } else {
+                                    otherGenes.push(gene);
+                                }
+                            });
+
+                            if (matchedGenes.length > 0) {
+                                reorganizedGenes = [...matchedGenes, ...otherGenes];
+                            }
+                        }
+
+                        // Create HTML for expandable content
+                        return `
+                            <div class="gene-container">
+                                <div class="gene-content collapsed">${reorganizedGenes.slice(0, 5).join(', ')}</div>
+                                <div class="gene-content expanded" style="display:none">${reorganizedGenes.join(', ')}</div>
+                                <button class="btn btn-sm btn-link p-0 gene-toggle" style="margin-left:5px;color:blue;">
+                                    Show all ${genes.length} genes
+                                </button>
+                            </div>
+                        `;
+                    }
+                }]
+            });
+        }
+
+        // Initialize all tables
+        $('#projects-tab table.table').each(function() { initializeTable(this); });
+        $('#samples-tab table.table').each(function() { initializeTable(this); });
+        $('#private-projects-tab table.table').each(function() { initializeTable(this); });
+        $('#private-samples-tab table.table').each(function() { initializeTable(this); });
+
+        // Handle click on the toggle button
+        $(document).on('click', '.gene-toggle', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const container = $(this).closest('.gene-container');
+            const collapsedContent = container.find('.gene-content.collapsed');
+            const expandedContent = container.find('.gene-content.expanded');
+
+            if (collapsedContent.is(':visible')) {
+                collapsedContent.hide();
+                expandedContent.show();
+                $(this).text('Show less');
+            } else {
+                expandedContent.hide();
+                collapsedContent.show();
+                $(this).text(`Show all ${expandedContent.text().split(',').length} genes`);
+            }
         });
     });
 </script>
 {% endblock %}
 
 {% block main %}
+<h2 class="mt-4">Search Query Information</h2>
 
-<h1>Search Results: {{ gene_query }} : {{ class_query }}  </h1>
-
-
-<h3>Projects</h3>
-<div>
-    <ul class="nav nav-tabs" role="tablist" >
-        <li class="nav-item">
-            <a class="nav-link active" href="#tab-table1" data-toggle="tab">Public Projects</a>
-        </li>
-        {% if user.is_authenticated %}
-        <li class="nav-item"> 
-            <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
-        </li>
-        {% endif %}
-    </ul>
-    <div class="tab-content" style="padding-top: 30px;">
-        <div class="tab-pane active" id="tab-table1">
-            <table id='projectTable1' class="table" style="padding-top: 20px; width:100%">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                        <th>Last Updated</th>
-                        <th>Project Members</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for project in public_projects %}
-                    <tr>
-                        <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
-                        <td>{{ project.description }}</td>
-                        <td>{{ project.date }}</td>
-                        <td>{% for person in project.project_members %}
-                            {{ person }}<br>
-                        {% endfor%}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% if user.is_authenticated %}
-        <div class="tab-pane" id="tab-table2">
-            <table id='projectTable2' class="table" style="padding-top: 20px; width:100%">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                        <th>Last Updated</th>
-                        <th>Project Members</th>
-                        <th>Edit Project</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for project in private_projects %}
-                    <tr>
-                        <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
-                        <td>{{ project.description }}</td>
-                        <td>{{ project.date }}</td>
-                        <td>{% for person in project.project_members %}
-                            {{ person }}<br>
-                        {% endfor%}</td>
-                        <td><a target="_blank" href="{% url 'edit_project_page' project_name=project.linkid %}"><i class="fas fa-edit" style="font-size:15px"></i></a></td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% endif %}
-    </div>
-</div>
-<br>
-<h3>Samples</h3>
-<h3>Samples</h3>
-<div>
-    <ul class="nav nav-tabs" role="tablist" >
-        <li class="nav-item">
-            <a class="nav-link active" href="#tab-table3" data-toggle="tab">Public Projects</a>
-        </li>
-        {% if user.is_authenticated %}
-        <li class="nav-item">
-            <a class='nav-link' href="#tab-table4" data-toggle="tab">Private Projects</a>
-        </li>
-        {% endif %}
-    </ul>
-    <div class="tab-content" style="padding-top: 30px;">
-        <div class="tab-pane active" id="tab-table3">
-            <table id='sampleTable1' class="table" style="padding-top: 20px; width:100%">
-                <thead>
-                    <tr>
-                        <th>Project Name</th>
-                        <th>Sample Name</th>
-                        <th>Feature Count</th>
-                        <th>Oncogenes</th>
-                        <th>Classifications</th>
-                        <!-- <th>Sample Page</th> -->
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for sample in public_sample_data %}
+<div class="card mb-4">
+    <div class="card-body">
+        <table class="table table-borderless mb-0">
+            <tbody>
+                {% for key, value in query_info.items %}
+                    {% if value %}
                         <tr>
-                            <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
-                            <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
-                            <td>{{ sample.Features }}</td>
-                            <td>{{ sample.Oncogenes|join:", " }}</td>
-                            <td>{{ sample.Classifications|join:", " }}</td>
-                            <!-- <td>{% for gene in sample.Oncogenes %}
-                                {{ gene|wordwrap:5 }}
-                            {% endfor %} -->
-                            </td>
-                            <!-- <td><a target="_blank" href="/project/{{project.linkid}}/sample/{{sample.Sample_name}}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td> -->
+                            <td class="fw-bold text-primary">{{ key|title }}:</td>
+                            <td>{{ value }}</td>
                         </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% if user.is_authenticated %}
-        <div class="tab-pane" id="tab-table4">
-            <table id='sampleTable2' class="table" style="padding-top: 20px; width:100%">
-                <thead>
-                    <tr>
-                        <th>Project Name</th>
-                        <th>Sample Name</th>
-                        <th>Feature Count</th>
-                        <th>Oncogenes</th>
-                        <th>Classifications</th>
-                        <!-- <th>Sample Page</th> -->
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for sample in private_sample_data %}
-                        <tr>
-                            <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
-                            <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
-                            <td>{{ sample.Features }}</td>
-                            <td>{{ sample.Oncogenes|join:", " }}</td>
-                            <td>{{ sample.Classifications|join:", " }}</td>
-                            <!-- <td>{% for gene in sample.Oncogenes %}
-                                {{ gene|wordwrap:5 }}
-                            {% endfor %} -->
-                            </td>
-                            <!-- <td><a target="_blank" href="/project/{{project.linkid}}/sample/{{sample.Sample_name}}"><i class="fa fa-link" aria-hidden="true" style="font-size:15px"></i></a></td> -->
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% endif %}
-    </div>
-    <div class="table-responsive">
-        <table id='myTable1' class="table table-hover table-sm">
-
+                    {% endif %}
+                {% endfor %}
+            </tbody>
         </table>
     </div>
 </div>
+<div class="search-container">
+    <!-- Embedded Search Box from search.html -->
+    <div class="search-box">
+        {% include 'includes/searchbox.html' %}
+    </div>
 
+    <!-- Results (Right) -->
+    <div class="results-container" >
+        <ul class="nav nav-tabs">
+            <li class="nav-item">
+                <a class="nav-link active" href="#projects-tab" data-toggle="tab">
+                    Projects <span class="badge badge-primary">{{ public_projects_count }}</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#samples-tab" data-toggle="tab">
+                    Samples <span class="badge badge-primary">{{ public_samples_count }} </span>
+                </a>
+            </li>
+            {% if user.is_authenticated %}
+            <li class="nav-item">
+                <a class="nav-link" href="#private-projects-tab" data-toggle="tab">
+                    Private Projects <span class="badge badge-primary">{{ private_projects_count }}</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#private-samples-tab" data-toggle="tab">
+                    Private Samples <span class="badge badge-primary">{{ private_samples_count }}</span>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
 
+        <div class="tab-content" style="padding-top: 20px; overflow-x: auto;">
+            <!-- Public Projects Tab -->
+            <div class="tab-pane active" id="projects-tab">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Last Updated</th>
+                            <th>Project Members</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for project in public_projects %}
+                        <tr>
+                            <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                            <td>{{ project.description }}</td>
+                            <td>{{ project.date }}</td>
+                            <td>{% for person in project.project_members %}
+                                {{ person }}<br>
+                            {% endfor %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Public Samples Tab -->
+            <div class="tab-pane" id="samples-tab">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Project Name</th>
+                            <th>Sample Name</th>
+                            <th>Feature ID</th>
+                            <th>Genes</th>
+                            <th>Classification</th>
+                            <th>Sample Type</th>
+                            <th>Cancer Type</th>
+                            <th>Tissue of Origin</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sample in public_sample_data %}
+                        <tr>
+                            <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
+                            <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
+                            <td><code>{{ sample.Feature_ID }}</code></td>
+                            <td>{{ sample.All_genes|join:", " }}</td>
+                            <td>{{ sample.Classification}}</td>
+                            <td>{{ sample.Sample_type}}</td>
+                            <td>{{ sample.Cancer_type}}</td>
+                            <td>{{ sample.Tissue_of_origin}}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if user.is_authenticated %}
+            <!-- Private Projects Tab -->
+            <div class="tab-pane" id="private-projects-tab">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Last Updated</th>
+                            <th>Project Members</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for project in private_projects %}
+                        <tr>
+                            <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                            <td>{{ project.description }}</td>
+                            <td>{{ project.date }}</td>
+                            <td>{% for person in project.project_members %}
+                                {{ person }}<br>
+                            {% endfor %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Private Samples Tab -->
+            <div class="tab-pane" id="private-samples-tab">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Project Name</th>
+                            <th>Sample Name</th>
+                            <th>Feature ID</th>
+                            <th>Genes</th>
+                            <th>Classification</th>
+                            <th>Sample Type</th>
+                            <th>Cancer Type</th>
+                            <th>Tissue of Origin</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sample in private_sample_data %}
+                        <tr>
+                            <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
+                            <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
+                            <td><code>{{ sample.Feature_ID }}</code></td>
+                            <td>{{ sample.All_genes|join:", " }}</td>
+                            <td>{{ sample.Classification}}</td>
+                            <td>{{ sample.Sample_type}}</td>
+                            <td>{{ sample.Cancer_type}}</td>
+                            <td>{{ sample.Tissue_of_origin}}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
 {% endblock %}

@@ -3,6 +3,7 @@ import logging
 import pandas as pd
 from bson import ObjectId
 from pymongo import MongoClient,ReadPreference
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from allauth.account.adapter import DefaultAccountAdapter
 from django import forms
 from django.contrib.auth import get_user_model
@@ -13,26 +14,57 @@ import re
 import os
 
 
-def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED
-                  ):
-    client = MongoClient(host, read_preference=read_preference
-                        )
-    db_handle = client[db_name]
-    return db_handle, client
+# def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED
+#                   ):
+#     client = MongoClient(host, read_preference=read_preference
+#                         )
+#     db_handle = client[db_name]
+#     return db_handle, client
+
+
+def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED):
+    try:
+        client = MongoClient(
+            host,
+            read_preference=read_preference,
+            maxPoolSize=50,
+            minPoolSize=10,
+            maxIdleTimeMS=45000,
+            connectTimeoutMS=5000,
+            socketTimeoutMS=5000,
+            serverSelectionTimeoutMS=5000,
+            waitQueueTimeoutMS=2500,  # Wait max 2.5 seconds for available connection
+            retryWrites=True,
+            retryReads=True,
+            w='majority',
+            wtimeoutMS=5000
+        )
+
+        # Verify connection is working
+        client.admin.command('ismaster')
+
+        db_handle = client[db_name]
+        return db_handle, client
+
+    except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+        logging.error(f"Could not connect to MongoDB: {str(e)}")
+        raise
+
 
 def get_collection_handle(db_handle,collection_name):
     return db_handle[collection_name]
 
+
 def create_run_display(project):
-    runs = project['runs']
-    run_list = []
-    for run in runs:
-        for sample in runs[run]:
-            for key in list(sample.keys()):
-                newkey = key.replace(" ", "_")
-                sample[newkey] = sample.pop(key)
-            run_list.append(sample)
-    return run_list
+    """
+    Creates a flattened list of samples with underscores replacing spaces in keys.
+    """
+    return [
+        {key.replace(" ", "_"): value for key, value in sample.items()}
+        for run in project['runs']
+        for sample in project['runs'][run]
+    ]
+
 
 # since we use email and/or username to control project visibility,
 # we don't want a new, unknown user to come in and register an account
@@ -180,8 +212,15 @@ def get_one_sample(project_name, sample_name):
 def sample_data_from_feature_list(features_list):
     """
     extracts sample data from a list of features
+    
+    ## only these fields are returned in the sample data for search!! ##
+    [['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Tissue_of_origin', 'extra_metadata_from_csv']]
     """
-    df = pd.DataFrame(features_list)[['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID']]
+    df = pd.DataFrame(features_list)
+    print("sample_data_from_feature_list df")
+    print(df.head())
+    cols = [col for col in ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', "Cancer_type", 'Tissue_of_origin', 'extra_metadata_from_csv'] if col in df.columns]
+    df= df[cols]
     sample_data = []
     for sample_name, indices in df.groupby(['Sample_name']).groups.items():
         sample_dict = dict()
@@ -193,9 +232,26 @@ def sample_data_from_feature_list(features_list):
             sample_dict['Features'] = 0
         else:
             sample_dict['Features'] = len(subset['Feature_ID'])
+        
+        # if 'extra_metadata_from_csv' in subset.columns:
+        #     try:
+        #         for k, v in subset['extra_metadata_from_csv']:
+        #             sample_dict[k] = v
+        #     except Exception as e:
+        #         logging.info(subset['extra_metadata_from_csv'])
+        #         logging.info(e)
+        if 'Sample_type' in subset.columns:
+            sample_dict['Sample_type'] = subset['Sample_type'].values[0]
+        if 'Cancer_type' in subset.columns:
+            sample_dict['Cancer_type'] = subset['Cancer_type'].values[0]
+        if 'Tissue_of_origin' in subset.columns:
+            sample_dict['Tissue_of_origin'] = subset['Tissue_of_origin'].values[0]
+        sample_dict['Sample_name'] = sample_name
         sample_data.append(sample_dict)
     # print(f'********** TOOK {datetime.datetime.now() - now}')
     return sample_data
+
+
 
 def get_all_alias():
     """
@@ -203,7 +259,6 @@ def get_all_alias():
     """
     return collection_handle.distinct('alias_name')
     
-
 
 def get_one_project(project_name_or_uuid):
     """
@@ -273,31 +328,38 @@ def get_one_project(project_name_or_uuid):
     return project
 
 
-def flatten(nested, lst = True, sort = True):
+def flatten(nested, lst=True, sort=True):
     """
-    recursive function to get elements in nested list
-    """
-    flat = []
-    def helper(nested):
-        for e in nested:
-            if isinstance(e, list):
-                helper(e)
-            else:
-                if e:
-                    e = e.replace("'",'')
-                    if len(e) > 0:
-                        flat.append(e)
-    helper(nested)
+    Recursively flattens a nested list and optionally sorts the result.
+    Removes empty strings and single quotes from elements.
 
-    if lst and sort:
-        return list(sorted(flat))
-    return flat
+    Args:
+        nested: A potentially nested list structure
+        lst: Whether to return a list (if False, returns the internal working list)
+        sort: Whether to sort the final result (only applies if lst=True)
+
+    Returns:
+        A flattened list of non-empty strings with quotes removed
+    """
+
+    def helper(items):
+        for item in items:
+            if isinstance(item, list):
+                yield from helper(item)
+            elif item:  # Checks for non-empty strings
+                cleaned = item.replace("'", '')
+                if cleaned:  # Check again after cleaning
+                    yield cleaned
+
+    result = list(helper(nested))
+    return sorted(result) if lst and sort else result
 
 
 def validate_project(project, project_name):
     """
     Checks the following for a project:
     1. if keys in project[runs] all contain underscores, if not, replace them with underscores, insert into db
+    2. Checks if Cancer_type exists. if not, initialize to None
     """
 
     ## check for 1
@@ -326,18 +388,16 @@ def prepare_project_linkid(project):
 
 def replace_underscore_keys(runs_from_proj_creation):
     """
-    Replaces underscores in the keys from runs at proj creation step
+    Replaces spaces with underscores in the keys from runs at project creation step.
+    Returns a new dictionary with transformed keys.
     """
-    new_run = {}
-    for sample in runs_from_proj_creation.keys():
-        features = []
-        for feature in runs_from_proj_creation[sample]:
-            new_feat = {}
-            for key in feature.keys():
-                new_feat[key.replace(" ", '_')] = feature[key]
-            features.append(new_feat)
-        new_run[sample] = features
-    return new_run
+    return {
+        sample: [
+            {key.replace(" ", "_"): value for key, value in feature.items()}
+            for feature in features
+        ]
+        for sample, features in runs_from_proj_creation.items()
+    }
 
 
 def create_user_list(string, current_user):
