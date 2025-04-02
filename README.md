@@ -81,7 +81,58 @@ This is the main repository for the AmpliconRepository website. The documentatio
 Periodically, you will want to purge old or excessively large accumulated data from you DB. You can do this using the provided script
 > `python purge-local-db.py`
 
-## 4. Set up secret keys for OAuth2 and other environment variables
+## 4. Neo4j Download Instructions
+
+### Docker
+
+the easiest way... edit the path at the end to the local drive you want it to use
+
+```docker run -d --name neo4j -p 7474:7474 -p 7687:7687 --env NEO4J_AUTH=neo4j/$NEO4J_PASSWORD_SECRET -v /home/ubuntu/AmpliconRepository-dev/neo4j neo4j```<br>
+
+
+### macOS
+
+Download and unzip the tar file:<br>
+```curl -O -C - http://dist.neo4j.org/neo4j-community-5.12.0-unix.tar.gz```<br>
+```tar -xvzf neo4j-community-5.12.0-unix.tar.gz```<br>
+
+Start neo4j with the console command:<br>
+```cd neo4j-community-5.12.0```<br>
+```bin/neo4j console```<br>
+
+Go to http://localhost:7474/browser/ and change the auth settings. By default, both user and password are 'neo4j'. Keep user as 'neo4j' and change password to 'password'.
+
+The environment is now set up. Ensure that neo4j is running before querying the graph.
+
+
+> Alternatively, go to https://neo4j.com/deployment-center/, then download the rpm file for the latest Community Edition under the section titled 'Graph Database Self-Managed'. Further instructions are available upon clicking Download. Note that this method has not been tested by our team.
+
+### Ubuntu (or Windows via WSL/WSL2)
+
+Please follow this documentation to set up the latest version of [Neo4j Community Edition](https://neo4j.com/docs/operations-manual/2025.01/installation/linux/debian/)
+
+In brief, you can do
+
+```
+wget -O - https://debian.neo4j.com/neotechnology.gpg.key | sudo apt-key add -
+echo 'deb https://debian.neo4j.com stable latest' | sudo tee /etc/apt/sources.list.d/neo4j.list
+sudo apt-get update
+sudo apt-get install neo4j
+```
+
+Register for an account at [Neo4j Aura Console](https://console.neo4j.io/)
+
+Then launch it by running
+```
+sudo neo4j start
+```
+
+Visit http://localhost:7474 and login with neo4j as both the user and password. You will be prompted to set a password for future use. 
+You must set the updated password to the value in your `config.sh` file (value of NEO4J_PASSWORD_SECRET) 
+
+For shutdown at the end of your session, you can do `sudo neo4j stop`
+
+## 5. Set up secret keys for OAuth2 and other environment variables
 - Make sure you have the `config.sh` file from another developer (this contains secret key information)
 - Run the command to initialize variables:
 `source config.sh`
@@ -95,7 +146,7 @@ export S3_FILE_DOWNLOADS='FALSE'
 **IMPORTANT**: After recieving your `config.sh`, please ensure you do not upload it to Github or make it available publicly anywhere.
 
 
-## 5. Run development server (Django)
+## 6. Run development server (Django)
 - Open a terminal window or tab with the `ampliconenv` environment active
 - Move to the `caper/` folder (should see `manage.py`)
 - Run the server locally:

@@ -122,3 +122,32 @@ table.dataTable.no-border tbody td {
     height:35px;
     width:35px;
 }
+
+.cy-container {
+    position: relative;
+}
+
+.download-svg-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 8px 16px;
+    background-color: #d63031; /* Red color to make it distinct */
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 999;
+}
+
+.download-svg-btn:hover {
+    background-color: #b71c1c;
+}
+
+/* Show button on container hover */
+.cy-container:hover .download-svg-btn {
+    opacity: 1;
+}
