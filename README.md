@@ -322,7 +322,7 @@ docker inspect -f \
 
 # Pushing changes to GitHub and merging PRs <a name="pr"></a> 
 - Work on branches and open pull requests to merge changes into main.
-- Please ensure that you do not commit `caper.sqlite3` along with your other changes. 
+- **Please ensure that you do not commit `caper.sqlite3` along with your other changes.** 
 - PR reviewers, please check that `caper.sqlite3` is not among the changed files in a PR.
 - When merging a PR, please do the following steps:
   - pull the branch in question and load in local deployment
