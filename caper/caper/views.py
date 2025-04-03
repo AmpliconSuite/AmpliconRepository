@@ -48,14 +48,14 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
 from django.contrib import messages
 from django.utils.safestring import mark_safe
 
-
-from .view_download_stats import * 
+from .view_download_stats import *
 
 ## aggregator 
 from .aggregator_main import * 
 # from AmpliconSuiteAggregatorFunctions import *
 
-
+# search
+from .search import *
 
 # SET UP HANDLE
 def loading(request):
@@ -2531,7 +2531,7 @@ def search_results(request):
                      f' Extra Metadata={extra_metadata}')
 
         # Run the search function
-        search_results = caper.search.perform_search(
+        search_results = perform_search(
             genequery=gene_search,
             project_name=project_name,
             classquery=classifications,
