@@ -47,6 +47,15 @@
     <div class="settings">
         <!-- probability slider -->
         <div class="edge-slider">
+            <!-- <label class="tooltip-wrapper">
+                <span class="tooltip-icon">?⃝
+                    <span class="tooltip-text">
+                        <strong>Significance score is computed using a chi-squared test.</strong><br>
+                        Explanation here for tooltip.
+                    </span>
+                </span>
+                Significance Threshold ≥ <span id="qValue">0.05</span>
+            </label> -->
             Significance Threshold &ge;
             <span id="qValue">0.05</span>
             <div class="slider-info">
@@ -119,6 +128,7 @@
     <!-- Hidden tooltip templates -->
     <div id="node-template" style="display: none;">
         <strong>Gene:</strong> <span id="ntip-name"></span><br>
+        <strong>Location:</strong> <span id="ntip-location"></span><br>
         <strong>Oncogene:</strong> <span id="ntip-oncogene"></span><br>
         <strong>Amplified in:</strong> <span id="ntip-nsamples"></span> sample(s)<br>
         <strong>Sample(s):</strong> <span id="ntip-samples"></span>
@@ -127,9 +137,12 @@
         <strong>Relationship:</strong> <span id="etip-name"></span><br>
         <strong>Coamplification frequency:</strong> <span id="etip-weight"></span><br>
         <strong>Coamplification fraction:</strong> <span id="etip-frac"></span><br>
+        <strong>Distance:</strong> <span id="etip-distance"></span><br>
+        <strong>P-value:</strong> <span id="etip-pval"></span><br>
+        <strong>Q-value:</strong> <span id="etip-qval"></span><br>
+        <strong>Odds ratio:</strong> <span id="etip-odds_ratio"></span><br>
         <strong>Coamplified in:</strong> <span id="etip-nsamples"></span> sample(s)<br>
-        <strong>Sample(s):</strong> <span id="etip-samples"></span><br>
-        <strong>q-value:</strong> <span id="etip-qval"></span>
+        <strong>Sample(s):</strong> <span id="etip-samples"></span>
     </div>
 
 {% endblock %}
