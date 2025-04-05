@@ -232,6 +232,7 @@ window.addEventListener('DOMContentLoaded', function () {
                 row.appendChild(cellName);
                 row.appendChild(cellStatus);
                 row.appendChild(cellWeight);
+                
 
                 datacontainer.appendChild(row);
 
@@ -313,6 +314,7 @@ window.addEventListener('DOMContentLoaded', function () {
         if (ele.isNode()) {
             let template = document.getElementById('node-template');
             template.querySelector('#ntip-name').textContent = ele.data('label') || 'N/A';
+            template.querySelector('#ntip-location').textContent = ele.data('location') || 'N/A';
             template.querySelector('#ntip-oncogene').textContent = ele.data('oncogene') || 'N/A';
             template.querySelector('#ntip-nsamples').textContent = ele.data('features').length || 'N/A';
             template.querySelector('#ntip-samples').textContent = ele.data('features').join(', ') || 'N/A';
@@ -323,9 +325,12 @@ window.addEventListener('DOMContentLoaded', function () {
             template.querySelector('#etip-name').textContent = ele.data('label') || 'N/A';
             template.querySelector('#etip-weight').textContent = ele.data('weight').toFixed(3) || 'N/A';
             template.querySelector('#etip-frac').textContent = ele.data('leninter') + '/' + ele.data('lenunion');
+            template.querySelector('#etip-distance').textContent = ele.data('distance') < 0 ? 'N/A' : ele.data('distance');
+            template.querySelector('#etip-pval').textContent = ele.data('pval') < 0 ? 'N/A' : ele.data('pval').toFixed(3);
+            template.querySelector('#etip-qval').textContent = ele.data('qval') < 0 ? 'N/A' : ele.data('qval').toFixed(3);
+            template.querySelector('#etip-odds_ratio').textContent = ele.data('odds_ratio') < 0 ? 'N/A' : ele.data('odds_ratio').toFixed(3);
             template.querySelector('#etip-nsamples').textContent = ele.data('leninter') || 'N/A';
             template.querySelector('#etip-samples').textContent = ele.data('inter').join(', ') || 'N/A';
-            template.querySelector('#etip-qval').textContent = ele.data('qval') < 0 ? 'N/A' : ele.data('qval').toFixed(3);
             content = template.innerHTML;
         }
         return content;
@@ -557,7 +562,7 @@ window.addEventListener('DOMContentLoaded', function () {
         const csv = [];
 
         // Add header row to CSV
-        const header = ['Gene Name', 'Oncogene', 'Coamplification Frequency', 'Intersection Samples', 'Union Samples'];
+        const header = ['Gene Name', 'Oncogene', 'Coamplification Frequency','Distance (bp)', 'P-Value', 'Q-value', 'Odds Ratio', 'Intersection Samples', 'Union Samples'];
         csv.push(header.join(',')); // Join column labels with commas
 
 
@@ -616,6 +621,10 @@ window.addEventListener('DOMContentLoaded', function () {
             const cellWeight = document.createElement('td');
             const cellInter = document.createElement('td');
             const cellUnion = document.createElement('td');
+            const cellDistance = document.createElement('td');
+            const cellPValue = document.createElement('td');
+            const cellQValue = document.createElement('td');
+            const cellOddsRatio = document.createElement('td');
 
             const edges = node.edgesWith(cy.$(nodeID[inputNode]));
             const edgeData = edges[0]?.data() || {};
@@ -628,11 +637,21 @@ window.addEventListener('DOMContentLoaded', function () {
             const unionList = edgeData.union ? `["${edgeData.union.join('", "')}"]` : 'N/A';
             cellUnion.textContent = unionList;
 
+            cellDistance.textContent = String((edgeData.distance === -1 || edgeData.distance === undefined) ? 'N/A' : edgeData.distance);
+            cellPValue.textContent = String((edgeData.pval === -1 || edgeData.pval === undefined) ? 'N/A' : edgeData.pval.toFixed(3));
+            cellQValue.textContent = String((edgeData.qval === -1 || edgeData.qval === undefined) ? 'N/A' : edgeData.qval.toFixed(3));
+            cellOddsRatio.textContent = String((edgeData.odds_ratio === -1 || edgeData.odds_ratio === undefined) ? 'N/A' : edgeData.odds_ratio.toFixed(3));
+
             row.appendChild(cellName);
             row.appendChild(cellStatus);
             row.appendChild(cellWeight);
+            row.appendChild(cellDistance);
+            row.appendChild(cellPValue);
+            row.appendChild(cellQValue);
+            row.appendChild(cellOddsRatio);
             row.appendChild(cellInter);
             row.appendChild(cellUnion);
+
             datacontainercsv.appendChild(row);
         });
 
