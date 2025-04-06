@@ -506,10 +506,8 @@ class Graph:
 		# extract valid p-values
 		valid_mask = [p != -1 for p in p_values]
 		valid_p_values = [p for p in p_values if p != -1]
-		print(valid_p_values)
 		# apply FDR correction only to valid p-values
 		_, valid_q_values = fdrcorrection(valid_p_values, alpha=alpha)
-		print(valid_q_values)
 		# reconstruct q_values with 'N/A' in the appropriate positions
 		valid_q_iter = iter(valid_q_values)
 		q_values = [next(valid_q_iter) if valid else -1 for valid in valid_mask]
