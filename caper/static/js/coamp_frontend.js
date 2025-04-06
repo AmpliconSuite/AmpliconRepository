@@ -562,7 +562,7 @@ window.addEventListener('DOMContentLoaded', function () {
         const csv = [];
 
         // Add header row to CSV
-        const header = ['Gene Name', 'Oncogene', 'Coamplification Frequency','Distance (bp)', 'P-Value', 'Q-value', 'Odds Ratio', 'Intersection Samples', 'Union Samples'];
+        const header = ['Gene Name', 'Oncogene', 'Coamplification Frequency', 'Location', 'Distance (bp)', 'P-Value', 'Q-value', 'Odds Ratio', 'Intersection Samples', 'Union Samples'];
         csv.push(header.join(',')); // Join column labels with commas
 
 
@@ -618,6 +618,9 @@ window.addEventListener('DOMContentLoaded', function () {
             const cellStatus = document.createElement('td');
             cellStatus.textContent = node.data('oncogene');
 
+            const cellLocation = document.createElement('td');
+            cellLocation.textContent = node.data('location')
+
             const cellWeight = document.createElement('td');
             const cellInter = document.createElement('td');
             const cellUnion = document.createElement('td');
@@ -645,6 +648,7 @@ window.addEventListener('DOMContentLoaded', function () {
             row.appendChild(cellName);
             row.appendChild(cellStatus);
             row.appendChild(cellWeight);
+            row.appendChild(cellLocation);
             row.appendChild(cellDistance);
             row.appendChild(cellPValue);
             row.appendChild(cellQValue);
