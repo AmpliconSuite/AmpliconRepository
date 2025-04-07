@@ -18,24 +18,23 @@ models = {
 
 class Graph:
 
-	def __init__(self, dataset=None, col_format=None, amp_type="ecDNA", loc_type="feature"):
+	def __init__(self, dataset=None, focal_amp="ecDNA", coamp_level="feature"):
 		"""
         Parameters:
             self (Graph) : Graph object
             dataset (tsv file) : AA aggregated results file
-            amp_type (str) : type of focal amplification (ecDNA, BFB, etc.)
-            loc_type (str) : cell line or feature
+            focal_amp (str) : type of focal amplification (ecDNA, BFB, etc.)
+            coamp_level (str) : sample or feature
         Return:
             None
         """
 		if dataset is None:
 			print("Error: provide Amplicon Architect annotations")
 		else:
-			self.amp_type = amp_type
-			self.loc_type = loc_type
+			self.focal_amp = focal_amp
+			self.coamp_level = coamp_level
 			self.nodes = []
 			self.edges = []
-			self.total_samples = 0
 
 			# Initialize dictionaries for each reference genome
 			self.locs_by_genome = {}
@@ -53,8 +52,12 @@ class Graph:
 				print(f"Loaded {ref_genome} gene locations in {time.time() - start_ref:.2f} seconds")
 			print(f"Total gene location loading time: {time.time() - start_time:.2f} seconds")
 
+			# Preprocess dataset
+			preprocessed_dataset = self.preprocess_dataset(dataset)
+			self.total_samples = len(preprocessed_dataset)
+
 			# Create nodes and edges from the combined dataset
-			self.CreateNodes(dataset, col_format)
+			self.CreateNodes(preprocessed_dataset)
 			self.CreateEdges()
 
 	def get_gene_bed_path(self, reference_genome):
@@ -89,52 +92,111 @@ class Graph:
 
 		return bed_path
 
-	def CreateNodes(self, dataset, col_format):
+	def merge_intervals(self, location):
+		"""
+		Parameters: 
+			location (str): 'Location' column of one feature in input dataset
+			MERGE_CUTOFF (int): merge intervals < cutoff distance (bp)
+		Return: 
+			merged_intervals (list): list of tuples in format (chromosome, start, end)
+		"""
+		MERGE_CUTOFF=50000
+		merged_intervals = []
+
+		# find all matches of chr:start-end
+		matches = re.findall(r"'?(chr[\dXY]+):(\d+)-(\d+)'?", location)
+		matches = [[chrom, int(start), int(end)] for chrom, start, end in matches]
+
+		curr_interval = matches[0]
+		for i in range(len(matches)):            
+			# if end is reached, add the current interval
+			if i == len(matches) - 1:
+				merged_intervals.append(curr_interval)
+			# if this interval can be merged with the next, extend the current interval
+			elif matches[i][0] == matches[i+1][0] and matches[i+1][1] - matches[i][2] <= MERGE_CUTOFF:
+				curr_interval[2] = matches[i+1][2]
+			# otherwise add the current interval and reset
+			else:
+				merged_intervals.append(curr_interval)
+				curr_interval = matches[i+1]
+
+		return merged_intervals
+	
+	def preprocess_dataset(self, dataset):
+		"""
+		streamline preprocessing of intervals and dataset reformatting before graph construction
+		"""
+		# replace spaces with underscores
+		dataset.columns = dataset.columns.str.replace(' ', '_')
+
+		# subset dataset by focal amplification type
+		filter_start = time.time()
+		filtered_dataset = dataset[dataset['Classification'] == self.focal_amp].copy()
+		filter_end = time.time()
+		print(f"Filtering features took {filter_end - filter_start:.4f} seconds, resulting in {len(filtered_dataset)} features")
+
+		# reformat columns
+		reformat_start = time.time()
+		filtered_dataset['Merged_Intervals'] = filtered_dataset.apply(
+			lambda row: self.merge_intervals(str(row['Location'])), axis=1
+		)
+		filtered_dataset['Oncogenes'] = filtered_dataset.apply(
+			lambda row: set(self.ExtractGenes(str(row['Oncogenes']))), axis=1
+		)
+		filtered_dataset['All_genes'] = filtered_dataset.apply(
+			lambda row: self.ExtractGenes(str(row['All_genes'])), axis=1
+		)
+		reformat_end = time.time()
+		print(f"Preprocessing intervals and reformatting dataset took {reformat_end - reformat_start:.4f} seconds")
+		
+		# if specified, group by sample name for sample-level co-amplifications
+		if self.coamp_level == 'sample':
+			group_start = time.time()
+			filtered_dataset = filtered_dataset.groupby('Sample_name', as_index=False).agg({
+				'Feature_ID': lambda col: [item for item in col],
+				'Oncogenes': lambda col: set([x for item in col for x in item]),
+				'All_genes': lambda col: list(set([x for item in col for x in item])),
+				'Merged_Intervals': lambda col: [x for item in col for x in item]
+			})
+			group_end = time.time()
+			print(f"Grouping features by sample took {group_end - group_start:.4f} seconds, resulting in {len(filtered_dataset)} samples")
+		
+		# return relevant columns
+		preprocessed_dataset = filtered_dataset[['Sample_name', 
+												 'Feature_ID',
+												 'Merged_Intervals', 
+												 'Oncogenes', 
+												 'All_genes']].copy()
+		return preprocessed_dataset
+
+	def CreateNodes(self, dataset):
 		"""
         Create nodes while tracking the reference genome for each gene
         """
 		start_time = time.time()
 		print(f"Starting CreateNodes with {len(dataset)} rows")
 
-		ALL_GENES = 'All genes' if col_format == 'space' else 'All_genes'
-		FEATURE_ID = 'Feature ID' if col_format == 'space' else 'Feature_ID'
-		REF_VERSION = 'Reference_version'  # Column name for reference genome
+		for genome in self.locs_by_genome:
+			print(len(self.locs_by_genome[genome]))
 
 		# dictionary for fast lookups of gene labels
 		gene_index = {}
 
-		# get subset of ecDNA features
-		filter_start = time.time()
-		if self.loc_type == "feature":
-			all_features = dataset[dataset['Classification'] == self.amp_type]
-		else:
-			all_features = dataset
-		filter_end = time.time()
-		print(
-			f"Filtering features took {filter_end - filter_start:.4f} seconds, resulting in {len(all_features)} features")
-
-		# for each feature
 		process_start = time.time()
 		gene_count = 0
 
-		for genome in self.locs_by_genome:
-			print(len(self.locs_by_genome[genome]))
+		# for each feature or sample
+		for __, row in dataset.iterrows():
+			# get the properties in this feature
+			ref_genome = row.get('Reference_version', 'GRCh38')  # Default to GRCh38 if not specified
+			oncogenes = row.get('Oncogenes')
+			all_genes = row.get('All_genes')
+			feature = row.get('Feature_ID') if self.coamp_level == 'feature' else row.get('Sample_name')
+			sample = row.get('Sample_name') # redundant for sample-level co-amps
 
-		self.total_samples = len(all_features)
-
-		for __, row in all_features.iterrows():
-			# get the reference genome for this feature
-			ref_genome = row.get(REF_VERSION, 'GRCh38')  # Default to GRCh38 if not specified
-
-			# get the genes in this feature
-			oncogenes = set(self.ExtractGenes(str(row['Oncogenes'])))
-			all_genes = self.ExtractGenes(str(row[ALL_GENES]))
 			gene_count += len(all_genes)
 
 			for gene in all_genes:
-				feature = row[FEATURE_ID]
-				sample = feature.split("_amplicon")[0]
-
 				# if the gene has been seen, add feature and cell line to info
 				if gene in gene_index:
 					index = gene_index[gene]
@@ -148,7 +210,8 @@ class Graph:
 				# otherwise add the gene to self.nodes as a new row
 				else:
 					if (gene in self.locs_by_genome[ref_genome]):
-						location = f"chr{self.locs_by_genome[ref_genome][gene][0]}:{self.locs_by_genome[ref_genome][gene][1]}-{self.locs_by_genome[ref_genome][gene][2]}"
+						chr, start, end = self.locs_by_genome[ref_genome][gene]
+						location = f"chr{chr}:{start}-{end}"
 					else:
 						location = 'N/A'
 
