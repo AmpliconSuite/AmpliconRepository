@@ -5,6 +5,7 @@ window.addEventListener('DOMContentLoaded', function () {
     let allTooltips = {};
     let inputNode = null
     let total_data = 0;
+    let completeData = null;
     console.log(document.styleSheets)
 
     cytoscape.use( cytoscapePopper(tippyFactory) );
@@ -55,6 +56,10 @@ window.addEventListener('DOMContentLoaded', function () {
             }
 
             const data = await response.json();
+
+            // Store the complete data for later use in CSV export
+            completeData = data;
+
             total_data = data.nodes.length;
             const filtered_data = filterData(data, limit)
             // Initialize Cytoscape with fetched data
@@ -232,6 +237,7 @@ window.addEventListener('DOMContentLoaded', function () {
                 row.appendChild(cellName);
                 row.appendChild(cellStatus);
                 row.appendChild(cellWeight);
+                
 
                 datacontainer.appendChild(row);
 
@@ -313,6 +319,7 @@ window.addEventListener('DOMContentLoaded', function () {
         if (ele.isNode()) {
             let template = document.getElementById('node-template');
             template.querySelector('#ntip-name').textContent = ele.data('label') || 'N/A';
+            template.querySelector('#ntip-location').textContent = ele.data('location') || 'N/A';
             template.querySelector('#ntip-oncogene').textContent = ele.data('oncogene') || 'N/A';
             template.querySelector('#ntip-nsamples').textContent = ele.data('features').length || 'N/A';
             template.querySelector('#ntip-samples').textContent = ele.data('features').join(', ') || 'N/A';
@@ -323,9 +330,12 @@ window.addEventListener('DOMContentLoaded', function () {
             template.querySelector('#etip-name').textContent = ele.data('label') || 'N/A';
             template.querySelector('#etip-weight').textContent = ele.data('weight').toFixed(3) || 'N/A';
             template.querySelector('#etip-frac').textContent = ele.data('leninter') + '/' + ele.data('lenunion');
+            template.querySelector('#etip-distance').textContent = ele.data('distance') < 0 ? 'N/A' : ele.data('distance');
+            template.querySelector('#etip-pval').textContent = ele.data('pval') < 0 ? 'N/A' : ele.data('pval').toFixed(3);
+            template.querySelector('#etip-qval').textContent = ele.data('qval') < 0 ? 'N/A' : ele.data('qval').toFixed(3);
+            template.querySelector('#etip-odds_ratio').textContent = ele.data('odds_ratio') < 0 ? 'N/A' : ele.data('odds_ratio').toFixed(3);
             template.querySelector('#etip-nsamples').textContent = ele.data('leninter') || 'N/A';
             template.querySelector('#etip-samples').textContent = ele.data('inter').join(', ') || 'N/A';
-            template.querySelector('#etip-qval').textContent = ele.data('qval') < 0 ? 'N/A' : ele.data('qval').toFixed(3);
             content = template.innerHTML;
         }
         return content;
@@ -540,47 +550,90 @@ window.addEventListener('DOMContentLoaded', function () {
 
     // Helper function to format lists for csv, accounting for quotes
     function formatCell(cellContent) {
-        if (cellContent.startsWith('[') && cellContent.endsWith(']')) {
-            // For formatting, need lists to be formatted as lists in csv and not a string
-            return `"${cellContent.replace(/"/g, '""')}"`;
+        const str = String(cellContent);
+
+        // Escape quotes by doubling them
+        const escaped = str.replace(/"/g, '""');
+
+        // If the field contains a comma, quote, or newline, wrap in quotes
+        if (/[",\n]/.test(escaped)) {
+            return `"${escaped}"`;
         }
-        return cellContent;
+
+        return escaped;
     }
 
     // Function to generate CSV
-    function generateCSV(datacontainercsv) {
-        if (!datacontainercsv) {
-            alert('Data container is not available.');
+    function generateCSV(data, inputNode) {
+        if (!data || !data.nodes || !data.edges) {
+            alert('Data is incomplete.');
             return '';
         }
-        const rows = Array.from(datacontainercsv.querySelectorAll('tr'));
+
         const csv = [];
+        const header = ['Gene Name', 'Oncogene', 'Gene ecDNA Count', 'Intersection Count', 'Coamplification Frequency', 'Location', 'Distance (bp)', 'P-Value', 'Q-value', 'Odds Ratio', 'Gene ecDNA Samples', 'Intersection Samples'];
+        csv.push(header.join(','));
 
-        // Add header row to CSV
-        const header = ['Gene Name', 'Oncogene', 'Coamplification Frequency', 'Intersection Samples', 'Union Samples'];
-        csv.push(header.join(',')); // Join column labels with commas
+        const nodes = data.nodes;
+        const edges = data.edges;
 
-
-        // Separate the first row
-        const firstRow = rows.shift(); // Remove the first row (query gene needs to be at top for reference)
-        const firstRowData = Array.from(firstRow.querySelectorAll('td')).map(cell => {
-            return formatCell(cell.textContent);
-        });
-        csv.push(firstRowData.join(','));
-
-        // Sort remaining rows by `cell.weight` in descending order
-        const sortedRows = rows.sort((a, b) => {
-            const weightA = parseFloat(a.querySelector('td:nth-child(3)').textContent) || 0;
-            const weightB = parseFloat(b.querySelector('td:nth-child(3)').textContent) || 0;
-            return weightB - weightA;
+        // Map edges for fast lookup
+        const edgeMap = new Map();
+        edges.forEach(edge => {
+            const key1 = `${edge.data.source}|${edge.data.target}`;
+            const key2 = `${edge.data.target}|${edge.data.source}`;
+            edgeMap.set(key1, edge.data);
+            edgeMap.set(key2, edge.data);
         });
 
-        // Process sorted rows
-        sortedRows.forEach(row => {
-            const cols = Array.from(row.querySelectorAll('td')).map(cell => {
-                return formatCell(cell.textContent);
-            });
-            csv.push(cols.join(','));
+        // Build node + edge data rows
+        const rows = nodes.map(node => {
+            const nData = node.data;
+            const key = `${inputNode}|${nData.label}`;
+            const edgeData = edgeMap.get(key) || {};
+
+            return {
+                gene: nData.label,
+                oncogene: nData.oncogene || 'False',
+                sample_count: nData.features ? nData.features.length : 'N/A',
+                inter_count: edgeData.inter ? edgeData.inter.length : 'N/A',
+                weight: edgeData.weight ?? -1,
+                location: nData.location || 'N/A',
+                distance: edgeData.distance ?? 'N/A',
+                pval: edgeData.pval ?? 'N/A',
+                qval: edgeData.qval ?? 'N/A',
+                odds_ratio: edgeData.odds_ratio ?? 'N/A',
+                gene_samples: nData.features ? `["${nData.features.join('", "')}"]` : 'N/A',
+                inter: edgeData.inter ? `["${edgeData.inter.join('", "')}"]` : 'N/A',
+            };
+        });
+
+        // Move inputNode to top
+        const queryRow = rows.find(r => r.gene === inputNode);
+        const otherRows = rows.filter(r => r.gene !== inputNode);
+
+        // Sort other rows by coamplification frequency descending
+        otherRows.sort((a, b) => (b.weight ?? -1) - (a.weight ?? -1));
+
+        // Combine and format
+        const finalRows = [queryRow, ...otherRows];
+        finalRows.forEach(row => {
+            const formattedRow = [
+                row.gene,
+                row.oncogene,
+                row.sample_count,
+                row.inter_count,
+                row.weight === -1 ? 'N/A' : row.weight.toFixed(3),
+                row.location,
+                row.distance === -1 ? 'N/A' : row.distance,
+                row.pval === -1 ? 'N/A' : parseFloat(row.pval).toFixed(3),
+                row.qval === -1 ? 'N/A' : parseFloat(row.qval).toFixed(3),
+                row.odds_ratio === -1 ? 'N/A' : parseFloat(row.odds_ratio).toFixed(3),
+                row.gene_samples,
+                row.inter,
+            ].map(formatCell);
+
+            csv.push(formattedRow.join(','));
         });
 
         return csv.join('\n');
@@ -592,67 +645,33 @@ window.addEventListener('DOMContentLoaded', function () {
     const newDownloadBtn = downloadBtn.cloneNode(true);
     downloadBtn.parentNode.replaceChild(newDownloadBtn, downloadBtn);
 
-    // Add a single event listener with a proper closure around the necessary variables
+    // Single event listener for Download CSV button
     newDownloadBtn.addEventListener('click', function() {
-        const datacontainercsv = document.createElement('table');
-
-        // Make sure cy and inputNode are available
-        if (!cy || !inputNode) {
+        // Make sure completeData and inputNode are available
+        if (!completeData || !inputNode) {
             alert('No graph data available. Please load a graph first.');
             return;
         }
 
-        // Generate a table from cytoscape graph for export
-        cy.nodes().forEach(node => {
-            const row = document.createElement('tr');
+        // Generate CSV content directly using the proper parameters
+        const csvContent = generateCSV(completeData, inputNode);
 
-            const cellName = document.createElement('td');
-            const geneName = node.data('label');
-            cellName.textContent = geneName;
+        if (!csvContent) {
+            return; // Exit if CSV generation failed
+        }
 
-            const cellStatus = document.createElement('td');
-            cellStatus.textContent = node.data('oncogene');
-
-            const cellWeight = document.createElement('td');
-            const cellInter = document.createElement('td');
-            const cellUnion = document.createElement('td');
-
-            const edges = node.edgesWith(cy.$(nodeID[inputNode]));
-            const edgeData = edges[0]?.data() || {};
-
-            cellWeight.textContent = String(edgeData.weight?.toFixed(3) ?? 'N/A');
-
-            const interList = edgeData.inter ? `["${edgeData.inter.join('", "')}"]` : 'N/A';
-            cellInter.textContent = interList;
-
-            const unionList = edgeData.union ? `["${edgeData.union.join('", "')}"]` : 'N/A';
-            cellUnion.textContent = unionList;
-
-            row.appendChild(cellName);
-            row.appendChild(cellStatus);
-            row.appendChild(cellWeight);
-            row.appendChild(cellInter);
-            row.appendChild(cellUnion);
-            datacontainercsv.appendChild(row);
-        });
-
-        const csvContent = generateCSV(datacontainercsv);
         const blob = new Blob([csvContent], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
 
-        // Create a temporary download link
         const link = document.createElement('a');
         link.href = url;
         const now = new Date();
-        // Format date and time (e.g., YYYY-MM-DD_HH-MM-SS)
         const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
         link.download = `AACoampGraph_${inputNode}_${formattedDate}.csv`;
 
-        // Add to DOM, click, and remove (all in one go)
         document.body.appendChild(link);
         link.click();
 
-        // Clean up - remove link and revoke object URL
         setTimeout(() => {
             document.body.removeChild(link);
             URL.revokeObjectURL(url);

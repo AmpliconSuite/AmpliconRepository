@@ -11,6 +11,9 @@ import time
 
 neo4j_driver = None
 
+import logging
+logging.getLogger("neo4j").setLevel(logging.WARNING)
+
 def get_driver():
     # Connect to Neo4j instance
     global neo4j_driver
@@ -91,6 +94,7 @@ def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_
         nodes.setdefault(record['n']['label'], 
                          {'data': {'id': record['n']['label'],
                                    'label': record['n']['label'],
+                                   'location': record['n']['location'],
                                    'oncogene': record['n']['oncogene'],
                                    'features': record['n']['features'],
                                    'cell_lines': record['n']['cell_lines']}})
@@ -98,6 +102,7 @@ def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_
         nodes.setdefault(record['m']['label'], 
                          {'data': {'id': record['m']['label'],
                                    'label': record['m']['label'],
+                                   'location': record['m']['location'],
                                    'oncogene': record['m']['oncogene'],
                                    'features': record['m']['features'],
                                    'cell_lines': record['m']['cell_lines']}})
@@ -113,7 +118,10 @@ def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_
                                    'inter': record['r']['inter'],
                                    'lenunion': len(record['r']['union']),
                                    'union': record['r']['union'],
+                                   'distance': record['r']['distance'],
+                                   'pval': record['r']['pval'],
                                    'qval': record['r']['qval'],
+                                   'odds_ratio': record['r']['odds_ratio'],
                                    'interaction': 'interacts with'
                                    }})
         
@@ -225,7 +233,7 @@ def load_graph(dataset=None):
         # add nodes
         session.run("""
             UNWIND $nodes AS row
-            CREATE (n:Node {label: row.label, oncogene: row.oncogene, features: row.samples})
+            CREATE (n:Node {label: row.label, location: row.location, oncogene: row.oncogene, features: row.samples})
             """, nodes=nodes
         )
         # add index on label (can be done once)
@@ -237,7 +245,7 @@ def load_graph(dataset=None):
         session.run("""
             UNWIND $edges AS row
             MATCH (a:Node {label: row.source}), (b:Node {label: row.target})
-            MERGE (a)-[:COAMP {qval: toFloat(row.qval), weight: toFloat(row.weight), inter: row.inter, union: row.union}]->(b)
+            MERGE (a)-[:COAMP {odds_ratio: toFloat(row.odds_ratio), distance: toInteger(row.distance), pval: toFloat(row.pval), qval: toFloat(row.qval), weight: toFloat(row.weight), inter: row.inter, union: row.union}]->(b)
             """, edges=edges
         )
     IMPORT_TIME = time.process_time()

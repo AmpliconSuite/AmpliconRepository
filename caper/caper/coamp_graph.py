@@ -6,6 +6,7 @@ import time
 import os
 from scipy.stats import expon
 from scipy.stats import gamma
+from scipy.stats import chi2
 from statsmodels.stats.multitest import fdrcorrection
 
 models = {
@@ -34,6 +35,7 @@ class Graph:
 			self.loc_type = loc_type
 			self.nodes = []
 			self.edges = []
+			self.total_samples = 0
 
 			# Initialize dictionaries for each reference genome
 			self.locs_by_genome = {}
@@ -114,6 +116,12 @@ class Graph:
 		# for each feature
 		process_start = time.time()
 		gene_count = 0
+
+		for genome in self.locs_by_genome:
+			print(len(self.locs_by_genome[genome]))
+
+		self.total_samples = len(all_features)
+
 		for __, row in all_features.iterrows():
 			# get the reference genome for this feature
 			ref_genome = row.get(REF_VERSION, 'GRCh38')  # Default to GRCh38 if not specified
@@ -139,11 +147,17 @@ class Graph:
 
 				# otherwise add the gene to self.nodes as a new row
 				else:
+					if (gene in self.locs_by_genome[ref_genome]):
+						location = f"chr{self.locs_by_genome[ref_genome][gene][0]}:{self.locs_by_genome[ref_genome][gene][1]}-{self.locs_by_genome[ref_genome][gene][2]}"
+					else:
+						location = 'N/A'
+
 					node_info = {
 						'label': gene,
 						'oncogene': str(gene in oncogenes),
 						'features': [feature],
 						'samples': [sample],
+						'location': location,
 						'reference_genomes': [ref_genome]  # Track which reference genome(s) this gene appears in
 					}
 					self.nodes.append(node_info)
@@ -278,6 +292,8 @@ class Graph:
 		tgt_filtered = [tgt_indices[i] for i, mask in enumerate(non_empty_mask) if mask]
 		inters_filtered = [inters[i] for i, mask in enumerate(non_empty_mask) if mask]
 		unions_filtered = [unions[i] for i, mask in enumerate(non_empty_mask) if mask]
+		src_sets_filtered = [src_sets[i] for i, mask in enumerate(non_empty_mask) if mask]
+		tgt_sets_filtered = [tgt_sets[i] for i, mask in enumerate(non_empty_mask) if mask]
 		filter_end = time.time()
 		print(
 			f"Filtering non-empty intersections took {filter_end - filter_start:.4f} seconds, {len(src_filtered)} pairs remain")
@@ -297,7 +313,11 @@ class Graph:
 
 		# compute p and q values
 		pval_start = time.time()
-		p_values = [self.PVal(labels[a], labels[b]) for a, b in zip(src_filtered, tgt_filtered)]
+		chi_squared_results = [self.chi_squared_dep_test(labels[i], labels[j], src_sets_filtered[idx], tgt_sets_filtered[idx], inters_filtered[idx], self.total_samples) for idx, (i, j) in enumerate(zip(src_filtered, tgt_filtered))]
+		p_values, odds_ratio, distances = zip(*chi_squared_results)
+		p_values = list(p_values)
+		odds_ratio = list(odds_ratio)
+		distances = list(distances)
 		pval_end = time.time()
 		print(f"Calculating p-values took {pval_end - pval_start:.4f} seconds")
 
@@ -315,8 +335,10 @@ class Graph:
 				'weight': weights[idx],
 				'inter': inters_filtered[idx],
 				'union': unions_filtered[idx],
+				'distance': distances[idx], 
 				'pval': p_values[idx],
-				'qval': q_values[idx]
+				'qval': q_values[idx],
+				'odds_ratio': odds_ratio[idx]
 			}
 			for idx, (i, j) in enumerate(zip(src_filtered, tgt_filtered))
 		]
@@ -383,7 +405,7 @@ class Graph:
 		b_idx = self._node_cache[b]
 
 		if a_idx is None or b_idx is None:
-			return 'N/A'  # One or both genes not found
+			return -1  # One or both genes not found
 
 		# Get the reference genomes
 		a_refs = self.nodes_df.iloc[a_idx]['reference_genomes']
@@ -394,7 +416,7 @@ class Graph:
 
 		if not common_refs:
 			# Log the warning only in debug mode to avoid excessive output
-			return 'N/A'
+			return -1
 
 		# For each common reference, try to calculate distance
 		for ref in common_refs:
@@ -407,10 +429,12 @@ class Graph:
 				continue  # Different chromosomes, try next reference
 
 			# Same chromosome, calculate distance
-			return abs(self.locs_by_genome[ref][a][1] - self.locs_by_genome[ref][b][1])
+			e_s = abs(self.locs_by_genome[ref][a][2] - self.locs_by_genome[ref][b][1])
+			s_e = abs(self.locs_by_genome[ref][a][1] - self.locs_by_genome[ref][b][2])
+			return min(e_s, s_e)
 
 		# If we get here, genes don't have coordinates in any common reference genome
-		return 'N/A'
+		return -1
 
 	def PVal(self, gene_a, gene_b, model='gamma_random_breakage'):
 		"""
@@ -425,19 +449,70 @@ class Graph:
             float or str : p-value or 'N/A' if distance couldn't be calculated
         """
 		d = self.Distance(gene_a, gene_b)
-		if d == 'N/A': return d
+		if d == -1: return -1, d
 		params = models[model]
 		cdf = gamma.cdf(d, a=params[0], loc=params[1], scale=params[2])
-		return 1 - cdf
+		return 1 - cdf, d
+
+	def chi_squared_dep_test(self, gene_a, gene_b, src_sets_filtered, tgt_sets_filtered, inters_filtered, total_samples):
+		pdD, d = self.PVal(gene_a, gene_b)
+		if pdD == -1: return -1, -1, -1
+			
+		geneA_samples = len(src_sets_filtered)
+		geneB_samples = len(tgt_sets_filtered)
+		geneAB_samples = len(inters_filtered)
+		# fAandB = geneAB_samples/total_samples
+		# fA = geneA_samples/total_samples
+		# fB = geneB_samples/total_samples
+		# fAorB = fA + fB - fAandB
+
+		# observed
+		O11 = geneAB_samples
+		O12 = geneA_samples - geneAB_samples
+		O21 = geneB_samples - geneAB_samples
+		O22 = total_samples - geneA_samples - geneB_samples + geneAB_samples
+		obs = [O11, O12, O21, O22]
+		
+		# expected
+		E11 = (geneA_samples + geneB_samples - geneAB_samples) * pdD
+		E12 = geneA_samples * (1 - pdD)
+		E21 = geneB_samples * (1 - pdD)
+		E22 = total_samples - (geneA_samples + geneB_samples - geneAB_samples)
+		exp = [E11, E12, E21, E22] 
+
+		# apply Haldane correction if any observed category count is zero
+		if 0 in obs:
+			obs = [o + 0.5 for o in obs]
+			exp = [e + 0.5 for e in exp]
+
+		total_obs = sum(obs)
+		total_exp = sum(exp)
+		obs_freq = [o / total_obs for o in obs]
+		exp_freq = [e / total_exp for e in exp]
+
+		test_statistic = sum([(o-e)*(o-e)/e for o,e in zip(obs_freq, exp_freq)])
+		cdf = chi2.cdf(test_statistic, df=1)
+		p_val_two_sided = 1-cdf
+		diagonal_residual_sum = ((obs_freq[0]-exp_freq[0]) + (obs_freq[3]-exp_freq[3]))
+
+		odds_ratio = obs_freq[0] / exp_freq[0]
+		if odds_ratio > 1e9:
+			odds_ratio = 1e9 # cap ultra large to prevent infinite odds ratios
+
+		# Convert to one-sided p-value
+		if diagonal_residual_sum >= 0:
+			p_val_one_sided = p_val_two_sided / 2
+		else:
+			p_val_one_sided = 1 - (p_val_two_sided / 2)
+
+		return p_val_one_sided, odds_ratio, d
 	
 	def QVal(self, p_values, alpha=0.05):
 		# extract valid p-values
-		valid_mask = [p != 'N/A' for p in p_values]
-		valid_p_values = [p for p in p_values if p != 'N/A']
-
+		valid_mask = [p != -1 for p in p_values]
+		valid_p_values = [p for p in p_values if p != -1]
 		# apply FDR correction only to valid p-values
 		_, valid_q_values = fdrcorrection(valid_p_values, alpha=alpha)
-
 		# reconstruct q_values with 'N/A' in the appropriate positions
 		valid_q_iter = iter(valid_q_values)
 		q_values = [next(valid_q_iter) if valid else -1 for valid in valid_mask]
@@ -453,7 +528,7 @@ class Graph:
 	# get functions
 	# -------------
 	def Locs(self):
-		return self.locs
+		return self.locs_by_genome
 	def NumNodes(self):
 		try:
 			return len(self.nodes)
