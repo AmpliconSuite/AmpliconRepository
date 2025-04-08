@@ -1,0 +1,2 @@
+caper/caper.sqlite3 filter=lfs diff=lfs merge=lfs -text
+caper/caper.sqlite3 skip-worktree

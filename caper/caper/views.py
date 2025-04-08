@@ -25,12 +25,11 @@ from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm,
 from .extra_metadata import *
 from django.forms.models import model_to_dict
 
-# search imports
-from django.shortcuts import render, redirect
-import logging
-import caper.search
+# imports for coamp graph
+from .neo4j_utils import load_graph, fetch_subgraph
 
-# vis imports
+import subprocess
+import shutil
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
@@ -423,13 +422,24 @@ def reference_genome_from_project(samples):
     reference_genomes = list()
     for sample, features in samples.items():
         for feature in features:
-            reference_genomes.append(feature['Reference_version'])
-    if len(set(reference_genomes)) > 1:
-        reference_genome = 'Multiple'
-    else:
-        reference_genome = reference_genomes[0]
-    return reference_genome
+            # Check if Reference_version exists before accessing
+            if 'Reference_version' in feature:
+                reference_genomes.append(feature['Reference_version'])
+            else:
+                # If not found, add a placeholder or default value
+                print(f"Warning: Missing Reference_version in feature from sample {sample}")
+                reference_genomes.append('Unknown')
 
+    # Handle case with no reference genomes found
+    if not reference_genomes:
+        return 'Unknown'
+
+    # Handle multiple reference genomes
+    if len(set(reference_genomes)) > 1:
+        return 'Multiple'
+
+    # Return the single reference genome
+    return reference_genomes[0]
 
 def reference_genome_from_sample(sample_data):
     reference_genomes = list()
@@ -1103,73 +1113,98 @@ def png_download(request, project_name, sample_name, feature_name, feature_id):
 
 def gene_search_page(request):
     genequery = request.GET.get("genequery")
-    genequery = genequery.upper()
-    gen_query = {'$regex': genequery }
-    
+    if genequery:
+        genequery = genequery.upper()
+        gen_query = {'$regex': genequery}
+    else:
+        genequery = ""
+        gen_query = {'$regex': ''}
+
     logging.debug("Performing gene search")
 
-    classquery = request.GET.get("classquery")
-    classquery = classquery.upper()
-    class_query = {'$regex': classquery}
+    classquery = request.GET.get("classquery", "")
+    if classquery:
+        classquery = classquery.upper()
+        class_query = {'$regex': classquery}
+    else:
+        class_query = {'$regex': ''}
+
+    # Get the combined cancer/tissue field
+    metadata_cancer_tissue = request.GET.get("metadata_cancer_tissue", "")
 
     # Gene Search
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
-        query_obj = {'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}] , 'Oncogenes' : gen_query, 'delete': False}
+        query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}],
+                     'Oncogenes': gen_query, 'delete': False}
 
         private_projects = list(collection_handle.find(query_obj))
         # private_projects = get_projects_close_cursor(query_obj)
     else:
         private_projects = []
-    
-    public_projects = list(collection_handle.find({'private' : False, 'Oncogenes' : gen_query, 'delete': False}))
+
+    public_projects = list(collection_handle.find({'private': False, 'Oncogenes': gen_query, 'delete': False}))
     # public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
 
     for proj in private_projects:
-        prepare_project_linkid(proj)    
+        prepare_project_linkid(proj)
     for proj in public_projects:
         prepare_project_linkid(proj)
 
     def collect_class_data(projects):
         sample_data = []
         for project in projects:
-
             project_name = project['project_name']
             project_linkid = project['_id']
             features = project['runs']
             features_list = replace_space_to_underscore(features)
             data = sample_data_from_feature_list(features_list)
+
             for sample in data:
                 sample['project_name'] = project_name
                 sample['project_linkid'] = project_linkid
-                if genequery in sample['Oncogenes']:
-                    upperclass =  map(str.upper, sample['Classifications'])
-                    classmatch =(classquery in upperclass)
-                    classempty = (len(classquery) == 0)
-                    # keep the sample if we have matched on both oncogene and classification or oncogene and classification is empty
-                    if classmatch or classempty:
-                        sample_data.append(sample)
-                elif len(genequery) == 0:
-                    upperclass = map(str.upper, sample['Classifications'])
-                    classmatch = (classquery in upperclass)
-                    classempty = (len(classquery) == 0)
-                    # keep the sample if we have matched on classification and oncogene is empty
-                    if classmatch or classempty:
-                        sample_data.append(sample)
+
+                # Gene and classification checks
+                gene_match = (genequery in sample['Oncogenes'] or len(genequery) == 0)
+                upperclass = list(map(str.upper, sample['Classifications']))
+                class_match = (classquery in upperclass or len(classquery) == 0)
+
+                # Cancer type or tissue of origin check
+                cancer_tissue_match = True  # Default to True if no filter
+                if metadata_cancer_tissue:
+                    cancer_type = sample.get('Cancer_type', '').lower()
+                    tissue_origin = sample.get('Tissue_of_origin', '').lower()
+                    cancer_tissue_match = (
+                            metadata_cancer_tissue.lower() in cancer_type or
+                            metadata_cancer_tissue.lower() in tissue_origin
+                    )
+
+                # Only add the sample if all filters match
+                if gene_match and class_match and cancer_tissue_match:
+                    sample_data.append(sample)
 
         return sample_data
-    
+
     public_sample_data = collect_class_data(public_projects)
     private_sample_data = collect_class_data(private_projects)
 
     # for display on the results page
     if len(classquery) == 0:
         classquery = "all amplicon types"
+
     return render(request, "pages/gene_search.html",
-                  {'public_projects': public_projects, 'private_projects' : private_projects,
+                  {'public_projects': public_projects, 'private_projects': private_projects,
                    'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data,
-                   'gene_query': genequery, 'class_query': classquery})
+                   'gene_query': genequery, 'class_query': classquery,
+                   'query_info': {
+                       "Project Name": request.GET.get("project_name", ""),
+                       "Sample Name": request.GET.get("metadata_sample_name", ""),
+                       "Gene": genequery,
+                       "Classification": classquery,
+                       "Sample Type": request.GET.get("metadata_sample_type", ""),
+                       "Cancer Type or Tissue": metadata_cancer_tissue
+                   }})
 
 
 def gene_search_download(request, project_name):
@@ -2279,9 +2314,189 @@ def robots(request):
     return HttpResponse(robots_txt, content_type="text/plain")
 
 
+# redirect to visualizer upon project selection
+def coamplification_graph(request):
+    if request.method == 'POST':
+        # get list of selected projects
+        selected_projects = request.POST.getlist('selected_projects')
+        # store in session
+        request.session['selected_projects'] = selected_projects
+        return redirect('visualizer')  # Redirect to the visualizer page
+
+    # Get projects the same way profile.html does
+    username = request.user.username
+    try:
+        useremail = request.user.email
+    except:
+        # not logged in
+        useremail = ""
+        # For unauthenticated users, just get public projects
+        public_projects = get_projects_close_cursor({'private': False, 'delete': False})
+
+        # Filter out mm10, Unknown, and Multiple reference genome projects
+        filtered_projects = []
+        for proj in public_projects:
+            prepare_project_linkid(proj)
+            # Check reference genome for this project
+            if 'runs' in proj and proj['runs']:
+                ref_genome = reference_genome_from_project(proj['runs'])
+                if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
+                    # Add reference genome to project object
+                    proj['reference_genome'] = ref_genome
+                    filtered_projects.append(proj)
+            else:
+                # Skip projects without runs info
+                continue
+
+        return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
+
+    # Prevent an absent/null email from matching on anything
+    if not useremail:
+        useremail = username
+
+    # Get all projects user has access to
+    all_projects = get_projects_close_cursor({"$or": [
+        # Projects where user is a member
+        {"project_members": username},
+        {"project_members": useremail},
+        # Public projects
+        {"private": False}
+    ], 'delete': False})
+
+    # Filter out mm10, Unknown, and Multiple reference genome projects
+    filtered_projects = []
+    for proj in all_projects:
+        prepare_project_linkid(proj)
+        # Check reference genome for this project
+        if 'runs' in proj and proj['runs']:
+            ref_genome = reference_genome_from_project(proj['runs'])
+            if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
+                # Add reference genome to project object
+                proj['reference_genome'] = ref_genome
+                filtered_projects.append(proj)
+        else:
+            # Skip projects without runs info
+            continue
+
+    return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
+
+
+# concatenate projects specified by project_list into a single data frame
+def concat_projects(project_list):
+    start_time = time.time()
+
+    # Pre-allocate lists for efficiency
+    all_samples = []
+    sample_count = 0
+
+    for project_name in project_list:
+        project_start = time.time()
+        project = validate_project(get_one_project(project_name), project_name)
+
+        # Get reference genome for this project - do this once per project
+        ref_genome = reference_genome_from_project(project['runs'])
+
+        # Get the project ID once
+        project_id = project['_id']
+
+        # Process all samples for this project in one batch
+        project_samples = []
+        for sample_data in project['runs'].values():
+            # Convert to DataFrame once for each sample
+            sample_df = pd.DataFrame(sample_data)
+
+            # Add project_id and Reference_version columns efficiently
+            sample_df['project_id'] = project_id
+
+            # Only set Reference_version if it's missing
+            if 'Reference_version' not in sample_df.columns:
+                sample_df['Reference_version'] = ref_genome
+
+            project_samples.append(sample_df)
+            sample_count += 1
+
+        # Batch concatenate all samples for this project
+        if project_samples:
+            project_df = pd.concat(project_samples, ignore_index=True)
+            all_samples.append(project_df)
+
+        project_time = time.time() - project_start
+        logging.debug(
+            f"Processed project {project_name} with {len(project_samples)} samples in {project_time:.3f} seconds")
+
+    # If no valid projects, return empty DataFrame
+    if not all_samples:
+        logging.debug("No samples found in selected projects")
+        return pd.DataFrame()
+
+    # Final concatenation of all project DataFrames
+    concat_start = time.time()
+    df = pd.concat(all_samples, ignore_index=True)
+    concat_time = time.time() - concat_start
+
+    total_time = time.time() - start_time
+    logging.debug(
+        f"Concatenated {sample_count} samples from {len(project_list)} projects into DataFrame with {len(df)} rows in {total_time:.3f} seconds")
+    logging.debug(f"Final concatenation took {concat_time:.3f} seconds")
+
+    return df
+
+
+def visualizer(request):
+    selected_projects = request.session.get('selected_projects', [])
+
+    # If no projects selected, redirect back
+    if not selected_projects:
+        messages.error(request, "No projects selected for visualization.")
+        return redirect('coamplification_graph')
+
+    # combine selected projects
+    CONCAT_START = time.time()
+    projects_df = concat_projects(selected_projects)
+    CONCAT_END = time.time()
+
+    # If no data, redirect back
+    if projects_df.empty:
+        messages.error(request, "No valid data found in selected projects.")
+        return redirect('coamplification_graph')
+
+    # construct graph and load into neo4j
+    load_graph(projects_df)
+    IMPORT_END = time.time()
+
+    # Get reference genomes information for display
+    ref_genomes = projects_df[
+        'Reference_version'].unique().tolist() if 'Reference_version' in projects_df.columns else ["Unknown"]
+
+    return render(request, 'pages/visualizer.html', {
+        'test_size': len(projects_df),
+        'diff': CONCAT_END - CONCAT_START,
+        'import_time': IMPORT_END - CONCAT_END,
+        'reference_genomes': ref_genomes
+    })
+
+
+def fetch_graph(request, gene_name):
+    min_weight = request.GET.get('min_weight')
+    min_samples = request.GET.get('min_samples')
+    oncogenes = request.GET.get('oncogenes', 'false').lower() == 'true'
+    all_edges = request.GET.get('all_edges', 'false').lower() == 'true'
+
+    try:
+        nodes, edges = fetch_subgraph(gene_name, min_weight, min_samples, oncogenes, all_edges)
+        # print(f"\nNumber of nodes: {len(nodes)}\nNumber of edges: {len(edges)}\n")
+        return JsonResponse({
+            'nodes': nodes,
+            'edges': edges
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+      
 def search_results(request):
     """Handles user queries and renders search results."""
-    
+
     if request.method == "POST":
         # Extract search parameters from POST request
         gene_search = request.POST.get("genequery", "").upper()
@@ -2289,8 +2504,14 @@ def search_results(request):
         classifications = request.POST.get("classquery", "").upper()
         sample_name = request.POST.get("metadata_sample_name", "").upper()
         sample_type = request.POST.get("metadata_sample_type", "").upper()
-        cancer_type = request.POST.get("metadata_cancer_type", "").upper()
-        tissue_origin = request.POST.get("metadata_tissue_origin", "").upper()
+
+        # Get the combined cancer/tissue field
+        cancer_tissue = request.POST.get("metadata_cancer_tissue", "").upper()
+
+        # We'll set both parameters to the same value for the backend search
+        cancer_type = cancer_tissue
+        tissue_origin = ""  # Leave empty to avoid duplicate filtering
+
         extra_metadata = request.POST.get('metadata_extra', "").upper()
 
         # Store user query for persistence in the form
@@ -2300,14 +2521,13 @@ def search_results(request):
             "classquery": classifications,
             "metadata_sample_name": sample_name,
             "metadata_sample_type": sample_type,
-            "metadata_cancer_type": cancer_type,
-            "metadata_tissue_origin": tissue_origin,
+            "metadata_cancer_tissue": cancer_tissue,  # New field
             'extra_metadata': extra_metadata
         }
 
         # Debugging logs
         logging.info(f'Search terms: Gene={gene_search}, Project={project_name}, Class={classifications}, '
-                     f'Sample Name={sample_name}, Sample Type={sample_type}, Cancer={cancer_type}, Tissue={tissue_origin},'
+                     f'Sample Name={sample_name}, Sample Type={sample_type}, Cancer/Tissue={cancer_tissue},'
                      f' Extra Metadata={extra_metadata}')
 
         # Run the search function
@@ -2317,10 +2537,9 @@ def search_results(request):
             classquery=classifications,
             metadata_sample_name=sample_name,
             metadata_sample_type=sample_type,
-            metadata_cancer_type=cancer_type,
-            metadata_tissue_origin=tissue_origin,
-            extra_metadata = extra_metadata,
-            
+            metadata_cancer_type=cancer_tissue,  # Use the combined term
+            metadata_tissue_origin=tissue_origin,  # Leave this empty
+            extra_metadata=extra_metadata,
             user=request.user
         )
 
@@ -2336,8 +2555,7 @@ def search_results(request):
             "Classification": classifications,
             "Sample Name": sample_name,
             "Sample Type": sample_type,
-            "Cancer Type": cancer_type,
-            "Tissue of Origin": tissue_origin,
+            "Cancer Type or Tissue": cancer_tissue,  # Combined field in display
         }
 
         return render(request, "pages/gene_search.html", {
@@ -2352,6 +2570,6 @@ def search_results(request):
             "public_samples_count": public_samples_count,
             "private_samples_count": private_samples_count,
         })
-    
+
     else:
         return redirect("gene_search_page")  # Redirect if accessed incorrectly

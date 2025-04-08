@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+
+{% block meta_title %}Coamplification Graph Analysis{% endblock %}
+
+{% block main %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        // Check if DataTable is already initialized before initializing
+        if (!$.fn.dataTable.isDataTable('#availableProjectsTable')) {
+            $('#availableProjectsTable').DataTable({
+                "pageLength": 10,
+                "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]]
+            });
+        }
+
+        // Select all checkbox functionality
+        $('#selectAll').change(function() {
+            $('.project-checkbox').prop('checked', this.checked);
+        });
+
+        // Form submission loading state
+        $('#coamplificationForm').on('submit', function() {
+            // Check if at least one project is selected
+            if ($('.project-checkbox:checked').length === 0) {
+                $('#message_dialog').removeClass('alert-success').addClass('alert-danger');
+                $('#message_to_user').text('Please select at least one project');
+                $('#message_dialog').show();
+                return false;
+            }
+
+            // Show loading spinner and disable submit button
+            $('#submitButton').html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...').prop('disabled', true);
+
+            // Show processing message
+            $('#message_dialog').removeClass('alert-danger').addClass('alert-success');
+            $('#message_to_user').text('Building coamplification graph. This can take a few minutes. Please wait...');
+            $('#message_dialog').show();
+
+            return true;
+        });
+    });
+</script>
+{% endblock %}
+
+<div class="container main-container" style="max-width:1600px; width:90%; margin:auto;">
+    <div id="message_dialog" class="alert alert-success" role="alert" style="display:none">
+        <span id="message_to_user">default text</span>
+        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+        </button>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <h2>Coamplification Graph Analysis</h2>
+            <hr>
+            <p>Select projects to include in your coamplification graph analysis:</p>
+        </div>
+    </div>
+
+    <form id="coamplificationForm" method="post" action="{% url 'coamplification_graph' %}">
+        {% csrf_token %}
+
+        <!-- Combined Projects Table -->
+        <div class="row" style="margin-top:20px">
+            <div class="col-md-12">
+                <h3>Available Projects</h3>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table id='availableProjectsTable' class="table table-hover table-sm">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="selectAll"> Select</th>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Visibility</th>
+                        <th>Reference build</th>
+                        <th>Sample Count</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project in all_projects %}
+                    <tr>
+                        <td>
+                            <input type="checkbox" class="project-checkbox"
+                                   id="project_{{ forloop.counter }}"
+                                   name="selected_projects"
+                                   value="{{ project.project_name }}">
+                        </td>
+                        <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                        <td>{{ project.description }}</td>
+                        <td>{% if project.private %}Private{% else %}Public{% endif %}</td>
+                        <td>{{ project.reference_genome }}</td>
+                        <td>{{ project.sample_count|default:"0" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="row" style="margin-top:25px; margin-bottom:25px">
+            <div class="col-md-12">
+                <button id="submitButton" type="submit" class="btn btn-primary">Generate Coamplification Graph</button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

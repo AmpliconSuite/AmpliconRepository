@@ -4,12 +4,69 @@
 </div>
 {% endif %}
 
+<style>
+/* Modal styles */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 2000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.4);
+}
+
+.modal.is-active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    position: relative;
+    background-color: #fefefe;
+    margin: auto;
+    padding: 0;
+    border-radius: 5px;
+    max-width: 600px;
+    width: 90%;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.modal-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.modal-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.box {
+    background-color: white;
+    border-radius: 5px;
+    padding: 1.25rem;
+}
+</style>
+
 
 <nav class="navbar navbar-expand-lg navbar-light bg-light">
     <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarTogglerDemo01" aria-controls="navbarTogglerDemo01" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
     </button>
     {% comment %} <div class="collapse navbar-collapse" id = "navbarTogglerDemo01"> {% endcomment %}
+
     <a class="navbar-brand" href="/">
         <img class = "custom-icon" src="{{ STATIC_URL }}img/AmpliconSuiteIconCirc.png" width="35px"> AmpliconRepository
     </a>
@@ -24,23 +81,21 @@
             <li>
                 <a class="nav-link" href="https://docs.ampliconrepository.org/en/latest/getting-started">Getting Started</a>
             </li>
+            <li>
+                <a class="nav-link" href="/coamplification-graph">Co-Amplification Graph</a>
+            </li>
         </ul>
     </div>
 
     {% comment %} Search functionality {% endcomment %}
     <div class="navbar-item" style='padding-right:30px'>
-        <a id="toggleSearchDropdown" class="button is-light is-flex is-align-items-center">
+        <a id="openSearchModal" class="button is-light is-flex is-align-items-center">
             <span class="icon is-small">
                 <i class="fas fa-search"></i>
             </span>
             <span class="ml-1">Search</span>
         </a>
     </div>
-
-
-        <div id="searchDropdown" class="navbar-dropdown p-4 is-hidden">
-            {% include "includes/searchbox.html" %}
-        </div>
 
         
     {% if not user.is_authenticated %}
@@ -112,34 +167,6 @@
     });
 </script>
 
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const searchButton = document.getElementById("toggleSearchDropdown");
-        const searchDropdown = document.getElementById("searchDropdown");
-    
-        searchButton.addEventListener("click", function (event) {
-            event.preventDefault();
-            searchDropdown.classList.toggle("is-hidden"); // Toggle visibility
-    
-            // Ensure dropdown stays within viewport
-            const rect = searchDropdown.getBoundingClientRect();
-            if (rect.right > window.innerWidth) {
-                searchDropdown.style.left = "auto";
-                searchDropdown.style.right = "0"; // Align to right if needed
-            }
-        });
-    
-        // Close dropdown when clicking outside
-        document.addEventListener("click", function (event) {
-            if (!searchDropdown.contains(event.target) && !searchButton.contains(event.target)) {
-                searchDropdown.classList.add("is-hidden");
-            }
-        });
-    });
-
-</script>
-
-
 <style>
 
     .navbar-item a.button {
@@ -156,3 +183,46 @@
 
 
 </style>
+
+<div id="searchModal" class="modal">
+    <div class="modal-background"></div>
+    <div class="modal-content">
+        <div class="box">
+            {% include "includes/searchbox.html" %}
+        </div>
+    </div>
+    <button class="modal-close is-large" aria-label="close"></button>
+</div>
+
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Get references to modal elements
+        const openSearchBtn = document.getElementById('openSearchModal');
+        const searchModal = document.getElementById('searchModal');
+        const modalClose = searchModal.querySelector('.modal-close');
+        const modalBackground = searchModal.querySelector('.modal-background');
+
+        // Open modal when search button is clicked
+        openSearchBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            searchModal.classList.add('is-active');
+        });
+
+        // Close modal when X button or background is clicked
+        modalClose.addEventListener('click', function() {
+            searchModal.classList.remove('is-active');
+        });
+
+        modalBackground.addEventListener('click', function() {
+            searchModal.classList.remove('is-active');
+        });
+
+        // Close with ESC key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && searchModal.classList.contains('is-active')) {
+                searchModal.classList.remove('is-active');
+            }
+        });
+    });
+</script>
