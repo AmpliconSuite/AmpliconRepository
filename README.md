@@ -1,6 +1,6 @@
 # [AmpliconRepository.org](https://ampliconrepository.org/)
 
-#### Authors: Forrest Kim, Jens Luebeck, Ted Liefeld, Edwin Huang, Gino Prasad, Rohil Ahuja, Rishaan Kenkre, Tushar Agashe, Devika Torvi, Madalina Giurgiu, Thorin Tabor, Vineet Bafna
+#### Authors: Forrest Kim, Edwin Huang, Ted Liefeld, Jens Luebeck, Thorin Tabor, Michael Chan, Dhruv Khatri, Kyra Fetter, Gino Prasad, Rohil Ahuja, Rishaan Kenkre, Tushar Agashe, Devika Torvi, Madalina Giurgiu, Vineet Bafna
 
 ---
 

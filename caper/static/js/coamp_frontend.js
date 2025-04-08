@@ -5,7 +5,7 @@ window.addEventListener('DOMContentLoaded', function () {
     let allTooltips = {};
     let inputNode = null
     let total_data = 0;
-    let data = null
+    let completeData = null;
     console.log(document.styleSheets)
 
     cytoscape.use( cytoscapePopper(tippyFactory) );
@@ -55,7 +55,11 @@ window.addEventListener('DOMContentLoaded', function () {
                 throw new Error(`Node ${inputNode} not found or server error.`);
             }
 
-            data = await response.json();
+            const data = await response.json();
+
+            // Store the complete data for later use in CSV export
+            completeData = data;
+
             total_data = data.nodes.length;
             const filtered_data = filterData(data, limit)
             // Initialize Cytoscape with fetched data
@@ -643,12 +647,78 @@ window.addEventListener('DOMContentLoaded', function () {
 
     // Single event listener for Download CSV button
     newDownloadBtn.addEventListener('click', function() {
-        if (!data || !inputNode) {
-            alert('No data available. Please load a graph first.');
+        // Make sure completeData and inputNode are available
+        if (!completeData || !inputNode) {
+            alert('No graph data available. Please load a graph first.');
             return;
         }
-    
-        const csvContent = generateCSV(data, inputNode);
+
+        const datacontainercsv = document.createElement('table');
+
+        // Create a temporary cytoscape instance with all the data for CSV generation
+        const tempCy = cytoscape({
+            headless: true,  // Headless mode - no rendering
+            elements: completeData  // Use the complete data
+        });
+
+        // Generate a table from all the nodes for export
+        tempCy.nodes().forEach(node => {
+            const row = document.createElement('tr');
+
+            const cellName = document.createElement('td');
+            const geneName = node.data('label');
+            cellName.textContent = geneName;
+
+            const cellStatus = document.createElement('td');
+            cellStatus.textContent = node.data('oncogene');
+
+            const cellLocation = document.createElement('td');
+            cellLocation.textContent = node.data('location')
+
+            const cellWeight = document.createElement('td');
+            const cellInter = document.createElement('td');
+            const cellUnion = document.createElement('td');
+            const cellDistance = document.createElement('td');
+            const cellPValue = document.createElement('td');
+            const cellQValue = document.createElement('td');
+            const cellOddsRatio = document.createElement('td');
+
+            // Find the query node in the temp instance
+            const queryNode = tempCy.nodes().filter(n => n.data('label') === inputNode).first();
+            const edges = queryNode && node.edgesWith(queryNode);
+            const edgeData = edges && edges.length > 0 ? edges[0].data() : {};
+
+            cellWeight.textContent = String(edgeData.weight?.toFixed(3) ?? 'N/A');
+
+            const interList = edgeData.inter ? `["${edgeData.inter.join('", "')}"]` : 'N/A';
+            cellInter.textContent = interList;
+
+            const unionList = edgeData.union ? `["${edgeData.union.join('", "')}"]` : 'N/A';
+            cellUnion.textContent = unionList;
+
+            cellDistance.textContent = String((edgeData.distance === -1 || edgeData.distance === undefined) ? 'N/A' : edgeData.distance);
+            cellPValue.textContent = String((edgeData.pval === -1 || edgeData.pval === undefined) ? 'N/A' : edgeData.pval.toFixed(3));
+            cellQValue.textContent = String((edgeData.qval === -1 || edgeData.qval === undefined) ? 'N/A' : edgeData.qval.toFixed(3));
+            cellOddsRatio.textContent = String((edgeData.odds_ratio === -1 || edgeData.odds_ratio === undefined) ? 'N/A' : edgeData.odds_ratio.toFixed(3));
+
+            row.appendChild(cellName);
+            row.appendChild(cellStatus);
+            row.appendChild(cellWeight);
+            row.appendChild(cellLocation);
+            row.appendChild(cellDistance);
+            row.appendChild(cellPValue);
+            row.appendChild(cellQValue);
+            row.appendChild(cellOddsRatio);
+            row.appendChild(cellInter);
+            row.appendChild(cellUnion);
+
+            datacontainercsv.appendChild(row);
+        });
+
+        // Destroy the temporary instance
+        tempCy.destroy();
+
+        const csvContent = generateCSV(datacontainercsv);
         const blob = new Blob([csvContent], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
     

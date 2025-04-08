@@ -492,7 +492,10 @@ class Graph:
 		cdf = chi2.cdf(test_statistic, df=1)
 		p_val_two_sided = 1-cdf
 		diagonal_residual_sum = ((obs_freq[0]-exp_freq[0]) + (obs_freq[3]-exp_freq[3]))
-		odds_ratio = obs_freq[0]/exp_freq[0]
+
+		odds_ratio = obs_freq[0] / exp_freq[0]
+		if odds_ratio > 1e9:
+			odds_ratio = 1e9 # cap ultra large to prevent infinite odds ratios
 
 		# Convert to one-sided p-value
 		if diagonal_residual_sum >= 0:
