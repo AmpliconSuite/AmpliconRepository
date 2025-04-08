@@ -461,10 +461,10 @@ class Graph:
 		geneA_samples = len(src_sets_filtered)
 		geneB_samples = len(tgt_sets_filtered)
 		geneAB_samples = len(inters_filtered)
-		fAandB = geneAB_samples/total_samples
-		fA = geneA_samples/total_samples
-		fB = geneB_samples/total_samples
-		fAorB = fA + fB - fAandB
+		# fAandB = geneAB_samples/total_samples
+		# fA = geneA_samples/total_samples
+		# fB = geneB_samples/total_samples
+		# fAorB = fA + fB - fAandB
 
 		# observed
 		O11 = geneAB_samples
@@ -528,7 +528,7 @@ class Graph:
 	# get functions
 	# -------------
 	def Locs(self):
-		return self.locs
+		return self.locs_by_genome
 	def NumNodes(self):
 		try:
 			return len(self.nodes)
