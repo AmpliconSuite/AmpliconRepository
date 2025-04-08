@@ -569,14 +569,14 @@ window.addEventListener('DOMContentLoaded', function () {
             alert('Data is incomplete.');
             return '';
         }
-    
+
         const csv = [];
         const header = ['Gene Name', 'Oncogene', 'Gene ecDNA Count', 'Intersection Count', 'Coamplification Frequency', 'Location', 'Distance (bp)', 'P-Value', 'Q-value', 'Odds Ratio', 'Gene ecDNA Samples', 'Intersection Samples'];
         csv.push(header.join(','));
-    
+
         const nodes = data.nodes;
         const edges = data.edges;
-    
+
         // Map edges for fast lookup
         const edgeMap = new Map();
         edges.forEach(edge => {
@@ -585,13 +585,13 @@ window.addEventListener('DOMContentLoaded', function () {
             edgeMap.set(key1, edge.data);
             edgeMap.set(key2, edge.data);
         });
-    
+
         // Build node + edge data rows
         const rows = nodes.map(node => {
             const nData = node.data;
             const key = `${inputNode}|${nData.label}`;
             const edgeData = edgeMap.get(key) || {};
-    
+
             return {
                 gene: nData.label,
                 oncogene: nData.oncogene || 'False',
@@ -607,14 +607,14 @@ window.addEventListener('DOMContentLoaded', function () {
                 inter: edgeData.inter ? `["${edgeData.inter.join('", "')}"]` : 'N/A',
             };
         });
-    
+
         // Move inputNode to top
         const queryRow = rows.find(r => r.gene === inputNode);
         const otherRows = rows.filter(r => r.gene !== inputNode);
-    
+
         // Sort other rows by coamplification frequency descending
         otherRows.sort((a, b) => (b.weight ?? -1) - (a.weight ?? -1));
-    
+
         // Combine and format
         const finalRows = [queryRow, ...otherRows];
         finalRows.forEach(row => {
@@ -632,10 +632,10 @@ window.addEventListener('DOMContentLoaded', function () {
                 row.gene_samples,
                 row.inter,
             ].map(formatCell);
-    
+
             csv.push(formattedRow.join(','));
         });
-    
+
         return csv.join('\n');
     }
 
@@ -653,84 +653,25 @@ window.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        const datacontainercsv = document.createElement('table');
+        // Generate CSV content directly using the proper parameters
+        const csvContent = generateCSV(completeData, inputNode);
 
-        // Create a temporary cytoscape instance with all the data for CSV generation
-        const tempCy = cytoscape({
-            headless: true,  // Headless mode - no rendering
-            elements: completeData  // Use the complete data
-        });
+        if (!csvContent) {
+            return; // Exit if CSV generation failed
+        }
 
-        // Generate a table from all the nodes for export
-        tempCy.nodes().forEach(node => {
-            const row = document.createElement('tr');
-
-            const cellName = document.createElement('td');
-            const geneName = node.data('label');
-            cellName.textContent = geneName;
-
-            const cellStatus = document.createElement('td');
-            cellStatus.textContent = node.data('oncogene');
-
-            const cellLocation = document.createElement('td');
-            cellLocation.textContent = node.data('location')
-
-            const cellWeight = document.createElement('td');
-            const cellInter = document.createElement('td');
-            const cellUnion = document.createElement('td');
-            const cellDistance = document.createElement('td');
-            const cellPValue = document.createElement('td');
-            const cellQValue = document.createElement('td');
-            const cellOddsRatio = document.createElement('td');
-
-            // Find the query node in the temp instance
-            const queryNode = tempCy.nodes().filter(n => n.data('label') === inputNode).first();
-            const edges = queryNode && node.edgesWith(queryNode);
-            const edgeData = edges && edges.length > 0 ? edges[0].data() : {};
-
-            cellWeight.textContent = String(edgeData.weight?.toFixed(3) ?? 'N/A');
-
-            const interList = edgeData.inter ? `["${edgeData.inter.join('", "')}"]` : 'N/A';
-            cellInter.textContent = interList;
-
-            const unionList = edgeData.union ? `["${edgeData.union.join('", "')}"]` : 'N/A';
-            cellUnion.textContent = unionList;
-
-            cellDistance.textContent = String((edgeData.distance === -1 || edgeData.distance === undefined) ? 'N/A' : edgeData.distance);
-            cellPValue.textContent = String((edgeData.pval === -1 || edgeData.pval === undefined) ? 'N/A' : edgeData.pval.toFixed(3));
-            cellQValue.textContent = String((edgeData.qval === -1 || edgeData.qval === undefined) ? 'N/A' : edgeData.qval.toFixed(3));
-            cellOddsRatio.textContent = String((edgeData.odds_ratio === -1 || edgeData.odds_ratio === undefined) ? 'N/A' : edgeData.odds_ratio.toFixed(3));
-
-            row.appendChild(cellName);
-            row.appendChild(cellStatus);
-            row.appendChild(cellWeight);
-            row.appendChild(cellLocation);
-            row.appendChild(cellDistance);
-            row.appendChild(cellPValue);
-            row.appendChild(cellQValue);
-            row.appendChild(cellOddsRatio);
-            row.appendChild(cellInter);
-            row.appendChild(cellUnion);
-
-            datacontainercsv.appendChild(row);
-        });
-
-        // Destroy the temporary instance
-        tempCy.destroy();
-
-        const csvContent = generateCSV(datacontainercsv);
         const blob = new Blob([csvContent], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
-    
+
         const link = document.createElement('a');
         link.href = url;
         const now = new Date();
         const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
         link.download = `AACoampGraph_${inputNode}_${formattedDate}.csv`;
-    
+
         document.body.appendChild(link);
         link.click();
-    
+
         setTimeout(() => {
             document.body.removeChild(link);
             URL.revokeObjectURL(url);

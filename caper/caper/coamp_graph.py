@@ -429,7 +429,9 @@ class Graph:
 				continue  # Different chromosomes, try next reference
 
 			# Same chromosome, calculate distance
-			return abs(self.locs_by_genome[ref][a][1] - self.locs_by_genome[ref][b][1])
+			e_s = abs(self.locs_by_genome[ref][a][2] - self.locs_by_genome[ref][b][1])
+			s_e = abs(self.locs_by_genome[ref][a][1] - self.locs_by_genome[ref][b][2])
+			return min(e_s, s_e)
 
 		# If we get here, genes don't have coordinates in any common reference genome
 		return -1
