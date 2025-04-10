@@ -265,13 +265,24 @@ CACHE_MIDDLEWARE_KEY_PREFIX = PROJECT_APP
 
 
 USE_S3 = os.getenv('S3_STATIC_FILES') == 'TRUE'
-
+logging.error(f"=============================  USE_S3: {USE_S3}")
 if USE_S3:
     # s3 static settings
     # URL prefix for static files.
     # Example: "http://media.lawrence.com/static/"
 
-    STATIC_URL = "https://amprepobucket.s3.amazonaws.com/static/"
+    # issue 331, make sure dev/prod don't use the same static files. Have it default to the current shared location 
+    # of https://amprepobucket.s3.amazonaws.com/static/ but move them now to be set based on the AMPLICON_ENV as 
+    # defined in config.sh so like this https://amprepobucket.s3.amazonaws.com/dev/static/
+    AMPLICON_ENV = os.getenv('AMPLICON_ENV', default='')
+    S3_DEFAULT_STATIC_PATH = f"{AMPLICON_ENV}/static/"
+    # it has to end with a '/' so lets make sure it does
+    S3_STATIC_PATH = f"{os.getenv('S3_STATIC_PATH', default=S3_DEFAULT_STATIC_PATH).rstrip('/')}/"
+
+
+    STATIC_URL = f"https://amprepobucket.s3.amazonaws.com/{S3_STATIC_PATH}"
+    
+    logging.error(f"=============================  STATIC_URL: {STATIC_URL}")
     # Absolute path to the directory static files should be collected to.
     # Don't put anything in this directory yourself; store your static files
     # in apps' "static/" subdirectories and in STATICFILES_DIRS.
