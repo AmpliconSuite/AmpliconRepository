@@ -523,8 +523,11 @@ class Graph:
 			# single interval case
 			else:
 				return 2
-				distance = abs(a_info[1] - b_info[1])
-				distance_pval = self.p_d_D()
+				# calculate distance
+				e_s = abs(a_info[2] - b_info[1])
+				s_e = abs(a_info[1] - b_info[2])
+				distance = min(e_s, s_e)
+				distance_pval = self.p_d_D(distance)
 
 
 		# genes don't have coordinates in any common reference genome
@@ -573,7 +576,10 @@ class Graph:
 			if a_info[0] != b_info[0]:
 				return -1
 			else:
-				return abs(a_info[1] - b_info[1])
+				# Same chromosome, calculate distance
+				e_s = abs(a_info[2] - b_info[1])
+				s_e = abs(a_info[1] - b_info[2])
+				return min(e_s, s_e)
 		return -1
 
 
