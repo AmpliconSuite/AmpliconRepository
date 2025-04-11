@@ -33,6 +33,7 @@ class Graph:
 		else:
 			self.focal_amp = focal_amp
 			self.coamp_level = coamp_level
+			self.gene_index = {} # constant lookup of genes in self.nodes
 			self.nodes = []
 			self.edges = []
 
@@ -98,7 +99,7 @@ class Graph:
 			location (str): 'Location' column of one feature in input dataset
 			MERGE_CUTOFF (int): merge intervals < cutoff distance (bp)
 		Return: 
-			merged_intervals (list): list of tuples in format (chromosome, start, end)
+			merged_intervals (list): list of intervals as lists of chr,start,end
 		"""
 		MERGE_CUTOFF=50000
 		merged_intervals = []
@@ -126,8 +127,8 @@ class Graph:
 		"""
 		streamline preprocessing of intervals and dataset reformatting before graph construction
 		"""
-		# replace spaces with underscores
-		dataset.columns = dataset.columns.str.replace(' ', '_')
+		# replace spaces with underscores (for testing locally downloaded datasets)
+		# dataset.columns = dataset.columns.str.replace(' ', '_')
 
 		# subset dataset by focal amplification type
 		filter_start = time.time()
@@ -164,6 +165,7 @@ class Graph:
 		# return relevant columns
 		preprocessed_dataset = filtered_dataset[['Sample_name', 
 												 'Feature_ID',
+												 'Reference_version',
 												 'Merged_Intervals', 
 												 'Oncogenes', 
 												 'All_genes']].copy()
@@ -179,11 +181,9 @@ class Graph:
 		for genome in self.locs_by_genome:
 			print(len(self.locs_by_genome[genome]))
 
-		# dictionary for fast lookups of gene labels
-		gene_index = {}
-
 		process_start = time.time()
 		gene_count = 0
+		interval_id_counter = 0
 
 		# for each feature or sample
 		for __, row in dataset.iterrows():
@@ -193,13 +193,29 @@ class Graph:
 			all_genes = row.get('All_genes')
 			feature = row.get('Feature_ID') if self.coamp_level == 'feature' else row.get('Sample_name')
 			sample = row.get('Sample_name') # redundant for sample-level co-amps
-
+			intervals = row.get('Merged_Intervals')
+			
+			interval_lookup = defaultdict(list)
+			for interval in intervals:
+				ichr, istart, iend = interval
+				interval_lookup[ichr].append([istart, iend, interval_id_counter])
+				interval_id_counter += 1
+			
 			gene_count += len(all_genes)
 
 			for gene in all_genes:
-				# if the gene has been seen, add feature and cell line to info
-				if gene in gene_index:
-					index = gene_index[gene]
+				# if the gene has coordinates in this ref genome 
+				if (gene in self.locs_by_genome[ref_genome]):
+					chr, start, end, interval_ids = self.locs_by_genome[ref_genome][gene]
+					# store the interval id that the gene appears on
+					for istart, iend, id in interval_lookup[chr]:
+						if (start > istart and start < iend):
+							interval_ids.add(id)
+							break
+
+				# if the gene has been seen, add feature properties to node info
+				if gene in self.gene_index:
+					index = self.gene_index[gene]
 					self.nodes[index]['features'].append(feature)
 					self.nodes[index]['samples'].append(sample)
 
@@ -209,33 +225,50 @@ class Graph:
 
 				# otherwise add the gene to self.nodes as a new row
 				else:
-					if (gene in self.locs_by_genome[ref_genome]):
-						chr, start, end = self.locs_by_genome[ref_genome][gene]
-						location = f"chr{chr}:{start}-{end}"
-					else:
-						location = 'N/A'
-
 					node_info = {
 						'label': gene,
 						'oncogene': str(gene in oncogenes),
 						'features': [feature],
 						'samples': [sample],
-						'location': location,
-						'reference_genomes': [ref_genome]  # Track which reference genome(s) this gene appears in
+						'reference_genomes': [ref_genome],  # Track which reference genome(s) this gene appears in
 					}
 					self.nodes.append(node_info)
-					gene_index[gene] = len(self.nodes) - 1
+					self.gene_index[gene] = len(self.nodes) - 1
 		process_end = time.time()
 		print(
 			f"Processing {gene_count} genes took {process_end - process_start:.4f} seconds, resulting in {len(self.nodes)} unique nodes")
 
 		# remove potential duplicate features or cell lines
 		dedup_start = time.time()
+		features_diff = 0
+		samples_diff = 0
 		for node_info in self.nodes:
+			f0 = len(node_info['features'])
+			s0 = len(node_info['samples'])
+			
 			node_info['features'] = list(set(node_info['features']))
 			node_info['samples'] = list(set(node_info['samples']))
+			
+			f1 = len(node_info['features'])
+			s1 = len(node_info['samples'])
+			if f1-f0 != 0: features_diff += 1
+			if s1-s0 != 0: samples_diff += 1
+
 		dedup_end = time.time()
-		print(f"Deduplicating features and samples took {dedup_end - dedup_start:.4f} seconds")
+		print(f"Deduplicating features and samples took {dedup_end - dedup_start:.4f} seconds. {features_diff} duplicate features and {samples_diff} duplicate samples found")
+
+		# add location by ref genome to each node
+		for node_info in self.nodes:
+			location = []
+			for ref in node_info['reference_genomes']:
+				if node_info['label'] in self.locs_by_genome[ref]:
+					chr, start, end, __ = self.locs_by_genome[ref][node_info['label']]
+					# store as a single list of chr, start, end
+					location = [chr, str(start), str(end)]
+					break
+					# for detailed info, store as list of locations by ref
+					# location.append([ref, chr, start, end])
+			node_info['location'] = location
 
 		# concatenate all nodes as rows in df
 		df_start = time.time()
@@ -427,8 +460,11 @@ class Graph:
 
 	def ImportLocs(self, bed_file):
 		"""
-        Return a dict of format: {gene (string): (start chromosome (string),
-        start coordinate (int), end coordinate (int))}
+        Return a dict of format: {gene (string): ( start chromosome (string),
+        										   start coordinate (int), 
+												   end coordinate (int),
+												   on_intervals (set of int) )}
+		Note: on_intervals to be populated in CreateNodes()
         """
 		locs = {}
 		try:
@@ -441,11 +477,107 @@ class Graph:
 			locs = dict(zip(gene_coords[3],
 							zip(gene_coords['chr_num'],
 								gene_coords[1].astype(int),
-								gene_coords[2].astype(int))))
+								gene_coords[2].astype(int),
+								[set()] * len(gene_coords))))
 		except Exception as e:
 			print(f"Error importing gene coordinates from {bed_file}: {e}")
 
 		return locs
+
+	# -------------------------- significance testing  -------------------------
+	def test_selector(self, a, b):
+		"""
+		determine appropiate significance test by two genes' genomic location and
+		interval on ecDNA
+		(temporary) return -1: no shared ref genome
+						    0: multi-chr
+							1: multi-interval
+							2: single interval
+		"""
+		# get the reference genomes
+		a_refs = self.nodes[self.gene_index[a]]['reference_genomes']
+		b_refs = self.nodes[self.gene_index[b]]['reference_genomes']
+
+		common_refs = set(a_refs).intersection(b_refs)
+		
+		if not common_refs:
+			return -1
+		
+		# for each common reference, try to select a significance test
+		for ref in common_refs:
+			# skip if gene coordinates aren't available
+			if a not in self.locs_by_genome[ref] or b not in self.locs_by_genome[ref]:
+				continue
+
+			a_info = self.locs_by_genome[ref][a]
+			b_info = self.locs_by_genome[ref][b]
+
+			# multi-chromosomal case
+			if a_info[0] != b_info[0]:
+				return 0
+			
+			# multi-interval case
+			elif set(a_info[3]).intersection(b_info[3]) == 0:
+				return 1
+			
+			# single interval case
+			else:
+				return 2
+				distance = abs(a_info[1] - b_info[1])
+				distance_pval = self.p_d_D()
+
+
+		# genes don't have coordinates in any common reference genome
+		return -1
+
+	def p_d_D(self, distance, model='gamma_random_breakage'):
+		"""
+		generate p_val based on naive random breakage model, considering distance
+        but not number of incidents of co-amplification
+		
+		expects a valid distance value (>0)
+		"""
+		models = { 'gamma_random_breakage': [0.3987543483729932,
+											 1.999999999999,
+											 1749495.5696758535] }
+		params = models[model]
+		cdf = gamma.cdf(distance, a=params[0], loc=params[1], scale=params[2])
+		return 1 - cdf
+	
+	def single_interval_test(self, ): # add parameters
+		return 1.0
+
+	def multi_interval_test(self, ): # add parameters
+		return 1.0
+	
+	def multi_chromosomal_test(self, ): # add parameters
+		return 1.0
+	
+	def q_val(self, ): # add parameters
+		return 1.0
+
+	def test_distance(self, a, b):
+		"""
+		temporary - just checking p-val speedup
+		"""
+		a_refs = self.nodes[self.gene_index[a]]['reference_genomes']
+		b_refs = self.nodes[self.gene_index[b]]['reference_genomes']
+		common_refs = set(a_refs).intersection(b_refs)
+		if not common_refs:
+			return -1
+		for ref in common_refs:
+			if a not in self.locs_by_genome[ref] or b not in self.locs_by_genome[ref]:
+				continue
+			a_info = self.locs_by_genome[ref][a]
+			b_info = self.locs_by_genome[ref][b]
+			if a_info[0] != b_info[0]:
+				return -1
+			else:
+				return abs(a_info[1] - b_info[1])
+		return -1
+
+
+	# -------------------- (soon to be) deprecated functions -------------------
 
 	def Distance(self, a, b):
 		"""
@@ -511,7 +643,8 @@ class Graph:
         Return:
             float or str : p-value or 'N/A' if distance couldn't be calculated
         """
-		d = self.Distance(gene_a, gene_b)
+		# d = self.Distance(gene_a, gene_b)
+		d = self.test_distance(gene_a, gene_b)
 		if d == -1: return -1, d
 		params = models[model]
 		cdf = gamma.cdf(d, a=params[0], loc=params[1], scale=params[2])
@@ -569,7 +702,8 @@ class Graph:
 			p_val_one_sided = 1 - (p_val_two_sided / 2)
 
 		return p_val_one_sided, odds_ratio, d
-	
+
+	# note: need to reimplement if given an input list of p_vals from different tests
 	def QVal(self, p_values, alpha=0.05):
 		# extract valid p-values
 		valid_mask = [p != -1 for p in p_values]
@@ -587,6 +721,9 @@ class Graph:
 		# 	if valid:
 		# 		q_values[i] = valid_q_values[j]
 		# 		j += 1
+	
+	# --------------------------------------------------------------------------
+
 
 	# get functions
 	# -------------
