@@ -492,7 +492,9 @@ class Graph:
 				continue  # Different chromosomes, try next reference
 
 			# Same chromosome, calculate distance
-			return abs(self.locs_by_genome[ref][a][1] - self.locs_by_genome[ref][b][1])
+			e_s = abs(self.locs_by_genome[ref][a][2] - self.locs_by_genome[ref][b][1])
+			s_e = abs(self.locs_by_genome[ref][a][1] - self.locs_by_genome[ref][b][2])
+			return min(e_s, s_e)
 
 		# If we get here, genes don't have coordinates in any common reference genome
 		return -1
@@ -522,10 +524,10 @@ class Graph:
 		geneA_samples = len(src_sets_filtered)
 		geneB_samples = len(tgt_sets_filtered)
 		geneAB_samples = len(inters_filtered)
-		fAandB = geneAB_samples/total_samples
-		fA = geneA_samples/total_samples
-		fB = geneB_samples/total_samples
-		fAorB = fA + fB - fAandB
+		# fAandB = geneAB_samples/total_samples
+		# fA = geneA_samples/total_samples
+		# fB = geneB_samples/total_samples
+		# fAorB = fA + fB - fAandB
 
 		# observed
 		O11 = geneAB_samples
@@ -555,7 +557,10 @@ class Graph:
 		cdf = chi2.cdf(test_statistic, df=1)
 		p_val_two_sided = 1-cdf
 		diagonal_residual_sum = ((obs_freq[0]-exp_freq[0]) + (obs_freq[3]-exp_freq[3]))
-		odds_ratio = obs_freq[0]/exp_freq[0]
+
+		odds_ratio = obs_freq[0] / exp_freq[0]
+		if odds_ratio > 1e9:
+			odds_ratio = 1e9 # cap ultra large to prevent infinite odds ratios
 
 		# Convert to one-sided p-value
 		if diagonal_residual_sum >= 0:
@@ -586,7 +591,7 @@ class Graph:
 	# get functions
 	# -------------
 	def Locs(self):
-		return self.locs
+		return self.locs_by_genome
 	def NumNodes(self):
 		try:
 			return len(self.nodes)
