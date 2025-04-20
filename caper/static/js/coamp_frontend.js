@@ -17,6 +17,17 @@ window.addEventListener('DOMContentLoaded', function () {
         console.error("Failed to load cytoscape-svg:", e);
     }
 
+    const projectStats = JSON.parse(document.getElementById('project-stats-data').textContent);
+
+    const sampleList = document.getElementById('sampleList');
+    sampleList.innerHTML = '';
+
+    Object.entries(projectStats).forEach(([project, [sampleCount, ecDNACount]]) => {
+        const li = document.createElement('li');
+        li.textContent = `${project} — ${sampleCount} sample${sampleCount !== 1 ? 's' : ''}, ${ecDNACount} ecDNA features`;
+        sampleList.appendChild(li);
+    });
+
     // ----------------------------- Neo4j interaction -----------------------------
     async function fetchSubgraph() {
         console.log("Load graph pressed");
