@@ -37,16 +37,32 @@ class Graph:
 			self.nodes = []
 			self.edges = []
 
-			# Initialize dictionaries for each reference genome
-			self.locs_by_genome = {}
+			# # ----------- new approach loads locs for one genome -------------
 
-			# Define reference genomes to process
-			ref_genomes = ['GRCh38', 'GRCh37', 'hg19', "GRCh38_viral"]
+			# # load gene location data for one base reference genome 
+			# # map genes from other references to the base reference 
+			# import time
+			# start_time = time.time()
+			
+			# # define reference genomes to process
+			# ref_genomes = ['GRCh38', 'GRCh37', 'hg19', 'GRCh38_viral']
+			# base_ref = 'GRCh38'
+
+			# self.map_to_GRCh38 = self.get_ref_map(ref_genomes, base_ref)
+			# self.locs = self.ImportLocs(self.get_gene_bed_path(base_ref))
+
+			# print(f"Gene location loading time: {time.time() - start_time:.2f} seconds")
+
+			# ------------ previous approach loads all ref genomes -------------
+			# Initialize dictionaries for each reference genome
+			ref_genomes = ['GRCh38', 'GRCh37', 'hg19', 'GRCh38_viral']
+			self.locs_by_genome = {}
 
 			# Load gene location data for all possible reference genomes
 			# This could be parallelized with multiprocessing if performance is critical
 			import time
 			start_time = time.time()
+
 			for ref_genome in ref_genomes:
 				start_ref = time.time()
 				self.locs_by_genome[ref_genome] = self.ImportLocs(self.get_gene_bed_path(ref_genome))
@@ -60,6 +76,28 @@ class Graph:
 			# Create nodes and edges from the combined dataset
 			self.CreateNodes(preprocessed_dataset)
 			self.CreateEdges()
+
+	def get_ref_map(self, ref_genomes, base_ref):
+		ids_to_refs = {} # { NCBI ID: [GRCh37_name, hg19_name, ...] }
+		for ref_genome in ref_genomes:
+			if ref_genome != base_ref:
+				bed_file = self.get_gene_bed_path(ref_genome)
+				gene_coords = pd.read_csv(bed_file, sep="\t", header=None)
+				for row in gene_coords:
+					ncbi_id = row[6]
+					alt_name = row[3]
+					ids_to_refs[ncbi_id].append(alt_name)
+
+		refs_to_base = {} # { other ref name: GRCh38_name }
+		base_bed = self.get_gene_bed_path(base_ref)
+		base_gene_coords = pd.read_csv(base_bed, sep="\t", header=None)
+		for row in base_gene_coords:
+			ncbi_id = row[6]
+			base_name = row[3]
+			for alt_name in ids_to_refs[ncbi_id]:
+				refs_to_base[alt_name] = row[base_name]
+
+		return refs_to_base
 
 	def get_gene_bed_path(self, reference_genome):
 		"""
