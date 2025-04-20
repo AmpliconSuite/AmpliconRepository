@@ -10,6 +10,8 @@
 {% endblock %}
 
 {% block main %}
+<!--convert project_stats dictionary to json object, used to display projects on coamp tool page-->
+{{ projects_stats|json_script:"project-stats-data" }}
 
 <!-- <p>You selected:</p>
     {% for project in selected_projects %}
@@ -27,8 +29,14 @@
     <div class="header" id="titleText">ecDNA Coamplification Tool</div>
     <!-- gene input button -->
     <div class="text-storage">
-        <textarea id="textBox" placeholder="Enter gene name"></textarea>
-        <button id="storeButton">→</button>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <textarea id="textBox" placeholder="Enter gene name"></textarea>
+            <button id="storeButton">→</button>
+            <div id="sampleDisplay">
+                <div class="sample-title">Projects loaded:</div>
+                <div id="sampleList"></div>
+            </div>
+        </div>
         <p id="storedText"></p>
         <div class="slider-box">
             <div class="slider-header">
