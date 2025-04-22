@@ -145,6 +145,8 @@ class Graph:
 		# find all matches of chr:start-end
 		matches = re.findall(r"'?(chr[\dXY]+):(\d+)-(\d+)'?", location)
 		matches = [[chrom, int(start), int(end)] for chrom, start, end in matches]
+		if not matches:
+			return matches
 
 		curr_interval = matches[0]
 		for i in range(len(matches)):            
@@ -215,9 +217,6 @@ class Graph:
         """
 		start_time = time.time()
 		print(f"Starting CreateNodes with {len(dataset)} rows")
-
-		for genome in self.locs_by_genome:
-			print(len(self.locs_by_genome[genome]))
 
 		process_start = time.time()
 		gene_count = 0
@@ -447,7 +446,8 @@ class Graph:
 
 		# compute p and q values
 		pval_start = time.time()
-		chi_squared_results = [self.chi_squared_dep_test(labels[i], labels[j], src_sets_filtered[idx], tgt_sets_filtered[idx], inters_filtered[idx], self.total_samples) for idx, (i, j) in enumerate(zip(src_filtered, tgt_filtered))]
+		chi_squared_results = [self.chi_squared_dep_test(labels[i], labels[j], src_sets_filtered[idx],
+			tgt_sets_filtered[idx], inters_filtered[idx], self.total_samples) for idx, (i, j) in enumerate(zip(src_filtered, tgt_filtered))]
 		p_values, odds_ratio, distances = zip(*chi_squared_results)
 		p_values = list(p_values)
 		odds_ratio = list(odds_ratio)
