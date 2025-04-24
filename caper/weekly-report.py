@@ -9,6 +9,13 @@ import ast
 import shutil
 from pymongo import MongoClient
 import os
+import requests
+from io import StringIO
+
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'
+}
+
 
 # Set the date range to weekly
 import datetime
@@ -29,9 +36,31 @@ elif server_base == 'prod':
 else:
     full_url = f'http://localhost:{server_port}'
 
+print(f"CALLING {full_url}/admin-stats/download/user/")
+print(f"CALLING {full_url}/admin-stats/download/project/")
+
 # Get all data
-user_df = pd.read_csv(f"{full_url}/admin-stats/download/user/")
-projects_df = pd.read_csv(f"{full_url}/admin-stats/download/project/")
+user_df = None
+
+response = requests.get(f"{full_url}/admin-stats/download/user/", headers=headers)
+if response.status_code == 200:
+    user_df = pd.read_csv(StringIO(response.text))
+    #print(df.head())
+else:
+    print(f"Failed to fetch data: {response.status_code}")
+
+#user_df = pd.read_csv(f"{full_url}/admin-stats/download/user/")
+
+projects_df = None
+#projects_df = pd.read_csv(f"{full_url}/admin-stats/download/project/")
+
+response = requests.get(f"{full_url}/admin-stats/download/project/", headers=headers)
+if response.status_code == 200:
+    projects_df = pd.read_csv(StringIO(response.text))
+    #print(df.head())
+else:
+    print(f"Failed to fetch data: {response.status_code}")
+
 
 # fix data type issue
 def literal_return(val):
@@ -78,8 +107,11 @@ projects_df['Sample Downloads, this week'] = projects_df['sample_downloads'].app
 projects_df['New projects, this week'] = projects_df['date_created'].apply(get_recent)
 
 # get report details
-with open('version.txt', 'r') as v:
-    version = v.readline().strip('\n').replace('Version=','')
+try:
+    with open('version.txt', 'r') as v:
+        version = v.readline().strip('\n').replace('Version=','')
+except:
+    version= "versions file not found"
 
 report_df = pd.DataFrame([('Start Date',past_date),('End Date',current_date),('Version',version)])
 
