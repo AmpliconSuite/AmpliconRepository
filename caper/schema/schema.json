@@ -1,0 +1,263 @@
+{
+    "type": "object",
+    "properties": {
+        "creator": {
+            "type": "string"
+        },
+        "project_name": {
+            "type": "string"
+        },
+        "publication_link": {
+            "type": "string"
+        },
+        "description": {
+            "type": "string"
+        },
+        "tarfile": {},
+        "date_created": {
+            "type": "string"
+        },
+        "date": {
+            "type": "string"
+        },
+        "private": {
+            "type": "boolean"
+        },
+        "delete": {
+            "type": "boolean"
+        },
+        "current": {
+            "type": "boolean"
+        },
+        "previous_versions": {
+            "type": "array",
+            "items": {}
+        },
+        "update_date": {
+            "type": "string"
+        },
+        "project_members": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "runs": {
+            "type": "object",
+            "properties": {
+                "/": {}
+            },
+            "patternProperties": {
+                "^(sample_[0-9]+)$": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "AA_PDF_file": {},
+                            "AA_PNG_file": {},
+                            "AA_amplicon_number": {
+                                "type": ["integer", "null"]
+                            },
+                            "AA_directory": {
+                                "type": "string"
+                            },
+                            "AA_summary_file": {
+                                "type": "string"
+                            },
+                            "All_genes": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "CNV_BED_file": {},
+                            "Captured_interval_length": {
+                                "type": ["number", "null"]
+                            },
+                            "Classification": {
+                                "type": ["string", "null"]
+                            },
+                            "Complexity_score": {
+                                "type": ["number", "null"]
+                            },
+                            "Feature_BED_file": {},
+                            "Feature_ID": {
+                                "type": "string"
+                            },
+                            "Feature_maximum_copy_number": {
+                                "type": ["number", "null"]
+                            },
+                            "Feature_median_copy_number": {
+                                "type": ["number", "null"]
+                            },
+                            "Filter_flag": {
+                                "type": ["string", "null"]
+                            },
+                            "Location": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "Oncogenes": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "Reference_version": {
+                                "type": "string"
+                            },
+                            "Run_metadata_JSON": {
+                                "type": "string"
+                            },
+                            "Sample_metadata_JSON": {},
+                            "Sample_name": {
+                                "type": "string"
+                            },
+                            "Sample_type": {
+                                "type": ["string", "null"]
+                            },
+                            "Tissue_of_origin": {
+                                "type": ["string", "null"]
+                            },
+                            "cnvkit_directory": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "AA_PDF_file",
+                            "AA_PNG_file",
+                            "AA_amplicon_number",
+                            "AA_directory",
+                            "AA_summary_file",
+                            "All_genes",
+                            "CNV_BED_file",
+                            "Captured_interval_length",
+                            "Classification",
+                            "Complexity_score",
+                            "Feature_BED_file",
+                            "Feature_ID",
+                            "Feature_maximum_copy_number",
+                            "Feature_median_copy_number",
+                            "Filter_flag",
+                            "Location",
+                            "Oncogenes",
+                            "Reference_version",
+                            "Run_metadata_JSON",
+                            "Sample_metadata_JSON",
+                            "Sample_name",
+                            "Sample_type",
+                            "Tissue_of_origin",
+                            "cnvkit_directory"
+                        ]
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+        "Oncogenes": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "Classification": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "FINISHED?": {
+            "type": "boolean"
+        },
+        "views": {
+            "type": "integer"
+        },
+        "downloads": {
+            "type": "integer"
+        },
+        "alias_name": {
+            "type": "string"
+        },
+        "sample_count": {
+            "type": "integer"
+        },
+        "aggregate_df": {
+            "type": "string"
+        },
+        "metadata_stored": {
+            "type": "string"
+        },
+        "reference_genome": {
+            "type": "string"
+        },
+        "sample_data": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "Sample_name": {
+                        "type": "string"
+                    },
+                    "Oncogenes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "Classifications": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "Features": {
+                        "type": "integer"
+                    },
+                    "Sample_type": {
+                        "type": ["string", "null"]
+                    },
+                    "Tissue_of_origin": {
+                        "type": ["string", "null"]
+                    }
+                },
+                "required": [
+                    "Classifications",
+                    "Features",
+                    "Oncogenes",
+                    "Sample_name",
+                    "Sample_type",
+                    "Tissue_of_origin"
+                ]
+            }
+        }
+    },
+    "required": [
+        "Classification",
+        "FINISHED?",
+        "Oncogenes",
+        "aggregate_df",
+        "alias_name",
+        "creator",
+        "current",
+        "date",
+        "date_created",
+        "delete",
+        "description",
+        "downloads",
+        "metadata_stored",
+        "previous_versions",
+        "private",
+        "project_members",
+        "project_name",
+        "publication_link",
+        "reference_genome",
+        "runs",
+        "sample_count",
+        "sample_data",
+        "tarfile",
+        "update_date",
+        "views"
+    ]
+}
