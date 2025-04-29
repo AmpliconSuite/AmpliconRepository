@@ -57,9 +57,11 @@ from .aggregator_main import *
 # search
 from .search import *
 
+
 # SET UP HANDLE
 def loading(request):
     return render(request, "pages/loading.html")
+
 
 # Site-wide focal amp color scheme
 fa_cmap = {
@@ -559,7 +561,7 @@ def project_page(request, project_name, message=''):
         return render(request, "pages/loading.html", {"project_name":project_name})
 
     if project['private'] and not is_user_a_project_member(project, request):
-        return redirect('/accounts/login')
+        return redirect('/accounts/login?next=/project/' + project_name)
 
     # if we got here by an OLD project id (prior to edits) then we want to redirect to the new one
     if not project_name == str(project['linkid']):
@@ -1309,7 +1311,6 @@ def download_file(url, save_path):
     
     print(f"File downloaded successfully and saved to {save_path}")
     
-
 
 def edit_project_page(request, project_name):
     if request.method == "GET":
