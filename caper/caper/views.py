@@ -2388,6 +2388,7 @@ def concat_projects(project_list):
     # Pre-allocate lists for efficiency
     all_samples = []
     sample_count = 0
+    samples_per_project = {}
 
     for project_name in project_list:
         project_start = time.time()
@@ -2401,6 +2402,8 @@ def concat_projects(project_list):
 
         # Process all samples for this project in one batch
         project_samples = []
+        samples_per_project[project_name] = [0, 0]
+
         for sample_data in project['runs'].values():
             # Convert to DataFrame once for each sample
             sample_df = pd.DataFrame(sample_data)
@@ -2414,6 +2417,10 @@ def concat_projects(project_list):
 
             project_samples.append(sample_df)
             sample_count += 1
+            samples_per_project[project_name][0] += 1
+            if 'Classification' in sample_df.columns:
+                ecdna_count = int(sample_df['Classification'].astype(str).str.lower().eq('ecdna').sum())
+                samples_per_project[project_name][1] += ecdna_count
 
         # Batch concatenate all samples for this project
         if project_samples:
@@ -2427,7 +2434,7 @@ def concat_projects(project_list):
     # If no valid projects, return empty DataFrame
     if not all_samples:
         logging.debug("No samples found in selected projects")
-        return pd.DataFrame()
+        return pd.DataFrame(), {}
 
     # Final concatenation of all project DataFrames
     concat_start = time.time()
@@ -2439,7 +2446,7 @@ def concat_projects(project_list):
         f"Concatenated {sample_count} samples from {len(project_list)} projects into DataFrame with {len(df)} rows in {total_time:.3f} seconds")
     logging.debug(f"Final concatenation took {concat_time:.3f} seconds")
 
-    return df
+    return df, samples_per_project
 
 
 def visualizer(request):
@@ -2452,7 +2459,7 @@ def visualizer(request):
 
     # combine selected projects
     CONCAT_START = time.time()
-    projects_df = concat_projects(selected_projects)
+    projects_df, projects_info = concat_projects(selected_projects)
     CONCAT_END = time.time()
 
     # If no data, redirect back
@@ -2472,7 +2479,8 @@ def visualizer(request):
         'test_size': len(projects_df),
         'diff': CONCAT_END - CONCAT_START,
         'import_time': IMPORT_END - CONCAT_END,
-        'reference_genomes': ref_genomes
+        'reference_genomes': ref_genomes,
+        'projects_stats': projects_info
     })
 
 

@@ -77,6 +77,40 @@ button:hover {
     margin: 0; /* Remove the margin that's causing misalignment */
 }
 
+#sampleDisplay {
+    background-color: white;
+    border: 1px solid rgba(211, 211, 211, 0.792);
+    padding: 12px 16px;
+    max-width: 350px;
+    font-size: 14px;
+    line-height: 1.4;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    min-height: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-left: 40px;
+    max-height: 120px;          
+    overflow-y: auto;           
+}
+
+.sample-title {
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 4px;
+}
+
+#sampleList {
+    list-style: disc;
+    padding-left: 18px;
+    margin: 0;
+}
+
+#sampleList li {
+    margin-bottom: 4px;
+}
+
 /* Slider Box Styling */
 .slider-box {
     background-color: white;
