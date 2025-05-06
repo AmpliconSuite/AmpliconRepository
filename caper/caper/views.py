@@ -936,9 +936,10 @@ def sample_page(request, project_name, sample_name):
 def sample_download(request, project_name, sample_name):
     project, sample_data = get_one_sample(project_name, sample_name)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
-    
+
+    # Track downloads
     if check_if_db_field_exists(project, 'sample_downloads'):
-        sample_download_data = project['sample_downloads']        
+        sample_download_data = project['sample_downloads']
         if isinstance(sample_download_data, int):
             temp_data = sample_download_data
             sample_download_data = dict()
@@ -947,90 +948,180 @@ def sample_download(request, project_name, sample_name):
             sample_download_data[get_date_short()] += 1
         else:
             sample_download_data[get_date_short()] = 1
-    else: 
+    else:
         sample_download_data = dict()
         sample_download_data[get_date_short()] = 1
-    
-    query = {'_id': ObjectId(project_name)}
-    new_val = { "$set": {'sample_downloads': sample_download_data} }
-    collection_handle.update_one(query, new_val)   
 
-    sample_data_path = f"tmp/{project_name}/{sample_name}"        
+    query = {'_id': ObjectId(project_name)}
+    new_val = {"$set": {'sample_downloads': sample_download_data}}
+    collection_handle.update_one(query, new_val)
+
+    # Create directories for files
+    sample_data_path = f"tmp/{project_name}/{sample_name}"
+    os.makedirs(sample_data_path, exist_ok=True)
+
+    # Get and save sample metadata
+    try:
+        sample_metadata = get_sample_metadata(sample_data)
+        with open(f'{sample_data_path}/{sample_name}_sample_metadata.json', 'w') as metadata_file:
+            json.dump(sample_metadata, metadata_file, indent=2)
+        metadata_file_path = f"{sample_name}/{sample_name}_sample_metadata.json"
+    except Exception as e:
+        logging.exception(e)
+        metadata_file_path = "Not Provided"
+
+    # Process feature files and build updated data for JSON/TSV
+    updated_data = []
+
+    # Track if we've processed the CNV file for the sample
+    cnv_file_processed = False
 
     for feature in sample_data_processed:
-        # set up file system
+        # Create a copy of the feature to update paths
+        updated_feature = feature.copy()
+
+        # Update the Sample_metadata_JSON to reference the new file
+        if 'Sample_metadata_JSON' in updated_feature:
+            updated_feature['Sample_metadata_JSON'] = metadata_file_path
+
+        # Set up file system
         feature_id = feature['Feature_ID']
-        feature_data_path = f"tmp/{project_name}/{sample_name}/{feature_id}"
-        os.makedirs(feature_data_path, exist_ok=True)
-        # get object ids
+        amplicon_number = feature['AA_amplicon_number']
+        feature_data_path = f"{sample_name}/{feature_id}"  # Relative path within zip
+        abs_feature_data_path = f"tmp/{project_name}/{sample_name}/{feature_id}"  # Absolute path for file writing
+        os.makedirs(abs_feature_data_path, exist_ok=True)
+
+        # Get object ids
         if feature['Feature_BED_file'] != 'Not Provided':
             bed_id = feature['Feature_BED_file']
+            # Update the path in the feature copy
+            updated_feature['Feature_BED_file'] = f"{feature_data_path}/{feature_id}.bed"
         else:
             bed_id = False
-        if feature['CNV_BED_file'] != 'Not Provided':
+
+        # CNV file is at the sample level
+        if feature.get('CNV_BED_file', 'Not Provided') != 'Not Provided':
             cnv_id = feature['CNV_BED_file']
+            # All features reference the same CNV file at the sample level
+            updated_feature['CNV_BED_file'] = f"{sample_name}/{sample_name}_CNV_CALLS.bed"
         else:
             cnv_id = False
-        if feature['AA_PDF_file'] != 'Not Provided':
+
+        if feature.get('AA_PDF_file', 'Not Provided') != 'Not Provided':
             pdf_id = feature['AA_PDF_file']
+            # Update the path to use amplicon number in the filename, but keep in feature dir
+            updated_feature['AA_PDF_file'] = f"{feature_data_path}/{sample_name}_amplicon{amplicon_number}.pdf"
         else:
             pdf_id = False
-        if feature['AA_PNG_file'] != 'Not Provided':
+
+        if feature.get('AA_PNG_file', 'Not Provided') != 'Not Provided':
             png_id = feature['AA_PNG_file']
+            # Update the path to use amplicon number in the filename, but keep in feature dir
+            updated_feature['AA_PNG_file'] = f"{feature_data_path}/{sample_name}_amplicon{amplicon_number}.png"
         else:
             png_id = False
-        if feature['AA_directory'] != 'Not Provided':
+
+        if feature.get('AA_directory', 'Not Provided') != 'Not Provided':
             aa_directory_id = feature['AA_directory']
+            # Update the path in the feature copy
+            updated_feature['AA_directory'] = f"{sample_name}/aa_directory.tar.gz"
         else:
             aa_directory_id = False
-        if feature['cnvkit_directory'] != 'Not Provided':
+
+        if feature.get('cnvkit_directory', 'Not Provided') != 'Not Provided':
             cnvkit_directory_id = feature['cnvkit_directory']
+            # Update the path in the feature copy
+            updated_feature['cnvkit_directory'] = f"{sample_name}/cnvkit_directory.tar.gz"
         else:
             cnvkit_directory_id = False
 
-        # get files from gridfs
-        # bed_file = fs_handle.get(ObjectId(bed_id)).read()
-        if bed_id is not None:
+        # Add the updated feature to our list
+        updated_data.append(updated_feature)
+
+        # Get files from gridfs
+        if bed_id is not None and bed_id:
             if not ObjectId.is_valid(bed_id):
-                 logging.debug("Sample: " + sample_name + ", Feature: " + feature_id + ", BED_ID is ->" + str(bed_id) + " <-")
-                 break
+                logging.debug(
+                    "Sample: " + sample_name + ", Feature: " + feature_id + ", BED_ID is ->" + str(bed_id) + " <-")
+                break
 
             bed_file = fs_handle.get(ObjectId(bed_id)).read()
-            with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
+            with open(f'{abs_feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
                 bed_file_tmp.write(bed_file)
-  
-        if cnv_id:
+
+        # Only process the CNV file once for the whole sample
+        if cnv_id and not cnv_file_processed:
             cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
+            with open(f'{sample_data_path}/{sample_name}_CNV_CALLS.bed', "wb+") as cnv_file_tmp:
+                cnv_file_tmp.write(cnv_file)
+            cnv_file_processed = True
+
         if pdf_id:
             pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
+            # Save the PDF in the feature subdirectory with the amplicon number in the filename
+            with open(f'{abs_feature_data_path}/{sample_name}_amplicon{amplicon_number}.pdf', "wb+") as pdf_file_tmp:
+                pdf_file_tmp.write(pdf_file)
+
         if png_id:
             png_file = fs_handle.get(ObjectId(png_id)).read()
-        if aa_directory_id:
-            aa_directory_file = fs_handle.get(ObjectId(aa_directory_id)).read()
-        if cnvkit_directory_id:
-            cnvkit_directory_file = fs_handle.get(ObjectId(cnvkit_directory_id)).read()
-         
-        # send files to tmp file system
-#        with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
-#            bed_file_tmp.write(bed_file)
-        if cnv_id:
-            with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
-                cnv_file_tmp.write(cnv_file)
-        if pdf_id:
-            with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
-                pdf_file_tmp.write(pdf_file)
-        if png_id:
-            with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
+            # Save the PNG in the feature subdirectory with the amplicon number in the filename
+            with open(f'{abs_feature_data_path}/{sample_name}_amplicon{amplicon_number}.png', "wb+") as png_file_tmp:
                 png_file_tmp.write(png_file)
+
         if aa_directory_id:
             if not os.path.exists(f'{sample_data_path}/aa_directory.tar.gz'):
+                aa_directory_file = fs_handle.get(ObjectId(aa_directory_id)).read()
                 with open(f'{sample_data_path}/aa_directory.tar.gz', "wb+") as aa_directory_tmp:
                     aa_directory_tmp.write(aa_directory_file)
+
         if cnvkit_directory_id:
             if not os.path.exists(f'{sample_data_path}/cnvkit_directory.tar.gz'):
+                cnvkit_directory_file = fs_handle.get(ObjectId(cnvkit_directory_id)).read()
                 with open(f'{sample_data_path}/cnvkit_directory.tar.gz', "wb+") as cnvkit_directory_tmp:
                     cnvkit_directory_tmp.write(cnvkit_directory_file)
 
+    # Custom JSON encoder to handle any remaining ObjectId
+    class JSONEncoder(json.JSONEncoder):
+        def default(self, o):
+            if isinstance(o, ObjectId):
+                return str(o)
+            return super().default(o)
+
+    # Generate JSON file using the updated data
+    with open(f'{sample_data_path}/{sample_name}_result_data.json', 'w') as json_file:
+        json.dump(updated_data, json_file, indent=2, cls=JSONEncoder)
+
+    # Generate TSV file using the updated data
+    with open(f'{sample_data_path}/{sample_name}_result_data.tsv', 'w') as tsv_file:
+        # Define the column order for the first four columns
+        ordered_columns = ['Sample_name', 'AA_amplicon_number', 'Feature_ID', 'Classification']
+
+        # Get all column names from the data
+        all_columns = set()
+        for feature in updated_data:
+            all_columns.update(feature.keys())
+
+        # Sort remaining columns alphabetically
+        remaining_columns = sorted(list(all_columns - set(ordered_columns)))
+
+        # Final column order
+        columns = ordered_columns + remaining_columns
+
+        # Write header
+        tsv_file.write('\t'.join(columns) + '\n')
+
+        # Write data rows
+        for feature in updated_data:
+            row = []
+            for col in columns:
+                val = feature.get(col, '')
+                # Convert ObjectId to string if needed
+                if isinstance(val, ObjectId):
+                    val = str(val)
+                row.append(str(val))
+            tsv_file.write('\t'.join(row) + '\n')
+
+    # Create the zip file
     shutil.make_archive(f'{sample_name}', 'zip', sample_data_path)
     zip_file_path = f"{sample_name}.zip"
     with open(zip_file_path, 'rb') as zip_file:
@@ -1038,6 +1129,7 @@ def sample_download(request, project_name, sample_name):
         response['Content-Type'] = 'application/x-zip-compressed'
         response['Content-Disposition'] = f'attachment; filename={sample_name}.zip'
 
+    # Clean up
     os.remove(f'{sample_name}.zip')
     return response
     

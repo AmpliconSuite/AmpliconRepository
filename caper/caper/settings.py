@@ -157,7 +157,7 @@ SITE_URL = os.environ.get("SITE_URL", default="http://127.0.0.1:8000/")
 
 SERVER_IDENTIFICATION_BANNER=os.getenv('SERVER_IDENTIFICATION_BANNER', default=None)
 
-logging.error(f"SERVER_IDENTIFICATION_BANNER: {SERVER_IDENTIFICATION_BANNER}")
+logging.debug(f"SERVER_IDENTIFICATION_BANNER: {SERVER_IDENTIFICATION_BANNER}")
 
 #ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = os.environ['ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS']
 
@@ -265,7 +265,7 @@ CACHE_MIDDLEWARE_KEY_PREFIX = PROJECT_APP
 
 
 USE_S3 = os.getenv('S3_STATIC_FILES') == 'TRUE'
-logging.error(f"=============================  USE_S3: {USE_S3}")
+logging.debug(f"=============================  USE_S3: {USE_S3}")
 if USE_S3:
     # s3 static settings
     # URL prefix for static files.
@@ -282,7 +282,7 @@ if USE_S3:
 
     STATIC_URL = f"https://amprepobucket.s3.amazonaws.com/{S3_STATIC_PATH}"
     
-    logging.error(f"=============================  STATIC_URL: {STATIC_URL}")
+    logging.debug(f"=============================  STATIC_URL: {STATIC_URL}")
     # Absolute path to the directory static files should be collected to.
     # Don't put anything in this directory yourself; store your static files
     # in apps' "static/" subdirectories and in STATICFILES_DIRS.
