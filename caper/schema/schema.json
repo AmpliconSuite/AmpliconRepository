@@ -178,7 +178,7 @@
             "type": "integer"
         },
         "alias_name": {
-            "type": "string"
+            "type": ["string", "null"]
         },
         "sample_count": {
             "type": "integer"

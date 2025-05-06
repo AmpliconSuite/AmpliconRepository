@@ -185,10 +185,16 @@ def main():
         cursor = collection.find()
         for doc in cursor:
             doc_count += 1
+
+            # Skip deleted projects
+            deleted = doc.get('delete', False)
+            if deleted: continue
+
             # --- Identify the document ---
             # Use 'project_name' or 'name' field if available, otherwise use _id
             doc_id_str = str(doc.get('_id', 'UNKNOWN_ID'))
             identifier = doc.get('project_name', doc.get('name', f"Document (ID: {doc_id_str})"))
+            creator = doc.get('creator', 'Unknown User')
 
             # --- Prepare document for validation ---
             # Create a copy and remove MongoDB's _id field, as it's usually
@@ -201,10 +207,10 @@ def main():
             # --- Perform Validation ---
             try:
                 validate(instance=doc_to_validate, schema=schema)
-                print(f"- '{identifier}': VALID")
+                print(f"- '{identifier}' ({creator}): VALID")
             except ValidationError as e:
                 invalid_count += 1
-                print(f"- '{identifier}': NOT VALID")
+                print(f"- '{identifier}' ({creator}): NOT VALID")
                 # Provide specific error details
                 print(f"  Reason: {e.message}") # Primary error message
                 if e.path:
