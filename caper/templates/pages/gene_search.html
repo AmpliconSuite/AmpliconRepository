@@ -327,7 +327,15 @@
                 return;
             }
 
-            // Create and show a modal loading notification
+            // Check if user is logged in
+            if (!{% if user.is_authenticated %}true{% else %}false{% endif %}) {
+                // Show login modal or redirect to login page
+                alert('You must be logged in to batch download samples from this page. Please log in and try again or visit project pages to download samples.');
+                window.location.href = '/accounts/login/?next=' + encodeURIComponent(window.location.pathname);
+                return;
+            }
+
+            // Show loading message
             const loadingModal = $('<div>', {
                 'class': 'modal fade',
                 'id': 'loadingModal',
@@ -353,42 +361,39 @@
             $('body').append(loadingModal);
             $('#loadingModal').modal('show');
 
-            // Add a slight delay before submitting to ensure modal is shown
-            setTimeout(function() {
-                // Create a form for submission
-                const form = $('<form>', {
-                    'method': 'POST',
-                    'action': '/batch-sample-download/',
-                    'style': 'display: none'
-                });
+            // Create a form for submission
+            const form = $('<form>', {
+                'method': 'POST',
+                'action': '/batch-sample-download/',
+                'style': 'display: none'
+            });
 
-                // Add CSRF token
+            // Add CSRF token
+            form.append($('<input>', {
+                'type': 'hidden',
+                'name': 'csrfmiddlewaretoken',
+                'value': $('[name=csrfmiddlewaretoken]').val()
+            }));
+
+            // Add selected samples
+            samples.forEach(function(sample) {
                 form.append($('<input>', {
                     'type': 'hidden',
-                    'name': 'csrfmiddlewaretoken',
-                    'value': $('[name=csrfmiddlewaretoken]').val()
+                    'name': 'samples',
+                    'value': sample
                 }));
+            });
 
-                // Add selected samples
-                samples.forEach(function(sample) {
-                    form.append($('<input>', {
-                        'type': 'hidden',
-                        'name': 'samples',
-                        'value': sample
-                    }));
-                });
+            // Add flag for private samples
+            form.append($('<input>', {
+                'type': 'hidden',
+                'name': 'is_private',
+                'value': isPrivate ? '1' : '0'
+            }));
 
-                // Add flag for private samples
-                form.append($('<input>', {
-                    'type': 'hidden',
-                    'name': 'is_private',
-                    'value': isPrivate ? '1' : '0'
-                }));
-
-                // Submit the form
-                $('body').append(form);
-                form.submit();
-            }, 500);
+            // Submit the form
+            $('body').append(form);
+            form.submit();
         }
 
         // Public samples - Download Selected button

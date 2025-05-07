@@ -1,6 +1,6 @@
 from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, Http404, JsonResponse
 from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import user_passes_test
+from django.contrib.auth.decorators import user_passes_test, login_required
 
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
@@ -1204,6 +1204,7 @@ def sample_download(request, project_name, sample_name):
     return create_zip_response(sample_data_path, sample_name)
 
 
+@login_required(login_url='/accounts/login/')
 def batch_sample_download(request):
     """
     Download multiple samples organized by project.
