@@ -942,6 +942,7 @@ class JSONEncoder(json.JSONEncoder):
 def create_zip_response(zip_source_dir, filename):
     """
     Create a zip file from a directory and return it as an HTTP response.
+    Cleans up both the zip file and the source directory.
 
     Args:
         zip_source_dir: Directory to zip
@@ -950,17 +951,33 @@ def create_zip_response(zip_source_dir, filename):
     Returns:
         HttpResponse with the zip file
     """
+    logging.debug("Creating sample download zip file from directory " + zip_source_dir)
     zip_path = f"{filename}.zip"
-    shutil.make_archive(filename, 'zip', zip_source_dir)
 
-    with open(zip_path, 'rb') as zip_file:
-        response = HttpResponse(zip_file)
-        response['Content-Type'] = 'application/x-zip-compressed'
-        response['Content-Disposition'] = f'attachment; filename={filename}.zip'
+    try:
+        # Create the zip archive
+        shutil.make_archive(filename, 'zip', zip_source_dir)
 
-    # Clean up
-    os.remove(zip_path)
-    return response
+        # Create the response
+        with open(zip_path, 'rb') as zip_file:
+            response = HttpResponse(zip_file)
+            response['Content-Type'] = 'application/x-zip-compressed'
+            response['Content-Disposition'] = f'attachment; filename={filename}.zip'
+
+        return response
+
+    finally:
+        # Clean up both the zip file and the source directory
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+
+        # Clean up the source directory
+        if os.path.exists(zip_source_dir):
+            try:
+                shutil.rmtree(zip_source_dir)
+                logging.debug(f"Cleaned up temporary directory: {zip_source_dir}")
+            except Exception as e:
+                logging.error(f"Failed to clean up directory {zip_source_dir}: {e}")
 
 
 def process_sample_data(project, sample_name, sample_data, output_dir=None):
