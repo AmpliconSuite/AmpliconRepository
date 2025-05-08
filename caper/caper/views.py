@@ -249,13 +249,23 @@ def data_qc(request):
     # Run the schema validation script
     try:
         # Replace 'path/to/your/script.py' with the actual path
-        schema_process = subprocess.run(
-            ['python', 'schema/schema_validate.py', '--schema=schema/schema.json', f'--db={os.getenv("DB_URI")}/{os.getenv("DB_NAME")}'],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        schema_report = schema_process.stdout
+        if "DB_URI_SECRET" in os.environ:
+            db_uri = os.getenv("DB_URI_SECRET")
+        elif "DB_URI" in os.environ:
+            db_uri = os.environ.get("DB_URI")
+        else:
+            db_uri = None
+            schema_report = "No DB_URI found."
+
+        if db_uri is not None:
+            schema_process = subprocess.run(
+                ['python', 'schema/schema_validate.py', '--schema=schema/schema.json', f'--db={os.getenv("DB_URI")}/{os.getenv("DB_NAME")}'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            schema_report = schema_process.stdout
+
     except subprocess.CalledProcessError as e: schema_report = f"Error running script: {e.stderr}"
     except FileNotFoundError: schema_report = "Script not found."
     
