@@ -246,34 +246,26 @@ def data_qc(request):
     datetime_status = check_datetime(public_projects) + check_datetime(private_projects)
     sample_count_status = check_sample_count_status(private_projects) + check_sample_count_status(public_projects)
 
-    # Run the schema validation script
+    # Run the schema validation directly
     try:
-        # Replace 'path/to/your/script.py' with the actual path
-        if "DB_URI_SECRET" in os.environ:
-            db_uri = os.getenv("DB_URI_SECRET")
-        elif "DB_URI" in os.environ:
-            db_uri = os.environ.get("DB_URI")
-        else:
-            db_uri = None
-            schema_report = "No DB_URI found."
+        from caper.schema_validate import run_validation
 
-        if db_uri is not None:
-            # strip extra vars off db_uri
-            db_uri = db_uri.rsplit('/?')[0]
-            schema_process = subprocess.run(
-                ['python', 'schema/schema_validate.py', '--schema=schema/schema.json', f'--db={db_uri}/{os.getenv("DB_NAME")}'],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            schema_report = schema_process.stdout
+        # Get the schema path relative to the project root
+        schema_path = "schema/schema.json"
 
-    except subprocess.CalledProcessError as e: schema_report = f"Error running script: {e.stderr}"
-    except FileNotFoundError: schema_report = "Script not found."
-    
+        # Run the validation and get the report
+        schema_report = run_validation(
+            db_host=None,  # Use the existing connection from utils
+            collection_name="projects",
+            schema_path=schema_path
+        )
+
+    except Exception as e:
+        schema_report = f"Error running schema validation: {str(e)}"
+
     return render(request, "pages/admin_quality_check.html", {
         'public_projects': public_projects,
-        'private_projects' : private_projects,
+        'private_projects': private_projects,
         'datetime_status': datetime_status,
         'sample_count_status': sample_count_status,
         'schema_report': schema_report,
