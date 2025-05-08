@@ -250,7 +250,7 @@ def data_qc(request):
     try:
         # Replace 'path/to/your/script.py' with the actual path
         schema_process = subprocess.run(
-            ['python', 'schema/schema_validate.py', '--schema=schema/schema.json', f'--db={os.getenv("DB_URI")}/caper'],
+            ['python', 'schema/schema_validate.py', '--schema=schema/schema.json', f'--db={os.getenv("DB_URI")}/{os.getenv("DB_NAME")}'],
             capture_output=True,
             text=True,
             check=True

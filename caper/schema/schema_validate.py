@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import sys
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure, ConfigurationError
@@ -96,14 +97,22 @@ def generate_schema(data: Any) -> Dict[str, Any]:
 
 def parse_arguments():
     """Parses command-line arguments."""
+    # Get the database name from environment variable or raise an error if not set
+    db_name = os.environ.get("DB_NAME")
+    if db_name is None:
+        print("Error: Environment variable DB_NAME is not set.", file=sys.stderr)
+        sys.exit(1)
+
+    default_db_uri = f"mongodb://localhost:27017/{db_name}"
+
     parser = argparse.ArgumentParser(
         description="Validate documents in a MongoDB collection against a JSON schema."
     )
     parser.add_argument(
         "--db", "-d",
         dest="db_host",
-        default="mongodb://localhost:27017/caper",
-        help="MongoDB connection string (default: mongodb://localhost:27017/caper)"
+        default=default_db_uri,
+        help=f"MongoDB connection string (default: {default_db_uri})"
     )
     parser.add_argument(
         "--collection", "-c",
