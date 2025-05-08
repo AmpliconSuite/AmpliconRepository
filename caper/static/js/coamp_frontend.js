@@ -17,6 +17,17 @@ window.addEventListener('DOMContentLoaded', function () {
         console.error("Failed to load cytoscape-svg:", e);
     }
 
+    const projectStats = JSON.parse(document.getElementById('project-stats-data').textContent);
+
+    const sampleList = document.getElementById('sampleList');
+    sampleList.innerHTML = '';
+
+    Object.entries(projectStats).forEach(([project, [sampleCount, ecDNACount]]) => {
+        const li = document.createElement('li');
+        li.textContent = `${project} — ${sampleCount} sample${sampleCount !== 1 ? 's' : ''}, ${ecDNACount} ecDNA features`;
+        sampleList.appendChild(li);
+    });
+
     // ----------------------------- Neo4j interaction -----------------------------
     async function fetchSubgraph() {
         console.log("Load graph pressed");
@@ -319,7 +330,10 @@ window.addEventListener('DOMContentLoaded', function () {
         if (ele.isNode()) {
             let template = document.getElementById('node-template');
             template.querySelector('#ntip-name').textContent = ele.data('label') || 'N/A';
-            template.querySelector('#ntip-location').textContent = ele.data('location') || 'N/A';
+            template.querySelector('#ntip-location').textContent =
+            ele.data('location')
+                ? `chr${ele.data('location')[0]}:${ele.data('location')[1]}-${ele.data('location')[2]}`
+                : 'N/A';
             template.querySelector('#ntip-oncogene').textContent = ele.data('oncogene') || 'N/A';
             template.querySelector('#ntip-nsamples').textContent = ele.data('features').length || 'N/A';
             template.querySelector('#ntip-samples').textContent = ele.data('features').join(', ') || 'N/A';
@@ -598,7 +612,7 @@ window.addEventListener('DOMContentLoaded', function () {
                 sample_count: nData.features ? nData.features.length : 'N/A',
                 inter_count: edgeData.inter ? edgeData.inter.length : 'N/A',
                 weight: edgeData.weight ?? -1,
-                location: nData.location || 'N/A',
+                location: nData.location ? `chr${nData.location[0]}:${nData.location[1]}-${nData.location[2]}` : 'N/A',
                 distance: edgeData.distance ?? 'N/A',
                 pval: edgeData.pval ?? 'N/A',
                 qval: edgeData.qval ?? 'N/A',

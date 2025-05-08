@@ -81,6 +81,7 @@ def collect_metadata_samples(sample_data, metadata_to_find):
             samples_to_return.append(sample)
     return samples_to_return
 
+
 def add_extra_metadata(df):
     '''
     adds extra metadata to df

@@ -3,41 +3,86 @@
 {% load account socialaccount %}
 {% load i18n static %}
 
-{% block head_title %}{% trans "Sign In" %}{% endblock %}
+{% block head_title %}{% trans "Account Access" %}{% endblock %}
 
 {% block main %}
 <div class="container d-flex justify-content-center align-items-center" style="min-height: 100vh;">
   <div class="card shadow-sm p-4" style="max-width: 400px; width: 100%;">
-    <h4 class="text-center mb-4">{% trans "Login" %}</h4>
 
-    {% get_providers as socialaccount_providers %}
+    <!-- Tab navigation -->
+    <ul class="nav nav-tabs mb-4" id="accountTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <a class="nav-link active" id="login-tab" data-toggle="tab" href="#login" role="tab" aria-controls="login" aria-selected="true">{% trans "Login" %}</a>
+      </li>
+      <li class="nav-item" role="presentation">
+        <a class="nav-link" id="register-tab" data-toggle="tab" href="#register" role="tab" aria-controls="register" aria-selected="false">{% trans "Register" %}</a>
+      </li>
+    </ul>
 
-    {% if socialaccount_providers %}
-    <p class="text-center">{% blocktrans with site.name as site_name %}Please sign in with one of your existing third party accounts, or <a href="{{ signup_url }}">register</a> for an AmpliconRepository account and sign in below:{% endblocktrans %}</p>
+    <!-- Tab content -->
+    <div class="tab-content" id="accountTabsContent">
+      <!-- Login Tab -->
+      <div class="tab-pane fade show active" id="login" role="tabpanel" aria-labelledby="login-tab">
+        <h5 class="mb-3">{% trans "Sign in to your account" %}</h5>
 
-    <div class="socialaccount_ballot mb-3">
-      <ul class="socialaccount_providers list-unstyled text-center">
-        {% include "socialaccount/snippets/provider_list.html" with process="login" %}
-      </ul>
-      <div class="login-or text-center my-2">{% trans 'or' %}</div>
+        <!-- Traditional login form -->
+        <form class="login mb-4" method="POST" action="{% url 'account_login' %}">
+          {% csrf_token %}
+          {{ form.as_p }}
+          {% if redirect_field_value %}
+          <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
+          {% endif %}
+
+          <button class="btn btn-primary w-100 mt-3" type="submit">{% trans "Sign In" %}</button>
+          <a class="btn btn-link mt-2 text-center" href="{% url 'account_reset_password' %}">{% trans "Forgot Password?" %}</a>
+        </form>
+
+        {% get_providers as socialaccount_providers %}
+        {% if socialaccount_providers %}
+        <!-- Social login options -->
+        <div class="text-center my-3">
+          <hr class="my-2">
+          <span class="px-2 bg-white" style="position: relative; top: -12px;">{% trans 'or' %}</span>
+        </div>
+
+        <p class="text-center mb-3">{% trans "Sign in with:" %}</p>
+
+        <div class="socialaccount_ballot">
+          <ul class="socialaccount_providers list-unstyled text-center">
+            {% include "socialaccount/snippets/provider_list.html" with process="login" %}
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Register Tab -->
+      <div class="tab-pane fade" id="register" role="tabpanel" aria-labelledby="register-tab">
+        <h5 class="mb-3">{% trans "Create a new account" %}</h5>
+
+        <!-- Button to standard registration page -->
+        <div class="mb-4">
+          <a href="{{ signup_url }}" class="btn btn-primary w-100">{% trans "Register with Email/Password" %}</a>
+        </div>
+
+        {% get_providers as socialaccount_providers %}
+        {% if socialaccount_providers %}
+        <!-- Social registration options -->
+        <div class="text-center my-3">
+          <hr class="my-2">
+          <span class="px-2 bg-white" style="position: relative; top: -12px;">{% trans 'or' %}</span>
+        </div>
+
+        <p class="text-center mb-3">{% trans "Register with:" %}</p>
+
+        <div class="socialaccount_ballot">
+          <ul class="socialaccount_providers list-unstyled text-center">
+            {% include "socialaccount/snippets/provider_list.html" with process="signup" %}
+          </ul>
+        </div>
+        {% endif %}
+      </div>
     </div>
-
-    {% include "socialaccount/snippets/login_extra.html" %}
-
-    {% else %}
-    <p class="text-center">{% blocktrans %}If you have not created an account yet, please <a href="{{ signup_url }}">sign up</a> first.{% endblocktrans %}</p>
-    {% endif %}
-
-    <form class="login" method="POST" action="{% url 'account_login' %}">
-      {% csrf_token %}
-      {{ form.as_p }}
-      {% if redirect_field_value %}
-      <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
-      {% endif %}
-
-      <button class="btn btn-primary w-100 mt-3" type="submit">{% trans "Sign In" %}</button>
-      <a class="btn btn-link w-100 mt-2 text-center" href="{% url 'account_reset_password' %}">{% trans "Forgot Password?" %}</a>
-    </form>
   </div>
 </div>
+
 {% endblock %}
