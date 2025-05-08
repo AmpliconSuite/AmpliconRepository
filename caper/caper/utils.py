@@ -217,8 +217,8 @@ def sample_data_from_feature_list(features_list):
     [['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Tissue_of_origin', 'extra_metadata_from_csv']]
     """
     df = pd.DataFrame(features_list)
-    print("sample_data_from_feature_list df")
-    print(df.head())
+    # print("sample_data_from_feature_list df")
+    # print(df.head())
     cols = [col for col in ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', "Cancer_type", 'Tissue_of_origin', 'extra_metadata_from_csv'] if col in df.columns]
     df= df[cols]
     sample_data = []
