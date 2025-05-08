@@ -258,6 +258,8 @@ def data_qc(request):
             schema_report = "No DB_URI found."
 
         if db_uri is not None:
+            # strip extra vars off db_uri
+            db_uri = db_uri.rsplit('/?')[0]
             schema_process = subprocess.run(
                 ['python', 'schema/schema_validate.py', '--schema=schema/schema.json', f'--db={db_uri}/{os.getenv("DB_NAME")}'],
                 capture_output=True,
