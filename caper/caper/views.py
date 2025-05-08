@@ -259,7 +259,7 @@ def data_qc(request):
 
         if db_uri is not None:
             schema_process = subprocess.run(
-                ['python', 'schema/schema_validate.py', '--schema=schema/schema.json', f'--db={os.getenv("DB_URI")}/{os.getenv("DB_NAME")}'],
+                ['python', 'schema/schema_validate.py', '--schema=schema/schema.json', f'--db={db_uri}/{os.getenv("DB_NAME")}'],
                 capture_output=True,
                 text=True,
                 check=True
