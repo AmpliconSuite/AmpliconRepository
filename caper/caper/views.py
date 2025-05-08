@@ -57,9 +57,11 @@ from .aggregator_main import *
 # search
 from .search import *
 
+
 # SET UP HANDLE
 def loading(request):
     return render(request, "pages/loading.html")
+
 
 # Site-wide focal amp color scheme
 fa_cmap = {
@@ -244,7 +246,26 @@ def data_qc(request):
     datetime_status = check_datetime(public_projects) + check_datetime(private_projects)
     sample_count_status = check_sample_count_status(private_projects) + check_sample_count_status(public_projects)
 
-    return render(request, "pages/admin_quality_check.html", {'public_projects': public_projects, 'private_projects' : private_projects, 'datetime_status': datetime_status, 'sample_count_status': sample_count_status})
+    # Run the schema validation script
+    try:
+        # Replace 'path/to/your/script.py' with the actual path
+        schema_process = subprocess.run(
+            ['python', 'schema/schema_validate.py', '--schema=schema/schema.json', f'--db={os.getenv("DB_URI")}/{os.getenv("DB_NAME")}'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        schema_report = schema_process.stdout
+    except subprocess.CalledProcessError as e: schema_report = f"Error running script: {e.stderr}"
+    except FileNotFoundError: schema_report = "Script not found."
+    
+    return render(request, "pages/admin_quality_check.html", {
+        'public_projects': public_projects,
+        'private_projects' : private_projects,
+        'datetime_status': datetime_status,
+        'sample_count_status': sample_count_status,
+        'schema_report': schema_report,
+    })
 
 
 def check_datetime(projects):
@@ -559,7 +580,7 @@ def project_page(request, project_name, message=''):
         return render(request, "pages/loading.html", {"project_name":project_name})
 
     if project['private'] and not is_user_a_project_member(project, request):
-        return redirect('/accounts/login')
+        return redirect('/accounts/login?next=/project/' + project_name)
 
     # if we got here by an OLD project id (prior to edits) then we want to redirect to the new one
     if not project_name == str(project['linkid']):
@@ -1555,7 +1576,6 @@ def download_file(url, save_path):
         file.write(response.content)
 
     print(f"File downloaded successfully and saved to {save_path}")
-
 
 
 def edit_project_page(request, project_name):
