@@ -1,4 +1,4 @@
-Version= v2.8.1_050825
+Version= v2.8.2_050925
 Creator= liefeld
-Date= Thu May  8 21:12:42 UTC 2025
-CommitID=3d8b931ca604165581192644dd4c701d2e86217d
+Date= Fri May  9 14:35:38 UTC 2025
+CommitID=ece0baed0161191cc7382e8588ecbfd80997c2e0
