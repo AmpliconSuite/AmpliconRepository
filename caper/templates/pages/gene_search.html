@@ -105,54 +105,50 @@
 
             // Initialize DataTable with custom rendering for the genes column
             table.DataTable({
-                "paging": true,
-                "pageLength": 10,
-                "lengthMenu": [10, 25, 50, 100],
-                "ordering": true,
-                "info": true,
-                "searching": true,
-                "autoWidth": false,
-                "responsive": true,
-                "columnDefs": [{
-                    "targets": genesColumnIndex !== -1 ? genesColumnIndex : [], // Only apply to Genes column
-                    "render": function(data, type, row) {
-                        if (type !== 'display' || genesColumnIndex === -1) return data;
+                paging: true,
+                pageLength: 10,
+                lengthMenu: [10, 25, 50, 100],
+                ordering: true,
+                info: true,
+                searching: true,
+                autoWidth: false,
+                responsive: true,
+                order: [[1, 'asc']], // Default sort by Project Name column (index 1)
+                columnDefs: [
+                    {
+                        targets: 0,
+                        orderable: false // Disable sorting for checkbox column
+                    },
+                    genesColumnIndex !== -1 ? {
+                        targets: genesColumnIndex,
+                        render: function(data, type, row) {
+                            if (type !== 'display') return data;
+                            const genes = data.split(', ');
+                            if (genes.length <= 5) return data;
 
-                        // For display rendering, create expandable content
-                        const genes = data.split(', ');
-                        if (genes.length <= 5) return data; // No need for expansion
-
-                        // Reorganize genes if any match the search term
-                        let reorganizedGenes = [...genes];
-                        if (searchTerms.length > 0) {
-                            const matchedGenes = [];
-                            const otherGenes = [];
-
-                            genes.forEach(gene => {
-                                if (searchTerms.some(term => gene.toUpperCase().includes(term))) {
-                                    matchedGenes.push(`<mark>${gene}</mark>`);
-                                } else {
-                                    otherGenes.push(gene);
-                                }
-                            });
-
-                            if (matchedGenes.length > 0) {
-                                reorganizedGenes = [...matchedGenes, ...otherGenes];
+                            let reorganizedGenes = [...genes];
+                            if (searchTerms.length > 0) {
+                                const matched = [], other = [];
+                                genes.forEach(gene =>
+                                    searchTerms.some(term => gene.toUpperCase().includes(term))
+                                        ? matched.push(`<mark>${gene}</mark>`)
+                                        : other.push(gene)
+                                );
+                                if (matched.length > 0) reorganizedGenes = [...matched, ...other];
                             }
-                        }
 
-                        // Create HTML for expandable content
-                        return `
-                            <div class="gene-container">
-                                <div class="gene-content collapsed">${reorganizedGenes.slice(0, 5).join(', ')}</div>
-                                <div class="gene-content expanded" style="display:none">${reorganizedGenes.join(', ')}</div>
-                                <button class="btn btn-sm btn-link p-0 gene-toggle" style="margin-left:5px;color:blue;">
-                                    Show all ${genes.length} genes
-                                </button>
-                            </div>
-                        `;
-                    }
-                }]
+                            return `
+                                <div class="gene-container">
+                                    <div class="gene-content collapsed">${reorganizedGenes.slice(0, 5).join(', ')}</div>
+                                    <div class="gene-content expanded" style="display:none">${reorganizedGenes.join(', ')}</div>
+                                    <button class="btn btn-sm btn-link p-0 gene-toggle" style="margin-left:5px;color:blue;">
+                                        Show all ${genes.length} genes
+                                    </button>
+                                </div>
+                            `;
+                        }
+                    } : {}
+                ]
             });
         }
 
@@ -314,6 +310,44 @@
             });
 
             $('#private-select-all-checkbox').prop('checked', false);
+            updatePrivateSelection();
+        });
+
+        // Header checkbox: Select/deselect all on current page — public samples
+        $('#public-select-all-checkbox').on('change', function() {
+            const isChecked = $(this).is(':checked');
+            publicTable.rows({ page: 'current' }).every(function() {
+                const $row = $(this.node());
+                const checkbox = $row.find('.public-sample-checkbox');
+                checkbox.prop('checked', isChecked);
+                const projectId = checkbox.data('project-id');
+                const sampleName = checkbox.data('sample-name');
+                const key = `${projectId}:${sampleName}`;
+                if (isChecked) {
+                    if (!publicSelectedSamples.includes(key)) publicSelectedSamples.push(key);
+                } else {
+                    publicSelectedSamples = publicSelectedSamples.filter(item => item !== key);
+                }
+            });
+            updatePublicSelection();
+        });
+
+        // Header checkbox: Select/deselect all on current page — private samples
+        $('#private-select-all-checkbox').on('change', function() {
+            const isChecked = $(this).is(':checked');
+            privateTable.rows({ page: 'current' }).every(function() {
+                const $row = $(this.node());
+                const checkbox = $row.find('.private-sample-checkbox');
+                checkbox.prop('checked', isChecked);
+                const projectId = checkbox.data('project-id');
+                const sampleName = checkbox.data('sample-name');
+                const key = `${projectId}:${sampleName}`;
+                if (isChecked) {
+                    if (!privateSelectedSamples.includes(key)) privateSelectedSamples.push(key);
+                } else {
+                    privateSelectedSamples = privateSelectedSamples.filter(item => item !== key);
+                }
+            });
             updatePrivateSelection();
         });
 
