@@ -341,13 +341,18 @@ window.addEventListener('DOMContentLoaded', function () {
         }
         else {
             let template = document.getElementById('edge-template');
+            const selectedTest = document.getElementById('sigTestSelect').value;
+
+            const pvalKey = `pval_${selectedTest}`;
+            const qvalKey = `qval_${selectedTest}`;
+            const oddsKey = `odds_ratio_${selectedTest}`;
             template.querySelector('#etip-name').textContent = ele.data('label') || 'N/A';
             template.querySelector('#etip-weight').textContent = ele.data('weight').toFixed(3) || 'N/A';
             template.querySelector('#etip-frac').textContent = ele.data('leninter') + '/' + ele.data('lenunion');
             template.querySelector('#etip-distance').textContent = ele.data('distance') < 0 ? 'N/A' : ele.data('distance');
-            template.querySelector('#etip-pval').textContent = ele.data('pval') < 0 ? 'N/A' : ele.data('pval').toFixed(3);
-            template.querySelector('#etip-qval').textContent = ele.data('qval') < 0 ? 'N/A' : ele.data('qval').toFixed(3);
-            template.querySelector('#etip-odds_ratio').textContent = ele.data('odds_ratio') < 0 ? 'N/A' : ele.data('odds_ratio').toFixed(3);
+            template.querySelector('#etip-pval').textContent = ele.data(pvalKey) < 0 ? 'N/A' : ele.data(pvalKey).toFixed(3);
+            template.querySelector('#etip-qval').textContent = ele.data(qvalKey) < 0 ? 'N/A' : ele.data(qvalKey).toFixed(3);
+            template.querySelector('#etip-odds_ratio').textContent = ele.data(oddsKey) < 0 ? 'N/A' : ele.data(oddsKey).toFixed(3);
             template.querySelector('#etip-nsamples').textContent = ele.data('leninter') || 'N/A';
             template.querySelector('#etip-samples').textContent = ele.data('inter').join(', ') || 'N/A';
             content = template.innerHTML;
@@ -450,9 +455,30 @@ window.addEventListener('DOMContentLoaded', function () {
     });
     $('#filterButton').on('click', fetchSubgraph);
 
+    // Update graph based on chosen signficance test
+    document.getElementById('sigTestSelect').addEventListener('change', function () {
+        document.getElementById('sigThreshold').dispatchEvent(new Event('input'));
+        if (cy) {
+            // Remove highlighted class from all elements
+            cy.elements('.highlighted').forEach(ele => {
+                ele.removeClass('highlighted');
+                if (ele.isEdge()) {
+                    ele.style('width', 1);  // Reset to default width
+                }
+            });
+    
+            // Destroy and recreate tooltips
+            removeAllTooltips();
+            makeTips(cy);
+        }
+    });
+
     // update sliders
     document.getElementById('sigThreshold').addEventListener('input', function() {
         const qvalueThreshold = parseFloat(this.value);
+        const selectedTest = document.getElementById('sigTestSelect').value;
+        const qvalKey = `qval_${selectedTest}`;
+
         document.getElementById('qValue').textContent = qvalueThreshold;
         if (cy) {
             cy.edges().forEach(edge => {
@@ -585,7 +611,7 @@ window.addEventListener('DOMContentLoaded', function () {
         }
 
         const csv = [];
-        const header = ['Gene Name', 'Oncogene', 'Gene ecDNA Count', 'Intersection Count', 'Coamplification Frequency', 'Location', 'Distance (bp)', 'P-Value', 'Q-value', 'Odds Ratio', 'Gene ecDNA Samples', 'Intersection Samples'];
+        const header = ['Gene Name', 'Oncogene', 'Gene ecDNA Count', 'Intersection Count', 'Coamplification Frequency', 'Location', 'Distance (bp)', 'P-Value Single Interval Test', 'Q-value Single Interval Test', 'Odds Ratio Single Interval Test', 'P-Value Multi Interval Test', 'Q-value Multi Interval Test', 'Odds Ratio Multi Interval Test', 'P-Value Multi Chromosomal Test', 'Q-value Multi Chromosomal Test', 'Odds Ratio Multi Chromosomal Test','Gene ecDNA Samples', 'Intersection Samples'];
         csv.push(header.join(','));
 
         const nodes = data.nodes;
@@ -614,9 +640,15 @@ window.addEventListener('DOMContentLoaded', function () {
                 weight: edgeData.weight ?? -1,
                 location: nData.location ? `chr${nData.location[0]}:${nData.location[1]}-${nData.location[2]}` : 'N/A',
                 distance: edgeData.distance ?? 'N/A',
-                pval: edgeData.pval ?? 'N/A',
-                qval: edgeData.qval ?? 'N/A',
-                odds_ratio: edgeData.odds_ratio ?? 'N/A',
+                pval_single_interval: edgeData.pval_single_interval ?? 'N/A',
+                qval_single_interval: edgeData.qval_single_interval ?? 'N/A',
+                odds_ratio_single_interval: edgeData.odds_ratio_single_interval ?? 'N/A',
+                pval_multi_interval: edgeData.pval_multi_interval ?? 'N/A',
+                qval_multi_interval: edgeData.qval_multi_interval ?? 'N/A',
+                odds_ratio_multi_interval: edgeData.odds_ratio_multi_interval ?? 'N/A',
+                pval_multi_chromosomal: edgeData.pval_multi_chromosomal ?? 'N/A',
+                qval_multi_chromosomal: edgeData.qval_multi_chromosomal ?? 'N/A',
+                odds_ratio_multi_chromosomal: edgeData.odds_ratio_multi_chromosomal ?? 'N/A',
                 gene_samples: nData.features ? `["${nData.features.join('", "')}"]` : 'N/A',
                 inter: edgeData.inter ? `["${edgeData.inter.join('", "')}"]` : 'N/A',
             };
@@ -640,9 +672,15 @@ window.addEventListener('DOMContentLoaded', function () {
                 row.weight === -1 ? 'N/A' : row.weight.toFixed(3),
                 row.location,
                 row.distance === -1 ? 'N/A' : row.distance,
-                row.pval === -1 ? 'N/A' : parseFloat(row.pval).toFixed(3),
-                row.qval === -1 ? 'N/A' : parseFloat(row.qval).toFixed(3),
-                row.odds_ratio === -1 ? 'N/A' : parseFloat(row.odds_ratio).toFixed(3),
+                row.pval_single_interval === -1 ? 'N/A' : parseFloat(row.pval_single_interval).toFixed(3),
+                row.qval_single_interval === -1 ? 'N/A' : parseFloat(row.qval_single_interval).toFixed(3),
+                row.odds_ratio_single_interval === -1 ? 'N/A' : parseFloat(row.odds_ratio_single_interval).toFixed(3),
+                row.pval_multi_interval === -1 ? 'N/A' : parseFloat(row.pval_multi_interval).toFixed(3),
+                row.qval_multi_interval === -1 ? 'N/A' : parseFloat(row.qval_multi_interval).toFixed(3),
+                row.odds_ratio_multi_interval === -1 ? 'N/A' : parseFloat(row.odds_ratio_multi_interval).toFixed(3),
+                row.pval_multi_chromosomal === -1 ? 'N/A' : parseFloat(row.pval_multi_chromosomal).toFixed(3),
+                row.qval_multi_chromosomal === -1 ? 'N/A' : parseFloat(row.qval_multi_chromosomal).toFixed(3),
+                row.odds_ratio_multi_chromosomal === -1 ? 'N/A' : parseFloat(row.odds_ratio_multi_chromosomal).toFixed(3),
                 row.gene_samples,
                 row.inter,
             ].map(formatCell);
