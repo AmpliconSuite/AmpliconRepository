@@ -145,6 +145,7 @@ class Graph:
 		# find all matches of chr:start-end
 		matches = re.findall(r"'?(chr[\dXY]+):(\d+)-(\d+)'?", location)
 		matches = [[chrom, int(start), int(end)] for chrom, start, end in matches]
+
 		if not matches:
 			return matches
 
@@ -446,17 +447,28 @@ class Graph:
 
 		# compute p and q values
 		pval_start = time.time()
-		chi_squared_results = [self.chi_squared_dep_test(labels[i], labels[j], src_sets_filtered[idx],
-			tgt_sets_filtered[idx], inters_filtered[idx], self.total_samples) for idx, (i, j) in enumerate(zip(src_filtered, tgt_filtered))]
-		p_values, odds_ratio, distances = zip(*chi_squared_results)
-		p_values = list(p_values)
-		odds_ratio = list(odds_ratio)
+		single_interval_results = [self.single_interval_test(labels[i], labels[j], src_sets_filtered[idx], tgt_sets_filtered[idx], inters_filtered[idx], self.total_samples) for idx, (i, j) in enumerate(zip(src_filtered, tgt_filtered))]
+		p_values_single_interval, odds_ratio_single_interval, distances = zip(*single_interval_results)
+		p_values_single_interval = list(p_values_single_interval)
+		odds_ratio_single_interval = list(odds_ratio_single_interval)
 		distances = list(distances)
+
+		multi_interval_results = [self.multi_interval_test(labels[i], labels[j], src_sets_filtered[idx], tgt_sets_filtered[idx], inters_filtered[idx], self.total_samples) for idx, (i, j) in enumerate(zip(src_filtered, tgt_filtered))]
+		p_values_multi_interval, odds_ratio_multi_interval, _ = zip(*multi_interval_results)
+		p_values_multi_interval = list(p_values_multi_interval)
+		odds_ratio_multi_interval = list(odds_ratio_multi_interval)
+
+		multi_chromosomal_results = [self.multi_chromosomal_test(labels[i], labels[j], src_sets_filtered[idx], tgt_sets_filtered[idx], inters_filtered[idx], self.total_samples) for idx, (i, j) in enumerate(zip(src_filtered, tgt_filtered))]
+		p_values_multi_chromosomal, odds_ratio_multi_chromosomal, _ = zip(*multi_chromosomal_results)
+		p_values_multi_chromosomal = list(p_values_multi_chromosomal)
+		odds_ratio_multi_chromosomal = list(odds_ratio_multi_chromosomal)
 		pval_end = time.time()
 		print(f"Calculating p-values took {pval_end - pval_start:.4f} seconds")
 
 		qval_start = time.time()
-		q_values = self.QVal(p_values)
+		q_values_single_interval = self.QVal(p_values_single_interval)
+		q_values_multi_interval = self.QVal(p_values_multi_interval)
+		q_values_multi_chromosomal = self.QVal(p_values_multi_chromosomal)
 		qval_end = time.time()
 		print(f"Calculating q-values took {qval_end - qval_start:.4f} seconds")
 
@@ -470,9 +482,15 @@ class Graph:
 				'inter': inters_filtered[idx],
 				'union': unions_filtered[idx],
 				'distance': distances[idx], 
-				'pval': p_values[idx],
-				'qval': q_values[idx],
-				'odds_ratio': odds_ratio[idx]
+				'pval_single_interval': p_values_single_interval[idx],
+				'qval_single_interval': q_values_single_interval[idx],
+				'odds_ratio_single_interval': odds_ratio_single_interval[idx],
+				'pval_multi_interval': p_values_multi_interval[idx],
+				'qval_multi_interval': q_values_multi_interval[idx],
+				'odds_ratio_multi_interval': odds_ratio_multi_interval[idx],
+				'pval_multi_chromosomal': p_values_multi_chromosomal[idx],
+				'qval_multi_chromosomal': q_values_multi_chromosomal[idx],
+				'odds_ratio_multi_chromosomal': odds_ratio_multi_chromosomal[idx],
 			}
 			for idx, (i, j) in enumerate(zip(src_filtered, tgt_filtered))
 		]
@@ -585,17 +603,163 @@ class Graph:
 		cdf = gamma.cdf(distance, a=params[0], loc=params[1], scale=params[2])
 		return 1 - cdf
 	
-	def single_interval_test(self, ): # add parameters
-		return 1.0
+	def single_interval_test(self, gene_a, gene_b, src_sets_filtered, tgt_sets_filtered, inters_filtered, total_samples):
+		pdD, d = self.PVal(gene_a, gene_b)
+		if pdD == -1: return -1, -1, -1
+			
+		geneA_samples = len(src_sets_filtered)
+		geneB_samples = len(tgt_sets_filtered)
+		geneAB_samples = len(inters_filtered)
 
-	def multi_interval_test(self, ): # add parameters
-		return 1.0
+		# observed
+		O11 = geneAB_samples
+		O12 = geneA_samples - geneAB_samples
+		O21 = geneB_samples - geneAB_samples
+		O22 = total_samples - geneA_samples - geneB_samples + geneAB_samples
+		obs = [O11, O12, O21, O22]
+		
+		# expected
+		E11 = (geneA_samples + geneB_samples - geneAB_samples) * pdD
+		E12 = geneA_samples * (1 - pdD)
+		E21 = geneB_samples * (1 - pdD)
+		E22 = total_samples - (geneA_samples + geneB_samples - geneAB_samples)
+		exp = [E11, E12, E21, E22] 
+
+		# apply Haldane correction if any observed category count is zero
+		if 0 in obs:
+			obs = [o + 0.5 for o in obs]
+			exp = [e + 0.5 for e in exp]
+
+		total_obs = sum(obs)
+		total_exp = sum(exp)
+		obs_freq = [o / total_obs for o in obs]
+		exp_freq = [e / total_exp for e in exp]
+
+		test_statistic = sum([(o-e)*(o-e)/e for o,e in zip(obs_freq, exp_freq)])
+		cdf = chi2.cdf(test_statistic, df=1)
+		p_val_two_sided = 1-cdf
+		diagonal_residual_sum = ((obs_freq[0]-exp_freq[0]) + (obs_freq[3]-exp_freq[3]))
+
+		odds_ratio = obs_freq[0] / exp_freq[0]
+		if odds_ratio > 1e9:
+			odds_ratio = 1e9 # cap ultra large to prevent infinite odds ratios
+
+		# Convert to one-sided p-value
+		if diagonal_residual_sum >= 0:
+			p_val_one_sided = p_val_two_sided / 2
+		else:
+			p_val_one_sided = 1 - (p_val_two_sided / 2)
+
+		return p_val_one_sided, odds_ratio, d
+
+	def multi_interval_test(self, gene_a, gene_b, src_sets_filtered, tgt_sets_filtered, inters_filtered, total_samples, m_same_chromosome = 0.275405): 
+		pdD, d = self.PVal(gene_a, gene_b)
+		if pdD == -1: return -1, -1, -1
+			
+		geneA_samples = len(src_sets_filtered)
+		geneB_samples = len(tgt_sets_filtered)
+		geneAB_samples = len(inters_filtered)
+
+		# observed
+		O11 = geneAB_samples
+		O12 = geneA_samples - geneAB_samples
+		O21 = geneB_samples - geneAB_samples
+		O22 = total_samples - geneA_samples - geneB_samples + geneAB_samples
+		obs = [O11, O12, O21, O22]
+		
+		# expected
+		E11 = (geneA_samples) * (geneB_samples) * ((1-pdD)**2) * (m_same_chromosome)
+		E12 = geneA_samples * (total_samples - geneB_samples)
+		E21 = geneB_samples * (total_samples - geneA_samples)
+		E22 = (total_samples - geneA_samples) * (total_samples - geneB_samples)
+		exp = [E11, E12, E21, E22] 
+
+		# apply Haldane correction if any observed category count is zero
+		if 0 in obs:
+			obs = [o + 0.5 for o in obs]
+			exp = [e + 0.5 for e in exp]
+
+		total_obs = sum(obs)
+		total_exp = sum(exp)
+		obs_freq = [o / total_obs for o in obs]
+		exp_freq = [e / total_exp for e in exp]
+
+		test_statistic = sum([(o-e)*(o-e)/e for o,e in zip(obs_freq, exp_freq)])
+		cdf = chi2.cdf(test_statistic, df=1)
+		p_val_two_sided = 1-cdf
+		diagonal_residual_sum = ((obs_freq[0]-exp_freq[0]) + (obs_freq[3]-exp_freq[3]))
+
+		odds_ratio = obs_freq[0] / exp_freq[0]
+		if odds_ratio > 1e9:
+			odds_ratio = 1e9 # cap ultra large to prevent infinite odds ratios
+
+		# Convert to one-sided p-value
+		if diagonal_residual_sum >= 0:
+			p_val_one_sided = p_val_two_sided / 2
+		else:
+			p_val_one_sided = 1 - (p_val_two_sided / 2)
+
+		return p_val_one_sided, odds_ratio, d
 	
-	def multi_chromosomal_test(self, ): # add parameters
-		return 1.0
+	def multi_chromosomal_test(self, gene_a, gene_b, src_sets_filtered, tgt_sets_filtered, inters_filtered, total_samples, m_multi_chromosome = 0.116055):
+		pdD, d = self.PVal(gene_a, gene_b)
+		if pdD == -1: return -1, -1, -1
+			
+		geneA_samples = len(src_sets_filtered)
+		geneB_samples = len(tgt_sets_filtered)
+		geneAB_samples = len(inters_filtered)
+
+		# observed
+		O11 = geneAB_samples
+		O12 = geneA_samples - geneAB_samples
+		O21 = geneB_samples - geneAB_samples
+		O22 = total_samples - geneA_samples - geneB_samples + geneAB_samples
+		obs = [O11, O12, O21, O22]
+		
+		# expected
+		E11 = (geneA_samples) * (geneB_samples) * (m_multi_chromosome)
+		E12 = geneA_samples * (total_samples - geneB_samples)
+		E21 = geneB_samples * (total_samples - geneA_samples)
+		E22 = (total_samples - geneA_samples) * (total_samples - geneB_samples)
+		exp = [E11, E12, E21, E22] 
+
+		# apply Haldane correction if any observed category count is zero
+		if 0 in obs:
+			obs = [o + 0.5 for o in obs]
+			exp = [e + 0.5 for e in exp]
+
+		total_obs = sum(obs)
+		total_exp = sum(exp)
+		obs_freq = [o / total_obs for o in obs]
+		exp_freq = [e / total_exp for e in exp]
+
+		test_statistic = sum([(o-e)*(o-e)/e for o,e in zip(obs_freq, exp_freq)])
+		cdf = chi2.cdf(test_statistic, df=1)
+		p_val_two_sided = 1-cdf
+		diagonal_residual_sum = ((obs_freq[0]-exp_freq[0]) + (obs_freq[3]-exp_freq[3]))
+
+		odds_ratio = obs_freq[0] / exp_freq[0]
+		if odds_ratio > 1e9:
+			odds_ratio = 1e9 # cap ultra large to prevent infinite odds ratios
+
+		# Convert to one-sided p-value
+		if diagonal_residual_sum >= 0:
+			p_val_one_sided = p_val_two_sided / 2
+		else:
+			p_val_one_sided = 1 - (p_val_two_sided / 2)
+
+		return p_val_one_sided, odds_ratio, d
 	
-	def q_val(self, ): # add parameters
-		return 1.0
+	def q_val(self, p_values, alpha=0.05): # add parameters
+		valid_mask = [p != -1 for p in p_values]
+		valid_p_values = [p for p in p_values if p != -1]
+		# apply FDR correction only to valid p-values
+		_, valid_q_values = fdrcorrection(valid_p_values, alpha=alpha)
+		# reconstruct q_values with 'N/A' in the appropriate positions
+		valid_q_iter = iter(valid_q_values)
+		q_values = [next(valid_q_iter) if valid else -1 for valid in valid_mask]
+
+		return q_values
 
 	def test_distance(self, a, b):
 		"""
@@ -693,59 +857,6 @@ class Graph:
 		params = models[model]
 		cdf = gamma.cdf(d, a=params[0], loc=params[1], scale=params[2])
 		return 1 - cdf, d
-
-	def chi_squared_dep_test(self, gene_a, gene_b, src_sets_filtered, tgt_sets_filtered, inters_filtered, total_samples):
-		pdD, d = self.PVal(gene_a, gene_b)
-		if pdD == -1: return -1, -1, -1
-			
-		geneA_samples = len(src_sets_filtered)
-		geneB_samples = len(tgt_sets_filtered)
-		geneAB_samples = len(inters_filtered)
-		# fAandB = geneAB_samples/total_samples
-		# fA = geneA_samples/total_samples
-		# fB = geneB_samples/total_samples
-		# fAorB = fA + fB - fAandB
-
-		# observed
-		O11 = geneAB_samples
-		O12 = geneA_samples - geneAB_samples
-		O21 = geneB_samples - geneAB_samples
-		O22 = total_samples - geneA_samples - geneB_samples + geneAB_samples
-		obs = [O11, O12, O21, O22]
-		
-		# expected
-		E11 = (geneA_samples + geneB_samples - geneAB_samples) * pdD
-		E12 = geneA_samples * (1 - pdD)
-		E21 = geneB_samples * (1 - pdD)
-		E22 = total_samples - (geneA_samples + geneB_samples - geneAB_samples)
-		exp = [E11, E12, E21, E22] 
-
-		# apply Haldane correction if any observed category count is zero
-		if 0 in obs:
-			obs = [o + 0.5 for o in obs]
-			exp = [e + 0.5 for e in exp]
-
-		total_obs = sum(obs)
-		total_exp = sum(exp)
-		obs_freq = [o / total_obs for o in obs]
-		exp_freq = [e / total_exp for e in exp]
-
-		test_statistic = sum([(o-e)*(o-e)/e for o,e in zip(obs_freq, exp_freq)])
-		cdf = chi2.cdf(test_statistic, df=1)
-		p_val_two_sided = 1-cdf
-		diagonal_residual_sum = ((obs_freq[0]-exp_freq[0]) + (obs_freq[3]-exp_freq[3]))
-
-		odds_ratio = obs_freq[0] / exp_freq[0]
-		if odds_ratio > 1e9:
-			odds_ratio = 1e9 # cap ultra large to prevent infinite odds ratios
-
-		# Convert to one-sided p-value
-		if diagonal_residual_sum >= 0:
-			p_val_one_sided = p_val_two_sided / 2
-		else:
-			p_val_one_sided = 1 - (p_val_two_sided / 2)
-
-		return p_val_one_sided, odds_ratio, d
 
 	# note: need to reimplement if given an input list of p_vals from different tests
 	def QVal(self, p_values, alpha=0.05):

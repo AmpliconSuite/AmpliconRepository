@@ -119,9 +119,15 @@ def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_
                                    'lenunion': len(record['r']['union']),
                                    'union': record['r']['union'],
                                    'distance': record['r']['distance'],
-                                   'pval': record['r']['pval'],
-                                   'qval': record['r']['qval'],
-                                   'odds_ratio': record['r']['odds_ratio'],
+                                   'pval_single_interval': record['r']['pval_single_interval'],
+                                   'qval_single_interval': record['r']['qval_single_interval'],
+                                   'odds_ratio_single_interval': record['r']['odds_ratio_single_interval'],
+                                   'pval_multi_interval': record['r']['pval_multi_interval'],
+                                   'qval_multi_interval': record['r']['qval_multi_interval'],
+                                   'odds_ratio_multi_interval': record['r']['odds_ratio_multi_interval'],
+                                   'pval_multi_chromosomal': record['r']['pval_multi_chromosomal'],
+                                   'qval_multi_chromosomal': record['r']['qval_multi_chromosomal'],
+                                   'odds_ratio_multi_chromosomal': record['r']['odds_ratio_multi_chromosomal'],
                                    'interaction': 'interacts with'
                                    }})
         
@@ -245,7 +251,7 @@ def load_graph(dataset=None):
         session.run("""
             UNWIND $edges AS row
             MATCH (a:Node {label: row.source}), (b:Node {label: row.target})
-            MERGE (a)-[:COAMP {odds_ratio: toFloat(row.odds_ratio), distance: toInteger(row.distance), pval: toFloat(row.pval), qval: toFloat(row.qval), weight: toFloat(row.weight), inter: row.inter, union: row.union}]->(b)
+            MERGE (a)-[:COAMP {odds_ratio_multi_chromosomal: toFloat(row.odds_ratio_multi_chromosomal), pval_multi_chromosomal: toFloat(row.pval_multi_chromosomal), qval_multi_chromosomal: toFloat(row.qval_multi_chromosomal), odds_ratio_multi_interval: toFloat(row.odds_ratio_multi_interval), pval_multi_interval: toFloat(row.pval_multi_interval), qval_multi_interval: toFloat(row.qval_multi_interval), odds_ratio_single_interval: toFloat(row.odds_ratio_single_interval), distance: toInteger(row.distance), pval_single_interval: toFloat(row.pval_single_interval), qval_single_interval: toFloat(row.qval_single_interval), weight: toFloat(row.weight), inter: row.inter, union: row.union}]->(b)
             """, edges=edges
         )
     IMPORT_TIME = time.process_time()
