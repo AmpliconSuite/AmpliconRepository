@@ -44,6 +44,7 @@ matplotlib==3.6.2
 Mezzanine==6.0.0
 mongoengine==0.24.2
 neo4j==5.28.0
+networkx==3.1
 numpy==1.23.2
 oauthlib==3.2.0
 packaging==21.3

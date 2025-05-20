@@ -94,18 +94,18 @@ def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_
         nodes.setdefault(record['n']['label'], 
                          {'data': {'id': record['n']['label'],
                                    'label': record['n']['label'],
+                                   'all_labels': record['n']['all_labels'],
                                    'location': record['n']['location'],
                                    'oncogene': record['n']['oncogene'],
-                                   'features': record['n']['features'],
-                                   'cell_lines': record['n']['cell_lines']}})
+                                   'samples': record['n']['samples']}})
         # target
         nodes.setdefault(record['m']['label'], 
                          {'data': {'id': record['m']['label'],
                                    'label': record['m']['label'],
+                                   'all_labels': record['m']['all_labels'],
                                    'location': record['m']['location'],
                                    'oncogene': record['m']['oncogene'],
-                                   'features': record['m']['features'],
-                                   'cell_lines': record['m']['cell_lines']}})
+                                   'samples': record['m']['samples']}})
         # edge
         edgelabel = f"{record['n']['label']} -- {record['m']['label']}"
         edges.setdefault(edgelabel, 
@@ -119,15 +119,15 @@ def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_
                                    'lenunion': len(record['r']['union']),
                                    'union': record['r']['union'],
                                    'distance': record['r']['distance'],
-                                   'pval_single_interval': record['r']['pval_single_interval'],
-                                   'qval_single_interval': record['r']['qval_single_interval'],
-                                   'odds_ratio_single_interval': record['r']['odds_ratio_single_interval'],
-                                   'pval_multi_interval': record['r']['pval_multi_interval'],
-                                   'qval_multi_interval': record['r']['qval_multi_interval'],
-                                   'odds_ratio_multi_interval': record['r']['odds_ratio_multi_interval'],
-                                   'pval_multi_chromosomal': record['r']['pval_multi_chromosomal'],
-                                   'qval_multi_chromosomal': record['r']['qval_multi_chromosomal'],
-                                   'odds_ratio_multi_chromosomal': record['r']['odds_ratio_multi_chromosomal'],
+                                   'pval_single_interval': record['r']['p_values'][0],
+                                   'qval_single_interval': record['r']['q_values'][0],
+                                   'odds_ratio_single_interval': record['r']['odds_ratios'][0],
+                                   'pval_multi_interval': record['r']['p_values'][1],
+                                   'qval_multi_interval': record['r']['q_values'][1],
+                                   'odds_ratio_multi_interval': record['r']['odds_ratios'][1],
+                                   'pval_multi_chromosomal': record['r']['p_values'][2],
+                                   'qval_multi_chromosomal': record['r']['q_values'][2],
+                                   'odds_ratio_multi_chromosomal': record['r']['odds_ratios'][2],
                                    'interaction': 'interacts with'
                                    }})
         
@@ -229,6 +229,24 @@ def load_graph(dataset=None):
     nodes = graph.Nodes()
     edges = graph.Edges()
 
+    # reformat for neo4j
+    for node in nodes:
+        del node['features']
+        del node['intervals']
+        for k, v in node.items():
+            if isinstance(v, set):
+                node[k] = list(v)
+        if 'location' in node:
+            node['location'] = [str(i) for i in node['location']]
+    print('First node:\n', nodes[0])
+
+    for edge in edges:
+        del edge['p_d_D']
+        for k, v in edge.items():
+            if isinstance(v, set):
+                edge[k] = list(v)
+    print('First edge:\n', edges[0])
+
     CONSTRUCT_TIME = time.process_time()
 
     # drop previous graph
@@ -239,7 +257,7 @@ def load_graph(dataset=None):
         # add nodes
         session.run("""
             UNWIND $nodes AS row
-            CREATE (n:Node {label: row.label, location: row.location, oncogene: row.oncogene, features: row.samples})
+            CREATE (n:Node {label: row.label, all_labels: row.all_labels, location: row.location, oncogene: row.oncogene, samples: row.samples})
             """, nodes=nodes
         )
         # add index on label (can be done once)
@@ -251,9 +269,15 @@ def load_graph(dataset=None):
         session.run("""
             UNWIND $edges AS row
             MATCH (a:Node {label: row.source}), (b:Node {label: row.target})
-            MERGE (a)-[:COAMP {odds_ratio_multi_chromosomal: toFloat(row.odds_ratio_multi_chromosomal), pval_multi_chromosomal: toFloat(row.pval_multi_chromosomal), qval_multi_chromosomal: toFloat(row.qval_multi_chromosomal), odds_ratio_multi_interval: toFloat(row.odds_ratio_multi_interval), pval_multi_interval: toFloat(row.pval_multi_interval), qval_multi_interval: toFloat(row.qval_multi_interval), odds_ratio_single_interval: toFloat(row.odds_ratio_single_interval), distance: toInteger(row.distance), pval_single_interval: toFloat(row.pval_single_interval), qval_single_interval: toFloat(row.qval_single_interval), weight: toFloat(row.weight), inter: row.inter, union: row.union}]->(b)
+            MERGE (a)-[:COAMP {weight: toFloat(row.weight), inter: row.inter, union: row.union, distance: toInteger(row.distance), p_values: row.p_values, odds_ratios: row.odds_ratios, q_values: row.q_values}]->(b)
             """, edges=edges
         )
+        # session.run("""
+        #     UNWIND $edges AS row
+        #     MATCH (a:Node {label: row.source}), (b:Node {label: row.target})
+        #     MERGE (a)-[:COAMP {odds_ratio_multi_chromosomal: toFloat(row.odds_ratio_multi_chromosomal), pval_multi_chromosomal: toFloat(row.pval_multi_chromosomal), qval_multi_chromosomal: toFloat(row.qval_multi_chromosomal), odds_ratio_multi_interval: toFloat(row.odds_ratio_multi_interval), pval_multi_interval: toFloat(row.pval_multi_interval), qval_multi_interval: toFloat(row.qval_multi_interval), odds_ratio_single_interval: toFloat(row.odds_ratio_single_interval), distance: toInteger(row.distance), pval_single_interval: toFloat(row.pval_single_interval), qval_single_interval: toFloat(row.qval_single_interval), weight: toFloat(row.weight), inter: row.inter, union: row.union}]->(b)
+        #     """, edges=edges
+        # )
     IMPORT_TIME = time.process_time()
 
     print(f'Construct graph: {CONSTRUCT_TIME-START_TIME} s')

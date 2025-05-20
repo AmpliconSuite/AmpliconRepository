@@ -332,11 +332,11 @@ window.addEventListener('DOMContentLoaded', function () {
             template.querySelector('#ntip-name').textContent = ele.data('label') || 'N/A';
             template.querySelector('#ntip-location').textContent =
             ele.data('location')
-                ? `chr${ele.data('location')[0]}:${ele.data('location')[1]}-${ele.data('location')[2]}`
+                ? `${ele.data('location')[0]}:${ele.data('location')[1]}-${ele.data('location')[2]}`
                 : 'N/A';
             template.querySelector('#ntip-oncogene').textContent = ele.data('oncogene') || 'N/A';
-            template.querySelector('#ntip-nsamples').textContent = ele.data('features').length || 'N/A';
-            template.querySelector('#ntip-samples').textContent = ele.data('features').join(', ') || 'N/A';
+            template.querySelector('#ntip-nsamples').textContent = ele.data('samples').length || 'N/A';
+            template.querySelector('#ntip-samples').textContent = ele.data('samples').join(', ') || 'N/A';
             content = template.innerHTML;
         }
         else {
@@ -635,10 +635,10 @@ window.addEventListener('DOMContentLoaded', function () {
             return {
                 gene: nData.label,
                 oncogene: nData.oncogene || 'False',
-                sample_count: nData.features ? nData.features.length : 'N/A',
+                sample_count: nData.samples ? nData.samples.length : 'N/A',
                 inter_count: edgeData.inter ? edgeData.inter.length : 'N/A',
                 weight: edgeData.weight ?? -1,
-                location: nData.location ? `chr${nData.location[0]}:${nData.location[1]}-${nData.location[2]}` : 'N/A',
+                location: nData.location ? `${nData.location[0]}:${nData.location[1]}-${nData.location[2]}` : 'N/A',
                 distance: edgeData.distance ?? 'N/A',
                 pval_single_interval: edgeData.pval_single_interval ?? 'N/A',
                 qval_single_interval: edgeData.qval_single_interval ?? 'N/A',
@@ -649,7 +649,7 @@ window.addEventListener('DOMContentLoaded', function () {
                 pval_multi_chromosomal: edgeData.pval_multi_chromosomal ?? 'N/A',
                 qval_multi_chromosomal: edgeData.qval_multi_chromosomal ?? 'N/A',
                 odds_ratio_multi_chromosomal: edgeData.odds_ratio_multi_chromosomal ?? 'N/A',
-                gene_samples: nData.features ? `["${nData.features.join('", "')}"]` : 'N/A',
+                gene_samples: nData.samples ? `["${nData.samples.join('", "')}"]` : 'N/A',
                 inter: edgeData.inter ? `["${edgeData.inter.join('", "')}"]` : 'N/A',
             };
         });
