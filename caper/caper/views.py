@@ -272,6 +272,29 @@ def data_qc(request):
     })
 
 
+def fix_schema(request):
+    # Run the schema validation directly
+    try:
+        from caper.schema_validate import run_fix_schema
+
+        # Get the schema path relative to the project root
+        schema_path = "schema/schema.json"
+
+        # Run the validation and get the report
+        fix_schema_report = run_fix_schema(
+            db_host=None,  # Use the existing connection from utils
+            collection_name="projects",
+            schema_path=schema_path
+        )
+
+    except Exception as e:
+        fix_schema_report = f"Error running fix schema: {str(e)}"
+
+    return render(request, "pages/admin_fix_schema_report.html", {
+        'fix_schema_report': fix_schema_report,
+    })
+
+
 def check_datetime(projects):
     errors = 0
     for project in projects:

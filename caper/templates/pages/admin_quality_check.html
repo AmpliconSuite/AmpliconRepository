@@ -106,6 +106,10 @@
             <hr>
             <h3>Project Schema Validation</h3>
             <pre>{{ schema_report }}</pre>
+            <hr><form method="POST" action="{% url 'fix_schema' %}">
+                {% csrf_token %}
+                <input type="submit" value="Fix Missing Keys" class="btn btn-warning">
+            </form>
         </div>
     </div>
 
