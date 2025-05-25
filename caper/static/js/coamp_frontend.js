@@ -129,7 +129,54 @@ window.addEventListener('DOMContentLoaded', function () {
             console.log(nodeID[inputNode] + ': ' + cy.$(nodeID[inputNode]).data('label'));
 
             // Update significant class
-            document.getElementById('sigThreshold').dispatchEvent(new Event('input'));
+            document.getElementById('sigThreshold').addEventListener('input', function() {
+            const threshold = parseFloat(this.value);
+            const testRadios = document.getElementsByName("sigTest");
+            let selectedTest = "any"; // default fallback
+
+            for (const radio of testRadios) {
+                if (radio.checked) {
+                    selectedTest = radio.value;
+                    break;
+                }
+            }
+
+            document.getElementById('qValue').textContent = threshold;
+
+            if (cy) {
+                cy.edges().forEach(edge => {
+                    let isSignificant = false;
+
+                    if (selectedTest === "any") {
+                        // Check all q-values
+                        const qvals = [
+                            parseFloat(edge.data('qval_single_interval')),
+                            parseFloat(edge.data('qval_multi_interval')),
+                            parseFloat(edge.data('qval_multi_chromosomal'))
+                        ];
+
+                        for (const q of qvals) {
+                            if (!isNaN(q) && q <= threshold && q >= 0) {
+                                isSignificant = true;
+                                break;
+                            }
+                        }
+                    } else {
+                        const qvalKey = `qval_${selectedTest}`;
+                        const qval = parseFloat(edge.data(qvalKey));
+                        if (!isNaN(qval) && qval <= threshold && qval >= 0) {
+                            isSignificant = true;
+                        }
+                    }
+
+                    if (isSignificant) {
+                        edge.addClass('significant');
+                    } else {
+                        edge.removeClass('significant');
+                    }
+                    });
+            }
+        });
             // Update sample slider max
             updateSampleMax(cy);
             // Updata limit slider
@@ -341,18 +388,20 @@ window.addEventListener('DOMContentLoaded', function () {
         }
         else {
             let template = document.getElementById('edge-template');
-            const selectedTest = document.getElementById('sigTestSelect').value;
-
-            const pvalKey = `pval_${selectedTest}`;
-            const qvalKey = `qval_${selectedTest}`;
-            const oddsKey = `odds_ratio_${selectedTest}`;
+            
             template.querySelector('#etip-name').textContent = ele.data('label') || 'N/A';
             template.querySelector('#etip-weight').textContent = ele.data('weight').toFixed(3) || 'N/A';
             template.querySelector('#etip-frac').textContent = ele.data('leninter') + '/' + ele.data('lenunion');
             template.querySelector('#etip-distance').textContent = ele.data('distance') < 0 ? 'N/A' : ele.data('distance');
-            template.querySelector('#etip-pval').textContent = ele.data(pvalKey) < 0 ? 'N/A' : ele.data(pvalKey).toFixed(3);
-            template.querySelector('#etip-qval').textContent = ele.data(qvalKey) < 0 ? 'N/A' : ele.data(qvalKey).toFixed(3);
-            template.querySelector('#etip-odds_ratio').textContent = ele.data(oddsKey) < 0 ? 'N/A' : ele.data(oddsKey).toFixed(3);
+            template.querySelector('#etip-pval-single_interval').textContent = ele.data('pval_single_interval') < 0 ? 'N/A' : ele.data('pval_single_interval').toFixed(3);
+            template.querySelector('#etip-qval-single_interval').textContent = ele.data('qval_single_interval') < 0 ? 'N/A' : ele.data('qval_single_interval').toFixed(3);
+            template.querySelector('#etip-odds_ratio-single_interval').textContent = ele.data('odds_ratio_single_interval') < 0 ? 'N/A' : ele.data('odds_ratio_single_interval').toFixed(3);
+            template.querySelector('#etip-pval-multi_interval').textContent = ele.data('pval_multi_interval') < 0 ? 'N/A' : ele.data('pval_multi_interval').toFixed(3);
+            template.querySelector('#etip-qval-multi_interval').textContent = ele.data('qval_multi_interval') < 0 ? 'N/A' : ele.data('qval_multi_interval').toFixed(3);
+            template.querySelector('#etip-odds_ratio-multi_interval').textContent = ele.data('odds_ratio_multi_interval') < 0 ? 'N/A' : ele.data('odds_ratio_multi_interval').toFixed(3);
+            template.querySelector('#etip-pval-multi_chromosomal').textContent = ele.data('pval_multi_chromosomal') < 0 ? 'N/A' : ele.data('pval_multi_chromosomal').toFixed(3);
+            template.querySelector('#etip-qval-multi_chromosomal').textContent = ele.data('qval_multi_chromosomal') < 0 ? 'N/A' : ele.data('qval_multi_chromosomal').toFixed(3);
+            template.querySelector('#etip-odds_ratio-multi_chromosomal').textContent = ele.data('odds_ratio_multi_chromosomal') < 0 ? 'N/A' : ele.data('odds_ratio_multi_chromosomal').toFixed(3);
             template.querySelector('#etip-nsamples').textContent = ele.data('leninter') || 'N/A';
             template.querySelector('#etip-samples').textContent = ele.data('inter').join(', ') || 'N/A';
             content = template.innerHTML;
@@ -456,41 +505,12 @@ window.addEventListener('DOMContentLoaded', function () {
     $('#filterButton').on('click', fetchSubgraph);
 
     // Update graph based on chosen signficance test
-    document.getElementById('sigTestSelect').addEventListener('change', function () {
-        document.getElementById('sigThreshold').dispatchEvent(new Event('input'));
-        if (cy) {
-            // Remove highlighted class from all elements
-            cy.elements('.highlighted').forEach(ele => {
-                ele.removeClass('highlighted');
-                if (ele.isEdge()) {
-                    ele.style('width', 1);  // Reset to default width
-                }
-            });
-    
-            // Destroy and recreate tooltips
-            removeAllTooltips();
-            makeTips(cy);
-        }
+    document.querySelectorAll('input[name="sigTest"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            document.getElementById('sigThreshold').dispatchEvent(new Event('input'));
+        });
     });
 
-    // update sliders
-    document.getElementById('sigThreshold').addEventListener('input', function() {
-        const qvalueThreshold = parseFloat(this.value);
-        const selectedTest = document.getElementById('sigTestSelect').value;
-        const qvalKey = `qval_${selectedTest}`;
-
-        document.getElementById('qValue').textContent = qvalueThreshold;
-        if (cy) {
-            cy.edges().forEach(edge => {
-                qval = parseFloat(edge.data('qval'));
-                if (qval <= qvalueThreshold && qval >= 0) {
-                    edge.addClass('significant');
-                } else {
-                    edge.removeClass('significant');
-                }
-            });
-        }
-    });
     document.getElementById('edgeWeight').addEventListener('input', function() {
         document.getElementById('sliderValue').textContent = this.value;
     });
