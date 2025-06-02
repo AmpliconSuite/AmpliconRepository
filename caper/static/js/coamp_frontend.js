@@ -200,7 +200,7 @@ window.addEventListener('DOMContentLoaded', function () {
             }
 
             // Create SVG download button
-            const buttonContainer = document.querySelector('.button-container');
+            const buttonContainer = document.querySelector('.filter-right');
             const downloadSvgBtn = document.createElement('button');
             downloadSvgBtn.id = 'download-svg-btn';
             downloadSvgBtn.innerHTML = 'Download SVG';

@@ -56,7 +56,7 @@
         <!--Buttons to choose significance test for slider-->
         <div class="edge-slider">
             <label>Significance Test:</label><br>
-            <div style="display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; flex-direction: column; gap: 2px;">
                 <label style="margin: 0;">
                     <input type="radio" name="sigTest" value="any" checked> Any
                 </label>
@@ -114,19 +114,29 @@
             </div>
         </div>
 
-        <!-- filter button and oncogenes grouped -->
-        <div class="filter-container">
+        <!--<div class="filter-buttons">
             <div class="oncogene-option">
-                <span>Oncogenes only</span>
-                <input type="checkbox" id="oncogenes_only">
+            <span>Oncogenes only</span>
+            <input type="checkbox" id="oncogenes_only">
             </div>
             <button id="filterButton">Filter</button>
-        </div>
-
-        <!-- Download buttons in separate container -->
-        <div class="button-container">
             <button id="download-btn">Download CSV</button>
-            <!-- SVG button will be added by JavaScript -->
+            
+        </div>-->
+        <div class="filter-container">
+            <!-- Left column: Oncogenes + Filter -->
+            <div class="filter-left">
+                <div class="oncogene-option">
+                <span>Oncogenes only</span>
+                <input type="checkbox" id="oncogenes_only">
+                </div>
+                <button id="filterButton">Filter</button>
+            </div>
+
+            <!-- Right column: Downloads -->
+            <div class="filter-right">
+                <button id="download-btn">Download CSV</button>
+            </div>
         </div>
     </div>
 
