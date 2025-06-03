@@ -868,7 +868,7 @@ def get_sample_metadata(sample_data):
         if isinstance(extra_metadata, dict):
             sample_metadata.update(extra_metadata)
     except Exception as e:
-        logging.exception(e)
+        # logging.exception(e)
         sample_metadata = defaultdict(str)
 
     return sample_metadata
@@ -910,12 +910,15 @@ def sample_page(request, project_name, sample_name):
     igv_tracks = []
     download_png = []
     reference_version = []
+
+    # Check if ec3D visualization is available
+    ec3d_available = check_ec3d_available(project['project_name'], sample_name)
+
     if sample_data_processed[0]['AA_amplicon_number'] == None:
         plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
 
     else:
         plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
-        #plot, featid_to_updated_locations = sample_plot.plot(sample_data, sample_name, project_name, filter_plots=filter_plots)
         for feature in sample_data_processed:
             reference_version.append(feature['Reference_version'])
             download_png.append({
@@ -927,13 +930,13 @@ def sample_page(request, project_name, sample_name):
             all_locuses.append(locus)
             # print("Converted location list {} to IGV formatted string {}".format(str(feature['Location']), locus))
             track = {
-                'name':feature['Feature_ID'],
+                'name': feature['Feature_ID'],
                 # 'type': "seg",
                 # 'url' : f"http://{request.get_host()}/project/{project_linkid}/sample/{sample_name}/feature/{feature['Feature_ID']}/download/{feature['Feature_BED_file']}".replace(" ", "%"),
                 # 'indexed':False,
                 'color': "rgba(94,255,1,0.25)",
                 'features': roi_features,
-                }
+            }
 
             igv_tracks.append(track)
 
@@ -942,18 +945,20 @@ def sample_page(request, project_name, sample_name):
             ## have the IGV button in the features table
             ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
     return render(request, "pages/sample.html",
-    {'project': project,
-    'project_name': project_name,
-    'project_linkid': project_linkid,
-    'sample_data': sample_data_processed,
-    'sample_metadata': sample_metadata,
-    'reference_genome': reference_genome,
-    'sample_name': sample_name, 'graph': plot,
-    'igv_tracks': json.dumps(igv_tracks),
-    'locuses': json.dumps(all_locuses),
-    'download_links': json.dumps(download_png),
-    'reference_versions': json.dumps(reference_version),
-    }
+                  {'project': project,
+                   'project_name': project_name,
+                   'project_linkid': project_linkid,
+                   'sample_data': sample_data_processed,
+                   'sample_metadata': sample_metadata,
+                   'reference_genome': reference_genome,
+                   'sample_name': sample_name,
+                   'graph': plot,
+                   'igv_tracks': json.dumps(igv_tracks),
+                   'locuses': json.dumps(all_locuses),
+                   'download_links': json.dumps(download_png),
+                   'reference_versions': json.dumps(reference_version),
+                   'ec3d_available': ec3d_available,  # New context variable
+        }
     )
 
 # Custom JSON encoder to handle any remaining ObjectId
@@ -2851,3 +2856,43 @@ def search_results(request):
 
     else:
         return redirect("gene_search_page")  # Redirect if accessed incorrectly
+
+
+def ec3d_visualization(request, sample_name):
+    """
+    Serve ec3D visualization HTML files for specific samples.
+    """
+    # Construct the file path
+    ec3d_filename = f"{sample_name}_5k_ec3d.html"
+    ec3d_path = os.path.join(settings.STATIC_ROOT or 'static', 'ec3d', ec3d_filename)
+
+    # Check if file exists
+    if not os.path.exists(ec3d_path):
+        raise Http404(f"ec3D visualization not found for sample {sample_name}")
+
+    # Read and serve the HTML file
+    try:
+        with open(ec3d_path, 'r', encoding='utf-8') as f:
+            html_content = f.read()
+        return HttpResponse(html_content, content_type='text/html')
+    except Exception as e:
+        logging.error(f"Error serving ec3D file for {sample_name}: {e}")
+        raise Http404("Error loading ec3D visualization")
+
+
+def check_ec3d_available(project_name, sample_name):
+    """
+    Check if ec3D visualization is available for a given project and sample.
+    Returns True if the project name starts with 'ec3D' and the HTML file exists.
+    """
+    # Check if project name starts with 'ec3D'
+    if not project_name.lower().startswith('ec3d'):
+        logging.debug(f"{project_name} is not an ec3D project")
+        return False
+
+    # Check if ec3D HTML file exists
+    ec3d_filename = f"{sample_name}_5k_ec3d.html"
+    ec3d_path = os.path.join(settings.STATIC_ROOT or 'static', 'ec3d', ec3d_filename)
+    logging.debug(f"ec3d_path is {ec3d_path}")
+
+    return os.path.exists(ec3d_path)
