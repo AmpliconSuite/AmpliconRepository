@@ -371,6 +371,10 @@ def _add_missing_fields_recursive(document_part, schema_node, changes_log, curre
             default_val = get_default_value(prop_schema_for_req_key)
             document_part[req_key] = default_val
 
+            # Special case for FINISHED? - if the key is "FINISHED?", set it to True by default
+            if req_key == "FINISHED?" and isinstance(default_val, bool):
+                document_part[req_key] = True
+
             path_str = ".".join(current_path_parts + [req_key])
             changes_log.append({
                 "path": path_str,
