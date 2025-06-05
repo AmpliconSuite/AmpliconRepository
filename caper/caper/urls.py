@@ -80,6 +80,7 @@ urlpatterns += [
     path('robots.txt', views.robots, name = "robots.txt"),
     path('loading/', views.loading),
     path('search_results/', views.search_results, name='search_results'),
+    path('ec3d/<str:sample_name>/', views.ec3d_visualization, name='ec3d_visualization'),
     
 ]
 
