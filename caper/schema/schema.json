@@ -58,9 +58,7 @@
                             "AA_amplicon_number": {
                                 "type": ["integer", "null"]
                             },
-                            "AA_directory": {
-                                "type": "string"
-                            },
+                            "AA_directory": {},
                             "AA_summary_file": {
                                 "type": "string"
                             },
@@ -121,9 +119,7 @@
                             "Tissue_of_origin": {
                                 "type": ["string", "null"]
                             },
-                            "cnvkit_directory": {
-                                "type": "string"
-                            }
+                            "cnvkit_directory": {}
                         },
                         "required": [
                             "AA_PDF_file",
