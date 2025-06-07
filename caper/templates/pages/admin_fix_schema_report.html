@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+
+{% block meta_title %} Home
+{% endblock %}
+
+{% block main %}
+<head>
+    <title>
+        AmpliconRepository
+    </title>
+</head>
+
+<div class="row">
+    <div class="col-md-10">
+        <div>
+            <h1 style="padding-top: 50px">Fix Schema Report</h1>
+            <hr>
+            <pre>{{ fix_schema_report }}</pre>
+        </div>
+    </div>
+
+    
+</div>
+{% endblock %}
