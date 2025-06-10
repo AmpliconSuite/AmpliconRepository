@@ -207,9 +207,9 @@ button:hover {
   flex-direction: row;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 30px;
+  gap: 20px;
   flex-wrap: nowrap;
-  max-width: 1500px;
+  max-width: 1400px;
   margin: 0 auto 20px;
   padding: 15px;
   background-color: white;
