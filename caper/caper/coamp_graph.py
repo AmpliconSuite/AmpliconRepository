@@ -59,6 +59,8 @@ class Graph:
 			preprocessed_dataset = self.preprocess_dataset(dataset, focal_amp)
 			self.total_samples = len(preprocessed_dataset)
 
+			self.test_preprocessed_dataset = preprocessed_dataset
+
 			# create nodes and edges from the combined dataset
 			self.create_nodes(preprocessed_dataset)
 			self.create_edges(by_sample)
@@ -106,18 +108,13 @@ class Graph:
 		locs = {}
 		try:
 			gene_coords = pd.read_csv(bed_file, sep="\t", header=None)
-	
-			# Note: 
-			# removed chr renaming to match format of input dataset when matching 
-			# locations to ecDNA intervals
 
-			# # Vectorized operation for chromosome naming
-			# gene_coords['chr_num'] = gene_coords[0].str[-1]
-			# gene_coords.loc[~gene_coords['chr_num'].str.match(r'[0-9XY]'), 'chr_num'] = gene_coords[0]
-
+			# Vectorized operation for chromosome naming
+			gene_coords['chr_num'] = gene_coords[0].str.extract(r'chr(\w+)', expand=False)
+            
 			# Convert to dictionary in one operation instead of row-by-row
 			locs = dict(zip(gene_coords[3],
-							zip(gene_coords[0], #gene_coords['chr_num'],
+							zip(gene_coords['chr_num'],
 								gene_coords[1].astype(int),
 								gene_coords[2].astype(int))))
 		except Exception as e:
@@ -185,7 +182,7 @@ class Graph:
 		merged_intervals = []
 
 		# find all matches of chr:start-end
-		matches = re.findall(r"'?(chr[\dXY]+):(\d+)-(\d+)'?", location)
+		matches = re.findall(r"'?([\dXY]+):(\d+)-(\d+)'?", location)
 		matches = [[chrom, int(start), int(end)] for chrom, start, end in matches]
 
 		if not matches:
@@ -278,6 +275,12 @@ class Graph:
 		feature_id_counter = 0
 		interval_id_counter = 0
 
+		genes_with_loc_counter = 0
+		genes_with_interval_counter = 0
+		genes_with_chr_no_interval_counter = 0
+		genes_with_no_chr_match_counter = 0
+		self.genes_with_no_chr_match_list = []
+
 		# for each feature or sample
 		for __, row in dataset.iterrows():
 			# get the properties in this feature
@@ -305,12 +308,25 @@ class Graph:
 					record['samples'].add(sample)
 					record['updated'] = True
 					# get the id of the interval the gene is amplified on
+					record['intervals'][sample][feature_id_counter] = None                        
 					if record['location']:
+						genes_with_loc_counter += 1
 						chr, start, __ = record['location']
-						for istart, iend, id in interval_lookup[chr]:
-							if (start > istart and start < iend):
-								record['intervals'][sample][feature_id_counter] = id
-								break
+						if chr in interval_lookup: 
+							interval_found = False
+							for istart, iend, id in interval_lookup[chr]:
+								if (start > istart and start < iend):
+									genes_with_interval_counter += 1                               
+									record['intervals'][sample][feature_id_counter] = id
+									interval_found = True
+									break
+							if not interval_found:
+								genes_with_chr_no_interval_counter += 1
+								record['genes_with_chr_no_interval_counter'] = True
+						else:
+							genes_with_no_chr_match_counter += 1
+							record['genes_with_no_chr_match_counter'] = True
+							self.genes_with_no_chr_match_list.append((chr, interval_lookup.keys()))
 				else:
 					print(f"Warning: {gene} does not match to any gene in the provided reference files")
 			feature_id_counter += 1
@@ -324,6 +340,13 @@ class Graph:
 				check_feature_sample_count += 1
 
 		print(f"Note: {check_feature_sample_count} genes are amplified on multiple feature IDs in the same sample")
+
+		test_size_1 = len([r for r in self.gene_records.values() if r.get('genes_with_chr_no_interval_counter')])    
+		test_size_2 = len([r for r in self.gene_records.values() if r.get('genes_with_no_chr_match_counter')])
+		print(f"TEST: {genes_with_loc_counter} searches where gene's location is found")
+		print(f"TEST: {genes_with_interval_counter} searches where gene's chr on interval and gene's location is matched to an interval")
+		print(f"TEST: {genes_with_chr_no_interval_counter} searches where gene's chr on interval but gene's location is NOT matched to an interval ({test_size_1} unique nodes)")
+		print(f"TEST: {genes_with_no_chr_match_counter} searches where gene's chr not on interval ({test_size_2} unique nodes)")
 
 		process_end = time.time()
 		print(
@@ -397,11 +420,16 @@ class Graph:
 				
 		# perform significance testing on edges
 		p_start = time.time()
+		na_counter = 0
 		for edge in self.edges:
 			self.perform_tests(edge)
+			if edge['p_values'] == [-1,-1,-1,-1]:
+				na_counter += 1
 		print(
 			f"Performing significance tests took {time.time() - p_start:.4f} seconds")
-
+		print(
+			f"P-values were not assigned to {na_counter} edges")
+		
 		# calculate q-values for each test
 		q_start = time.time()
 		p_lists = [[] for _ in range(4)]
@@ -460,6 +488,10 @@ class Graph:
 		if not record_a['location'] or not record_b['location']:
 			return
 		
+		# test
+		if record_a.get('genes_with_chr_no_interval_counter') or record_a.get('genes_with_no_chr_match_counter') or record_b.get('genes_with_chr_no_interval_counter') or record_b.get('genes_with_no_chr_match_counter'):
+			edge['missing_interval_data'] = True
+
 		samples = list(edge['inter'])
 		tested = [False, False, False, False]
 
@@ -471,9 +503,19 @@ class Graph:
 			intervals_b = record_b['intervals'][samples[i]]
 			features_ab = set(intervals_a.keys()) & set(intervals_b.keys())
 
+			if len(features_ab) > 1:
+				print('Note: unexpected number of shared features in sample')
+
 			same_chr = record_a['location'][0] == record_b['location'][0]
 			same_feature = len(features_ab) > 0
-			same_interval = any(intervals_a[f] == intervals_b[f] for f in features_ab)
+			same_interval = any(intervals_a[f] == intervals_b[f] 
+								for f in features_ab 
+								if intervals_a[f] is not None 
+								and intervals_b[f] is not None)
+			diff_interval = any(intervals_a[f] != intervals_b[f] 
+								for f in features_ab 
+								if intervals_a[f] is not None 
+								and intervals_b[f] is not None)
 
 			# [0] single interval test
 			if not tested[0] and same_interval:
@@ -483,7 +525,7 @@ class Graph:
 				tested[0] = True
 
 			# [1] multi interval test
-			if not tested[1] and same_chr and same_feature and not same_interval:
+			if not tested[1] and same_chr and same_feature and diff_interval:
 				p_value, odds_ratio = self.multi_interval(edge, record_a, record_b)
 				edge['p_values'][1] = p_value
 				edge['odds_ratios'][1] = odds_ratio
@@ -504,7 +546,6 @@ class Graph:
 				tested[3] = True
 
 			i += 1
-			break
 
 	def chi_squared_helper(self, obs, exp):
 		# apply Haldane correction if any observed category count is zero

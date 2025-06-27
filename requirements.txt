@@ -33,6 +33,7 @@ GEOparse==2.0.3
 grappelli-safe==1.1.1
 idna==3.3
 importlib-metadata==5.0.0
+ipykernel==6.29.5
 itsdangerous==2.1.2
 Jinja2==3.1.2
 joblib==1.2.0
@@ -60,6 +61,7 @@ pymongo==3.12.1
 pyparsing==3.0.9
 pyrsistent==0.19.2
 python-dateutil==2.8.2
+python-dotenv==1.0.1
 python3-openid==3.2.0
 pytz==2022.1
 pytz-deprecation-shim==0.1.0.post0
