@@ -2243,6 +2243,34 @@ def admin_permanent_delete_project(project_id, project, project_name):
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to
 # deny that this might even be a valid URL
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_delete_user(request):
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    error_message = ""
+    solo_projects = []  # Initialize with a default value
+    member_projects = []  # Initialize with a default value
+    username = ""
+    
+    if request.method == "POST":
+        username = request.POST.get("user_name", "")
+        logging.error("POST to delete user")
+       
+        #deleted_projects = list(collection_handle.find({'delete': True, 'current': True}))
+    
+    
+    
+    return render(request, 'pages/admin_delete_user.html',
+                      {'username': username,
+                          'solo_projects': solo_projects, 
+                       'member_projects': member_projects ,
+                       'error_message': error_message})
+
+
+
+
+# only allow users designated as staff to see this, otherwise redirect to nonexistant page to
+# deny that this might even be a valid URL
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_delete_project(request):
     if not request.user.is_staff:
         return redirect('/accounts/logout')

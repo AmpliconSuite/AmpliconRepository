@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        // Adjust DataTables columns when tabs are shown
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+        });
+
+        // Initialize DataTables with a custom search placeholder
+        $('table.table').DataTable({
+            language: {
+                searchPlaceholder: "Search deleted projects"
+            }
+        });
+
+        // Handle message display logic
+        let message_to_user = "{{ error_message }}";
+        if (message_to_user.length > 0) {
+            $('#message_to_user').text(message_to_user);
+
+            if (message_to_user.includes("Problem")) {
+                $("#message_dialog").addClass("alert-warning");
+                $("#message_dialog").removeClass("alert-success");
+            }
+            $("#message_dialog").show();
+        } else {
+            document.getElementById("message_dialog").style.display = "none";
+        }
+
+       
+    });
+</script>
+{% endblock %}
+
+{% block meta_title %} Home
+{% endblock %}
+
+{% block main %}
+<head>
+    <title>
+        AmpliconRepository
+    </title>
+</head>
+
+<div id="message_dialog" class="alert alert-success" role="alert" style="display:none">
+<span id="message_to_user">default text</span>
+<button type="button" class="close" data-dismiss="alert" aria-label="Close">
+    <span aria-hidden="true">&times;</span>
+  </button>
+</div>
+
+
+<div class="row">
+    <div class="col-md-8">
+        <div>
+            <h1 style="padding-top: 50px">Delete User</h1>
+
+            <hr>
+            <div style="margin-top: 30px">
+                <p>Permanently delete a user account.<br/>
+                Solo private projects owned by the user will be permanently deleted.<br/>
+                Public solo projects owned by the user will be transferred to an admin user.<br/>
+                Projects that are shared with other users will have this user removed from their teams.</p>
+
+            </div>
+        </div>
+    </div>
+</div>
+    <div class="row">
+        <div class="col-md-12">
+        <div>
+              
+            
+
+            {% if username %}
+            <div id="delete_user_form_container" >
+                <form id="form__delete_user" action="/admin-delete-user/" method="post">
+                    {% csrf_token %}
+                    <p>Are you sure you want to delete the selected user?</p>
+                    <input id="delete_user_name" type="hidden" name="user_name" value="{{ username }}"/>
+                    <input type="hidden" name="action" value="delete_user" />
+                    <input id="delete_user_button" type="submit" value="Delete User '{{ username }}' " class="btn btn-danger" />
+                </form>
+            </div>
+            {% else %}
+            <div style="display: block">
+                <form id="form__select_user" action="/admin-delete-user/" method="post">
+                    {% csrf_token %}
+                    <label for="user_name">Select User:</label>
+                    <input id="user_name" type="text" name="user_name" value="{{ username }}" required /><br />
+                    <input type="hidden" name="action" value="select_user" />
+                    <input id="select_user_button" type="submit" value="Select User" class="btn btn-primary" />
+                </form>
+            </div>
+            {% endif %}
+            
+
+        </div>
+        
+
+        <style>
+            .nav-tabs .nav-link {
+                color: gray;
+                border: 0;
+                border-bottom: 1px solid grey;
+            }
+            
+            .nav-tabs .nav-link:hover {
+                border: 0;
+                border-bottom: 1px solid grey;
+            }
+            
+            .nav-tabs .nav-link.active {
+                color: #000000;
+                border: 0;
+                border-radius: 0;
+                border-bottom: 2px solid  #0275d8 ;
+            }
+            </style>
+
+        {% if username %}
+        <div style="margin-top:20px">
+            <h4>Solo projects for {{ username }} </h4>
+            <p>Projects will be deleted unless public, then they will be reassigned to an admin.</p>
+            <div class="tab-content" style="padding-top: 30px;">
+                <div class="tab-pane active" id="tab-table0">
+                    <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
+                        <thead>
+                            <tr>
+                               
+                                <th>Creator</th>
+                               
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Deleted on</th>
+                                <th>Project Members</th>
+                                <th>Tarfile Size</th>
+                               
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in solo_projects %}
+                            <tr>
+                                <td>{{ project.creator }}</td>
+                                <td>{{ project.project_name }}</td>
+                                <td>{{ project.description }}</td>
+                                <td>{{ project.delete_date }}</td>
+                                <td>{% for person in project.project_members %}
+                                    {{ person }}<br>
+                                {% endfor%}</td>
+                                <td>{{ project.tar_file_len }}</td>
+                           </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+
+            </div> 
+        </div>
+            
+        
+        <div style="margin-top:20px;">
+            <h4>Member projects for {{ username  }} </h4>
+            <p>Projects will be retained, user will be removed from project members.</p>
+            <div class="tab-content" style="padding-top: 30px;">
+
+                <div class="tab-pane active" id="tab-table0">
+                    <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
+                        <thead>
+                            <tr>
+                               
+                                <th>Creator</th>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Deleted on</th>
+                                <th>Project Members</th>
+                                <th>Tarfile Size</th>
+                               
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in member_projects %}
+                            <tr>
+                                <td>{{ project.creator }}</td>
+                                <td>{{ project.project_name }}</td>
+                                <td>{{ project.description }}</td>
+                                <td>{{ project.delete_date }}</td>
+                                <td>{% for person in project.project_members %}
+                                    {{ person }}<br>
+                                {% endfor%}</td>
+                                <td>{{ project.tar_file_len }}</td>
+                           </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+
+            </div> 
+        </div>    
+        {% endif %}    
+    </div>
+
+</div>
+
+
+{% endblock %}
