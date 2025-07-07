@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import user_passes_test, login_required
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
+from django.contrib.auth.models import User
 
 ## API framework packages
 from rest_framework.response import Response
@@ -2260,7 +2261,6 @@ def admin_delete_user(request):
     if request.method == "POST":
         username = request.POST.get("user_name", "")
         action = request.POST.get("action", "select_user")
-        logging.error("POST to delete user")
        
         if action == 'select_user':
             solo_projects = list(collection_handle.find({ 'current': True, 'project_members': [username] }))
@@ -2272,7 +2272,61 @@ def admin_delete_user(request):
             }))
             
         elif action == 'delete_user':
-            error_message="user " + username + " deleted." 
+            
+            # for solo projects that are private, delete them
+            solo_projects = list(collection_handle.find({'project_members': [username]}))
+            
+            for project in solo_projects:
+                project_name = project['project_name']
+                project_id = project['_id']
+
+                # delete the project
+                if project['private']:
+                    error_message += f"User {username} deleted, project {project_name} was private and deleted. "
+                    error_message += admin_permanent_delete_project(project_id, project, project_name)
+                else:
+                    # replace username as owner with 'jluebeck' if a user exists by that name
+                    # or by an admin user
+                    query = {'_id': ObjectId(project_id)}
+                    # check if user jluebeck exists
+                    anAdmin = 'admin'
+                    if User.objects.filter(username='jluebeck').exists():
+                        anAdmin = 'jluebeck'
+                    else:
+                        # replace with admin user
+                        if User.objects.filter(is_staff=True).exists():
+                            anAdmin = User.objects.filter(is_staff=True).first().username
+                    new_val = {"$set": {'project_members': [anAdmin]}}
+                    error_message += f"User {username} deleted, project {project_name} was public and reassigned to {anAdmin}. "
+                    collection_handle.update_one(query, new_val)
+                    
+                      
+                
+            
+            # for member projects, remove the user from the project members
+            member_projects = list(collection_handle.find({
+                'current': True,
+                'project_members': {'$all': [username]},
+                '$expr': {'$gt': [{'$size': '$project_members'}, 1]}  # Ensure the array size is greater than 1
+            }))
+            for project in member_projects:
+                project_name = project['project_name']
+                project_id = project['_id']
+                query = {'_id': ObjectId(project_id)}
+                new_val = {"$pull": {'project_members': username}}
+                collection_handle.update_one(query, new_val)
+                error_message += f"User {username} removed from project {project_name}. "
+            # delete the user
+            try:
+                user = User.objects.get(username=username)
+                user.delete()
+                error_message += f"User {username} deleted successfully."
+            except User.DoesNotExist:
+                error_message += f"User {username} does not exist."
+                
+            solo_projects = []
+            member_projects=[]
+                
     
     return render(request, 'pages/admin_delete_user.html',
                       {'username': username,
