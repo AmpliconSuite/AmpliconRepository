@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import user_passes_test, login_required
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
+
 ## API framework packages
 from rest_framework.response import Response
 
@@ -1646,7 +1647,12 @@ def edit_project_page(request, project_name):
         old_membership = project['project_members']
         old_privacy = project['private']
         new_privacy = form_dict['private']
-        notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
+        
+        try:
+            notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
+        except:
+            print("Failed to notify users of project membership change")
+            #error_message = "Failed to notify users of project membership change. Please check your email settings."
 
         ## check multi files, send files to GP and run aggregator there:
         file_fps = []
@@ -2253,11 +2259,20 @@ def admin_delete_user(request):
     
     if request.method == "POST":
         username = request.POST.get("user_name", "")
+        action = request.POST.get("action", "select_user")
         logging.error("POST to delete user")
        
-        #deleted_projects = list(collection_handle.find({'delete': True, 'current': True}))
-    
-    
+        if action == 'select_user':
+            solo_projects = list(collection_handle.find({ 'current': True, 'project_members': [username] }))
+            # Member projects: username is one of the members, but not the only one
+            member_projects = list(collection_handle.find({
+                'current': True,
+                'project_members': {'$all': [username]},
+                '$expr': {'$gt': [{'$size': '$project_members'}, 1]}  # Ensure the array size is greater than 1
+            }))
+            
+        elif action == 'delete_user':
+            error_message="user " + username + " deleted." 
     
     return render(request, 'pages/admin_delete_user.html',
                       {'username': username,

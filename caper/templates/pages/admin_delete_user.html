@@ -132,12 +132,12 @@
                             <tr>
                                
                                 <th>Creator</th>
-                               
+                              
                                 <th>Name</th>
                                 <th>Description</th>
                                 <th>Deleted on</th>
                                 <th>Project Members</th>
-                                <th>Tarfile Size</th>
+                                <th>Public?</th>
                                
                             </tr>
                         </thead>
@@ -151,7 +151,7 @@
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor%}</td>
-                                <td>{{ project.tar_file_len }}</td>
+                                <td>{% if project.private %}<i>private</i>{% else %}<b>PUBLIC</b>{% endif %}</td>
                            </tr>
                             {% endfor %}
                         </tbody>
@@ -178,7 +178,7 @@
                                 <th>Description</th>
                                 <th>Deleted on</th>
                                 <th>Project Members</th>
-                                <th>Tarfile Size</th>
+                               
                                
                             </tr>
                         </thead>
@@ -192,7 +192,7 @@
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor%}</td>
-                                <td>{{ project.tar_file_len }}</td>
+                               
                            </tr>
                             {% endfor %}
                         </tbody>
