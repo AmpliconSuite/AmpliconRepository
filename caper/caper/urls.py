@@ -73,6 +73,8 @@ urlpatterns += [
     path('project/<str:project_id>/process_metadata', views.process_metadata, name='process_metadata'),
     path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
     path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),
+    path('admin-delete-user/', views.admin_delete_user, name='admin_delete_user'),
+
     path('data-qc/', views.data_qc, name='data_qc'),
     path('data-qc/change-database-dates', views.change_database_dates, name='change_database_dates'),
     path('data-qc/update_sample_counts', views.update_sample_counts, name='update_sample_counts'),
