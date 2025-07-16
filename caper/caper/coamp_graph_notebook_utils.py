@@ -48,6 +48,18 @@ db_handle_primary, mongo_client_primary = get_db_handle(os.getenv('DB_NAME', def
 collection_handle = get_collection_handle(db_handle,'projects')
 collection_handle_primary = get_collection_handle(db_handle_primary,'projects')
 
+def get_all_alias():
+    """
+    Gets all alias names in the db
+    """
+    return collection_handle.distinct('alias_name')
+
+def get_all_projects():
+    """
+    Gets all alias names in the db
+    """
+    return collection_handle.distinct('project_name')
+
 def get_one_project(project_name_or_uuid):
     """
     Gets one project from name or UUID. 

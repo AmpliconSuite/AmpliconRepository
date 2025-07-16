@@ -12,7 +12,7 @@ from statsmodels.stats.multitest import fdrcorrection
 
 class Graph:
 
-	def __init__(self, dataset=None, focal_amp="ecDNA", by_sample=False):
+	def __init__(self, dataset=None, focal_amp="ecDNA", by_sample=False, merge_cutoff=50000, construct_graph=True):
 		"""
         Parameters:
             self (Graph) : Graph object
@@ -25,6 +25,9 @@ class Graph:
 		if dataset is None:
 			print("Error: provide Amplicon Architect annotations")
 		else:
+			# processing parameters
+			self.MERGE_CUTOFF = merge_cutoff
+
 			# graph properties
 			self.nodes = []
 			self.edges = []
@@ -59,11 +62,12 @@ class Graph:
 			preprocessed_dataset = self.preprocess_dataset(dataset, focal_amp)
 			self.total_samples = len(preprocessed_dataset)
 
-			self.test_preprocessed_dataset = preprocessed_dataset
+			self.preprocessed_dataset = preprocessed_dataset
 
 			# create nodes and edges from the combined dataset
-			self.create_nodes(preprocessed_dataset)
-			self.create_edges(by_sample)
+			if construct_graph:
+				self.create_nodes(preprocessed_dataset)
+				self.create_edges(by_sample)
 
 	def get_gene_bed_path(self, reference_genome):
 		"""
@@ -174,11 +178,10 @@ class Graph:
 		"""
 		Parameters: 
 			location (str): 'Location' column of one feature in input dataset
-			MERGE_CUTOFF (int): merge intervals < cutoff distance (bp)
+			self.MERGE_CUTOFF (int): merge intervals < cutoff distance (bp)
 		Return: 
 			merged_intervals (list): list of intervals as lists of chr,start,end
 		"""
-		MERGE_CUTOFF=50000
 		merged_intervals = []
 
 		# find all matches of chr:start-end
@@ -194,7 +197,7 @@ class Graph:
 			if i == len(matches) - 1:
 				merged_intervals.append(curr_interval)
 			# if this interval can be merged with the next, extend the current interval
-			elif matches[i][0] == matches[i+1][0] and matches[i+1][1] - matches[i][2] <= MERGE_CUTOFF:
+			elif matches[i][0] == matches[i+1][0] and matches[i+1][1] - matches[i][2] <= self.MERGE_CUTOFF:
 				curr_interval[2] = matches[i+1][2]
 			# otherwise add the current interval and reset
 			else:
@@ -598,7 +601,7 @@ class Graph:
 		return self.chi_squared_helper(obs, exp)
 
 	def multi_interval(self, edge, record_a, record_b):
-		M_SAME_CHR = 0.275405
+		# M_SAME_CHR = 0.275405
 
 		pdD = edge['p_d_D']
 		geneA_samples = len(record_a['samples'])
@@ -613,7 +616,8 @@ class Graph:
 		obs = [O11, O12, O21, O22]
 		
 		# expected
-		E11 = (geneA_samples) * (geneB_samples) * ((1-pdD)**2) * (M_SAME_CHR)
+		E11 = (geneA_samples) * (geneB_samples) * ((1-pdD)**2) 
+		# E11 = E11 * M_SAME_CHR
 		E12 = geneA_samples * (self.total_samples - geneB_samples)
 		E21 = geneB_samples * (self.total_samples - geneA_samples)
 		E22 = (self.total_samples - geneA_samples) * (self.total_samples - geneB_samples)
