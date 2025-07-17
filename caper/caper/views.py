@@ -51,8 +51,7 @@ from django.utils.safestring import mark_safe
 from .view_download_stats import *
 
 ## aggregator
-from .aggregator_main import *
-# from AmpliconSuiteAggregator import *
+from AmpliconSuiteAggregator import *
 
 # search
 from .search import *
