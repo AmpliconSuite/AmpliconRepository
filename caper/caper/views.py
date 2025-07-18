@@ -2265,11 +2265,14 @@ def admin_delete_user(request):
         if action == 'select_user':
             solo_projects = list(collection_handle.find({ 'current': True, 'project_members': [username] }))
             # Member projects: username is one of the members, but not the only one
+            # Query for projects where the username is in the project_members array
             member_projects = list(collection_handle.find({
                 'current': True,
-                'project_members': {'$all': [username]},
-                '$expr': {'$gt': [{'$size': '$project_members'}, 1]}  # Ensure the array size is greater than 1
+                'project_members': {'$all': [username]}
             }))
+
+            # Filter the results to ensure the project_members array has more than one member
+            member_projects = [project for project in member_projects if len(project.get('project_members', [])) > 1]
             
         elif action == 'delete_user':
             
