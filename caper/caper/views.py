@@ -53,8 +53,7 @@ from django.utils.safestring import mark_safe
 from .view_download_stats import *
 
 ## aggregator
-from .aggregator_main import *
-# from AmpliconSuiteAggregatorFunctions import *
+from AmpliconSuiteAggregator import *
 
 # search
 from .search import *
@@ -1685,8 +1684,9 @@ def edit_project_page(request, project_name):
                     file_fps.append(os.path.join('download.tar.gz'))
                 # print(f"AFTERS FILE FPS LIST: {file_fps}")
                 # print(f'aggregating on: {file_fps}')
-                agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = f'{temp_proj_id}')
-                if agg.complete != True:
+                temp_directory = os.path.join('./tmp/', str(temp_proj_id))
+                agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
+                if not agg.completed:
                     ## redirect to edit page if aggregator fails
                     alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
                     return render(request, 'pages/edit_project.html',
@@ -2422,8 +2422,10 @@ def create_project(request):
             fp = os.path.join(project_data_path, file.name)
             file_fps.append(file.name)
             file.close()
-        agg = Aggregator(file_fps, project_data_path, 'No', "", 'python3', output_directory = f'{temp_proj_id}')
-        if agg.complete != True:
+
+        temp_directory = os.path.join('./tmp/', str(temp_proj_id))
+        agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
+        if not agg.completed:
             ## redirect to edit page if aggregator fails
             alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
             return render(request, 'pages/create_project.html',
@@ -2546,6 +2548,8 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     ti = time.time()
     failed = False
     # print(f'{file_location}')
+    logging.debug("FILE LOCATION EXISTS: " + str(os.path.exists(file_location)))
+    logging.debug("PROJECT LOCATION EXISTS: " + str(os.path.exists(project_data_path)))
     with tarfile.open(file_location, 'r') as tar:
         try:
             # run_location = [run for run in tar.getnames() if 'run.json' in run]
