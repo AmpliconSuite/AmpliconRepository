@@ -2307,11 +2307,13 @@ def admin_delete_user(request):
                 
             
             # for member projects, remove the user from the project members
-            member_projects = list(collection_handle.find({
-                'current': True,
-                'project_members': {'$all': [username]},
-                '$expr': {'$gt': [{'$size': '$project_members'}, 1]}  # Ensure the array size is greater than 1
-            }))
+            member_projects = [
+                project for project in collection_handle.find({
+                    'current': True,
+                    'project_members': {'$all': [username]}
+                })
+                if len(project.get('project_members', [])) > 1  # Ensure the array size is greater than 1
+            ]
             for project in member_projects:
                 project_name = project['project_name']
                 project_id = project['_id']
