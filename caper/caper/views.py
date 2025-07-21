@@ -2672,7 +2672,39 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['downloads'] = previous_views[1]
     project['alias_name'] = form_dict['alias']
     project['sample_count'] = len(runs)
+    
+    # iterate over project['runs'] and get the unique values across all runs
+    # of AA_version, AC_version and 'AS-P_version'. Then add them to the project dict
+    #substututing ASP_version for AS-P_version
+    aa_versions = set()
+    ac_versions = set()
+        
+    asp_versions = set()
+    for sample, features in runs.items():
+        for feature in features:
+            if 'AA version' in feature:
+                aa_versions.add(feature['AA version'])
+            if 'AC version' in feature:
+                ac_versions.add(feature['AC version'])
+            if 'AS-p version' in feature:
+                asp_versions.add(feature['AS-p version'])
+
+    project['AA_version'] = process_version_set(aa_versions)
+    project['AC_version'] = process_version_set(ac_versions)
+    project['ASP_version'] = process_version_set(asp_versions)
+    
     return project, tmp_id
+
+def process_version_set(version_set):
+    """Return 'NA' if only None, the value if one, or comma-separated if multiple."""
+    version_list = [v for v in version_set if v is not None]
+    if not version_list:
+        return 'NA'
+    elif len(version_list) == 1:
+        return str(version_list[0])
+    else:
+        return ', '.join(str(v) for v in version_list)
+
 
 class FileUploadView(APIView):
     parser_class = (MultiPartParser,)
