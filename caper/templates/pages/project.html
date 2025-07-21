@@ -288,6 +288,35 @@
             }
         </style>
 
+        <div class="card-header" id="headingToolVersions">
+            <h4 class="mb-0">
+                <button class="btn btn-link collapsed" type="button" data-toggle="collapse" data-target="#collapseToolVersions" aria-expanded="false" aria-controls="collapseToolVersions" style="padding: 0.25rem 0.5rem; font-weight: bold;">
+                    Tool versions 
+                </button>
+            </h4>
+        </div>
+        <div id="collapseToolVersions" class="collapse" aria-labelledby="headingToolVersions" data-parent="#accordion">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <th scope="col">AS-p</th>
+                            <th scope="col">AA</th>
+                            <th scope="col">AC</th>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td scope="row">{{ project.ASP_version |default:"NA"  }}</td>
+                                <td scope="row">{{ project.AA_version |default:"NA" }}</td>
+                                <td scope="row">{{ project.AC_version |default:"NA"  }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    
+    
         <div class="card-header" id="headingPrevVersions">
             <h4 class="mb-0">
                 <button class="btn btn-link collapsed" type="button" data-toggle="collapse" data-target="#collapsePrevVersions" aria-expanded="false" aria-controls="collapsePrevVersions" style="padding: 0.25rem 0.5rem; font-weight: bold;">
@@ -304,6 +333,10 @@
                         <thead>
                             <th scope="col">Date Created</th>
                             <th scope="col">Version</th>
+                            <th scope="col">AS-p</th>
+                            <th scope="col">AA</th>
+                            <th scope="col">AC</th>
+                            
                             <th scope="col">Download</th>
                         </thead>
                         <tbody>
@@ -317,6 +350,9 @@
                                         <strong>(Currently viewing)</strong>
                                     {% endif %}
                                 </td>
+                                <td scope="row">{{ version.ASP_version }}</td>
+                                <td scope="row">{{ version.AA_version }}</td>
+                                <td scope="row">{{ version.AC_version }}</td>
                                 <td scope="row">
                                     <a class="btn btn-primary" href="/project/{{ version.linkid }}/download" style="color: white; margin-bottom: 12px;">Download version</a>
                                 </td>
