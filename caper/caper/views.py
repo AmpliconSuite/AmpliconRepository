@@ -1844,9 +1844,9 @@ def edit_project_page(request, project_name):
         memberString = ', '.join(members)
 
         
-        AAVersion="NA"
-        ACVersion="NA"
-        ASPVersion="NA"
+        AAVersion=project.get('AA_version', 'NA')
+        ACVersion=project.get('AC_version', 'NA')
+        ASPVersion=project.get('ASP_version', 'NA')
         
         form = UpdateForm(initial={"project_name": project['project_name'],
                                    "description": project['description'],
