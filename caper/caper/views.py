@@ -2182,13 +2182,22 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         feature[k] = id_var
 
         # Now update the project with the updated runs
-        get_one_project(project_id)
+        project = get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
         if extra_metadata_filepath:
             runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath)
 
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
+        
+        logging.error("project is "+ str(project))
+        
+        get_tool_versions(project, runs)
+        version_keys = ['AA_version', 'AC_version', 'ASP_version']
+        tool_versions = {k: project[k] for k in version_keys if k in project}
+        
+        
+        new_val["$set"].update(tool_versions)
 
         collection_handle.update_one(query, new_val)
         t_sb = time.time()
@@ -2676,10 +2685,22 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     # iterate over project['runs'] and get the unique values across all runs
     # of AA_version, AC_version and 'AS-P_version'. Then add them to the project dict
     #substututing ASP_version for AS-P_version
-    aa_versions = set()
-    ac_versions = set()
-        
-    asp_versions = set()
+    get_tool_versions(project, runs)
+
+    return project, tmp_id
+
+
+def get_tool_versions(project, runs):
+    def get_existing_versions(key):
+        val = project.get(key)
+        if val and isinstance(val, str) and val != 'NA':
+            return set(map(str.strip, val.split(',')))
+        return set()
+
+    aa_versions = get_existing_versions('AA_version')
+    ac_versions = get_existing_versions('AC_version')
+    asp_versions = get_existing_versions('ASP_version')
+    
     for sample, features in runs.items():
         for feature in features:
             if 'AA version' in feature:
@@ -2688,12 +2709,10 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
                 ac_versions.add(feature['AC version'])
             if 'AS-p version' in feature:
                 asp_versions.add(feature['AS-p version'])
-
     project['AA_version'] = process_version_set(aa_versions)
     project['AC_version'] = process_version_set(ac_versions)
     project['ASP_version'] = process_version_set(asp_versions)
-    
-    return project, tmp_id
+
 
 def process_version_set(version_set):
     """Return 'NA' if only None, the value if one, or comma-separated if multiple."""
