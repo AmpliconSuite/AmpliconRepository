@@ -2190,7 +2190,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
         
-        logging.error("project is "+ str(project))
+        # logging.error("project is "+ str(project))
         
         get_tool_versions(project, runs)
         version_keys = ['AA_version', 'AC_version', 'ASP_version']
