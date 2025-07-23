@@ -60,17 +60,17 @@ class UpdateForm(forms.ModelForm):
     )
     ASP_version = forms.CharField(
         required=False,
-        label="AS-p Version(s)",
+        label="AmpliconSuite-pipeline version(s)",
         widget=forms.TextInput(),
     )
     AA_version = forms.CharField(
         required=False,
-        label="AA Version(s)",
+        label="AmpliconArchitect version(s)",
         widget=forms.TextInput(),
     )
     AC_version = forms.CharField(
         required=False,
-        label="AC Version(s)",
+        label="AmpliconClassifier version(s)",
         widget=forms.TextInput(),
     )
 
