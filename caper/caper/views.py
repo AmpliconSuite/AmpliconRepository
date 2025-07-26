@@ -9,6 +9,7 @@ from django.contrib.auth.models import User
 
 ## API framework packages
 from rest_framework.response import Response
+from werkzeug.debug import console
 
 from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
 from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
@@ -54,6 +55,7 @@ from .view_download_stats import *
 
 ## aggregator
 from AmpliconSuiteAggregator import *
+import AmpliconSuiteAggregator
 
 # search
 from .search import *
@@ -554,18 +556,38 @@ def previous_versions(project):
     res = []
     msg = None
     # print(project['_id'])
-
+    logging.error(f"Getting previous versions for project {project['_id']}")
     ### Accessing a previous version of a project.
     ## looking for the old link in the previous project. Will output something if
     ## we are trying to access an older project
+    #cursor = collection_handle.find(
+    #    {'current': True, 'previous_versions.linkid' : str(project['_id'])}, {'date': 1, 'previous_versions':1}).sort('date', -1)
+    #data = list(cursor)
+    fields = ['date', 'previous_versions', 'AC_version', 'AA_version', 'AP_version']
     cursor = collection_handle.find(
-        {'current': True, 'previous_versions.linkid' : str(project['_id'])}, {'date': 1, 'previous_versions':1}).sort('date', -1)
-    data = list(cursor)
+        {'current': True, 'previous_versions.linkid': str(project['_id'])},
+        {field: 1 for field in fields}
+    ).sort('date', -1)
+    data = []
+    for doc in cursor:
+        logging.error(f" RES FOR  {project['_id']}")
+        for field in ['AC_version', 'AA_version', 'AP_version']:
+            if field not in doc:
+                doc[field] = 'NA'
+                logging.error(f"Field {field} not found in document, setting to 'NA'")
+            else:
+                logging.error(f"Field {field} found in document, setting to 'NA'")
+                
+        data.append(doc)
+    
     cursor.close()
     if len(data) == 1:
         res = data[0]['previous_versions']
         res.append({'date': data[0]['date'],
-                    'linkid' : str(data[0]['_id'])})
+                    'linkid' : str(data[0]['_id']),
+                    'AC_version': data[0].get('AC_version', 'NA'),
+                    'AA_version': data[0].get('AA_version', 'NA'),
+                    'ASP_version': data[0].get('ASP_version', 'NA')})
         res.reverse()
         msg = f"Viewing an older version of the project. View latest version <a href = '/project/{str(data[0]['_id'])}'>here</a>"
 
@@ -577,7 +599,11 @@ def previous_versions(project):
         # add current main version to the list
 
         res.append({'date': project['date'],
-                    'linkid':str(project['linkid'])})
+                    'linkid':str(project['linkid']),
+                    'AC_version': project.get('AC_version', 'NA'),
+                    'AA_version': project.get('AA_version', 'NA'),
+                    'ASP_version': project.get('ASP_version', 'NA')
+                    })
         res.reverse()
 
     return res, msg
@@ -1782,6 +1808,14 @@ def edit_project_page(request, project_name):
                                  'publication_link': form_dict['publication_link'],
                                  'Oncogenes': get_project_oncogenes(current_runs),
                                  'alias_name' : alias_name}}
+            
+            # After form_dict is created and before new_val is defined
+            for version_field in ['ASP_version', 'AA_version', 'AC_version']:
+                value = form.cleaned_data.get(version_field, 'NA').strip()
+                if value and value != 'NA':
+                    # Add to new_val to be saved in mongo
+                    new_val.setdefault('$set', {})[version_field] = value
+            
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
                 edit_proj_privacy(project, old_privacy, new_privacy)
@@ -1793,6 +1827,7 @@ def edit_project_page(request, project_name):
         else:
             return HttpResponse("Project does not exist")
     else:
+        # get method handling
         project = get_one_project(project_name)
         prev_versions, prev_ver_msg = previous_versions(project)
         if prev_ver_msg:
@@ -1807,7 +1842,20 @@ def edit_project_page(request, project_name):
             publication_link = None
         members = [i for i in members if i]
         memberString = ', '.join(members)
-        form = UpdateForm(initial={"project_name": project['project_name'],"description": project['description'],"private":project['private'],"project_members": memberString,"publication_link": publication_link})
+
+        
+        AAVersion=project.get('AA_version', 'NA')
+        ACVersion=project.get('AC_version', 'NA')
+        ASPVersion=project.get('ASP_version', 'NA')
+        
+        form = UpdateForm(initial={"project_name": project['project_name'],
+                                   "description": project['description'],
+                                   "private":project['private'],
+                                   "project_members": memberString,
+                                   "publication_link": publication_link,  
+                                   "AA_version": AAVersion,
+                                   "ASP_version": ASPVersion,
+                                   "AC_version": ACVersion })
 
     return render(request, "pages/edit_project.html",
                   {'project': project,
@@ -2134,13 +2182,22 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         feature[k] = id_var
 
         # Now update the project with the updated runs
-        get_one_project(project_id)
+        project = get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
         if extra_metadata_filepath:
             runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath)
 
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
+        
+        # logging.error("project is "+ str(project))
+        
+        get_tool_versions(project, runs)
+        version_keys = ['AA_version', 'AC_version', 'ASP_version']
+        tool_versions = {k: project[k] for k in version_keys if k in project}
+        
+        
+        new_val["$set"].update(tool_versions)
 
         collection_handle.update_one(query, new_val)
         t_sb = time.time()
@@ -2429,6 +2486,15 @@ def create_project(request):
             file.close()
 
         temp_directory = os.path.join('./tmp/', str(temp_proj_id))
+
+        print(AmpliconSuiteAggregator.__file__)
+        if hasattr(AmpliconSuiteAggregator, '__version__'):
+            print(f"AmpliconSuiteAggregator version: {AmpliconSuiteAggregator.__version__}")
+        elif hasattr(Aggregator, '__version__'):
+            print(f"Aggregator version: {Aggregator.__version__}")
+        else:
+            print("No version attribute found for Aggregator or AmpliconSuiteAggregator.")
+
         agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
         if not agg.completed:
             ## redirect to edit page if aggregator fails
@@ -2615,7 +2681,49 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['downloads'] = previous_views[1]
     project['alias_name'] = form_dict['alias']
     project['sample_count'] = len(runs)
+    
+    # iterate over project['runs'] and get the unique values across all runs
+    # of AA_version, AC_version and 'AS-P_version'. Then add them to the project dict
+    #substututing ASP_version for AS-P_version
+    get_tool_versions(project, runs)
+
     return project, tmp_id
+
+
+def get_tool_versions(project, runs):
+    def get_existing_versions(key):
+        val = project.get(key)
+        if val and isinstance(val, str) and val != 'NA':
+            return set(map(str.strip, val.split(',')))
+        return set()
+
+    aa_versions = get_existing_versions('AA_version')
+    ac_versions = get_existing_versions('AC_version')
+    asp_versions = get_existing_versions('ASP_version')
+    
+    for sample, features in runs.items():
+        for feature in features:
+            if 'AA version' in feature:
+                aa_versions.add(feature['AA version'])
+            if 'AC version' in feature:
+                ac_versions.add(feature['AC version'])
+            if 'AS-p version' in feature:
+                asp_versions.add(feature['AS-p version'])
+    project['AA_version'] = process_version_set(aa_versions)
+    project['AC_version'] = process_version_set(ac_versions)
+    project['ASP_version'] = process_version_set(asp_versions)
+
+
+def process_version_set(version_set):
+    """Return 'NA' if only None, the value if one, or comma-separated if multiple."""
+    version_list = [v for v in version_set if v is not None]
+    if not version_list:
+        return 'NA'
+    elif len(version_list) == 1:
+        return str(version_list[0])
+    else:
+        return ', '.join(str(v) for v in version_list)
+
 
 class FileUploadView(APIView):
     parser_class = (MultiPartParser,)
