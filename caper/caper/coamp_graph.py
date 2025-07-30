@@ -12,7 +12,7 @@ from statsmodels.stats.multitest import fdrcorrection
 
 class Graph:
 
-	def __init__(self, dataset=None, focal_amp="ecDNA", by_sample=False, merge_cutoff=50000, construct_graph=True):
+	def __init__(self, dataset=None, focal_amp="ecDNA", by_sample=False, merge_cutoff=50000, pdD_model='gamma_random_breakage', construct_graph=True):
 		"""
         Parameters:
             self (Graph) : Graph object
@@ -27,6 +27,7 @@ class Graph:
 		else:
 			# processing parameters
 			self.MERGE_CUTOFF = merge_cutoff
+			self.pdD_MODEL = pdD_model
 
 			# graph properties
 			self.nodes = []
@@ -461,7 +462,7 @@ class Graph:
 			distance = min(e_s, s_e)
 		return distance
 	
-	def p_d_D(self, distance, model='gamma_random_breakage'):
+	def p_d_D(self, distance):
 		"""
 		generate p_val based on naive random breakage model, considering distance
         but not number of incidents of co-amplification
@@ -470,8 +471,11 @@ class Graph:
 			return -1
 		models = { 'gamma_random_breakage': [0.3987543483729932,
 											 1.999999999999,
-											 1749495.5696758535] }
-		params = models[model]
+											 1749495.5696758535],
+				   'gamma_capped_5m': [0.4528058380301946,
+						               1.999999999999,
+									   1192794.3765480835] }
+		params = models[self.pdD_MODEL]
 		cdf = gamma.cdf(distance, a=params[0], loc=params[1], scale=params[2])
 		return 1 - cdf
 
