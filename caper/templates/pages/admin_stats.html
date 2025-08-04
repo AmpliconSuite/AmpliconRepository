@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 
 {% load mezzanine_tags %}
+{% load get_item %}
 {% block extra_js %}
 <script>
     $(document).ready(function () {
@@ -271,6 +272,8 @@
                                 <th>Email</th>
                                 <th>Joined</th>
                                 <th>Last Login</th>
+                                <th>Solo projects (Public/private)</th>
+                                <th>Details</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -280,6 +283,15 @@
                                 <td>{{ user.email }}</td>
                                 <td>{{ user.date_joined }}</td>
                                 <td>{{ user.last_login }}</td>
+                                <td>{{ user_stats|get_item:user.id|get_item:'solo_public_projects' }}/{{ user_stats|get_item:user.id|get_item:'solo_private_projects' }}</td>
+                                <td>
+                                    <form action="{% url 'admin_delete_user' %}" method="POST">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="user_name" value="{{ user.username }}">
+                                        <input type="hidden" name="action" value="select_user">
+                                        <button type="submit" class="btn btn-sm btn-info">Details</button>
+                                    </form>
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
