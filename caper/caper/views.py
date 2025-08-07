@@ -2022,16 +2022,52 @@ def admin_sendemail(request):
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_stats(request):
-    if not  request.user.is_staff:
+    if not request.user.is_staff:
         return redirect('/accounts/logout')
 
     # Get all user data
     User = get_user_model()
     users = User.objects.all()
 
-    # Get public and private project data
-    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
-    # public_projects = get_projects_close_cursor({'private': False, 'delete': False})
+    # Get all projects
+    all_projects = list(collection_handle.find({'delete': False}))
+
+    # Create a dictionary to store user stats
+    user_stats = {}
+
+    # For each user, count their private and public projects where they are the only member
+    for user in users:
+        username = user.username
+        email = user.email
+        user_id = user.id
+        
+        # Initialize counts for this user
+        solo_private_projects = 0
+        solo_public_projects = 0
+        
+        # Check each project
+        for project in all_projects:
+            project_members = project.get('project_members', [])
+            
+            # Check if user is a member (by username or email) and they're the only member
+            is_only_member = (len(project_members) == 1 and 
+                             (username in project_members or email in project_members))
+            
+            if is_only_member:
+                if project.get('private', False):
+                    solo_private_projects += 1
+                else:
+                    solo_public_projects += 1
+        
+        # Store the stats for this user
+        user_stats[user_id] = {
+            'solo_private_projects': solo_private_projects,
+            'solo_public_projects': solo_public_projects
+        }
+
+    # Get public project data for display
+    public_projects = [p for p in all_projects if not p.get('private', True)]
+
     for proj in public_projects:
         prepare_project_linkid(proj)
         if check_if_db_field_exists(proj, 'project_downloads'):
@@ -2048,30 +2084,37 @@ def admin_stats(request):
             sample_download_data = proj['sample_downloads']
             if isinstance(sample_download_data, int):
                 if sample_download_data > 0:
+                    # Migration for sample downloads format
                     temp_data = sample_download_data
                     sample_download_data = dict()
                     sample_download_data[get_date_short()] = temp_data
                     proj_id = proj['_id']
                     query = {'_id': ObjectId(proj_id)}
-                    new_val = { "$set": {'sample_downloads': sample_download_data} }
+                    new_val = {"$set": {'sample_downloads': sample_download_data}}
                     collection_handle.update_one(query, new_val)
-    # Calculate stats
-    # total_downloads = [project['project_downloads'] for project in public_projects]
 
+    # Calculate stats
     for project in public_projects:
         if 'project_downloads' in project:
-            project['project_downloads_sum'] = sum(project['project_downloads'].values())
+            # Process download stats
+            pass
         else:
-            project['project_downloads_sum'] = 0
+            project['project_downloads'] = {}
 
         if 'sample_downloads' in project:
-            project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
+            # Process sample download stats
+            pass
         else:
-            project['sample_downloads_sum'] = 0
+            project['sample_downloads'] = {}
 
     repo_stats = get_latest_site_statistics()
 
-    return render(request, 'pages/admin_stats.html', {'public_projects': public_projects, 'users': users, 'site_stats':repo_stats })
+    return render(request, 'pages/admin_stats.html', {
+        'public_projects': public_projects, 
+        'users': users, 
+        'user_stats': user_stats,
+        'site_stats': repo_stats
+    })
 
 # @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def user_stats_download(request):
