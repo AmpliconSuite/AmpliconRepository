@@ -3,9 +3,53 @@ source ./config.sh
 DATE=$(date +%Y%m%d)
 BACKUP_DIR="../backups"
 DB_PATH="./caper.sqlite3"
+BACKUP_FILE="$BACKUP_DIR/backup_$DATE.sqlite3"
 
 # Create backup with timestamp
-docker exec -it amplicon-${AMPLICON_ENV} sqlite3 $DB_PATH ".backup $BACKUP_DIR/backup_$DATE.sqlite3"
+#docker exec -it amplicon-${AMPLICON_ENV} sqlite3 $DB_PATH ".backup $BACKUP_DIR/backup_$DATE.sqlite3"
+
+
+# Check if a backup for today already exists (either compressed or uncompressed)
+if [ -f "$BACKUP_FILE" ] || [ -f "$BACKUP_FILE.gz" ]; then
+    echo "Backup for today already exists, incrementing version numbers"
+    
+    # Determine the highest version number
+    highest_version=0
+    for existing in $(find $BACKUP_DIR -name "backup_${DATE}.sqlite3*" | sort); do
+        if [[ "$existing" =~ \.([0-9]+)(\.gz)?$ ]] && [[ ! "$existing" =~ \.gz\.[0-9]+$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            if (( version > highest_version )); then
+                highest_version=$version
+            fi
+        fi
+    done
+    
+    # Rename files in reverse order (highest version first to avoid conflicts)
+    for current_version in $(seq $highest_version -1 1); do
+        # Handle compressed files
+        if [ -f "$BACKUP_DIR/backup_${DATE}.sqlite3.$current_version.gz" ]; then
+            new_version=$((current_version + 1))
+            mv "$BACKUP_DIR/backup_${DATE}.sqlite3.$current_version.gz" "$BACKUP_DIR/backup_${DATE}.sqlite3.$new_version.gz"
+        fi
+        
+        # Handle uncompressed files
+        if [ -f "$BACKUP_DIR/backup_${DATE}.sqlite3.$current_version" ]; then
+            new_version=$((current_version + 1))
+            mv "$BACKUP_DIR/backup_${DATE}.sqlite3.$current_version" "$BACKUP_DIR/backup_${DATE}.sqlite3.$new_version"
+        fi
+    done
+    
+    # Move the unversioned file to version 1
+    if [ -f "$BACKUP_FILE.gz" ]; then
+        mv "$BACKUP_FILE.gz" "$BACKUP_FILE.1.gz"
+    fi
+    if [ -f "$BACKUP_FILE" ]; then
+        mv "$BACKUP_FILE" "$BACKUP_FILE.1"
+    fi
+fi
+
+# Create the new backup
+docker exec -it amplicon-${AMPLICON_ENV} sqlite3 $DB_PATH ".backup $BACKUP_FILE"
 
 # Compress the backup
 gzip $BACKUP_DIR/backup_$DATE.sqlite3
