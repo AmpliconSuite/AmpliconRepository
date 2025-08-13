@@ -1712,8 +1712,11 @@ def edit_project_page(request, project_name):
                 # print(f'aggregating on: {file_fps}')
                 temp_directory = os.path.join('./tmp/', str(temp_proj_id))
                 agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
+                
                 if not agg.completed:
                     ## redirect to edit page if aggregator fails
+                    if os.path.exists(temp_directory):
+                        shutil.rmtree(temp_directory)
                     alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
                     return render(request, 'pages/edit_project.html',
                               {'project': project,
@@ -1765,6 +1768,9 @@ def edit_project_page(request, project_name):
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
             ## get extra metadata from csv first (if exists in old project), add it to the new proj
             new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions = new_prev_versions, previous_views = [views, downloads])
+
+            if os.path.exists(temp_directory):
+                shutil.rmtree(temp_directory)
             if new_id is not None:
                 # go to the new project
                 return redirect('project_page', project_name=new_id.inserted_id)
@@ -2539,7 +2545,10 @@ def create_project(request):
             print("No version attribute found for Aggregator or AmpliconSuiteAggregator.")
 
         agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
+        
         if not agg.completed:
+            if os.path.exists(temp_directory):
+                shutil.rmtree(temp_directory)
             ## redirect to edit page if aggregator fails
             alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
             return render(request, 'pages/create_project.html',
@@ -2547,6 +2556,7 @@ def create_project(request):
                         'alert_message': alert_message,
                         'all_alias':json.dumps(get_all_alias())})
         ## after running aggregator, replace the requests file with the aggregated file:
+        logging.error(f"Aggregated filename: {agg.aggregated_filename}")
         with open(agg.aggregated_filename, 'rb') as f:
             uploaded_file = SimpleUploadedFile(
             name=os.path.basename(agg.aggregated_filename),
@@ -2558,6 +2568,10 @@ def create_project(request):
 
         # return render(request, 'pages/loading.html')
         new_id = _create_project(form, request, extra_metadata_file_fp)
+
+        if os.path.exists(temp_directory):
+            shutil.rmtree(temp_directory)
+
         if new_id is not None:
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
