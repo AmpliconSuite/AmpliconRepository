@@ -823,8 +823,8 @@ def project_download(request, project_name):
                     output.write(chunk)
                 output.close()
                 # recreate the path without the {settings.S3_DOWNLOADS_BUCKET} which the upload_file_to_s3 adds as well
-                s3_file_location = f'{project_linkid}/{project_linkid}.tar.gz'
-                upload_file_to_s3(f'{project_data_path}/{project_linkid}.tar.gz', s3_file_location)
+                s3_file_location_bucketless = f'{project_linkid}/{project_linkid}.tar.gz'
+                upload_file_to_s3(f'{project_data_path}/{project_linkid}.tar.gz', s3_file_location_bucketless)
                 logging.info('==== XXX upload to bucket complete, move on to get one time url')
 
             else:
