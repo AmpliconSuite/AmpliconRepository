@@ -822,6 +822,8 @@ def project_download(request, project_name):
                 for chunk in tar_file_wrapper:
                     output.write(chunk)
                 output.close()
+                # recreate the path without the {settings.S3_DOWNLOADS_BUCKET} which the upload_file_to_s3 adds as well
+                s3_file_location = f'{project_linkid}/{project_linkid}.tar.gz'
                 upload_file_to_s3(f'{project_data_path}/{project_linkid}.tar.gz', s3_file_location)
                 logging.info('==== XXX upload to bucket complete, move on to get one time url')
 
@@ -2030,7 +2032,7 @@ def admin_stats(request):
     users = User.objects.all()
 
     # Get all projects
-    all_projects = list(collection_handle.find({'delete': False}))
+    all_projects = list(collection_handle.find({'current': True, 'delete': False}))
 
     # Create a dictionary to store user stats
     user_stats = {}
