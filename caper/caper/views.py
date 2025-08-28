@@ -3399,3 +3399,48 @@ def check_ec3d_available(project_name, sample_name):
     logging.debug(f"ec3d_path is {ec3d_path}")
 
     return os.path.exists(ec3d_path)
+
+
+
+class ProjectFileAddView(APIView):
+    parser_class = (MultiPartParser,)
+    permission_classes = []
+
+    def post(self, request, format=None):
+        project_uuid = request.data.get('project_uuid')
+        project_key = request.data.get('project_key')
+        username = request.data.get('username')
+
+        # Validate project exists
+        project = get_one_project(project_name)
+        if not project:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Validate user is a project member
+        if username not in project.get('project_members', []):
+            return Response({'error': 'User not authorized'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Validate project key
+        if project.get('privateKey') != project_key:
+            return Response({'error': 'Invalid project key'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Implementation for file handling goes here
+        api_id = uuid.uuid4().hex
+        file_serializer = FileSerializer(data=request.data)
+        project_data_path = f"tmp/{api_id}"
+       
+        if file_serializer.is_valid():
+            file_serializer.save()
+            form = RunForm(request.POST)
+            form_dict = form_to_dict(form)
+            
+            request_file = request.FILES['file']
+            if not os.path.exists(os.path.join('tmp', api_id)):
+                os.system(f'mkdir -p tmp/{api_id}')
+            os.system(f'mv tmp/{request_file.name} tmp/{api_id}/{request_file.name}')
+        
+            
+            
+
+
+        return Response({'message': 'Files uploaded successfully'}, status=status.HTTP_200_OK)

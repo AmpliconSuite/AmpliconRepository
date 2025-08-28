@@ -83,7 +83,9 @@ urlpatterns += [
     path('data-qc/change-database-dates', views.change_database_dates, name='change_database_dates'),
     path('data-qc/update_sample_counts', views.update_sample_counts, name='update_sample_counts'),
     path('data-qc/fix-schema', views.fix_schema, name='fix_schema'),
-    path('upload_api/', views.FileUploadView.as_view(), name = 'Document'), 
+    path('upload_api/', views.FileUploadView.as_view(), name = 'Document'),
+    path('add_samples_to_project_api/', views.ProjectFileAddView.as_view(), name='addSamplesToProject'),
+
     path('robots.txt', views.robots, name = "robots.txt"),
     path('loading/', views.loading),
     path('search_results/', views.search_results, name='search_results'),
