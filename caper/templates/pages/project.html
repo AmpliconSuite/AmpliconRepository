@@ -157,6 +157,77 @@
         {% if not viewing_old_project %}
             {% if project.current_user_may_edit  %}
             <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 24px"></i></a>
+             <a href="javascript:void(0);" onclick="$('#projectInfoModal').modal('show');" data-toggle="tooltip" title="Upload Project"><i class="fas fa-key" style="font-size: 24px; margin-left: 10px;"></i></a>
+           <div class="modal fade" id="projectInfoModal" tabindex="-1" role="dialog" aria-labelledby="projectInfoModalLabel" aria-hidden="true">
+             <div class="modal-dialog" role="document" style="max-width: 550px;">
+               <div class="modal-content">
+                 <div class="modal-header">
+                   <h5 class="modal-title" id="projectInfoModalLabel"><i class="fas fa-key" style="font-size: 24px; margin-left: 10px;"></i> Project key for AmpliconSuite</h5>
+                   <button type="button" class="close" data-dismiss="modal" aria-label="Close" onclick="$('#projectInfoModal').modal('hide');">
+                     <span aria-hidden="true">&times;</span>
+                   </button>
+                 </div>
+                 <div class="modal-body">
+                   <div class="form-group row mb-2 col-form-label-sm">When running AmpliconSuite you can provide these values to have samples automatically added to this project.</div>
+                   <div class="form-group row mb-2">
+                     <label for="projectUuid" class="col-sm-3 col-form-label col-form-label-sm">Project UUID:</label>
+                     <div class="col-sm-9">
+                       <input type="text" class="form-control" id="projectUuid" value="{{ project.linkid }}" readonly>
+                     </div>
+                   </div>
+                   <div class="form-group row mb-2">
+                     <label for="privateKey" class="col-sm-3 col-form-label col-form-label-sm">Project Key:</label>
+                     <div class="col-sm-9">
+                       <input type="text" class="form-control" id="privateKey" value="{{ project.privateKey|default:'' }}" readonly>
+                     </div>
+                   </div>
+                 </div>
+                 <div class="modal-footer">
+                   <button type="button" class="btn btn-primary" onclick="regenerateProjectKey()">Regenerate Key</button>
+                   <button type="button" class="btn btn-secondary" data-dismiss="modal" onclick="$('#projectInfoModal').modal('hide');">Close</button>
+                 </div>
+               </div>
+             </div>
+           </div>
+           
+           <script>
+           function regenerateProjectKey() {
+             $.ajax({
+               url: "/project/{{ project.linkid }}/regenerate_project_key",
+               type: "POST",
+               headers: {
+                 "X-CSRFToken": getCookie("csrftoken"),
+                   'Content-Type': 'application/json'
+               },
+               success: function(response) {
+                 if (response.key) {
+                   $("#privateKey").val(response.key);
+                 } else {
+                   alert("Failed to regenerate key: " + response.error);
+                 }
+               },
+               error: function(xhr, status, error) {
+                 alert("Error: " + error);
+               }
+             });
+           }
+           
+           // Helper function to get CSRF token from cookies
+           function getCookie(name) {
+             let cookieValue = null;
+             if (document.cookie && document.cookie !== '') {
+               const cookies = document.cookie.split(';');
+               for (let i = 0; i < cookies.length; i++) {
+                 const cookie = cookies[i].trim();
+                 if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                   cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                   break;
+                 }
+               }
+             }
+             return cookieValue;
+           }
+           </script>
         {%  endif %}</h2>
         {% endif %}
 

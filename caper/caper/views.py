@@ -2613,6 +2613,37 @@ def sizeof_fmt(num, suffix="B"):
         num /= 1024.0
     return f"{num:.1f}Yi{suffix}"
 
+@login_required(login_url='/accounts/login/')
+def regenerate_project_key(request, project_name):
+    """
+    Regenerates a private key for a project.
+    Only project owners/members or admins can regenerate keys.
+    Returns the new key as JSON.
+    """
+    # Check if this is a POST request
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # Get the project
+    project = get_one_project(project_name)
+    if not project:
+        return JsonResponse({"error": "Project not found"}, status=404)
+    
+    # Check if user is authorized (project member or admin)
+    if not (is_user_a_project_member(project, request) or request.user.is_staff):
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+    
+    # Generate a new UUID key
+    new_key = str(uuid.uuid4())
+    
+    # Update the project with the new key
+    query = {'_id': project['_id']}
+    new_val = {"$set": {'privateKey': new_key}}
+    collection_handle.update_one(query, new_val)
+    
+    # Return the new key
+    return JsonResponse({"key": new_key})
+
 
 def create_empty_project(request):
     """
