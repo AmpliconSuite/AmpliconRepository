@@ -43,6 +43,8 @@ urlpatterns += [
     path('coamplification-graph/', views.coamplification_graph, name='coamplification_graph'),
     path('coamplification-graph/visualizer/', views.visualizer, name='visualizer'),
     path('create-project/', views.create_project, name='create_project'),
+    path('create-empty-project/', views.create_empty_project, name='create_empty_project'),
+
     path('accounts/', include('allauth.urls')),
     path("accounts/profile/", views.profile, name="profile"),
     path("profile-update-notification-preferences/", views.update_notification_preferences , name="profile-update-notification-preferences"),

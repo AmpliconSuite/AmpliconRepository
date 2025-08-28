@@ -460,16 +460,39 @@
 
 
     $(document).ready(function() {
-    // Get references to the checkbox, file input, and submit button
-    const $checkbox = $('#custom_id_replace_project');
-    const $fileInput = $('#fileuploadfield');
-    const $submitButton = $('#createProjectBtn');
+        // Get references to the checkbox, file input, and submit button
+        const $checkbox = $('#custom_id_replace_project');
+        const $fileInput = $('#fileuploadfield');
+        const $submitButton = $('#createProjectBtn');
+        const projectIsEmpty = {% if is_empty_project %}true{% else %}false{% endif %};
+    
+        // If project is empty, automatically check the checkbox
+        if (projectIsEmpty) {
+            $checkbox.prop('checked', true);
+            // Make it readonly by preventing click/change events
+            $checkbox.click(function(e) {
+                if (projectIsEmpty) {
+                    e.preventDefault();
+                    return false;
+                }
+            });
+            // Add a hidden input with the same name to ensure the value is submitted
+            $checkbox.after('<input type="hidden" name="' + $checkbox.attr('name') + '" value="on">');
+            
+            // Style the checkbox to look disabled but still be submittable
+            $checkbox.css('opacity', '0.6');
+            $checkbox.css('cursor', 'not-allowed');
+            // trigger the change event to update any dependent UI elements
+            $checkbox.trigger('change');
+            // open the accordian so files will be added
+            $('#collapseOne').collapse('show');
+        }
 
     // Function to toggle the submit button based on checkbox and file input status
     function toggleSubmitButton() {
         const isChecked = $checkbox.is(':checked'); // Check if checkbox is checked
+        
         const filesUploaded = $fileInput[0].files.length; // Get the number of uploaded files
-
         console.log('Checkbox checked:', isChecked);
         console.log('Files uploaded:', filesUploaded);
 

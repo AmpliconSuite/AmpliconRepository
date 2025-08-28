@@ -163,8 +163,9 @@
         <br>
         <h5>Description: <span style="font-weight: 200">{{ project.description }}</span></h5>
         <h5>Publication link: <span style="font-weight: 200">{{ project.publication_link|escape|replace_urls|safe }}</span></h5>
+        {% if not is_empty_project %}
         <h5>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h5>
-        
+        {% endif %}
         {% if project.alias_name %}
             <h5>Project Link: <a id='aliaslink' href="">ampliconrepository.org/project/{{project.alias_name}}  </a><i class="fas fa-link chain-icon" style = 'cursor:pointer;'onclick="copyToClipboard()"></i></h5>
             <p id="message"></p>
@@ -173,6 +174,7 @@
         
     </div>
 
+    {% if not is_empty_project %}
     <div class="col-md-3">
         <a class="btn btn-primary" style="color: white; margin-bottom: 12px;" onclick = "downloadAndReload();" >Download Project Data</a><br>
         <!-- <p><b>Last Updated:</b> {{ project.date }}</p> -->
@@ -185,6 +187,7 @@
 
         <div id = "project_statistics"> Views: {{ views }} | Downloads: <span id = 'downloads'>{{downloads}}</span></div>
     </div>
+    
     <div  style="margin:auto; border: 0.5px solid grey; padding: 0px">
         <span style="display:inline-block">{{ stackedbar_graph|safe }}
         {% block plotly_js %}
@@ -204,10 +207,11 @@
         </span>
         <span style="display:inline-block">{{ piechart|safe }}</span>
     </div>
-
+    {% endif %}
 </div>
 <br>
 <div class="container">
+  {% if not is_empty_project %}  
 <div class="table-responsive">
     <table id='myTable1' class="table table-hover table-sm stripe no-border">
         <thead>
@@ -237,7 +241,7 @@
         </tbody>
     </table>
 </div>
-
+{% endif %}
 
     <br>
     <div id="accordion" >

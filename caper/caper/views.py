@@ -620,6 +620,111 @@ def project_page(request, project_name, message=''):
     ### this part will delete the metadata_stored field for a project
     ### is is only run IF we need to reset a project and reload the data
 
+    project = validate_project(get_one_project(project_name), project_name)
+    if 'FINISHED?' in project and project['FINISHED?'] == False:
+        return render(request, "pages/loading.html", {"project_name":project_name})
+
+    # Check if this is an empty project
+    is_empty_project = 'EMPTY?' in project and project['EMPTY?'] == True
+
+    if project['private'] and not is_user_a_project_member(project, request):
+        return redirect('/accounts/login?next=/project/' + project_name)
+
+    # if we got here by an OLD project id (prior to edits) then we want to redirect to the new one
+    if not project_name == str(project['linkid']):
+        return redirect('project_page', project_name=project['linkid'])
+
+    prev_versions, prev_ver_msg = previous_versions(project)
+    viewing_old_project = False
+    if prev_ver_msg:
+        messages.error(request, mark_safe(prev_ver_msg))
+        viewing_old_project = True
+
+    set_project_edit_OK_flag(project, request)
+
+    # For empty projects, set defaults
+    if is_empty_project:
+        samples = {}
+        reference_genome = 'N/A'
+        sample_data = []
+        aggregate = None
+        stackedbar_plot = None
+        pc_fig = None
+    # For regular projects, process as before
+    elif 'metadata_stored' not in project:
+        samples = project['runs'].copy()
+        features_list = replace_space_to_underscore(samples)
+        reference_genome = reference_genome_from_project(samples)
+        sample_data = sample_data_from_feature_list(features_list)
+        aggregate, aggregate_save_fp = create_aggregate_df(project, samples)
+
+        logging.debug(f'aggregate shape: {aggregate.shape}')
+        new_values = {"$set" : {'sample_data' : sample_data,
+                                'reference_genome' : reference_genome,
+                                'aggregate_df' : aggregate_save_fp,
+                                'metadata_stored': 'Yes'}}
+        query = {'_id' : project['_id'], 'delete': False}
+
+        logging.debug('Inserting Now')
+        collection_handle.update(query, new_values)
+        logging.debug('Insert complete')
+
+        stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
+        pc_fig = piechart.pie_chart(aggregate, fa_cmap)
+    elif 'metadata_stored' in project:
+        logging.info('Already have the lists in DB')
+        samples = project['runs']
+        reference_genome = project['reference_genome']
+        sample_data = project['sample_data']
+        aggregate_df_fp = project['aggregate_df']
+        if not os.path.exists(aggregate_df_fp):
+            aggregate, aggregate_df_fp = create_aggregate_df(project, samples)
+        else:
+            aggregate = pd.read_csv(aggregate_df_fp)
+            
+        stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
+        pc_fig = piechart.pie_chart(aggregate, fa_cmap)
+
+    t_f = time.time()
+    diff = t_f - t_i
+    logging.info(f"Generated the project page for '{project['project_name']}' with views.py in {diff} seconds")
+
+    # check for an error when project was created, but don't override a message that was already sent in
+    if not message:
+        if "warning" in project:
+            message = project["warning"]
+
+    ## download & view statistics
+    views, downloads = session_visit(request, project)
+
+    return render(request, "pages/project.html", {
+        'project': project,
+        'sample_data': sample_data,
+        'reference_genome': reference_genome,
+        'stackedbar_graph': stackedbar_plot,
+        'piechart': pc_fig,
+        'prev_versions': prev_versions,
+        'prev_versions_length': len(prev_versions),
+        'views': views,
+        'downloads': downloads,
+        'proj_id': project_name,
+        'viewing_old_project': viewing_old_project,
+        'is_empty_project': is_empty_project,  # Pass this flag to the template
+    })
+
+
+def XXXproject_page(request, project_name, message=''):
+    """
+    Render Project Page
+
+    will append sample_data, ref genome, feature_list to project json in the database
+    for faster querying in the future.
+    """
+    t_i = time.time()
+    ## leaving this bit of code here
+    ### this part will delete the metadata_stored field for a project
+    ### is is only run IF we need to reset a project and reload the data
+
     # project = get_one_project(project_name) ## 0 loops
     # query = {'_id' : project['_id'],
     #                 'delete': False}
@@ -1829,6 +1934,7 @@ def edit_project_page(request, project_name):
     else:
         # get method handling
         project = get_one_project(project_name)
+        is_empty_project = 'EMPTY?' in project and project['EMPTY?'] == True
         prev_versions, prev_ver_msg = previous_versions(project)
         if prev_ver_msg:
             messages.error(request, "Redirected to latest version, editing of old versions not allowed. ")
@@ -1852,7 +1958,7 @@ def edit_project_page(request, project_name):
                                    "description": project['description'],
                                    "private":project['private'],
                                    "project_members": memberString,
-                                   "publication_link": publication_link,  
+                                   "publication_link": publication_link,
                                    "AA_version": AAVersion,
                                    "ASP_version": ASPVersion,
                                    "AC_version": ACVersion })
@@ -1860,7 +1966,9 @@ def edit_project_page(request, project_name):
     return render(request, "pages/edit_project.html",
                   {'project': project,
                    'run': form,
-                   'all_alias' :json.dumps(get_all_alias())})
+                   'all_alias' :json.dumps(get_all_alias()),
+                   "is_empty_project": is_empty_project,
+                   })
 
 
 
@@ -2506,6 +2614,89 @@ def sizeof_fmt(num, suffix="B"):
     return f"{num:.1f}Yi{suffix}"
 
 
+def create_empty_project(request):
+    """
+    Creates an empty project with minimal information.
+    Only requires project name and description.
+    Can only be private, not public.
+    """
+    if request.method == "POST":
+        # Extract minimal required fields
+        project_name = request.POST.get('project_name', '').strip()
+        description = request.POST.get('description', '').strip()
+        alias = request.POST.get('alias', '').strip()
+        publication_link = request.POST.get('publication_link', '').strip()
+
+        # Get project members if provided
+        project_members_raw = request.POST.get('project_members', '')
+        
+        # Validate inputs
+        if not project_name:
+            messages.error(request, "Project name is required")
+            return redirect('profile')
+
+        # Get current user info
+        creator = get_current_user(request)
+
+        # Process project members (ensure creator is included)
+        project_members = create_user_list(project_members_raw, creator)
+        
+        # Set up timestamps
+        current_date = get_date()
+
+        # Create minimal project document
+        project = {
+            'creator': creator,
+            'project_name': project_name,
+            'description': description,
+            'date_created': current_date,
+            'date': current_date,
+            'private': True,  # Empty projects can only be private
+            'delete': False,
+            'project_members': project_members,
+            'runs': {},  # Empty runs dictionary
+            'Oncogenes': [],
+            'Classification': [],
+            'linkid': ObjectId(),  # Generate a new linkid
+            'current': True,
+            'empty': True,  # Flag to identify empty projects
+            'FINISHED?': True,  # Mark as finished since there's no extraction needed
+            'EMPTY?': True, # Mark as empty
+            'sample_count': 0,
+            'metadata_stored': True  # Prevent reprocessing attempts
+        }
+        if publication_link:
+            project['publication_link'] = publication_link
+        # Add alias if provided
+        if alias:
+            project['alias'] = alias
+
+        # Insert the project into MongoDB
+        result = collection_handle.insert_one(project)
+        project_id = str(result.inserted_id)
+
+        # Update project with its own ID
+        collection_handle.update_one(
+            {'_id': ObjectId(project_id)},
+            {"$set": {'linkid': project_id}}
+        )
+
+        # Create empty project directory structure
+        project_data_path = f"tmp/{project_id}"
+        os.makedirs(project_data_path, exist_ok=True)
+
+        messages.success(request, f"Empty project '{project_name}' created successfully. You can now add files to it.")
+
+        # Return to project page with alias if available
+        if alias:
+            return redirect('project_page', project_name=f"{project_id}")
+        else:
+            return redirect('project_page', project_name=project_id)
+
+    # GET request - render the same form used for creating regular projects
+    return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
+
+
 def create_project(request):
     if request.method == "POST":
         ## preprocess request
@@ -2720,6 +2911,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['Oncogenes'] = get_project_oncogenes(runs)
     project['Classification'] = get_project_classifications(runs)
     project['FINISHED?'] = False
+    project['EMPTY?'] = False
     project['views'] = previous_views[0]
     project['downloads'] = previous_views[1]
     project['alias_name'] = form_dict['alias']
