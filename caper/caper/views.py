@@ -521,7 +521,11 @@ def is_user_a_project_member(project, request):
 
 
 def set_project_edit_OK_flag(project, request):
-    if (is_user_a_project_member(project, request)):
+    try:
+        is_admin = getattr(request.user, 'is_staff', False)
+    except Exception:
+        is_admin = False
+    if is_user_a_project_member(project, request) or (is_admin and not project.get('private', True)):
         project['current_user_may_edit'] = True
     else:
         project['current_user_may_edit'] = False
@@ -1595,7 +1599,9 @@ def get_current_user(request):
 def project_delete(request, project_name):
     project = get_one_project(project_name)
     deleter = get_current_user(request)
-    if check_project_exists(project_name) and is_user_a_project_member(project, request):
+    is_admin = getattr(request.user, 'is_staff', False)
+    allowed = is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))
+    if check_project_exists(project_name) and allowed:
         current_runs = project['runs']
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
@@ -1614,7 +1620,9 @@ def project_update(request, project_name):
     update_date will be changed after project has been updated.
     """
     project = get_one_project(project_name)
-    if check_project_exists(project_name) and is_user_a_project_member(project, request):
+    is_admin = getattr(request.user, 'is_staff', False)
+    allowed = is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))
+    if check_project_exists(project_name) and allowed:
         query = {'_id': project['_id']}
         ## 2 new fields: current, and update_date, $set will add a new field with the specified value.
         new_val = { "$set": {'current' : False, 'update_date': get_date()} }
@@ -1642,6 +1650,9 @@ def download_file(url, save_path):
 def edit_project_page(request, project_name):
     if request.method == "GET":
         project = get_one_project(project_name)
+        is_admin = getattr(request.user, 'is_staff', False)
+        if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
+            return HttpResponse("Project does not exist")
     if request.method == "POST":
         try:
             metadata_file = request.FILES.get("metadataFile")
@@ -1653,8 +1664,9 @@ def edit_project_page(request, project_name):
         if 'alias_name' in project:
             old_alias_name = project['alias_name']
             print(f'THE OLD ALIAS NAME SHOULD BE: {old_alias_name}')
-        # no edits for non-project members
-        if not is_user_a_project_member(project, request):
+        # no edits for non-project members unless admin on a public project
+        is_admin = getattr(request.user, 'is_staff', False)
+        if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
             return HttpResponse("Project does not exist")
         form = UpdateForm(request.POST, request.FILES)
         ## give the new project the old project alias.
