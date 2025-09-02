@@ -1681,7 +1681,13 @@ def edit_project_page(request, project_name):
                 collection_handle.update_one(query, new_val)
         ## new project information is stored in form_dict
         form_dict = form_to_dict(form)
-        form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
+        # Build project member list. Avoid auto-adding admins editing public projects when they are not members.
+        is_member = is_user_a_project_member(project, request)
+        is_public = not project.get('private', True)
+        add_self = True
+        if getattr(request.user, 'is_staff', False) and is_public and not is_member:
+            add_self = False
+        form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request), add_current_user=add_self)
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
         old_membership = project['project_members']

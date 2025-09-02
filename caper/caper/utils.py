@@ -400,9 +400,10 @@ def replace_underscore_keys(runs_from_proj_creation):
     }
 
 
-def create_user_list(string, current_user):
+def create_user_list(string, current_user, add_current_user=True):
     # user_list = str.split(',')
-    string = string + ',' + current_user
+    if add_current_user:
+        string = string + ',' + current_user
     # issue 21
     user_list = re.split(' |;|,|\t', string)
     # drop empty strings
