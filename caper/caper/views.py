@@ -612,6 +612,22 @@ def previous_versions(project):
 
     return res, msg
 
+def get_latest_project_version(project):
+       
+        
+        doc = collection_handle.find_one(
+            {'current': True, 'previous_versions.linkid': str(project['_id'])},
+        )
+       
+        
+        if doc is None:
+            return project
+        else:
+            prepare_project_linkid(doc)
+            return doc
+        
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -3297,6 +3313,8 @@ class ProjectFileAddView(APIView):
     parser_class = (MultiPartParser,)
     permission_classes = []
 
+    
+
     def post(self, request, format=None):
         project_uuid = request.data.get('project_uuid')
         project_key = request.data.get('project_key')
@@ -3306,6 +3324,17 @@ class ProjectFileAddView(APIView):
         project = get_one_project(project_uuid)
         if not project:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # If project is not current, get the latest version.  check that the user is still a member of the latest version
+        # but compare the project key to the original project version submitted.  This allows a user to run several
+        # additions of samples without going back and forth to get the updated uuid and key after each one
+        if project['current'] is False or project['delete'] is True:
+            # get the latest 
+            latest_proj = get_latest_project_version(project)
+            original_project = project
+            project = latest_proj
+        else:
+            original_project = project
 
         # Validate user is a project member
         # Get the identifier (could be username or email)
@@ -3320,7 +3349,7 @@ class ProjectFileAddView(APIView):
             return Response({'error': 'User not authorized'}, status=status.HTTP_403_FORBIDDEN)
 
         # Validate project key
-        if project.get('privateKey') != project_key:
+        if original_project.get('privateKey') != project_key:
             return Response({'error': 'Invalid project key'}, status=status.HTTP_403_FORBIDDEN)
 
         #  file handling , save the new file to a temp dir
@@ -3348,8 +3377,7 @@ class ProjectFileAddView(APIView):
     
     def process_file_in_background(self, request, project, username, uploaded_file, api_id):
         
-        project_uuid = request.data.get('project_uuid')
-        project_key = request.data.get('project_key')
+        project_uuid = project['linkid']
         tmp_project_data_path = f"tmp/{api_id}"
         user_identifier = request.data.get('username')
         user = User.objects.get(Q(username=user_identifier) | Q(email=user_identifier))
