@@ -3,6 +3,17 @@
 {% load mezzanine_tags %}
 {% block extra_js %}
 <script>
+
+// Custom sort for "Month DD, YYYY at HH:MM:SS AM/PM TZ"
+jQuery.extend(jQuery.fn.dataTable.ext.type.order, {
+    'custom-date-pre': function (d) {
+        // Remove "at" and timezone for parsing
+        var cleaned = d.replace(/ at /, ' ').replace(/ [A-Z]{2,4}$/, '');
+        var parsed = Date.parse(cleaned);
+        return isNaN(parsed) ? 0 : parsed;
+    }
+});
+
     $(document).ready(function () {
         $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
             $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
@@ -11,17 +22,35 @@
         $('#projectTable0').DataTable({
             language: {
                     searchPlaceholder: "Search projects"
-                    }
+                    },
+            columnDefs: [
+                {
+                    targets: 2, // 3rd column (zero-based index)
+                    type: 'custom-date'
+                }
+            ]
         });
         $('#projectTable1').DataTable({
             language: {
                     searchPlaceholder: "Search projects"
-                    }
+                    },
+            columnDefs: [
+                {
+                    targets: 2, // 3rd column (zero-based index)
+                    type: 'custom-date'
+                }
+            ]
         });
         $('#projectTable2').DataTable({
             language: {
                     searchPlaceholder: "Search projects"
-                    }
+                    },
+            columnDefs: [
+                {
+                    targets: 2, // 3rd column (zero-based index)
+                    type: 'custom-date'
+                }
+            ]
         });
     });
 </script>
