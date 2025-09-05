@@ -20,7 +20,8 @@
                     targets: 2, // 3rd column (zero-based index)
                     type: 'custom-date'
                 }
-            ]
+            ],
+            order: [[2, 'desc']] // Sort by date column (index 2) in descending order
         });
         $('#projectTable1').DataTable({
             language: {
@@ -31,7 +32,9 @@
                     targets: 2, // 3rd column (zero-based index)
                     type: 'custom-date'
                 }
-            ]
+            ],
+            order: [[2, 'desc']] // Sort by date column (index 2) in descending order
+
         });
         $('#projectTable2').DataTable({
             language: {
@@ -42,7 +45,8 @@
                     targets: 2, // 3rd column (zero-based index)
                     type: 'custom-date'
                 }
-            ]
+            ],
+            order: [[2, 'desc']] // Sort by date column (index 2) in descending order
         });
     });
     // Call the formatDates function when the page is loaded
