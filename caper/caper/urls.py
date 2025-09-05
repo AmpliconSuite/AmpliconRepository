@@ -43,6 +43,8 @@ urlpatterns += [
     path('coamplification-graph/', views.coamplification_graph, name='coamplification_graph'),
     path('coamplification-graph/visualizer/', views.visualizer, name='visualizer'),
     path('create-project/', views.create_project, name='create_project'),
+    path('create-empty-project/', views.create_empty_project, name='create_empty_project'),
+
     path('accounts/', include('allauth.urls')),
     path("accounts/profile/", views.profile, name="profile"),
     path("profile-update-notification-preferences/", views.update_notification_preferences , name="profile-update-notification-preferences"),
@@ -51,6 +53,8 @@ urlpatterns += [
 
     path("project/<project_name>/download", views.project_download, name="project_download"),
     path("project/<project_name>/delete", views.project_delete, name="project_delete"),
+    path("project/<project_name>/regenerate_project_key", views.regenerate_project_key, name="regenerate_project_key"),
+
     path("project/<project_name>/sample/<sample_name>", views.sample_page, name="sample_page"),
     path("project/<project_name>/sample/<sample_name>/download", views.sample_download, name="sample_download"),
     path("project/<project_name>/sample/<sample_name>/download_metadata", views.sample_metadata_download, name="sample_metadata_download"),
@@ -79,7 +83,9 @@ urlpatterns += [
     path('data-qc/change-database-dates', views.change_database_dates, name='change_database_dates'),
     path('data-qc/update_sample_counts', views.update_sample_counts, name='update_sample_counts'),
     path('data-qc/fix-schema', views.fix_schema, name='fix_schema'),
-    path('upload_api/', views.FileUploadView.as_view(), name = 'Document'), 
+    path('upload_api/', views.FileUploadView.as_view(), name = 'Document'),
+    path('add_samples_to_project_api/', views.ProjectFileAddView.as_view(), name='addSamplesToProject'),
+
     path('robots.txt', views.robots, name = "robots.txt"),
     path('loading/', views.loading),
     path('search_results/', views.search_results, name='search_results'),

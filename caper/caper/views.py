@@ -22,6 +22,10 @@ from pathlib import Path
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
 from django.conf import settings
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.contrib.auth.models import User
+from django.db.models import Q
 
 # from .models import File
 from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
@@ -612,6 +616,22 @@ def previous_versions(project):
 
     return res, msg
 
+def get_latest_project_version(project):
+       
+        
+        doc = collection_handle.find_one(
+            {'current': True, 'previous_versions.linkid': str(project['_id'])},
+        )
+       
+        
+        if doc is None:
+            return project
+        else:
+            prepare_project_linkid(doc)
+            return doc
+        
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -624,18 +644,12 @@ def project_page(request, project_name, message=''):
     ### this part will delete the metadata_stored field for a project
     ### is is only run IF we need to reset a project and reload the data
 
-    # project = get_one_project(project_name) ## 0 loops
-    # query = {'_id' : project['_id'],
-    #                 'delete': False}
-    # val = {'$unset':{'metadata_stored':""}}
-    # collection_handle.update(query, val)
-    # logging.warning('delete complete')
-
-    ## if flag is unfinished, render a loading page:
-
     project = validate_project(get_one_project(project_name), project_name)
     if 'FINISHED?' in project and project['FINISHED?'] == False:
         return render(request, "pages/loading.html", {"project_name":project_name})
+
+    # Check if this is an empty project
+    is_empty_project = 'EMPTY?' in project and project['EMPTY?'] == True
 
     if project['private'] and not is_user_a_project_member(project, request):
         return redirect('/accounts/login?next=/project/' + project_name)
@@ -650,16 +664,22 @@ def project_page(request, project_name, message=''):
         messages.error(request, mark_safe(prev_ver_msg))
         viewing_old_project = True
 
-    ## if the project being loaded is stored in another project's previous versions, then load the previous_versions list of the latest project,
-    ## and give a message saying: this is not the latest version, and link to latest version.
+    set_project_edit_OK_flag(project, request)
 
-    if 'metadata_stored' not in project:
-        #dict_keys(['_id', 'creator', 'project_name', 'description', 'tarfile', 'date_created', 'date', 'private', 'delete', 'project_members', 'runs', 'Oncogenes', 'Classification', 'project_downloads', 'linkid'])
-        set_project_edit_OK_flag(project, request) ## 0 loops
+    # For empty projects, set defaults
+    if is_empty_project:
+        samples = {}
+        reference_genome = 'N/A'
+        sample_data = []
+        aggregate = None
+        stackedbar_plot = None
+        pc_fig = None
+    # For regular projects, process as before
+    elif 'metadata_stored' not in project:
         samples = project['runs'].copy()
-        features_list = replace_space_to_underscore(samples) # 1 loop
-        reference_genome = reference_genome_from_project(samples) # 1 over sample nested with 1 over features O(S^f)
-        sample_data = sample_data_from_feature_list(features_list) # O(S)
+        features_list = replace_space_to_underscore(samples)
+        reference_genome = reference_genome_from_project(samples)
+        sample_data = sample_data_from_feature_list(features_list)
         aggregate, aggregate_save_fp = create_aggregate_df(project, samples)
 
         logging.debug(f'aggregate shape: {aggregate.shape}')
@@ -667,65 +687,55 @@ def project_page(request, project_name, message=''):
                                 'reference_genome' : reference_genome,
                                 'aggregate_df' : aggregate_save_fp,
                                 'metadata_stored': 'Yes'}}
-        query = {'_id' : project['_id'],
-                    'delete': False}
+        query = {'_id' : project['_id'], 'delete': False}
 
         logging.debug('Inserting Now')
         collection_handle.update(query, new_values)
         logging.debug('Insert complete')
 
+        stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
+        pc_fig = piechart.pie_chart(aggregate, fa_cmap)
     elif 'metadata_stored' in project:
         logging.info('Already have the lists in DB')
-        set_project_edit_OK_flag(project, request) ## 0 loops
         samples = project['runs']
-        # features_list = project['features_list']
         reference_genome = project['reference_genome']
         sample_data = project['sample_data']
         aggregate_df_fp = project['aggregate_df']
         if not os.path.exists(aggregate_df_fp):
-            ## create the aggregate df if it doesn't exist already.
             aggregate, aggregate_df_fp = create_aggregate_df(project, samples)
         else:
             aggregate = pd.read_csv(aggregate_df_fp)
+            
+        stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
+        pc_fig = piechart.pie_chart(aggregate, fa_cmap)
 
-    stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
-    pc_fig = piechart.pie_chart(aggregate, fa_cmap)
     t_f = time.time()
     diff = t_f - t_i
     logging.info(f"Generated the project page for '{project['project_name']}' with views.py in {diff} seconds")
 
     # check for an error when project was created, but don't override a message that was already sent in
     if not message:
-        extraction_error = None
-        project_error_file_path = f"tmp/{project_name}/project_extraction_errors.txt"
-        alt_project_error_file_path = f"tmp/{project['project_name']}/project_extraction_errors.txt"
-        if os.path.isfile(project_error_file_path):
-            extraction_error = project_error_file_path
-        elif os.path.isfile(alt_project_error_file_path):
-            extraction_error = alt_project_error_file_path
-
-        if extraction_error:
-            over_a_month_old = time.time() - os.path.getmtime(extraction_error) > (30 * 24 * 60 * 60)
-            if over_a_month_old:
-                # if its been ignored for a month, rename the file and stop sending warnings
-                os.rename(extraction_error, "_"+extraction_error)
-            else:
-                message = 'There was a problem extracting the results from the AmpliconAggregator .tar.gz file for this project.  Please notifiy the administrator so that they can help resolve the problem.'
+        if "warning" in project:
+            message = project["warning"]
 
     ## download & view statistics
     views, downloads = session_visit(request, project)
-    return render(request, "pages/project.html", {'project': project,
-                                                  'sample_data': sample_data,
-                                                  'message':message,
-                                                  'reference_genome': reference_genome,
-                                                  'stackedbar_graph': stackedbar_plot,
-                                                  'piechart': pc_fig,
-                                                  'prev_versions' : prev_versions,
-                                                  'prev_versions_length' : len(prev_versions),
-                                                  "proj_id":str(project['linkid']),
-                                                  'viewing_old_project': viewing_old_project,
-                                                  'views' : views,
-                                                  'downloads' : downloads})
+
+    return render(request, "pages/project.html", {
+        'project': project,
+        'sample_data': sample_data,
+        'reference_genome': reference_genome,
+        'stackedbar_graph': stackedbar_plot,
+        'piechart': pc_fig,
+        'prev_versions': prev_versions,
+        'prev_versions_length': len(prev_versions),
+        'views': views,
+        'downloads': downloads,
+        'proj_id': project_name,
+        'viewing_old_project': viewing_old_project,
+        'is_empty_project': is_empty_project,  # Pass this flag to the template
+    })
+
 
 
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
@@ -1700,7 +1710,7 @@ def edit_project_page(request, project_name):
             print("Failed to notify users of project membership change")
             #error_message = "Failed to notify users of project membership change. Please check your email settings."
 
-        ## check multi files, send files to GP and run aggregator there:
+        ## check multi files,  run aggregator :
         file_fps = []
         temp_proj_id = uuid.uuid4().hex ## to be changed
         try:
@@ -1735,9 +1745,11 @@ def edit_project_page(request, project_name):
                 
                 if not agg.completed:
                     ## redirect to edit page if aggregator fails
+
                     if os.path.exists(temp_directory):
                         shutil.rmtree(temp_directory)
                     alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
+
                     return render(request, 'pages/edit_project.html',
                               {'project': project,
                                'run': form,
@@ -1855,6 +1867,7 @@ def edit_project_page(request, project_name):
     else:
         # get method handling
         project = get_one_project(project_name)
+        is_empty_project = 'EMPTY?' in project and project['EMPTY?'] == True
         prev_versions, prev_ver_msg = previous_versions(project)
         if prev_ver_msg:
             messages.error(request, "Redirected to latest version, editing of old versions not allowed. ")
@@ -1878,7 +1891,7 @@ def edit_project_page(request, project_name):
                                    "description": project['description'],
                                    "private":project['private'],
                                    "project_members": memberString,
-                                   "publication_link": publication_link,  
+                                   "publication_link": publication_link,
                                    "AA_version": AAVersion,
                                    "ASP_version": ASPVersion,
                                    "AC_version": ACVersion })
@@ -1886,7 +1899,9 @@ def edit_project_page(request, project_name):
     return render(request, "pages/edit_project.html",
                   {'project': project,
                    'run': form,
-                   'all_alias' :json.dumps(get_all_alias())})
+                   'all_alias' :json.dumps(get_all_alias()),
+                   "is_empty_project": is_empty_project,
+                   })
 
 
 
@@ -2531,6 +2546,120 @@ def sizeof_fmt(num, suffix="B"):
         num /= 1024.0
     return f"{num:.1f}Yi{suffix}"
 
+@login_required(login_url='/accounts/login/')
+def regenerate_project_key(request, project_name):
+    """
+    Regenerates a private key for a project.
+    Only project owners/members or admins can regenerate keys.
+    Returns the new key as JSON.
+    """
+    # Check if this is a POST request
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # Get the project
+    project = get_one_project(project_name)
+    if not project:
+        return JsonResponse({"error": "Project not found"}, status=404)
+    
+    # Check if user is authorized (project member or admin)
+    if not (is_user_a_project_member(project, request) or request.user.is_staff):
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+    
+    # Generate a new UUID key
+    new_key = str(uuid.uuid4())
+    
+    # Update the project with the new key
+    query = {'_id': project['_id']}
+    new_val = {"$set": {'privateKey': new_key}}
+    collection_handle.update_one(query, new_val)
+    
+    # Return the new key
+    return JsonResponse({"key": new_key})
+
+
+def create_empty_project(request):
+    """
+    Creates an empty project with minimal information.
+    Only requires project name and description.
+    Can only be private, not public.
+    """
+    if request.method == "POST":
+        # Extract minimal required fields
+        project_name = request.POST.get('project_name', '').strip()
+        description = request.POST.get('description', '').strip()
+        alias = request.POST.get('alias', '').strip()
+        publication_link = request.POST.get('publication_link', '').strip()
+
+        # Get project members if provided
+        project_members_raw = request.POST.get('project_members', '')
+        
+        # Validate inputs
+        if not project_name:
+            messages.error(request, "Project name is required")
+            return redirect('profile')
+
+        # Get current user info
+        creator = get_current_user(request)
+
+        # Process project members (ensure creator is included)
+        project_members = create_user_list(project_members_raw, creator)
+        
+        # Set up timestamps
+        current_date = get_date()
+
+        # Create minimal project document
+        project = {
+            'creator': creator,
+            'project_name': project_name,
+            'description': description,
+            'date_created': current_date,
+            'date': current_date,
+            'private': True,  # Empty projects can only be private
+            'delete': False,
+            'project_members': project_members,
+            'runs': {},  # Empty runs dictionary
+            'Oncogenes': [],
+            'Classification': [],
+            'linkid': ObjectId(),  # Generate a new linkid
+            'current': True,
+            'empty': True,  # Flag to identify empty projects
+            'FINISHED?': True,  # Mark as finished since there's no extraction needed
+            'EMPTY?': True, # Mark as empty
+            'sample_count': 0,
+            'metadata_stored': True  # Prevent reprocessing attempts
+        }
+        if publication_link:
+            project['publication_link'] = publication_link
+        # Add alias if provided
+        if alias:
+            project['alias'] = alias
+
+        # Insert the project into MongoDB
+        result = collection_handle.insert_one(project)
+        project_id = str(result.inserted_id)
+
+        # Update project with its own ID
+        collection_handle.update_one(
+            {'_id': ObjectId(project_id)},
+            {"$set": {'linkid': project_id}}
+        )
+
+        # Create empty project directory structure
+        project_data_path = f"tmp/{project_id}"
+        os.makedirs(project_data_path, exist_ok=True)
+
+        messages.success(request, f"Empty project '{project_name}' created successfully. You can now add files to it.")
+
+        # Return to project page with alias if available
+        if alias:
+            return redirect('project_page', project_name=f"{project_id}")
+        else:
+            return redirect('project_page', project_name=project_id)
+
+    # GET request - render the same form used for creating regular projects
+    return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
+
 
 def create_project(request):
     if request.method == "POST":
@@ -2570,7 +2699,7 @@ def create_project(request):
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
             ## redirect to edit page if aggregator fails
-            alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
+            alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid cSuite results."
             return render(request, 'pages/create_project.html',
                         {'run': form,
                         'alert_message': alert_message,
@@ -2754,6 +2883,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['Oncogenes'] = get_project_oncogenes(runs)
     project['Classification'] = get_project_classifications(runs)
     project['FINISHED?'] = False
+    project['EMPTY?'] = False
     project['views'] = previous_views[0]
     project['downloads'] = previous_views[1]
     project['alias_name'] = form_dict['alias']
@@ -2802,97 +2932,6 @@ def process_version_set(version_set):
         return ', '.join(str(v) for v in version_list)
 
 
-class FileUploadView(APIView):
-    parser_class = (MultiPartParser,)
-    permission_classes = []
-
-    def get(self, request):
-        logging.debug('Hello')
-        return Response({'response':'success'})
-
-    def post(self, request, format= None):
-        '''
-        Post API
-        '''
-        file_serializer = FileSerializer(data = request.data)
-
-        if file_serializer.is_valid():
-            file_serializer.save()
-            form = RunForm(request.POST)
-            form_dict = form_to_dict(form)
-            proj_name = form_dict['project_name']
-            request_file = request.FILES['file']
-            # extract contents of file
-            current_user = request.POST['project_members'][0]
-            logging.info(f'Creating project for user {current_user}')
-            if 'MULTIPART' in proj_name:
-                _, api_id, final_file, actual_proj_name = proj_name.split('__')
-            else:
-                api_id = uuid.uuid4().hex
-
-            if not os.path.exists(os.path.join('tmp', api_id)):
-                os.system(f'mkdir -p tmp/{api_id}')
-            os.system(f'mv tmp/{request_file.name} tmp/{api_id}/{request_file.name}')
-
-            if 'MULTIPART' in proj_name:
-                if str(final_file) in str(request_file.name):
-                    ## we've reached the last file in the multifile upload, time to zip them up together
-                    print('reached the final file, creating reconstructed zip now. ')
-                    os.system(f'cat ./tmp/{api_id}/POST* > ./tmp/{api_id}/reconstructed.tar.gz')
-                    file = open(f'./tmp/{api_id}/reconstructed.tar.gz', 'rb')
-                    print('removing POST files now')
-                    os.system(f'rm -f ./tmp/{api_id}/POST*')
-
-                    helper_thread = Thread(target=self.api_helper, args=(form, current_user, file , api_id, actual_proj_name, True))
-                    helper_thread.start()
-            else:
-                ## no multipart, just run the api helper:
-                file = open(f'./tmp/{api_id}/{request_file.name}')
-                actual_proj_name = request_file.name.split('.')[0]
-                helper_thread = Thread(target=self.api_helper, args=(form, current_user,file, api_id, actual_proj_name))
-                helper_thread.start()
-
-            print('hanging up now')
-            if 'MULTIPART':
-                return Response({'Message': 'Successfully uploaded. Project creation will take more than 2 mins. Upload may time-out.'}, status=status.HTTP_201_CREATED)
-            else:
-                return Response(file_serializer.data, status=status.HTTP_201_CREATED)
-        else:
-            return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-
-    def api_helper(self, form, current_user, request_file, api_id,actual_proj_name, multifile = False):
-        """
-        Helper function for API, to be run asynchronously
-        """
-        logging.info('starting api helper')
-        project, tmp_id = create_project_helper(form, current_user, request_file, save = False, tmp_id = api_id, from_api = True)
-        if multifile:
-            project['project_name'] = actual_proj_name
-        logging.info('the project is here: ')
-        new_id = collection_handle.insert_one(project)
-        logging.info(str(new_id))
-        project_data_path = f"tmp/{api_id}"
-        # move the project location to a new name using the UUID to prevent name collisions
-        # new_project_data_path = f"tmp/{new_id.inserted_id}"
-        # os.rename(project_data_path, new_project_data_path)
-        # project_data_path = new_project_data_path
-
-        file_location = f'{request_file.name}'
-        logging.debug('the project is here: ')
-        logging.debug(str(file_location))
-
-            # extract the files async also
-        extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
-        extract_thread.start()
-
-        if settings.USE_S3_DOWNLOADS:
-            # load the zip asynch to S3 for later use
-            file_location = f'{project_data_path}/{request_file.name}'
-
-            s3_thread = Thread(target=upload_file_to_s3, args=(f'{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
-            s3_thread.start()
 
 
 def robots(request):
@@ -3210,3 +3249,269 @@ def check_ec3d_available(project_name, sample_name):
     logging.debug(f"ec3d_path is {ec3d_path}")
 
     return os.path.exists(ec3d_path)
+
+
+class FileUploadView(APIView):
+    parser_class = (MultiPartParser,)
+    permission_classes = []
+
+    def get(self, request):
+        logging.debug('Hello')
+        return Response({'response':'success'})
+
+    def post(self, request, format= None):
+        '''
+        Post API
+        '''
+        file_serializer = FileSerializer(data = request.data)
+
+        if file_serializer.is_valid():
+            file_serializer.save()
+            form = RunForm(request.POST)
+            form_dict = form_to_dict(form)
+            proj_name = form_dict['project_name']
+            request_file = request.FILES['file']
+            # extract contents of file
+            current_user = request.POST['project_members'][0]
+            logging.info(f'Creating project for user {current_user}')
+            if 'MULTIPART' in proj_name:
+                _, api_id, final_file, actual_proj_name = proj_name.split('__')
+            else:
+                api_id = uuid.uuid4().hex
+
+            if not os.path.exists(os.path.join('tmp', api_id)):
+                os.system(f'mkdir -p tmp/{api_id}')
+            os.system(f'mv tmp/{request_file.name} tmp/{api_id}/{request_file.name}')
+
+            if 'MULTIPART' in proj_name:
+                if str(final_file) in str(request_file.name):
+                    ## we've reached the last file in the multifile upload, time to zip them up together
+                    print('reached the final file, creating reconstructed zip now. ')
+                    os.system(f'cat ./tmp/{api_id}/POST* > ./tmp/{api_id}/reconstructed.tar.gz')
+                    file = open(f'./tmp/{api_id}/reconstructed.tar.gz', 'rb')
+                    print('removing POST files now')
+                    os.system(f'rm -f ./tmp/{api_id}/POST*')
+
+                    helper_thread = Thread(target=self.api_helper, args=(form, current_user, file , api_id, actual_proj_name, True))
+                    helper_thread.start()
+            else:
+                ## no multipart, just run the api helper:
+                file = open(f'./tmp/{api_id}/{request_file.name}')
+                actual_proj_name = request_file.name.split('.')[0]
+                helper_thread = Thread(target=self.api_helper, args=(form, current_user,file, api_id, actual_proj_name))
+                helper_thread.start()
+
+            print('hanging up now')
+            if 'MULTIPART':
+                return Response({'Message': 'Successfully uploaded. Project creation will take more than 2 mins. Upload may time-out.'}, status=status.HTTP_201_CREATED)
+            else:
+                return Response(file_serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+    def api_helper(self, form, current_user, request_file, api_id,actual_proj_name, multifile = False):
+        """
+        Helper function for API, to be run asynchronously
+        """
+        logging.info('starting api helper')
+        project, tmp_id = create_project_helper(form, current_user, request_file, save = False, tmp_id = api_id, from_api = True)
+        if multifile:
+            project['project_name'] = actual_proj_name
+        logging.info('the project is here: ')
+        new_id = collection_handle.insert_one(project)
+        logging.info(str(new_id))
+        project_data_path = f"tmp/{api_id}"
+        # move the project location to a new name using the UUID to prevent name collisions
+        # new_project_data_path = f"tmp/{new_id.inserted_id}"
+        # os.rename(project_data_path, new_project_data_path)
+        # project_data_path = new_project_data_path
+
+        file_location = f'{request_file.name}'
+        logging.debug('the project is here: ')
+        logging.debug(str(file_location))
+
+            # extract the files async also
+        extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
+        extract_thread.start()
+
+        if settings.USE_S3_DOWNLOADS:
+            # load the zip asynch to S3 for later use
+            file_location = f'{project_data_path}/{request_file.name}'
+
+            s3_thread = Thread(target=upload_file_to_s3, args=(f'{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
+            s3_thread.start()
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class ProjectFileAddView(APIView):
+    parser_class = (MultiPartParser,)
+    permission_classes = []
+
+    
+
+    def post(self, request, format=None):
+        project_uuid = request.data.get('project_uuid')
+        project_key = request.data.get('project_key')
+        username = request.data.get('username')
+
+        # Validate project exists
+        project = get_one_project(project_uuid)
+        if not project:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # If project is not current, get the latest version.  check that the user is still a member of the latest version
+        # but compare the project key to the original project version submitted.  This allows a user to run several
+        # additions of samples without going back and forth to get the updated uuid and key after each one
+        if project['current'] is False or project['delete'] is True:
+            # get the latest 
+            latest_proj = get_latest_project_version(project)
+            original_project = project
+            project = latest_proj
+        else:
+            original_project = project
+
+        # Validate user is a project member
+        # Get the identifier (could be username or email)
+        user_identifier = request.data.get('username')
+
+        # Get all usernames and emails from project members
+        project_members = project.get('project_members', [])
+        user_objs = User.objects.filter(username__in=project_members) | User.objects.filter(email__in=project_members)
+        member_identifiers = set([u.username for u in user_objs] + [u.email for u in user_objs])
+
+        if user_identifier not in member_identifiers:
+            return Response({'error': 'User not authorized'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Validate project key
+        if original_project.get('privateKey') != project_key:
+            return Response({'error': 'Invalid project key'}, status=status.HTTP_403_FORBIDDEN)
+
+        #  file handling , save the new file to a temp dir
+        api_id = uuid.uuid4().hex
+        tmp_project_data_path = f"tmp/{api_id}"
+
+        uploaded_file = request.FILES['file']
+        os.makedirs(tmp_project_data_path, exist_ok=True)
+        file_path = os.path.join(tmp_project_data_path, uploaded_file.name)
+
+        with open(file_path, 'wb+') as destination:
+            for chunk in uploaded_file.chunks():
+                destination.write(chunk)
+
+        # Start file processing in a background thread
+        file_process_thread = Thread(
+            target=self.process_file_in_background,
+            args=(request, project, username, uploaded_file, api_id)
+        )
+        file_process_thread.start()
+        
+        
+        return Response({'message': 'Files uploaded successfully and submitted for processing.'}, status=status.HTTP_200_OK)
+    
+    
+    def process_file_in_background(self, request, project, username, uploaded_file, api_id):
+        
+        project_uuid = project['linkid']
+        tmp_project_data_path = f"tmp/{api_id}"
+        user_identifier = request.data.get('username')
+        user = User.objects.get(Q(username=user_identifier) | Q(email=user_identifier))
+
+        
+
+        alert_message = None
+        project_data_path = tmp_project_data_path
+        file_fps = [uploaded_file.name]
+        url = f'http://127.0.0.1:8000/project/{project["linkid"]}/download'
+        download_path = project_data_path + '/download.tar.gz'
+        try:
+            ## try to download old project file
+            print(f"PREVIOUS FILE FPS LIST: {file_fps}")
+            
+            download = download_file(url, download_path)
+            file_fps.append(os.path.join('download.tar.gz'))
+            
+        except:
+            logging.error("Could not download existing project data for aggregation")
+
+        logging.error(f"file_fps are {file_fps}")
+        try:
+            temp_directory = os.path.join('./tmp/', str(api_id))
+            agg = Aggregator(file_fps, temp_directory, tmp_project_data_path, 'No', "", 'python3', uuid=str(api_id))
+            if not agg.completed:
+                ## redirect to edit page if aggregator fails
+                alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
+            else:
+                with open(agg.aggregated_filename, 'rb') as f:
+                    uploaded_file = SimpleUploadedFile(
+                    name=os.path.basename(agg.aggregated_filename),
+                    content=f.read(),
+                    content_type='application/gzip'
+                    )
+                    self.request.FILES['document'] = uploaded_file
+                f.close()
+                
+                self.request.user = user
+                update_project = project_update(self.request, project_uuid)
+                delete_project = project_delete(self.request, project_uuid)
+
+                new_prev_versions = []
+                if 'previous_versions' in project:
+                    new_prev_versions = project['previous_versions']
+
+                new_prev_versions.append({
+                    'date': str(project['date']),
+                    'linkid': str(project['linkid'])
+                })
+                # transfer the view and downloads counts to the new project version
+                views = project['views']
+                downloads = project['downloads']
+                form_data = {
+                    'project_name': project.get('project_name', ''),
+                    'publication_link': project.get('publication_link', ''),
+                    'description': project.get('description', ''),
+                    'private': project.get('private', True),
+                    'project_members': ','.join(project.get('project_members', [])),
+                    'alias': project.get('alias_name', ''),
+                    'accept_license': True
+                }
+                form = RunForm(form_data)
+                if not form.is_valid():
+                    logging.error(form.errors)
+                extra_metadata_file_fp = None
+                ## get extra metadata from csv first (if exists in old project), add it to the new proj
+                new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions=new_prev_versions,
+                                         previous_views=[views, downloads])
+                if new_id is not None:
+                    new_project_uuid = str(new_id.inserted_id)
+                    alert_message = f"Aggregation successful. New samples added to project version: {new_project_uuid}"
+        except Exception as e:
+            logging.error(e)
+            alert_message = "Edit project failed. Error performing aggregation. Please ensure all uploaded samples are valid AmpliconSuite results."
+
+        logging.error("Preparing to send  email with status: "+ alert_message)
+        form_dict = {}
+        # add details for the template
+        form_dict['SITE_TITLE'] = settings.SITE_TITLE
+        form_dict['SITE_URL'] = settings.SITE_URL
+        form_dict['sharing_user_email'] = user.email
+        form_dict['project_name'] = project.get('project_name', project_uuid)
+        form_dict['project_id'] = project_uuid
+        form_dict['alert_message'] = alert_message
+        
+        html_message = render_to_string('contacts/project_api_file_added.html', form_dict)
+        plain_message = strip_tags(html_message)
+
+        # send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER_SECRET, recipient_list = [settings.RECIPIENT_ADDRESS])
+        email = EmailMessage(
+            f"Project update on {form_dict['project_name']}",
+            html_message,
+            settings.EMAIL_HOST_USER,
+            [user.email],
+            reply_to=[settings.EMAIL_HOST_USER]
+        )
+        email.content_subtype = "html"
+        email.send(fail_silently=False)
+        logging.error("Finished email sent")
+        
