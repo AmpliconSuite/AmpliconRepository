@@ -294,6 +294,10 @@
         </span>
         <span style="display:inline-block">{{ piechart|safe }}</span>
     </div>
+    {% else %}
+        <div class="col-md-12 text-center" style="margin-top: 50px; margin-bottom: 50px;">
+            <h4 style="color: #666;">No samples in project</h4>
+        </div>
     {% endif %}
 </div>
 <br>
