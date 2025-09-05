@@ -525,7 +525,11 @@ def is_user_a_project_member(project, request):
 
 
 def set_project_edit_OK_flag(project, request):
-    if (is_user_a_project_member(project, request)):
+    try:
+        is_admin = getattr(request.user, 'is_staff', False)
+    except Exception:
+        is_admin = False
+    if is_user_a_project_member(project, request) or (is_admin and not project.get('private', True)):
         project['current_user_may_edit'] = True
     else:
         project['current_user_may_edit'] = False
@@ -832,7 +836,9 @@ def project_download(request, project_name):
                 for chunk in tar_file_wrapper:
                     output.write(chunk)
                 output.close()
-                upload_file_to_s3(f'{project_data_path}/{project_linkid}.tar.gz', s3_file_location)
+                # recreate the path without the {settings.S3_DOWNLOADS_BUCKET} which the upload_file_to_s3 adds as well
+                s3_file_location_bucketless = f'{project_linkid}/{project_linkid}.tar.gz'
+                upload_file_to_s3(f'{project_data_path}/{project_linkid}.tar.gz', s3_file_location_bucketless)
                 logging.info('==== XXX upload to bucket complete, move on to get one time url')
 
             else:
@@ -1603,7 +1609,9 @@ def get_current_user(request):
 def project_delete(request, project_name):
     project = get_one_project(project_name)
     deleter = get_current_user(request)
-    if check_project_exists(project_name) and is_user_a_project_member(project, request):
+    is_admin = getattr(request.user, 'is_staff', False)
+    allowed = is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))
+    if check_project_exists(project_name) and allowed:
         current_runs = project['runs']
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
@@ -1622,7 +1630,9 @@ def project_update(request, project_name):
     update_date will be changed after project has been updated.
     """
     project = get_one_project(project_name)
-    if check_project_exists(project_name) and is_user_a_project_member(project, request):
+    is_admin = getattr(request.user, 'is_staff', False)
+    allowed = is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))
+    if check_project_exists(project_name) and allowed:
         query = {'_id': project['_id']}
         ## 2 new fields: current, and update_date, $set will add a new field with the specified value.
         new_val = { "$set": {'current' : False, 'update_date': get_date()} }
@@ -1650,6 +1660,9 @@ def download_file(url, save_path):
 def edit_project_page(request, project_name):
     if request.method == "GET":
         project = get_one_project(project_name)
+        is_admin = getattr(request.user, 'is_staff', False)
+        if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
+            return HttpResponse("Project does not exist")
     if request.method == "POST":
         try:
             metadata_file = request.FILES.get("metadataFile")
@@ -1661,8 +1674,9 @@ def edit_project_page(request, project_name):
         if 'alias_name' in project:
             old_alias_name = project['alias_name']
             print(f'THE OLD ALIAS NAME SHOULD BE: {old_alias_name}')
-        # no edits for non-project members
-        if not is_user_a_project_member(project, request):
+        # no edits for non-project members unless admin on a public project
+        is_admin = getattr(request.user, 'is_staff', False)
+        if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
             return HttpResponse("Project does not exist")
         form = UpdateForm(request.POST, request.FILES)
         ## give the new project the old project alias.
@@ -1677,7 +1691,13 @@ def edit_project_page(request, project_name):
                 collection_handle.update_one(query, new_val)
         ## new project information is stored in form_dict
         form_dict = form_to_dict(form)
-        form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request))
+        # Build project member list. Avoid auto-adding admins editing public projects when they are not members.
+        is_member = is_user_a_project_member(project, request)
+        is_public = not project.get('private', True)
+        add_self = True
+        if getattr(request.user, 'is_staff', False) and is_public and not is_member:
+            add_self = False
+        form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request), add_current_user=add_self)
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
         old_membership = project['project_members']
@@ -1722,9 +1742,14 @@ def edit_project_page(request, project_name):
                 # print(f'aggregating on: {file_fps}')
                 temp_directory = os.path.join('./tmp/', str(temp_proj_id))
                 agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
+                
                 if not agg.completed:
                     ## redirect to edit page if aggregator fails
-                    alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
+
+                    if os.path.exists(temp_directory):
+                        shutil.rmtree(temp_directory)
+                    alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
+
                     return render(request, 'pages/edit_project.html',
                               {'project': project,
                                'run': form,
@@ -1775,6 +1800,9 @@ def edit_project_page(request, project_name):
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
             ## get extra metadata from csv first (if exists in old project), add it to the new proj
             new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions = new_prev_versions, previous_views = [views, downloads])
+
+            if os.path.exists(temp_directory):
+                shutil.rmtree(temp_directory)
             if new_id is not None:
                 # go to the new project
                 return redirect('project_page', project_name=new_id.inserted_id)
@@ -2043,7 +2071,7 @@ def admin_stats(request):
     users = User.objects.all()
 
     # Get all projects
-    all_projects = list(collection_handle.find({'delete': False}))
+    all_projects = list(collection_handle.find({'current': True, 'delete': False}))
 
     # Create a dictionary to store user stats
     user_stats = {}
@@ -2666,7 +2694,10 @@ def create_project(request):
             print("No version attribute found for Aggregator or AmpliconSuiteAggregator.")
 
         agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
+        
         if not agg.completed:
+            if os.path.exists(temp_directory):
+                shutil.rmtree(temp_directory)
             ## redirect to edit page if aggregator fails
             alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid cSuite results."
             return render(request, 'pages/create_project.html',
@@ -2674,6 +2705,7 @@ def create_project(request):
                         'alert_message': alert_message,
                         'all_alias':json.dumps(get_all_alias())})
         ## after running aggregator, replace the requests file with the aggregated file:
+        logging.error(f"Aggregated filename: {agg.aggregated_filename}")
         with open(agg.aggregated_filename, 'rb') as f:
             uploaded_file = SimpleUploadedFile(
             name=os.path.basename(agg.aggregated_filename),
@@ -2685,6 +2717,10 @@ def create_project(request):
 
         # return render(request, 'pages/loading.html')
         new_id = _create_project(form, request, extra_metadata_file_fp)
+
+        if os.path.exists(temp_directory):
+            shutil.rmtree(temp_directory)
+
         if new_id is not None:
             return redirect('project_page', project_name=new_id.inserted_id)
         else:
