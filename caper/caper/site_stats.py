@@ -13,7 +13,7 @@ def get_date():
 
 def get_latest_site_statistics():
     # check to auto create the stats if needed
-    if site_statistics_handle.find().count()==0:
+    if site_statistics_handle.count_documents({})==0:
         regenerate_site_statistics()
 
     latest = site_statistics_handle.find().sort('_id', -1).limit(1).next()

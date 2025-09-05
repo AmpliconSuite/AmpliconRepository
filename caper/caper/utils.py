@@ -377,7 +377,7 @@ def validate_project(project, project_name):
         }}
         query = {'_id': project['_id'],
                     'delete': False}
-        collection_handle.update(query, new_values)
+        collection_handle.update_one(query, new_values)
 
     return get_one_project(project_name)
 

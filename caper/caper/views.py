@@ -343,7 +343,7 @@ def change_database_dates(request):
                                 'date_created' : date_created}}
         query = {'_id' : project['_id'],
                     'delete': False}
-        collection_handle.update(query, new_values)
+        collection_handle.update_one(query, new_values)
 
         # if "previous_versions" in project:
         #     updated_versions = project.previous_versions.view()
@@ -377,7 +377,7 @@ def update_sample_counts(request):
         sample_count = len(project['runs'])
         new_values = {"$set": {'sample_count': sample_count}}
         query = {'_id': project['_id'], 'delete': False}
-        collection_handle.update(query, new_values)
+        collection_handle.update_one(query, new_values)
 
 
     response = redirect('/data-qc')
@@ -671,7 +671,7 @@ def project_page(request, project_name, message=''):
                     'delete': False}
 
         logging.debug('Inserting Now')
-        collection_handle.update(query, new_values)
+        collection_handle.update_one(query, new_values)
         logging.debug('Insert complete')
 
     elif 'metadata_stored' in project:
