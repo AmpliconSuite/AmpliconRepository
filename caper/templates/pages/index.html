@@ -3,6 +3,9 @@
 {% load mezzanine_tags %}
 {% block extra_js %}
 <script>
+    // get the format and sort functions from the included file
+    {% include 'includes/datatable_date_utils.html' %}
+
     $(document).ready(function () {
         $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
             $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
@@ -11,22 +14,44 @@
         $('#projectTable0').DataTable({
             language: {
                     searchPlaceholder: "Search projects"
-                    }
+                    },
+            columnDefs: [
+                {
+                    targets: 2, // 3rd column (zero-based index)
+                    type: 'custom-date'
+                }
+            ],
+            order: [[2, 'desc']] // Sort by date column (index 2) in descending order
         });
         $('#projectTable1').DataTable({
             language: {
                     searchPlaceholder: "Search projects"
-                    }
+                    },
+            columnDefs: [
+                {
+                    targets: 2, // 3rd column (zero-based index)
+                    type: 'custom-date'
+                }
+            ],
+            order: [[2, 'desc']] // Sort by date column (index 2) in descending order
+
         });
         $('#projectTable2').DataTable({
             language: {
                     searchPlaceholder: "Search projects"
-                    }
+                    },
+            columnDefs: [
+                {
+                    targets: 2, // 3rd column (zero-based index)
+                    type: 'custom-date'
+                }
+            ],
+            order: [[2, 'desc']] // Sort by date column (index 2) in descending order
         });
     });
-</script>
-
-<script>
+    // Call the formatDates function when the page is loaded
+    document.addEventListener('DOMContentLoaded', formatDates);
+    
     window.addEventListener('DOMContentLoaded', function() {
         var tabContent = document.getElementById('tab-table0');
         if (tabContent.scrollWidth > tabContent.clientWidth) {
@@ -35,42 +60,10 @@
             tabContent.style.overflowX = 'hidden';
         }
     });
-</script>
 
-<script>
-    // Function to format the date string
-    function formatDate(dateString) {
-        // Parse the date string into a Date object (assuming it's in UTC)
-        const utcDate = new Date(dateString);
-        //Convert the UTC date to the local timezone
-        const localDate = new Date(utcDate.getTime() - utcDate.getTimezoneOffset() * 60000);
-        {#const localDate = utcDate#}
-        // Format the local date using the desired format
-        const formattedDate = localDate.toLocaleString('en-US', {
-            month: 'long',
-            day: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true,
-            timeZoneName: 'short'
-        });
-        return formattedDate;
-    }
+    
 
-    // Function to format all date elements in the table
-    function formatDates() {
-        const dateElements = document.querySelectorAll('.date');
-        dateElements.forEach(element => {
-            const originalDate = element.textContent.trim();
-            const formattedDate = formatDate(originalDate);
-            element.textContent = formattedDate;
-        });
-    }
-
-    // Call the formatDates function when the page is loaded
-    document.addEventListener('DOMContentLoaded', formatDates);
+   
 </script>
 
 
