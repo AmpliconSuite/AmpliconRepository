@@ -264,8 +264,6 @@
     {% if not is_empty_project %}
     <div class="col-md-3">
         <a class="btn btn-primary" style="color: white; margin-bottom: 12px;" onclick = "downloadAndReload();" >Download Project Data</a><br>
-        <!-- <p><b>Last Updated:</b> {{ project.date }}</p> -->
-        <!-- <p><b>Private:</b> {{ project.private }}</p> -->
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}
         <p><b>Project Members:</b> {% for person in project.project_members %}
             {{ person }}
@@ -295,6 +293,14 @@
         <span style="display:inline-block">{{ piechart|safe }}</span>
     </div>
     {% else %}
+        <div class="col-md-3">
+        {% if  project.private %}Visibility: <b>Private</b>{% endif %}
+        <p><b>Project Members:</b> {% for person in project.project_members %}
+            {{ person }}
+        {% endfor %}
+        </p>
+
+        </div>
         <div class="col-md-12 text-center" style="margin-top: 50px; margin-bottom: 50px;">
             <h4 style="color: #666;">No samples in project</h4>
         </div>
