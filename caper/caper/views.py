@@ -1,3 +1,11 @@
+import logging
+
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
+                    level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
+
+logging.getLogger("pymongo").setLevel(logging.WARNING)
+
+
 from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, Http404, JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test, login_required
@@ -44,12 +52,10 @@ from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from wsgiref.util import FileWrapper
-import boto3, botocore, fnmatch, uuid, datetime, time, logging
+import boto3, botocore, fnmatch, uuid, datetime, time
 from threading import Thread
 import dateutil.parser
 
-logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
-                    level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
 ## Message framework
 from django.contrib import messages
@@ -347,7 +353,7 @@ def change_database_dates(request):
                                 'date_created' : date_created}}
         query = {'_id' : project['_id'],
                     'delete': False}
-        collection_handle.update(query, new_values)
+        collection_handle.update_one(query, new_values)
 
         # if "previous_versions" in project:
         #     updated_versions = project.previous_versions.view()
@@ -381,7 +387,7 @@ def update_sample_counts(request):
         sample_count = len(project['runs'])
         new_values = {"$set": {'sample_count': sample_count}}
         query = {'_id': project['_id'], 'delete': False}
-        collection_handle.update(query, new_values)
+        collection_handle.update_one(query, new_values)
 
 
     response = redirect('/data-qc')
@@ -690,7 +696,7 @@ def project_page(request, project_name, message=''):
         query = {'_id' : project['_id'], 'delete': False}
 
         logging.debug('Inserting Now')
-        collection_handle.update(query, new_values)
+        collection_handle.update_one(query, new_values)
         logging.debug('Insert complete')
 
         stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
