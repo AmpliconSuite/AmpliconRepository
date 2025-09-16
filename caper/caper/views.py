@@ -1754,7 +1754,7 @@ def edit_project_page(request, project_name):
 
                     if os.path.exists(temp_directory):
                         shutil.rmtree(temp_directory)
-                    alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
+                    alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
 
                     return render(request, 'pages/edit_project.html',
                               {'project': project,
@@ -3447,7 +3447,7 @@ class ProjectFileAddView(APIView):
             agg = Aggregator(file_fps, temp_directory, tmp_project_data_path, 'No', "", 'python3', uuid=str(api_id))
             if not agg.completed:
                 ## redirect to edit page if aggregator fails
-                alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmplionSuite results."
+                alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
             else:
                 with open(agg.aggregated_filename, 'rb') as f:
                     uploaded_file = SimpleUploadedFile(
