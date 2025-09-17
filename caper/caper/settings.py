@@ -1,14 +1,14 @@
 import os
 from django.utils.translation import gettext_lazy as _
 import logging
-default_log_level_name = os.getenv("DEFAULT_LOG_LEVEL", "ERROR").upper()
-caper_log_level_name = os.getenv("CAPER_LOG_LEVEL", "INFO").upper()
+default_log_level_name = os.getenv("DEFAULT_LOG_LEVEL", "INFO").upper()
+caper_log_level_name = os.getenv("CAPER_LOG_LEVEL", "DEBUG").upper()
 
 try:
     default_log_level = getattr(logging, default_log_level_name)
 except AttributeError:
-    print(f"Warning: Invalid default log level '{default_log_level_name}' specified. Defaulting to ERROR.")
-    default_log_level = logging.ERROR
+    print(f"Warning: Invalid default log level '{default_log_level_name}' specified. Defaulting to INFO.")
+    default_log_level = logging.INFO
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=default_log_level, datefmt='%Y-%m-%d %H:%M:%S')
