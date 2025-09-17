@@ -34,6 +34,7 @@ class Graph:
 			self.edges = []
 			self.gene_records = {}
 			self.name_to_record = {}
+			self.name_to_edge = {}
 			
 			start_time = time.time()
 			# define reference genomes to process
@@ -318,6 +319,7 @@ class Graph:
 						chr, start, __ = record['location']
 						if chr in interval_lookup: 
 							interval_found = False
+							# TODO 09/16: REFACTOR WITH INTERVAL TREE
 							for istart, iend, id in interval_lookup[chr]:
 								if (start > istart and start < iend):
 									genes_with_interval_counter += 1                               
@@ -422,6 +424,14 @@ class Graph:
 		print(
 			f"Constructing edges took {time.time() - construct_start:.4f} seconds: {len(self.edges)} edges with non-empty intersections")
 				
+		# create retrieval index for edges
+		self.name_to_edge = {
+			f"{a}-{b}": edge
+			for edge in self.edges
+			for a, b in [(edge["source"], edge["target"]),
+						 (edge["target"], edge["source"])]
+		}
+
 		# perform significance testing on edges
 		p_start = time.time()
 		na_counter = 0
@@ -457,9 +467,11 @@ class Graph:
 		"""
 		distance = -1
 		if record_a['location'][0] == record_b['location'][0]:
-			e_s = abs(record_a['location'][2] - record_a['location'][1])
-			s_e = abs(record_a['location'][1] - record_a['location'][2])
-			distance = min(e_s, s_e)
+			(start1, end1), (start2, end2) = sorted([
+				(record_a['location'][1], record_a['location'][2]), 
+				(record_b['location'][1], record_b['location'][2])
+			])
+			distance = max(0, start2 - end1)
 		return distance
 	
 	def p_d_D(self, distance):
@@ -474,7 +486,13 @@ class Graph:
 											 1749495.5696758535],
 				   'gamma_capped_5m': [0.4528058380301946,
 						               1.999999999999,
-									   1192794.3765480835] }
+									   1192794.3765480835], 
+				   'merge25kbp_cap2mbp': [0.5567064701123039,
+						                  1.9999999999999996,
+									      534068.5378861207],
+				   'merge25kbp_cap1mbp': [0.7420123072378633,
+						                  1.9999999999999998,
+									      203145.72909328266] }
 		params = models[self.pdD_MODEL]
 		cdf = gamma.cdf(distance, a=params[0], loc=params[1], scale=params[2])
 		return 1 - cdf
@@ -554,23 +572,23 @@ class Graph:
 
 			i += 1
 
-	def chi_squared_helper(self, obs, exp):
+	def chi_squared_helper(self, obs, exp, verbose=False):
 		# apply Haldane correction if any observed category count is zero
 		if 0 in obs:
 			obs = [o + 0.5 for o in obs]
 			exp = [e + 0.5 for e in exp]
 
-		total_obs = sum(obs)
-		total_exp = sum(exp)
-		obs_freq = [o / total_obs for o in obs]
-		exp_freq = [e / total_exp for e in exp]
+		# total_obs = sum(obs)
+		# total_exp = sum(exp)
+		# obs_freq = [o / total_obs for o in obs]
+		# exp_freq = [e / total_exp for e in exp]
 
-		test_statistic = sum([(o-e)*(o-e)/e for o,e in zip(obs_freq, exp_freq)])
+		test_statistic = sum([(o-e)*(o-e)/e for o,e in zip(obs, exp)])
 		cdf = chi2.cdf(test_statistic, df=1)
 		p_val_two_sided = 1-cdf
-		diagonal_residual_sum = ((obs_freq[0]-exp_freq[0]) + (obs_freq[3]-exp_freq[3]))
+		diagonal_residual_sum = ((obs[0]-exp[0]) + (obs[3]-exp[3]))
 
-		odds_ratio = obs_freq[0] / exp_freq[0]
+		odds_ratio = obs[0] / exp[0]
 		if odds_ratio > 1e9:
 			odds_ratio = 1e9 # cap ultra large to prevent infinite odds ratios
 
@@ -580,9 +598,15 @@ class Graph:
 		else:
 			p_val_one_sided = 1 - (p_val_two_sided / 2)
 
+		if verbose:
+			print(f"test_statistic: {test_statistic}\n" \
+		 		  f"p_val_two_sided: {p_val_two_sided}\n" \
+				  f"diagonal_residual_sum: {diagonal_residual_sum}\n" \
+				  f"p_val_one_sided: {p_val_one_sided}\n")
+
 		return p_val_one_sided, odds_ratio
 
-	def single_interval(self, edge, record_a, record_b):
+	def single_interval(self, edge, record_a, record_b, verbose=False):
 		pdD = edge['p_d_D']
 		geneA_samples = len(record_a['samples'])
 		geneB_samples = len(record_b['samples'])
@@ -599,12 +623,21 @@ class Graph:
 		E11 = (geneA_samples + geneB_samples - geneAB_samples) * pdD
 		E12 = geneA_samples * (1 - pdD)
 		E21 = geneB_samples * (1 - pdD)
-		E22 = self.total_samples - (geneA_samples + geneB_samples - geneAB_samples)
+		E22 = self.total_samples - (E11 + E12 + E21)
 		exp = [E11, E12, E21, E22] 
 
-		return self.chi_squared_helper(obs, exp)
+		if verbose:
+			print(f"pdD value: {pdD}\n" \
+		 		  f"{record_a['label']} samples: {geneA_samples}\n" \
+				  f"{record_b['label']} samples: {geneB_samples}\n" \
+				  f"{record_a['label']} & {record_b['label']} samples: {geneAB_samples}\n" \
+				  f"Total samples: {self.total_samples}\n" \
+				  f"Observed counts ([O11, O12, O21, O22]): {obs}\n" \
+				  f"Expected counts ([E11, E12, E21, E22]): {exp}\n")
 
-	def multi_interval(self, edge, record_a, record_b):
+		return self.chi_squared_helper(obs, exp, verbose=verbose)
+
+	def multi_interval(self, edge, record_a, record_b, verbose=False):
 		# M_SAME_CHR = 0.275405
 
 		pdD = edge['p_d_D']
@@ -620,19 +653,28 @@ class Graph:
 		obs = [O11, O12, O21, O22]
 		
 		# expected
-		E11 = (geneA_samples) * (geneB_samples) * ((1-pdD)**2) 
+		E11 = (geneA_samples) * (geneB_samples) * ((1-pdD)**2) / self.total_samples
 		# E11 = E11 * M_SAME_CHR
-		E12 = geneA_samples * (self.total_samples - geneB_samples)
-		E21 = geneB_samples * (self.total_samples - geneA_samples)
-		E22 = (self.total_samples - geneA_samples) * (self.total_samples - geneB_samples)
+		E12 = geneA_samples * (self.total_samples - geneB_samples) / self.total_samples
+		E21 = geneB_samples * (self.total_samples - geneA_samples) / self.total_samples
+		E22 = self.total_samples - (E11 + E12 + E21)
 		exp = [E11, E12, E21, E22] 
 
-		return self.chi_squared_helper(obs, exp)
+		if verbose:
+			print(f"pdD value: {pdD}\n" \
+		 		  f"{record_a['label']} samples: {geneA_samples}\n" \
+				  f"{record_b['label']} samples: {geneB_samples}\n" \
+				  f"{record_a['label']} & {record_b['label']} samples: {geneAB_samples}\n" \
+				  f"Total samples: {self.total_samples}\n" \
+				  f"Observed counts ([O11, O12, O21, O22]): {obs}\n" \
+				  f"Expected counts ([E11, E12, E21, E22]): {exp}\n")
+			
+		return self.chi_squared_helper(obs, exp, verbose=verbose)
 
-	def multi_chromosomal(self, edge, record_a, record_b):
+	def multi_chromosomal(self, edge, record_a, record_b, verbose=False):
 		M_MULTI_CHR = 0.116055
 
-		pdD = edge['p_d_D']
+		# pdD = edge['p_d_D']
 		geneA_samples = len(record_a['samples'])
 		geneB_samples = len(record_b['samples'])
 		geneAB_samples = len(edge['inter'])
@@ -648,12 +690,21 @@ class Graph:
 		E11 = (geneA_samples) * (geneB_samples) * (M_MULTI_CHR)
 		E12 = geneA_samples * (self.total_samples - geneB_samples)
 		E21 = geneB_samples * (self.total_samples - geneA_samples)
-		E22 = (self.total_samples - geneA_samples) * (self.total_samples - geneB_samples)
+		E22 = self.total_samples - (E11 + E12 + E21)
 		exp = [E11, E12, E21, E22] 
 
-		return self.chi_squared_helper(obs, exp)
+		if verbose:
+			print(f"Multichromosomal rate: {M_MULTI_CHR}\n" \
+		 		  f"{record_a['label']} samples: {geneA_samples}\n" \
+				  f"{record_b['label']} samples: {geneB_samples}\n" \
+				  f"{record_a['label']} & {record_b['label']} samples: {geneAB_samples}\n" \
+				  f"Total samples: {self.total_samples}\n" \
+				  f"Observed counts ([O11, O12, O21, O22]): {obs}\n" \
+				  f"Expected counts ([E11, E12, E21, E22]): {exp}\n")
+			
+		return self.chi_squared_helper(obs, exp, verbose=verbose)
 
-	def multi_ecdna(self, edge, record_a, record_b):
+	def multi_ecdna(self, edge, record_a, record_b, verbose=False):
 		# to complete
 		return -1, -1
 
@@ -667,6 +718,41 @@ class Graph:
 		q_values = [next(valid_q_iter) if valid else -1 for valid in valid_mask]
 
 		return q_values
+
+	def test_edge(self, source, target, test=0):
+		edge_name = f"{source}-{target}"
+		if edge_name not in self.name_to_edge:
+			print(f"No co-amplification found between {source} and {target}.")
+			return
+		
+		edge = self.name_to_edge[edge_name]
+		source_node = self.name_to_record[edge['source']]
+		target_node = self.name_to_record[edge['target']]
+
+		p_val, q_val = edge['p_values'][test], edge['q_values'][test]
+		if p_val == -1:
+			print("The selected test does not apply to this co-amplification.\n\n" \
+				   f"{source} location: {source_node['location']}\n" \
+				   f"{target} location: {target_node['location']}\n" \
+				   f"Distance: {edge['distance']}")
+			return
+		
+		print(f"Stored p-value: {p_val}\nStored q-value: {q_val}\n")
+		
+		# match-case
+		if test == 0:
+			result = self.single_interval(edge, source_node, target_node, verbose=True)
+		elif test == 1:
+			result = self.multi_interval(edge, source_node, target_node, verbose=True)
+		elif test == 2:
+			result = self.multi_chromosomal(edge, source_node, target_node, verbose=True)
+		elif test == 3:
+			result = self.multi_ecdna(edge, source_node, target_node, verbose=True)
+		else:
+			return "Input a valid test selection"
+		
+		print("Final p-value: ", result[0])
+		return
 
 	# # -------------------- (soon to be) deprecated functions -------------------
 
