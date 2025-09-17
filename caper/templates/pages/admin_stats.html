@@ -200,6 +200,7 @@
                                 <th>Name</th>
                                 <th>Description</th>
                                 <th>Last Updated</th>
+                                <th>Sample Metadata</th>
                                 <th>Project Members</th>
                                 <th>Project Downloads</th>
                                 <th>Sample Downloads</th>
@@ -211,6 +212,12 @@
                                 <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
+                                <td>{% if project.metadata_stored %}
+                                <i class="fas fa-check-square" style="color: green;"></i>
+                                    {% else %}
+                                        <i class="far fa-square"></i>
+                                    {% endif %}
+                                </td>
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor %}</td>
