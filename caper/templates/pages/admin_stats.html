@@ -212,7 +212,7 @@
                                 <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
-                                <td>{% if project.metadata_stored %}
+                                <td>{% if project.sample_metadata_available %}
                                 <i class="fas fa-check-square" style="color: green;"></i>
                                     {% else %}
                                         <i class="far fa-square"></i>

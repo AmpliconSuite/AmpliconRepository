@@ -223,11 +223,30 @@ def get_extra_metadata_from_project(project):
     Returns:
         dict: A dictionary containing the extra metadata from the project's runs.
     """
-    extra_metadata = {}
-    for sample_list in project.get('runs', {}).values():
-        for sample in sample_list:
-            extra_metadata_from_csv = sample.get('extra_metadata_from_csv', {})
-            if extra_metadata_from_csv:
-                extra_metadata[sample['Sample_name']] = extra_metadata_from_csv
+    return {
+        sample['Sample_name']: sample['extra_metadata_from_csv']
+        for sample_list in project.get('runs', {}).values()
+        for sample in sample_list
+        if 'extra_metadata_from_csv' in sample
+    }
 
-    return extra_metadata
+def has_sample_metadata(project_id):
+    """
+    Checks if there is any sample metadata in the project's runs.
+
+    Args:
+        project_id (str): The ID of the project to check.
+
+    Returns:
+        bool: True if sample metadata exists, False otherwise.
+    """
+    try:
+        # Query the collection with a projection to check for extra_metadata_from_csv
+        result = collection_handle.find_one(
+            {'_id': ObjectId(project_id), 'runs.sample_list.extra_metadata_from_csv': {'$exists': True}},
+            {'_id': 1}  # Only return the _id field for efficiency
+        )
+        return result is not None
+    except Exception as e:
+        logging.exception("Error checking for sample metadata")
+        return False

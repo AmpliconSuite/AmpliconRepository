@@ -94,7 +94,7 @@
                         <td>{{ project.description|truncatechars:100 }}</td>
                         <td class="date">{{ project.date }}</td>
                         <td>{% if  project.private %}private{%  else  %}public{% endif %}</td>
-                        <td>{% if project.metadata_stored %}
+                        <td>{% if project.sample_metadata_available %}
                                 <i class="fas fa-check-square" style="color: green;"></i>
                             {% else %}
                                 <i class="far fa-square"></i>
