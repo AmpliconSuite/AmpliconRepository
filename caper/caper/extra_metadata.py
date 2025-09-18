@@ -88,13 +88,6 @@ def process_metadata_no_request(project_runs, metadata_file=None, file_path=None
     Raises:
         ValueError: If neither `metadata_file` nor `file_path` is provided or there is an error in processing.
     """
-    
-    print('*****************************')
-    print(metadata_file)
-    print(file_path)
-    print('*****************************')
-    
-    
     if not metadata_file and not file_path:
         raise ValueError("Either 'metadata_file' or 'file_path' must be provided.")
 
@@ -125,7 +118,8 @@ def process_metadata_no_request(project_runs, metadata_file=None, file_path=None
 
         # Iterate through the records and update metadata
         for row in records:
-            sample_name = row.get('sample_name')
+            # look for sample name, case insensitive
+            sample_name = {k.lower(): v for k, v in row.items()}.get('sample_name')
             if not sample_name:
                 continue  # Skip rows without a sample_name
 
@@ -133,6 +127,7 @@ def process_metadata_no_request(project_runs, metadata_file=None, file_path=None
             for sample_key, sample_list in project_runs.items():
                 for sample in sample_list:
                     if sample.get('Sample_name') == sample_name:
+                        logging.error(f" -- loading metadata for sample {sample_name} -- ")
                         if "extra_metadata_from_csv" not in sample:
                             sample["extra_metadata_from_csv"] = {}
                         for key, value in row.items():
@@ -223,11 +218,27 @@ def get_extra_metadata_from_project(project):
     Returns:
         dict: A dictionary containing the extra metadata from the project's runs.
     """
-    extra_metadata = {}
-    for sample_list in project.get('runs', {}).values():
-        for sample in sample_list:
-            extra_metadata_from_csv = sample.get('extra_metadata_from_csv', {})
-            if extra_metadata_from_csv:
-                extra_metadata[sample['Sample_name']] = extra_metadata_from_csv
+    return {
+        sample['Sample_name']: sample['extra_metadata_from_csv']
+        for sample_list in project.get('runs', {}).values()
+        for sample in sample_list
+        if 'extra_metadata_from_csv' in sample
+    }
 
-    return extra_metadata
+def has_sample_metadata(project):
+    """
+    Checks if there is any sample metadata in the project's runs.
+
+    Args:
+        project_id (str): The ID of the project to check.
+
+    Returns:
+        bool: True if sample metadata exists, False otherwise.
+    """
+    if not project or 'runs' not in project:
+        return False
+    for sample_list in project['runs'].values():
+        for sample in sample_list:
+            if 'extra_metadata_from_csv' in sample:
+                return True
+    return False

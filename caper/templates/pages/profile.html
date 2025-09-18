@@ -79,6 +79,7 @@
                         <th>Description</th>
                         <th>Date</th>
                         <th>Visibility</th>
+                        <th>Sample Metadata</th>
                         <th>Project Members</th>
                         <th>Edit Project</th>
                         <th>Delete Project</th>
@@ -93,6 +94,12 @@
                         <td>{{ project.description|truncatechars:100 }}</td>
                         <td class="date">{{ project.date }}</td>
                         <td>{% if  project.private %}private{%  else  %}public{% endif %}</td>
+                        <td>{% if project.sample_metadata_available %}
+                                <i class="fas fa-check-square" style="color: green;"></i>
+                            {% else %}
+                                <i class="far fa-square"></i>
+                            {% endif %}
+                        </td>
                         <td>{% for person in project.project_members %}
                             {{ person }}<br>
                         {% endfor%}</td>
