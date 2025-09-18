@@ -3370,7 +3370,7 @@ class ProjectFileAddView(APIView):
         # If project is not current, get the latest version.  check that the user is still a member of the latest version
         # but compare the project key to the original project version submitted.  This allows a user to run several
         # additions of samples without going back and forth to get the updated uuid and key after each one
-        if project['current'] is False or project['delete'] is True:
+        if not project.get('current', True) or project.get('delete', False):
             # get the latest 
             latest_proj = get_latest_project_version(project)
             original_project = project
