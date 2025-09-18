@@ -462,7 +462,8 @@ def profile(request, message_to_user=None):
 
     for proj in projects:
         prepare_project_linkid(proj)
-        proj['sample_metadata_available'] = has_sample_metadata(proj['_id'])
+        test = get_extra_metadata_from_project(proj)
+        proj['sample_metadata_available'] = has_sample_metadata(proj)
 
     prefs = get_user_preferences(request.user)
     form = UserPreferencesForm(prefs)
@@ -936,13 +937,17 @@ def get_sample_metadata(sample_data):
         sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
         sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
         sample_metadata = json.loads(sample_metadata.decode())
+    except Exception as e:
+        # logging.exception(e)
+        sample_metadata = defaultdict(str)
+    try:
         # Add metadata from the `extra_metadata_from_csv` field
         extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
         if isinstance(extra_metadata, dict):
             sample_metadata.update(extra_metadata)
     except Exception as e:
-        # logging.exception(e)
-        sample_metadata = defaultdict(str)
+        logging.exception(e)
+        #sample_metadata = defaultdict(str)
 
     return sample_metadata
 
@@ -1022,7 +1027,7 @@ def sample_page(request, project_name, sample_name):
                    'project_name': project_name,
                    'project_linkid': project_linkid,
                    'sample_data': sample_data_processed,
-                   'sample_metadata': sample_metadata,
+                   'sample_metadata': dict(sample_metadata),
                    'reference_genome': reference_genome,
                    'sample_name': sample_name,
                    'graph': plot,
@@ -2732,7 +2737,8 @@ def create_project(request):
         # return render(request, 'pages/loading.html')
         new_id = _create_project(form, request, extra_metadata_file_fp)
 
-        if os.path.exists(temp_directory):
+        # can't delete it, if its being used in the other thread for metadata extraction
+        if os.path.exists(temp_directory) and not extra_metadata_file_fp:
             shutil.rmtree(temp_directory)
 
         if new_id is not None:

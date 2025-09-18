@@ -88,13 +88,6 @@ def process_metadata_no_request(project_runs, metadata_file=None, file_path=None
     Raises:
         ValueError: If neither `metadata_file` nor `file_path` is provided or there is an error in processing.
     """
-    
-    print('*****************************')
-    print(metadata_file)
-    print(file_path)
-    print('*****************************')
-    
-    
     if not metadata_file and not file_path:
         raise ValueError("Either 'metadata_file' or 'file_path' must be provided.")
 
@@ -125,7 +118,8 @@ def process_metadata_no_request(project_runs, metadata_file=None, file_path=None
 
         # Iterate through the records and update metadata
         for row in records:
-            sample_name = row.get('sample_name')
+            # look for sample name, case insensitive
+            sample_name = {k.lower(): v for k, v in row.items()}.get('sample_name')
             if not sample_name:
                 continue  # Skip rows without a sample_name
 
@@ -133,6 +127,7 @@ def process_metadata_no_request(project_runs, metadata_file=None, file_path=None
             for sample_key, sample_list in project_runs.items():
                 for sample in sample_list:
                     if sample.get('Sample_name') == sample_name:
+                        logging.error(f" -- loading metadata for sample {sample_name} -- ")
                         if "extra_metadata_from_csv" not in sample:
                             sample["extra_metadata_from_csv"] = {}
                         for key, value in row.items():
@@ -230,7 +225,7 @@ def get_extra_metadata_from_project(project):
         if 'extra_metadata_from_csv' in sample
     }
 
-def has_sample_metadata(project_id):
+def has_sample_metadata(project):
     """
     Checks if there is any sample metadata in the project's runs.
 
@@ -240,13 +235,10 @@ def has_sample_metadata(project_id):
     Returns:
         bool: True if sample metadata exists, False otherwise.
     """
-    try:
-        # Query the collection with a projection to check for extra_metadata_from_csv
-        result = collection_handle.find_one(
-            {'_id': ObjectId(project_id), 'runs.sample_list.extra_metadata_from_csv': {'$exists': True}},
-            {'_id': 1}  # Only return the _id field for efficiency
-        )
-        return result is not None
-    except Exception as e:
-        logging.exception("Error checking for sample metadata")
+    if not project or 'runs' not in project:
         return False
+    for sample_list in project['runs'].values():
+        for sample in sample_list:
+            if 'extra_metadata_from_csv' in sample:
+                return True
+    return False
