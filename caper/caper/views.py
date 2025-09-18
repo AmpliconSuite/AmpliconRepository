@@ -2150,7 +2150,7 @@ def admin_stats(request):
 
     # Calculate stats
     for project in public_projects:
-        project['sample_metadata_available'] = has_sample_metadata(project['_id'])
+        project['sample_metadata_available'] = has_sample_metadata(project)
         if 'project_downloads' in project:
             # Process download stats
             pass
