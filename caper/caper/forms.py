@@ -74,6 +74,10 @@ class UpdateForm(forms.ModelForm):
         widget=forms.TextInput(),
     )
 
+    def clean_samples_to_remove(self):
+        # This would be called if you add the field, but it's not necessary
+        samples = self.cleaned_data.get('samples_to_remove', [])
+        return samples
 
     class Meta:
         model = Run

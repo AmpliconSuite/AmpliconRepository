@@ -1881,6 +1881,16 @@ def edit_project_page(request, project_name):
     else:
         # get method handling
         project = get_one_project(project_name)
+
+        sample_names = set()
+        for features in project.get('runs', {}).values():
+            if features and isinstance(features, list):
+                for feature in features:
+                    if isinstance(feature, dict) and 'Sample_name' in feature:
+                        sample_names.add(feature['Sample_name'])
+                        break  # All features in a list have the same sample name
+        sample_names = list(sample_names)
+
         is_empty_project = 'EMPTY?' in project and project['EMPTY?'] == True
         prev_versions, prev_ver_msg = previous_versions(project)
         if prev_ver_msg:
@@ -1913,6 +1923,7 @@ def edit_project_page(request, project_name):
     return render(request, "pages/edit_project.html",
                   {'project': project,
                    'run': form,
+                     'sample_names': sample_names,
                    'all_alias' :json.dumps(get_all_alias()),
                    "is_empty_project": is_empty_project,
                    })
