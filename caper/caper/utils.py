@@ -34,8 +34,8 @@ def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFER
             socketTimeoutMS=5000,
             serverSelectionTimeoutMS=5000,
             waitQueueTimeoutMS=2500,  # Wait max 2.5 seconds for available connection
-            retryWrites=True,
-            retryReads=True,
+            retryWrites=False,
+            retryReads=False,
             w='majority',
             wtimeoutMS=5000
         )
