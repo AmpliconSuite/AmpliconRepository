@@ -498,6 +498,45 @@
                 result.style.color = 'green';
             }
         });
+        
+        
+           const sampleCheckboxes = document.querySelectorAll('.sample-checkbox');
+    const fileInput = document.getElementById('fileuploadfield');
+    const metadataInput = document.getElementById('metadataFileInput');
+    const submitBtn = document.getElementById('createProjectBtn');
+    const form = document.getElementById('upload-form');
+
+    function updateInputs() {
+        const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
+        const filesSelected = fileInput && fileInput.files.length > 0;
+        const metadataSelected = metadataInput && metadataInput.files.length > 0;
+
+        if (samplesSelected) {
+            if (fileInput) fileInput.disabled = true;
+            if (metadataInput) metadataInput.disabled = true;
+        } else {
+            if (fileInput) fileInput.disabled = false;
+            if (metadataInput) metadataInput.disabled = false;
+        }
+    }
+
+    sampleCheckboxes.forEach(cb => cb.addEventListener('change', updateInputs));
+    if (fileInput) fileInput.addEventListener('change', updateInputs);
+    if (metadataInput) metadataInput.addEventListener('change', updateInputs);
+
+    form.addEventListener('submit', function(e) {
+        const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
+        const filesSelected = fileInput && fileInput.files.length > 0;
+        const metadataSelected = metadataInput && metadataInput.files.length > 0;
+        if (samplesSelected && (filesSelected || metadataSelected)) {
+            e.preventDefault();
+            alert('While deleting samples, new data or metadata cannot be uploaded. Please unselect either the files or the samples to delete.');
+        }
+    });
+        
+        
+        
+        
     });
 
 
