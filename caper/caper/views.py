@@ -1888,8 +1888,9 @@ def edit_project_page(request, project_name):
             old_extra_metadata = get_extra_metadata_from_project(project)
             current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file, old_extra_metadata = old_extra_metadata)
          
-            sample_data = project['sample_data']    
-            if samples_to_remove and len(samples_to_remove) > 0:
+             
+            if project.get('sample_data',False) and samples_to_remove and len(samples_to_remove) > 0:
+                sample_data = project['sample_data']
                 current_runs = remove_samples_from_runs(current_runs, samples_to_remove)
                 for sample in project['sample_data']:
                     if sample['Sample_name'] in samples_to_remove:
@@ -1904,7 +1905,10 @@ def edit_project_page(request, project_name):
                                  'publication_link': form_dict['publication_link'],
                                  'Oncogenes': get_project_oncogenes(current_runs),
                                  'alias_name' : alias_name}}
-            
+
+            if project.get('sample_data', False) and samples_to_remove and len(samples_to_remove) > 0:
+                new_val["$unset"] = {'metadata_stored': ""}
+
             # After form_dict is created and before new_val is defined
             for version_field in ['ASP_version', 'AA_version', 'AC_version']:
                 value = form.cleaned_data.get(version_field, 'NA').strip()
