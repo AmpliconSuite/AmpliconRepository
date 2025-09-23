@@ -1669,6 +1669,37 @@ def download_file(url, save_path):
     print(f"File downloaded successfully and saved to {save_path}")
 
 
+
+def remove_samples_from_runs(runs, samples_to_remove):
+    """
+    Removes specified samples from the runs dictionary.
+    
+    Args:
+        runs: Dictionary where keys are sample identifiers and values are arrays of feature objects
+        samples_to_remove: List of sample identifiers to remove
+        
+    Returns:
+        Updated runs dictionary with specified samples removed
+    """
+    # Create a copy of the runs dictionary to avoid modifying the original
+    updated_runs = runs.copy()
+
+    # Find keys to remove by matching Sample_name in the feature objects
+    keys_to_remove = []
+    for key, features in updated_runs.items():
+        # Check if the array is not empty
+        if features and len(features) > 0:
+            # Get the sample name from the first feature
+            sample_name = features[0].get('Sample_name')
+            if sample_name in samples_to_remove:
+                keys_to_remove.append(key)
+
+    # Remove the identified keys
+    for key in keys_to_remove:
+        del updated_runs[key]
+    
+    return updated_runs
+
 def edit_project_page(request, project_name):
     if request.method == "GET":
         project = get_one_project(project_name)
@@ -1681,6 +1712,9 @@ def edit_project_page(request, project_name):
         except Exception as e:
             print(f'Failed to get the metadata file from the form')
             print(e)
+
+        samples_to_remove = request.POST.getlist('samples_to_remove')
+
         project = get_one_project(project_name)
         old_alias_name = None
         if 'alias_name' in project:
@@ -1851,15 +1885,21 @@ def edit_project_page(request, project_name):
             except:
                 print('no alias to be found')
 
-
-
-            ## try to get metadata file:
             old_extra_metadata = get_extra_metadata_from_project(project)
             current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file, old_extra_metadata = old_extra_metadata)
-            
+         
+            sample_data = project['sample_data']    
+            if samples_to_remove and len(samples_to_remove) > 0:
+                current_runs = remove_samples_from_runs(current_runs, samples_to_remove)
+                for sample in project['sample_data']:
+                    if sample['Sample_name'] in samples_to_remove:
+                        project['sample_data'].remove(sample)
+                
+
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs,
                                  'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'],
+                                 'sample_data': sample_data,
                                  'project_members': form_dict['project_members'],
                                  'publication_link': form_dict['publication_link'],
                                  'Oncogenes': get_project_oncogenes(current_runs),
@@ -1885,6 +1925,16 @@ def edit_project_page(request, project_name):
     else:
         # get method handling
         project = get_one_project(project_name)
+
+        sample_names = set()
+        for features in project.get('runs', {}).values():
+            if features and isinstance(features, list):
+                for feature in features:
+                    if isinstance(feature, dict) and 'Sample_name' in feature:
+                        sample_names.add(feature['Sample_name'])
+                        break  # All features in a list have the same sample name
+        sample_names = sorted(sample_names)
+
         is_empty_project = 'EMPTY?' in project and project['EMPTY?'] == True
         prev_versions, prev_ver_msg = previous_versions(project)
         if prev_ver_msg:
@@ -1917,6 +1967,7 @@ def edit_project_page(request, project_name):
     return render(request, "pages/edit_project.html",
                   {'project': project,
                    'run': form,
+                     'sample_names': sample_names,
                    'all_alias' :json.dumps(get_all_alias()),
                    "is_empty_project": is_empty_project,
                    })
@@ -2255,7 +2306,9 @@ def project_stats_download(request):
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
-def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata):
+
+def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
+
     t_sa = time.time()
     logging.debug("Extracting files from tar")
     try:
@@ -2266,9 +2319,12 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         run_path = f'{project_data_path}/results/run.json'
         with open(run_path, 'r') as run_json:
            runs = samples_to_dict(run_json)
+        
+        if samples_to_remove:
+            runs = remove_samples_from_runs(runs, samples_to_remove)
         # get cnv, image, bed files
         for sample, features in runs.items():
-            logging.debug(f"Extracting {str(len(features))} features from {features[0]['Sample name']}")
+                
             for feature in features:
                 # logging.debug(feature['Sample name'])
                 if len(feature) > 0:
@@ -2766,7 +2822,10 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     """
     Creates the project
     """
-
+    # it could be a new file was provided at the same time as sampels to be
+    # removed from the project.  That can't be done until runs is populated in the project
+    samples_to_remove = request.POST.getlist('samples_to_remove')
+    
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
     publication_link = form_dict['publication_link']
@@ -2791,7 +2850,8 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
 
     # extract the files async also
     extract_thread = Thread(target=extract_project_files,
-                            args=(tarfile, file_location, project_data_path, new_id.inserted_id, extra_metadata_file_fp, old_extra_metadata))
+        args=(tarfile, file_location, project_data_path, new_id.inserted_id, extra_metadata_file_fp, old_extra_metadata, samples_to_remove))
+
     extract_thread.start()
 
     if settings.USE_S3_DOWNLOADS:
@@ -3359,7 +3419,8 @@ class FileUploadView(APIView):
         logging.debug(str(file_location))
 
             # extract the files async also
-        extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id))
+        samples_to_remove = []
+        extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id, None, samples_to_remove))
         extract_thread.start()
 
         if settings.USE_S3_DOWNLOADS:

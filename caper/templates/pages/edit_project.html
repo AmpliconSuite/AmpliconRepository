@@ -183,7 +183,47 @@
           </div>
           </div>
         </div>
-
+        <div id="accordion">
+          <div class="card">
+              <div class="card-header" id="deleteSamplesHeader">
+                  <h5 class="mb-0">
+                      <button class="btn btn-link collapsed" type="button" data-toggle="collapse" data-target="#deleteSamplesContent" aria-expanded="true" aria-controls="deleteSamplesContent" style="padding: 0.25rem 0.5rem;">
+                          Remove Samples from Project
+                      </button>
+                  </h5>
+              </div>
+              <div id="deleteSamplesContent" class="collapse" aria-labelledby="deleteSamplesHeader" data-parent="#accordion">
+                  <div class="card-body">
+                         {% if sample_names %}
+                      <p>Select samples you want to remove from this project:</p>
+                      
+                      <div class="mb-3" id="sample_removal_disabled_msg" style="display: none;">
+                       
+                        
+                      </div>
+                      
+                      <div class="sample-list" style="max-height: 300px; overflow-y: auto;">
+                        {% for sample in sample_names %}
+                          <div class="form-check">
+                            <input class="form-check-input sample-checkbox" type="checkbox" name="samples_to_remove" value="{{ sample }}" id="sample-{{ forloop.counter }}">
+                            <label class="form-check-label" for="sample-{{ forloop.counter }}">
+                              {{ sample }}
+                            </label>
+                          </div>
+                        {% endfor %}
+                      </div>
+                      
+                      <div class="mt-3">
+                        <p class="text-muted"><small>Note: Removing samples will create a new version of the project.</small></p>
+                      </div>
+                    {% else %}
+                      <p class="text-muted">No samples available in this project.</p>
+                    {% endif %}
+                  </div>
+                  </div>
+              </div>
+          </div>
+        
         
 
         <progress id="js-progressbar" class="uk-progress" value="0" max="100" hidden></progress>
@@ -266,6 +306,8 @@
           </div>
       </div>
 
+         
+        
 
       <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
         {{ run.accept_license | as_crispy_field }}
@@ -341,6 +383,7 @@
       fileList.innerHTML = '';
       input.value = '';
       document.getElementById('js-progressbar').hidden = true;
+      updateInputs();
     }
   
     function addFileRow(file) {
@@ -362,6 +405,7 @@
     function removeFileFromArray(fileName) {
       filesArray = filesArray.filter(file => file.name !== fileName);
       updateFileInput();
+       updateInputs();
     }
   
     function updateFileInput() {
@@ -436,6 +480,62 @@
   
      //xhr.send(fd);
     }
+    
+     function updateInputs() {
+        fileInput = document.getElementById('fileuploadfield');
+        metadataInput = document.getElementById('metadataFileInput');
+        const sampleCheckboxes = document.querySelectorAll('.sample-checkbox');
+        const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
+        const filesSelected = fileInput && fileInput.files.length > 0;
+        const metadataSelected = metadataInput && metadataInput.files.length > 0;
+    
+        if (samplesSelected) {
+            setDisabledWithMessage(fileInput, true, 'Disabled while deleting samples.', 'fileuploadfield-disabled-msg');
+            setDisabledWithMessage(metadataInput, true, 'Disabled while deleting samples.', 'metadataFileInput-disabled-msg');
+            setCheckboxesDisabled(false, ''); // Enable checkboxes, remove message
+        } else if (filesSelected || metadataSelected) {
+            setCheckboxesDisabled(true, 'Disabled while uploading files.'); // Disable checkboxes, show message
+            setDisabledWithMessage(fileInput, false, '', 'fileuploadfield-disabled-msg');
+            setDisabledWithMessage(metadataInput, false, '', 'metadataFileInput-disabled-msg');
+        } else {
+            setCheckboxesDisabled(false, ''); // Enable checkboxes, remove message
+            setDisabledWithMessage(fileInput, false, '', 'fileuploadfield-disabled-msg');
+            setDisabledWithMessage(metadataInput, false, '', 'metadataFileInput-disabled-msg');
+        }
+    }
+
+// Helper to add/remove explanation spans
+    function setDisabledWithMessage(element, disabled, message, spanId) {
+        element.disabled = disabled;
+        let span = document.getElementById(spanId);
+        if (disabled) {
+            if (!span) {
+                span = document.createElement('span');
+                span.id = spanId;
+                span.style.color = 'red';
+                span.style.marginLeft = '8px';
+                span.textContent = message;
+                element.parentNode.appendChild(span);
+            }
+        } else if (span) {
+            span.remove();
+        }
+    }
+
+     function setCheckboxesDisabled(disabled, message) {
+        const sampleCheckboxes = document.querySelectorAll('.sample-checkbox');
+        const msgDiv = document.getElementById('sample_removal_disabled_msg');
+        // Set disabled property for all checkboxes
+        sampleCheckboxes.forEach(cb => cb.disabled = disabled);
+        // Show or clear the message
+        if (disabled && message) {
+            msgDiv.style.display = 'block';
+            msgDiv.innerHTML = `<span style="color:red;">${message}</span>`;
+        } else {
+            msgDiv.style.display = 'none';
+            msgDiv.innerHTML = '';
+        }
+    }
 
     document.addEventListener('DOMContentLoaded', function() {
         // Pass the alias names from Django context to JavaScript
@@ -456,6 +556,37 @@
                 result.style.color = 'green';
             }
         });
+        
+            const sampleCheckboxes = document.querySelectorAll('.sample-checkbox');
+    const fileInput = document.getElementById('fileuploadfield');
+    const metadataInput = document.getElementById('metadataFileInput');
+    const form = document.getElementById('upload-form');
+
+    
+
+   
+
+    sampleCheckboxes.forEach(cb => cb.addEventListener('change', updateInputs));
+    if (fileInput) fileInput.addEventListener('change', updateInputs);
+    if (metadataInput) metadataInput.addEventListener('change', updateInputs);
+
+    form.addEventListener('submit', function(e) {
+        const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
+        const filesSelected = fileInput && fileInput.files.length > 0;
+        const metadataSelected = metadataInput && metadataInput.files.length > 0;
+        if (samplesSelected && (filesSelected || metadataSelected)) {
+            e.preventDefault();
+            alert('While deleting samples, new data or metadata cannot be uploaded. Please unselect either the files or the samples to delete.');
+        }
+        if ((filesSelected || metadataSelected) && samplesSelected) {
+            e.preventDefault();
+            alert('While uploading files, you cannot select samples to delete. Please unselect either the files or the samples to delete.');
+        }
+    });
+
+    updateInputs(); // Initial state
+        
+        
     });
 
 
