@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 import networkx as nx
 from collections import defaultdict
+import json
 import time
 import os
+from intervaltree import IntervalTree
 from scipy.stats import expon
 from scipy.stats import gamma
 from scipy.stats import chi2
@@ -295,12 +297,20 @@ class Graph:
 			sample = row.get('Sample_name')
 			intervals = row.get('Merged_Intervals')
 			
-			# store interval coordinates of feature
-			interval_lookup = defaultdict(list)
+			# build per-chromosome interval trees
+			interval_lookup = defaultdict(IntervalTree)
 			for interval in intervals:
 				ichr, istart, iend = interval
-				interval_lookup[ichr].append([istart, iend, interval_id_counter])
+				tree = interval_lookup[ichr]
+				tree.addi(istart, iend, interval_id_counter)
 				interval_id_counter += 1
+
+			# # store interval coordinates of feature 
+			# interval_lookup = defaultdict(list) 
+			# for interval in intervals: 
+			# 	ichr, istart, iend = interval 
+			# 	interval_lookup[ichr].append([istart, iend, interval_id_counter]) 
+			# 	interval_id_counter += 1
 			
 			gene_count += len(all_genes)
 
@@ -318,15 +328,21 @@ class Graph:
 						genes_with_loc_counter += 1
 						chr, start, __ = record['location']
 						if chr in interval_lookup: 
-							interval_found = False
-							# TODO 09/16: REFACTOR WITH INTERVAL TREE
-							for istart, iend, id in interval_lookup[chr]:
-								if (start > istart and start < iend):
-									genes_with_interval_counter += 1                               
-									record['intervals'][sample][feature_id_counter] = id
-									interval_found = True
-									break
-							if not interval_found:
+							hits = interval_lookup[chr][start]  # fast lookup
+							if hits:
+								# pick one (if multiple intervals overlap)
+								hit = next(iter(hits))
+								genes_with_interval_counter += 1
+								record['intervals'][sample][feature_id_counter] = hit.data
+							else:
+							# interval_found = False 
+							# for istart, iend, id in interval_lookup[chr]: 
+							# 	if (start > istart and start < iend): 
+							# 		genes_with_interval_counter += 1 
+							# 		record['intervals'][sample][feature_id_counter] = id 
+							# 		interval_found = True 
+							# 		break 
+							# if not interval_found:
 								genes_with_chr_no_interval_counter += 1
 								record['genes_with_chr_no_interval_counter'] = True
 						else:
@@ -537,10 +553,11 @@ class Graph:
 								for f in features_ab 
 								if intervals_a[f] is not None 
 								and intervals_b[f] is not None)
-			diff_interval = any(intervals_a[f] != intervals_b[f] 
-								for f in features_ab 
-								if intervals_a[f] is not None 
-								and intervals_b[f] is not None)
+			diff_interval = not same_interval
+			# diff_interval = any(intervals_a[f] != intervals_b[f] 
+			# 					for f in features_ab 
+			# 					if intervals_a[f] is not None 
+			# 					and intervals_b[f] is not None)
 
 			# [0] single interval test
 			if not tested[0] and same_interval:
@@ -574,7 +591,7 @@ class Graph:
 
 	def chi_squared_helper(self, obs, exp, verbose=False):
 		# apply Haldane correction if any observed category count is zero
-		if 0 in obs:
+		if 0 in obs or 0 in exp:
 			obs = [o + 0.5 for o in obs]
 			exp = [e + 0.5 for e in exp]
 
@@ -653,7 +670,8 @@ class Graph:
 		obs = [O11, O12, O21, O22]
 		
 		# expected
-		E11 = (geneA_samples) * (geneB_samples) * ((1-pdD)**2) / self.total_samples
+		E11 = (geneA_samples) * (geneB_samples) * (1-pdD) / self.total_samples
+		# E11 = (geneA_samples) * (geneB_samples) * ((1-pdD)**2) / self.total_samples
 		# E11 = E11 * M_SAME_CHR
 		E12 = geneA_samples * (self.total_samples - geneB_samples) / self.total_samples
 		E21 = geneB_samples * (self.total_samples - geneA_samples) / self.total_samples
@@ -687,9 +705,9 @@ class Graph:
 		obs = [O11, O12, O21, O22]
 		
 		# expected
-		E11 = (geneA_samples) * (geneB_samples) * (M_MULTI_CHR)
-		E12 = geneA_samples * (self.total_samples - geneB_samples)
-		E21 = geneB_samples * (self.total_samples - geneA_samples)
+		E11 = (geneA_samples) * (geneB_samples) * (M_MULTI_CHR) / self.total_samples
+		E12 = geneA_samples * (self.total_samples - geneB_samples) / self.total_samples
+		E21 = geneB_samples * (self.total_samples - geneA_samples) / self.total_samples
 		E22 = self.total_samples - (E11 + E12 + E21)
 		exp = [E11, E12, E21, E22] 
 
@@ -720,6 +738,12 @@ class Graph:
 		return q_values
 
 	def test_edge(self, source, target, test=0):
+		if source not in self.name_to_record:
+			print(f"{source} not found.")
+			return
+		if target not in self.name_to_record:
+			print(f"{target} not found.")
+			return
 		edge_name = f"{source}-{target}"
 		if edge_name not in self.name_to_edge:
 			print(f"No co-amplification found between {source} and {target}.")
@@ -753,6 +777,35 @@ class Graph:
 		
 		print("Final p-value: ", result[0])
 		return
+
+	def export_intervals(self, output_file="intervals.json"):
+		"""
+		Export intervals from self.nodes into a JSON file for comparison with diff
+		"""
+		export_data = {}
+
+		for node in self.nodes:  # nodes are your updated records
+			node_id = node.get("label")
+			if not node_id:
+				continue
+
+			intervals = node.get("intervals", {})
+			export_data[node_id] = {}
+
+			for sample, feats in intervals.items():
+				clean_feats = {k: v for k, v in feats.items() if v is not None}
+				if clean_feats:  # only include non-empty samples
+					export_data[node_id][sample] = clean_feats
+
+			# optionally remove node if it has no samples left
+			if not export_data[node_id]:
+				del export_data[node_id]
+
+		# Write JSON, sort keys so diff is clean
+		with open(output_file, "w") as f:
+			json.dump(export_data, f, indent=2, sort_keys=True)
+
+		print(f"Exported {len(export_data)} nodes' intervals to {output_file}")
 
 	# # -------------------- (soon to be) deprecated functions -------------------
 
