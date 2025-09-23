@@ -227,11 +227,6 @@ def validate_collection(
     except Exception as e:
         print(f"Error during validation: {e}", file=sys.stderr)
         return doc_count, invalid_count, error_count + 1
-    finally:
-        # Close the connection if requested and if we have a client
-        if close_connection and client is not None:
-            client.close()
-            print("MongoDB connection closed.")
 
 
 def run_validation(
@@ -491,7 +486,6 @@ def run_fix_schema(
                 fix_schema_report += f"  - Path: '{path}', Action: {action}, Value Set: {value_str}"
 
     fix_schema_report += f"\nSummary: Processed {documents_processed} documents. Updated {documents_updated} documents."
-    client.close()
     return fix_schema_report
 
 
