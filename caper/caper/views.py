@@ -2030,7 +2030,7 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
             # load the zip synch to S3 for later use
             # synch to simplify cleanup
 
-            upload_file_to_s3(os.path.abspath(new_project_tar_fp), f"{project['linkid']}/{project['linkid']}.tar.gz")
+            upload_file_to_s3(os.path.abspath(project_tar_fp), f"{project['linkid']}/{project['linkid']}.tar.gz")
 
         
 
