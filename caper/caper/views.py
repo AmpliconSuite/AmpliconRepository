@@ -1895,6 +1895,12 @@ def edit_project_page(request, project_name):
                 for sample in project['sample_data']:
                     if sample['Sample_name'] in samples_to_remove:
                         project['sample_data'].remove(sample)
+                        
+                # now we have to remove the sample data for the samples removed
+                # from the project zip file. They will be in a directory in the tar file called
+                # results/other_files/<SAMPLE_NAME>_classification/
+                remove_samples_from_tar(project, samples_to_remove, download_path, url)
+                
                 
 
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs,
@@ -1975,6 +1981,61 @@ def edit_project_page(request, project_name):
                    'all_alias' :json.dumps(get_all_alias()),
                    "is_empty_project": is_empty_project,
                    })
+
+
+def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
+    # remove the sample data for the samples removed
+    # from the project zip file. They will be in a directory in the tar file called
+    # results/other_files/<SAMPLE_NAME>_classification/
+    project_linkid = project['linkid']
+    project_name = project['project_name']
+    project_tar_fp = f'tmp/{project_linkid}/{project_name}.tar.gz'
+    
+    
+    
+    if os.path.exists(download_path):
+        project_tar_fp = download_path
+    else:
+        download = download_file(url, project_tar_fp)
+        
+    if os.path.exists(project_tar_fp):    
+        # Create a temporary directory to extract the tar file
+        temp_extract_dir = f'tmp/{project_linkid}/extracted'
+        os.makedirs(temp_extract_dir, exist_ok=True)
+
+        # Extract the tar file
+        with tarfile.open(project_tar_fp, 'r:gz') as tar:
+            tar.extractall(path=temp_extract_dir)
+
+        # Remove the sample directories
+        for sample in samples_to_remove:
+            sample_dir = os.path.join(temp_extract_dir, 'results', 'other_files', f'{sample}_classification')
+            if os.path.exists(sample_dir):
+                shutil.rmtree(sample_dir)
+                
+            # Also remove other directories left behind in other_files
+            sample_dir2 = os.path.join(temp_extract_dir, 'results', 'AA_outputs', f'{sample}_AA_results')
+            if os.path.exists(sample_dir2):
+                shutil.rmtree(sample_dir2)
+
+        # Create a new tar file without the removed samples
+        new_project_tar_fp = f'tmp/{project_linkid}/{project_name}_updated.tar.gz'
+        with tarfile.open(new_project_tar_fp, 'w:gz') as tar:
+            tar.add(os.path.join(temp_extract_dir, 'results'), arcname='results')
+
+        # Replace the old tar file with the new one
+        os.replace(new_project_tar_fp, project_tar_fp)
+        # and upload to S3
+        if settings.USE_S3_DOWNLOADS:
+            # load the zip synch to S3 for later use
+            # synch to simplify cleanup
+
+            upload_file_to_s3(os.path.abspath(new_project_tar_fp), f"{project['linkid']}/{project['linkid']}.tar.gz")
+
+        
+
+        # Clean up the temporary extraction directory
+        shutil.rmtree(temp_extract_dir)
 
 
 
