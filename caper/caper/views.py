@@ -1832,6 +1832,7 @@ def edit_project_page(request, project_name):
             if 'previous_versions' in project:
                 new_prev_versions = project['previous_versions']
 
+            
             ## update for current
             new_prev_versions.append(
                 {
@@ -1845,7 +1846,8 @@ def edit_project_page(request, project_name):
             # create a new one with the new form
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
             ## get extra metadata from csv first (if exists in old project), add it to the new proj
-            new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions = new_prev_versions, previous_views = [views, downloads])
+            old_extra_metadata = get_extra_metadata_from_project(project)
+            new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,  previous_versions = new_prev_versions, previous_views = [views, downloads])
 
             # can't delete it, if its being used in the other thread for metadata extraction
             if os.path.exists(temp_directory) and not extra_metadata_file_fp:
@@ -1883,10 +1885,9 @@ def edit_project_page(request, project_name):
             except:
                 print('no alias to be found')
 
-            if metadata_file:
-                current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file)
-            
-                
+            old_extra_metadata = get_extra_metadata_from_project(project)
+            current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file, old_extra_metadata = old_extra_metadata)
+         
             sample_data = project['sample_data']    
             if samples_to_remove and len(samples_to_remove) > 0:
                 current_runs = remove_samples_from_runs(current_runs, samples_to_remove)
@@ -1894,6 +1895,7 @@ def edit_project_page(request, project_name):
                     if sample['Sample_name'] in samples_to_remove:
                         project['sample_data'].remove(sample)
                 
+
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs,
                                  'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'],
@@ -2304,7 +2306,9 @@ def project_stats_download(request):
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
-def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, samples_to_remove):
+
+def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
+
     t_sa = time.time()
     logging.debug("Extracting files from tar")
     try:
@@ -2340,11 +2344,13 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         project = get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
         if extra_metadata_filepath:
-            runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath)
+            runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath, old_extra_metadata = old_extra_metadata)
             parent_dir = os.path.dirname(extra_metadata_filepath)
 
             if os.path.exists(parent_dir):
                 shutil.rmtree(parent_dir)
+        else:
+            runs = process_metadata_no_request(replace_underscore_keys(runs), old_extra_metadata = old_extra_metadata)
 
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
@@ -2812,7 +2818,7 @@ def create_project(request):
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
-def _create_project(form, request, extra_metadata_file_fp = None, previous_versions = [], previous_views = [0, 0], agg_fp = None):
+def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], agg_fp = None):
     """
     Creates the project
     """
@@ -2844,7 +2850,8 @@ def _create_project(form, request, extra_metadata_file_fp = None, previous_versi
 
     # extract the files async also
     extract_thread = Thread(target=extract_project_files,
-                            args=(tarfile, file_location, project_data_path, new_id.inserted_id, extra_metadata_file_fp, samples_to_remove))
+        args=(tarfile, file_location, project_data_path, new_id.inserted_id, extra_metadata_file_fp, old_extra_metadata, samples_to_remove))
+
     extract_thread.start()
 
     if settings.USE_S3_DOWNLOADS:
@@ -3561,8 +3568,9 @@ class ProjectFileAddView(APIView):
                     logging.error(form.errors)
                 extra_metadata_file_fp = None
                 ## get extra metadata from csv first (if exists in old project), add it to the new proj
+                old_extra_metadata = get_extra_metadata_from_project(project)
                 new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions=new_prev_versions,
-                                         previous_views=[views, downloads])
+                                         previous_views=[views, downloads], old_extra_metadata = old_extra_metadata)
                 if new_id is not None:
                     new_project_uuid = str(new_id.inserted_id)
                     alert_message = f"Aggregation successful. New samples added to project version: {new_project_uuid}"
