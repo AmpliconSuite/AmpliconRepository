@@ -1,4 +1,5 @@
 import logging
+import os
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -1770,10 +1771,24 @@ def edit_project_page(request, project_name):
                 file_fps.append(file.name)
                 file.close()
 
+           
+
             ## download old project file here and run it through aggregator
             ## build download URL
-            url = f'http://127.0.0.1:8000/project/{project["linkid"]}/download'
+            url = f'http://localhost:8000/project/{project["linkid"]}/download'
             download_path = project_data_path+'/download.tar.gz'
+
+            if samples_to_remove and len(samples_to_remove) > 0:
+                # strip them from the current project runs before aggregation
+                try:
+                    os.makedirs(project_data_path, exist_ok=True)
+                except Exception as e:
+                    logging.error(f'Failed to make directory {project_data_path}')
+                    logging.error(e)
+                    
+                stripped_tar = remove_samples_from_tar(project, samples_to_remove, download_path, url)
+                file_fps.append(os.path.basename(stripped_tar) )
+            
             try:
                 ## try to download old project file
                 print(f"PREVIOUS FILE FPS LIST: {file_fps}")
@@ -1782,8 +1797,14 @@ def edit_project_page(request, project_name):
                     if request.POST['replace_project'] == 'on':
                         print('Replacing project with new uploaded file')
                 except:
-                    download = download_file(url, download_path)
-                    file_fps.append(os.path.join('download.tar.gz'))
+                    # when removing samples we want the stripped tar file to be aggregated
+                    # pulling the old one would have the stripped samples still in it
+                    if not (samples_to_remove and len(samples_to_remove) > 0):
+                        try:
+                            download_file(url, download_path)
+                            file_fps.append(os.path.join('download.tar.gz'))
+                        except Exception as e:
+                            logging.error(f'Failed to download the file: {e}')
                 # print(f"AFTERS FILE FPS LIST: {file_fps}")
                 # print(f'aggregating on: {file_fps}')
                 temp_directory = os.path.join('./tmp/', str(temp_proj_id))
@@ -1987,24 +2008,24 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
     # remove the sample data for the samples removed
     # from the project zip file. They will be in a directory in the tar file called
     # results/other_files/<SAMPLE_NAME>_classification/
-    project_linkid = project['linkid']
     project_name = project['project_name']
-    project_tar_fp = f'tmp/{project_linkid}/{project_name}.tar.gz'
     
     
     
-    if os.path.exists(download_path):
-        project_tar_fp = download_path
-    else:
-        download = download_file(url, project_tar_fp)
+    try:    
+        download_file(url, download_path)
+    except Exception as e:
+        logging.error(f'Failed to download the file: {e}')
+        return None
         
-    if os.path.exists(project_tar_fp):    
+    if os.path.exists(download_path):
+        parent_dir = os.path.abspath(os.path.dirname(download_path))
         # Create a temporary directory to extract the tar file
-        temp_extract_dir = f'tmp/{project_linkid}/extracted'
+        temp_extract_dir = f'{parent_dir}/extracted'
         os.makedirs(temp_extract_dir, exist_ok=True)
 
         # Extract the tar file
-        with tarfile.open(project_tar_fp, 'r:gz') as tar:
+        with tarfile.open(download_path, 'r:gz') as tar:
             tar.extractall(path=temp_extract_dir)
 
         # Remove the sample directories
@@ -2018,24 +2039,20 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
             if os.path.exists(sample_dir2):
                 shutil.rmtree(sample_dir2)
 
+            sample_dir3 = os.path.join(temp_extract_dir, 'results', 'AA_outputs','extracted_from_zips', f'{sample}_AA_results')
+            if os.path.exists(sample_dir3):
+                shutil.rmtree(sample_dir3)
+
         # Create a new tar file without the removed samples
-        new_project_tar_fp = f'tmp/{project_linkid}/{project_name}_updated.tar.gz'
+        
+        new_project_tar_fp = f'{parent_dir}/{project_name}_stripped.tar.gz'
         with tarfile.open(new_project_tar_fp, 'w:gz') as tar:
             tar.add(os.path.join(temp_extract_dir, 'results'), arcname='results')
 
-        # Replace the old tar file with the new one
-        os.replace(new_project_tar_fp, project_tar_fp)
-        # and upload to S3
-        if settings.USE_S3_DOWNLOADS:
-            # load the zip synch to S3 for later use
-            # synch to simplify cleanup
-
-            upload_file_to_s3(os.path.abspath(project_tar_fp), f"{project['linkid']}/{project['linkid']}.tar.gz")
-
-        
-
         # Clean up the temporary extraction directory
         shutil.rmtree(temp_extract_dir)
+        os.remove(download_path)
+        return new_project_tar_fp
 
 
 
