@@ -1917,13 +1917,7 @@ def edit_project_page(request, project_name):
                     if sample['Sample_name'] in samples_to_remove:
                         project['sample_data'].remove(sample)
                         
-                # now we have to remove the sample data for the samples removed
-                # from the project zip file. They will be in a directory in the tar file called
-                # results/other_files/<SAMPLE_NAME>_classification/
-                remove_samples_from_tar(project, samples_to_remove, download_path, url)
-                
-                
-
+             
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs,
                                  'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'],
