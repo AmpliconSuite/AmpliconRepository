@@ -188,27 +188,53 @@ class Graph:
 		"""
 		merged_intervals = []
 
-		# find all matches of chr:start-end
-		matches = re.findall(r"'?([\dXY]+):(\d+)-(\d+)'?", location)
+		# extract all chr:start-end patterns
+		matches = re.findall(r"'?([A-Za-z0-9_]+):(\d+)-(\d+)'?", location)
 		matches = [[chrom, int(start), int(end)] for chrom, start, end in matches]
 
 		if not matches:
-			return matches
+			return []
 
-		curr_interval = matches[0]
-		for i in range(len(matches)):            
-			# if end is reached, add the current interval
-			if i == len(matches) - 1:
-				merged_intervals.append(curr_interval)
-			# if this interval can be merged with the next, extend the current interval
-			elif matches[i][0] == matches[i+1][0] and matches[i+1][1] - matches[i][2] <= self.MERGE_CUTOFF:
-				curr_interval[2] = matches[i+1][2]
-			# otherwise add the current interval and reset
+		curr_chr, curr_start, curr_end = matches[0]
+
+		for chrom, start, end in matches[1:]:
+			same_chr = (chrom == curr_chr)
+			close_or_overlap = (start - curr_end) <= self.MERGE_CUTOFF
+
+			if same_chr and close_or_overlap:
+				# merge by extending end coordinate
+				curr_end = max(curr_end, end)
 			else:
-				merged_intervals.append(curr_interval)
-				curr_interval = matches[i+1]
+				# push current and start new
+				merged_intervals.append([curr_chr, curr_start, curr_end])
+				curr_chr, curr_start, curr_end = chrom, start, end
 
+		# add the last interval
+		merged_intervals.append([curr_chr, curr_start, curr_end])
 		return merged_intervals
+		# merged_intervals = []
+
+		# # find all matches of chr:start-end
+		# matches = re.findall(r"'?([\dXY]+):(\d+)-(\d+)'?", location)
+		# matches = [[chrom, int(start), int(end)] for chrom, start, end in matches]
+
+		# if not matches:
+		# 	return matches
+
+		# curr_interval = matches[0]
+		# for i in range(len(matches)):            
+		# 	# if end is reached, add the current interval
+		# 	if i == len(matches) - 1:
+		# 		merged_intervals.append(curr_interval)
+		# 	# if this interval can be merged with the next, extend the current interval
+		# 	elif matches[i][0] == matches[i+1][0] and matches[i+1][1] - matches[i][2] <= self.MERGE_CUTOFF:
+		# 		curr_interval[2] = matches[i+1][2]
+		# 	# otherwise add the current interval and reset
+		# 	else:
+		# 		merged_intervals.append(curr_interval)
+		# 		curr_interval = matches[i+1]
+
+		# return merged_intervals
 	
 	def extract_genes(self, input):
 		"""
@@ -326,9 +352,9 @@ class Graph:
 					record['intervals'][sample][feature_id_counter] = None                        
 					if record['location']:
 						genes_with_loc_counter += 1
-						chr, start, __ = record['location']
+						chr, start, end = record['location']
 						if chr in interval_lookup: 
-							hits = interval_lookup[chr][start]  # fast lookup
+							hits = interval_lookup[chr][start:end]  # fast lookup
 							if hits:
 								# pick one (if multiple intervals overlap)
 								hit = next(iter(hits))
@@ -513,7 +539,7 @@ class Graph:
 		cdf = gamma.cdf(distance, a=params[0], loc=params[1], scale=params[2])
 		return 1 - cdf
 
-	def perform_tests(self, edge):
+	def perform_tests(self, edge, verbose=False):
 		"""
 		perform all applicable significance tests and fill corresponding properties
 		fill lists in order: 
@@ -530,11 +556,21 @@ class Graph:
 			return
 		
 		# test
-		if record_a.get('genes_with_chr_no_interval_counter') or record_a.get('genes_with_no_chr_match_counter') or record_b.get('genes_with_chr_no_interval_counter') or record_b.get('genes_with_no_chr_match_counter'):
+		if (
+			record_a.get('genes_with_chr_no_interval_counter')
+			or record_a.get('genes_with_no_chr_match_counter')
+			or record_b.get('genes_with_chr_no_interval_counter')
+			or record_b.get('genes_with_no_chr_match_counter')
+		):
 			edge['missing_interval_data'] = True
 
 		samples = list(edge['inter'])
 		tested = [False, False, False, False]
+		log = []
+		log.append(
+			f"{len(samples)} shared samples\n"
+			f"Missing interval data: {'missing_interval_data' in edge}\n"
+		)
 
 		# for each co-amplified sample, determine the type of co-amplification
 		# and run the appropriate test if not previously done
@@ -544,8 +580,10 @@ class Graph:
 			intervals_b = record_b['intervals'][samples[i]]
 			features_ab = set(intervals_a.keys()) & set(intervals_b.keys())
 
-			if len(features_ab) > 1:
-				print('Note: unexpected number of shared features in sample')
+			log_test_update = False
+
+			# if len(features_ab) > 1:
+			# 	print('Note: unexpected number of shared features in sample')
 
 			same_chr = record_a['location'][0] == record_b['location'][0]
 			same_feature = len(features_ab) > 0
@@ -565,6 +603,11 @@ class Graph:
 				edge['p_values'][0] = p_value
 				edge['odds_ratios'][0] = odds_ratio
 				tested[0] = True
+				log_test_update = True
+				log.append(
+					f"[i={i}] Sample '{samples[i]}'\n"
+					f"Ran single_interval test: p={p_value:.3g}"
+				)
 
 			# [1] multi interval test
 			if not tested[1] and same_chr and same_feature and diff_interval:
@@ -572,6 +615,11 @@ class Graph:
 				edge['p_values'][1] = p_value
 				edge['odds_ratios'][1] = odds_ratio
 				tested[1] = True
+				log_test_update = True
+				log.append(
+					f"[i={i}] Sample '{samples[i]}'\n"
+					f"Ran multi_interval test: p={p_value:.3g}"
+				)
 
 			# [2] multi chromosomal test
 			if not tested[2] and not same_chr:
@@ -579,6 +627,11 @@ class Graph:
 				edge['p_values'][2] = p_value
 				edge['odds_ratios'][2] = odds_ratio
 				tested[2] = True
+				log_test_update = True
+				log.append(
+					f"[i={i}] Sample '{samples[i]}'\n"
+					f"Ran multi_chromosomal test: p={p_value:.3g}"
+				)
 			
 			# [3] multi ecDNA test
 			if not tested[3] and not same_feature:
@@ -586,8 +639,26 @@ class Graph:
 				edge['p_values'][3] = p_value
 				edge['odds_ratios'][3] = odds_ratio
 				tested[3] = True
+				log.append(
+					f"[i={i}] Sample '{samples[i]}'\n"
+					f"Ran multi_ecDNA test: p={p_value:.3g}"
+				)
+
+			if log_test_update:
+				log.append(
+					f"{record_a['label']} features: {sorted(intervals_a)}\n"
+					f"{record_b['label']} features: {sorted(intervals_b)}\n"
+					f"Shared features: {sorted(features_ab)}\n"
+				)
+				log.append(
+					f"same_chr: {same_chr} \nsame_feature: {same_feature} \nsame_interval: {same_interval} \ndiff_interval: {diff_interval}\n\n"
+				)
 
 			i += 1
+
+		if verbose:
+			print("\n".join(log))
+
 
 	def chi_squared_helper(self, obs, exp, verbose=False):
 		# apply Haldane correction if any observed category count is zero
@@ -737,7 +808,10 @@ class Graph:
 
 		return q_values
 
-	def test_edge(self, source, target, test=0):
+	def find_edge_helper(self, source, target):
+		"""
+		For test_dry_run() and test_selector_dry_run()
+		"""
 		if source not in self.name_to_record:
 			print(f"{source} not found.")
 			return
@@ -748,35 +822,45 @@ class Graph:
 		if edge_name not in self.name_to_edge:
 			print(f"No co-amplification found between {source} and {target}.")
 			return
-		
-		edge = self.name_to_edge[edge_name]
-		source_node = self.name_to_record[edge['source']]
-		target_node = self.name_to_record[edge['target']]
+		return self.name_to_edge[edge_name]
+
+
+	def test_dry_run(self, source, target, test=0):
+		edge = self.find_edge_helper(source, target)
+		if not edge:	
+			return
 
 		p_val, q_val = edge['p_values'][test], edge['q_values'][test]
+		sn, tn = self.name_to_record[edge['source']], self.name_to_record[edge['target']]
+		print(f"{source} location: {sn['location']}\n" \
+			  f"{target} location: {tn['location']}\n" \
+			  f"Distance: {edge['distance']}")
 		if p_val == -1:
-			print("The selected test does not apply to this co-amplification.\n\n" \
-				   f"{source} location: {source_node['location']}\n" \
-				   f"{target} location: {target_node['location']}\n" \
-				   f"Distance: {edge['distance']}")
+			print("The selected test does not apply to this co-amplification.")
 			return
-		
-		print(f"Stored p-value: {p_val}\nStored q-value: {q_val}\n")
+		else:
+			print(f"Stored p-value: {p_val}\nStored q-value: {q_val}\n")
 		
 		# match-case
 		if test == 0:
-			result = self.single_interval(edge, source_node, target_node, verbose=True)
+			result = self.single_interval(edge, sn, tn, verbose=True)
 		elif test == 1:
-			result = self.multi_interval(edge, source_node, target_node, verbose=True)
+			result = self.multi_interval(edge, sn, tn, verbose=True)
 		elif test == 2:
-			result = self.multi_chromosomal(edge, source_node, target_node, verbose=True)
+			result = self.multi_chromosomal(edge, sn, tn, verbose=True)
 		elif test == 3:
-			result = self.multi_ecdna(edge, source_node, target_node, verbose=True)
+			result = self.multi_ecdna(edge, sn, tn, verbose=True)
 		else:
 			return "Input a valid test selection"
 		
 		print("Final p-value: ", result[0])
-		return
+
+	def test_selection_dry_run(self, source, target):
+		edge = self.find_edge_helper(source, target)
+		if not edge:	
+			return
+		
+		self.perform_tests(edge, verbose=True)
 
 	def export_intervals(self, output_file="intervals.json"):
 		"""
