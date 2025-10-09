@@ -1,4 +1,4 @@
-Version= v2.12.4_100925
+Version= v2.12.5_100925
 Creator= liefeld
-Date= Thu Oct  9 17:58:09 UTC 2025
-CommitID=7e3cfd686035ee556b6721cf26090ac90cd30074
+Date= Thu Oct  9 19:55:12 UTC 2025
+CommitID=fa01c43b42fd126e6e0720ae4f53d7d242597328
