@@ -1610,9 +1610,9 @@ def get_current_user(request):
     current_user = request.user.username
     try:
         if current_user.email:
-            current_user = request.user.email
+            current_user = current_user.email
         else:
-            current_user = request.user.username
+            current_user = current_user.username
     except:
         current_user = request.user.username
 
@@ -1998,6 +1998,7 @@ def edit_project_page(request, project_name):
                    })
 
 
+
 def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
     # remove the sample data for the samples removed
     # from the project zip file. They will be in a directory in the tar file called
@@ -2047,7 +2048,6 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
         shutil.rmtree(temp_extract_dir)
         os.remove(download_path)
         return new_project_tar_fp
-
 
 
 def clear_tmp(folder = 'tmp/'):
@@ -2235,7 +2235,7 @@ def admin_stats(request):
         for project in all_projects:
             project_members = project.get('project_members', [])
             
-            # Check if user is a member (by username or email) and they're the only member
+            # Check if user is a member (by username or email) and they're the only one
             is_only_member = (len(project_members) == 1 and 
                              (username in project_members or email in project_members))
             
@@ -2386,10 +2386,11 @@ def project_stats_download(request):
 def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
 
     t_sa = time.time()
-    logging.debug("Extracting files from tar")
+    logging.info("Extracting files from tar...")
     try:
         with tarfile.open(file_location, "r:gz") as tar_file:
             tar_file.extractall(path=project_data_path)
+        logging.info("Tar file extracted.")
 
         # get run.json
         run_path = f'{project_data_path}/results/run.json'
@@ -2398,11 +2399,18 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         
         if samples_to_remove:
             runs = remove_samples_from_runs(runs, samples_to_remove)
+        
+        logging.info("Processing and uploading individual files to GridFS...")
+        feature_count = 0
+        total_features = sum(len(features) for features in runs.values())
+        
         # get cnv, image, bed files
         for sample, features in runs.items():
-                
             for feature in features:
-                # logging.debug(feature['Sample name'])
+                feature_count += 1
+                if feature_count % 100 == 0:
+                    logging.info(f"Processing feature {feature_count}/{total_features}...")
+                
                 if len(feature) > 0:
                     # get paths
                     key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON',
@@ -2415,6 +2423,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         except:
                             id_var = "Not Provided"
                         feature[k] = id_var
+        
+        logging.info("All features processed. Updating project in database...")
 
         # Now update the project with the updated runs
         project = get_one_project(project_id)
@@ -2431,12 +2441,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
         
-        # logging.error("project is "+ str(project))
-        
         get_tool_versions(project, runs)
         version_keys = ['AA_version', 'AC_version', 'ASP_version']
         tool_versions = {k: project[k] for k in version_keys if k in project}
-        
         
         new_val["$set"].update(tool_versions)
 
@@ -2444,14 +2451,13 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         t_sb = time.time()
         diff = t_sb - t_sa
 
-
         finish_flag = {
             "$set" : {
                 'FINISHED?' : True
             }
         }
         collection_handle.update_one(query, finish_flag)
-        logging.info(f"Finished extracting from tar in {str(diff)} seconds")
+        logging.info(f"Finished extracting from tar and updating database in {str(diff)} seconds")
 
     except Exception as anError:
         logging.error("Error occurred extracting project tarfile results into "+ project_data_path)
@@ -2636,8 +2642,6 @@ def admin_delete_user(request):
                           'solo_projects': solo_projects, 
                        'member_projects': member_projects ,
                        'error_message': error_message})
-
-
 
 
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to
@@ -2856,7 +2860,7 @@ def create_project(request):
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
             ## redirect to edit page if aggregator fails
-            alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid cSuite results."
+            alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
             return render(request, 'pages/create_project.html',
                         {'run': form,
                         'alert_message': alert_message,
@@ -3119,28 +3123,14 @@ def coamplification_graph(request):
         useremail = request.user.email
     except:
         # not logged in
+        # print(request.user)
+        ## if user is anonymous, then need to login
         useremail = ""
-        # For unauthenticated users, just get public projects
-        public_projects = get_projects_close_cursor({'private': False, 'delete': False})
+        ## redirect to login page
+        return redirect('account_login')
 
-        # Filter out mm10, Unknown, and Multiple reference genome projects
-        filtered_projects = []
-        for proj in public_projects:
-            prepare_project_linkid(proj)
-            # Check reference genome for this project
-            if 'runs' in proj and proj['runs']:
-                ref_genome = reference_genome_from_project(proj['runs'])
-                if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
-                    # Add reference genome to project object
-                    proj['reference_genome'] = ref_genome
-                    filtered_projects.append(proj)
-            else:
-                # Skip projects without runs info
-                continue
 
-        return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
-
-    # Prevent an absent/null email from matching on anything
+    # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
 
@@ -3678,4 +3668,4 @@ class ProjectFileAddView(APIView):
         email.content_subtype = "html"
         email.send(fail_silently=False)
         logging.error("Finished email sent")
-        
+
