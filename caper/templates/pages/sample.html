@@ -112,7 +112,7 @@
                     <table class="table table-bordered table-striped">
                         <thead class="thead-dark">
                             <tr>
-                                <th>Field</th>
+                                <th>Field  </th>
                                 <th>Value</th>
                             </tr>
                         </thead>
@@ -131,7 +131,11 @@
     </div>
     <div class="col-md-3" style='text-align:right'>
         <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download" style="color: white; margin-bottom: 8px;" class="btn btn-primary">Download Sample Data</a>
-        <a class="btn btn-primary" href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download_metadata" style="color: white; ">Download Metadata</a>
+        <a class="btn btn-primary" href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download_metadata" style="color: white; margin-bottom: 8px;">Download Metadata</a>
+
+        {% if ec3d_available %}
+        <a class="btn btn-primary" href="{% url 'ec3d_visualization' sample_name=sample_name %}" target="_blank" style="color: white;">ec3D Visualization</a>
+        {% endif %}
     </div>
 
 

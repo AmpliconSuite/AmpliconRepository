@@ -30,7 +30,7 @@ def get_increment_view_and_download_statistics(project):
     query = {'_id':project['_id']}
     if ('views' not in project.keys()) or ('downloads' not in project.keys()) :
         
-        collection_handle.update(query, {
+        collection_handle.update_one(query, {
             '$set':{
                 'views':1,
                 'downloads':0
@@ -40,7 +40,7 @@ def get_increment_view_and_download_statistics(project):
         return [1, 0]
     
     else:
-        collection_handle.update(query, {
+        collection_handle.update_one(query, {
             '$inc':{
                 'views':1,
             }
@@ -53,7 +53,7 @@ def increment_download(project):
     Increments download count
     """
     query = {'_id':project['_id']}
-    collection_handle.update(query, {
+    collection_handle.update_one(query, {
         '$inc':{
             'downloads':1
         }

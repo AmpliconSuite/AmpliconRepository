@@ -5,18 +5,35 @@
 {% block meta_title %} Profile
 {% endblock %}
 
-{% block main %}
+
 
 {% block extra_js %}
 <script>
-    $(document).ready( function () {
-        $('#projectTable').DataTable(
-        );
+     // get the format and sort functions from the included file
+    {% include 'includes/datatable_date_utils.html' %}
 
+    
+    $(document).ready( function () {
+        if ($.fn.DataTable.isDataTable('#projectTable')) {
+            $('#projectTable').DataTable().destroy();
+        }
+        formatDates();
+        $('#projectTable').DataTable({
+            columnDefs: [
+                {
+                    targets: 2,
+                    type: 'custom-date'
+                }
+            ],
+            order: [[2, 'desc']] // Sort by date column (index 2) in descending order
+        });
+       
     } );
+ 
+    
 </script>
 {% endblock %}
-
+{% block main %}
 <head>
     <title>
         Profile
@@ -62,6 +79,7 @@
                         <th>Description</th>
                         <th>Date</th>
                         <th>Visibility</th>
+                        <th>Sample Metadata</th>
                         <th>Project Members</th>
                         <th>Edit Project</th>
                         <th>Delete Project</th>
@@ -74,8 +92,14 @@
                           <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
                         </td>
                         <td>{{ project.description|truncatechars:100 }}</td>
-                        <td>{{ project.date }}</td>
+                        <td class="date">{{ project.date }}</td>
                         <td>{% if  project.private %}private{%  else  %}public{% endif %}</td>
+                        <td>{% if project.sample_metadata_available %}
+                                <i class="fas fa-check-square" style="color: green;"></i>
+                            {% else %}
+                                <i class="far fa-square"></i>
+                            {% endif %}
+                        </td>
                         <td>{% for person in project.project_members %}
                             {{ person }}<br>
                         {% endfor%}</td>

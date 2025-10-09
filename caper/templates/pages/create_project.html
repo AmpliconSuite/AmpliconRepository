@@ -167,6 +167,15 @@
             .table-not-striped td {
                 color: #696a6c
             }
+            .navbar-brand {
+                min-width: 221px !important;
+            }
+
+          /* Fix for header alignment */
+            header .navbar-nav .nav-link {
+                position: relative !important;
+                left: 0 !important;
+            }
         </style>
         <div class="card-header" id="addMetadataHeader">
             <h5 class="mb-0">
@@ -257,6 +266,9 @@
   <button id="createProjectBtn" class="uk-button uk-button-primary" onClick="uploadFiles();" disabled>
     Submit
   </button>
+  <button id="createEmptyProjectBtn" class="uk-button uk-button-secondary" onClick="createEmptyProject();" disabled>
+    Create Empty Project
+  </button>  
 </form>
 
 <br />
@@ -379,11 +391,13 @@
           row.remove();
           removeFileFromArray(file.name);
       });
+      updateSubmitButtonState();
     }
   
     function removeFileFromArray(fileName) {
       filesArray = filesArray.filter(file => file.name !== fileName);
       updateFileInput();
+      updateSubmitButtonState();
     }
   
     function updateFileInput() {
@@ -460,13 +474,46 @@
       return filesArray.length > 0; // Ensure at least one valid file is selected
     }
 
+    function createEmptyProject() {
+      const originalAction = uploadForm.action;
+      uploadForm.action = "{% url 'create_empty_project' %}";
+      if (!document.getElementById('id_project_name').value) {
+        alert("Please enter a project name");
+        return false;
+     }
+      if (!document.getElementById('id_project_description').value) {
+        alert("Please enter a project description");
+        return false;
+     }
+      // Submit the form
+      uploadForm.submit();
+      
+      // Reset the form's action (optional, helps if the user returns to this page)
+      setTimeout(() => {
+        uploadForm.action = originalAction;
+      }, 100);
+    }
+
+    // Update the existing function to also handle the empty project button
     function updateSubmitButtonState() {
-      if (validateForm() && validateFiles()) {
-        createProjectBtn.disabled = false; // Enable button if both are valid
+      const licenseAccepted = document.getElementById('id_accept_license').checked;
+      const hasFiles = filesArray.length > 0;
+      
+      // Regular project button - requires files and license
+      if (licenseAccepted && hasFiles) {
+        createProjectBtn.disabled = false;
       } else {
-        createProjectBtn.disabled = true; // Keep button disabled otherwise
+        createProjectBtn.disabled = true;
+      }
+      
+      // Empty project button - requires license but should be disabled if files are present
+      if (licenseAccepted && !hasFiles) {
+        createEmptyProjectBtn.disabled = false;
+      } else {
+        createEmptyProjectBtn.disabled = true;
       }
     }
+
 
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -488,6 +535,11 @@
                 result.style.color = 'green';
             }
         });
+        const licenseCheckbox = document.getElementById('id_accept_license');
+        licenseCheckbox.addEventListener('change', updateSubmitButtonState);
+          
+        //  call it initially to set correct state
+        updateSubmitButtonState();
     });
 
 

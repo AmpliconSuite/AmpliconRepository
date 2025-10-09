@@ -34,8 +34,8 @@ def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFER
             socketTimeoutMS=5000,
             serverSelectionTimeoutMS=5000,
             waitQueueTimeoutMS=2500,  # Wait max 2.5 seconds for available connection
-            retryWrites=True,
-            retryReads=True,
+            retryWrites=False,
+            retryReads=False,
             w='majority',
             wtimeoutMS=5000
         )
@@ -217,8 +217,8 @@ def sample_data_from_feature_list(features_list):
     [['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Tissue_of_origin', 'extra_metadata_from_csv']]
     """
     df = pd.DataFrame(features_list)
-    print("sample_data_from_feature_list df")
-    print(df.head())
+    # print("sample_data_from_feature_list df")
+    # print(df.head())
     cols = [col for col in ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', "Cancer_type", 'Tissue_of_origin', 'extra_metadata_from_csv'] if col in df.columns]
     df= df[cols]
     sample_data = []
@@ -377,7 +377,7 @@ def validate_project(project, project_name):
         }}
         query = {'_id': project['_id'],
                     'delete': False}
-        collection_handle.update(query, new_values)
+        collection_handle.update_one(query, new_values)
 
     return get_one_project(project_name)
 
@@ -400,9 +400,10 @@ def replace_underscore_keys(runs_from_proj_creation):
     }
 
 
-def create_user_list(string, current_user):
+def create_user_list(string, current_user, add_current_user=True):
     # user_list = str.split(',')
-    string = string + ',' + current_user
+    if add_current_user:
+        string = string + ',' + current_user
     # issue 21
     user_list = re.split(' |;|,|\t', string)
     # drop empty strings

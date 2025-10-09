@@ -58,10 +58,30 @@ class UpdateForm(forms.ModelForm):
         widget = forms.CheckboxInput(),
         help_text = 'The default behavior is to add samples to the current project.'
     )
+    ASP_version = forms.CharField(
+        required=False,
+        label="AmpliconSuite-pipeline version(s)",
+        widget=forms.TextInput(),
+    )
+    AA_version = forms.CharField(
+        required=False,
+        label="AmpliconArchitect version(s)",
+        widget=forms.TextInput(),
+    )
+    AC_version = forms.CharField(
+        required=False,
+        label="AmpliconClassifier version(s)",
+        widget=forms.TextInput(),
+    )
+
+    def clean_samples_to_remove(self):
+        # This would be called if you add the field, but it's not necessary
+        samples = self.cleaned_data.get('samples_to_remove', [])
+        return samples
 
     class Meta:
         model = Run
-        fields = ('project_name', 'description', 'publication_link', 'private', 'project_members', 'accept_license', 'alias')
+        fields = ('project_name', 'description', 'publication_link', 'private', 'project_members', 'accept_license', 'alias', 'ASP_version','AC_version', 'AA_version')
         labels = {
             'private': 'Visibility'
         }
@@ -80,6 +100,9 @@ class UpdateForm(forms.ModelForm):
         self.fields['project_members'].widget.attrs.update({'placeholder': 'Optional: List of additional email addresses or AmpliconRepository usernames separated by spaces or commas'})
         self.fields['replace_project'].widget.attrs.update({'id': 'custom_id_replace_project'})
         # self.fields['file'].required = False
+        self.fields['ASP_version'].widget.attrs.update({ 'placeholder': 'Optional: List of AS-p versions used by samples in this project, separated by spaces or commas'})
+        self.fields['AA_version'].widget.attrs.update({ 'placeholder': 'Optional: List of AA versions used by samples in this project separated by spaces or commas'})
+        self.fields['AC_version'].widget.attrs.update({'placeholder': 'Optional: List of AC versions used in this project separated by spaces or commas'})
 
 
 class FeaturedProjectForm(forms.ModelForm):

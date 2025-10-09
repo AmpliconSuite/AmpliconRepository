@@ -43,6 +43,25 @@
       padding: 0 2px;
       border-radius: 2px;
     }
+
+    /* Batch download controls */
+    .batch-controls {
+        margin-bottom: 15px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 5px;
+        border: 1px solid #e9ecef;
+    }
+
+    .selected-count {
+        margin-left: 15px;
+        font-weight: bold;
+    }
+
+    /* Checkbox styling */
+    .sample-checkbox {
+        cursor: pointer;
+    }
 </style>
 {% endblock %}
 
@@ -86,54 +105,50 @@
 
             // Initialize DataTable with custom rendering for the genes column
             table.DataTable({
-                "paging": true,
-                "pageLength": 10,
-                "lengthMenu": [10, 25, 50, 100],
-                "ordering": true,
-                "info": true,
-                "searching": true,
-                "autoWidth": false,
-                "responsive": true,
-                "columnDefs": [{
-                    "targets": genesColumnIndex !== -1 ? genesColumnIndex : [], // Only apply to Genes column
-                    "render": function(data, type, row) {
-                        if (type !== 'display' || genesColumnIndex === -1) return data;
+                paging: true,
+                pageLength: 10,
+                lengthMenu: [10, 25, 50, 100],
+                ordering: true,
+                info: true,
+                searching: true,
+                autoWidth: false,
+                responsive: true,
+                order: [[1, 'asc']], // Default sort by Project Name column (index 1)
+                columnDefs: [
+                    {
+                        targets: 0,
+                        orderable: false // Disable sorting for checkbox column
+                    },
+                    genesColumnIndex !== -1 ? {
+                        targets: genesColumnIndex,
+                        render: function(data, type, row) {
+                            if (type !== 'display') return data;
+                            const genes = data.split(', ');
+                            if (genes.length <= 5) return data;
 
-                        // For display rendering, create expandable content
-                        const genes = data.split(', ');
-                        if (genes.length <= 5) return data; // No need for expansion
-
-                        // Reorganize genes if any match the search term
-                        let reorganizedGenes = [...genes];
-                        if (searchTerms.length > 0) {
-                            const matchedGenes = [];
-                            const otherGenes = [];
-
-                            genes.forEach(gene => {
-                                if (searchTerms.some(term => gene.toUpperCase().includes(term))) {
-                                    matchedGenes.push(`<mark>${gene}</mark>`);
-                                } else {
-                                    otherGenes.push(gene);
-                                }
-                            });
-
-                            if (matchedGenes.length > 0) {
-                                reorganizedGenes = [...matchedGenes, ...otherGenes];
+                            let reorganizedGenes = [...genes];
+                            if (searchTerms.length > 0) {
+                                const matched = [], other = [];
+                                genes.forEach(gene =>
+                                    searchTerms.some(term => gene.toUpperCase().includes(term))
+                                        ? matched.push(`<mark>${gene}</mark>`)
+                                        : other.push(gene)
+                                );
+                                if (matched.length > 0) reorganizedGenes = [...matched, ...other];
                             }
-                        }
 
-                        // Create HTML for expandable content
-                        return `
-                            <div class="gene-container">
-                                <div class="gene-content collapsed">${reorganizedGenes.slice(0, 5).join(', ')}</div>
-                                <div class="gene-content expanded" style="display:none">${reorganizedGenes.join(', ')}</div>
-                                <button class="btn btn-sm btn-link p-0 gene-toggle" style="margin-left:5px;color:blue;">
-                                    Show all ${genes.length} genes
-                                </button>
-                            </div>
-                        `;
-                    }
-                }]
+                            return `
+                                <div class="gene-container">
+                                    <div class="gene-content collapsed">${reorganizedGenes.slice(0, 5).join(', ')}</div>
+                                    <div class="gene-content expanded" style="display:none">${reorganizedGenes.join(', ')}</div>
+                                    <button class="btn btn-sm btn-link p-0 gene-toggle" style="margin-left:5px;color:blue;">
+                                        Show all ${genes.length} genes
+                                    </button>
+                                </div>
+                            `;
+                        }
+                    } : {}
+                ]
             });
         }
 
@@ -161,6 +176,268 @@
                 collapsedContent.show();
                 $(this).text(`Show all ${expandedContent.text().split(',').length} genes`);
             }
+        });
+
+        // Batch sample download functionality
+        // Variables to track selection
+        let publicSelectedSamples = [];
+        let privateSelectedSamples = [];
+
+        // Get references to the DataTables instances
+        const publicTable = $('#samples-tab table').DataTable();
+        const privateTable = $('#private-samples-tab table').DataTable();
+
+        // Function to update selected count and button state for public samples
+        function updatePublicSelection() {
+            const count = publicSelectedSamples.length;
+            $('#public-selected-count').text(count + ' sample' + (count !== 1 ? 's' : '') + ' selected');
+            $('#download-public-selected').prop('disabled', count === 0);
+        }
+
+        // Function to update selected count and button state for private samples
+        function updatePrivateSelection() {
+            const count = privateSelectedSamples.length;
+            $('#private-selected-count').text(count + ' sample' + (count !== 1 ? 's' : '') + ' selected');
+            $('#download-private-selected').prop('disabled', count === 0);
+        }
+
+        // Handle individual checkbox clicks for public samples
+        $(document).on('change', '.public-sample-checkbox', function() {
+            const projectId = $(this).data('project-id');
+            const sampleName = $(this).data('sample-name');
+            const key = `${projectId}:${sampleName}`;
+
+            if ($(this).is(':checked')) {
+                if (!publicSelectedSamples.includes(key)) {
+                    publicSelectedSamples.push(key);
+                }
+            } else {
+                publicSelectedSamples = publicSelectedSamples.filter(item => item !== key);
+            }
+
+            updatePublicSelection();
+        });
+
+        // Handle individual checkbox clicks for private samples
+        $(document).on('change', '.private-sample-checkbox', function() {
+            const projectId = $(this).data('project-id');
+            const sampleName = $(this).data('sample-name');
+            const key = `${projectId}:${sampleName}`;
+
+            if ($(this).is(':checked')) {
+                if (!privateSelectedSamples.includes(key)) {
+                    privateSelectedSamples.push(key);
+                }
+            } else {
+                privateSelectedSamples = privateSelectedSamples.filter(item => item !== key);
+            }
+
+            updatePrivateSelection();
+        });
+
+        // Public samples - Select All button using DataTables API
+        $('#select-all-public').on('click', function() {
+            // Clear current selection
+            publicSelectedSamples = [];
+
+            // Process all rows, not just visible ones
+            publicTable.rows({ search: 'applied' }).every(function(rowIdx) {
+                const row = this.node();
+                const checkbox = $(row).find('.public-sample-checkbox');
+                const projectId = checkbox.data('project-id');
+                const sampleName = checkbox.data('sample-name');
+
+                if (projectId && sampleName) {
+                    const key = `${projectId}:${sampleName}`;
+                    publicSelectedSamples.push(key);
+                    checkbox.prop('checked', true);
+                }
+            });
+
+            // Also check the "select all" checkbox in the header
+            $('#public-select-all-checkbox').prop('checked', true);
+
+            updatePublicSelection();
+        });
+
+        // Public samples - Deselect All button
+        $('#deselect-all-public').on('click', function() {
+            publicSelectedSamples = [];
+
+            // Uncheck all checkboxes, using DataTables API
+            publicTable.rows().every(function(rowIdx) {
+                const row = this.node();
+                $(row).find('.public-sample-checkbox').prop('checked', false);
+            });
+
+            $('#public-select-all-checkbox').prop('checked', false);
+            updatePublicSelection();
+        });
+
+        // Private samples - Select All button using DataTables API
+        $('#select-all-private').on('click', function() {
+            // Clear current selection
+            privateSelectedSamples = [];
+
+            // Process all rows, not just visible ones
+            privateTable.rows({ search: 'applied' }).every(function(rowIdx) {
+                const row = this.node();
+                const checkbox = $(row).find('.private-sample-checkbox');
+                const projectId = checkbox.data('project-id');
+                const sampleName = checkbox.data('sample-name');
+
+                if (projectId && sampleName) {
+                    const key = `${projectId}:${sampleName}`;
+                    privateSelectedSamples.push(key);
+                    checkbox.prop('checked', true);
+                }
+            });
+
+            // Also check the "select all" checkbox in the header
+            $('#private-select-all-checkbox').prop('checked', true);
+
+            updatePrivateSelection();
+        });
+
+        // Private samples - Deselect All button
+        $('#deselect-all-private').on('click', function() {
+            privateSelectedSamples = [];
+
+            // Uncheck all checkboxes, using DataTables API
+            privateTable.rows().every(function(rowIdx) {
+                const row = this.node();
+                $(row).find('.private-sample-checkbox').prop('checked', false);
+            });
+
+            $('#private-select-all-checkbox').prop('checked', false);
+            updatePrivateSelection();
+        });
+
+        // Header checkbox: Select/deselect all on current page — public samples
+        $('#public-select-all-checkbox').on('change', function() {
+            const isChecked = $(this).is(':checked');
+            publicTable.rows({ page: 'current' }).every(function() {
+                const $row = $(this.node());
+                const checkbox = $row.find('.public-sample-checkbox');
+                checkbox.prop('checked', isChecked);
+                const projectId = checkbox.data('project-id');
+                const sampleName = checkbox.data('sample-name');
+                const key = `${projectId}:${sampleName}`;
+                if (isChecked) {
+                    if (!publicSelectedSamples.includes(key)) publicSelectedSamples.push(key);
+                } else {
+                    publicSelectedSamples = publicSelectedSamples.filter(item => item !== key);
+                }
+            });
+            updatePublicSelection();
+        });
+
+        // Header checkbox: Select/deselect all on current page — private samples
+        $('#private-select-all-checkbox').on('change', function() {
+            const isChecked = $(this).is(':checked');
+            privateTable.rows({ page: 'current' }).every(function() {
+                const $row = $(this.node());
+                const checkbox = $row.find('.private-sample-checkbox');
+                checkbox.prop('checked', isChecked);
+                const projectId = checkbox.data('project-id');
+                const sampleName = checkbox.data('sample-name');
+                const key = `${projectId}:${sampleName}`;
+                if (isChecked) {
+                    if (!privateSelectedSamples.includes(key)) privateSelectedSamples.push(key);
+                } else {
+                    privateSelectedSamples = privateSelectedSamples.filter(item => item !== key);
+                }
+            });
+            updatePrivateSelection();
+        });
+
+        // Function to handle sample download submission
+        function downloadSelectedSamples(samples, isPrivate) {
+            if (samples.length === 0) return;
+
+            // Check if too many samples are selected
+            if (samples.length > 1000) {
+                alert('You have selected too many samples. Please select 1000 or fewer samples.');
+                return;
+            }
+
+            // Check if user is logged in
+            if (!{% if user.is_authenticated %}true{% else %}false{% endif %}) {
+                // Show login modal or redirect to login page
+                alert('You must be logged in to batch download samples from this page. Please log in and try again or visit project pages to download samples.');
+                window.location.href = '/accounts/login/?next=' + encodeURIComponent(window.location.pathname);
+                return;
+            }
+
+            // Show loading message
+            const loadingModal = $('<div>', {
+                'class': 'modal fade',
+                'id': 'loadingModal',
+                'tabindex': '-1',
+                'role': 'dialog',
+                'aria-hidden': 'true',
+                'data-backdrop': 'static',
+                'data-keyboard': 'false'
+            }).append(
+                $('<div>', {'class': 'modal-dialog modal-dialog-centered'}).append(
+                    $('<div>', {'class': 'modal-content'}).append(
+                        $('<div>', {'class': 'modal-body text-center'}).append(
+                            $('<div>', {'class': 'spinner-border text-primary mb-3', 'role': 'status'}).append(
+                                $('<span>', {'class': 'sr-only'}).text('Loading...')
+                            ),
+                            $('<h5>').text('Gathering samples, please wait.'),
+                            $('<p>').text('This can take a few minutes for large downloads...')
+                        )
+                    )
+                )
+            );
+
+            $('body').append(loadingModal);
+            $('#loadingModal').modal('show');
+
+            // Create a form for submission
+            const form = $('<form>', {
+                'method': 'POST',
+                'action': '/batch-sample-download/',
+                'style': 'display: none'
+            });
+
+            // Add CSRF token
+            form.append($('<input>', {
+                'type': 'hidden',
+                'name': 'csrfmiddlewaretoken',
+                'value': $('[name=csrfmiddlewaretoken]').val()
+            }));
+
+            // Add selected samples
+            samples.forEach(function(sample) {
+                form.append($('<input>', {
+                    'type': 'hidden',
+                    'name': 'samples',
+                    'value': sample
+                }));
+            });
+
+            // Add flag for private samples
+            form.append($('<input>', {
+                'type': 'hidden',
+                'name': 'is_private',
+                'value': isPrivate ? '1' : '0'
+            }));
+
+            // Submit the form
+            $('body').append(form);
+            form.submit();
+        }
+
+        // Public samples - Download Selected button
+        $('#download-public-selected').on('click', function() {
+            downloadSelectedSamples(publicSelectedSamples, false);
+        });
+
+        // Private samples - Download Selected button
+        $('#download-private-selected').on('click', function() {
+            downloadSelectedSamples(privateSelectedSamples, true);
         });
     });
 </script>
@@ -195,12 +472,12 @@
     <div class="results-container" >
         <ul class="nav nav-tabs">
             <li class="nav-item">
-                <a class="nav-link active" href="#projects-tab" data-toggle="tab">
+                <a class="nav-link" href="#projects-tab" data-toggle="tab">
                     Projects <span class="badge badge-primary">{{ public_projects_count }}</span>
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#samples-tab" data-toggle="tab">
+                <a class="nav-link active" href="#samples-tab" data-toggle="tab">
                     Samples <span class="badge badge-primary">{{ public_samples_count }} </span>
                 </a>
             </li>
@@ -220,7 +497,7 @@
 
         <div class="tab-content" style="padding-top: 20px; overflow-x: auto;">
             <!-- Public Projects Tab -->
-            <div class="tab-pane active" id="projects-tab">
+            <div class="tab-pane" id="projects-tab">
                 <table class="table">
                     <thead>
                         <tr>
@@ -246,10 +523,19 @@
             </div>
 
             <!-- Public Samples Tab -->
-            <div class="tab-pane" id="samples-tab">
+            <div class="tab-pane active" id="samples-tab">
+                <!-- Batch download controls -->
+                <div class="batch-controls">
+                    <button id="select-all-public" class="btn btn-sm btn-outline-secondary">Select All</button>
+                    <button id="deselect-all-public" class="btn btn-sm btn-outline-secondary">Deselect All</button>
+                    <button id="download-public-selected" class="btn btn-sm btn-primary" disabled>Download Selected Samples</button>
+                    <span id="public-selected-count" class="selected-count">0 samples selected</span>
+                </div>
+
                 <table class="table">
                     <thead>
                         <tr>
+                            <th><input type="checkbox" id="public-select-all-checkbox"></th>
                             <th>Project Name</th>
                             <th>Sample Name</th>
                             <th>Feature ID</th>
@@ -263,6 +549,11 @@
                     <tbody>
                         {% for sample in public_sample_data %}
                         <tr>
+                            <td>
+                                <input type="checkbox" class="sample-checkbox public-sample-checkbox"
+                                       data-project-id="{{ sample.project_linkid }}"
+                                       data-sample-name="{{ sample.Sample_name }}">
+                            </td>
                             <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
                             <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
                             <td><code>{{ sample.Feature_ID }}</code></td>
@@ -306,9 +597,18 @@
 
             <!-- Private Samples Tab -->
             <div class="tab-pane" id="private-samples-tab">
+                <!-- Batch download controls -->
+                <div class="batch-controls">
+                    <button id="select-all-private" class="btn btn-sm btn-outline-secondary">Select All</button>
+                    <button id="deselect-all-private" class="btn btn-sm btn-outline-secondary">Deselect All</button>
+                    <button id="download-private-selected" class="btn btn-sm btn-primary" disabled>Download Selected Samples</button>
+                    <span id="private-selected-count" class="selected-count">0 samples selected</span>
+                </div>
+
                 <table class="table">
                     <thead>
                         <tr>
+                            <th><input type="checkbox" id="private-select-all-checkbox"></th>
                             <th>Project Name</th>
                             <th>Sample Name</th>
                             <th>Feature ID</th>
@@ -322,6 +622,11 @@
                     <tbody>
                         {% for sample in private_sample_data %}
                         <tr>
+                            <td>
+                                <input type="checkbox" class="sample-checkbox private-sample-checkbox"
+                                       data-project-id="{{ sample.project_linkid }}"
+                                       data-sample-name="{{ sample.Sample_name }}">
+                            </td>
                             <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
                             <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
                             <td><code>{{ sample.Feature_ID }}</code></td>
@@ -339,4 +644,5 @@
         </div>
     </div>
 </div>
+{% csrf_token %}
 {% endblock %}

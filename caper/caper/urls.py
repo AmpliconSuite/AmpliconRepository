@@ -43,6 +43,8 @@ urlpatterns += [
     path('coamplification-graph/', views.coamplification_graph, name='coamplification_graph'),
     path('coamplification-graph/visualizer/', views.visualizer, name='visualizer'),
     path('create-project/', views.create_project, name='create_project'),
+    path('create-empty-project/', views.create_empty_project, name='create_empty_project'),
+
     path('accounts/', include('allauth.urls')),
     path("accounts/profile/", views.profile, name="profile"),
     path("profile-update-notification-preferences/", views.update_notification_preferences , name="profile-update-notification-preferences"),
@@ -51,6 +53,8 @@ urlpatterns += [
 
     path("project/<project_name>/download", views.project_download, name="project_download"),
     path("project/<project_name>/delete", views.project_delete, name="project_delete"),
+    path("project/<project_name>/regenerate_project_key", views.regenerate_project_key, name="regenerate_project_key"),
+
     path("project/<project_name>/sample/<sample_name>", views.sample_page, name="sample_page"),
     path("project/<project_name>/sample/<sample_name>/download", views.sample_download, name="sample_download"),
     path("project/<project_name>/sample/<sample_name>/download_metadata", views.sample_metadata_download, name="sample_metadata_download"),
@@ -60,7 +64,8 @@ urlpatterns += [
     path("project/<project_name>/sample/<sample_name>/feature/<feature_name>/download/pdf/<feature_id>", views.pdf_download, name="pdf_download"),
     path("project/<project_name>/edit", views.edit_project_page, name="edit_project_page"),
     path('gene-search/', views.gene_search_page, name='gene_search_page'),
-    path('gene-search/download', views.gene_search_download, name='gene_search_download'),
+    path("batch-sample-download/", views.batch_sample_download, name="batch_sample_download"),
+    # path('gene-search/download', views.gene_search_download, name='gene_search_download'),
     # path('class-search/', views.class_search_page, name='class_search_page'),
     path('admin-featured-projects/', views.admin_featured_projects, name='admin_featured_projects'),
     path('admin-stats/', views.admin_stats, name='admin_stats'),
@@ -72,13 +77,19 @@ urlpatterns += [
     path('project/<str:project_id>/process_metadata', views.process_metadata, name='process_metadata'),
     path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
     path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),
+    path('admin-delete-user/', views.admin_delete_user, name='admin_delete_user'),
+
     path('data-qc/', views.data_qc, name='data_qc'),
     path('data-qc/change-database-dates', views.change_database_dates, name='change_database_dates'),
     path('data-qc/update_sample_counts', views.update_sample_counts, name='update_sample_counts'),
-    path('upload_api/', views.FileUploadView.as_view(), name = 'Document'), 
+    path('data-qc/fix-schema', views.fix_schema, name='fix_schema'),
+    path('upload_api/', views.FileUploadView.as_view(), name = 'Document'),
+    path('add_samples_to_project_api/', views.ProjectFileAddView.as_view(), name='addSamplesToProject'),
+
     path('robots.txt', views.robots, name = "robots.txt"),
     path('loading/', views.loading),
     path('search_results/', views.search_results, name='search_results'),
+    path('ec3d/<str:sample_name>/', views.ec3d_visualization, name='ec3d_visualization'),
     
 ]
 

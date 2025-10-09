@@ -41,7 +41,7 @@
             <hr>
             <div style="margin-top: 30px">
                 <h3>Datetime bug:
-                    {% if datetime_status == 0 %}
+                    {% if datetime_status != 0 %}
                         <button type="button" class="btn btn-success" data-toggle="modal" data-target="#datetimeModal"><i class="fa fa-check" aria-hidden="true"></i></button>
                     {% else %}
                         <button type="button" class="btn btn-danger" data-toggle="modal" data-target="#datetimeModal"><i class="fa fa-times" aria-hidden="true"></i></button>
@@ -102,6 +102,14 @@
                     </div>
                 </div>
             </div>
+        
+            <hr>
+            <h3>Project Schema Validation</h3>
+            <pre>{{ schema_report }}</pre>
+            <hr><form method="POST" action="{% url 'fix_schema' %}">
+                {% csrf_token %}
+                <input type="submit" value="Fix Missing Keys" class="btn btn-warning">
+            </form>
         </div>
     </div>
 

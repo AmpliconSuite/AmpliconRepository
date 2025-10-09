@@ -73,13 +73,14 @@ def process_metadata(request, project_id):
     else:
         return "Invalid request method"
 
-def process_metadata_no_request(project_runs, metadata_file=None, file_path=None):
+def process_metadata_no_request(project_runs, metadata_file=None, old_extra_metadata = None, file_path=None):
     """
     Updates the 'runs' field of a project dictionary with metadata from an uploaded file or a file path.
 
     Args:
         project_runs (dict): The 'runs' field of the project as a dictionary.
         metadata_file (UploadedFile, optional): The metadata file uploaded by the user.
+        old_extra_metadata (dict, optional): Existing extra metadata to be preserved.
         file_path (str, optional): The path to the metadata file on disk.
 
     Returns:
@@ -88,15 +89,22 @@ def process_metadata_no_request(project_runs, metadata_file=None, file_path=None
     Raises:
         ValueError: If neither `metadata_file` nor `file_path` is provided or there is an error in processing.
     """
+    if not metadata_file and not file_path and not old_extra_metadata:
+        #raise ValueError("Either 'metadata_file' or 'file_path' must be provided.")
+        return project_runs
+    elif not metadata_file and not file_path and old_extra_metadata:
+        # add the old extra metadata 
+        for sample_key, sample_list in project_runs.items():
+            for sample in sample_list:
+                sample_name = sample.get('Sample_name')
+                if sample_name and sample_name in old_extra_metadata:
+                    if "extra_metadata_from_csv" not in sample:
+                        sample["extra_metadata_from_csv"] = {}
+                    sample["extra_metadata_from_csv"].update(old_extra_metadata[sample_name])   
+        return project_runs
     
-    print('*****************************')
-    print(metadata_file)
-    print(file_path)
-    print('*****************************')
-    
-    
-    if not metadata_file and not file_path:
-        raise ValueError("Either 'metadata_file' or 'file_path' must be provided.")
+    # gold old metadata and also a new file is provided
+        
 
     try:
         # Determine the file source and load it into a Pandas DataFrame
@@ -125,16 +133,31 @@ def process_metadata_no_request(project_runs, metadata_file=None, file_path=None
 
         # Iterate through the records and update metadata
         for row in records:
-            sample_name = row.get('sample_name')
+            # look for sample name, case insensitive
+            sample_name = {k.lower(): v for k, v in row.items()}.get('sample_name')
             if not sample_name:
                 continue  # Skip rows without a sample_name
+            if old_extra_metadata and sample_name and sample_name in old_extra_metadata:
+                this_samples_old_metadata = old_extra_metadata[sample_name]
+            else: 
+                this_samples_old_metadata = None
 
             # Find and update all corresponding samples in the runs
             for sample_key, sample_list in project_runs.items():
                 for sample in sample_list:
                     if sample.get('Sample_name') == sample_name:
+                        
+                        
+                        logging.error(f" -- loading metadata for sample {sample_name} -- ")
                         if "extra_metadata_from_csv" not in sample:
                             sample["extra_metadata_from_csv"] = {}
+
+                        # If there is old metadata for this sample, preserve it
+                        # but then update with new metadata
+                        if this_samples_old_metadata:
+                            sample["extra_metadata_from_csv"].update(this_samples_old_metadata)
+                            
+                            
                         for key, value in row.items():
                             if key != 'sample_name':
                                 sample["extra_metadata_from_csv"][key] = value
@@ -223,11 +246,27 @@ def get_extra_metadata_from_project(project):
     Returns:
         dict: A dictionary containing the extra metadata from the project's runs.
     """
-    extra_metadata = {}
-    for sample_list in project.get('runs', {}).values():
-        for sample in sample_list:
-            extra_metadata_from_csv = sample.get('extra_metadata_from_csv', {})
-            if extra_metadata_from_csv:
-                extra_metadata[sample['Sample_name']] = extra_metadata_from_csv
+    return {
+        sample['Sample_name']: sample['extra_metadata_from_csv']
+        for sample_list in project.get('runs', {}).values()
+        for sample in sample_list
+        if 'extra_metadata_from_csv' in sample
+    }
 
-    return extra_metadata
+def has_sample_metadata(project):
+    """
+    Checks if there is any sample metadata in the project's runs.
+
+    Args:
+        project_id (str): The ID of the project to check.
+
+    Returns:
+        bool: True if sample metadata exists, False otherwise.
+    """
+    if not project or 'runs' not in project:
+        return False
+    for sample_list in project['runs'].values():
+        for sample in sample_list:
+            if 'extra_metadata_from_csv' in sample:
+                return True
+    return False

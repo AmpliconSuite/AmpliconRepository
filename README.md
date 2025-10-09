@@ -322,7 +322,7 @@ docker inspect -f \
 
 # Pushing changes to GitHub and merging PRs <a name="pr"></a> 
 - Work on branches and open pull requests to merge changes into main.
-- Please ensure that you do not commit `caper.sqlite3` along with your other changes. 
+- **Please ensure that you do not commit `caper.sqlite3` along with your other changes.** 
 - PR reviewers, please check that `caper.sqlite3` is not among the changed files in a PR.
 - When merging a PR, please do the following steps:
   - pull the branch in question and load in local deployment
@@ -383,6 +383,7 @@ The server is currently running on an EC2 instance through Docker. The ports act
 > `git fetch`
 > `git pull`
 > `git checkout tags/<release tag in github>`
+- if any static (css, js, images) have changed, run sync_static_to_s3.sh to copy the files into the S3 bucket
 - Restart the server
 > `./stop-server.sh`
 > `./start-server.sh`

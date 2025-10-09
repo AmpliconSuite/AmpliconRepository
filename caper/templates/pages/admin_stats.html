@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 
 {% load mezzanine_tags %}
+{% load get_item %}
 {% block extra_js %}
 <script>
     $(document).ready(function () {
@@ -199,6 +200,7 @@
                                 <th>Name</th>
                                 <th>Description</th>
                                 <th>Last Updated</th>
+                                <th>Sample Metadata</th>
                                 <th>Project Members</th>
                                 <th>Project Downloads</th>
                                 <th>Sample Downloads</th>
@@ -210,6 +212,12 @@
                                 <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
+                                <td>{% if project.sample_metadata_available %}
+                                <i class="fas fa-check-square" style="color: green;"></i>
+                                    {% else %}
+                                        <i class="far fa-square"></i>
+                                    {% endif %}
+                                </td>
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor %}</td>
@@ -271,6 +279,8 @@
                                 <th>Email</th>
                                 <th>Joined</th>
                                 <th>Last Login</th>
+                                <th>Solo projects (Public/private)</th>
+                                <th>Details</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -280,6 +290,15 @@
                                 <td>{{ user.email }}</td>
                                 <td>{{ user.date_joined }}</td>
                                 <td>{{ user.last_login }}</td>
+                                <td>{{ user_stats|get_item:user.id|get_item:'solo_public_projects' }}/{{ user_stats|get_item:user.id|get_item:'solo_private_projects' }}</td>
+                                <td>
+                                    <form action="{% url 'admin_delete_user' %}" method="POST">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="user_name" value="{{ user.username }}">
+                                        <input type="hidden" name="action" value="select_user">
+                                        <button type="submit" class="btn btn-sm btn-info">Details</button>
+                                    </form>
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>

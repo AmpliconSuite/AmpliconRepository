@@ -1,9 +1,26 @@
 import os
 from django.utils.translation import gettext_lazy as _
 import logging
+default_log_level_name = os.getenv("DEFAULT_LOG_LEVEL", "INFO").upper()
+caper_log_level_name = os.getenv("CAPER_LOG_LEVEL", "DEBUG").upper()
+
+try:
+    default_log_level = getattr(logging, default_log_level_name)
+except AttributeError:
+    print(f"Warning: Invalid default log level '{default_log_level_name}' specified. Defaulting to INFO.")
+    default_log_level = logging.INFO
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
-                    level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
+                    level=default_log_level, datefmt='%Y-%m-%d %H:%M:%S')
+
+try:
+    caper_log_level = getattr(logging, caper_log_level_name)
+except AttributeError:
+    print(f"Warning: Invalid caper log level '{caper_log_level_name}' specified. Defaulting to DEBUG.")
+    caper_log_level = logging.DEBUG
+
+logger = logging.getLogger(__name__) 
+logger.setLevel(caper_log_level)
 
 ######################
 # MEZZANINE SETTINGS #
@@ -157,7 +174,7 @@ SITE_URL = os.environ.get("SITE_URL", default="http://127.0.0.1:8000/")
 
 SERVER_IDENTIFICATION_BANNER=os.getenv('SERVER_IDENTIFICATION_BANNER', default=None)
 
-logging.error(f"SERVER_IDENTIFICATION_BANNER: {SERVER_IDENTIFICATION_BANNER}")
+logging.debug(f"SERVER_IDENTIFICATION_BANNER: {SERVER_IDENTIFICATION_BANNER}")
 
 #ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = os.environ['ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS']
 
@@ -265,13 +282,24 @@ CACHE_MIDDLEWARE_KEY_PREFIX = PROJECT_APP
 
 
 USE_S3 = os.getenv('S3_STATIC_FILES') == 'TRUE'
-
+logging.debug(f"=============================  USE_S3: {USE_S3}")
 if USE_S3:
     # s3 static settings
     # URL prefix for static files.
     # Example: "http://media.lawrence.com/static/"
 
-    STATIC_URL = "https://amprepobucket.s3.amazonaws.com/static/"
+    # issue 331, make sure dev/prod don't use the same static files. Have it default to the current shared location 
+    # of https://amprepobucket.s3.amazonaws.com/static/ but move them now to be set based on the AMPLICON_ENV as 
+    # defined in config.sh so like this https://amprepobucket.s3.amazonaws.com/dev/static/
+    AMPLICON_ENV = os.getenv('AMPLICON_ENV', default='')
+    S3_DEFAULT_STATIC_PATH = f"{AMPLICON_ENV}/static/"
+    # it has to end with a '/' so lets make sure it does
+    S3_STATIC_PATH = f"{os.getenv('S3_STATIC_PATH', default=S3_DEFAULT_STATIC_PATH).rstrip('/')}/"
+
+
+    STATIC_URL = f"https://amprepobucket.s3.amazonaws.com/{S3_STATIC_PATH}"
+    
+    logging.debug(f"=============================  STATIC_URL: {STATIC_URL}")
     # Absolute path to the directory static files should be collected to.
     # Don't put anything in this directory yourself; store your static files
     # in apps' "static/" subdirectories and in STATICFILES_DIRS.
