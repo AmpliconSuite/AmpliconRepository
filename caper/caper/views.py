@@ -1916,6 +1916,8 @@ def edit_project_page(request, project_name):
                 for sample in project['sample_data']:
                     if sample['Sample_name'] in samples_to_remove:
                         project['sample_data'].remove(sample)
+            else:
+                sample_data = project.get('sample_data', [])
                         
              
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs,
