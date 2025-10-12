@@ -1,4 +1,6 @@
 import re
+from tabnanny import verbose
+
 import pandas as pd
 import numpy as np
 import networkx as nx
@@ -25,82 +27,124 @@ class Graph:
         Return:
             None
         """
+        # processing parameters
+        self.MERGE_CUTOFF = merge_cutoff
+        self.pdD_MODEL = pdD_model
+
+        # graph properties
+        self.nodes = []
+        self.edges = []
+        self.gene_records = {}
+        self.name_to_record = {}
+        self.name_to_edge = {}
+        self.reference_genome = None
+        self.total_samples = 0
+        self.preprocessed_dataset = None
+
         if dataset is None:
-            print("Error: provide Amplicon Architect annotations")
-        else:
-            # processing parameters
-            self.MERGE_CUTOFF = merge_cutoff
-            self.pdD_MODEL = pdD_model
+            print("ERROR: No dataset provided to Graph constructor")
+            return
 
-            # graph properties
-            self.nodes = []
-            self.edges = []
-            self.gene_records = {}
-            self.name_to_record = {}
-            self.name_to_edge = {}
+        start_time = time.time()
 
-            start_time = time.time()
-            # define reference genomes to process
-            ref_genomes = ['hg38_gtf', 'hg19_gtf']
-            base_ref = 'GRCh38'
+        # Preprocess dataset (includes reference check and normalization)
+        preprocessed_dataset = self.preprocess_dataset(dataset, focal_amp)
 
-            ref_files = [self.get_gene_bed_path(ref) for ref in ref_genomes]
-            base_ref_file = self.get_gene_bed_path(base_ref)
+        # Check if preprocessing failed
+        if preprocessed_dataset is None:
+            print("ERROR: Preprocessing failed. Constructing empty graph.")
+            return
 
-            # load gene location data for base reference
-            locs_by_base_ref = self.import_locs(base_ref_file)
-            print(
-                f"Retrieved locations for {len(locs_by_base_ref)} {base_ref} genes in {time.time() - start_time:.2f} seconds")
+        self.total_samples = len(preprocessed_dataset)
+        self.preprocessed_dataset = preprocessed_dataset
 
-            # build comprehensive group of genes containing location data
-            start_record = time.time()
-            self.gene_records, self.name_to_record = self.create_gene_records(ref_files, locs_by_base_ref)
-            print(f"Loaded {len(self.gene_records)} genes from provided reference files")
-            print(f"Gene record creation time: {time.time() - start_record:.2f} seconds")
+        # reference_genome is now normalized (either 'hg19' or 'hg38')
+        ref_version = self.reference_genome
 
-            # test
-            print(len(self.name_to_record.keys()))
+        # Map normalized reference to BED file
+        ref_to_bed = {
+            'hg38': 'hg38_genes.bed',
+            'hg19': 'hg19_genes.bed',
+        }
+
+        if ref_version not in ref_to_bed:
+            print(f"ERROR: Unsupported normalized reference genome: {ref_version}")
+            print("Constructing empty graph.")
+            return
+
+        # Get BED file path for this reference
+        bed_file = self.get_gene_bed_path(ref_version)
+
+        # Check if BED file exists
+        if not os.path.exists(bed_file):
+            print(f"ERROR: BED file not found: {bed_file}")
+            print("Constructing empty graph.")
+            return
+
+        # Load gene locations and names from BED file
+        try:
+            load_start = time.time()
+            self.gene_records, self.name_to_record = self.create_gene_records_from_bed(bed_file)
+            print(f"Loaded {len(self.gene_records)} genes from {ref_version} in {time.time() - load_start:.2f} seconds")
+            print(f"Total gene name variants: {len(self.name_to_record)}")
 
             loc_count = sum([len(v['location']) > 0 for v in self.gene_records.values()])
-            print(f"Matched location data for {loc_count} genes")
+            print(f"Genes with location data: {loc_count}")
+        except Exception as e:
+            print(f"ERROR: Failed to load gene records: {e}")
+            print("Constructing empty graph.")
+            return
 
-            # preprocess dataset
-            preprocessed_dataset = self.preprocess_dataset(dataset, focal_amp)
-            self.total_samples = len(preprocessed_dataset)
-
-            self.preprocessed_dataset = preprocessed_dataset
-
-            # create nodes and edges from the combined dataset
-            if construct_graph:
+        # create nodes and edges from the combined dataset
+        if construct_graph:
+            try:
                 self.create_nodes(preprocessed_dataset)
                 self.create_edges(by_sample)
+            except Exception as e:
+                print(f"ERROR: Failed to construct graph: {e}")
+                print("Graph construction incomplete.")
+                return
+
+    def is_valid(self):
+        """
+        Check if the graph was successfully constructed
+
+        Returns:
+            bool: True if graph has nodes and was properly initialized
+        """
+        return (self.reference_genome is not None and
+                len(self.gene_records) > 0)
+
+    def normalize_chr(self, chrom):
+        # Normalize chromosome names to always have 'chr' prefix
+        chrom = str(chrom)
+        if not chrom.startswith('chr'):
+            return 'chr' + chrom
+        return chrom
 
     def get_gene_bed_path(self, reference_genome):
         """
         Get the appropriate gene annotation bed file path based on reference genome
 
         Parameters:
-            reference_genome (str) : Reference genome version
+            reference_genome (str) : Reference genome version (normalized: hg19 or hg38)
         Return:
             str : Path to the appropriate gene annotation bed file
         """
         caper_root = os.environ.get('CAPER_ROOT', '')
         bed_dir = os.path.join(caper_root, 'caper', 'bed_files')
 
-        # Map reference genome to appropriate bed file
+        # Map normalized reference genome to appropriate bed file
         genome_to_bed = {
-            'hg38_gtf': 'Genes_hg38.gff',
-            'hg19_gtf': 'Genes_July_2010_hg19.gff',
-            'GRCh38': 'hg38_genes.bed',
             'hg38': 'hg38_genes.bed',
-            'GRCh38_viral': 'hg38_genes.bed',
-            'GRCh37': 'GRCh37_genes.bed',
             'hg19': 'hg19_genes.bed',
-            # 'mm10': 'mm10_genes.bed'
         }
 
-        # Get bed file name, default to hg38 if not found
-        bed_file = genome_to_bed.get(reference_genome, 'hg38_genes.bed')
+        # Get bed file name
+        bed_file = genome_to_bed.get(reference_genome)
+
+        if bed_file is None:
+            raise ValueError(f"No BED file mapping for reference: {reference_genome}")
 
         # Check if file exists, warn if not
         bed_path = os.path.join(bed_dir, bed_file)
@@ -118,15 +162,7 @@ class Graph:
         locs = {}
         try:
             gene_coords = pd.read_csv(bed_file, sep="\t", header=None)
-
-            # Normalize chromosome names to always have 'chr' prefix
-            def normalize_chr(chrom):
-                chrom = str(chrom)
-                if not chrom.startswith('chr'):
-                    return 'chr' + chrom
-                return chrom
-
-            gene_coords['chr_normalized'] = gene_coords[0].apply(normalize_chr)
+            gene_coords['chr_normalized'] = gene_coords[0].apply(self.normalize_chr)
 
             # Convert to dictionary
             locs = dict(zip(gene_coords[3],
@@ -138,51 +174,56 @@ class Graph:
 
         return locs
 
-    def create_gene_records(self, ref_files, locs_by_base_ref):
+    def create_gene_records_from_bed(self, bed_file):
+        """
+        Create gene records directly from BED file.
+        BED format: chr  start  end  gene_name  .  strand  transcript_id
+
+        Parameters:
+            bed_file (str): Path to BED file
+
+        Returns:
+            gene_records (dict): {gene_name: record_dict}
+            name_to_record (dict): {gene_name: record_dict} (includes all variants)
+        """
         gene_records = {}
-        # parse name and id data
-        names_ids = pd.DataFrame(columns=['ID', 'Name'])
-        for ref in ref_files:
-            df = pd.read_csv(ref, sep="\t", comment="#", header=None)
-            df = df.assign(Name=lambda x: (x[8].str.extract(r'Name=([^;]+)')))
-            df = df.assign(ID=lambda x: (x[8].str.extract(r'Accession=([^;]+)')))
-            df.dropna(inplace=True)
-            names_ids = pd.concat([names_ids, df[['ID', 'Name']]])
 
-        # map names to ids
-        name_to_ids = names_ids.groupby('Name')['ID'].agg(set).to_dict()
+        try:
+            bed_data = pd.read_csv(bed_file, sep="\t", header=None, comment="#")
+            bed_data['chr_normalized'] = bed_data[0].apply(self.normalize_chr)
 
-        # construct name-id graph
-        G = nx.Graph()
-        for name, ids in name_to_ids.items():
-            for id in ids:
-                G.add_edge(name, id)
+            # Group by gene name to handle duplicates
+            # Multiple rows per gene can exist (different transcripts)
+            for gene_name, group in bed_data.groupby(3):
+                # Use the first entry for location (or could merge/extend ranges)
+                first_row = group.iloc[0]
+                chrom = first_row['chr_normalized']
+                start = int(first_row[1])
+                end = int(first_row[2])
 
-        base_ref_names = set(locs_by_base_ref.keys())
-        # find connected components
-        for component in nx.connected_components(G):
-            names_in_component = {node for node in component if node in name_to_ids}
-            first_name = list(names_in_component)[0]
-            # overlay location info from base ref if possible
-            location = ()
-            base_names = names_in_component & base_ref_names
-            if len(base_names) > 0:
-                first_name = list(base_names)[0]
-                location = locs_by_base_ref[first_name]
-            # store the group, arbitrarily labeling by first name in component
-            gene_records[first_name] = {'label': first_name,
-                                        'all_labels': names_in_component,
-                                        'oncogene': '',
-                                        'features': set(),
-                                        'samples': set(),
-                                        'location': location,
-                                        'intervals': defaultdict(lambda: defaultdict(int))
-                                        }
-        # create retrieval index
-        name_to_record = {}
-        for __, record in gene_records.items():
-            for name in record['all_labels']:
-                name_to_record[name] = record
+                # Collect all transcript IDs for this gene (column 6)
+                transcript_ids = set(group[6].dropna().astype(str))
+
+                # Create gene record
+                gene_records[gene_name] = {
+                    'label': gene_name,
+                    'all_labels': {gene_name} | transcript_ids,  # Gene name + all transcript IDs
+                    'oncogene': '',
+                    'features': set(),
+                    'samples': set(),
+                    'location': (chrom, start, end),
+                    'intervals': defaultdict(lambda: defaultdict(int))
+                }
+
+            # Create retrieval index - map all names/IDs to their records
+            name_to_record = {}
+            for gene_name, record in gene_records.items():
+                for name in record['all_labels']:
+                    name_to_record[name] = record
+
+        except Exception as e:
+            print(f"Error loading gene records from {bed_file}: {e}")
+            raise
 
         return gene_records, name_to_record
 
@@ -236,6 +277,35 @@ class Graph:
         """
         streamline preprocessing of intervals and dataset reformatting before graph construction
         """
+        # Define equivalent reference groups (normalize to most common name)
+        ref_equivalence = {
+            'hg19': 'hg19',
+            'GRCh37': 'hg19',
+            'hg38': 'hg38',
+            'GRCh38': 'hg38',
+            'GRCh38_viral': 'hg38',
+        }
+
+        # Check that all data is from compatible reference genomes
+        unique_refs = dataset['Reference_version'].unique()
+        normalized_refs = set()
+
+        for ref in unique_refs:
+            if ref not in ref_equivalence:
+                print(f"ERROR: Unsupported reference genome: {ref}")
+                print(f"Supported references: {list(ref_equivalence.keys())}")
+                return None
+            normalized_refs.add(ref_equivalence[ref])
+
+        if len(normalized_refs) > 1:
+            print(f"ERROR: Incompatible reference genomes detected: {list(unique_refs)}")
+            print(f"Normalized to: {list(normalized_refs)}")
+            print(f"Data must be from compatible references (all GRCh37/hg19 or all GRCh38/hg38/GRCh38_viral)")
+            return None
+
+        self.reference_genome = list(normalized_refs)[0]  # Store the normalized reference
+        print(f"Using reference genome: {self.reference_genome} (input references: {list(unique_refs)})")
+
         # subset dataset by focal amplification type
         filter_start = time.time()
         filtered_dataset = dataset[dataset['Classification'] == focal_amp].copy()
@@ -276,23 +346,9 @@ class Graph:
         reformat_end = time.time()
         print(f"Preprocessing intervals and reformatting dataset took {reformat_end - reformat_start:.4f} seconds")
 
-        # # NOTE sample vs. feature level distinction made in CreateEdges()
-        # # if specified, group by sample name for sample-level co-amplifications
-        # if self.by_sample:
-        # 	group_start = time.time()
-        # 	filtered_dataset = filtered_dataset.groupby('Sample_name', as_index=False).agg({
-        # 		'Feature_ID': lambda col: [item for item in col],
-        # 		'Oncogenes': lambda col: set([x for item in col for x in item]),
-        # 		'All_genes': lambda col: list(set([x for item in col for x in item])),
-        # 		'Merged_Intervals': lambda col: [x for item in col for x in item]
-        # 	})
-        # 	group_end = time.time()
-        # 	print(f"Grouping features by sample took {group_end - group_start:.4f} seconds, resulting in {len(filtered_dataset)} samples")
-
         # return relevant columns
         preprocessed_dataset = filtered_dataset[['Sample_name',
                                                  'Feature_ID',
-                                                 'Reference_version',
                                                  'Merged_Intervals',
                                                  'Oncogenes',
                                                  'All_genes']].copy()
@@ -318,10 +374,6 @@ class Graph:
 
         # for each feature or sample
         for ind, row in dataset.iterrows():
-            # get the properties in this feature
-            # if ind < 10:
-            #     print(row['Sample_name'], row['Feature_ID'], row['Reference_version'], row['Merged_Intervals'], row['Oncogenes'], row['All_genes'])
-
             oncogenes = row.get('Oncogenes')
             all_genes = row.get('All_genes')
             feature = row.get('Feature_ID')
@@ -335,13 +387,6 @@ class Graph:
                 tree = interval_lookup[ichr]
                 tree.addi(istart, iend, interval_id_counter)
                 interval_id_counter += 1
-
-            # # store interval coordinates of feature
-            # interval_lookup = defaultdict(list)
-            # for interval in intervals:
-            # 	ichr, istart, iend = interval
-            # 	interval_lookup[ichr].append([istart, iend, interval_id_counter])
-            # 	interval_id_counter += 1
 
             gene_count += len(all_genes)
 
@@ -366,14 +411,6 @@ class Graph:
                                 genes_with_interval_counter += 1
                                 record['intervals'][sample][feature_id_counter] = hit.data
                             else:
-                                # interval_found = False
-                                # for istart, iend, id in interval_lookup[chr]:
-                                # 	if (start > istart and start < iend):
-                                # 		genes_with_interval_counter += 1
-                                # 		record['intervals'][sample][feature_id_counter] = id
-                                # 		interval_found = True
-                                # 		break
-                                # if not interval_found:
                                 genes_with_chr_no_interval_counter += 1
                                 record['genes_with_chr_no_interval_counter'] = True
                         else:
@@ -460,20 +497,25 @@ class Graph:
                 weight = len(inter) / len(union)
                 locs_found = record_a['location'] and record_b['location']
                 distance = self.distance(record_a, record_b) if locs_found else -1
-                p_d_D = self.p_d_D(distance)
+
                 self.edges.append({'source': record_a['label'],
                                    'target': record_b['label'],
                                    'weight': weight,
                                    'inter': inter,
                                    'union': union,
                                    'distance': distance,
-                                   'p_d_D': p_d_D,
+                                   'p_d_D': -1,  # Will be computed in batch below
                                    'p_values': [-1] * 4,
                                    'odds_ratios': [-1] * 4,
                                    'q_values': [-1] * 4
                                    })
         print(
             f"Constructing edges took {time.time() - construct_start:.4f} seconds: {len(self.edges)} edges with non-empty intersections")
+
+        # Vectorized p_d_D calculation
+        pdd_start = time.time()
+        self._compute_p_d_D_vectorized()
+        print(f"Computing p_d_D values took {time.time() - pdd_start:.4f} seconds")
 
         # create retrieval index for edges
         self.name_to_edge = {
@@ -548,10 +590,48 @@ class Graph:
         cdf = gamma.cdf(distance, a=params[0], loc=params[1], scale=params[2])
         return 1 - cdf
 
+    def _compute_p_d_D_vectorized(self):
+        """
+        Compute p_d_D values for all edges using vectorized gamma.cdf
+        """
+        if not self.edges:
+            return
+
+        # Extract distances
+        distances = np.array([edge['distance'] for edge in self.edges])
+
+        # Get model parameters
+        models = {'gamma_random_breakage': [0.3987543483729932,
+                                            1.999999999999,
+                                            1749495.5696758535],
+                  'gamma_capped_5m': [0.4528058380301946,
+                                      1.999999999999,
+                                      1192794.3765480835],
+                  'merge25kbp_cap2mbp': [0.5567064701123039,
+                                         1.9999999999999996,
+                                         534068.5378861207],
+                  'merge25kbp_cap1mbp': [0.7420123072378633,
+                                         1.9999999999999998,
+                                         203145.72909328266]}
+        params = models[self.pdD_MODEL]
+
+        # Vectorized computation - only for valid distances (>= 0)
+        valid_mask = distances >= 0
+        p_d_D_values = np.full(len(distances), -1.0)  # Initialize with -1
+
+        if np.any(valid_mask):
+            valid_distances = distances[valid_mask]
+            cdfs = gamma.cdf(valid_distances, a=params[0], loc=params[1], scale=params[2])
+            p_d_D_values[valid_mask] = 1 - cdfs
+
+        # Assign back to edges
+        for i, edge in enumerate(self.edges):
+            edge['p_d_D'] = p_d_D_values[i]
+
     def perform_tests(self, edge, verbose=False):
         """
-        perform all applicable significance tests and fill corresponding properties
-        fill lists in order:
+        Perform all applicable significance tests and fill corresponding properties
+        Fill lists in order:
             [0] single interval
             [1] multi interval
             [2] multi chromosomal
@@ -560,115 +640,201 @@ class Graph:
         record_a = self.name_to_record[edge['source']]
         record_b = self.name_to_record[edge['target']]
 
-        # early return if missing location data
+        # Early return if missing location data
         if not record_a['location'] or not record_b['location']:
             return
 
-        # test
-        if (
-                record_a.get('genes_with_chr_no_interval_counter')
-                or record_a.get('genes_with_no_chr_match_counter')
-                or record_b.get('genes_with_chr_no_interval_counter')
-                or record_b.get('genes_with_no_chr_match_counter')
-        ):
+        # Mark if missing interval data
+        if (record_a.get('genes_with_chr_no_interval_counter') or
+                record_a.get('genes_with_no_chr_match_counter') or
+                record_b.get('genes_with_chr_no_interval_counter') or
+                record_b.get('genes_with_no_chr_match_counter')):
             edge['missing_interval_data'] = True
 
-        samples = list(edge['inter'])
-        tested = [False, False, False, False]
-        log = []
-        log.append(
-            f"{len(samples)} shared samples\n"
-            f"Missing interval data: {'missing_interval_data' in edge}\n"
-        )
+        # Pre-compute chromosome compatibility (constant for all samples)
+        same_chr = record_a['location'][0] == record_b['location'][0]
 
-        # for each co-amplified sample, determine the type of co-amplification
-        # and run the appropriate test if not previously done
-        i = 0
-        while i < len(samples) and False in tested:
-            intervals_a = record_a['intervals'][samples[i]]
-            intervals_b = record_b['intervals'][samples[i]]
+        # Classify co-amplifications by type
+        coamp_counts = self._classify_coamplifications(edge, record_a, record_b, same_chr)
+
+        # Determine which tests are applicable by checking ALL samples
+        applicable_tests, log_data = self._determine_applicable_tests(edge, record_a, record_b, same_chr, verbose)
+
+        # Prepare verbose logging
+        log = []
+        if verbose:
+            log.append(f"{len(edge['inter'])} shared samples\n")
+            log.append(f"Co-amplification counts: {coamp_counts}\n")
+            log.append(f"Missing interval data: {'missing_interval_data' in edge}\n")
+            log.append(f"same_chr: {same_chr}\n")
+            if log_data:
+                log.extend(log_data)
+
+        # Execute only the applicable tests (no loops, no conditions)
+        if applicable_tests[0]:  # single interval
+            p_value, odds_ratio = self.single_interval(edge, record_a, record_b, coamp_counts)
+            edge['p_values'][0] = p_value
+            edge['odds_ratios'][0] = odds_ratio
+            if verbose:
+                log.append(f"Ran single_interval test: p={p_value:.3g}, OR={odds_ratio:.3g}\n")
+
+        if applicable_tests[1]:  # multi interval
+            p_value, odds_ratio = self.multi_interval(edge, record_a, record_b, coamp_counts)
+            edge['p_values'][1] = p_value
+            edge['odds_ratios'][1] = odds_ratio
+            if verbose:
+                log.append(f"Ran multi_interval test: p={p_value:.3g}, OR={odds_ratio:.3g}\n")
+
+        if applicable_tests[2]:  # multi chromosomal
+            p_value, odds_ratio = self.multi_chromosomal(edge, record_a, record_b, coamp_counts)
+            edge['p_values'][2] = p_value
+            edge['odds_ratios'][2] = odds_ratio
+            if verbose:
+                log.append(f"Ran multi_chromosomal test: p={p_value:.3g}, OR={odds_ratio:.3g}\n")
+
+        if applicable_tests[3]:  # multi ecDNA
+            p_value, odds_ratio = self.multi_ecdna(edge, record_a, record_b, coamp_counts)
+            edge['p_values'][3] = p_value
+            edge['odds_ratios'][3] = odds_ratio
+            if verbose:
+                log.append(f"Ran multi_ecDNA test: p={p_value:.3g}, OR={odds_ratio:.3g}\n")
+
+        if verbose:
+            print("\n".join(log))
+
+    def _classify_coamplifications(self, edge, record_a, record_b, same_chr):
+        """
+        Classify each co-amplification by type
+
+        Returns:
+            dict with counts for each test type
+        """
+        counts = {
+            'single_interval': 0,  # same chr, same feature, same interval
+            'multi_interval': 0,  # same chr, same feature, diff interval
+            'multi_chromosomal': 0,  # diff chr
+            'multi_ecdna': 0,  # diff feature
+            'total': len(edge['inter'])
+        }
+
+        samples = edge['inter']
+        intervals_a_all = record_a['intervals']
+        intervals_b_all = record_b['intervals']
+
+        for sample in samples:
+            intervals_a = intervals_a_all[sample]
+            intervals_b = intervals_b_all[sample]
             features_ab = set(intervals_a.keys()) & set(intervals_b.keys())
 
-            log_test_update = False
+            # Different chromosomes
+            if not same_chr:
+                counts['multi_chromosomal'] += 1
+                if not features_ab:  # Also different features
+                    counts['multi_ecdna'] += 1
+                continue
 
-            # if len(features_ab) > 1:
-            # 	print('Note: unexpected number of shared features in sample')
+            # Same chromosome, different features
+            if not features_ab:
+                counts['multi_ecdna'] += 1
+                continue
 
-            same_chr = record_a['location'][0] == record_b['location'][0]
-            same_feature = len(features_ab) > 0
+            # Same chromosome, same feature - check intervals
             intervals_to_check = [(intervals_a[f], intervals_b[f])
                                   for f in features_ab
                                   if intervals_a[f] is not None and intervals_b[f] is not None]
 
             if intervals_to_check:
-                same_interval = any(a == b for a, b in intervals_to_check)
-                diff_interval = any(a != b for a, b in intervals_to_check)
-            else:
-                # No valid intervals to compare
-                same_interval = False
-                diff_interval = False
+                if any(a == b for a, b in intervals_to_check):
+                    counts['single_interval'] += 1
+                elif any(a != b for a, b in intervals_to_check):
+                    counts['multi_interval'] += 1
 
-            # [0] single interval test
-            if not tested[0] and same_interval:
-                p_value, odds_ratio = self.single_interval(edge, record_a, record_b)
-                edge['p_values'][0] = p_value
-                edge['odds_ratios'][0] = odds_ratio
-                tested[0] = True
-                log_test_update = True
-                log.append(
-                    f"[i={i}] Sample '{samples[i]}'\n"
-                    f"Ran single_interval test: p={p_value:.3g}"
-                )
+        return counts
 
-            # [1] multi interval test
-            if not tested[1] and same_chr and same_feature and diff_interval:
-                p_value, odds_ratio = self.multi_interval(edge, record_a, record_b)
-                edge['p_values'][1] = p_value
-                edge['odds_ratios'][1] = odds_ratio
-                tested[1] = True
-                log_test_update = True
-                log.append(
-                    f"[i={i}] Sample '{samples[i]}'\n"
-                    f"Ran multi_interval test: p={p_value:.3g}"
-                )
+    def _determine_applicable_tests(self, edge, record_a, record_b, same_chr, verbose=False):
+        """
+        Determine which tests apply by scanning all samples once.
 
-            # [2] multi chromosomal test
-            if not tested[2] and not same_chr:
-                p_value, odds_ratio = self.multi_chromosomal(edge, record_a, record_b)
-                edge['p_values'][2] = p_value
-                edge['odds_ratios'][2] = odds_ratio
-                tested[2] = True
-                log_test_update = True
-                log.append(
-                    f"[i={i}] Sample '{samples[i]}'\n"
-                    f"Ran multi_chromosomal test: p={p_value:.3g}"
-                )
+        Returns:
+            tuple: (applicable_tests, log_data)
+                applicable_tests: list[bool] - [single_interval, multi_interval, multi_chromosomal, multi_ecDNA]
+                log_data: list[str] - verbose logging information
+        """
+        applicable = [False, False, False, False]
+        log_data = []
 
-            # [3] multi ecDNA test
-            if not tested[3] and not same_feature:
-                p_value, odds_ratio = self.multi_ecdna(edge, record_a, record_b)
-                edge['p_values'][3] = p_value
-                edge['odds_ratios'][3] = odds_ratio
-                tested[3] = True
-                log.append(
-                    f"[i={i}] Sample '{samples[i]}'\n"
-                    f"Ran multi_ecDNA test: p={p_value:.3g}"
-                )
+        # For same chromosome, check samples to determine other tests
+        samples = edge['inter']
+        intervals_a_all = record_a['intervals']
+        intervals_b_all = record_b['intervals']
 
-            if log_test_update:
-                log.append(
-                    f"{record_a['label']} features: {sorted(intervals_a)}\n"
-                    f"{record_b['label']} features: {sorted(intervals_b)}\n"
-                    f"Shared features: {sorted(features_ab)}\n"
-                )
-                log.append(
-                    f"same_chr: {same_chr} \nsame_feature: {same_feature} \nsame_interval: {same_interval} \ndiff_interval: {diff_interval}\n\n"
-                )
+        found_same_interval = False
+        found_diff_interval_same_feature = False
+        found_diff_feature = False
+        first_sample_with_diff_feature = None
 
-            i += 1
+        for sample in samples:
+            intervals_a = intervals_a_all[sample]
+            intervals_b = intervals_b_all[sample]
+            features_ab = set(intervals_a.keys()) & set(intervals_b.keys())
+
+            # Check for different features (multi ecDNA)
+            if not features_ab:
+                if not found_diff_feature:
+                    found_diff_feature = True
+                    first_sample_with_diff_feature = sample
+                # Continue checking for other conditions (don't early exit)
+                if not same_chr:
+                    # If different chromosomes, we can exit early after finding diff_feature
+                    if found_diff_feature:
+                        break
+                else:
+                    # If same chromosome, still need to check for interval conditions
+                    if found_same_interval and found_diff_interval_same_feature:
+                        break
+                continue
+
+            # Only check intervals if on same chromosome
+            if same_chr:
+                # Check intervals within shared features
+                intervals_to_check = [(intervals_a[f], intervals_b[f])
+                                      for f in features_ab
+                                      if intervals_a[f] is not None and intervals_b[f] is not None]
+
+                if intervals_to_check:
+                    has_same = any(a == b for a, b in intervals_to_check)
+                    has_diff = any(a != b for a, b in intervals_to_check)
+
+                    if has_same and not found_same_interval:
+                        found_same_interval = True
+                        first_sample_with_same_interval = sample
+                        if verbose:
+                            log_data.append(f"Sample '{sample}': same_interval=True, features={sorted(features_ab)}\n")
+
+                    if has_diff and not found_diff_interval_same_feature:
+                        found_diff_interval_same_feature = True
+                        first_sample_with_diff_interval = sample
+                        if verbose:
+                            log_data.append(f"Sample '{sample}': diff_interval=True, features={sorted(features_ab)}\n")
+
+                # Early exit if we found all conditions for same chromosome
+                if found_same_interval and found_diff_interval_same_feature and found_diff_feature:
+                    break
+
+        # Set applicable tests based on what we found
+        applicable[0] = found_same_interval and same_chr  # single interval (only same chr)
+        applicable[1] = found_diff_interval_same_feature and same_chr  # multi interval (only same chr)
+        applicable[2] = not same_chr  # multi chromosomal (only diff chr)
+        applicable[3] = found_diff_feature  # multi ecDNA (any chromosome)
 
         if verbose:
-            print("\n".join(log))
+            log_data.append(f"same_chr: {same_chr}\n")
+            if found_diff_feature:
+                log_data.append(f"Sample '{first_sample_with_diff_feature}': different features (multi_ecDNA)\n")
+            if not same_chr:
+                log_data.append("Different chromosomes - multi_chromosomal test applies\n")
+
+        return applicable, log_data
 
     def chi_squared_helper(self, obs, exp, verbose=False):
         # apply Haldane correction if any observed category count is zero
@@ -702,21 +868,26 @@ class Graph:
 
         return p_val_one_sided, odds_ratio
 
-    def single_interval(self, edge, record_a, record_b, verbose=False):
+    def single_interval(self, edge, record_a, record_b, coamp_counts, verbose=False):
         pdD = edge['p_d_D']
         geneA_samples = len(record_a['samples'])
         geneB_samples = len(record_b['samples'])
-        geneAB_samples = len(edge['inter'])
+        total_coamps = len(edge['inter'])
 
         # observed
-        O11 = geneAB_samples
-        O12 = geneA_samples - geneAB_samples
-        O21 = geneB_samples - geneAB_samples
-        O22 = self.total_samples - geneA_samples - geneB_samples + geneAB_samples
+        O11 = coamp_counts['single_interval']
+        nonapplicable_coamps = total_coamps - O11
+
+        geneA_alone = geneA_samples - total_coamps
+        geneB_alone = geneB_samples - total_coamps
+
+        O12 = geneA_alone + 0.5 * nonapplicable_coamps
+        O21 = geneB_alone + 0.5 * nonapplicable_coamps
+        O22 = self.total_samples - O11 - O12 - O21
         obs = [O11, O12, O21, O22]
 
         # expected
-        E11 = (geneA_samples + geneB_samples - geneAB_samples) * pdD
+        E11 = (geneA_samples + geneB_samples - O11) * pdD
         E12 = geneA_samples * (1 - pdD)
         E21 = geneB_samples * (1 - pdD)
         E22 = self.total_samples - (E11 + E12 + E21)
@@ -726,32 +897,35 @@ class Graph:
             print(f"pdD value: {pdD}\n" \
                   f"{record_a['label']} samples: {geneA_samples}\n" \
                   f"{record_b['label']} samples: {geneB_samples}\n" \
-                  f"{record_a['label']} & {record_b['label']} samples: {geneAB_samples}\n" \
+                  f"{record_a['label']} & {record_b['label']} (same interval): {O11}\n" \
+                  f"Total co-amplifications: {total_coamps}\n" \
+                  f"Non-applicable co-amps: {nonapplicable_coamps}\n" \
                   f"Total samples: {self.total_samples}\n" \
                   f"Observed counts ([O11, O12, O21, O22]): {obs}\n" \
                   f"Expected counts ([E11, E12, E21, E22]): {exp}\n")
 
         return self.chi_squared_helper(obs, exp, verbose=verbose)
 
-    def multi_interval(self, edge, record_a, record_b, verbose=False):
-        # M_SAME_CHR = 0.275405
-
+    def multi_interval(self, edge, record_a, record_b, coamp_counts, verbose=False):
         pdD = edge['p_d_D']
         geneA_samples = len(record_a['samples'])
         geneB_samples = len(record_b['samples'])
-        geneAB_samples = len(edge['inter'])
+        total_coamps = len(edge['inter'])
 
         # observed
-        O11 = geneAB_samples
-        O12 = geneA_samples - geneAB_samples
-        O21 = geneB_samples - geneAB_samples
-        O22 = self.total_samples - geneA_samples - geneB_samples + geneAB_samples
+        O11 = coamp_counts['multi_interval']
+        nonapplicable_coamps = total_coamps - O11
+
+        geneA_alone = geneA_samples - total_coamps
+        geneB_alone = geneB_samples - total_coamps
+
+        O12 = geneA_alone + 0.5 * nonapplicable_coamps
+        O21 = geneB_alone + 0.5 * nonapplicable_coamps
+        O22 = self.total_samples - O11 - O12 - O21
         obs = [O11, O12, O21, O22]
 
         # expected
         E11 = (geneA_samples) * (geneB_samples) * (1 - pdD) / self.total_samples
-        # E11 = (geneA_samples) * (geneB_samples) * ((1-pdD)**2) / self.total_samples
-        # E11 = E11 * M_SAME_CHR
         E12 = geneA_samples * (self.total_samples - geneB_samples) / self.total_samples
         E21 = geneB_samples * (self.total_samples - geneA_samples) / self.total_samples
         E22 = self.total_samples - (E11 + E12 + E21)
@@ -761,26 +935,32 @@ class Graph:
             print(f"pdD value: {pdD}\n" \
                   f"{record_a['label']} samples: {geneA_samples}\n" \
                   f"{record_b['label']} samples: {geneB_samples}\n" \
-                  f"{record_a['label']} & {record_b['label']} samples: {geneAB_samples}\n" \
+                  f"{record_a['label']} & {record_b['label']} (multi interval): {O11}\n" \
+                  f"Total co-amplifications: {total_coamps}\n" \
+                  f"Non-applicable co-amps: {nonapplicable_coamps}\n" \
                   f"Total samples: {self.total_samples}\n" \
                   f"Observed counts ([O11, O12, O21, O22]): {obs}\n" \
                   f"Expected counts ([E11, E12, E21, E22]): {exp}\n")
 
         return self.chi_squared_helper(obs, exp, verbose=verbose)
 
-    def multi_chromosomal(self, edge, record_a, record_b, verbose=False):
+    def multi_chromosomal(self, edge, record_a, record_b, coamp_counts, verbose=False):
         M_MULTI_CHR = 0.116055
 
-        # pdD = edge['p_d_D']
         geneA_samples = len(record_a['samples'])
         geneB_samples = len(record_b['samples'])
-        geneAB_samples = len(edge['inter'])
+        total_coamps = len(edge['inter'])
 
         # observed
-        O11 = geneAB_samples
-        O12 = geneA_samples - geneAB_samples
-        O21 = geneB_samples - geneAB_samples
-        O22 = self.total_samples - geneA_samples - geneB_samples + geneAB_samples
+        O11 = coamp_counts['multi_chromosomal']
+        nonapplicable_coamps = total_coamps - O11
+
+        geneA_alone = geneA_samples - total_coamps
+        geneB_alone = geneB_samples - total_coamps
+
+        O12 = geneA_alone + 0.5 * nonapplicable_coamps
+        O21 = geneB_alone + 0.5 * nonapplicable_coamps
+        O22 = self.total_samples - O11 - O12 - O21
         obs = [O11, O12, O21, O22]
 
         # expected
@@ -794,15 +974,34 @@ class Graph:
             print(f"Multichromosomal rate: {M_MULTI_CHR}\n" \
                   f"{record_a['label']} samples: {geneA_samples}\n" \
                   f"{record_b['label']} samples: {geneB_samples}\n" \
-                  f"{record_a['label']} & {record_b['label']} samples: {geneAB_samples}\n" \
+                  f"{record_a['label']} & {record_b['label']} (multi chromosomal): {O11}\n" \
+                  f"Total co-amplifications: {total_coamps}\n" \
+                  f"Non-applicable co-amps: {nonapplicable_coamps}\n" \
                   f"Total samples: {self.total_samples}\n" \
                   f"Observed counts ([O11, O12, O21, O22]): {obs}\n" \
                   f"Expected counts ([E11, E12, E21, E22]): {exp}\n")
 
         return self.chi_squared_helper(obs, exp, verbose=verbose)
 
-    def multi_ecdna(self, edge, record_a, record_b, verbose=False):
-        # to complete
+    def multi_ecdna(self, edge, record_a, record_b, coamp_counts, verbose=False):
+        geneA_samples = len(record_a['samples'])
+        geneB_samples = len(record_b['samples'])
+        total_coamps = len(edge['inter'])
+
+        # observed
+        O11 = coamp_counts['multi_ecdna']
+        nonapplicable_coamps = total_coamps - O11
+
+        geneA_alone = geneA_samples - total_coamps
+        geneB_alone = geneB_samples - total_coamps
+
+        O12 = geneA_alone + 0.5 * nonapplicable_coamps
+        O21 = geneB_alone + 0.5 * nonapplicable_coamps
+        O22 = self.total_samples - O11 - O12 - O21
+        obs = [O11, O12, O21, O22]
+
+        # expected - TODO: need proper expected value model
+        # For now, return -1 to indicate not implemented
         return -1, -1
 
     def q_val(self, p_values, alpha=0.05):
@@ -848,15 +1047,20 @@ class Graph:
         else:
             print(f"Stored p-value: {p_val}\nStored q-value: {q_val}\n")
 
+        # Classify co-amplifications to get counts
+        same_chr = sn['location'][0] == tn['location'][0]
+        coamp_counts = self._classify_coamplifications(edge, sn, tn, same_chr)
+        print(f"Co-amplification counts: {coamp_counts}\n")
+
         # match-case
         if test == 0:
-            result = self.single_interval(edge, sn, tn, verbose=True)
+            result = self.single_interval(edge, sn, tn, coamp_counts, verbose=True)
         elif test == 1:
-            result = self.multi_interval(edge, sn, tn, verbose=True)
+            result = self.multi_interval(edge, sn, tn, coamp_counts, verbose=True)
         elif test == 2:
-            result = self.multi_chromosomal(edge, sn, tn, verbose=True)
+            result = self.multi_chromosomal(edge, sn, tn, coamp_counts, verbose=True)
         elif test == 3:
-            result = self.multi_ecdna(edge, sn, tn, verbose=True)
+            result = self.multi_ecdna(edge, sn, tn, coamp_counts, verbose=True)
         else:
             return "Input a valid test selection"
 
