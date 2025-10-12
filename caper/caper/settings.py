@@ -463,15 +463,16 @@ OPTIONAL_APPS = (
 
 f = os.path.join(PROJECT_APP_PATH, "local_settings.py")
 if os.path.exists(f):
-    import imp
     import sys
+    import importlib.util
 
     module_name = "%s.local_settings" % PROJECT_APP
-    module = imp.new_module(module_name)
-    module.__file__ = f
-    sys.modules[module_name] = module
-    exec(open(f, "rb").read())
 
+    # Load the module from file
+    spec = importlib.util.spec_from_file_location(module_name, f)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
 
 PROJECT_DATA_URL='/project_data/'
 PROJECT_DATA_ROOT=os.path.join(BASE_DIR,'project_data')
