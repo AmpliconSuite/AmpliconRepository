@@ -95,8 +95,13 @@
         <ol class="breadcrumb">
             <li class="breadcrumb-item"><a href="/">Home</a></li>
             <li class="breadcrumb-item"><a href="/project/{{ project.linkid }}">{{ project.project_name }}</a></li>
-            <li class="breadcrumb-item active" aria-current="page">{{ sample_name }}</li>
+            <li class="breadcrumb-item active" aria-current="page">
+                {% if prev_sample %}<a title="Previous: {{ prev_sample }}" href="/project/{{ project.linkid }}/sample/{{ prev_sample }}" style="margin-right: 8px;font-size:0.7em;">← Prev</a>{% endif %}
+                {{ sample_name }}
+                {% if next_sample %}<a title="Next: {{ next_sample }}" href="/project/{{ project.linkid }}/sample/{{ next_sample }}" style="margin-left: 8px;font-size:0.7em;">Next →</a>{% endif %}
+            </li>
         </ol>
+        
     </nav>
 </div>
 

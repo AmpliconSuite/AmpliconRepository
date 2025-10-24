@@ -128,7 +128,7 @@ def get_one_deleted_project(project_name_or_uuid):
 
 
 def get_one_feature(project_name, sample_name, feature_name):
-    project, sample = get_one_sample(project_name, sample_name)
+    project, sample, _, _ = get_one_sample(project_name, sample_name)
     feature = list(filter(lambda s: s['Feature_ID'] == feature_name, sample))
     return project, sample, feature
 
@@ -953,7 +953,7 @@ def get_sample_metadata(sample_data):
     return sample_metadata
 
 def sample_metadata_download(request, project_name, sample_name):
-    project, sample_data = get_one_sample(project_name, sample_name)
+    project, sample_data, _, _ = get_one_sample(project_name, sample_name)
     sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
     extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
     try:
@@ -977,10 +977,20 @@ def add_metadata(request, project_id):
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
     logging.info(f"Loading sample page for {sample_name}")
-    project, sample_data = get_one_sample(project_name, sample_name)
+    project, sample_data, prev_sample, next_sample = get_one_sample(project_name, sample_name)
     project_linkid = project['_id']
     if project['private'] and not is_user_a_project_member(project, request):
         return redirect('/accounts/login')
+    
+    # Extract sample names from prev_sample and next_sample
+    prev_sample_name = None
+    if prev_sample and len(prev_sample) > 0:
+        prev_sample_name = prev_sample[0].get('Sample_name')
+    
+    next_sample_name = None
+    if next_sample and len(next_sample) > 0:
+        next_sample_name = next_sample[0].get('Sample_name')
+    
     sample_metadata = get_sample_metadata(sample_data)
     reference_genome = reference_genome_from_sample(sample_data)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
@@ -1031,6 +1041,8 @@ def sample_page(request, project_name, sample_name):
                    'sample_metadata': dict(sample_metadata),
                    'reference_genome': reference_genome,
                    'sample_name': sample_name,
+                   'prev_sample': prev_sample_name,
+                   'next_sample': next_sample_name,
                    'graph': plot,
                    'igv_tracks': json.dumps(igv_tracks),
                    'locuses': json.dumps(all_locuses),
@@ -1304,7 +1316,7 @@ def sample_download(request, project_name, sample_name):
     """
     Download a single sample's data.
     """
-    project, sample_data = get_one_sample(project_name, sample_name)
+    project, sample_data, _, _ = get_one_sample(project_name, sample_name)
 
     # Process the sample data
     sample_data_path, _ = process_sample_data(project, sample_name, sample_data)
@@ -1373,7 +1385,7 @@ def batch_sample_download(request):
             for sample_name in project_info['samples']:
                 try:
                     # Get sample data
-                    _, sample_data = get_one_sample(project_id, sample_name)
+                    _, sample_data, _, _ = get_one_sample(project_id, sample_name)
                     if not sample_data:
                         continue
 
