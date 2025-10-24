@@ -1921,6 +1921,8 @@ def edit_project_page(request, project_name):
             old_extra_metadata = get_extra_metadata_from_project(project)
             current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file, old_extra_metadata = old_extra_metadata)
          
+            # Initialize sample_data from existing project
+            sample_data = project.get('sample_data', None)
              
             if project.get('sample_data',False) and samples_to_remove and len(samples_to_remove) > 0:
                 sample_data = project['sample_data']
