@@ -3518,7 +3518,6 @@ class FileUploadView(APIView):
             return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
     def api_helper(self, form, current_user, request_file, api_id,actual_proj_name, multifile = False):
         """
         Helper function for API, to be run asynchronously
@@ -3557,8 +3556,6 @@ class FileUploadView(APIView):
 class ProjectFileAddView(APIView):
     parser_class = (MultiPartParser,)
     permission_classes = []
-
-    
 
     def post(self, request, format=None):
         project_uuid = request.data.get('project_uuid')

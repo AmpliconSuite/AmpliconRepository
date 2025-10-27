@@ -150,7 +150,6 @@ def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_
     print(f"Unique nodes returned: {len(nodes)}")
     print(f"Unique edges returned: {len(edges)}")
     node_ids = [n['data']['id'] for n in nodes.values()]
-    print(f"Node IDs: {node_ids}")
 
     for edge_key, edge in list(edges.items())[:5]:  # First 5 edges
         print(f"Edge: {edge['data']['source']} -> {edge['data']['target']}")
