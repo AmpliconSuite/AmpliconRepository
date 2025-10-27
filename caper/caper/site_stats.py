@@ -54,6 +54,8 @@ def subtract_amplicon_counts_by_classification(class_keys, class_values, sum_hol
 def regenerate_site_statistics():
     pub_amplicon_counts = dict()
     priv_amplicon_counts = dict()
+    pub_tissue_counts = dict()
+    priv_tissue_counts = dict()
 
     # just get stats for all private
     all_private_proj_count = 0
@@ -62,6 +64,8 @@ def regenerate_site_statistics():
     for proj in all_private_projects:
         class_keys, amplicon_counts = get_project_amplicon_counts(proj)
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts)
+        tissue_counts = get_project_tissue_of_origin_counts(proj)
+        sum_tissue_of_origin_counts(tissue_counts, priv_tissue_counts)
         all_private_proj_count = all_private_proj_count + 1
         all_private_sample_count = all_private_sample_count + len(proj['runs'])
     # end private stats
@@ -72,10 +76,13 @@ def regenerate_site_statistics():
     for proj in public_projects:
         class_keys, amplicon_counts = get_project_amplicon_counts(proj)
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, pub_amplicon_counts)
+        tissue_counts = get_project_tissue_of_origin_counts(proj)
+        sum_tissue_of_origin_counts(tissue_counts, pub_tissue_counts)
         public_proj_count = public_proj_count + 1
         public_sample_count = public_sample_count + len(proj['runs'])
 
     print(f"  pub amp counts is  == {pub_amplicon_counts} ")
+    print(f"  pub tissue counts is  == {pub_tissue_counts} ")
     # make it an array of name/values so we can add to it later
     repo_stats = {}
     repo_stats["public_proj_count"] = public_proj_count
@@ -84,6 +91,8 @@ def regenerate_site_statistics():
     repo_stats["all_private_sample_count"] = all_private_sample_count
     repo_stats["all_private_amplicon_classifications_count"] = priv_amplicon_counts
     repo_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
+    repo_stats["all_private_tissue_of_origin_count"] = priv_tissue_counts
+    repo_stats["public_tissue_of_origin_count"] = pub_tissue_counts
 
     repo_stats["date"] = get_date()
     new_id = site_statistics_handle.insert_one(repo_stats)
@@ -115,10 +124,17 @@ def add_project_to_site_statistics(project, is_private=False):
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts)
         updated_stats["all_private_amplicon_classifications_count"] = priv_amplicon_counts
 
+        # Get tissue of origin counts for private stats
+        priv_tissue_counts = current_stats.get("all_private_tissue_of_origin_count", {})
+        tissue_counts = get_project_tissue_of_origin_counts(project)
+        sum_tissue_of_origin_counts(tissue_counts, priv_tissue_counts)
+        updated_stats["all_private_tissue_of_origin_count"] = priv_tissue_counts
+
         # Public stats remain unchanged
         updated_stats["public_proj_count"] = current_stats["public_proj_count"]
         updated_stats["public_sample_count"] = current_stats["public_sample_count"]
         updated_stats["public_amplicon_classifications_count"] = current_stats["public_amplicon_classifications_count"]
+        updated_stats["public_tissue_of_origin_count"] = current_stats.get("public_tissue_of_origin_count", {})
     else:
         # Adding to public stats
         updated_stats["public_proj_count"] = current_stats["public_proj_count"] + 1
@@ -130,11 +146,18 @@ def add_project_to_site_statistics(project, is_private=False):
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, pub_amplicon_counts)
         updated_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
 
+        # Get tissue of origin counts for public stats
+        pub_tissue_counts = current_stats.get("public_tissue_of_origin_count", {})
+        tissue_counts = get_project_tissue_of_origin_counts(project)
+        sum_tissue_of_origin_counts(tissue_counts, pub_tissue_counts)
+        updated_stats["public_tissue_of_origin_count"] = pub_tissue_counts
+
         # Private stats remain unchanged
         updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"]
         updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"]
         updated_stats["all_private_amplicon_classifications_count"] = current_stats[
             "all_private_amplicon_classifications_count"]
+        updated_stats["all_private_tissue_of_origin_count"] = current_stats.get("all_private_tissue_of_origin_count", {})
 
     updated_stats["date"] = get_date()
     new_id = site_statistics_handle.insert_one(updated_stats)
@@ -162,10 +185,17 @@ def delete_project_from_site_statistics(project, is_private):
         subtract_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts)
         updated_stats["all_private_amplicon_classifications_count"] = priv_amplicon_counts
 
+        # Get tissue of origin counts to subtract from private stats
+        priv_tissue_counts = current_stats.get("all_private_tissue_of_origin_count", {})
+        tissue_counts = get_project_tissue_of_origin_counts(project)
+        subtract_tissue_of_origin_counts(tissue_counts, priv_tissue_counts)
+        updated_stats["all_private_tissue_of_origin_count"] = priv_tissue_counts
+
         # Public stats remain unchanged
         updated_stats["public_proj_count"] = current_stats["public_proj_count"]
         updated_stats["public_sample_count"] = current_stats["public_sample_count"]
         updated_stats["public_amplicon_classifications_count"] = current_stats["public_amplicon_classifications_count"]
+        updated_stats["public_tissue_of_origin_count"] = current_stats.get("public_tissue_of_origin_count", {})
     else:
         # Removing from public stats
         updated_stats["public_proj_count"] = current_stats["public_proj_count"] - 1
@@ -177,11 +207,18 @@ def delete_project_from_site_statistics(project, is_private):
         subtract_amplicon_counts_by_classification(class_keys, amplicon_counts, pub_amplicon_counts)
         updated_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
 
+        # Get tissue of origin counts to subtract from public stats
+        pub_tissue_counts = current_stats.get("public_tissue_of_origin_count", {})
+        tissue_counts = get_project_tissue_of_origin_counts(project)
+        subtract_tissue_of_origin_counts(tissue_counts, pub_tissue_counts)
+        updated_stats["public_tissue_of_origin_count"] = pub_tissue_counts
+
         # Private stats remain unchanged
         updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"]
         updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"]
         updated_stats["all_private_amplicon_classifications_count"] = current_stats[
             "all_private_amplicon_classifications_count"]
+        updated_stats["all_private_tissue_of_origin_count"] = current_stats.get("all_private_tissue_of_origin_count", {})
 
     updated_stats["date"] = get_date()
     new_id = site_statistics_handle.insert_one(updated_stats)
@@ -244,3 +281,76 @@ def get_project_amplicon_counts(project):
 
 
     return class_keys, amplicon_counts
+
+
+def get_project_tissue_of_origin_counts(project):
+    """
+    Counts the number of samples per tissue_of_origin in a project.
+    
+    Args:
+        project (dict): Project dictionary containing runs data
+        
+    Returns:
+        dict: Dictionary with tissue_of_origin as keys and counts as values
+    """
+    tissue_counts = dict()
+    runs = project['runs']
+    
+    for sample_num in runs.keys():
+        sample_data = runs[sample_num]
+        # Check if sample_data is a list (array of features) or dict
+        if isinstance(sample_data, list) and len(sample_data) > 0:
+            # Get the first feature to access sample-level metadata
+            sample_info = sample_data[0]
+        else:
+            sample_info = sample_data
+            
+        # Get tissue_of_origin from the sample
+        tissue = sample_info.get('Tissue_of_origin', None)
+        
+        # Only count if tissue_of_origin exists and is not None/empty
+        if tissue and str(tissue).strip():
+            tissue = str(tissue).strip()
+            tissue_counts[tissue] = tissue_counts.get(tissue, 0) + 1
+    
+    return tissue_counts
+
+
+def sum_tissue_of_origin_counts(tissue_counts, sum_holder):
+    """
+    Adds tissue_of_origin counts to the running sum.
+    
+    Args:
+        tissue_counts (dict): Dictionary of tissue_of_origin counts to add
+        sum_holder (dict): Dictionary holding the cumulative counts
+        
+    Returns:
+        dict: Updated sum_holder with added counts
+    """
+    for tissue_name, count in tissue_counts.items():
+        prev = sum_holder.get(tissue_name, 0)
+        sum_holder[tissue_name] = prev + count
+    
+    return sum_holder
+
+
+def subtract_tissue_of_origin_counts(tissue_counts, sum_holder):
+    """
+    Subtracts tissue_of_origin counts from the running sum.
+    
+    Args:
+        tissue_counts (dict): Dictionary of tissue_of_origin counts to subtract
+        sum_holder (dict): Dictionary holding the cumulative counts
+        
+    Returns:
+        dict: Updated sum_holder with subtracted counts
+    """
+    for tissue_name, count in tissue_counts.items():
+        prev = sum_holder.get(tissue_name, 0)
+        val = prev - count
+        if val < 0:
+            print(f" NEGATIVE TISSUE_OF_ORIGIN COUNTS IN SITE STATS AFTER PROJECT DELETION -- SHOULD REGENERATE ALL SITE STATS (tissue: {tissue_name})")
+            val = 0
+        sum_holder[tissue_name] = val
+    
+    return sum_holder

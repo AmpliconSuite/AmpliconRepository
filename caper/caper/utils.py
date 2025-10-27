@@ -198,15 +198,38 @@ def get_one_sample(project_name, sample_name):
     project = validate_project(get_one_project(project_name), project_name)
     # print("ID --- ", project['_id'])
     runs = project['runs']
-    for sample_num in runs.keys():
+    
+    # Get all sample keys as a sorted list
+    sample_keys = sorted(runs.keys())
+    
+    sample_out = None
+    prev_sample = None
+    next_sample = None
+    current_index = None
+    
+    # Find the current sample and its index
+    for idx, sample_num in enumerate(sample_keys):
         current = runs[sample_num]
         try:
             if len(current) > 0 and current[0]['Sample_name'] == sample_name:
                 sample_out = current
+                current_index = idx
+                break
         except:
             # should not get here but we do sometimes for new projects, issue 194
-            sample_out = None
-    return project, sample_out
+            pass
+    
+    # Get previous and next samples if current sample was found
+    if current_index is not None:
+        if current_index > 0:
+            prev_sample_key = sample_keys[current_index - 1]
+            prev_sample = runs[prev_sample_key]
+        
+        if current_index < len(sample_keys) - 1:
+            next_sample_key = sample_keys[current_index + 1]
+            next_sample = runs[next_sample_key]
+    
+    return project, sample_out, prev_sample, next_sample
 
 
 def sample_data_from_feature_list(features_list):
