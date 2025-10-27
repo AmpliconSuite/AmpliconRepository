@@ -35,6 +35,7 @@ class AdminSendEmail(models.Model):
 class UserPreferencesModel(models.Model):
     onAddedToProjectTeam = models.BooleanField(default=False)
     onRemovedFromProjectTeam = models.BooleanField(default=False)
+    onProjectUpdate = models.BooleanField(default=True)
 
 class UploadTarFile(models.Model):
     """

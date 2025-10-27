@@ -674,6 +674,9 @@ def project_page(request, project_name, message=''):
         viewing_old_project = True
 
     set_project_edit_OK_flag(project, request)
+    
+    # Check if user is actually a project member (for subscription checkbox visibility)
+    is_project_member = is_user_a_project_member(project, request)
 
     # For empty projects, set defaults
     if is_empty_project:
@@ -740,6 +743,7 @@ def project_page(request, project_name, message=''):
         'prev_versions_length': len(prev_versions),
         'views': views,
         'downloads': downloads,
+        'is_project_member': is_project_member,  # Pass actual membership status for subscription UI
         'proj_id': project_name,
         'viewing_old_project': viewing_old_project,
         'is_empty_project': is_empty_project,  # Pass this flag to the template
@@ -1876,17 +1880,29 @@ def edit_project_page(request, project_name):
 
             views = project['views']
             downloads = project['downloads']
+            # Preserve subscribers from the old project version
+            old_subscribers = project.get('subscribers', [])
             # create a new one with the new form
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
             ## get extra metadata from csv first (if exists in old project), add it to the new proj
             old_extra_metadata = get_extra_metadata_from_project(project)
-            new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,  previous_versions = new_prev_versions, previous_views = [views, downloads])
+            new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,  previous_versions = new_prev_versions, previous_views = [views, downloads], old_subscribers = old_subscribers)
 
             # can't delete it, if its being used in the other thread for metadata extraction
             if os.path.exists(temp_directory) and not extra_metadata_file_fp:
                 shutil.rmtree(temp_directory)
             
             if new_id is not None:
+                # Notify subscribers about the project update
+                try:
+                    from .user_preferences import notify_subscribers_of_project_update
+                    # Get the new project to determine sample count
+                    new_project = get_one_project(str(new_id.inserted_id))
+                    new_sample_count = new_project.get('sample_count', len(new_project.get('runs', {})))
+                    notify_subscribers_of_project_update(project, new_id.inserted_id, new_sample_count)
+                except Exception as e:
+                    logging.error(f"Failed to notify subscribers of project update: {str(e)}")
+                
                 # go to the new project
                 return redirect('project_page', project_name=new_id.inserted_id)
             else:
@@ -2749,6 +2765,65 @@ def regenerate_project_key(request, project_name):
     return JsonResponse({"key": new_key})
 
 
+@login_required
+def toggle_project_subscription(request, project_name):
+    """
+    Toggle a user's subscription to a project.
+    Non-members can subscribe to receive notifications about project changes.
+    Returns JSON with subscription status.
+    """
+    # Check if this is a POST request
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # Get the project
+    project = get_one_project(project_name)
+    if not project:
+        return JsonResponse({"error": "Project not found"}, status=404)
+    
+    # Get current user
+    current_user_email = request.user.email if request.user.email else request.user.username
+    current_user_username = request.user.username
+    
+    # Check if user is a project member (members cannot subscribe/unsubscribe)
+    is_member = current_user_username in project.get('project_members', []) or \
+                current_user_email in project.get('project_members', [])
+    
+    if is_member:
+        return JsonResponse({
+            "error": "Project members are automatically notified of changes",
+            "is_subscribed": True,
+            "is_member": True
+        }, status=400)
+    
+    # Initialize subscribers array if it doesn't exist
+    subscribers = project.get('subscribers', [])
+    
+    # Toggle subscription
+    if current_user_email in subscribers:
+        # Unsubscribe
+        subscribers.remove(current_user_email)
+        is_subscribed = False
+        message = "Successfully unsubscribed from project updates"
+    else:
+        # Subscribe
+        subscribers.append(current_user_email)
+        is_subscribed = True
+        message = "Successfully subscribed to project updates"
+    
+    # Update the project with new subscribers list
+    query = {'_id': project['_id']}
+    new_val = {"$set": {'subscribers': subscribers}}
+    collection_handle.update_one(query, new_val)
+    
+    # Return the subscription status
+    return JsonResponse({
+        "is_subscribed": is_subscribed,
+        "is_member": False,
+        "message": message
+    })
+
+
 def create_empty_project(request):
     """
     Creates an empty project with minimal information.
@@ -2908,7 +2983,7 @@ def create_project(request):
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
-def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], agg_fp = None):
+def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None):
     """
     Creates the project
     """
@@ -2924,7 +2999,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
     ## try to get metadata file
-    project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions, previous_views = previous_views)
+    project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions, previous_views = previous_views, old_subscribers = old_subscribers)
     if project is None or tmp_id is None:
         return None
 
@@ -2955,7 +3030,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
 
 
 ## make a create_project_helper for project creation code
-def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex, from_api = False, previous_versions = [], previous_views = [0, 0]):
+def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex, from_api = False, previous_versions = [], previous_views = [0, 0], old_subscribers = None):
     """
     Creates a project dictionary from
 
@@ -3064,6 +3139,12 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['downloads'] = previous_views[1]
     project['alias_name'] = form_dict['alias']
     project['sample_count'] = len(runs)
+    
+    # Preserve subscribers from previous version if provided
+    if old_subscribers is not None:
+        project['subscribers'] = old_subscribers
+    else:
+        project['subscribers'] = []
     
     # iterate over project['runs'] and get the unique values across all runs
     # of AA_version, AC_version and 'AS-P_version'. Then add them to the project dict
@@ -3644,6 +3725,7 @@ class ProjectFileAddView(APIView):
                 # transfer the view and downloads counts to the new project version
                 views = project['views']
                 downloads = project['downloads']
+                old_subscribers = project.get('subscribers', [])
                 form_data = {
                     'project_name': project.get('project_name', ''),
                     'publication_link': project.get('publication_link', ''),
@@ -3660,10 +3742,19 @@ class ProjectFileAddView(APIView):
                 ## get extra metadata from csv first (if exists in old project), add it to the new proj
                 old_extra_metadata = get_extra_metadata_from_project(project)
                 new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions=new_prev_versions,
-                                         previous_views=[views, downloads], old_extra_metadata = old_extra_metadata)
+                                         previous_views=[views, downloads], old_extra_metadata = old_extra_metadata, old_subscribers = old_subscribers)
                 if new_id is not None:
                     new_project_uuid = str(new_id.inserted_id)
                     alert_message = f"Aggregation successful. New samples added to project version: {new_project_uuid}"
+                    
+                    # Notify subscribers about the project update
+                    try:
+                        from .user_preferences import notify_subscribers_of_project_update
+                        new_project = get_one_project(new_project_uuid)
+                        new_sample_count = new_project.get('sample_count', len(new_project.get('runs', {})))
+                        notify_subscribers_of_project_update(project, new_id.inserted_id, new_sample_count)
+                    except Exception as notify_error:
+                        logging.error(f"Failed to notify subscribers: {str(notify_error)}")
         except Exception as e:
             logging.error(e)
             alert_message = "Edit project failed. Error performing aggregation. Please ensure all uploaded samples are valid AmpliconSuite results."

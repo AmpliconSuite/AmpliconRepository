@@ -125,7 +125,7 @@ class UserPreferencesForm(forms.ModelForm):
 
     class Meta:
         model = UserPreferencesModel
-        fields = ('onAddedToProjectTeam', 'onRemovedFromProjectTeam')
+        fields = ('onAddedToProjectTeam', 'onRemovedFromProjectTeam', 'onProjectUpdate')
 
 
 class MySignUpForm(SignupForm):

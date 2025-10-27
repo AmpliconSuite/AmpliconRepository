@@ -270,6 +270,80 @@
         {% endfor %}
         </p>
 
+        {% if user.is_authenticated and not is_project_member %}
+        <div style="margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 5px;">
+            <label style="cursor: pointer; user-select: none;">
+                <input type="checkbox" id="subscription-checkbox" style="margin-right: 5px;">
+                <span id="subscription-label">Subscribe to project updates</span>
+            </label>
+            <div id="subscription-message" style="margin-top: 5px; font-size: 0.9em;"></div>
+        </div>
+        <script>
+        $(document).ready(function() {
+            // Check current subscription status on page load
+            checkSubscriptionStatus();
+            
+            // Handle checkbox change
+            $('#subscription-checkbox').on('change', function() {
+                toggleSubscription();
+            });
+        });
+        
+        function checkSubscriptionStatus() {
+            // Check if user is subscribed
+            var subscribers = {{ project.subscribers|default:"[]"|safe }};
+            var userEmail = "{{ user.email|default:user.username }}";
+            var isSubscribed = subscribers.includes(userEmail);
+            
+            $('#subscription-checkbox').prop('checked', isSubscribed);
+            updateSubscriptionLabel(isSubscribed);
+        }
+        
+        function toggleSubscription() {
+            $.ajax({
+                url: "/project/{{ project.linkid }}/toggle_subscription",
+                type: "POST",
+                headers: {
+                    "X-CSRFToken": getCookie("csrftoken"),
+                    'Content-Type': 'application/json'
+                },
+                success: function(response) {
+                    updateSubscriptionLabel(response.is_subscribed);
+                    showSubscriptionMessage(response.message, 'success');
+                },
+                error: function(xhr, status, error) {
+                    var errorMsg = "An error occurred";
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        errorMsg = xhr.responseJSON.error;
+                    }
+                    showSubscriptionMessage(errorMsg, 'error');
+                    // Revert checkbox to previous state
+                    $('#subscription-checkbox').prop('checked', !$('#subscription-checkbox').prop('checked'));
+                }
+            });
+        }
+        
+        function updateSubscriptionLabel(isSubscribed) {
+            if (isSubscribed) {
+                $('#subscription-label').text('Subscribed to project updates');
+            } else {
+                $('#subscription-label').text('Subscribe to project updates');
+            }
+        }
+        
+        function showSubscriptionMessage(message, type) {
+            var messageDiv = $('#subscription-message');
+            var color = type === 'success' ? '#28a745' : '#dc3545';
+            messageDiv.html('<span style="color: ' + color + ';">' + message + '</span>');
+            
+            // Clear message after 3 seconds
+            setTimeout(function() {
+                messageDiv.html('');
+            }, 3000);
+        }
+        </script>
+        {% endif %}
+
         <div id = "project_statistics"> Views: {{ views }} | Downloads: <span id = 'downloads'>{{downloads}}</span></div>
     </div>
     
