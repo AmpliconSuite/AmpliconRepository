@@ -1637,7 +1637,7 @@ def get_current_user(request):
 
 
 def project_delete(request, project_name):
-    project = get_one_project_sans_runs(project_name)
+    project = get_one_project(project_name)
     deleter = get_current_user(request)
     is_admin = getattr(request.user, 'is_staff', False)
     allowed = is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))
