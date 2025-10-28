@@ -60,7 +60,7 @@ def regenerate_site_statistics():
     # just get stats for all private
     all_private_proj_count = 0
     all_private_sample_count = 0
-    all_private_projects = list(collection_handle.find({'private': True, 'delete': False}))
+    all_private_projects = list(collection_handle.find({'private': True, 'delete': False, 'current': True}))
     for proj in all_private_projects:
         class_keys, amplicon_counts = get_project_amplicon_counts(proj)
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts)
@@ -72,7 +72,7 @@ def regenerate_site_statistics():
 
     public_proj_count = 0
     public_sample_count = 0
-    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    public_projects = list(collection_handle.find({'private': False, 'delete': False, 'current': True}))
     for proj in public_projects:
         class_keys, amplicon_counts = get_project_amplicon_counts(proj)
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, pub_amplicon_counts)
