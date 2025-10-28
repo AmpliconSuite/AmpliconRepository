@@ -1637,21 +1637,28 @@ def get_current_user(request):
 
 
 def project_delete(request, project_name):
-    project = get_one_project(project_name)
+    project = get_one_project_sans_runs(project_name)
     deleter = get_current_user(request)
     is_admin = getattr(request.user, 'is_staff', False)
     allowed = is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))
     if check_project_exists(project_name) and allowed:
-        current_runs = project['runs']
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
         delete_project_from_site_statistics(project, project['private'])
+        
+        # Clean up large objects
+        del project
+        gc.collect()
+        
         return redirect('profile')
     else:
+        # Clean up even on error path
+        del project
+        gc.collect()
         return HttpResponse("Project does not exist")
-    # return redirect('profile')
+
 
 def project_update(request, project_name):
     """
@@ -1659,7 +1666,7 @@ def project_update(request, project_name):
     current = False when a project is edited.
     update_date will be changed after project has been updated.
     """
-    project = get_one_project(project_name)
+    project = get_one_project_sans_runs(project_name)
     is_admin = getattr(request.user, 'is_staff', False)
     allowed = is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))
     if check_project_exists(project_name) and allowed:
@@ -1994,7 +2001,7 @@ def edit_project_page(request, project_name):
                 if value and value != 'NA':
                     # Add to new_val to be saved in mongo
                     new_val.setdefault('$set', {})[version_field] = value
-            
+
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
                 edit_proj_privacy(project, old_privacy, new_privacy)
@@ -2039,11 +2046,11 @@ def edit_project_page(request, project_name):
         members = [i for i in members if i]
         memberString = ', '.join(members)
 
-        
+
         AAVersion=project.get('AA_version', 'NA')
         ACVersion=project.get('AC_version', 'NA')
         ASPVersion=project.get('ASP_version', 'NA')
-        
+
         form = UpdateForm(initial={"project_name": project['project_name'],
                                    "description": project['description'],
                                    "private":project['private'],
@@ -2068,15 +2075,15 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
     # from the project zip file. They will be in a directory in the tar file called
     # results/other_files/<SAMPLE_NAME>_classification/
     project_name = project['project_name']
-    
-    
-    
-    try:    
+
+
+
+    try:
         download_file(url, download_path)
     except Exception as e:
         logging.error(f'Failed to download the file: {e}')
         return None
-        
+
     if os.path.exists(download_path):
         parent_dir = os.path.abspath(os.path.dirname(download_path))
         # Create a temporary directory to extract the tar file
@@ -2092,7 +2099,7 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
             sample_dir = os.path.join(temp_extract_dir, 'results', 'other_files', f'{sample}_classification')
             if os.path.exists(sample_dir):
                 shutil.rmtree(sample_dir)
-                
+
             # Also remove other directories left behind in other_files
             sample_dir2 = os.path.join(temp_extract_dir, 'results', 'AA_outputs', f'{sample}_AA_results')
             if os.path.exists(sample_dir2):
@@ -2103,7 +2110,7 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
                 shutil.rmtree(sample_dir3)
 
         # Create a new tar file without the removed samples
-        
+
         new_project_tar_fp = f'{parent_dir}/{project_name}_stripped.tar.gz'
         with tarfile.open(new_project_tar_fp, 'w:gz') as tar:
             tar.add(os.path.join(temp_extract_dir, 'results'), arcname='results')
@@ -2290,25 +2297,25 @@ def admin_stats(request):
         username = user.username
         email = user.email
         user_id = user.id
-        
+
         # Initialize counts for this user
         solo_private_projects = 0
         solo_public_projects = 0
-        
+
         # Check each project
         for project in all_projects:
             project_members = project.get('project_members', [])
-            
+
             # Check if user is a member (by username or email) and they're the only one
-            is_only_member = (len(project_members) == 1 and 
+            is_only_member = (len(project_members) == 1 and
                              (username in project_members or email in project_members))
-            
+
             if is_only_member:
                 if project.get('private', False):
                     solo_private_projects += 1
                 else:
                     solo_public_projects += 1
-        
+
         # Store the stats for this user
         user_stats[user_id] = {
             'solo_private_projects': solo_private_projects,
@@ -2361,8 +2368,8 @@ def admin_stats(request):
     repo_stats = get_latest_site_statistics()
 
     return render(request, 'pages/admin_stats.html', {
-        'public_projects': public_projects, 
-        'users': users, 
+        'public_projects': public_projects,
+        'users': users,
         'user_stats': user_stats,
         'site_stats': repo_stats
     })
@@ -2460,21 +2467,21 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         run_path = f'{project_data_path}/results/run.json'
         with open(run_path, 'r') as run_json:
            runs = samples_to_dict(run_json)
-        
+
         if samples_to_remove:
             runs = remove_samples_from_runs(runs, samples_to_remove)
-        
+
         logging.info("Processing and uploading individual files to GridFS...")
         feature_count = 0
         total_features = sum(len(features) for features in runs.values())
-        
+
         # get cnv, image, bed files
         for sample, features in runs.items():
             for feature in features:
                 feature_count += 1
                 if feature_count % 100 == 0:
                     logging.info(f"Processing feature {feature_count}/{total_features}...")
-                
+
                 if len(feature) > 0:
                     # get paths
                     key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON',
@@ -2487,7 +2494,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         except:
                             id_var = "Not Provided"
                         feature[k] = id_var
-        
+
         logging.info("All features processed. Updating project in database...")
 
         # Now update the project with the updated runs
@@ -2504,11 +2511,11 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
 
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
-        
+
         get_tool_versions(project, runs)
         version_keys = ['AA_version', 'AC_version', 'ASP_version']
         tool_versions = {k: project[k] for k in version_keys if k in project}
-        
+
         new_val["$set"].update(tool_versions)
 
         collection_handle.update_one(query, new_val)
@@ -2625,11 +2632,11 @@ def admin_delete_user(request):
     solo_projects = []  # Initialize with a default value
     member_projects = []  # Initialize with a default value
     username = ""
-    
+
     if request.method == "POST":
         username = request.POST.get("user_name", "")
         action = request.POST.get("action", "select_user")
-       
+
         if action == 'select_user':
             solo_projects = list(collection_handle.find({ 'current': True, 'project_members': [username] }))
             # Member projects: username is one of the members, but not the only one
@@ -2641,12 +2648,12 @@ def admin_delete_user(request):
 
             # Filter the results to ensure the project_members array has more than one member
             member_projects = [project for project in member_projects if len(project.get('project_members', [])) > 1]
-            
+
         elif action == 'delete_user':
-            
+
             # for solo projects that are private, delete them
             solo_projects = list(collection_handle.find({'project_members': [username]}))
-            
+
             for project in solo_projects:
                 project_name = project['project_name']
                 project_id = project['_id']
@@ -2670,10 +2677,10 @@ def admin_delete_user(request):
                     new_val = {"$set": {'project_members': [anAdmin]}}
                     error_message += f"User {username} deleted, project {project_name} was public and reassigned to {anAdmin}. "
                     collection_handle.update_one(query, new_val)
-                    
-                      
-                
-            
+
+
+
+
             # for member projects, remove the user from the project members
             member_projects = [
                 project for project in collection_handle.find({
@@ -2696,14 +2703,14 @@ def admin_delete_user(request):
                 error_message += f"User {username} deleted successfully."
             except User.DoesNotExist:
                 error_message += f"User {username} does not exist."
-                
+
             solo_projects = []
             member_projects=[]
-                
-    
+
+
     return render(request, 'pages/admin_delete_user.html',
                       {'username': username,
-                          'solo_projects': solo_projects, 
+                          'solo_projects': solo_projects,
                        'member_projects': member_projects ,
                        'error_message': error_message})
 
@@ -2781,24 +2788,24 @@ def regenerate_project_key(request, project_name):
     # Check if this is a POST request
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
-    
+
     # Get the project
     project = get_one_project(project_name)
     if not project:
         return JsonResponse({"error": "Project not found"}, status=404)
-    
+
     # Check if user is authorized (project member or admin)
     if not (is_user_a_project_member(project, request) or request.user.is_staff):
         return JsonResponse({"error": "Unauthorized"}, status=403)
-    
+
     # Generate a new UUID key
     new_key = str(uuid.uuid4())
-    
+
     # Update the project with the new key
     query = {'_id': project['_id']}
     new_val = {"$set": {'privateKey': new_key}}
     collection_handle.update_one(query, new_val)
-    
+
     # Return the new key
     return JsonResponse({"key": new_key})
 
@@ -2813,30 +2820,30 @@ def toggle_project_subscription(request, project_name):
     # Check if this is a POST request
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
-    
+
     # Get the project
     project = get_one_project(project_name)
     if not project:
         return JsonResponse({"error": "Project not found"}, status=404)
-    
+
     # Get current user
     current_user_email = request.user.email if request.user.email else request.user.username
     current_user_username = request.user.username
-    
+
     # Check if user is a project member (members cannot subscribe/unsubscribe)
     is_member = current_user_username in project.get('project_members', []) or \
                 current_user_email in project.get('project_members', [])
-    
+
     if is_member:
         return JsonResponse({
             "error": "Project members are automatically notified of changes",
             "is_subscribed": True,
             "is_member": True
         }, status=400)
-    
+
     # Initialize subscribers array if it doesn't exist
     subscribers = project.get('subscribers', [])
-    
+
     # Toggle subscription
     if current_user_email in subscribers:
         # Unsubscribe
@@ -2848,12 +2855,12 @@ def toggle_project_subscription(request, project_name):
         subscribers.append(current_user_email)
         is_subscribed = True
         message = "Successfully subscribed to project updates"
-    
+
     # Update the project with new subscribers list
     query = {'_id': project['_id']}
     new_val = {"$set": {'subscribers': subscribers}}
     collection_handle.update_one(query, new_val)
-    
+
     # Return the subscription status
     return JsonResponse({
         "is_subscribed": is_subscribed,
@@ -2877,7 +2884,7 @@ def create_empty_project(request):
 
         # Get project members if provided
         project_members_raw = request.POST.get('project_members', '')
-        
+
         # Validate inputs
         if not project_name:
             messages.error(request, "Project name is required")
@@ -2888,7 +2895,7 @@ def create_empty_project(request):
 
         # Process project members (ensure creator is included)
         project_members = create_user_list(project_members_raw, creator)
-        
+
         # Set up timestamps
         current_date = get_date()
 
@@ -2978,7 +2985,7 @@ def create_project(request):
             print("No version attribute found for Aggregator or AmpliconSuiteAggregator.")
 
         agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
-        
+
         if not agg.completed:
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
@@ -3028,7 +3035,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     # it could be a new file was provided at the same time as sampels to be
     # removed from the project. That can't be done until runs is populated in the project
     samples_to_remove = request.POST.getlist('samples_to_remove')
-    
+
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
     publication_link = form_dict['publication_link']
@@ -3177,13 +3184,13 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['downloads'] = previous_views[1]
     project['alias_name'] = form_dict['alias']
     project['sample_count'] = len(runs)
-    
+
     # Preserve subscribers from previous version if provided
     if old_subscribers is not None:
         project['subscribers'] = old_subscribers
     else:
         project['subscribers'] = []
-    
+
     # iterate over project['runs'] and get the unique values across all runs
     # of AA_version, AC_version and 'AS-P_version'. Then add them to the project dict
     #substututing ASP_version for AS-P_version

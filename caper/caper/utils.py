@@ -351,6 +351,78 @@ def get_one_project(project_name_or_uuid):
     return project
 
 
+def get_one_project_sans_runs(project_name_or_uuid):
+    """
+    Gets one project from name or UUID, excluding the 'runs' field to reduce memory usage.
+    
+    if name, then checks the DB for an "alias" field, then gets that project if it has one 
+    
+    This is useful when you only need project metadata without the full sample/feature data.
+    """
+    
+    # Projection to exclude the runs field
+    projection = {'runs': 0}
+    
+    try:
+        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': False}, projection)[0]
+        prepare_project_linkid(project)
+        return project
+
+    except:
+        project = None
+
+    # backstop using the name the old way
+    if project is None:
+        ## first try finding the alias name
+        try:
+            project = collection_handle.find({'alias_name': project_name_or_uuid, 'delete': False}, projection)[0]
+            prepare_project_linkid(project)
+            return project
+        except:
+            project = None
+            
+        ## then find project via project name
+        try:
+            project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False}, projection)
+            if project is not None:
+                logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
+                prepare_project_linkid(project)
+                return project
+        except:
+            project = None
+
+
+    ## Maybe we are looking for an updated project: look for it by checking for the "current = False" flag
+    if project is None:
+        try:
+            project = collection_handle.find_one({'_id': ObjectId(project_name_or_uuid), 'current': False, 'delete': True}, projection)
+            if project is not None:
+                prepare_project_linkid(project)
+                logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
+
+                return project
+        except:
+            project = None
+
+    if project is None:
+        try:
+            project = collection_handle.find_one({'project_name': project_name_or_uuid, 'current': False, 'delete': True}, projection)
+            if project is not None:
+                prepare_project_linkid(project)
+                logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
+
+                return project
+        except:
+            project = None
+
+
+
+    if project is None:
+        logging.error(f"Project is None for {project_name_or_uuid}")
+
+    return project
+
+
 def flatten(nested, lst=True, sort=True):
     """
     Recursively flattens a nested list and optionally sorts the result.
