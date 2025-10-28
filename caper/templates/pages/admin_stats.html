@@ -138,6 +138,25 @@
                         <td>{{ site_stats.public_amplicon_classifications_count.Unclassified|default:0 }}</td>
                         <td>{{ site_stats.all_private_amplicon_classifications_count.Unclassified|default:0 }}</td>
                     </tr>
+                    <tr>
+                        <td colspan="3" style="padding-top: 20px;"><strong>Tissue of Origin Statistics</strong></td>
+                    </tr>
+                    {% for tissue_name, count in site_stats.public_tissue_of_origin_count.items %}
+                    <tr>
+                        <td>{{ tissue_name }}</td>
+                        <td>{{ count|default:0 }}</td>
+                        <td>{{ site_stats.all_private_tissue_of_origin_count|get_item:tissue_name|default:0 }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% for tissue_name, count in site_stats.all_private_tissue_of_origin_count.items %}
+                        {% if tissue_name not in site_stats.public_tissue_of_origin_count.keys %}
+                    <tr>
+                        <td>{{ tissue_name }}</td>
+                        <td>0</td>
+                        <td>{{ count|default:0 }}</td>
+                    </tr>
+                        {% endif %}
+                    {% endfor %}
                 </tbody>
             </table>
 

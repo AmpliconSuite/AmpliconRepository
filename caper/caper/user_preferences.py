@@ -13,10 +13,18 @@ def get_user_preferences(user):
     latest = user_preferences_handle.find_one({'email': user.email})
     if latest == None:
         return set_default_user_preferences(user)
+    
+    # Ensure onProjectUpdate exists for existing users (migration safety net)
+    if 'onProjectUpdate' not in latest:
+        query = {'_id': ObjectId(latest['_id'])}
+        new_val = {"$set": {'onProjectUpdate': True}}
+        user_preferences_handle.update_one(query, new_val)
+        latest['onProjectUpdate'] = True
+    
     return latest
 
 def set_default_user_preferences(user):
-    prefs = {'onRemovedFromProjectTeam': True, 'onAddedToProjectTeam': True, 'email': user.email, 'welcomeMessage': True}
+    prefs = {'onRemovedFromProjectTeam': True, 'onAddedToProjectTeam': True, 'onProjectUpdate': True, 'email': user.email, 'welcomeMessage': True}
     user_preferences_handle.insert_one(prefs)
     return prefs
 
@@ -131,3 +139,68 @@ def send_project_membership_changed_email(subject, template, to_email, sharing_u
     )
     email.content_subtype = "html"
     email.send(fail_silently=False)
+
+
+def notify_subscribers_of_project_update(old_project, new_project_id, new_sample_count):
+    """
+    Notify all subscribers when a project is updated with a new version.
+    
+    Args:
+        old_project: The old project document (dict) containing subscribers list
+        new_project_id: The ObjectId of the new project version
+        new_sample_count: Number of samples in the new project version
+    """
+    subscribers = old_project.get('subscribers', [])
+    
+    if not subscribers:
+        print(f"No subscribers to notify for project {old_project.get('project_name', 'Unknown')}")
+        return
+    
+    project_name = old_project.get('project_name', 'Unknown Project')
+    
+    print(f"Notifying {len(subscribers)} subscribers about update to project {project_name}")
+    
+    # Prepare email context
+    form_dict = {
+        'SITE_TITLE': settings.SITE_TITLE,
+        'SITE_URL': settings.SITE_URL,
+        'project_name': project_name,
+        'new_project_id': str(new_project_id),
+        'sample_count': new_sample_count
+    }
+    
+    subject = f"Project {project_name} on {settings.SITE_TITLE} has been updated"
+    html_message = render_to_string('contacts/project_updated_mail_template.html', form_dict)
+    plain_message = strip_tags(html_message)
+    
+    # Send email to all subscribers who have opted in to receive notifications
+    for subscriber_email in subscribers:
+        try:
+            # Check user preferences before sending
+            user_obj = get_user_obj(subscriber_email)
+            if user_obj is not None:
+                user_prefs = get_user_preferences(user_obj)
+                emailOK = True  # default to sending email
+                
+                if user_prefs is not None:
+                    emailOK = user_prefs.get('onProjectUpdate', True)
+                
+                if not emailOK:
+                    print(f"Skipping notification to {subscriber_email} - user opted out")
+                    continue
+            
+            email = EmailMessage(
+                subject,
+                html_message,
+                settings.EMAIL_HOST_USER_SECRET,
+                [subscriber_email],
+                reply_to=[settings.EMAIL_HOST_USER_SECRET]
+            )
+            email.content_subtype = "html"
+            email.send(fail_silently=False)
+            print(f"Sent project update notification to {subscriber_email}")
+        except Exception as e:
+            print(f"Failed to send notification to {subscriber_email}: {str(e)}")
+
+
+
