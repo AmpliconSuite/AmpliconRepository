@@ -36,6 +36,11 @@
     #createProjectBtn {
         order: 4;
     }
+
+    .overlay-span {
+        line-height: 1.1 !important;
+        display: inline-block;
+    }
 </style>
 
 {% block main %}
@@ -327,6 +332,17 @@
 {% else %}
     <h1>Please sign in to edit projects</h1>
 {% endif %}
+
+<!-- Overlay for upload progress -->
+<div id="upload-overlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:flex-start;">
+  <div style="background:white; max-width:500px; width:100%; box-sizing:border-box; margin:auto; margin-top:30px; padding:40px 30px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2); font-size:1.5em; text-align:center;">
+    Project update in progress<br><br>
+      <span class="overlay-span" style="font-size:0.5em;line-height:0.7 !important;">Project update will continue even if you leave this page.</span>
+    <br/>
+      <span class="uk-spinner" uk-spinner="ratio:2"></span>
+  </div>
+</div>
+
 <script>
     const uploadForm = document.getElementById('upload-form');
     const input = document.getElementById('fileuploadfield');
@@ -425,8 +441,16 @@
       });
     }
 
+    function showUploadOverlay() {
+      document.getElementById('upload-overlay').style.display = 'flex';
+    }
+
+    function hideUploadOverlay() {
+      document.getElementById('upload-overlay').style.display = 'none';
+    }
   
     function uploadFiles() {
+      showUploadOverlay();
       const fd = new FormData();
       fd.append('csrfmiddlewaretoken', csrf[0].value);
   
@@ -459,6 +483,7 @@
       });
   
       xhr.onload = function () {
+          hideUploadOverlay();
           if (xhr.status >= 200 && xhr.status < 300) {
               alertBox.innerHTML = `<div class="alert alert-success" role="alert">
                                       Successfully uploaded file(s)
@@ -473,6 +498,7 @@
       };
   
       xhr.onerror = function () {
+          hideUploadOverlay();
           alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
                                   Something went wrong with the upload.
                                 </div>`;

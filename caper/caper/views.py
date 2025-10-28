@@ -3195,8 +3195,6 @@ def process_version_set(version_set):
         return ', '.join(str(v) for v in version_list)
 
 
-
-
 def robots(request):
     """
     View for robots.txt, will read the file from static root (depending on server), and show robots file.
@@ -3205,55 +3203,111 @@ def robots(request):
     return HttpResponse(robots_txt, content_type="text/plain")
 
 
+def get_reference_class(ref_genome):
+    """
+    Map reference genome to its compatibility class
+    Returns: 'hg19' or 'hg38' or None
+    """
+    ref_equivalence = {
+        'hg19': 'hg19',
+        'GRCh37': 'hg19',
+        'hg38': 'hg38',
+        'GRCh38': 'hg38',
+        'GRCh38_viral': 'hg38',
+    }
+    return ref_equivalence.get(ref_genome)
+
+
+def validate_reference_compatibility(project_list):
+    """
+    Check that all selected projects have compatible reference genomes
+    Returns: dict with 'valid' (bool) and 'error' (str) keys
+    """
+    if not project_list:
+        return {'valid': True, 'error': ''}
+
+    ref_classes = set()
+    ref_genomes_by_class = {}
+
+    for project_name in project_list:
+        project = get_one_project(project_name)
+        if not project or 'runs' not in project:
+            continue
+
+        ref_genome = reference_genome_from_project(project['runs'])
+        ref_class = get_reference_class(ref_genome)
+
+        if not ref_class:
+            return {
+                'valid': False,
+                'error': f'Project "{project_name}" has unsupported reference genome: {ref_genome}'
+            }
+
+        ref_classes.add(ref_class)
+        if ref_class not in ref_genomes_by_class:
+            ref_genomes_by_class[ref_class] = []
+        ref_genomes_by_class[ref_class].append(ref_genome)
+
+    # Check if multiple reference classes selected
+    if len(ref_classes) > 1:
+        hg19_refs = ', '.join(set(ref_genomes_by_class.get('hg19', [])))
+        hg38_refs = ', '.join(set(ref_genomes_by_class.get('hg38', [])))
+        return {
+            'valid': False,
+            'error': f'Incompatible reference genomes selected. Please select projects from only one reference class: either hg19/GRCh37 '
+                     f'({hg19_refs}) OR GRCh38/GRCh38_viral ({hg38_refs}), but not both.'
+        }
+
+    return {'valid': True, 'error': ''}
+
+
 # redirect to visualizer upon project selection
 def coamplification_graph(request):
     if request.method == 'POST':
         # get list of selected projects
         selected_projects = request.POST.getlist('selected_projects')
+
+        # Validate reference genome compatibility
+        if selected_projects:
+            ref_validation = validate_reference_compatibility(selected_projects)
+            if not ref_validation['valid']:
+                messages.error(request, ref_validation['error'])
+                return redirect('coamplification_graph')
+
         # store in session
         request.session['selected_projects'] = selected_projects
-        return redirect('visualizer')  # Redirect to the visualizer page
+        return redirect('visualizer')
 
     # Get projects the same way profile.html does
     username = request.user.username
     try:
         useremail = request.user.email
     except:
-        # not logged in
-        # print(request.user)
-        ## if user is anonymous, then need to login
         useremail = ""
-        ## redirect to login page
         return redirect('account_login')
 
-
-    # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
 
     # Get all projects user has access to
     all_projects = get_projects_close_cursor({"$or": [
-        # Projects where user is a member
         {"project_members": username},
         {"project_members": useremail},
-        # Public projects
         {"private": False}
     ], 'delete': False})
 
     # Filter out mm10, Unknown, and Multiple reference genome projects
+    # AND add reference_class
     filtered_projects = []
     for proj in all_projects:
         prepare_project_linkid(proj)
-        # Check reference genome for this project
         if 'runs' in proj and proj['runs']:
             ref_genome = reference_genome_from_project(proj['runs'])
             if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
-                # Add reference genome to project object
+                # Add reference genome and class to project object
                 proj['reference_genome'] = ref_genome
+                proj['reference_class'] = get_reference_class(ref_genome)
                 filtered_projects.append(proj)
-        else:
-            # Skip projects without runs info
-            continue
 
     return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
 
@@ -3559,7 +3613,6 @@ class FileUploadView(APIView):
             return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
     def api_helper(self, form, current_user, request_file, api_id,actual_proj_name, multifile = False):
         """
         Helper function for API, to be run asynchronously
@@ -3598,8 +3651,6 @@ class FileUploadView(APIView):
 class ProjectFileAddView(APIView):
     parser_class = (MultiPartParser,)
     permission_classes = []
-
-    
 
     def post(self, request, format=None):
         project_uuid = request.data.get('project_uuid')

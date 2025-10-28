@@ -96,9 +96,9 @@
             <li class="breadcrumb-item"><a href="/">Home</a></li>
             <li class="breadcrumb-item"><a href="/project/{{ project.linkid }}">{{ project.project_name }}</a></li>
             <li class="breadcrumb-item active" aria-current="page">
-                {% if prev_sample %}<a title="Previous: {{ prev_sample }}" href="/project/{{ project.linkid }}/sample/{{ prev_sample }}" style="margin-right: 8px;font-size:0.7em;">← Prev</a>{% endif %}
+                {% if prev_sample %}<a title="Previous: {{ prev_sample }}" href="/project/{{ project.linkid }}/sample/{{ prev_sample }}" style="margin-right: 8px;font-size:0.9em;">← Prev</a>{% endif %}
                 {{ sample_name }}
-                {% if next_sample %}<a title="Next: {{ next_sample }}" href="/project/{{ project.linkid }}/sample/{{ next_sample }}" style="margin-left: 8px;font-size:0.7em;">Next →</a>{% endif %}
+                {% if next_sample %}<a title="Next: {{ next_sample }}" href="/project/{{ project.linkid }}/sample/{{ next_sample }}" style="margin-left: 8px;font-size:0.9em;">Next →</a>{% endif %}
             </li>
         </ol>
         
@@ -326,7 +326,7 @@
                 <td>
                     {% for coord in feature.Location %}
                         {% if not forloop.first %}, {% endif %}
-                        <a class="genome-link" data-position="{{ coord }}" href="#"> <!-- href will be set by JS -->
+                        <a class="genome-link" data-position="{{ coord }}" href="#" target="_blank"> <!-- href will be set by JS -->
                             {{ coord }}
                         </a>
                     {% endfor %}

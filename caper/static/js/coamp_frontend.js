@@ -129,7 +129,54 @@ window.addEventListener('DOMContentLoaded', function () {
             console.log(nodeID[inputNode] + ': ' + cy.$(nodeID[inputNode]).data('label'));
 
             // Update significant class
-            document.getElementById('sigThreshold').dispatchEvent(new Event('input'));
+            document.getElementById('sigThreshold').addEventListener('input', function() {
+            const threshold = parseFloat(this.value);
+            const testRadios = document.getElementsByName("sigTest");
+            let selectedTest = "any"; // default fallback
+
+            for (const radio of testRadios) {
+                if (radio.checked) {
+                    selectedTest = radio.value;
+                    break;
+                }
+            }
+
+            document.getElementById('qValue').textContent = threshold;
+
+            if (cy) {
+                cy.edges().forEach(edge => {
+                    let isSignificant = false;
+
+                    if (selectedTest === "any") {
+                        // Check all q-values
+                        const qvals = [
+                            parseFloat(edge.data('qval_single_interval')),
+                            parseFloat(edge.data('qval_multi_interval')),
+                            parseFloat(edge.data('qval_multi_chromosomal'))
+                        ];
+
+                        for (const q of qvals) {
+                            if (!isNaN(q) && q <= threshold && q >= 0) {
+                                isSignificant = true;
+                                break;
+                            }
+                        }
+                    } else {
+                        const qvalKey = `qval_${selectedTest}`;
+                        const qval = parseFloat(edge.data(qvalKey));
+                        if (!isNaN(qval) && qval <= threshold && qval >= 0) {
+                            isSignificant = true;
+                        }
+                    }
+
+                    if (isSignificant) {
+                        edge.addClass('significant');
+                    } else {
+                        edge.removeClass('significant');
+                    }
+                    });
+            }
+        });
             // Update sample slider max
             updateSampleMax(cy);
             // Updata limit slider
@@ -153,7 +200,7 @@ window.addEventListener('DOMContentLoaded', function () {
             }
 
             // Create SVG download button
-            const buttonContainer = document.querySelector('.button-container');
+            const buttonContainer = document.querySelector('.filter-right');
             const downloadSvgBtn = document.createElement('button');
             downloadSvgBtn.id = 'download-svg-btn';
             downloadSvgBtn.innerHTML = 'Download SVG';
@@ -332,22 +379,29 @@ window.addEventListener('DOMContentLoaded', function () {
             template.querySelector('#ntip-name').textContent = ele.data('label') || 'N/A';
             template.querySelector('#ntip-location').textContent =
             ele.data('location')
-                ? `chr${ele.data('location')[0]}:${ele.data('location')[1]}-${ele.data('location')[2]}`
+                ? `${ele.data('location')[0]}:${ele.data('location')[1]}-${ele.data('location')[2]}`
                 : 'N/A';
             template.querySelector('#ntip-oncogene').textContent = ele.data('oncogene') || 'N/A';
-            template.querySelector('#ntip-nsamples').textContent = ele.data('features').length || 'N/A';
-            template.querySelector('#ntip-samples').textContent = ele.data('features').join(', ') || 'N/A';
+            template.querySelector('#ntip-nsamples').textContent = ele.data('samples').length || 'N/A';
+            template.querySelector('#ntip-samples').textContent = ele.data('samples').join(', ') || 'N/A';
             content = template.innerHTML;
         }
         else {
             let template = document.getElementById('edge-template');
+            
             template.querySelector('#etip-name').textContent = ele.data('label') || 'N/A';
             template.querySelector('#etip-weight').textContent = ele.data('weight').toFixed(3) || 'N/A';
             template.querySelector('#etip-frac').textContent = ele.data('leninter') + '/' + ele.data('lenunion');
             template.querySelector('#etip-distance').textContent = ele.data('distance') < 0 ? 'N/A' : ele.data('distance');
-            template.querySelector('#etip-pval').textContent = ele.data('pval') < 0 ? 'N/A' : ele.data('pval').toFixed(3);
-            template.querySelector('#etip-qval').textContent = ele.data('qval') < 0 ? 'N/A' : ele.data('qval').toFixed(3);
-            template.querySelector('#etip-odds_ratio').textContent = ele.data('odds_ratio') < 0 ? 'N/A' : ele.data('odds_ratio').toFixed(3);
+            template.querySelector('#etip-pval-single_interval').textContent = ele.data('pval_single_interval') < 0 ? 'N/A' : ele.data('pval_single_interval').toFixed(3);
+            template.querySelector('#etip-qval-single_interval').textContent = ele.data('qval_single_interval') < 0 ? 'N/A' : ele.data('qval_single_interval').toFixed(3);
+            template.querySelector('#etip-odds_ratio-single_interval').textContent = ele.data('odds_ratio_single_interval') < 0 ? 'N/A' : ele.data('odds_ratio_single_interval').toFixed(3);
+            template.querySelector('#etip-pval-multi_interval').textContent = ele.data('pval_multi_interval') < 0 ? 'N/A' : ele.data('pval_multi_interval').toFixed(3);
+            template.querySelector('#etip-qval-multi_interval').textContent = ele.data('qval_multi_interval') < 0 ? 'N/A' : ele.data('qval_multi_interval').toFixed(3);
+            template.querySelector('#etip-odds_ratio-multi_interval').textContent = ele.data('odds_ratio_multi_interval') < 0 ? 'N/A' : ele.data('odds_ratio_multi_interval').toFixed(3);
+            template.querySelector('#etip-pval-multi_chromosomal').textContent = ele.data('pval_multi_chromosomal') < 0 ? 'N/A' : ele.data('pval_multi_chromosomal').toFixed(3);
+            template.querySelector('#etip-qval-multi_chromosomal').textContent = ele.data('qval_multi_chromosomal') < 0 ? 'N/A' : ele.data('qval_multi_chromosomal').toFixed(3);
+            template.querySelector('#etip-odds_ratio-multi_chromosomal').textContent = ele.data('odds_ratio_multi_chromosomal') < 0 ? 'N/A' : ele.data('odds_ratio_multi_chromosomal').toFixed(3);
             template.querySelector('#etip-nsamples').textContent = ele.data('leninter') || 'N/A';
             template.querySelector('#etip-samples').textContent = ele.data('inter').join(', ') || 'N/A';
             content = template.innerHTML;
@@ -450,21 +504,13 @@ window.addEventListener('DOMContentLoaded', function () {
     });
     $('#filterButton').on('click', fetchSubgraph);
 
-    // update sliders
-    document.getElementById('sigThreshold').addEventListener('input', function() {
-        const qvalueThreshold = parseFloat(this.value);
-        document.getElementById('qValue').textContent = qvalueThreshold;
-        if (cy) {
-            cy.edges().forEach(edge => {
-                qval = parseFloat(edge.data('qval'));
-                if (qval <= qvalueThreshold && qval >= 0) {
-                    edge.addClass('significant');
-                } else {
-                    edge.removeClass('significant');
-                }
-            });
-        }
+    // Update graph based on chosen signficance test
+    document.querySelectorAll('input[name="sigTest"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            document.getElementById('sigThreshold').dispatchEvent(new Event('input'));
+        });
     });
+
     document.getElementById('edgeWeight').addEventListener('input', function() {
         document.getElementById('sliderValue').textContent = this.value;
     });
@@ -585,7 +631,7 @@ window.addEventListener('DOMContentLoaded', function () {
         }
 
         const csv = [];
-        const header = ['Gene Name', 'Oncogene', 'Gene ecDNA Count', 'Intersection Count', 'Coamplification Frequency', 'Location', 'Distance (bp)', 'P-Value', 'Q-value', 'Odds Ratio', 'Gene ecDNA Samples', 'Intersection Samples'];
+        const header = ['Gene Name', 'Oncogene', 'Gene ecDNA Count', 'Intersection Count', 'Coamplification Frequency', 'Location', 'Distance (bp)', 'P-Value Single Interval Test', 'Q-value Single Interval Test', 'Odds Ratio Single Interval Test', 'P-Value Multi Interval Test', 'Q-value Multi Interval Test', 'Odds Ratio Multi Interval Test', 'P-Value Multi Chromosomal Test', 'Q-value Multi Chromosomal Test', 'Odds Ratio Multi Chromosomal Test','Gene ecDNA Samples', 'Intersection Samples'];
         csv.push(header.join(','));
 
         const nodes = data.nodes;
@@ -609,15 +655,21 @@ window.addEventListener('DOMContentLoaded', function () {
             return {
                 gene: nData.label,
                 oncogene: nData.oncogene || 'False',
-                sample_count: nData.features ? nData.features.length : 'N/A',
+                sample_count: nData.samples ? nData.samples.length : 'N/A',
                 inter_count: edgeData.inter ? edgeData.inter.length : 'N/A',
                 weight: edgeData.weight ?? -1,
-                location: nData.location ? `chr${nData.location[0]}:${nData.location[1]}-${nData.location[2]}` : 'N/A',
+                location: nData.location ? `${nData.location[0]}:${nData.location[1]}-${nData.location[2]}` : 'N/A',
                 distance: edgeData.distance ?? 'N/A',
-                pval: edgeData.pval ?? 'N/A',
-                qval: edgeData.qval ?? 'N/A',
-                odds_ratio: edgeData.odds_ratio ?? 'N/A',
-                gene_samples: nData.features ? `["${nData.features.join('", "')}"]` : 'N/A',
+                pval_single_interval: edgeData.pval_single_interval ?? 'N/A',
+                qval_single_interval: edgeData.qval_single_interval ?? 'N/A',
+                odds_ratio_single_interval: edgeData.odds_ratio_single_interval ?? 'N/A',
+                pval_multi_interval: edgeData.pval_multi_interval ?? 'N/A',
+                qval_multi_interval: edgeData.qval_multi_interval ?? 'N/A',
+                odds_ratio_multi_interval: edgeData.odds_ratio_multi_interval ?? 'N/A',
+                pval_multi_chromosomal: edgeData.pval_multi_chromosomal ?? 'N/A',
+                qval_multi_chromosomal: edgeData.qval_multi_chromosomal ?? 'N/A',
+                odds_ratio_multi_chromosomal: edgeData.odds_ratio_multi_chromosomal ?? 'N/A',
+                gene_samples: nData.samples ? `["${nData.samples.join('", "')}"]` : 'N/A',
                 inter: edgeData.inter ? `["${edgeData.inter.join('", "')}"]` : 'N/A',
             };
         });
@@ -640,9 +692,15 @@ window.addEventListener('DOMContentLoaded', function () {
                 row.weight === -1 ? 'N/A' : row.weight.toFixed(3),
                 row.location,
                 row.distance === -1 ? 'N/A' : row.distance,
-                row.pval === -1 ? 'N/A' : parseFloat(row.pval).toFixed(3),
-                row.qval === -1 ? 'N/A' : parseFloat(row.qval).toFixed(3),
-                row.odds_ratio === -1 ? 'N/A' : parseFloat(row.odds_ratio).toFixed(3),
+                row.pval_single_interval === -1 ? 'N/A' : parseFloat(row.pval_single_interval).toFixed(3),
+                row.qval_single_interval === -1 ? 'N/A' : parseFloat(row.qval_single_interval).toFixed(3),
+                row.odds_ratio_single_interval === -1 ? 'N/A' : parseFloat(row.odds_ratio_single_interval).toFixed(3),
+                row.pval_multi_interval === -1 ? 'N/A' : parseFloat(row.pval_multi_interval).toFixed(3),
+                row.qval_multi_interval === -1 ? 'N/A' : parseFloat(row.qval_multi_interval).toFixed(3),
+                row.odds_ratio_multi_interval === -1 ? 'N/A' : parseFloat(row.odds_ratio_multi_interval).toFixed(3),
+                row.pval_multi_chromosomal === -1 ? 'N/A' : parseFloat(row.pval_multi_chromosomal).toFixed(3),
+                row.qval_multi_chromosomal === -1 ? 'N/A' : parseFloat(row.qval_multi_chromosomal).toFixed(3),
+                row.odds_ratio_multi_chromosomal === -1 ? 'N/A' : parseFloat(row.odds_ratio_multi_chromosomal).toFixed(3),
                 row.gene_samples,
                 row.inter,
             ].map(formatCell);
