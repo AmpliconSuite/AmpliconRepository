@@ -53,6 +53,25 @@
     
     <!-- Updated settings section with proper grouping -->
     <div class="settings">
+        <!--Buttons to choose significance test for slider-->
+        <div class="edge-slider">
+            <label>Significance Test:</label><br>
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+                <label style="margin: 0;">
+                    <input type="radio" name="sigTest" value="any" checked> Any
+                </label>
+                <label style="margin: 0;">
+                    <input type="radio" name="sigTest" value="single_interval"> Single Interval
+                </label>
+                <label style="margin: 0;">
+                    <input type="radio" name="sigTest" value="multi_interval"> Multi Interval
+                </label>
+                <label style="margin: 0;">
+                    <input type="radio" name="sigTest" value="multi_chromosomal"> Multi Chromosomal
+                </label>
+            </div>
+        </div>
+
         <!-- probability slider -->
         <div class="edge-slider">
             <!-- <label class="tooltip-wrapper">
@@ -95,19 +114,29 @@
             </div>
         </div>
 
-        <!-- filter button and oncogenes grouped -->
-        <div class="filter-container">
+        <!--<div class="filter-buttons">
             <div class="oncogene-option">
-                <span>Oncogenes only</span>
-                <input type="checkbox" id="oncogenes_only">
+            <span>Oncogenes only</span>
+            <input type="checkbox" id="oncogenes_only">
             </div>
             <button id="filterButton">Filter</button>
-        </div>
-
-        <!-- Download buttons in separate container -->
-        <div class="button-container">
             <button id="download-btn">Download CSV</button>
-            <!-- SVG button will be added by JavaScript -->
+            
+        </div>-->
+        <div class="filter-container">
+            <!-- Left column: Oncogenes + Filter -->
+            <div class="filter-left">
+                <div class="oncogene-option">
+                <span>Oncogenes only</span>
+                <input type="checkbox" id="oncogenes_only">
+                </div>
+                <button id="filterButton">Filter</button>
+            </div>
+
+            <!-- Right column: Downloads -->
+            <div class="filter-right">
+                <button id="download-btn">Download CSV</button>
+            </div>
         </div>
     </div>
 
@@ -145,10 +174,13 @@
         <strong>Relationship:</strong> <span id="etip-name"></span><br>
         <strong>Coamplification frequency:</strong> <span id="etip-weight"></span><br>
         <strong>Coamplification fraction:</strong> <span id="etip-frac"></span><br>
-        <strong>Distance:</strong> <span id="etip-distance"></span><br>
-        <strong>P-value:</strong> <span id="etip-pval"></span><br>
-        <strong>Q-value:</strong> <span id="etip-qval"></span><br>
-        <strong>Odds ratio:</strong> <span id="etip-odds_ratio"></span><br>
+        <strong>Distance:</strong> <span id="etip-distance"></span><strong>bp</strong><br>
+        <strong>Significance Testing Results:</strong>
+        <ul>
+            <li><strong>Single Interval:</strong> p = <span id="etip-pval-single_interval"></span>, q = <span id="etip-qval-single_interval"></span>, OR = <span id="etip-odds_ratio-single_interval"></span></li>
+            <li><strong>Multi Interval:</strong> p = <span id="etip-pval-multi_interval"></span>, q = <span id="etip-qval-multi_interval"></span>, OR = <span id="etip-odds_ratio-multi_interval"></span></li>
+            <li><strong>Multi Chromosomal:</strong> p = <span id="etip-pval-multi_chromosomal"></span>, q = <span id="etip-qval-multi_chromosomal"></span>, OR = <span id="etip-odds_ratio-multi_chromosomal"></span></li>
+        </ul>
         <strong>Coamplified in:</strong> <span id="etip-nsamples"></span> sample(s)<br>
         <strong>Sample(s):</strong> <span id="etip-samples"></span>
     </div>

@@ -321,7 +321,7 @@
                 <td>
                     {% for coord in feature.Location %}
                         {% if not forloop.first %}, {% endif %}
-                        <a class="genome-link" data-position="{{ coord }}" href="#"> <!-- href will be set by JS -->
+                        <a class="genome-link" data-position="{{ coord }}" href="#" target="_blank"> <!-- href will be set by JS -->
                             {{ coord }}
                         </a>
                     {% endfor %}
