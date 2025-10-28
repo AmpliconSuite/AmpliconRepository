@@ -9,26 +9,94 @@
 {% block extra_js %}
 <script>
     $(document).ready(function() {
-        // Check if DataTable is already initialized before initializing
+        // Initialize DataTable
+        let table;
         if (!$.fn.dataTable.isDataTable('#availableProjectsTable')) {
-            $('#availableProjectsTable').DataTable({
+            table = $('#availableProjectsTable').DataTable({
                 "pageLength": 10,
                 "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]]
             });
+        } else {
+            table = $('#availableProjectsTable').DataTable();
         }
 
         // Select all checkbox functionality
         $('#selectAll').change(function() {
-            $('.project-checkbox').prop('checked', this.checked);
+            // Need to check ALL rows across all pages, not just visible ones
+            table.rows().nodes().to$().find('.project-checkbox').prop('checked', this.checked);
+            updateReferenceClassValidation();
         });
 
-        // Form submission loading state
-        $('#coamplificationForm').on('submit', function() {
+        function updateReferenceClassValidation() {
+            let selectedClasses = new Set();
+            let classProjects = {};
+
+            // Check ALL rows across all pages, not just visible ones
+            table.rows().nodes().to$().find('.project-checkbox:checked').each(function() {
+                let row = $(this).closest('tr');
+                let refClass = row.data('ref-class');
+                selectedClasses.add(refClass);
+
+                if (!classProjects[refClass]) {
+                    classProjects[refClass] = [];
+                }
+                classProjects[refClass].push(row.find('td:eq(1)').text());
+            });
+
+            // Clear previous warnings from ALL rows - be more aggressive
+            $('#message_dialog').hide();
+
+            // Remove warning class from all table rows
+            $('#availableProjectsTable tbody tr').removeClass('table-warning');
+            table.rows().nodes().to$().removeClass('table-warning');
+
+            if (selectedClasses.size > 1) {
+                // Show warning
+                let hg19Projects = classProjects['hg19'] || [];
+                let hg38Projects = classProjects['hg38'] || [];
+
+                $('#message_dialog').removeClass('alert-success').addClass('alert-warning');
+                $('#message_to_user').html(
+                    '<strong>Warning:</strong> You have selected projects from incompatible reference genomes. ' +
+                    'Please select projects from only one group:<br>' +
+                    '<strong>hg19/GRCh37:</strong> ' + hg19Projects.join(', ') + '<br>' +
+                    '<strong>hg38/GRCh38/GRCh38_viral:</strong> ' + hg38Projects.join(', ')
+                );
+                $('#message_dialog').show();
+
+                // Visually highlight conflicting rows (across all pages)
+                table.rows().nodes().to$().find('.project-checkbox:checked').closest('tr').addClass('table-warning');
+
+                return false;
+            }
+
+            return true;
+        }
+
+        // Use delegated event binding so it works for all pages
+        $('#availableProjectsTable').on('change', '.project-checkbox', function() {
+            updateReferenceClassValidation();
+        });
+
+        // Trigger validation when page changes (user might see highlighted rows)
+        table.on('page.dt', function() {
+            // Small delay to ensure DOM is updated
+            setTimeout(updateReferenceClassValidation, 10);
+        });
+
+        // UPDATED: Form submission with reference validation
+        $('#coamplificationForm').on('submit', function(e) {
             // Check if at least one project is selected
-            if ($('.project-checkbox:checked').length === 0) {
+            if (table.rows().nodes().to$().find('.project-checkbox:checked').length === 0) {
                 $('#message_dialog').removeClass('alert-success').addClass('alert-danger');
                 $('#message_to_user').text('Please select at least one project');
                 $('#message_dialog').show();
+                return false;
+            }
+
+            // Validate reference compatibility
+            if (!updateReferenceClassValidation()) {
+                e.preventDefault();
                 return false;
             }
 
@@ -36,7 +104,7 @@
             $('#submitButton').html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...').prop('disabled', true);
 
             // Show processing message
-            $('#message_dialog').removeClass('alert-danger').addClass('alert-success');
+            $('#message_dialog').removeClass('alert-danger alert-warning').addClass('alert-success');
             $('#message_to_user').text('Building coamplification graph. This can take a few minutes. Please wait...');
             $('#message_dialog').show();
 
@@ -58,7 +126,7 @@
         <div class="col-md-12">
             <h2>Coamplification Graph Analysis</h2>
             <hr>
-            <p>Select projects to include in your coamplification graph analysis:</p>
+            <p>Select projects to include in your coamplification graph analysis. All selected projects must be of the same reference group - either (GRCh37, hg19) or (GRCh38, GRCh38_viral).</p>
         </div>
     </div>
 
@@ -86,7 +154,7 @@
                 </thead>
                 <tbody>
                     {% for project in all_projects %}
-                    <tr>
+                    <tr data-ref-class="{{ project.reference_class }}">
                         <td>
                             <input type="checkbox" class="project-checkbox"
                                    id="project_{{ forloop.counter }}"

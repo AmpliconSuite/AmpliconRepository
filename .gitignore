@@ -16,6 +16,9 @@ pyvenv.cfg
 *caper.sqlite3
 /ampliconenv
 *.bkup
+results/
+extracted_from_zips/
+*.ipynb
 # pycharm IDE
 .idea/
 tmp/
@@ -23,5 +26,3 @@ data/
 logs/
 .env
 caper/caper.sqlite3
-results/
-extracted_from_zips/

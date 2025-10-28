@@ -1626,9 +1626,9 @@ def get_current_user(request):
     current_user = request.user.username
     try:
         if current_user.email:
-            current_user = request.user.email
+            current_user = current_user.email
         else:
-            current_user = request.user.username
+            current_user = current_user.username
     except:
         current_user = request.user.username
 
@@ -1946,6 +1946,8 @@ def edit_project_page(request, project_name):
                 for sample in project['sample_data']:
                     if sample['Sample_name'] in samples_to_remove:
                         project['sample_data'].remove(sample)
+            else:
+                sample_data = project.get('sample_data', [])
                         
              
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs,
@@ -2028,6 +2030,7 @@ def edit_project_page(request, project_name):
                    })
 
 
+
 def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
     # remove the sample data for the samples removed
     # from the project zip file. They will be in a directory in the tar file called
@@ -2077,7 +2080,6 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
         shutil.rmtree(temp_extract_dir)
         os.remove(download_path)
         return new_project_tar_fp
-
 
 
 def clear_tmp(folder = 'tmp/'):
@@ -2265,7 +2267,7 @@ def admin_stats(request):
         for project in all_projects:
             project_members = project.get('project_members', [])
             
-            # Check if user is a member (by username or email) and they're the only member
+            # Check if user is a member (by username or email) and they're the only one
             is_only_member = (len(project_members) == 1 and 
                              (username in project_members or email in project_members))
             
@@ -2416,10 +2418,11 @@ def project_stats_download(request):
 def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
 
     t_sa = time.time()
-    logging.debug("Extracting files from tar")
+    logging.info("Extracting files from tar...")
     try:
         with tarfile.open(file_location, "r:gz") as tar_file:
             tar_file.extractall(path=project_data_path)
+        logging.info("Tar file extracted.")
 
         # get run.json
         run_path = f'{project_data_path}/results/run.json'
@@ -2428,11 +2431,18 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         
         if samples_to_remove:
             runs = remove_samples_from_runs(runs, samples_to_remove)
+        
+        logging.info("Processing and uploading individual files to GridFS...")
+        feature_count = 0
+        total_features = sum(len(features) for features in runs.values())
+        
         # get cnv, image, bed files
         for sample, features in runs.items():
-                
             for feature in features:
-                # logging.debug(feature['Sample name'])
+                feature_count += 1
+                if feature_count % 100 == 0:
+                    logging.info(f"Processing feature {feature_count}/{total_features}...")
+                
                 if len(feature) > 0:
                     # get paths
                     key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON',
@@ -2445,6 +2455,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         except:
                             id_var = "Not Provided"
                         feature[k] = id_var
+        
+        logging.info("All features processed. Updating project in database...")
 
         # Now update the project with the updated runs
         project = get_one_project(project_id)
@@ -2461,12 +2473,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
         
-        # logging.error("project is "+ str(project))
-        
         get_tool_versions(project, runs)
         version_keys = ['AA_version', 'AC_version', 'ASP_version']
         tool_versions = {k: project[k] for k in version_keys if k in project}
-        
         
         new_val["$set"].update(tool_versions)
 
@@ -2474,14 +2483,13 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         t_sb = time.time()
         diff = t_sb - t_sa
 
-
         finish_flag = {
             "$set" : {
                 'FINISHED?' : True
             }
         }
         collection_handle.update_one(query, finish_flag)
-        logging.info(f"Finished extracting from tar in {str(diff)} seconds")
+        logging.info(f"Finished extracting from tar and updating database in {str(diff)} seconds")
 
     except Exception as anError:
         logging.error("Error occurred extracting project tarfile results into "+ project_data_path)
@@ -2666,8 +2674,6 @@ def admin_delete_user(request):
                           'solo_projects': solo_projects, 
                        'member_projects': member_projects ,
                        'error_message': error_message})
-
-
 
 
 # only allow users designated as staff to see this, otherwise redirect to nonexistant page to
@@ -2945,7 +2951,7 @@ def create_project(request):
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
             ## redirect to edit page if aggregator fails
-            alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid cSuite results."
+            alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
             return render(request, 'pages/create_project.html',
                         {'run': form,
                         'alert_message': alert_message,
@@ -3189,8 +3195,6 @@ def process_version_set(version_set):
         return ', '.join(str(v) for v in version_list)
 
 
-
-
 def robots(request):
     """
     View for robots.txt, will read the file from static root (depending on server), and show robots file.
@@ -3199,69 +3203,111 @@ def robots(request):
     return HttpResponse(robots_txt, content_type="text/plain")
 
 
+def get_reference_class(ref_genome):
+    """
+    Map reference genome to its compatibility class
+    Returns: 'hg19' or 'hg38' or None
+    """
+    ref_equivalence = {
+        'hg19': 'hg19',
+        'GRCh37': 'hg19',
+        'hg38': 'hg38',
+        'GRCh38': 'hg38',
+        'GRCh38_viral': 'hg38',
+    }
+    return ref_equivalence.get(ref_genome)
+
+
+def validate_reference_compatibility(project_list):
+    """
+    Check that all selected projects have compatible reference genomes
+    Returns: dict with 'valid' (bool) and 'error' (str) keys
+    """
+    if not project_list:
+        return {'valid': True, 'error': ''}
+
+    ref_classes = set()
+    ref_genomes_by_class = {}
+
+    for project_name in project_list:
+        project = get_one_project(project_name)
+        if not project or 'runs' not in project:
+            continue
+
+        ref_genome = reference_genome_from_project(project['runs'])
+        ref_class = get_reference_class(ref_genome)
+
+        if not ref_class:
+            return {
+                'valid': False,
+                'error': f'Project "{project_name}" has unsupported reference genome: {ref_genome}'
+            }
+
+        ref_classes.add(ref_class)
+        if ref_class not in ref_genomes_by_class:
+            ref_genomes_by_class[ref_class] = []
+        ref_genomes_by_class[ref_class].append(ref_genome)
+
+    # Check if multiple reference classes selected
+    if len(ref_classes) > 1:
+        hg19_refs = ', '.join(set(ref_genomes_by_class.get('hg19', [])))
+        hg38_refs = ', '.join(set(ref_genomes_by_class.get('hg38', [])))
+        return {
+            'valid': False,
+            'error': f'Incompatible reference genomes selected. Please select projects from only one reference class: either hg19/GRCh37 '
+                     f'({hg19_refs}) OR GRCh38/GRCh38_viral ({hg38_refs}), but not both.'
+        }
+
+    return {'valid': True, 'error': ''}
+
+
 # redirect to visualizer upon project selection
 def coamplification_graph(request):
     if request.method == 'POST':
         # get list of selected projects
         selected_projects = request.POST.getlist('selected_projects')
+
+        # Validate reference genome compatibility
+        if selected_projects:
+            ref_validation = validate_reference_compatibility(selected_projects)
+            if not ref_validation['valid']:
+                messages.error(request, ref_validation['error'])
+                return redirect('coamplification_graph')
+
         # store in session
         request.session['selected_projects'] = selected_projects
-        return redirect('visualizer')  # Redirect to the visualizer page
+        return redirect('visualizer')
 
     # Get projects the same way profile.html does
     username = request.user.username
     try:
         useremail = request.user.email
     except:
-        # not logged in
         useremail = ""
-        # For unauthenticated users, just get public projects
-        public_projects = get_projects_close_cursor({'private': False, 'delete': False})
+        return redirect('account_login')
 
-        # Filter out mm10, Unknown, and Multiple reference genome projects
-        filtered_projects = []
-        for proj in public_projects:
-            prepare_project_linkid(proj)
-            # Check reference genome for this project
-            if 'runs' in proj and proj['runs']:
-                ref_genome = reference_genome_from_project(proj['runs'])
-                if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
-                    # Add reference genome to project object
-                    proj['reference_genome'] = ref_genome
-                    filtered_projects.append(proj)
-            else:
-                # Skip projects without runs info
-                continue
-
-        return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
-
-    # Prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
 
     # Get all projects user has access to
     all_projects = get_projects_close_cursor({"$or": [
-        # Projects where user is a member
         {"project_members": username},
         {"project_members": useremail},
-        # Public projects
         {"private": False}
     ], 'delete': False})
 
     # Filter out mm10, Unknown, and Multiple reference genome projects
+    # AND add reference_class
     filtered_projects = []
     for proj in all_projects:
         prepare_project_linkid(proj)
-        # Check reference genome for this project
         if 'runs' in proj and proj['runs']:
             ref_genome = reference_genome_from_project(proj['runs'])
             if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
-                # Add reference genome to project object
+                # Add reference genome and class to project object
                 proj['reference_genome'] = ref_genome
+                proj['reference_class'] = get_reference_class(ref_genome)
                 filtered_projects.append(proj)
-        else:
-            # Skip projects without runs info
-            continue
 
     return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
 
@@ -3567,7 +3613,6 @@ class FileUploadView(APIView):
             return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
     def api_helper(self, form, current_user, request_file, api_id,actual_proj_name, multifile = False):
         """
         Helper function for API, to be run asynchronously
@@ -3606,8 +3651,6 @@ class FileUploadView(APIView):
 class ProjectFileAddView(APIView):
     parser_class = (MultiPartParser,)
     permission_classes = []
-
-    
 
     def post(self, request, format=None):
         project_uuid = request.data.get('project_uuid')
@@ -3783,4 +3826,4 @@ class ProjectFileAddView(APIView):
         email.content_subtype = "html"
         email.send(fail_silently=False)
         logging.error("Finished email sent")
-        
+
