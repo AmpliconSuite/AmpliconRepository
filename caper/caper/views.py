@@ -1776,6 +1776,7 @@ def edit_project_page(request, project_name):
         ## check multi files,  run aggregator :
         file_fps = []
         temp_proj_id = uuid.uuid4().hex ## to be changed
+        agg = None  # Initialize to None for cleanup
         try:
             files = request.FILES.getlist('document')
             project_data_path = f"tmp/{temp_proj_id}" ## to change
@@ -1832,7 +1833,9 @@ def edit_project_page(request, project_name):
                     if os.path.exists(temp_directory):
                         shutil.rmtree(temp_directory)
                     alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
-
+                    
+                    # Clean up before returning
+                    del agg
                     return render(request, 'pages/edit_project.html',
                               {'project': project,
                                'run': form,
@@ -1846,12 +1849,18 @@ def edit_project_page(request, project_name):
                     content_type='application/gzip'
                     )
                     request.FILES['document'] = uploaded_file
-                f.close()
+                # Explicitly delete aggregator object after use to free memory
+                del agg
+                agg = None
             except:
                 ## download failed, don't run aggregator
                 print(f'download failed ... ')
+                if agg is not None:
+                    del agg
         except:
             print('no file uploaded')
+            if agg is not None:
+                del agg
         try:
             request_file = request.FILES['document']
         except:
@@ -1886,6 +1895,9 @@ def edit_project_page(request, project_name):
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
             ## get extra metadata from csv first (if exists in old project), add it to the new proj
             old_extra_metadata = get_extra_metadata_from_project(project)
+            
+            # Clear the large project dict before creating new version
+            project_id_for_redirect = None
             new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,  previous_versions = new_prev_versions, previous_views = [views, downloads], old_subscribers = old_subscribers)
 
             # can't delete it, if its being used in the other thread for metadata extraction
@@ -1893,18 +1905,29 @@ def edit_project_page(request, project_name):
                 shutil.rmtree(temp_directory)
             
             if new_id is not None:
+                project_id_for_redirect = new_id.inserted_id
                 # Notify subscribers about the project update
                 try:
                     from .user_preferences import notify_subscribers_of_project_update
-                    # Get the new project to determine sample count
-                    new_project = get_one_project(str(new_id.inserted_id))
+                    # Get the new project to determine sample count - use projection to limit data
+                    new_project = collection_handle.find_one(
+                        {'_id': ObjectId(str(project_id_for_redirect))},
+                        {'sample_count': 1, 'runs': 1}
+                    )
                     new_sample_count = new_project.get('sample_count', len(new_project.get('runs', {})))
-                    notify_subscribers_of_project_update(project, new_id.inserted_id, new_sample_count)
+                    notify_subscribers_of_project_update(project, project_id_for_redirect, new_sample_count)
+                    # Clean up the limited new_project dict
+                    del new_project
                 except Exception as e:
                     logging.error(f"Failed to notify subscribers of project update: {str(e)}")
                 
+                # Explicitly clear large objects before redirect
+                del project
+                del old_extra_metadata
+                del new_prev_versions
+                
                 # go to the new project
-                return redirect('project_page', project_name=new_id.inserted_id)
+                return redirect('project_page', project_name=project_id_for_redirect)
             else:
                 alert_message = "The input file was not a valid aggregation. Please see site documentation."
                 return render(request, 'pages/edit_project.html',
@@ -1923,7 +1946,8 @@ def edit_project_page(request, project_name):
             new_project_name = form_dict['project_name']
 
             logging.info(f"project name: {project_name}  change to {new_project_name}")
-            current_runs = project['runs']
+            # Create a deep copy to avoid holding reference to original
+            current_runs = dict(project['runs'])
 
             if runs != 0:
                 current_runs.update(runs)
@@ -1941,11 +1965,11 @@ def edit_project_page(request, project_name):
             sample_data = project.get('sample_data', None)
              
             if project.get('sample_data',False) and samples_to_remove and len(samples_to_remove) > 0:
-                sample_data = project['sample_data']
+                # Create a copy to avoid modifying the original
+                sample_data = list(project['sample_data'])
                 current_runs = remove_samples_from_runs(current_runs, samples_to_remove)
-                for sample in project['sample_data']:
-                    if sample['Sample_name'] in samples_to_remove:
-                        project['sample_data'].remove(sample)
+                # Use list comprehension instead of modifying in place
+                sample_data = [s for s in sample_data if s['Sample_name'] not in samples_to_remove]
             else:
                 sample_data = project.get('sample_data', [])
                         
@@ -1973,6 +1997,12 @@ def edit_project_page(request, project_name):
                 collection_handle.update_one(query, new_val)
                 edit_proj_privacy(project, old_privacy, new_privacy)
                 logging.debug("Updated collection_handle with new data")
+                
+                # Clean up large objects before redirect
+                del project
+                del current_runs
+                del old_extra_metadata
+                
                 return redirect('project_page', project_name=project_name)
             else:
                 raise Http404()
@@ -2994,7 +3024,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     Creates the project
     """
     # it could be a new file was provided at the same time as sampels to be
-    # removed from the project.  That can't be done until runs is populated in the project
+    # removed from the project. That can't be done until runs is populated in the project
     samples_to_remove = request.POST.getlist('samples_to_remove')
     
     form_dict = form_to_dict(form)
@@ -3666,7 +3696,7 @@ class ProjectFileAddView(APIView):
         # but compare the project key to the original project version submitted.  This allows a user to run several
         # additions of samples without going back and forth to get the updated uuid and key after each one
         if not project.get('current', True) or project.get('delete', False):
-            # get the latest 
+            # get the latest
             latest_proj = get_latest_project_version(project)
             original_project = project
             project = latest_proj
@@ -3707,19 +3737,19 @@ class ProjectFileAddView(APIView):
             args=(request, project, username, uploaded_file, api_id)
         )
         file_process_thread.start()
-        
-        
+
+
         return Response({'message': 'Files uploaded successfully and submitted for processing.'}, status=status.HTTP_200_OK)
-    
-    
+
+
     def process_file_in_background(self, request, project, username, uploaded_file, api_id):
-        
+
         project_uuid = project['linkid']
         tmp_project_data_path = f"tmp/{api_id}"
         user_identifier = request.data.get('username')
         user = User.objects.get(Q(username=user_identifier) | Q(email=user_identifier))
 
-        
+
 
         alert_message = None
         project_data_path = tmp_project_data_path
@@ -3729,10 +3759,10 @@ class ProjectFileAddView(APIView):
         try:
             ## try to download old project file
             print(f"PREVIOUS FILE FPS LIST: {file_fps}")
-            
+
             download = download_file(url, download_path)
             file_fps.append(os.path.join('download.tar.gz'))
-            
+
         except:
             logging.error("Could not download existing project data for aggregation")
 
@@ -3752,7 +3782,7 @@ class ProjectFileAddView(APIView):
                     )
                     self.request.FILES['document'] = uploaded_file
                 f.close()
-                
+
                 self.request.user = user
                 update_project = project_update(self.request, project_uuid)
                 delete_project = project_delete(self.request, project_uuid)
@@ -3789,7 +3819,7 @@ class ProjectFileAddView(APIView):
                 if new_id is not None:
                     new_project_uuid = str(new_id.inserted_id)
                     alert_message = f"Aggregation successful. New samples added to project version: {new_project_uuid}"
-                    
+
                     # Notify subscribers about the project update
                     try:
                         from .user_preferences import notify_subscribers_of_project_update
@@ -3811,7 +3841,7 @@ class ProjectFileAddView(APIView):
         form_dict['project_name'] = project.get('project_name', project_uuid)
         form_dict['project_id'] = project_uuid
         form_dict['alert_message'] = alert_message
-        
+
         html_message = render_to_string('contacts/project_api_file_added.html', form_dict)
         plain_message = strip_tags(html_message)
 
