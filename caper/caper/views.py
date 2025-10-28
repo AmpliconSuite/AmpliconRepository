@@ -1,5 +1,6 @@
 import logging
 import os
+import gc
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -684,7 +685,7 @@ def project_page(request, project_name, message=''):
         reference_genome = 'N/A'
         sample_data = []
         aggregate = None
-        stackedbar_plot = None
+        stacked_bar_plot = None
         pc_fig = None
     # For regular projects, process as before
     elif 'metadata_stored' not in project:
@@ -1832,6 +1833,7 @@ def edit_project_page(request, project_name):
 
                     if os.path.exists(temp_directory):
                         shutil.rmtree(temp_directory)
+                    # Clean up before returning
                     alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
                     
                     # Clean up before returning
@@ -1960,10 +1962,10 @@ def edit_project_page(request, project_name):
 
             old_extra_metadata = get_extra_metadata_from_project(project)
             current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file, old_extra_metadata = old_extra_metadata)
-         
+
             # Initialize sample_data from existing project
             sample_data = project.get('sample_data', None)
-             
+
             if project.get('sample_data',False) and samples_to_remove and len(samples_to_remove) > 0:
                 # Create a copy to avoid modifying the original
                 sample_data = list(project['sample_data'])
@@ -1972,8 +1974,8 @@ def edit_project_page(request, project_name):
                 sample_data = [s for s in sample_data if s['Sample_name'] not in samples_to_remove]
             else:
                 sample_data = project.get('sample_data', [])
-                        
-             
+
+
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs,
                                  'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'],
@@ -1997,12 +1999,12 @@ def edit_project_page(request, project_name):
                 collection_handle.update_one(query, new_val)
                 edit_proj_privacy(project, old_privacy, new_privacy)
                 logging.debug("Updated collection_handle with new data")
-                
+
                 # Clean up large objects before redirect
                 del project
                 del current_runs
                 del old_extra_metadata
-                
+
                 return redirect('project_page', project_name=project_name)
             else:
                 raise Http404()
