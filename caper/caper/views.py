@@ -1,6 +1,7 @@
 import logging
 import os
 import gc
+import tracemalloc
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -51,7 +52,7 @@ import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
-from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.files.uploadedfile import SimpleUploadedFile, TemporaryUploadedFile
 
 from wsgiref.util import FileWrapper
 import boto3, botocore, fnmatch, uuid, datetime, time
@@ -1732,6 +1733,8 @@ def edit_project_page(request, project_name):
         if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
             return HttpResponse("Project does not exist")
     if request.method == "POST":
+        tracemalloc.start()
+        start_snapshot = tracemalloc.take_snapshot()
         try:
             metadata_file = request.FILES.get("metadataFile")
         except Exception as e:
@@ -1851,13 +1854,20 @@ def edit_project_page(request, project_name):
                                'alert_message': alert_message,
                                'all_alias' :get_all_alias()})
                 ## after running aggregator, replace the requests file with the aggregated file:
+
                 with open(agg.aggregated_filename, 'rb') as f:
-                    uploaded_file = SimpleUploadedFile(
-                    name=os.path.basename(agg.aggregated_filename),
-                    content=f.read(),
-                    content_type='application/gzip'
+                    temp_file = TemporaryUploadedFile(
+                        name=os.path.basename(agg.aggregated_filename),
+                        content_type='application/gzip',
+                        size=os.path.getsize(agg.aggregated_filename),
+                        charset=None
                     )
-                    request.FILES['document'] = uploaded_file
+                    # Copy file in chunks
+                    for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                        temp_file.write(chunk)
+                    temp_file.seek(0)
+                    request.FILES['document'] = temp_file
+                    
                 # Explicitly delete aggregator object after use to free memory
                 del agg
                 agg = None
@@ -1912,6 +1922,12 @@ def edit_project_page(request, project_name):
             # can't delete it, if its being used in the other thread for metadata extraction
             if os.path.exists(temp_directory) and not extra_metadata_file_fp:
                 shutil.rmtree(temp_directory)
+
+            end_snapshot = tracemalloc.take_snapshot()
+            top_stats = end_snapshot.compare_to(start_snapshot, 'lineno')
+            print("[Memory usage differences after upload]")
+            for stat in top_stats[:10]:
+                print(stat)
             
             if new_id is not None:
                 project_id_for_redirect = new_id.inserted_id
@@ -1934,6 +1950,12 @@ def edit_project_page(request, project_name):
                 del project
                 del old_extra_metadata
                 del new_prev_versions
+
+                end_snapshot2 = tracemalloc.take_snapshot()
+                top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
+                print("[Memory usage differences after upload]")
+                for stat in top_stats2[:10]:
+                    print(stat)
                 
                 # go to the new project
                 return redirect('project_page', project_name=project_id_for_redirect)
@@ -2997,13 +3019,19 @@ def create_project(request):
                         'all_alias':json.dumps(get_all_alias())})
         ## after running aggregator, replace the requests file with the aggregated file:
         logging.error(f"Aggregated filename: {agg.aggregated_filename}")
+
         with open(agg.aggregated_filename, 'rb') as f:
-            uploaded_file = SimpleUploadedFile(
-            name=os.path.basename(agg.aggregated_filename),
-            content=f.read(),
-            content_type='application/gzip'
+            temp_file = TemporaryUploadedFile(
+                name=os.path.basename(agg.aggregated_filename),
+                content_type='application/gzip',
+                size=os.path.getsize(agg.aggregated_filename),
+                charset=None
             )
-            request.FILES['document'] = uploaded_file
+            # Copy file in chunks
+            for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                temp_file.write(chunk)
+            temp_file.seek(0)
+            request.FILES['document'] = temp_file
         f.close()
 
         # return render(request, 'pages/loading.html')
@@ -3783,13 +3811,19 @@ class ProjectFileAddView(APIView):
                 ## redirect to edit page if aggregator fails
                 alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
             else:
+
                 with open(agg.aggregated_filename, 'rb') as f:
-                    uploaded_file = SimpleUploadedFile(
-                    name=os.path.basename(agg.aggregated_filename),
-                    content=f.read(),
-                    content_type='application/gzip'
+                    temp_file = TemporaryUploadedFile(
+                        name=os.path.basename(agg.aggregated_filename),
+                        content_type='application/gzip',
+                        size=os.path.getsize(agg.aggregated_filename),
+                        charset=None
                     )
-                    self.request.FILES['document'] = uploaded_file
+                    # Copy file in chunks
+                    for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                        temp_file.write(chunk)
+                    temp_file.seek(0)
+                    self.request.FILES['document'] = temp_file
                 f.close()
 
                 self.request.user = user
