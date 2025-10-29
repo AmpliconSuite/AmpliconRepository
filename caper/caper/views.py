@@ -1923,11 +1923,7 @@ def edit_project_page(request, project_name):
             if os.path.exists(temp_directory) and not extra_metadata_file_fp:
                 shutil.rmtree(temp_directory)
 
-            end_snapshot = tracemalloc.take_snapshot()
-            top_stats = end_snapshot.compare_to(start_snapshot, 'lineno')
-            print("[Memory usage differences after upload]")
-            for stat in top_stats[:10]:
-                print(stat)
+           
             
             if new_id is not None:
                 project_id_for_redirect = new_id.inserted_id
@@ -1951,12 +1947,6 @@ def edit_project_page(request, project_name):
                 del old_extra_metadata
                 del new_prev_versions
 
-                end_snapshot2 = tracemalloc.take_snapshot()
-                top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
-                print("[Memory usage differences after upload]")
-                for stat in top_stats2[:10]:
-                    print(stat)
-                
                 # go to the new project
                 return redirect('project_page', project_name=project_id_for_redirect)
             else:
@@ -2033,6 +2023,13 @@ def edit_project_page(request, project_name):
                 del project
                 del current_runs
                 del old_extra_metadata
+
+                end_snapshot2 = tracemalloc.take_snapshot()
+                top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
+                print("[2 -- Memory usage differences at end of edit_project_page]")
+                for stat in top_stats2[:10]:
+                    print(stat)
+
 
                 return redirect('project_page', project_name=project_name)
             else:
