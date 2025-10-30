@@ -1469,8 +1469,8 @@ def edit_project_page(request, project_name):
         if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
             return HttpResponse("Project does not exist")
     if request.method == "POST":
-        tracemalloc.start()
-        start_snapshot = tracemalloc.take_snapshot()
+        #tracemalloc.start()
+        #start_snapshot = tracemalloc.take_snapshot()
         try:
             metadata_file = request.FILES.get("metadataFile")
         except Exception as e:
@@ -1679,11 +1679,11 @@ def edit_project_page(request, project_name):
                 del project
                 del old_extra_metadata
                 del new_prev_versions
-                end_snapshot2 = tracemalloc.take_snapshot()
-                top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
-                logging.error("[3 -- Memory usage differences at end of edit_project_page]")
-                for stat in top_stats2[:10]:
-                    logging.error(stat)
+                #end_snapshot2 = tracemalloc.take_snapshot()
+                #top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
+                #logging.error("[3 -- Memory usage differences at end of edit_project_page]")
+                #for stat in top_stats2[:10]:
+                #    logging.error(stat)
 
                 # go to the new project
                 return redirect('project_page', project_name=project_id_for_redirect)
@@ -1762,11 +1762,11 @@ def edit_project_page(request, project_name):
                 del current_runs
                 del old_extra_metadata
 
-                end_snapshot2 = tracemalloc.take_snapshot()
-                top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
-                print("[2 -- Memory usage differences at end of edit_project_page]")
-                for stat in top_stats2[:10]:
-                    print(stat)
+                #end_snapshot2 = tracemalloc.take_snapshot()
+                #top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
+                #print("[2 -- Memory usage differences at end of edit_project_page]")
+                #for stat in top_stats2[:10]:
+                #    print(stat)
 
 
                 return redirect('project_page', project_name=project_name)
@@ -1901,8 +1901,8 @@ def update_notification_preferences(request):
 # for users as they create the project
 
 def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
-    tracemalloc.start()
-    start_snapshot = tracemalloc.take_snapshot()
+    #tracemalloc.start()
+    #start_snapshot = tracemalloc.take_snapshot()
     t_sa = time.time()
     logging.info("Extracting files from tar...")
     try:
@@ -1994,11 +1994,11 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             print(anError.args, file = fh )  # arguments stored in .args
             print(anError, file=fh)
 
-    end_snapshot4 = tracemalloc.take_snapshot()
-    top_stats4 = end_snapshot4.compare_to(start_snapshot, 'lineno')
-    logging.error("\n\n[4 -- Memory usage differences at end of extract_project_files]")
-    for stat in top_stats4[:10]:
-        logging.error(stat)
+    #end_snapshot4 = tracemalloc.take_snapshot()
+    #top_stats4 = end_snapshot4.compare_to(start_snapshot, 'lineno')
+    #logging.error("\n\n[4 -- Memory usage differences at end of extract_project_files]")
+    #for stat in top_stats4[:10]:
+    #    logging.error(stat)
 
     finish_flag = f"{project_data_path}/results/finished_project_creation.txt"
     with open(finish_flag, 'w') as finish_flag_file:
