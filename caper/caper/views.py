@@ -1866,6 +1866,8 @@ def edit_project_page(request, project_name):
                     for chunk in iter(lambda: f.read(1024 * 1024), b''):
                         temp_file.write(chunk)
                     temp_file.seek(0)
+                    # Need to flush to ensure all data is written to the temp file
+                    temp_file.file.flush()
                     request.FILES['document'] = temp_file
                     
                 # Explicitly delete aggregator object after use to free memory
@@ -1948,9 +1950,9 @@ def edit_project_page(request, project_name):
                 del new_prev_versions
                 end_snapshot2 = tracemalloc.take_snapshot()
                 top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
-                print("[3 -- Memory usage differences at end of edit_project_page]")
+                logging.error("[3 -- Memory usage differences at end of edit_project_page]")
                 for stat in top_stats2[:10]:
-                    print(stat)
+                    logging.error(stat)
                     
                 # go to the new project
                 return redirect('project_page', project_name=project_id_for_redirect)
@@ -3223,7 +3225,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
 
     # iterate over project['runs'] and get the unique values across all runs
     # of AA_version, AC_version and 'AS-P_version'. Then add them to the project dict
-    #substututing ASP_version for AS-P_version
+    #substutiting ASP_version for AS-P_version
     get_tool_versions(project, runs)
 
     return project, tmp_id
@@ -3825,8 +3827,13 @@ class ProjectFileAddView(APIView):
                     for chunk in iter(lambda: f.read(1024 * 1024), b''):
                         temp_file.write(chunk)
                     temp_file.seek(0)
-                    self.request.FILES['document'] = temp_file
-                f.close()
+                    # Need to flush to ensure all data is written to the temp file
+                    temp_file.file.flush()
+                    request.FILES['document'] = temp_file
+                    
+                # Explicitly delete aggregator object after use to free memory
+                del agg
+                agg = None
 
                 self.request.user = user
                 update_project = project_update(self.request, project_uuid)
