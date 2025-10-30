@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 
 {% load mezzanine_tags %}
+{% load custom_filters %}
 {% block extra_js %}
 <script>
     // get the format and sort functions from the included file
@@ -374,6 +375,23 @@
                         </tr>
                     </tbody>
                 </table>
+                
+            <!--
+            <hr style="max-width: 60%; margin-left: 0;">
+                <p style="font-size: 1em;">Tissue of origin sample counts</p>
+                <table id='statsTable2' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
+                    <col width="50%">
+                    <col width="50%">
+                    <tbody>
+                        {% for tissue_name, count in site_stats.public_tissue_of_origin_count|sort_dict_by_value_desc %}
+                        <tr>
+                            <td style="font-size: 1em;">{{ tissue_name }}</td>
+                            <td style="font-size: 1em;">{{ count|default:0 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                -->
             </div>
         </div>
 

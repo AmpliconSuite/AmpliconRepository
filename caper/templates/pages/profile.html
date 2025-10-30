@@ -34,11 +34,6 @@
 </script>
 {% endblock %}
 {% block main %}
-<head>
-    <title>
-        Profile
-    </title>
-</head>
 {% if user.is_authenticated %}
 
 
@@ -135,6 +130,11 @@
                  <div class="col-md-4">   <input id="form__onRemovedFromProjectTeam" type="checkbox"
                                               onchange="document.getElementById('updateNotificationsBtn').disabled = false"
                                                  name="onRemovedFromProjectTeam"  {% if preferences.onRemovedFromProjectTeam %} checked{% endif %}  /></div></div>
+             <div class="row" style="margin-top:15px"><div class="col-md-4">When a subscribed project is <b><i>updated</i></b>:</div>
+                 <div class="col-md-4">   <input id="form__onProjectUpdate" type="checkbox"
+                                              onchange="document.getElementById('updateNotificationsBtn').disabled = false"
+                                                 name="onProjectUpdate"  {% if preferences.onProjectUpdate %} checked{% endif %}  /></div></div>
+             <div class="row" style="margin-top:5px"><div class="col-md-9" style="margin-left:15px;font-size:0.9em;color:#666;"><i>Unchecking this will disable project update emails for any projects you have subscribed to.</i></div></div>
 
              <div class="row" style="margin-top: 25px">
                 <div class="col-md-9">

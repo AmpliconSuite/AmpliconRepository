@@ -398,7 +398,7 @@ INSTALLED_APPS = [
     "mezzanine.pages",
     "mezzanine.forms",
     "mezzanine.galleries",
-    "caper",
+    "caper.apps.CaperConfig",
     # "mezzanine.twitter",
     # 'mezzanine.accounts',
     'allauth',

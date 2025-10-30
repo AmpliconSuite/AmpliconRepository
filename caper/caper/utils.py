@@ -12,7 +12,8 @@ from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 import gridfs
 import re
 import os
-
+from django.forms.models import model_to_dict
+import datetime
 
 # def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED
 #                   ):
@@ -198,15 +199,38 @@ def get_one_sample(project_name, sample_name):
     project = validate_project(get_one_project(project_name), project_name)
     # print("ID --- ", project['_id'])
     runs = project['runs']
-    for sample_num in runs.keys():
+    
+    # Get all sample keys as a sorted list
+    sample_keys = sorted(runs.keys())
+    
+    sample_out = None
+    prev_sample = None
+    next_sample = None
+    current_index = None
+    
+    # Find the current sample and its index
+    for idx, sample_num in enumerate(sample_keys):
         current = runs[sample_num]
         try:
             if len(current) > 0 and current[0]['Sample_name'] == sample_name:
                 sample_out = current
+                current_index = idx
+                break
         except:
             # should not get here but we do sometimes for new projects, issue 194
-            sample_out = None
-    return project, sample_out
+            pass
+    
+    # Get previous and next samples if current sample was found
+    if current_index is not None:
+        if current_index > 0:
+            prev_sample_key = sample_keys[current_index - 1]
+            prev_sample = runs[prev_sample_key]
+        
+        if current_index < len(sample_keys) - 1:
+            next_sample_key = sample_keys[current_index + 1]
+            next_sample = runs[next_sample_key]
+    
+    return project, sample_out, prev_sample, next_sample
 
 
 def sample_data_from_feature_list(features_list):
@@ -312,6 +336,212 @@ def get_one_project(project_name_or_uuid):
     if project is None:
         try:
             project = collection_handle.find_one({'project_name': project_name_or_uuid, 'current': False, 'delete': True})
+            if project is not None:
+                prepare_project_linkid(project)
+                logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
+
+                return project
+        except:
+            project = None
+
+
+
+    if project is None:
+        logging.error(f"Project is None for {project_name_or_uuid}")
+
+    return project
+
+
+
+def get_one_deleted_project(project_name_or_uuid):
+    try:
+
+        # old cursor
+        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
+        # project = get_projects_close_cursor({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
+
+
+        prepare_project_linkid(project)
+        return project
+
+    except:
+        project = None
+
+    # backstop using the name the old way
+    if project is None:
+        project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+        logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
+        prepare_project_linkid(project)
+
+    if project is None:
+        logging.error(f"Project is None for {project_name_or_uuid}")
+
+    return project
+
+
+def check_if_db_field_exists(project, field):
+    try:
+        if project[field]:
+            return True
+    except:
+        return False
+
+
+
+def get_date():
+    today = datetime.datetime.now()
+    date = today.strftime('%Y-%m-%dT%H:%M:%S.%f')
+    return date
+
+
+def get_date_short():
+    today = datetime.datetime.now()
+    date = today.strftime('%Y-%m-%d')
+    return date
+
+
+def previous_versions(project):
+    """
+    Gets a list of previous versions via UUID
+    """
+    res = []
+    msg = None
+    # print(project['_id'])
+    logging.error(f"Getting previous versions for project {project['_id']}")
+    ### Accessing a previous version of a project.
+    ## looking for the old link in the previous project. Will output something if
+    ## we are trying to access an older project
+    # cursor = collection_handle.find(
+    #    {'current': True, 'previous_versions.linkid' : str(project['_id'])}, {'date': 1, 'previous_versions':1}).sort('date', -1)
+    # data = list(cursor)
+    fields = ['date', 'previous_versions', 'AC_version', 'AA_version', 'AP_version']
+    cursor = collection_handle.find(
+        {'current': True, 'previous_versions.linkid': str(project['_id'])},
+        {field: 1 for field in fields}
+    ).sort('date', -1)
+    data = []
+    for doc in cursor:
+        logging.error(f" RES FOR  {project['_id']}")
+        for field in ['AC_version', 'AA_version', 'AP_version']:
+            if field not in doc:
+                doc[field] = 'NA'
+                logging.error(f"Field {field} not found in document, setting to 'NA'")
+            else:
+                logging.error(f"Field {field} found in document, setting to 'NA'")
+
+        data.append(doc)
+
+    cursor.close()
+    if len(data) == 1:
+        res = data[0]['previous_versions']
+        res.append({'date': data[0]['date'],
+                    'linkid': str(data[0]['_id']),
+                    'AC_version': data[0].get('AC_version', 'NA'),
+                    'AA_version': data[0].get('AA_version', 'NA'),
+                    'ASP_version': data[0].get('ASP_version', 'NA')})
+        res.reverse()
+        msg = f"Viewing an older version of the project. View latest version <a href = '/project/{str(data[0]['_id'])}'>here</a>"
+
+
+    else:
+        ## accessing current version, getting list of previous versions
+        if "previous_versions" in project:
+            res = project['previous_versions']
+        # add current main version to the list
+
+        res.append({'date': project['date'],
+                    'linkid': str(project['linkid']),
+                    'AC_version': project.get('AC_version', 'NA'),
+                    'AA_version': project.get('AA_version', 'NA'),
+                    'ASP_version': project.get('ASP_version', 'NA')
+                    })
+        res.reverse()
+
+    return res, msg
+
+def form_to_dict(form):
+    # print(form)
+    run = form.save(commit=False)
+    form_dict = model_to_dict(run)
+
+    if "alias" in form_dict:
+        try:
+            form_dict['alias'] = form_dict['alias'].replace(' ', '_')
+            print(f'alias for this project is: {form_dict["alias"]}')
+        except:
+            print('No alias provided, probably Null')
+    return form_dict
+
+
+
+def get_latest_project_version(project):
+
+    doc = collection_handle.find_one(
+        {'current': True, 'previous_versions.linkid': str(project['_id'])},
+    )
+
+    if doc is None:
+        return project
+    else:
+        prepare_project_linkid(doc)
+        return doc
+
+def get_one_project_sans_runs(project_name_or_uuid):
+    """
+    Gets one project from name or UUID, excluding the 'runs' field to reduce memory usage.
+    
+    if name, then checks the DB for an "alias" field, then gets that project if it has one 
+    
+    This is useful when you only need project metadata without the full sample/feature data.
+    """
+    
+    # Projection to exclude the runs field
+    projection = {'runs': 0}
+    
+    try:
+        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': False}, projection)[0]
+        prepare_project_linkid(project)
+        return project
+
+    except:
+        project = None
+
+    # backstop using the name the old way
+    if project is None:
+        ## first try finding the alias name
+        try:
+            project = collection_handle.find({'alias_name': project_name_or_uuid, 'delete': False}, projection)[0]
+            prepare_project_linkid(project)
+            return project
+        except:
+            project = None
+            
+        ## then find project via project name
+        try:
+            project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False}, projection)
+            if project is not None:
+                logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
+                prepare_project_linkid(project)
+                return project
+        except:
+            project = None
+
+
+    ## Maybe we are looking for an updated project: look for it by checking for the "current = False" flag
+    if project is None:
+        try:
+            project = collection_handle.find_one({'_id': ObjectId(project_name_or_uuid), 'current': False, 'delete': True}, projection)
+            if project is not None:
+                prepare_project_linkid(project)
+                logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
+
+                return project
+        except:
+            project = None
+
+    if project is None:
+        try:
+            project = collection_handle.find_one({'project_name': project_name_or_uuid, 'current': False, 'delete': True}, projection)
             if project is not None:
                 prepare_project_linkid(project)
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
