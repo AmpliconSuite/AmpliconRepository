@@ -2575,9 +2575,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             print(anError, file=fh)
 
     end_snapshot4 = tracemalloc.take_snapshot()
-    top_stats4 = end_snapshot2.compare_to(start_snapshot, 'lineno')
+    top_stats4 = end_snapshot4.compare_to(start_snapshot, 'lineno')
     logging.error("\n\n[4 -- Memory usage differences at end of extract_project_files]")
-    for stat in top_stats2[:10]:
+    for stat in top_stats4[:10]:
         logging.error(stat)
 
     finish_flag = f"{project_data_path}/results/finished_project_creation.txt"
