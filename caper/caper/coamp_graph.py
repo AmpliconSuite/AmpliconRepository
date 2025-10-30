@@ -37,15 +37,13 @@ class Graph:
         self.gene_records = {}
         self.name_to_record = {}
         self.name_to_edge = {}
-        self.reference_genome = None
+        self.reference_genome = None  # this is set in preprocess_dataset
         self.total_samples = 0
         self.preprocessed_dataset = None
 
         if dataset is None:
             print("ERROR: No dataset provided to Graph constructor")
             return
-
-        start_time = time.time()
 
         # Preprocess dataset (includes reference check and normalization)
         preprocessed_dataset = self.preprocess_dataset(dataset, focal_amp)

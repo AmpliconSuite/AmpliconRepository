@@ -3517,7 +3517,6 @@ class FileUploadView(APIView):
         else:
             return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
     def api_helper(self, form, current_user, request_file, api_id,actual_proj_name, multifile = False):
         """
         Helper function for API, to be run asynchronously
@@ -3612,19 +3611,15 @@ class ProjectFileAddView(APIView):
             args=(request, project, username, uploaded_file, api_id)
         )
         file_process_thread.start()
-        
-        
+
         return Response({'message': 'Files uploaded successfully and submitted for processing.'}, status=status.HTTP_200_OK)
     
     
     def process_file_in_background(self, request, project, username, uploaded_file, api_id):
-        
         project_uuid = project['linkid']
         tmp_project_data_path = f"tmp/{api_id}"
         user_identifier = request.data.get('username')
         user = User.objects.get(Q(username=user_identifier) | Q(email=user_identifier))
-
-        
 
         alert_message = None
         project_data_path = tmp_project_data_path
