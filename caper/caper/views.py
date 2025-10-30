@@ -1694,12 +1694,12 @@ def edit_project_page(request, project_name):
                                'run': form,
                                'alert_message': alert_message,
                                'all_alias' :json.dumps(get_all_alias())})
-        # JTL 081823 Not sure what these next 4 lines are about?  An earlier plan to change the project file?
-        # leaving them alone for now but they smell like dead code
-        # if 'file' in form_dict:
-        #     runs = samples_to_dict(form_dict['file'])
-        # else:
-        #     runs = 0
+        
+        
+        if 'file' in form_dict:
+            runs = samples_to_dict(form_dict['file'])
+        else:
+            runs = 0
 
         if check_project_exists(project_name):
             new_project_name = form_dict['project_name']
