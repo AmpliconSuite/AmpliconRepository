@@ -1965,10 +1965,10 @@ def edit_project_page(request, project_name):
                                'all_alias' :json.dumps(get_all_alias())})
         # JTL 081823 Not sure what these next 4 lines are about?  An earlier plan to change the project file?
         # leaving them alone for now but they smell like dead code
-        if 'file' in form_dict:
-            runs = samples_to_dict(form_dict['file'])
-        else:
-            runs = 0
+        # if 'file' in form_dict:
+        #     runs = samples_to_dict(form_dict['file'])
+        # else:
+        #     runs = 0
 
         if check_project_exists(project_name):
             new_project_name = form_dict['project_name']
@@ -2481,7 +2481,8 @@ def project_stats_download(request):
 # for users as they create the project
 
 def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
-
+    tracemalloc.start()
+    start_snapshot = tracemalloc.take_snapshot()
     t_sa = time.time()
     logging.info("Extracting files from tar...")
     try:
@@ -2507,6 +2508,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                 feature_count += 1
                 if feature_count % 100 == 0:
                     logging.info(f"Processing feature {feature_count}/{total_features}...")
+                    # Force garbage collection every 100 features to free memory
+                    gc.collect()
 
                 if len(feature) > 0:
                     # get paths
@@ -2517,6 +2520,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             path_var = feature[k]
                             with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
                                 id_var = fs_handle.put(file_var)
+                            # Explicitly delete the file data reference
+                            del path_var
                         except:
                             id_var = "Not Provided"
                         feature[k] = id_var
@@ -2568,6 +2573,12 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             print(type(anError), file = fh)  # the exception type
             print(anError.args, file = fh )  # arguments stored in .args
             print(anError, file=fh)
+
+    end_snapshot4 = tracemalloc.take_snapshot()
+    top_stats4 = end_snapshot2.compare_to(start_snapshot, 'lineno')
+    logging.error("\n\n[4 -- Memory usage differences at end of extract_project_files]")
+    for stat in top_stats2[:10]:
+        logging.error(stat)
 
     finish_flag = f"{project_data_path}/results/finished_project_creation.txt"
     with open(finish_flag, 'w') as finish_flag_file:
@@ -3830,7 +3841,7 @@ class ProjectFileAddView(APIView):
                     # Need to flush to ensure all data is written to the temp file
                     temp_file.file.flush()
                     request.FILES['document'] = temp_file
-                    
+
                 # Explicitly delete aggregator object after use to free memory
                 del agg
                 agg = None
