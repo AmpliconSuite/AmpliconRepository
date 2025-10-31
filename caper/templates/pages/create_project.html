@@ -41,6 +41,11 @@
   #icon {
     height: 35px;
   }
+
+  .overlay-span {
+    line-height: 1.1 !important;
+    display: inline-block;
+  }
 </style>
 
 {% block main %}
@@ -318,6 +323,15 @@
 <p>Sign in to Upload Files</p>
 {% endif %}
 
+<!-- Overlay for upload progress -->
+<div id="upload-overlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:flex-start;">
+  <div style="background:white; max-width:500px; width:100%; box-sizing:border-box; margin:auto; margin-top:30px; padding:40px 30px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2); font-size:1.5em; text-align:center;">
+    Project creation in progress<br><br>
+    <br/>
+      <span class="uk-spinner" uk-spinner="ratio:2"></span>
+  </div>
+</div>
+
 <script>
  const uploadForm = document.getElementById('upload-form');
     const input = document.getElementById('fileuploadfield');
@@ -342,22 +356,30 @@
       const files = Array.from(input.files);
       let allFilesValid = true;
       let invalidFileNames = [];
-  
+      let largeFiles = [];
+
       // Validate all selected files
       files.forEach(file => {
           const fileName = file.name;
-          console.log(fileName, "fname");
           if (!fileName.toLowerCase().endsWith(validFileExtension)) {
               allFilesValid = false;
               invalidFileNames.push(fileName);
           }
+          // Check file size > 1GB (1073741824 bytes)
+          if (file.size >1073741824) {
+              largeFiles.push(fileName);
+          }
       });
-  
+
       if (!allFilesValid) {
           alert("Sorry, the following files are invalid inputs:\n\n" + invalidFileNames.join(', ') + "\n\nPlease select .tar.gz files only.\n\nSee bottom of page for instructions on how to generate an aggregated input file.");
           throw new Error("Bad file extension!");
       }
-  
+
+      if (largeFiles.length > 0) {
+          alert("Warning: The following file(s) are larger than 1GB and may be too large to upload. Please contact the site administrator for assistance.\n\n" + largeFiles.join(', '));
+      }
+
       // Append new files to the array
       files.forEach(file => {
           if (!addFilename(file.name)) {
@@ -417,8 +439,16 @@
       });
     }
 
+    function showUploadOverlay() {
+      document.getElementById('upload-overlay').style.display = 'flex';
+    }
+
+    function hideUploadOverlay() {
+      document.getElementById('upload-overlay').style.display = 'none';
+    }
   
     function uploadFiles() {
+      showUploadOverlay();
       const fd = new FormData();
       fd.append('csrfmiddlewaretoken', csrf[0].value);
   
@@ -443,6 +473,7 @@
       });
   
       xhr.onload = function () {
+          hideUploadOverlay();
           if (xhr.status >= 200 && xhr.status < 300) {
               alertBox.innerHTML = `<div class="alert alert-success" role="alert">
                                       Successfully uploaded file(s)
@@ -457,6 +488,7 @@
       };
   
       xhr.onerror = function () {
+          hideUploadOverlay();
           alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
                                   Something went wrong with the upload.
                                 </div>`;

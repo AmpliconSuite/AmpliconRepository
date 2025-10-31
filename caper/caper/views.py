@@ -1,45 +1,64 @@
 import logging
 import os
+import gc
+import tracemalloc
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
 
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 
+from bson.objectid import ObjectId
 
 from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, Http404, JsonResponse
 from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import user_passes_test, login_required
+from django.contrib.auth.decorators import login_required
 
-from django.core.mail import EmailMessage
-from django.template.loader import render_to_string
-from django.utils.html import strip_tags
 from django.contrib.auth.models import User
 
 ## API framework packages
 from rest_framework.response import Response
-from werkzeug.debug import console
 
 from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
-from .site_stats import regenerate_site_statistics, get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
-from .serializers import FileSerializer
+from .site_stats import get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
+
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
 from rest_framework import status
 from pathlib import Path
 
+# Import admin views from separate module
+from .views_admin import (
+    admin_featured_projects, admin_version_details, admin_sendemail, admin_stats,
+    admin_permanent_delete_project, admin_delete_user, admin_delete_project,
+    user_stats_download, site_stats_regenerate, project_stats_download, sizeof_fmt,
+    fix_schema, data_qc
+)
+
+# Import API views from separate module
+from .views_apis import FileUploadView, ProjectFileAddView
+
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
 from django.conf import settings
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
-from django.contrib.auth.models import User
 from django.db.models import Q
 
 # from .models import File
-from .forms import RunForm, UpdateForm, FeaturedProjectForm, DeletedProjectForm, SendEmailForm, UserPreferencesForm
+from .forms import RunForm, UpdateForm, UserPreferencesForm
+
+# Import utils functions
+from .utils import (
+    collection_handle, collection_handle_primary, fs_handle,
+    get_one_project, get_one_sample, get_one_deleted_project,
+    prepare_project_linkid, check_if_db_field_exists,
+    get_date, get_date_short, previous_versions, form_to_dict,
+    replace_space_to_underscore, sample_data_from_feature_list,
+    get_all_alias, get_projects_close_cursor, create_user_list,
+    preprocess_sample_data, validate_project, replace_underscore_keys,
+    get_latest_project_version, flatten
+)
+
 from .extra_metadata import *
-from django.forms.models import model_to_dict
 
 # imports for coamp graph
 from .neo4j_utils import load_graph, fetch_subgraph
@@ -50,13 +69,12 @@ import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
 from django.core.files.storage import FileSystemStorage
-from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.files.uploadedfile import TemporaryUploadedFile
 
 from wsgiref.util import FileWrapper
 import boto3, botocore, fnmatch, uuid, datetime, time
 from threading import Thread
 import dateutil.parser
-
 
 ## Message framework
 from django.contrib import messages
@@ -89,46 +107,11 @@ fa_cmap = {
                 }
 
 
-def get_date():
-    today = datetime.datetime.now()
-    date = today.strftime('%Y-%m-%dT%H:%M:%S.%f')
-    return date
 
-
-def get_date_short():
-    today = datetime.datetime.now()
-    date = today.strftime('%Y-%m-%d')
-    return date
-
-
-def get_one_deleted_project(project_name_or_uuid):
-    try:
-
-        # old cursor
-        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
-        # project = get_projects_close_cursor({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
-
-
-        prepare_project_linkid(project)
-        return project
-
-    except:
-        project = None
-
-    # backstop using the name the old way
-    if project is None:
-        project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
-        logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
-        prepare_project_linkid(project)
-
-    if project is None:
-        logging.error(f"Project is None for {project_name_or_uuid}")
-
-    return project
 
 
 def get_one_feature(project_name, sample_name, feature_name):
-    project, sample = get_one_sample(project_name, sample_name)
+    project, sample, _, _ = get_one_sample(project_name, sample_name)
     feature = list(filter(lambda s: s['Feature_ID'] == feature_name, sample))
     return project, sample, feature
 
@@ -147,19 +130,6 @@ def check_project_exists(project_id):
 def samples_to_dict(form_file):
     return json.load(form_file)['runs']
 
-
-def form_to_dict(form):
-    # print(form)
-    run = form.save(commit=False)
-    form_dict = model_to_dict(run)
-
-    if "alias" in form_dict:
-        try:
-            form_dict['alias'] = form_dict['alias'].replace(' ', '_')
-            print(f'alias for this project is: {form_dict["alias"]}')
-        except:
-            print('No alias provided, probably Null')
-    return form_dict
 
 
 def get_project_oncogenes(runs):
@@ -210,119 +180,7 @@ def get_files(fs_id):
     return wrapper
 
 
-# This function appears to be unused
-def modify_date(projects):
-    """
-    Modifies the date to this format:
 
-    MM DD, YYYY HH:MM:SS AM/PM
-
-    """
-
-    for project in projects:
-        formats_to_try = [f"%Y-%m-%dT%H:%M:%S.%f", f"%B %d, %Y %I:%M:%S %p ", f"%Y-%m-%d", f"%Y-%m-%dT%H:%M:%S"]
-        for fmt in formats_to_try:
-            try:
-                dt = datetime.datetime.strptime(project['date'], fmt)
-                project['date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
-            except Exception as e:
-                # logging.exception("Could not modify date for " + project['project_name'])
-                continue
-
-    return projects
-
-
-def data_qc(request):
-    if not request.user.is_staff:
-        return redirect('/accounts/logout')
-
-    if request.user.is_authenticated:
-        username = request.user.username
-        useremail = request.user.email
-
-        # private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
-        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
-        for proj in private_projects:
-            prepare_project_linkid(proj)
-    else:
-        private_projects = []
-
-    public_proj_count = 0
-    public_sample_count = 0
-
-    # public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
-    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
-    for proj in public_projects:
-        prepare_project_linkid(proj)
-        public_proj_count = public_proj_count + 1
-        public_sample_count = public_sample_count + len(proj['runs'])
-
-    datetime_status = check_datetime(public_projects) + check_datetime(private_projects)
-    sample_count_status = check_sample_count_status(private_projects) + check_sample_count_status(public_projects)
-
-    # Run the schema validation directly
-    try:
-        from caper.schema_validate import run_validation
-
-        # Get the schema path relative to the project root
-        schema_path = "schema/schema.json"
-
-        # Run the validation and get the report
-        schema_report = run_validation(
-            db_host=None,  # Use the existing connection from utils
-            collection_name="projects",
-            schema_path=schema_path
-        )
-
-    except Exception as e:
-        schema_report = f"Error running schema validation: {str(e)}"
-
-    return render(request, "pages/admin_quality_check.html", {
-        'public_projects': public_projects,
-        'private_projects': private_projects,
-        'datetime_status': datetime_status,
-        'sample_count_status': sample_count_status,
-        'schema_report': schema_report,
-    })
-
-
-def fix_schema(request):
-    # Run the schema validation directly
-    try:
-        from caper.schema_validate import run_fix_schema
-
-        # Get the schema path relative to the project root
-        schema_path = "schema/schema.json"
-
-        # Run the validation and get the report
-        fix_schema_report = run_fix_schema(
-            db_host=None,  # Use the existing connection from utils
-            collection_name="projects",
-            schema_path=schema_path
-        )
-
-    except Exception as e:
-        fix_schema_report = f"Error running fix schema: {str(e)}"
-
-    return render(request, "pages/admin_fix_schema_report.html", {
-        'fix_schema_report': fix_schema_report,
-    })
-
-
-def check_datetime(projects):
-    errors = 0
-    for project in projects:
-        try:
-            change_to_standard_date(project['date'])
-        except:
-            errors += 1
-
-    if errors == 0:
-        datetime_status = 1
-    else:
-        datetime_status = 0
-
-    return datetime_status
 
 
 def check_sample_count_status(projects):
@@ -566,78 +424,7 @@ def create_aggregate_df(project, samples):
 
     return aggregate, aggregate_save_fp
 
-def previous_versions(project):
-    """
-    Gets a list of previous versions via UUID
-    """
-    res = []
-    msg = None
-    # print(project['_id'])
-    logging.error(f"Getting previous versions for project {project['_id']}")
-    ### Accessing a previous version of a project.
-    ## looking for the old link in the previous project. Will output something if
-    ## we are trying to access an older project
-    #cursor = collection_handle.find(
-    #    {'current': True, 'previous_versions.linkid' : str(project['_id'])}, {'date': 1, 'previous_versions':1}).sort('date', -1)
-    #data = list(cursor)
-    fields = ['date', 'previous_versions', 'AC_version', 'AA_version', 'AP_version']
-    cursor = collection_handle.find(
-        {'current': True, 'previous_versions.linkid': str(project['_id'])},
-        {field: 1 for field in fields}
-    ).sort('date', -1)
-    data = []
-    for doc in cursor:
-        logging.error(f" RES FOR  {project['_id']}")
-        for field in ['AC_version', 'AA_version', 'AP_version']:
-            if field not in doc:
-                doc[field] = 'NA'
-                logging.error(f"Field {field} not found in document, setting to 'NA'")
-            else:
-                logging.error(f"Field {field} found in document, setting to 'NA'")
-                
-        data.append(doc)
-    
-    cursor.close()
-    if len(data) == 1:
-        res = data[0]['previous_versions']
-        res.append({'date': data[0]['date'],
-                    'linkid' : str(data[0]['_id']),
-                    'AC_version': data[0].get('AC_version', 'NA'),
-                    'AA_version': data[0].get('AA_version', 'NA'),
-                    'ASP_version': data[0].get('ASP_version', 'NA')})
-        res.reverse()
-        msg = f"Viewing an older version of the project. View latest version <a href = '/project/{str(data[0]['_id'])}'>here</a>"
 
-
-    else:
-        ## accessing current version, getting list of previous versions
-        if "previous_versions" in project:
-            res = project['previous_versions']
-        # add current main version to the list
-
-        res.append({'date': project['date'],
-                    'linkid':str(project['linkid']),
-                    'AC_version': project.get('AC_version', 'NA'),
-                    'AA_version': project.get('AA_version', 'NA'),
-                    'ASP_version': project.get('ASP_version', 'NA')
-                    })
-        res.reverse()
-
-    return res, msg
-
-def get_latest_project_version(project):
-       
-        
-        doc = collection_handle.find_one(
-            {'current': True, 'previous_versions.linkid': str(project['_id'])},
-        )
-       
-        
-        if doc is None:
-            return project
-        else:
-            prepare_project_linkid(doc)
-            return doc
         
 
 
@@ -674,6 +461,9 @@ def project_page(request, project_name, message=''):
         viewing_old_project = True
 
     set_project_edit_OK_flag(project, request)
+    
+    # Check if user is actually a project member (for subscription checkbox visibility)
+    is_project_member = is_user_a_project_member(project, request)
 
     # For empty projects, set defaults
     if is_empty_project:
@@ -681,7 +471,7 @@ def project_page(request, project_name, message=''):
         reference_genome = 'N/A'
         sample_data = []
         aggregate = None
-        stackedbar_plot = None
+        stacked_bar_plot = None
         pc_fig = None
     # For regular projects, process as before
     elif 'metadata_stored' not in project:
@@ -740,6 +530,7 @@ def project_page(request, project_name, message=''):
         'prev_versions_length': len(prev_versions),
         'views': views,
         'downloads': downloads,
+        'is_project_member': is_project_member,  # Pass actual membership status for subscription UI
         'proj_id': project_name,
         'viewing_old_project': viewing_old_project,
         'is_empty_project': is_empty_project,  # Pass this flag to the template
@@ -755,13 +546,6 @@ def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket
                          f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
     logging.info('==== XXX uploaded to bucket ')
 
-
-def check_if_db_field_exists(project, field):
-    try:
-        if project[field]:
-            return True
-    except:
-        return False
 
 
 def find_one(pattern, path):
@@ -953,7 +737,7 @@ def get_sample_metadata(sample_data):
     return sample_metadata
 
 def sample_metadata_download(request, project_name, sample_name):
-    project, sample_data = get_one_sample(project_name, sample_name)
+    project, sample_data, _, _ = get_one_sample(project_name, sample_name)
     sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
     extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
     try:
@@ -977,10 +761,20 @@ def add_metadata(request, project_id):
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
     logging.info(f"Loading sample page for {sample_name}")
-    project, sample_data = get_one_sample(project_name, sample_name)
+    project, sample_data, prev_sample, next_sample = get_one_sample(project_name, sample_name)
     project_linkid = project['_id']
     if project['private'] and not is_user_a_project_member(project, request):
         return redirect('/accounts/login')
+    
+    # Extract sample names from prev_sample and next_sample
+    prev_sample_name = None
+    if prev_sample and len(prev_sample) > 0:
+        prev_sample_name = prev_sample[0].get('Sample_name')
+    
+    next_sample_name = None
+    if next_sample and len(next_sample) > 0:
+        next_sample_name = next_sample[0].get('Sample_name')
+    
     sample_metadata = get_sample_metadata(sample_data)
     reference_genome = reference_genome_from_sample(sample_data)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
@@ -1031,6 +825,8 @@ def sample_page(request, project_name, sample_name):
                    'sample_metadata': dict(sample_metadata),
                    'reference_genome': reference_genome,
                    'sample_name': sample_name,
+                   'prev_sample': prev_sample_name,
+                   'next_sample': next_sample_name,
                    'graph': plot,
                    'igv_tracks': json.dumps(igv_tracks),
                    'locuses': json.dumps(all_locuses),
@@ -1304,7 +1100,7 @@ def sample_download(request, project_name, sample_name):
     """
     Download a single sample's data.
     """
-    project, sample_data = get_one_sample(project_name, sample_name)
+    project, sample_data, _, _ = get_one_sample(project_name, sample_name)
 
     # Process the sample data
     sample_data_path, _ = process_sample_data(project, sample_name, sample_data)
@@ -1373,7 +1169,7 @@ def batch_sample_download(request):
             for sample_name in project_info['samples']:
                 try:
                     # Get sample data
-                    _, sample_data = get_one_sample(project_id, sample_name)
+                    _, sample_data, _, _ = get_one_sample(project_id, sample_name)
                     if not sample_data:
                         continue
 
@@ -1563,48 +1359,6 @@ def gene_search_page(request):
                    }})
 
 
-# def gene_search_download(request, project_name):
-#     project = get_one_project(project_name)
-#     samples = project['runs']
-#     for sample in samples:
-#         if len(samples[sample]) > 0:
-#             for feature in samples[sample]:
-#                 # set up file system
-#                 feature_id = feature['Feature_ID']
-#                 feature_data_path = f"tmp/{project_name}/{feature['Sample_name']}/{feature_id}"
-#                 os.makedirs(feature_data_path, exist_ok=True)
-#                 # get object ids
-#                 bed_id = feature['Feature_BED_file']
-#                 cnv_id = feature['CNV_BED_file']
-#                 pdf_id = feature['AA_PDF_file']
-#                 png_id = feature['AA_PNG_file']
-#
-#                 # get files from gridfs
-#                 bed_file = fs_handle.get(ObjectId(bed_id)).read()
-#                 cnv_file = fs_handle.get(ObjectId(cnv_id)).read()
-#                 pdf_file = fs_handle.get(ObjectId(pdf_id)).read()
-#                 png_file = fs_handle.get(ObjectId(png_id)).read()
-#
-#                 # send files to tmp file system
-#                 with open(f'{feature_data_path}/{feature_id}.bed', "wb+") as bed_file_tmp:
-#                     bed_file_tmp.write(bed_file)
-#                 with open(f'{feature_data_path}/{feature_id}_CNV.bed', "wb+") as cnv_file_tmp:
-#                     cnv_file_tmp.write(cnv_file)
-#                 with open(f'{feature_data_path}/{feature_id}.pdf', "wb+") as pdf_file_tmp:
-#                     pdf_file_tmp.write(pdf_file)
-#                 with open(f'{feature_data_path}/{feature_id}.png', "wb+") as png_file_tmp:
-#                     png_file_tmp.write(png_file)
-#
-#     project_data_path = f"tmp/{project_name}/"
-#     shutil.make_archive(f'{project_name}', 'zip', project_data_path)
-#     zip_file_path = f"{project_name}.zip"
-#     with open(zip_file_path, 'rb') as zip_file:
-#         response = HttpResponse(zip_file)
-#         response['Content-Type'] = 'application/x-zip-compressed'
-#         response['Content-Disposition'] = f'attachment; filename={project_name}.zip'
-#     os.remove(f'{project_name}.zip')
-#     return response
-
 
 def get_current_user(request):
     current_user = request.user.username
@@ -1625,16 +1379,23 @@ def project_delete(request, project_name):
     is_admin = getattr(request.user, 'is_staff', False)
     allowed = is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))
     if check_project_exists(project_name) and allowed:
-        current_runs = project['runs']
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
         delete_project_from_site_statistics(project, project['private'])
+        
+        # Clean up large objects
+        del project
+        gc.collect()
+        
         return redirect('profile')
     else:
+        # Clean up even on error path
+        del project
+        gc.collect()
         return HttpResponse("Project does not exist")
-    # return redirect('profile')
+
 
 def project_update(request, project_name):
     """
@@ -1642,7 +1403,7 @@ def project_update(request, project_name):
     current = False when a project is edited.
     update_date will be changed after project has been updated.
     """
-    project = get_one_project(project_name)
+    project = get_one_project_sans_runs(project_name)
     is_admin = getattr(request.user, 'is_staff', False)
     allowed = is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))
     if check_project_exists(project_name) and allowed:
@@ -1674,11 +1435,11 @@ def download_file(url, save_path):
 def remove_samples_from_runs(runs, samples_to_remove):
     """
     Removes specified samples from the runs dictionary.
-    
+
     Args:
         runs: Dictionary where keys are sample identifiers and values are arrays of feature objects
         samples_to_remove: List of sample identifiers to remove
-        
+
     Returns:
         Updated runs dictionary with specified samples removed
     """
@@ -1698,7 +1459,7 @@ def remove_samples_from_runs(runs, samples_to_remove):
     # Remove the identified keys
     for key in keys_to_remove:
         del updated_runs[key]
-    
+
     return updated_runs
 
 def edit_project_page(request, project_name):
@@ -1708,6 +1469,8 @@ def edit_project_page(request, project_name):
         if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
             return HttpResponse("Project does not exist")
     if request.method == "POST":
+        #tracemalloc.start()
+        #start_snapshot = tracemalloc.take_snapshot()
         try:
             metadata_file = request.FILES.get("metadataFile")
         except Exception as e:
@@ -1750,7 +1513,7 @@ def edit_project_page(request, project_name):
         old_membership = project['project_members']
         old_privacy = project['private']
         new_privacy = form_dict['private']
-        
+
         try:
             notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
         except:
@@ -1760,6 +1523,7 @@ def edit_project_page(request, project_name):
         ## check multi files,  run aggregator :
         file_fps = []
         temp_proj_id = uuid.uuid4().hex ## to be changed
+        agg = None  # Initialize to None for cleanup
         try:
             files = request.FILES.getlist('document')
             project_data_path = f"tmp/{temp_proj_id}" ## to change
@@ -1770,8 +1534,6 @@ def edit_project_page(request, project_name):
                 fp = os.path.join(project_data_path, file.name)
                 file_fps.append(file.name)
                 file.close()
-
-           
 
             ## download old project file here and run it through aggregator
             ## build download URL
@@ -1785,10 +1547,10 @@ def edit_project_page(request, project_name):
                 except Exception as e:
                     logging.error(f'Failed to make directory {project_data_path}')
                     logging.error(e)
-                    
+
                 stripped_tar = remove_samples_from_tar(project, samples_to_remove, download_path, url)
                 file_fps.append(os.path.basename(stripped_tar) )
-            
+
             try:
                 ## try to download old project file
                 print(f"PREVIOUS FILE FPS LIST: {file_fps}")
@@ -1809,33 +1571,51 @@ def edit_project_page(request, project_name):
                 # print(f'aggregating on: {file_fps}')
                 temp_directory = os.path.join('./tmp/', str(temp_proj_id))
                 agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
-                
+
                 if not agg.completed:
                     ## redirect to edit page if aggregator fails
 
                     if os.path.exists(temp_directory):
                         shutil.rmtree(temp_directory)
+                    # Clean up before returning
                     alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
 
+                    # Clean up before returning
+                    del agg
                     return render(request, 'pages/edit_project.html',
                               {'project': project,
                                'run': form,
                                'alert_message': alert_message,
                                'all_alias' :get_all_alias()})
                 ## after running aggregator, replace the requests file with the aggregated file:
+
                 with open(agg.aggregated_filename, 'rb') as f:
-                    uploaded_file = SimpleUploadedFile(
-                    name=os.path.basename(agg.aggregated_filename),
-                    content=f.read(),
-                    content_type='application/gzip'
+                    temp_file = TemporaryUploadedFile(
+                        name=os.path.basename(agg.aggregated_filename),
+                        content_type='application/gzip',
+                        size=os.path.getsize(agg.aggregated_filename),
+                        charset=None
                     )
-                    request.FILES['document'] = uploaded_file
-                f.close()
+                    # Copy file in chunks
+                    for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                        temp_file.write(chunk)
+                    temp_file.seek(0)
+                    # Need to flush to ensure all data is written to the temp file
+                    temp_file.file.flush()
+                    request.FILES['document'] = temp_file
+
+                # Explicitly delete aggregator object after use to free memory
+                del agg
+                agg = None
             except:
                 ## download failed, don't run aggregator
                 print(f'download failed ... ')
+                if agg is not None:
+                    del agg
         except:
             print('no file uploaded')
+            if agg is not None:
+                del agg
         try:
             request_file = request.FILES['document']
         except:
@@ -1853,7 +1633,6 @@ def edit_project_page(request, project_name):
             if 'previous_versions' in project:
                 new_prev_versions = project['previous_versions']
 
-            
             ## update for current
             new_prev_versions.append(
                 {
@@ -1864,19 +1643,50 @@ def edit_project_page(request, project_name):
 
             views = project['views']
             downloads = project['downloads']
+            # Preserve subscribers from the old project version
+            old_subscribers = project.get('subscribers', [])
             # create a new one with the new form
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
             ## get extra metadata from csv first (if exists in old project), add it to the new proj
             old_extra_metadata = get_extra_metadata_from_project(project)
-            new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,  previous_versions = new_prev_versions, previous_views = [views, downloads])
+
+            # Clear the large project dict before creating new version
+            project_id_for_redirect = None
+            new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,  previous_versions = new_prev_versions, previous_views = [views, downloads], old_subscribers = old_subscribers)
 
             # can't delete it, if its being used in the other thread for metadata extraction
             if os.path.exists(temp_directory) and not extra_metadata_file_fp:
                 shutil.rmtree(temp_directory)
-            
+
             if new_id is not None:
+                project_id_for_redirect = new_id.inserted_id
+                # Notify subscribers about the project update
+                try:
+                    from .user_preferences import notify_subscribers_of_project_update
+                    # Get the new project to determine sample count - use projection to limit data
+                    new_project = collection_handle.find_one(
+                        {'_id': ObjectId(str(project_id_for_redirect))},
+                        {'sample_count': 1, 'runs': 1}
+                    )
+                    new_sample_count = new_project.get('sample_count', len(new_project.get('runs', {})))
+                    notify_subscribers_of_project_update(project, project_id_for_redirect, new_sample_count)
+                    # Clean up the limited new_project dict
+                    del new_project
+                except Exception as e:
+                    logging.error(f"Failed to notify subscribers of project update: {str(e)}")
+
+                # Explicitly clear large objects before redirect
+                del project
+                del old_extra_metadata
+                del new_prev_versions
+                #end_snapshot2 = tracemalloc.take_snapshot()
+                #top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
+                #logging.error("[3 -- Memory usage differences at end of edit_project_page]")
+                #for stat in top_stats2[:10]:
+                #    logging.error(stat)
+
                 # go to the new project
-                return redirect('project_page', project_name=new_id.inserted_id)
+                return redirect('project_page', project_name=project_id_for_redirect)
             else:
                 alert_message = "The input file was not a valid aggregation. Please see site documentation."
                 return render(request, 'pages/edit_project.html',
@@ -1884,8 +1694,8 @@ def edit_project_page(request, project_name):
                                'run': form,
                                'alert_message': alert_message,
                                'all_alias' :json.dumps(get_all_alias())})
-        # JTL 081823 Not sure what these next 4 lines are about?  An earlier plan to change the project file?
-        # leaving them alone for now but they smell like dead code
+        
+        
         if 'file' in form_dict:
             runs = samples_to_dict(form_dict['file'])
         else:
@@ -1895,7 +1705,8 @@ def edit_project_page(request, project_name):
             new_project_name = form_dict['project_name']
 
             logging.info(f"project name: {project_name}  change to {new_project_name}")
-            current_runs = project['runs']
+            # Create a deep copy to avoid holding reference to original
+            current_runs = dict(project['runs'])
 
             if runs != 0:
                 current_runs.update(runs)
@@ -1908,18 +1719,20 @@ def edit_project_page(request, project_name):
 
             old_extra_metadata = get_extra_metadata_from_project(project)
             current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file, old_extra_metadata = old_extra_metadata)
-         
-             
+
+            # Initialize sample_data from existing project
+            sample_data = project.get('sample_data', None)
+
             if project.get('sample_data',False) and samples_to_remove and len(samples_to_remove) > 0:
-                sample_data = project['sample_data']
+                # Create a copy to avoid modifying the original
+                sample_data = list(project['sample_data'])
                 current_runs = remove_samples_from_runs(current_runs, samples_to_remove)
-                for sample in project['sample_data']:
-                    if sample['Sample_name'] in samples_to_remove:
-                        project['sample_data'].remove(sample)
+                # Use list comprehension instead of modifying in place
+                sample_data = [s for s in sample_data if s['Sample_name'] not in samples_to_remove]
             else:
                 sample_data = project.get('sample_data', [])
-                        
-             
+
+
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs,
                                  'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'],
@@ -1938,11 +1751,24 @@ def edit_project_page(request, project_name):
                 if value and value != 'NA':
                     # Add to new_val to be saved in mongo
                     new_val.setdefault('$set', {})[version_field] = value
-            
+
             if form.is_valid():
                 collection_handle.update_one(query, new_val)
                 edit_proj_privacy(project, old_privacy, new_privacy)
                 logging.debug("Updated collection_handle with new data")
+
+                # Clean up large objects before redirect
+                del project
+                del current_runs
+                del old_extra_metadata
+
+                #end_snapshot2 = tracemalloc.take_snapshot()
+                #top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
+                #print("[2 -- Memory usage differences at end of edit_project_page]")
+                #for stat in top_stats2[:10]:
+                #    print(stat)
+
+
                 return redirect('project_page', project_name=project_name)
             else:
                 raise Http404()
@@ -1977,11 +1803,11 @@ def edit_project_page(request, project_name):
         members = [i for i in members if i]
         memberString = ', '.join(members)
 
-        
+
         AAVersion=project.get('AA_version', 'NA')
         ACVersion=project.get('AC_version', 'NA')
         ASPVersion=project.get('ASP_version', 'NA')
-        
+
         form = UpdateForm(initial={"project_name": project['project_name'],
                                    "description": project['description'],
                                    "private":project['private'],
@@ -2006,15 +1832,13 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
     # from the project zip file. They will be in a directory in the tar file called
     # results/other_files/<SAMPLE_NAME>_classification/
     project_name = project['project_name']
-    
-    
-    
-    try:    
+
+    try:
         download_file(url, download_path)
     except Exception as e:
         logging.error(f'Failed to download the file: {e}')
         return None
-        
+
     if os.path.exists(download_path):
         parent_dir = os.path.abspath(os.path.dirname(download_path))
         # Create a temporary directory to extract the tar file
@@ -2030,7 +1854,7 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
             sample_dir = os.path.join(temp_extract_dir, 'results', 'other_files', f'{sample}_classification')
             if os.path.exists(sample_dir):
                 shutil.rmtree(sample_dir)
-                
+
             # Also remove other directories left behind in other_files
             sample_dir2 = os.path.join(temp_extract_dir, 'results', 'AA_outputs', f'{sample}_AA_results')
             if os.path.exists(sample_dir2):
@@ -2041,7 +1865,7 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
                 shutil.rmtree(sample_dir3)
 
         # Create a new tar file without the removed samples
-        
+
         new_project_tar_fp = f'{parent_dir}/{project_name}_stripped.tar.gz'
         with tarfile.open(new_project_tar_fp, 'w:gz') as tar:
             tar.add(os.path.join(temp_extract_dir, 'results'), arcname='results')
@@ -2073,320 +1897,12 @@ def update_notification_preferences(request):
 
     return profile(request, message_to_user="User preferences updated.")
 
-# only allow users designated as staff to see this, otherwise redirect to nonexistant page to
-# deny that this might even be a valid URL
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
-def admin_featured_projects(request):
-    if not  request.user.is_staff:
-        return redirect('/accounts/logout')
-
-    if request.method == "POST":
-
-        form = FeaturedProjectForm(request.POST)
-        form_dict = form_to_dict(form)
-        project_name = form_dict['project_name']
-        project_id = form_dict['project_id']
-        featured = form_dict['featured']
-
-        project = get_one_project(project_id)
-        query = {'_id': ObjectId(project_id)}
-        new_val = {"$set": {'featured': featured}}
-        collection_handle_primary.update_one(query, new_val)
-
-
-
-
-    public_projects = list(collection_handle_primary.find({'private': False, 'delete': False}))
-    # public_projects = get_projects_close_cursor({'private': False, 'delete': False})
-    for proj in public_projects:
-        prepare_project_linkid(proj)
-
-    return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
-
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
-def admin_version_details(request):
-    if not request.user.is_staff:
-        return redirect('/accounts/logout')
-    try:
-        #details = [{"name":"version","value":"test"},{"name":"creator","value":"someone"},{"name": "date", "value":"whenever" }]
-        details = []
-        comment_char="#"
-        sep="="
-        with open("version.txt", 'r') as version_file:
-            for line in version_file:
-                l = line.strip()
-                if l and not l.startswith(comment_char):
-                    key_value = l.split(sep)
-                    key = key_value[0].strip()
-                    value = sep.join(key_value[1:]).strip().strip('"')
-                    details.append({"name": key,  "value": value})
-    except:
-        details = [{"name":"version","value":"unknown"},{"name":"creator","value":"unknown"},{"name": "date", "value":"unknown" }]
-
-    env_to_skip = ['DB_URI_SECRET', "GOOGLE_SECRET", "GLOBUS_SECRET"]
-    env=[]
-    for key, value in os.environ.items():
-        if not ("SECRET" in key) and not key in env_to_skip:
-            env.append({"name": key, "value": value})
-
-    try:
-        gitcmd = 'export GIT_DISCOVERY_ACROSS_FILESYSTEM=1;git config --global --add safe.directory /srv;git status;echo \"Commit id:\"; git rev-parse HEAD'
-        git_result = subprocess.check_output(gitcmd, shell=True)
-        git_result = git_result.decode("UTF-8")\
-        #.replace("\n", "<br/>")
-    except:
-        git_result = "git status call failed"
-
-    try:
-        # try to account for different working directories as found in dev and prod
-        conf_file_locs = ["../config.sh", "./caper/config.sh", "./config.sh"]
-        manage_file_locs = ["./manage.py", "./caper/manage.py"]
-        for apath in conf_file_locs:
-            my_file = Path(apath)
-            if my_file.is_file():
-                config_path = apath
-                break
-        for apath in manage_file_locs:
-            my_file = Path(apath)
-            if my_file.is_file():
-                manage_path = apath
-                break
-
-        settingscmd = f'source {config_path};python {manage_path} diffsettings --all'
-
-        settings_raw_result = subprocess.check_output(settingscmd, shell=True)
-        settings_result = ""
-        for line in settings_raw_result.splitlines():
-            line_enc = line.decode("UTF-8")
-            if not(( "SECRET" in line_enc.upper()) or ( "mongodb" in line_enc)):
-                settings_result = settings_result + line_enc + "\n"
-
-    except:
-        settings_result="An error occurred getting the contents of settings.py."
-
-    #settings_result = "Get settings call failed."
-
-    return render(request, 'pages/admin_version_details.html', {'details': details, 'env':env, 'git': git_result, 'django_settings': settings_result})
-
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
-def admin_sendemail(request):
-    if not  request.user.is_staff:
-        return redirect('/accounts/logout')
-    message_to_user = ""
-
-    if request.method == "POST":
-        form = SendEmailForm(request.POST)
-        form_dict = form_to_dict(form)
-        to = form_dict['to']
-        cc = form_dict['cc']
-        subject = form_dict['subject']
-        body = form_dict['body']
-        logging.debug(" FORM = " + str(form_dict))
-
-        # add details for the template
-        form_dict['SITE_TITLE'] = settings.SITE_TITLE
-        form_dict['SITE_URL'] = settings.SITE_URL
-        html_message = render_to_string('contacts/mail_template.html', form_dict)
-        plain_message = strip_tags(html_message)
-
-        #send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER_SECRET, recipient_list = [settings.RECIPIENT_ADDRESS])
-        email = EmailMessage(
-            subject,
-            html_message,
-            settings.EMAIL_HOST_USER,
-            [to ],
-            [cc],
-            reply_to=[settings.EMAIL_HOST_USER]
-        )
-        email.content_subtype = "html"
-        email.send(fail_silently=False)
-
-        message_to_user= "Email sent"
-
-
-    return render(request, 'pages/admin_sendemail.html', {'message_to_user': message_to_user, 'user': request.user, 'SITE_TITLE': settings.SITE_TITLE })
-
-
-
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
-def admin_stats(request):
-    if not request.user.is_staff:
-        return redirect('/accounts/logout')
-
-    # Get all user data
-    User = get_user_model()
-    users = User.objects.all()
-
-    # Get all projects
-    all_projects = list(collection_handle.find({'current': True, 'delete': False}))
-
-    # Create a dictionary to store user stats
-    user_stats = {}
-
-    # For each user, count their private and public projects where they are the only member
-    for user in users:
-        username = user.username
-        email = user.email
-        user_id = user.id
-        
-        # Initialize counts for this user
-        solo_private_projects = 0
-        solo_public_projects = 0
-        
-        # Check each project
-        for project in all_projects:
-            project_members = project.get('project_members', [])
-            
-            # Check if user is a member (by username or email) and they're the only one
-            is_only_member = (len(project_members) == 1 and 
-                             (username in project_members or email in project_members))
-            
-            if is_only_member:
-                if project.get('private', False):
-                    solo_private_projects += 1
-                else:
-                    solo_public_projects += 1
-        
-        # Store the stats for this user
-        user_stats[user_id] = {
-            'solo_private_projects': solo_private_projects,
-            'solo_public_projects': solo_public_projects
-        }
-
-    # Get public project data for display
-    public_projects = [p for p in all_projects if not p.get('private', True)]
-
-    for proj in public_projects:
-        prepare_project_linkid(proj)
-        if check_if_db_field_exists(proj, 'project_downloads'):
-            project_download_data = proj['project_downloads']
-            if isinstance(project_download_data, int):
-                temp_data = project_download_data
-                project_download_data = dict()
-                project_download_data[get_date_short()] = temp_data
-                proj_id = proj['_id']
-                query = {'_id': ObjectId(proj_id)}
-                new_val = { "$set": {'project_downloads': project_download_data} }
-                collection_handle.update_one(query, new_val)
-        if check_if_db_field_exists(proj, 'sample_downloads'):
-            sample_download_data = proj['sample_downloads']
-            if isinstance(sample_download_data, int):
-                if sample_download_data > 0:
-                    # Migration for sample downloads format
-                    temp_data = sample_download_data
-                    sample_download_data = dict()
-                    sample_download_data[get_date_short()] = temp_data
-                    proj_id = proj['_id']
-                    query = {'_id': ObjectId(proj_id)}
-                    new_val = {"$set": {'sample_downloads': sample_download_data}}
-                    collection_handle.update_one(query, new_val)
-
-    # Calculate stats
-    for project in public_projects:
-        project['sample_metadata_available'] = has_sample_metadata(project)
-        if 'project_downloads' in project:
-            # Process download stats
-            pass
-        else:
-            project['project_downloads'] = {}
-
-        if 'sample_downloads' in project:
-            # Process sample download stats
-            pass
-        else:
-            project['sample_downloads'] = {}
-
-    repo_stats = get_latest_site_statistics()
-
-    return render(request, 'pages/admin_stats.html', {
-        'public_projects': public_projects, 
-        'users': users, 
-        'user_stats': user_stats,
-        'site_stats': repo_stats
-    })
-
-# @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
-def user_stats_download(request):
-    # user = authenticate(username=os.getenv('ADMIN_USER_SECRET'),password=os.getenv('ADMIN_PASSWORD_SECRET'))
-    # if not user.is_staff:
-    #     return redirect('/accounts/logout')
-
-    # Get all user data
-    User = get_user_model()
-    users = User.objects.all()
-
-    # Create the HttpResponse object with the appropriate CSV header.
-    today = get_date_short()
-    response = HttpResponse(
-        content_type="text/csv",
-    )
-    response['Content-Disposition'] = f'attachment; filename="users_{today}.csv"'
-
-    user_data = []
-    for user in users:
-        user_dict = {'username':user.username,'email':user.email,'date_joined':user.date_joined,'last_login':user.last_login}
-        user_data.append(user_dict)
-
-    writer = csv.writer(response)
-    keys = ['username','email','date_joined','last_login']
-    writer.writerow(keys)
-    for dictionary in user_data:
-        output = {k: dictionary.get(k, None) for k in keys}
-        writer.writerow(output.values())
-
-    return response
-
-# wrapper in views for site stats to keep the import of site_stats.py out of urls.py
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
-def site_stats_regenerate(request):
-    regenerate_site_statistics()
-    return admin_stats(request)
-
-# @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
-def project_stats_download(request):
-    # user = authenticate(username=os.getenv('ADMIN_USER_SECRET'),password=os.getenv('ADMIN_PASSWORD_SECRET'))
-    # if not user.is_staff:
-    #     return redirect('/accounts/logout')
-
-    # Get public and private project data
-
-    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
-    # public_projects = list(collection_handle.find({'private': False, 'delete': False}))
-    # public_projects = get_projects_close_cursor({'private': False, 'delete': False})
-    for project in public_projects:
-        if not 'project_downloads' in project:
-            project['project_downloads_sum'] = 0
-        else:
-            project['project_downloads_sum'] = sum(project['project_downloads'].values())
-
-        if not 'sample_downloads' in project:
-            project['sample_downloads_sum'] = 0
-        else:
-            project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
-
-    for proj in public_projects:
-        prepare_project_linkid(proj)
-
-    # Create the HttpResponse object with the appropriate CSV header.
-    today = get_date_short()
-    response = HttpResponse(
-        content_type="text/csv",
-    )
-    response['Content-Disposition'] = f'attachment; filename="projects_{today}.csv"'
-
-    writer = csv.writer(response)
-    keys = ['project_name','description','project_members','date_created','project_downloads','project_downloads_sum','sample_downloads','sample_downloads_sum']
-    writer.writerow(keys)
-    for dictionary in public_projects:
-        output = {k: dictionary.get(k, None) for k in keys}
-        writer.writerow(output.values())
-    return response
-
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
 
 def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
-
+    #tracemalloc.start()
+    #start_snapshot = tracemalloc.take_snapshot()
     t_sa = time.time()
     logging.info("Extracting files from tar...")
     try:
@@ -2398,21 +1914,23 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         run_path = f'{project_data_path}/results/run.json'
         with open(run_path, 'r') as run_json:
            runs = samples_to_dict(run_json)
-        
+
         if samples_to_remove:
             runs = remove_samples_from_runs(runs, samples_to_remove)
-        
+
         logging.info("Processing and uploading individual files to GridFS...")
         feature_count = 0
         total_features = sum(len(features) for features in runs.values())
-        
+
         # get cnv, image, bed files
         for sample, features in runs.items():
             for feature in features:
                 feature_count += 1
                 if feature_count % 100 == 0:
                     logging.info(f"Processing feature {feature_count}/{total_features}...")
-                
+                    # Force garbage collection every 100 features to free memory
+                    gc.collect()
+
                 if len(feature) > 0:
                     # get paths
                     key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON',
@@ -2422,10 +1940,12 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             path_var = feature[k]
                             with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
                                 id_var = fs_handle.put(file_var)
+                            # Explicitly delete the file data reference
+                            del path_var
                         except:
                             id_var = "Not Provided"
                         feature[k] = id_var
-        
+
         logging.info("All features processed. Updating project in database...")
 
         # Now update the project with the updated runs
@@ -2442,11 +1962,11 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
 
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
-        
+
         get_tool_versions(project, runs)
         version_keys = ['AA_version', 'AC_version', 'ASP_version']
         tool_versions = {k: project[k] for k in version_keys if k in project}
-        
+
         new_val["$set"].update(tool_versions)
 
         collection_handle.update_one(query, new_val)
@@ -2474,232 +1994,17 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             print(anError.args, file = fh )  # arguments stored in .args
             print(anError, file=fh)
 
+    #end_snapshot4 = tracemalloc.take_snapshot()
+    #top_stats4 = end_snapshot4.compare_to(start_snapshot, 'lineno')
+    #logging.error("\n\n[4 -- Memory usage differences at end of extract_project_files]")
+    #for stat in top_stats4[:10]:
+    #    logging.error(stat)
+
     finish_flag = f"{project_data_path}/results/finished_project_creation.txt"
     with open(finish_flag, 'w') as finish_flag_file:
         finish_flag_file.write("FINISHED")
     finish_flag_file.close()
 
-
-def admin_permanent_delete_project(project_id, project, project_name):
-    """
-    This function permanently deletes a project from s3 and from the server.
-    """
-    error_message = ""
-    query = {'_id': ObjectId(project_id)}
-    try:
-        # delete Samples & Features and feature files from mongo,
-        # Is this needed or will deleting the parent project delete the whole thing
-        current_runs = project['runs']
-        runs = project['runs']
-        for sample in runs:
-            for feature in sample:
-                key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'AA directory', 'cnvkit directory']
-                for k in key_names:
-                    try:
-                        fs_handle.delete(ObjectId(sample[k]))
-
-                    except:
-                        # DO NOTHING, its not there
-                        id_var = "Not Provided"
-    except:
-        logging.exception('Problem deleting sample files from Mongo.')
-        error_message="Problem deleting sample files from Mongo."
-
-    # delete project tar and files from mongo and local disk
-    #    - assume all feature and sample files are in this dir
-    try:
-        fs_handle.delete(ObjectId(project['tarfile']))
-    except KeyError:
-        logging.exception(f'Problem deleting project tar file from mongo. { project["project_name"]}')
-        error_message = error_message + " Problem deleting project tar file from mongo."
-
-    try:
-        if os.path.exists(f"../tmp/{project_id}/"):
-            project_data_path = f"../tmp/{project_id}/"
-        else:
-            project_data_path = f"tmp/{project_id}/"
-
-        shutil.rmtree(project_data_path)
-    except:
-        logging.exception(f'Problem deleting tar file from local drive. {project_data_path}')
-
-    if hasattr(settings, 'S3_DOWNLOADS_BUCKET_PATH'):
-        print("============= HAS ATTR  ================")
-        s3_file_path = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
-        try:
-            session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
-            s3client = session.client('s3')
-            s3client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET,Key=s3_file_path)
-        except:
-            logging.exception(f'Problem deleting tar file from S3. {s3_file_path}')
-            error_message = error_message+" Problem deleting tar file from S3. "
-    else:
-
-        error_message = error_message + " No S3 bucket path set. No attempt made to delete the tar file from S3. "
-
-    # Final step, delete the project
-    try:
-        collection_handle.delete_one(query)
-    except:
-        logging.exception('Problem deleting Project document from Mongo.')
-        error_message = error_message + " Problem deleting Project document from Mongo. "
-
-    if error_message:
-        error_message = error_message + " Other project artifacts successfully deleted. Please refer to the application log files for details. "
-    else:
-        error_message = f"Project {project_name} deleted."
-
-    return error_message
-
-
-
-# only allow users designated as staff to see this, otherwise redirect to nonexistant page to
-# deny that this might even be a valid URL
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
-def admin_delete_user(request):
-    if not request.user.is_staff:
-        return redirect('/accounts/logout')
-    error_message = ""
-    solo_projects = []  # Initialize with a default value
-    member_projects = []  # Initialize with a default value
-    username = ""
-    
-    if request.method == "POST":
-        username = request.POST.get("user_name", "")
-        action = request.POST.get("action", "select_user")
-       
-        if action == 'select_user':
-            solo_projects = list(collection_handle.find({ 'current': True, 'project_members': [username] }))
-            # Member projects: username is one of the members, but not the only one
-            # Query for projects where the username is in the project_members array
-            member_projects = list(collection_handle.find({
-                'current': True,
-                'project_members': {'$all': [username]}
-            }))
-
-            # Filter the results to ensure the project_members array has more than one member
-            member_projects = [project for project in member_projects if len(project.get('project_members', [])) > 1]
-            
-        elif action == 'delete_user':
-            
-            # for solo projects that are private, delete them
-            solo_projects = list(collection_handle.find({'project_members': [username]}))
-            
-            for project in solo_projects:
-                project_name = project['project_name']
-                project_id = project['_id']
-
-                # delete the project
-                if project['private']:
-                    error_message += f"User {username} deleted, project {project_name} was private and deleted. "
-                    error_message += admin_permanent_delete_project(project_id, project, project_name)
-                else:
-                    # replace username as owner with 'jluebeck' if a user exists by that name
-                    # or by an admin user
-                    query = {'_id': ObjectId(project_id)}
-                    # check if user jluebeck exists
-                    anAdmin = 'admin'
-                    if User.objects.filter(username='jluebeck').exists():
-                        anAdmin = 'jluebeck'
-                    else:
-                        # replace with admin user
-                        if User.objects.filter(is_staff=True).exists():
-                            anAdmin = User.objects.filter(is_staff=True).first().username
-                    new_val = {"$set": {'project_members': [anAdmin]}}
-                    error_message += f"User {username} deleted, project {project_name} was public and reassigned to {anAdmin}. "
-                    collection_handle.update_one(query, new_val)
-                    
-                      
-                
-            
-            # for member projects, remove the user from the project members
-            member_projects = [
-                project for project in collection_handle.find({
-                    'current': True,
-                    'project_members': {'$all': [username]}
-                })
-                if len(project.get('project_members', [])) > 1  # Ensure the array size is greater than 1
-            ]
-            for project in member_projects:
-                project_name = project['project_name']
-                project_id = project['_id']
-                query = {'_id': ObjectId(project_id)}
-                new_val = {"$pull": {'project_members': username}}
-                collection_handle.update_one(query, new_val)
-                error_message += f"User {username} removed from project {project_name}. "
-            # delete the user
-            try:
-                user = User.objects.get(username=username)
-                user.delete()
-                error_message += f"User {username} deleted successfully."
-            except User.DoesNotExist:
-                error_message += f"User {username} does not exist."
-                
-            solo_projects = []
-            member_projects=[]
-                
-    
-    return render(request, 'pages/admin_delete_user.html',
-                      {'username': username,
-                          'solo_projects': solo_projects, 
-                       'member_projects': member_projects ,
-                       'error_message': error_message})
-
-
-# only allow users designated as staff to see this, otherwise redirect to nonexistant page to
-# deny that this might even be a valid URL
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
-def admin_delete_project(request):
-    if not request.user.is_staff:
-        return redirect('/accounts/logout')
-    error_message = ""
-    if request.method == "POST":
-        form = DeletedProjectForm(request.POST)
-        form_dict = form_to_dict(form)
-        project_name = form_dict['project_name']
-        project_id = form_dict['project_id']
-        deleteit = form_dict['delete']
-        logging.debug(" FORM = " + str(form_dict))
-        action = form_dict['action']
-
-        if action == 'un-delete':
-            # remove the delete flag, this project goes back
-            project = get_one_deleted_project(project_id)
-            query = {'_id': ObjectId(project_id)}
-            new_val = {"$set": {'delete': False}}
-            collection_handle.update_one(query, new_val)
-            error_message = f"Project {project_name} restored."
-
-        elif deleteit and (action == 'delete'):
-
-            project = get_one_deleted_project(project_id)
-            prev_ver_list, msg = previous_versions(project)
-            ## find all previous versions of the project we are trying to delete.
-            ## If this is an older version, do not delete
-
-            if prev_ver_list:
-                for proj in prev_ver_list:
-                    p = get_one_deleted_project(proj['linkid'])
-                    admin_permanent_delete_project(proj['linkid'], p, p['project_name'])
-
-            error_message = admin_permanent_delete_project(project_id, project, project_name)
-
-
-    deleted_projects = list(collection_handle.find({'delete': True, 'current' : True}))
-    # deleted_projects = get_projects_close_cursor({'delete': True, 'current' : True})
-    for proj in deleted_projects:
-        prepare_project_linkid(proj)
-        try:
-            tar_file_len = fs_handle.get(ObjectId(proj['tarfile'])).length
-            proj['tar_file_len'] = sizeof_fmt(tar_file_len)
-            if proj['delete_date']:
-                dt = datetime.datetime.strptime(proj['delete_date'], f"%Y-%m-%dT%H:%M:%S")
-                proj['delete_date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
-        except:
-            #ignore missing date
-            logging.warning(proj['project_name'] + " missing date")
-
-    return render(request, 'pages/admin_delete_project.html', {'deleted_projects': deleted_projects, 'error_message':error_message})
 
 
 def sizeof_fmt(num, suffix="B"):
@@ -2719,26 +2024,85 @@ def regenerate_project_key(request, project_name):
     # Check if this is a POST request
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
-    
+
     # Get the project
     project = get_one_project(project_name)
     if not project:
         return JsonResponse({"error": "Project not found"}, status=404)
-    
+
     # Check if user is authorized (project member or admin)
     if not (is_user_a_project_member(project, request) or request.user.is_staff):
         return JsonResponse({"error": "Unauthorized"}, status=403)
-    
+
     # Generate a new UUID key
     new_key = str(uuid.uuid4())
-    
+
     # Update the project with the new key
     query = {'_id': project['_id']}
     new_val = {"$set": {'privateKey': new_key}}
     collection_handle.update_one(query, new_val)
-    
+
     # Return the new key
     return JsonResponse({"key": new_key})
+
+
+@login_required
+def toggle_project_subscription(request, project_name):
+    """
+    Toggle a user's subscription to a project.
+    Non-members can subscribe to receive notifications about project changes.
+    Returns JSON with subscription status.
+    """
+    # Check if this is a POST request
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    # Get the project
+    project = get_one_project(project_name)
+    if not project:
+        return JsonResponse({"error": "Project not found"}, status=404)
+
+    # Get current user
+    current_user_email = request.user.email if request.user.email else request.user.username
+    current_user_username = request.user.username
+
+    # Check if user is a project member (members cannot subscribe/unsubscribe)
+    is_member = current_user_username in project.get('project_members', []) or \
+                current_user_email in project.get('project_members', [])
+
+    if is_member:
+        return JsonResponse({
+            "error": "Project members are automatically notified of changes",
+            "is_subscribed": True,
+            "is_member": True
+        }, status=400)
+
+    # Initialize subscribers array if it doesn't exist
+    subscribers = project.get('subscribers', [])
+
+    # Toggle subscription
+    if current_user_email in subscribers:
+        # Unsubscribe
+        subscribers.remove(current_user_email)
+        is_subscribed = False
+        message = "Successfully unsubscribed from project updates"
+    else:
+        # Subscribe
+        subscribers.append(current_user_email)
+        is_subscribed = True
+        message = "Successfully subscribed to project updates"
+
+    # Update the project with new subscribers list
+    query = {'_id': project['_id']}
+    new_val = {"$set": {'subscribers': subscribers}}
+    collection_handle.update_one(query, new_val)
+
+    # Return the subscription status
+    return JsonResponse({
+        "is_subscribed": is_subscribed,
+        "is_member": False,
+        "message": message
+    })
 
 
 def create_empty_project(request):
@@ -2756,7 +2120,7 @@ def create_empty_project(request):
 
         # Get project members if provided
         project_members_raw = request.POST.get('project_members', '')
-        
+
         # Validate inputs
         if not project_name:
             messages.error(request, "Project name is required")
@@ -2767,7 +2131,7 @@ def create_empty_project(request):
 
         # Process project members (ensure creator is included)
         project_members = create_user_list(project_members_raw, creator)
-        
+
         # Set up timestamps
         current_date = get_date()
 
@@ -2857,7 +2221,7 @@ def create_project(request):
             print("No version attribute found for Aggregator or AmpliconSuiteAggregator.")
 
         agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
-        
+
         if not agg.completed:
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
@@ -2869,13 +2233,19 @@ def create_project(request):
                         'all_alias':json.dumps(get_all_alias())})
         ## after running aggregator, replace the requests file with the aggregated file:
         logging.error(f"Aggregated filename: {agg.aggregated_filename}")
+
         with open(agg.aggregated_filename, 'rb') as f:
-            uploaded_file = SimpleUploadedFile(
-            name=os.path.basename(agg.aggregated_filename),
-            content=f.read(),
-            content_type='application/gzip'
+            temp_file = TemporaryUploadedFile(
+                name=os.path.basename(agg.aggregated_filename),
+                content_type='application/gzip',
+                size=os.path.getsize(agg.aggregated_filename),
+                charset=None
             )
-            request.FILES['document'] = uploaded_file
+            # Copy file in chunks
+            for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                temp_file.write(chunk)
+            temp_file.seek(0)
+            request.FILES['document'] = temp_file
         f.close()
 
         # return render(request, 'pages/loading.html')
@@ -2900,14 +2270,14 @@ def create_project(request):
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
-def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], agg_fp = None):
+def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None):
     """
     Creates the project
     """
     # it could be a new file was provided at the same time as sampels to be
-    # removed from the project.  That can't be done until runs is populated in the project
+    # removed from the project. That can't be done until runs is populated in the project
     samples_to_remove = request.POST.getlist('samples_to_remove')
-    
+
     form_dict = form_to_dict(form)
     project_name = form_dict['project_name']
     publication_link = form_dict['publication_link']
@@ -2916,7 +2286,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
     ## try to get metadata file
-    project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions, previous_views = previous_views)
+    project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions, previous_views = previous_views, old_subscribers = old_subscribers)
     if project is None or tmp_id is None:
         return None
 
@@ -2947,7 +2317,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
 
 
 ## make a create_project_helper for project creation code
-def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex, from_api = False, previous_versions = [], previous_views = [0, 0]):
+def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.uuid4().hex, from_api = False, previous_versions = [], previous_views = [0, 0], old_subscribers = None):
     """
     Creates a project dictionary from
 
@@ -3056,10 +2426,16 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['downloads'] = previous_views[1]
     project['alias_name'] = form_dict['alias']
     project['sample_count'] = len(runs)
-    
+
+    # Preserve subscribers from previous version if provided
+    if old_subscribers is not None:
+        project['subscribers'] = old_subscribers
+    else:
+        project['subscribers'] = []
+
     # iterate over project['runs'] and get the unique values across all runs
     # of AA_version, AC_version and 'AS-P_version'. Then add them to the project dict
-    #substututing ASP_version for AS-P_version
+    #substutiting ASP_version for AS-P_version
     get_tool_versions(project, runs)
 
     return project, tmp_id
@@ -3457,263 +2833,4 @@ def check_ec3d_available(project_name, sample_name):
     logging.debug(f"ec3d_path is {ec3d_path}")
 
     return os.path.exists(ec3d_path)
-
-
-class FileUploadView(APIView):
-    parser_class = (MultiPartParser,)
-    permission_classes = []
-
-    def get(self, request):
-        logging.debug('Hello')
-        return Response({'response':'success'})
-
-    def post(self, request, format= None):
-        '''
-        Post API
-        '''
-        file_serializer = FileSerializer(data = request.data)
-
-        if file_serializer.is_valid():
-            file_serializer.save()
-            form = RunForm(request.POST)
-            form_dict = form_to_dict(form)
-            proj_name = form_dict['project_name']
-            request_file = request.FILES['file']
-            # extract contents of file
-            current_user = request.POST['project_members'][0]
-            logging.info(f'Creating project for user {current_user}')
-            if 'MULTIPART' in proj_name:
-                _, api_id, final_file, actual_proj_name = proj_name.split('__')
-            else:
-                api_id = uuid.uuid4().hex
-
-            if not os.path.exists(os.path.join('tmp', api_id)):
-                os.system(f'mkdir -p tmp/{api_id}')
-            os.system(f'mv tmp/{request_file.name} tmp/{api_id}/{request_file.name}')
-
-            if 'MULTIPART' in proj_name:
-                if str(final_file) in str(request_file.name):
-                    ## we've reached the last file in the multifile upload, time to zip them up together
-                    print('reached the final file, creating reconstructed zip now. ')
-                    os.system(f'cat ./tmp/{api_id}/POST* > ./tmp/{api_id}/reconstructed.tar.gz')
-                    file = open(f'./tmp/{api_id}/reconstructed.tar.gz', 'rb')
-                    print('removing POST files now')
-                    os.system(f'rm -f ./tmp/{api_id}/POST*')
-
-                    helper_thread = Thread(target=self.api_helper, args=(form, current_user, file , api_id, actual_proj_name, True))
-                    helper_thread.start()
-            else:
-                ## no multipart, just run the api helper:
-                file = open(f'./tmp/{api_id}/{request_file.name}')
-                actual_proj_name = request_file.name.split('.')[0]
-                helper_thread = Thread(target=self.api_helper, args=(form, current_user,file, api_id, actual_proj_name))
-                helper_thread.start()
-
-            print('hanging up now')
-            if 'MULTIPART':
-                return Response({'Message': 'Successfully uploaded. Project creation will take more than 2 mins. Upload may time-out.'}, status=status.HTTP_201_CREATED)
-            else:
-                return Response(file_serializer.data, status=status.HTTP_201_CREATED)
-        else:
-            return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def api_helper(self, form, current_user, request_file, api_id,actual_proj_name, multifile = False):
-        """
-        Helper function for API, to be run asynchronously
-        """
-        logging.info('starting api helper')
-        project, tmp_id = create_project_helper(form, current_user, request_file, save = False, tmp_id = api_id, from_api = True)
-        if multifile:
-            project['project_name'] = actual_proj_name
-        logging.info('the project is here: ')
-        new_id = collection_handle.insert_one(project)
-        logging.info(str(new_id))
-        project_data_path = f"tmp/{api_id}"
-        # move the project location to a new name using the UUID to prevent name collisions
-        # new_project_data_path = f"tmp/{new_id.inserted_id}"
-        # os.rename(project_data_path, new_project_data_path)
-        # project_data_path = new_project_data_path
-
-        file_location = f'{request_file.name}'
-        logging.debug('the project is here: ')
-        logging.debug(str(file_location))
-
-            # extract the files async also
-        samples_to_remove = []
-        extract_thread = Thread(target=extract_project_files, args=(tarfile, file_location, project_data_path, new_id.inserted_id, None, samples_to_remove))
-        extract_thread.start()
-
-        if settings.USE_S3_DOWNLOADS:
-            # load the zip asynch to S3 for later use
-            file_location = f'{project_data_path}/{request_file.name}'
-
-            s3_thread = Thread(target=upload_file_to_s3, args=(f'{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
-            s3_thread.start()
-
-
-@method_decorator(csrf_exempt, name='dispatch')
-class ProjectFileAddView(APIView):
-    parser_class = (MultiPartParser,)
-    permission_classes = []
-
-    def post(self, request, format=None):
-        project_uuid = request.data.get('project_uuid')
-        project_key = request.data.get('project_key')
-        username = request.data.get('username')
-
-        # Validate project exists
-        project = get_one_project(project_uuid)
-        if not project:
-            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        # If project is not current, get the latest version.  check that the user is still a member of the latest version
-        # but compare the project key to the original project version submitted.  This allows a user to run several
-        # additions of samples without going back and forth to get the updated uuid and key after each one
-        if not project.get('current', True) or project.get('delete', False):
-            # get the latest 
-            latest_proj = get_latest_project_version(project)
-            original_project = project
-            project = latest_proj
-        else:
-            original_project = project
-
-        # Validate user is a project member
-        # Get the identifier (could be username or email)
-        user_identifier = request.data.get('username')
-
-        # Get all usernames and emails from project members
-        project_members = project.get('project_members', [])
-        user_objs = User.objects.filter(username__in=project_members) | User.objects.filter(email__in=project_members)
-        member_identifiers = set([u.username for u in user_objs] + [u.email for u in user_objs])
-
-        if user_identifier not in member_identifiers:
-            return Response({'error': 'User not authorized'}, status=status.HTTP_403_FORBIDDEN)
-
-        # Validate project key
-        if original_project.get('privateKey') != project_key:
-            return Response({'error': 'Invalid project key'}, status=status.HTTP_403_FORBIDDEN)
-
-        #  file handling , save the new file to a temp dir
-        api_id = uuid.uuid4().hex
-        tmp_project_data_path = f"tmp/{api_id}"
-
-        uploaded_file = request.FILES['file']
-        os.makedirs(tmp_project_data_path, exist_ok=True)
-        file_path = os.path.join(tmp_project_data_path, uploaded_file.name)
-
-        with open(file_path, 'wb+') as destination:
-            for chunk in uploaded_file.chunks():
-                destination.write(chunk)
-
-        # Start file processing in a background thread
-        file_process_thread = Thread(
-            target=self.process_file_in_background,
-            args=(request, project, username, uploaded_file, api_id)
-        )
-        file_process_thread.start()
-
-        return Response({'message': 'Files uploaded successfully and submitted for processing.'}, status=status.HTTP_200_OK)
-    
-    
-    def process_file_in_background(self, request, project, username, uploaded_file, api_id):
-        project_uuid = project['linkid']
-        tmp_project_data_path = f"tmp/{api_id}"
-        user_identifier = request.data.get('username')
-        user = User.objects.get(Q(username=user_identifier) | Q(email=user_identifier))
-
-        alert_message = None
-        project_data_path = tmp_project_data_path
-        file_fps = [uploaded_file.name]
-        url = f'http://127.0.0.1:8000/project/{project["linkid"]}/download'
-        download_path = project_data_path + '/download.tar.gz'
-        try:
-            ## try to download old project file
-            print(f"PREVIOUS FILE FPS LIST: {file_fps}")
-            
-            download = download_file(url, download_path)
-            file_fps.append(os.path.join('download.tar.gz'))
-            
-        except:
-            logging.error("Could not download existing project data for aggregation")
-
-        logging.error(f"file_fps are {file_fps}")
-        try:
-            temp_directory = os.path.join('./tmp/', str(api_id))
-            agg = Aggregator(file_fps, temp_directory, tmp_project_data_path, 'No', "", 'python3', uuid=str(api_id))
-            if not agg.completed:
-                ## redirect to edit page if aggregator fails
-                alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
-            else:
-                with open(agg.aggregated_filename, 'rb') as f:
-                    uploaded_file = SimpleUploadedFile(
-                    name=os.path.basename(agg.aggregated_filename),
-                    content=f.read(),
-                    content_type='application/gzip'
-                    )
-                    self.request.FILES['document'] = uploaded_file
-                f.close()
-                
-                self.request.user = user
-                update_project = project_update(self.request, project_uuid)
-                delete_project = project_delete(self.request, project_uuid)
-
-                new_prev_versions = []
-                if 'previous_versions' in project:
-                    new_prev_versions = project['previous_versions']
-
-                new_prev_versions.append({
-                    'date': str(project['date']),
-                    'linkid': str(project['linkid'])
-                })
-                # transfer the view and downloads counts to the new project version
-                views = project['views']
-                downloads = project['downloads']
-                form_data = {
-                    'project_name': project.get('project_name', ''),
-                    'publication_link': project.get('publication_link', ''),
-                    'description': project.get('description', ''),
-                    'private': project.get('private', True),
-                    'project_members': ','.join(project.get('project_members', [])),
-                    'alias': project.get('alias_name', ''),
-                    'accept_license': True
-                }
-                form = RunForm(form_data)
-                if not form.is_valid():
-                    logging.error(form.errors)
-                extra_metadata_file_fp = None
-                ## get extra metadata from csv first (if exists in old project), add it to the new proj
-                old_extra_metadata = get_extra_metadata_from_project(project)
-                new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions=new_prev_versions,
-                                         previous_views=[views, downloads], old_extra_metadata = old_extra_metadata)
-                if new_id is not None:
-                    new_project_uuid = str(new_id.inserted_id)
-                    alert_message = f"Aggregation successful. New samples added to project version: {new_project_uuid}"
-        except Exception as e:
-            logging.error(e)
-            alert_message = "Edit project failed. Error performing aggregation. Please ensure all uploaded samples are valid AmpliconSuite results."
-
-        logging.error("Preparing to send  email with status: "+ alert_message)
-        form_dict = {}
-        # add details for the template
-        form_dict['SITE_TITLE'] = settings.SITE_TITLE
-        form_dict['SITE_URL'] = settings.SITE_URL
-        form_dict['sharing_user_email'] = user.email
-        form_dict['project_name'] = project.get('project_name', project_uuid)
-        form_dict['project_id'] = project_uuid
-        form_dict['alert_message'] = alert_message
-        
-        html_message = render_to_string('contacts/project_api_file_added.html', form_dict)
-        plain_message = strip_tags(html_message)
-
-        # send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER_SECRET, recipient_list = [settings.RECIPIENT_ADDRESS])
-        email = EmailMessage(
-            f"Project update on {form_dict['project_name']}",
-            html_message,
-            settings.EMAIL_HOST_USER,
-            [user.email],
-            reply_to=[settings.EMAIL_HOST_USER]
-        )
-        email.content_subtype = "html"
-        email.send(fail_silently=False)
-        logging.error("Finished email sent")
 
