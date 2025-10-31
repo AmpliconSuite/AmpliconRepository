@@ -744,11 +744,14 @@ class Graph:
             if intervals_to_check:
                 if any(a == b for a, b in intervals_to_check):
                     counts['single_interval'] += 1
+
+                #TODO: If two genes are on different intervals, but genes are close (<100kbp), should it be multi_interval?
                 elif any(a != b for a, b in intervals_to_check):
                     counts['multi_interval'] += 1
 
         return counts
 
+    # TODO: Determine if this function is necessary, given the coamp_counts genration in the function above
     def _determine_applicable_tests(self, edge, record_a, record_b, same_chr, verbose=False):
         """
         Determine which tests apply by scanning all samples once.
@@ -809,6 +812,7 @@ class Graph:
                         if verbose:
                             log_data.append(f"Sample '{sample}': same_interval=True, features={sorted(features_ab)}\n")
 
+                    #TODO: Determine if we need to consider two genes found on different intervals, but reference distance is close (<100kbp)
                     if has_diff and not found_diff_interval_same_feature:
                         found_diff_interval_same_feature = True
                         first_sample_with_diff_interval = sample
