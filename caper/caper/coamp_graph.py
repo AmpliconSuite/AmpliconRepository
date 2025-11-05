@@ -38,7 +38,7 @@ class Graph:
         self.name_to_record = {}
         self.name_to_edge = {}
         self.reference_genome = None  # this is set in preprocess_dataset
-        self.total_samples = 0
+        self.total_samples = 0  # this is set in preprocess_dataset
         self.preprocessed_dataset = None
 
         if dataset is None:
@@ -53,7 +53,7 @@ class Graph:
             print("ERROR: Preprocessing failed. Constructing empty graph.")
             return
 
-        self.total_samples = len(preprocessed_dataset)
+        print(f"Preprocessed dataset for {self.total_samples} samples")
         self.preprocessed_dataset = preprocessed_dataset
 
         # reference_genome is now normalized (either 'hg19' or 'hg38')
@@ -306,6 +306,7 @@ class Graph:
 
         # subset dataset by focal amplification type
         filter_start = time.time()
+        self.total_samples = len(dataset['Sample_name'].unique())
         filtered_dataset = dataset[dataset['Classification'] == focal_amp].copy()
         filter_end = time.time()
         print(
@@ -889,7 +890,8 @@ class Graph:
         obs = [O11, O12, O21, O22]
 
         # expected
-        E11 = (geneA_samples + geneB_samples - O11) * pdD
+        # E11 = (geneA_samples + geneB_samples - O11) * pdD
+        E11 = total_coamps * pdD  # N * f(A or B) * p(d|D)
         E12 = geneA_samples * (1 - pdD)
         E21 = geneB_samples * (1 - pdD)
         E22 = self.total_samples - (E11 + E12 + E21)
