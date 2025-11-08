@@ -1196,14 +1196,14 @@ class Graph:
 
         Parameters:
             include_sample_ids (bool): If True, include columns with sample IDs for
-                                      samples_A, samples_B, and samples_intersection
+                                      gene1, gene2, and intersection
 
         Returns:
             pd.DataFrame: DataFrame sorted by:
-                1. samples_intersection (descending)
-                2. max(samples_in_A, samples_in_B) (descending)
-                3. min(samples_in_A, samples_in_B) (descending)
-                4. source (ascending alphabetically)
+                1. shared_samples (descending)
+                2. max(gene1_samples, gene2_samples) (descending)
+                3. min(gene1_samples, gene2_samples) (descending)
+                4. gene1 (ascending alphabetically)
         """
         if not self.edges:
             print("No edges available. Graph may not be constructed.")
@@ -1222,12 +1222,17 @@ class Graph:
             samples_a = len(record_a['samples'])
             samples_b = len(record_b['samples'])
 
+            a_is_oncogene = record_a['oncogene']
+            b_is_oncogene = record_b['oncogene']
+
             row = {
-                'source': edge['source'],
-                'target': edge['target'],
-                'samples_in_A': samples_a,
-                'samples_in_B': samples_b,
-                'samples_intersection': len(edge['inter']),
+                'gene1': edge['source'],
+                'gene2': edge['target'],
+                'gene1_oncogene': a_is_oncogene,
+                'gene2_oncogene': b_is_oncogene,
+                'gene1_samples': samples_a,
+                'gene2_samples': samples_b,
+                'shared_samples': len(edge['inter']),
                 'distance': edge['distance'],
                 'p_d_D': edge['p_d_D'],
                 'count_single_interval': coamp_counts['single_interval'],
@@ -1251,9 +1256,9 @@ class Graph:
             }
 
             if include_sample_ids:
-                row['samples_A'] = ','.join(sorted(record_a['samples']))
-                row['samples_B'] = ','.join(sorted(record_b['samples']))
-                row['samples_intersection'] = ','.join(sorted(edge['inter']))
+                row['gene1_sample_ids'] = ','.join(sorted(record_a['samples']))
+                row['gene2_sample_ids'] = ','.join(sorted(record_b['samples']))
+                row['shared_sample_ids'] = ','.join(sorted(edge['inter']))
 
             rows.append(row)
 
@@ -1261,7 +1266,7 @@ class Graph:
 
         # Sort by the specified criteria
         df = df.sort_values(
-            by=['samples_intersection', 'max_samples', 'min_samples', 'source'],
+            by=['shared_samples', 'max_samples', 'min_samples', 'gene1'],
             ascending=[False, False, False, True]
         )
 
@@ -1272,5 +1277,3 @@ class Graph:
         df = df.reset_index(drop=True)
 
         return df
-
-        return pd.DataFrame(rows)
