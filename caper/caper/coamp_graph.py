@@ -1221,9 +1221,14 @@ class Graph:
 
             samples_a = len(record_a['samples'])
             samples_b = len(record_b['samples'])
+            shared = len(edge['inter'])
 
             a_is_oncogene = record_a['oncogene']
             b_is_oncogene = record_b['oncogene']
+
+            # Calculate Jaccard index: intersection / union
+            union = len(edge['union'])
+            sample_jaccard = shared / union if union > 0 else 0
 
             row = {
                 'gene1': edge['source'],
@@ -1232,13 +1237,14 @@ class Graph:
                 'gene2_oncogene': b_is_oncogene,
                 'gene1_samples': samples_a,
                 'gene2_samples': samples_b,
-                'shared_samples': len(edge['inter']),
+                'shared_samples': shared,
                 'distance': edge['distance'],
                 'p_d_D': edge['p_d_D'],
                 'count_single_interval': coamp_counts['single_interval'],
                 'count_multi_interval': coamp_counts['multi_interval'],
                 'count_multi_chromosomal': coamp_counts['multi_chromosomal'],
                 'count_multi_ecdna': coamp_counts['multi_ecdna'],
+                'sample_jaccard': sample_jaccard,
                 'p_single_interval': edge['p_values'][0],
                 'p_multi_interval': edge['p_values'][1],
                 'p_multi_chromosomal': edge['p_values'][2],
