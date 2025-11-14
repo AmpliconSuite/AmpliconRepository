@@ -28,14 +28,6 @@ window.addEventListener('DOMContentLoaded', function () {
         sampleList.appendChild(li);
     });
 
-    // Update gene name in dropdown when a gene is loaded
-    function updateGeneNameDisplay(geneName) {
-        const geneNameDisplay = document.getElementById('gene-name-display');
-        if (geneNameDisplay) {
-            geneNameDisplay.textContent = geneName || 'gene';
-        }
-    }
-
     // ----------------------------- Neo4j interaction -----------------------------
     async function fetchSubgraph() {
         console.log("Load graph pressed");
@@ -199,9 +191,6 @@ window.addEventListener('DOMContentLoaded', function () {
                 cy.fit();  // Adjusts the viewport to fit all elements
                 cy.zoom(1); // Optionally set zoom level (1 = default)
                 cy.resize();
-                
-                // Update the gene name in the dropdown menu
-                updateGeneNameDisplay(inputNode);
             });
 
             // Remove existing SVG button if it exists
@@ -209,6 +198,76 @@ window.addEventListener('DOMContentLoaded', function () {
             if (existingSvgBtn) {
                 existingSvgBtn.remove();
             }
+
+            // Attach click handler for full CSV download to the existing button
+            const downloadFullCsvBtn = document.getElementById('download-full-csv-btn');
+            
+            // Remove any existing event listeners by cloning the button
+            const newFullCsvBtn = downloadFullCsvBtn.cloneNode(true);
+            downloadFullCsvBtn.parentNode.replaceChild(newFullCsvBtn, downloadFullCsvBtn);
+
+            // Add click handler for full CSV download
+            newFullCsvBtn.addEventListener('click', async function(e) {
+                console.log("Full CSV download button clicked");
+                e.stopPropagation();
+
+                try {
+                    // Show loading indicator
+                    newFullCsvBtn.disabled = true;
+                    newFullCsvBtn.innerHTML = 'Downloading...';
+
+                    // Create AbortController with long timeout (5 minutes)
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+
+                    // Fetch the CSV with include_samples=true
+                    const response = await fetch('/coamplification-graph/download-edges/?include_samples=true', {
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    if (!response.ok) {
+                        throw new Error(`Server error: ${response.status}`);
+                    }
+
+                    // Get the blob from response
+                    const blob = await response.blob();
+
+                    // Create download link
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+
+                    // Generate filename with timestamp
+                    const now = new Date();
+                    const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
+                    link.download = `AACoampGraph_full_${formattedDate}.csv`;
+
+                    console.log("Triggering download: " + link.download);
+
+                    // Trigger download
+                    document.body.appendChild(link);
+                    link.click();
+
+                    // Cleanup
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(link.href);
+
+                    console.log("Download completed");
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        console.error("Download timed out after 5 minutes");
+                        alert("Download timed out. The file may be too large. Please try again or contact support.");
+                    } else {
+                        console.error("Error downloading full CSV:", error);
+                        alert("Error downloading CSV: " + error.message);
+                    }
+                } finally {
+                    // Reset button state
+                    newFullCsvBtn.disabled = false;
+                    newFullCsvBtn.innerHTML = 'Download full CSV';
+                }
+            });
 
             // Create SVG download button
             const buttonContainer = document.querySelector('.filter-right');
@@ -722,41 +781,42 @@ window.addEventListener('DOMContentLoaded', function () {
         return csv.join('\n');
     }
 
-    // Add event listener for the download gene CSV button
-    // Single event listener for Download Gene CSV button
-    document.addEventListener('click', function(e) {
-        if (e.target && e.target.id === 'download-gene-csv') {
-            e.preventDefault();
-            
-            // Make sure completeData and inputNode are available
-            if (!completeData || !inputNode) {
-                alert('No graph data available. Please load a graph first.');
-                return;
-            }
+    // Add event listener for the download button
+    // First, remove any existing event listeners to prevent multiple downloads
+    const downloadBtn = document.getElementById('download-btn');
+    const newDownloadBtn = downloadBtn.cloneNode(true);
+    downloadBtn.parentNode.replaceChild(newDownloadBtn, downloadBtn);
 
-            // Generate CSV content directly using the proper parameters
-            const csvContent = generateCSV(completeData, inputNode);
-
-            if (!csvContent) {
-                return; // Exit if CSV generation failed
-            }
-
-            const blob = new Blob([csvContent], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-
-            const link = document.createElement('a');
-            link.href = url;
-            const now = new Date();
-            const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
-            link.download = `AACoampGraph_${inputNode}_${formattedDate}.csv`;
-
-            document.body.appendChild(link);
-            link.click();
-
-            setTimeout(() => {
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-            }, 100);
+    // Single event listener for Download CSV button
+    newDownloadBtn.addEventListener('click', function() {
+        // Make sure completeData and inputNode are available
+        if (!completeData || !inputNode) {
+            alert('No graph data available. Please load a graph first.');
+            return;
         }
+
+        // Generate CSV content directly using the proper parameters
+        const csvContent = generateCSV(completeData, inputNode);
+
+        if (!csvContent) {
+            return; // Exit if CSV generation failed
+        }
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement('a');
+        link.href = url;
+        const now = new Date();
+        const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
+        link.download = `AACoampGraph_${inputNode}_${formattedDate}.csv`;
+
+        document.body.appendChild(link);
+        link.click();
+
+        setTimeout(() => {
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }, 100);
     });
 });

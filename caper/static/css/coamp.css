@@ -238,7 +238,7 @@ button:hover {
   gap: 8px;
 }
 
-#filterButton, #download-btn, #download-svg-btn {
+#filterButton, #download-btn, #download-full-csv-btn, #download-svg-btn {
   width: 150px;
   height: 36px;
   font-size: 14px;
@@ -265,7 +265,7 @@ button:hover {
 }
 
 /* Style download buttons */
-#download-btn, #download-svg-btn {
+#download-btn, #download-full-csv-btn, #download-svg-btn {
     width: 150px;
     height: 36px;
     line-height: 20px;
@@ -277,7 +277,7 @@ button:hover {
     color: white;
 }
 
-#download-btn:hover, #download-svg-btn:hover {
+#download-btn:hover, #download-full-csv-btn:hover, #download-svg-btn:hover {
     background-color: #218838;
 }
 
