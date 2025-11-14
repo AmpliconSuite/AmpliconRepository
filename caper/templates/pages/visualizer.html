@@ -135,7 +135,15 @@
 
             <!-- Right column: Downloads -->
             <div class="filter-right">
-                <button id="download-btn">Download CSV</button>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Download CSV
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-right">
+                        <a class="dropdown-item" href="#" id="download-gene-csv">Download <span id="gene-name-display">gene</span> CSV</a>
+                        <a class="dropdown-item" href="{% url 'download_coamp_edges' %}?include_samples=true" id="download-complete-csv">Download complete CSV</a>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

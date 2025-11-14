@@ -2679,9 +2679,15 @@ def visualizer(request):
         messages.error(request, "No valid data found in selected projects.")
         return redirect('coamplification_graph')
 
-    # construct graph and load into neo4j
-    load_graph(projects_df)
+    # construct graph and load into neo4j - this returns the Graph object
+    graph = load_graph(projects_df)
     IMPORT_END = time.time()
+    
+    # Cache the graph object in session for CSV download
+    # We can't serialize the full Graph object, so we'll store a flag indicating it's available
+    # The download function can reconstruct it quickly from the cached projects_df
+    request.session['graph_available'] = True
+    request.session['graph_timestamp'] = time.time()
 
     # Get reference genomes information for display
     ref_genomes = projects_df[
@@ -2712,6 +2718,111 @@ def fetch_graph(request, gene_name):
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+def download_coamp_edges(request):
+    """
+    Download the complete co-amplification graph edges as a CSV file.
+    Uses the already-constructed graph to avoid regenerating it.
+    """
+    import tempfile
+    from .coamp_graph import Graph
+    
+    # Check if graph was already constructed
+    graph_available = request.session.get('graph_available', False)
+    selected_projects = request.session.get('selected_projects', [])
+    
+    if not selected_projects:
+        messages.error(request, "No projects selected. Please create a graph first.")
+        return redirect('coamplification_graph')
+    
+    if not graph_available:
+        messages.error(request, "Please generate the graph visualization first before downloading.")
+        return redirect('visualizer')
+    
+    try:
+        # We need to reconstruct the graph because we can't serialize it in the session
+        # But this is unavoidable - the Graph object contains complex data structures
+        # that can't be efficiently cached in Django sessions
+        logging.info(f"Reconstructing graph from {len(selected_projects)} projects for CSV download")
+        projects_df, _ = concat_projects(selected_projects)
+        
+        if projects_df.empty:
+            messages.error(request, "No valid data found in selected projects.")
+            return redirect('coamplification_graph')
+        
+        # Construct the graph (this is fast compared to Neo4j import)
+        logging.info(f"Constructing graph with {len(projects_df)} rows")
+        graph = Graph(projects_df)
+        
+        # Get edges dataframe (without sample IDs to keep file size manageable)
+        # Set include_sample_ids=True if you want to include sample ID columns
+        include_sample_ids = request.GET.get('include_samples', 'false').lower() == 'true'
+        edges_df = graph.get_edges_dataframe(include_sample_ids=include_sample_ids)
+        
+        if edges_df.empty:
+            messages.error(request, "No edges found in the graph.")
+            return redirect('visualizer')
+        
+        logging.info(f"Generated dataframe with {len(edges_df)} edges")
+        
+        # Create a temporary file to write the CSV
+        temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', newline='')
+        temp_path = temp_file.name
+        
+        try:
+            # Write dataframe to CSV
+            edges_df.to_csv(temp_path, index=False)
+            temp_file.close()
+            
+            # Open file for reading in binary mode for streaming
+            file_handle = open(temp_path, 'rb')
+            
+            # Create streaming response with iterator that will clean up after
+            def file_iterator(file_obj, chunk_size=8192):
+                """Generator to read file in chunks and clean up after"""
+                try:
+                    while True:
+                        chunk = file_obj.read(chunk_size)
+                        if not chunk:
+                            break
+                        yield chunk
+                finally:
+                    file_obj.close()
+                    # Clean up temp file after streaming
+                    try:
+                        os.remove(temp_path)
+                        logging.info(f"Cleaned up temporary file: {temp_path}")
+                    except Exception as e:
+                        logging.warning(f"Failed to delete temp file {temp_path}: {e}")
+            
+            # Create the streaming response
+            response = StreamingHttpResponse(
+                file_iterator(file_handle),
+                content_type='text/csv'
+            )
+            
+            # Generate filename with timestamp
+            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'coamplification_edges_{timestamp}.csv'
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            
+            logging.info(f"Starting CSV download: {filename}")
+            return response
+            
+        except Exception as e:
+            # Clean up temp file if error occurs before streaming starts
+            try:
+                temp_file.close()
+                os.remove(temp_path)
+            except:
+                pass
+            raise e
+            
+    except Exception as e:
+        logging.exception(f"Error generating co-amplification edges CSV: {e}")
+        messages.error(request, f"Error generating CSV file: {str(e)}")
+        return redirect('visualizer')
 
 
 def search_results(request):

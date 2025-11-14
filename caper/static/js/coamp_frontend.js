@@ -28,6 +28,14 @@ window.addEventListener('DOMContentLoaded', function () {
         sampleList.appendChild(li);
     });
 
+    // Update gene name in dropdown when a gene is loaded
+    function updateGeneNameDisplay(geneName) {
+        const geneNameDisplay = document.getElementById('gene-name-display');
+        if (geneNameDisplay) {
+            geneNameDisplay.textContent = geneName || 'gene';
+        }
+    }
+
     // ----------------------------- Neo4j interaction -----------------------------
     async function fetchSubgraph() {
         console.log("Load graph pressed");
@@ -191,6 +199,9 @@ window.addEventListener('DOMContentLoaded', function () {
                 cy.fit();  // Adjusts the viewport to fit all elements
                 cy.zoom(1); // Optionally set zoom level (1 = default)
                 cy.resize();
+                
+                // Update the gene name in the dropdown menu
+                updateGeneNameDisplay(inputNode);
             });
 
             // Remove existing SVG button if it exists
@@ -711,42 +722,41 @@ window.addEventListener('DOMContentLoaded', function () {
         return csv.join('\n');
     }
 
-    // Add event listener for the download button
-    // First, remove any existing event listeners to prevent multiple downloads
-    const downloadBtn = document.getElementById('download-btn');
-    const newDownloadBtn = downloadBtn.cloneNode(true);
-    downloadBtn.parentNode.replaceChild(newDownloadBtn, downloadBtn);
+    // Add event listener for the download gene CSV button
+    // Single event listener for Download Gene CSV button
+    document.addEventListener('click', function(e) {
+        if (e.target && e.target.id === 'download-gene-csv') {
+            e.preventDefault();
+            
+            // Make sure completeData and inputNode are available
+            if (!completeData || !inputNode) {
+                alert('No graph data available. Please load a graph first.');
+                return;
+            }
 
-    // Single event listener for Download CSV button
-    newDownloadBtn.addEventListener('click', function() {
-        // Make sure completeData and inputNode are available
-        if (!completeData || !inputNode) {
-            alert('No graph data available. Please load a graph first.');
-            return;
+            // Generate CSV content directly using the proper parameters
+            const csvContent = generateCSV(completeData, inputNode);
+
+            if (!csvContent) {
+                return; // Exit if CSV generation failed
+            }
+
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement('a');
+            link.href = url;
+            const now = new Date();
+            const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
+            link.download = `AACoampGraph_${inputNode}_${formattedDate}.csv`;
+
+            document.body.appendChild(link);
+            link.click();
+
+            setTimeout(() => {
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }, 100);
         }
-
-        // Generate CSV content directly using the proper parameters
-        const csvContent = generateCSV(completeData, inputNode);
-
-        if (!csvContent) {
-            return; // Exit if CSV generation failed
-        }
-
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-
-        const link = document.createElement('a');
-        link.href = url;
-        const now = new Date();
-        const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
-        link.download = `AACoampGraph_${inputNode}_${formattedDate}.csv`;
-
-        document.body.appendChild(link);
-        link.click();
-
-        setTimeout(() => {
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        }, 100);
     });
 });
