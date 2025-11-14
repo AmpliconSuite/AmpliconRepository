@@ -1,23 +1,20 @@
 import re
-from tabnanny import verbose
 
 import pandas as pd
 import numpy as np
-import networkx as nx
 from collections import defaultdict
 import json
 import time
 import os
 from intervaltree import IntervalTree
-from scipy.stats import expon
 from scipy.stats import gamma
 from scipy.stats import chi2
 from statsmodels.stats.multitest import fdrcorrection
 
 
 class Graph:
-    def __init__(self, dataset=None, focal_amp="ecDNA", by_sample=False, merge_cutoff=50000,
-                 pdD_model='gamma_random_breakage', construct_graph=True):
+    def __init__(self, dataset=None, focal_amp="ecDNA", by_sample=False, merge_cutoff=300000, min_gene_occurrences=3,
+                 shift=40000, pdD_model='gamma_0_to_6Mb_merge150kb', construct_graph=True):
         """
         Parameters:
             self (Graph) : Graph object
@@ -30,6 +27,8 @@ class Graph:
         # processing parameters
         self.MERGE_CUTOFF = merge_cutoff
         self.pdD_MODEL = pdD_model
+        self.MIN_GENE_OCCURRENCES = min_gene_occurrences
+        self.SHIFT = shift
 
         # graph properties
         self.nodes = []
@@ -38,7 +37,7 @@ class Graph:
         self.name_to_record = {}
         self.name_to_edge = {}
         self.reference_genome = None  # this is set in preprocess_dataset
-        self.total_samples = 0
+        self.total_samples = 0  # this is set in preprocess_dataset
         self.preprocessed_dataset = None
 
         if dataset is None:
@@ -53,7 +52,7 @@ class Graph:
             print("ERROR: Preprocessing failed. Constructing empty graph.")
             return
 
-        self.total_samples = len(preprocessed_dataset)
+        print(f"Preprocessed dataset for {self.total_samples} samples")
         self.preprocessed_dataset = preprocessed_dataset
 
         # reference_genome is now normalized (either 'hg19' or 'hg38')
@@ -306,6 +305,7 @@ class Graph:
 
         # subset dataset by focal amplification type
         filter_start = time.time()
+        self.total_samples = len(dataset['Sample_name'].unique())
         filtered_dataset = dataset[dataset['Classification'] == focal_amp].copy()
         filter_end = time.time()
         print(
@@ -526,14 +526,21 @@ class Graph:
         # perform significance testing on edges
         p_start = time.time()
         na_counter = 0
+        below_min_size = 0
         for edge in self.edges:
-            self.perform_tests(edge)
+            record_a = self.name_to_record[edge['source']]
+            record_b = self.name_to_record[edge['target']]
+            if len(record_a['samples']) < self.MIN_GENE_OCCURRENCES or len(record_b['samples']) < self.MIN_GENE_OCCURRENCES:
+                below_min_size += 1
+            else:
+                self.perform_tests(edge)
+
             if edge['p_values'] == [-1, -1, -1, -1]:
                 na_counter += 1
         print(
             f"Performing significance tests took {time.time() - p_start:.4f} seconds")
         print(
-            f"P-values were not assigned to {na_counter} edges")
+            f"P-values were not assigned to {na_counter} edges. {below_min_size} edges are below min sample size")
 
         # calculate q-values for each test
         q_start = time.time()
@@ -572,25 +579,23 @@ class Graph:
         """
         if distance < 0:
             return -1
-        models = {'gamma_random_breakage': [0.3987543483729932,
-                                            1.999999999999,
-                                            1749495.5696758535],
-                  'gamma_capped_5m': [0.4528058380301946,
-                                      1.999999999999,
-                                      1192794.3765480835],
-                  'merge25kbp_cap2mbp': [0.5567064701123039,
-                                         1.9999999999999996,
-                                         534068.5378861207],
-                  'merge25kbp_cap1mbp': [0.7420123072378633,
-                                         1.9999999999999998,
-                                         203145.72909328266]}
+        models = {
+                  'gamma_0_to_6Mb_merge150kb': [0.61137261,
+                                                10.018,
+                                                1353.57303871]
+                  }
         params = models[self.pdD_MODEL]
-        cdf = gamma.cdf(distance, a=params[0], loc=params[1], scale=params[2])
+        if distance < self.SHIFT:
+            return 1
+
+        cdf = gamma.cdf((distance - self.SHIFT)/1000, a=params[0], loc=params[1], scale=params[2])
         return 1 - cdf
 
     def _compute_p_d_D_vectorized(self):
         """
         Compute p_d_D values for all edges using vectorized gamma.cdf
+        If distance < shift, p_d_D = 1
+        Otherwise, p_d_D is computed using distance + shift in gamma.cdf
         """
         if not self.edges:
             return
@@ -599,28 +604,40 @@ class Graph:
         distances = np.array([edge['distance'] for edge in self.edges])
 
         # Get model parameters
-        models = {'gamma_random_breakage': [0.3987543483729932,
-                                            1.999999999999,
-                                            1749495.5696758535],
-                  'gamma_capped_5m': [0.4528058380301946,
-                                      1.999999999999,
-                                      1192794.3765480835],
-                  'merge25kbp_cap2mbp': [0.5567064701123039,
-                                         1.9999999999999996,
-                                         534068.5378861207],
-                  'merge25kbp_cap1mbp': [0.7420123072378633,
-                                         1.9999999999999998,
-                                         203145.72909328266]}
+        models = {
+                  'gamma_0_to_6Mb_merge150kb': [0.61137261,
+                                                10.018,
+                                                1353.57303871]
+        }
         params = models[self.pdD_MODEL]
 
-        # Vectorized computation - only for valid distances (>= 0)
+        # Initialize p_d_D values
+        p_d_D_values = np.full(len(distances), -1.0)
+
+        # Mask for valid distances (>= 0)
         valid_mask = distances >= 0
-        p_d_D_values = np.full(len(distances), -1.0)  # Initialize with -1
 
         if np.any(valid_mask):
             valid_distances = distances[valid_mask]
-            cdfs = gamma.cdf(valid_distances, a=params[0], loc=params[1], scale=params[2])
-            p_d_D_values[valid_mask] = 1 - cdfs
+
+            # Mask for distances < shift (within valid distances)
+            below_shift_mask = valid_distances < self.SHIFT
+            above_shift_mask = ~below_shift_mask
+
+            # Create array to store results for valid distances
+            valid_p_d_D = np.zeros(len(valid_distances))
+
+            # Set p_d_D = 1 for distances < shift
+            valid_p_d_D[below_shift_mask] = 1.0
+
+            # Compute p_d_D for distances >= shift using distance + shift
+            if np.any(above_shift_mask):
+                shifted_distances = (valid_distances[above_shift_mask] - self.SHIFT) / 1000
+                cdfs = gamma.cdf(shifted_distances, a=params[0], loc=params[1], scale=params[2])
+                valid_p_d_D[above_shift_mask] = 1 - cdfs
+
+            # Assign valid results back
+            p_d_D_values[valid_mask] = valid_p_d_D
 
         # Assign back to edges
         for i, edge in enumerate(self.edges):
@@ -724,16 +741,16 @@ class Graph:
             intervals_b = intervals_b_all[sample]
             features_ab = set(intervals_a.keys()) & set(intervals_b.keys())
 
+            # different features
+            if not features_ab:
+                counts['multi_ecdna'] += 1
+                continue
+
             # Different chromosomes
             if not same_chr:
                 counts['multi_chromosomal'] += 1
                 if not features_ab:  # Also different features
                     counts['multi_ecdna'] += 1
-                continue
-
-            # Same chromosome, different features
-            if not features_ab:
-                counts['multi_ecdna'] += 1
                 continue
 
             # Same chromosome, same feature - check intervals
@@ -784,6 +801,7 @@ class Graph:
                 if not found_diff_feature:
                     found_diff_feature = True
                     first_sample_with_diff_feature = sample
+                    break
                 # Continue checking for other conditions (don't early exit)
                 if not same_chr:
                     # If different chromosomes, we can exit early after finding diff_feature
@@ -875,6 +893,7 @@ class Graph:
         geneA_samples = len(record_a['samples'])
         geneB_samples = len(record_b['samples'])
         total_coamps = len(edge['inter'])
+        total_amps = len(edge['union'])
 
         # observed
         O11 = coamp_counts['single_interval']
@@ -883,16 +902,17 @@ class Graph:
         geneA_alone = geneA_samples - total_coamps
         geneB_alone = geneB_samples - total_coamps
 
-        O12 = geneA_alone + 0.5 * nonapplicable_coamps
-        O21 = geneB_alone + 0.5 * nonapplicable_coamps
+        O12 = geneA_alone + nonapplicable_coamps
+        O21 = geneB_alone + nonapplicable_coamps
         O22 = self.total_samples - O11 - O12 - O21
         obs = [O11, O12, O21, O22]
 
         # expected
-        E11 = (geneA_samples + geneB_samples - O11) * pdD
+        # E11 = (geneA_samples + geneB_samples - O11) * pdD
+        E11 = total_amps * pdD  # N * f(A or B) * p(d|D)
         E12 = geneA_samples * (1 - pdD)
         E21 = geneB_samples * (1 - pdD)
-        E22 = self.total_samples - (E11 + E12 + E21)
+        E22 = max(0, self.total_samples - (E11 + E12 + E21))
         exp = [E11, E12, E21, E22]
 
         if verbose:
@@ -909,6 +929,8 @@ class Graph:
         return self.chi_squared_helper(obs, exp, verbose=verbose)
 
     def multi_interval(self, edge, record_a, record_b, coamp_counts, verbose=False):
+        # M_SAME_CHR = 0.275405
+        M_SAME_CHR = 0.349 # PCAWG TCGA HMF AC 1_5_1 merge 300kbp
         pdD = edge['p_d_D']
         geneA_samples = len(record_a['samples'])
         geneB_samples = len(record_b['samples'])
@@ -921,15 +943,18 @@ class Graph:
         geneA_alone = geneA_samples - total_coamps
         geneB_alone = geneB_samples - total_coamps
 
-        O12 = geneA_alone + 0.5 * nonapplicable_coamps
-        O21 = geneB_alone + 0.5 * nonapplicable_coamps
-        O22 = self.total_samples - O11 - O12 - O21
+        O12 = geneA_alone + nonapplicable_coamps
+        O21 = geneB_alone + nonapplicable_coamps
+        O22 = max(0, self.total_samples - O11 - O12 - O21)
         obs = [O11, O12, O21, O22]
 
         # expected
-        E11 = (geneA_samples) * (geneB_samples) * (1 - pdD) / self.total_samples
-        E12 = geneA_samples * (self.total_samples - geneB_samples) / self.total_samples
-        E21 = geneB_samples * (self.total_samples - geneA_samples) / self.total_samples
+        # E11 = (geneA_samples) * (geneB_samples) * (1 - pdD) / self.total_samples
+        E11 = (geneA_samples) * (geneB_samples) * M_SAME_CHR/ self.total_samples
+        # E12 = geneA_samples * (self.total_samples - geneB_samples) / self.total_samples
+        E12 = geneA_samples - E11
+        # E21 = geneB_samples * (self.total_samples - geneA_samples) / self.total_samples
+        E21 = geneB_samples - E11
         E22 = self.total_samples - (E11 + E12 + E21)
         exp = [E11, E12, E21, E22]
 
@@ -947,7 +972,8 @@ class Graph:
         return self.chi_squared_helper(obs, exp, verbose=verbose)
 
     def multi_chromosomal(self, edge, record_a, record_b, coamp_counts, verbose=False):
-        M_MULTI_CHR = 0.116055
+        #M_MULTI_CHR = 0.116055
+        M_MULTI_CHR = 0.177392
 
         geneA_samples = len(record_a['samples'])
         geneB_samples = len(record_b['samples'])
@@ -960,15 +986,17 @@ class Graph:
         geneA_alone = geneA_samples - total_coamps
         geneB_alone = geneB_samples - total_coamps
 
-        O12 = geneA_alone + 0.5 * nonapplicable_coamps
-        O21 = geneB_alone + 0.5 * nonapplicable_coamps
-        O22 = self.total_samples - O11 - O12 - O21
+        O12 = geneA_alone + nonapplicable_coamps
+        O21 = geneB_alone + nonapplicable_coamps
+        O22 = max(0, self.total_samples - O11 - O12 - O21)
         obs = [O11, O12, O21, O22]
 
         # expected
         E11 = (geneA_samples) * (geneB_samples) * (M_MULTI_CHR) / self.total_samples
-        E12 = geneA_samples * (self.total_samples - geneB_samples) / self.total_samples
-        E21 = geneB_samples * (self.total_samples - geneA_samples) / self.total_samples
+        # E12 = geneA_samples * (self.total_samples - geneB_samples) / self.total_samples
+        # E21 = geneB_samples * (self.total_samples - geneA_samples) / self.total_samples
+        E12 = geneA_samples - E11
+        E21 = geneB_samples - E11
         E22 = self.total_samples - (E11 + E12 + E21)
         exp = [E11, E12, E21, E22]
 
@@ -986,6 +1014,7 @@ class Graph:
         return self.chi_squared_helper(obs, exp, verbose=verbose)
 
     def multi_ecdna(self, edge, record_a, record_b, coamp_counts, verbose=False):
+        M_ECDNA_SPECIES = 0.364266
         geneA_samples = len(record_a['samples'])
         geneB_samples = len(record_b['samples'])
         total_coamps = len(edge['inter'])
@@ -997,14 +1026,30 @@ class Graph:
         geneA_alone = geneA_samples - total_coamps
         geneB_alone = geneB_samples - total_coamps
 
-        O12 = geneA_alone + 0.5 * nonapplicable_coamps
-        O21 = geneB_alone + 0.5 * nonapplicable_coamps
-        O22 = self.total_samples - O11 - O12 - O21
+        O12 = geneA_alone + nonapplicable_coamps
+        O21 = geneB_alone + nonapplicable_coamps
+        O22 = max(0, self.total_samples - O11 - O12 - O21)
         obs = [O11, O12, O21, O22]
 
-        # expected - TODO: need proper expected value model
-        # For now, return -1 to indicate not implemented
-        return -1, -1
+        # expected
+        E11 = (geneA_samples) * (geneB_samples) * (M_ECDNA_SPECIES) / self.total_samples
+        E12 = geneA_samples - E11
+        E21 = geneB_samples - E11
+        E22 = self.total_samples - (E11 + E12 + E21)
+        exp = [E11, E12, E21, E22]
+
+        if verbose:
+            print(f"Multiple ecDNA species rate: {M_ECDNA_SPECIES}\n" \
+                  f"{record_a['label']} samples: {geneA_samples}\n" \
+                  f"{record_b['label']} samples: {geneB_samples}\n" \
+                  f"{record_a['label']} & {record_b['label']} (on different ecDNA): {O11}\n" \
+                  f"Total co-amplifications: {total_coamps}\n" \
+                  f"Non-applicable co-amps: {nonapplicable_coamps}\n" \
+                  f"Total samples: {self.total_samples}\n" \
+                  f"Observed counts ([O11, O12, O21, O22]): {obs}\n" \
+                  f"Expected counts ([E11, E12, E21, E22]): {exp}\n")
+
+        return self.chi_squared_helper(obs, exp, verbose=verbose)
 
     def q_val(self, p_values, alpha=0.05):
         valid_mask = [p != -1 for p in p_values]
@@ -1032,6 +1077,47 @@ class Graph:
             print(f"No co-amplification found between {source} and {target}.")
             return
         return self.name_to_edge[edge_name]
+
+    # get functions
+    # -------------
+    def Locs(self):
+        return self.locs_by_genome
+
+    def NumNodes(self):
+        try:
+            return len(self.nodes)
+        except:
+            print('Error: build graph')
+
+    def NumEdges(self):
+        try:
+            return len(self.edges)
+        except:
+            print('Error: build graph')
+
+    def Nodes(self):
+        try:
+            return self.nodes
+        except:
+            print('Error: build graph')
+
+    def Edges(self):
+        try:
+            return self.edges
+        except:
+            print('Error: build graph')
+
+    def Nodes_df(self):
+        try:
+            return self.nodes_df
+        except:
+            print('Error: build graph')
+
+    def Edges_df(self):
+        try:
+            return self.edges_df
+        except:
+            print('Error: build graph')
 
     def test_dry_run(self, source, target, test=0):
         edge = self.find_edge_helper(source, target)
@@ -1104,44 +1190,96 @@ class Graph:
 
         print(f"Exported {len(export_data)} nodes' intervals to {output_file}")
 
-    # get functions
-    # -------------
-    def Locs(self):
-        return self.locs_by_genome
+    def get_edges_dataframe(self, include_sample_ids=False):
+        """
+        Export edges as a pandas DataFrame with statistics and co-amplification counts.
 
-    def NumNodes(self):
-        try:
-            return len(self.nodes)
-        except:
-            print('Error: build graph')
+        Parameters:
+            include_sample_ids (bool): If True, include columns with sample IDs for
+                                      gene1, gene2, and intersection
 
-    def NumEdges(self):
-        try:
-            return len(self.edges)
-        except:
-            print('Error: build graph')
+        Returns:
+            pd.DataFrame: DataFrame sorted by:
+                1. shared_samples (descending)
+                2. max(gene1_samples, gene2_samples) (descending)
+                3. min(gene1_samples, gene2_samples) (descending)
+                4. gene1 (ascending alphabetically)
+        """
+        if not self.edges:
+            print("No edges available. Graph may not be constructed.")
+            return pd.DataFrame()
 
-    def Nodes(self):
-        try:
-            return self.nodes
-        except:
-            print('Error: build graph')
+        rows = []
+        for edge in self.edges:
+            record_a = self.name_to_record[edge['source']]
+            record_b = self.name_to_record[edge['target']]
 
-    def Edges(self):
-        try:
-            return self.edges
-        except:
-            print('Error: build graph')
+            # Get co-amplification counts
+            same_chr = (record_a.get('location') and record_b.get('location') and
+                        record_a['location'][0] == record_b['location'][0])
+            coamp_counts = self._classify_coamplifications(edge, record_a, record_b, same_chr)
 
-    def Nodes_df(self):
-        try:
-            return self.nodes_df
-        except:
-            print('Error: build graph')
+            samples_a = len(record_a['samples'])
+            samples_b = len(record_b['samples'])
+            shared = len(edge['inter'])
 
-    def Edges_df(self):
-        try:
-            return self.edges_df
-        except:
-            print('Error: build graph')
+            a_is_oncogene = record_a['oncogene']
+            b_is_oncogene = record_b['oncogene']
 
+            # Calculate Jaccard index: intersection / union
+            union = len(edge['union'])
+            sample_jaccard = shared / union if union > 0 else 0
+
+            row = {
+                'gene1': edge['source'],
+                'gene2': edge['target'],
+                'gene1_oncogene': a_is_oncogene,
+                'gene2_oncogene': b_is_oncogene,
+                'gene1_samples': samples_a,
+                'gene2_samples': samples_b,
+                'shared_samples': shared,
+                'distance': edge['distance'],
+                'p_d_D': edge['p_d_D'],
+                'count_single_interval': coamp_counts['single_interval'],
+                'count_multi_interval': coamp_counts['multi_interval'],
+                'count_multi_chromosomal': coamp_counts['multi_chromosomal'],
+                'count_multi_ecdna': coamp_counts['multi_ecdna'],
+                'sample_jaccard': sample_jaccard,
+                'p_single_interval': edge['p_values'][0],
+                'p_multi_interval': edge['p_values'][1],
+                'p_multi_chromosomal': edge['p_values'][2],
+                'p_multi_ecdna': edge['p_values'][3],
+                'q_single_interval': edge['q_values'][0],
+                'q_multi_interval': edge['q_values'][1],
+                'q_multi_chromosomal': edge['q_values'][2],
+                'q_multi_ecdna': edge['q_values'][3],
+                'odds_ratio_single_interval': edge['odds_ratios'][0],
+                'odds_ratio_multi_interval': edge['odds_ratios'][1],
+                'odds_ratio_multi_chromosomal': edge['odds_ratios'][2],
+                'odds_ratio_multi_ecdna': edge['odds_ratios'][3],
+                'max_samples': max(samples_a, samples_b),
+                'min_samples': min(samples_a, samples_b),
+            }
+
+            if include_sample_ids:
+                row['gene1_sample_ids'] = ','.join(sorted(record_a['samples']))
+                row['gene2_sample_ids'] = ','.join(sorted(record_b['samples']))
+                row['shared_sample_ids'] = ','.join(sorted(edge['inter']))
+
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+
+        # Sort by the specified criteria
+        df = df.sort_values(
+            by=['shared_samples', 'max_samples', 'min_samples', 'gene1'],
+            ascending=[False, False, False, True]
+        )
+
+        # Drop helper columns used for sorting
+        df = df.drop(columns=['max_samples', 'min_samples'])
+
+        # Reset index after sorting
+        df = df.reset_index(drop=True)
+
+        return df

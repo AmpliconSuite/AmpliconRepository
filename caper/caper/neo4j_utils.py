@@ -241,7 +241,8 @@ def load_graph(dataset=None):
     print(f'Construct graph: {CONSTRUCT_TIME-START_TIME} s')
     print(f'Import to neo4j: {IMPORT_TIME-CONSTRUCT_TIME} s')
 
-    return JsonResponse({"message": "Graph loaded successfully"}), 200
+    # Return the graph object so it can be cached for CSV export
+    return graph
 
 
 def test_fetch_subgraph():

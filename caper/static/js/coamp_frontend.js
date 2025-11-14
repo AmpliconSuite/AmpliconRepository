@@ -199,6 +199,76 @@ window.addEventListener('DOMContentLoaded', function () {
                 existingSvgBtn.remove();
             }
 
+            // Attach click handler for full CSV download to the existing button
+            const downloadFullCsvBtn = document.getElementById('download-full-csv-btn');
+            
+            // Remove any existing event listeners by cloning the button
+            const newFullCsvBtn = downloadFullCsvBtn.cloneNode(true);
+            downloadFullCsvBtn.parentNode.replaceChild(newFullCsvBtn, downloadFullCsvBtn);
+
+            // Add click handler for full CSV download
+            newFullCsvBtn.addEventListener('click', async function(e) {
+                console.log("Full CSV download button clicked");
+                e.stopPropagation();
+
+                try {
+                    // Show loading indicator
+                    newFullCsvBtn.disabled = true;
+                    newFullCsvBtn.innerHTML = 'Downloading...';
+
+                    // Create AbortController with long timeout (5 minutes)
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+
+                    // Fetch the CSV with include_samples=true
+                    const response = await fetch('/coamplification-graph/download-edges/?include_samples=true', {
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    if (!response.ok) {
+                        throw new Error(`Server error: ${response.status}`);
+                    }
+
+                    // Get the blob from response
+                    const blob = await response.blob();
+
+                    // Create download link
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+
+                    // Generate filename with timestamp
+                    const now = new Date();
+                    const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
+                    link.download = `AACoampGraph_full_${formattedDate}.csv`;
+
+                    console.log("Triggering download: " + link.download);
+
+                    // Trigger download
+                    document.body.appendChild(link);
+                    link.click();
+
+                    // Cleanup
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(link.href);
+
+                    console.log("Download completed");
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        console.error("Download timed out after 5 minutes");
+                        alert("Download timed out. The file may be too large. Please try again or contact support.");
+                    } else {
+                        console.error("Error downloading full CSV:", error);
+                        alert("Error downloading CSV: " + error.message);
+                    }
+                } finally {
+                    // Reset button state
+                    newFullCsvBtn.disabled = false;
+                    newFullCsvBtn.innerHTML = 'Download full CSV';
+                }
+            });
+
             // Create SVG download button
             const buttonContainer = document.querySelector('.filter-right');
             const downloadSvgBtn = document.createElement('button');
