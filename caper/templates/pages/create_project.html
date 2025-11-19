@@ -281,13 +281,9 @@
 <p>
   <b>What file do I upload?</b> <br />
   A .tar.gz of your AmpliconSuite-pipeline output files, including all samples in your project.
-    This includes the CNV calls, AmpliconArchitect output and AmpliconClassifier output directories.
+    This includes the CNVkit directories, AmpliconArchitect output folder and AmpliconClassifier output folder.
     The site will unpack these files and if they are named correctly will be able to create a project.
-    To automatically pre-generate this .tar.gz file in a way that reduces filesize and removes unnecessary files and which
-    helps ensure all files are included, users can run
-  <a href="https://github.com/AmpliconSuite/AmpliconSuiteAggregator"
-    >AmpliconSuiteAggregator</a
-  >. It will disinclude .fastq and .bam files
+  >. Please do not include .fastq and .bam files
   from this packaging. Please refer to the
   <a href="https://docs.ampliconrepository.org/en/latest/getting-started/"
     >documentation</a
@@ -296,20 +292,6 @@
 </p>
 
 <p>
-  <b>Quickest way to run the Aggregator on my files?</b> <br />
-  AmpliconSuiteAggregator can be run via the
-  <a href="https://genepattern.ucsd.edu/">GenePattern</a> interface. Search for
-  "AmpliconSuiteAggregator" after signing in, and upload a .tar.gz or .zip file
-  containing the outputs produced by AmpliconSuite-pipeline. Please make sure
-  the .bam and .fastq files are not included when you make your initial .tar.gz
-  or .zip.
-</p>
-
-<p>
-  For files larger than 250Mb, please consider uploading directly to the site
-  with the AmpliconSuiteAggregator tool (no need to use this page in that
-  event).
-</p>
 
 <p>
   <b>Need help?</b> <br />
