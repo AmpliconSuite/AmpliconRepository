@@ -83,10 +83,10 @@
                 <tbody>
                     {% for project in projects %}
                     <tr>
-                        <td style="word-break: break-all; overflow-wrap: break-word;">
+                        <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                           <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
                         </td>
-                        <td>{{ project.description|truncatechars:100 }}</td>
+                        <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
                         <td class="date">{{ project.date }}</td>
                         <td>{% if  project.private %}private{%  else  %}public{% endif %}</td>
                         <td>{% if project.sample_metadata_available %}
