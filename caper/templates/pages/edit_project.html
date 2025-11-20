@@ -442,7 +442,12 @@
     }
 
     function showUploadOverlay() {
-      document.getElementById('upload-overlay').style.display = 'flex';
+        const licenseCheckbox = document.getElementById('id_accept_license');
+        if (licenseCheckbox && !licenseCheckbox.checked) {
+            return; // Exit without showing overlay - form validation will show the error
+        } else {
+            document.getElementById('upload-overlay').style.display = 'flex';
+        }
     }
 
     function hideUploadOverlay() {
@@ -450,7 +455,9 @@
     }
   
     function uploadFiles() {
+      
       showUploadOverlay();
+      
       const fd = new FormData();
       fd.append('csrfmiddlewaretoken', csrf[0].value);
   

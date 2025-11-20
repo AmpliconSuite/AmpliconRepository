@@ -131,7 +131,14 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
             df = df[df['All_genes'].apply(lambda x: genequery in [gene.replace("'", "") for gene in x])]
 
         if classquery:
-            df = df[df['Classification'].str.contains(classquery, case=False, na=False)]
+            # Special case: if searching for "LINEAR AMPLIFICATION", also match just "Linear"
+            if classquery.upper() == "LINEAR AMPLIFICATION":
+                df = df[df['Classification'].str.contains('LINEAR AMPLIFICATION|LINEAR', case=False, na=False, regex=True)]
+            # Special case: if searching for "COMPLEX NON-CYCLIC", match with any character (or none) between words
+            elif classquery.upper() == "COMPLEX NON-CYCLIC":
+                df = df[df['Classification'].str.contains(r'COMPLEX.?NON.?CYCLIC', case=False, na=False, regex=True)]
+            else:
+                df = df[df['Classification'].str.contains(classquery, case=False, na=False)]
 
         if metadata_sample_name:
             df = df[df['Sample_name'].str.contains(metadata_sample_name, case=False, na=False)]
