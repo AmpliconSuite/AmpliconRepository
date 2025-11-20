@@ -1645,6 +1645,8 @@ def edit_project_page(request, project_name):
             downloads = project['downloads']
             # Preserve subscribers from the old project version
             old_subscribers = project.get('subscribers', [])
+            # Remove any new project members from the subscribers list
+            old_subscribers = [email for email in old_subscribers if email not in form_dict['project_members']]
             # create a new one with the new form
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
             ## get extra metadata from csv first (if exists in old project), add it to the new proj
@@ -1732,12 +1734,16 @@ def edit_project_page(request, project_name):
             else:
                 sample_data = project.get('sample_data', [])
 
+            # Remove any project members from the subscribers list
+            current_subscribers = project.get('subscribers', [])
+            updated_subscribers = [email for email in current_subscribers if email not in form_dict['project_members']]
 
             new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs,
                                  'description': form_dict['description'], 'date': get_date(),
                                  'private': form_dict['private'],
                                  'sample_data': sample_data,
                                  'project_members': form_dict['project_members'],
+                                 'subscribers': updated_subscribers,
                                  'publication_link': form_dict['publication_link'],
                                  'Oncogenes': get_project_oncogenes(current_runs),
                                  'alias_name' : alias_name}}
