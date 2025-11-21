@@ -128,17 +128,30 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         df, extra_metadata_from_csv = add_extra_metadata(df)
 
         if genequery:
-            df = df[df['All_genes'].apply(lambda x: genequery in [gene.replace("'", "") for gene in x])]
+            df = df[df['All_genes'].apply(lambda x: genequery.upper() in [gene.replace("'", "").strip().upper() for gene in x])]
 
         if classquery:
-            # Special case: if searching for "LINEAR AMPLIFICATION", also match just "Linear"
-            if classquery.upper() == "LINEAR AMPLIFICATION":
-                df = df[df['Classification'].str.contains('LINEAR AMPLIFICATION|LINEAR', case=False, na=False, regex=True)]
-            # Special case: if searching for "COMPLEX NON-CYCLIC", match with any character (or none) between words
-            elif classquery.upper() == "COMPLEX NON-CYCLIC":
-                df = df[df['Classification'].str.contains(r'COMPLEX.?NON.?CYCLIC', case=False, na=False, regex=True)]
-            else:
-                df = df[df['Classification'].str.contains(classquery, case=False, na=False)]
+            # Split multiple classifications (joined by |) and build OR pattern
+            class_queries = [cq.strip() for cq in classquery.split('|') if cq.strip()]
+            regex_patterns = []
+            
+            for cq in class_queries:
+                cq_upper = cq.upper()
+                # Special case: if searching for "LINEAR AMPLIFICATION", also match just "Linear"
+                if cq_upper == "LINEAR AMPLIFICATION":
+                    regex_patterns.append('LINEAR AMPLIFICATION|LINEAR')
+                # Special case: if searching for "COMPLEX NON-CYCLIC", match with any character (or none) between words
+                elif cq_upper == "COMPLEX NON-CYCLIC":
+                    regex_patterns.append(r'COMPLEX.?NON.?CYCLIC')
+                else:
+                    # Escape special regex characters for literal matching
+                    import re
+                    regex_patterns.append(re.escape(cq))
+            
+            # Combine all patterns with OR logic
+            if regex_patterns:
+                combined_pattern = '|'.join(regex_patterns)
+                df = df[df['Classification'].str.contains(combined_pattern, case=False, na=False, regex=True)]
 
         if metadata_sample_name:
             df = df[df['Sample_name'].str.contains(metadata_sample_name, case=False, na=False)]

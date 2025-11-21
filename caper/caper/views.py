@@ -2838,7 +2838,8 @@ def search_results(request):
         # Extract search parameters from POST request
         gene_search = request.POST.get("genequery", "").upper()
         project_name = request.POST.get("project_name", "").upper()
-        classifications = request.POST.get("classquery", "").upper()
+        classifications_list = request.POST.getlist("classquery")  # Get multiple selections
+        classifications = "|".join(classifications_list).upper()  # Join with pipe for OR logic
         sample_name = request.POST.get("metadata_sample_name", "").upper()
         sample_type = request.POST.get("metadata_sample_type", "").upper()
 
