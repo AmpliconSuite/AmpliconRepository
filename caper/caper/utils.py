@@ -591,9 +591,15 @@ def validate_project(project, project_name):
     1. if keys in project[runs] all contain underscores, if not, replace them with underscores, insert into db
     2. Checks if Cancer_type exists. if not, initialize to None
     """
+    
+    # Handle case where project is None
+    if project is None:
+        logging.error(f"Cannot validate project: project is None for {project_name}")
+        return None
 
     ## check for 1
     update = False
+    runs = None
     for sample in project['runs'].keys():
         for feature in project['runs'][sample]:
             for key in feature.keys():
@@ -601,7 +607,7 @@ def validate_project(project, project_name):
                     runs = replace_underscore_keys(project['runs'])
                     update = True
                     break
-    if update:
+    if update and runs is not None:
         new_values = {"$set": {
             'runs': runs
         }}

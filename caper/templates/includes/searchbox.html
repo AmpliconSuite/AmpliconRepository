@@ -18,19 +18,108 @@
     <div class="mb-3">
         <label for="genequery" class="form-label">Gene Name</label>
         <input type="text" class="form-control" name="genequery" id="genequery"
-               placeholder="Gene name (e.g. MYC)" value="{{ user_query.genequery|default:'' }}">
+               placeholder="e.g. MYC or MYC|EGFR or MYC&EGFR" value="{{ user_query.genequery|default:'' }}">
+        <small class="form-text text-muted">
+            Use <strong>|</strong> for OR (finds samples with any gene) or <strong>&</strong> for AND (finds samples with all genes)
+        </small>
     </div>
 
     <div class="mb-3">
         <label for="classquery" class="form-label">Classification Type</label>
-        <select class="form-control" name="classquery" id="classquery">
-            <option value="" selected disabled>Select a classification type</option>
-            <option value="ecDNA" {% if user_query.classquery == "ecDNA" %}selected{% endif %}>ecDNA</option>
-            <option value="linear amplification" {% if user_query.classquery == "linear amplification" %}selected{% endif %}>Linear Amplification</option>
-            <option value="BFB" {% if user_query.classquery == "BFB" %}selected{% endif %}>Breakage-Fusion-Bridge (BFB)</option>
-            <option value="complex non-cyclic" {% if user_query.classquery == "complex non-cyclic" %}selected{% endif %}>Complex Non-Cyclic</option>
-        </select>
+        <div class="dropdown" id="classification-dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start" type="button" id="classificationDropdown" data-toggle="dropdown" aria-expanded="false">
+                <span id="classification-label">Select classification types...</span>
+            </button>
+            <div class="dropdown-menu w-100 p-2" aria-labelledby="classificationDropdown" style="max-height: 300px; overflow-y: auto;">
+                <div class="form-check">
+                    <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="ecDNA" id="class-ecDNA" {% if "ECDNA" in user_query.classquery|upper %}checked{% endif %}>
+                    <label class="form-check-label" for="class-ecDNA">
+                        ecDNA
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="linear amplification" id="class-linear" {% if "LINEAR AMPLIFICATION" in user_query.classquery|upper %}checked{% endif %}>
+                    <label class="form-check-label" for="class-linear">
+                        Linear Amplification
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="BFB" id="class-bfb" {% if "BFB" in user_query.classquery|upper %}checked{% endif %}>
+                    <label class="form-check-label" for="class-bfb">
+                        Breakage-Fusion-Bridge (BFB)
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="complex non-cyclic" id="class-complex" {% if "COMPLEX NON-CYCLIC" in user_query.classquery|upper %}checked{% endif %}>
+                    <label class="form-check-label" for="class-complex">
+                        Complex Non-Cyclic
+                    </label>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <script>
+        (function() {
+            // Use an IIFE to scope variables and prevent conflicts with multiple instances
+            
+            // Update the dropdown label based on selected checkboxes for ALL instances
+            function updateAllClassificationLabels() {
+                // Find all classification dropdown instances
+                document.querySelectorAll('#classification-dropdown').forEach(function(dropdown) {
+                    const checkboxes = dropdown.querySelectorAll('.classification-checkbox:checked');
+                    const label = dropdown.querySelector('#classification-label');
+                    
+                    if (!label) return;
+                    
+                    if (checkboxes.length === 0) {
+                        label.textContent = 'Select classification types...';
+                        label.style.color = '#6c757d';
+                    } else {
+                        const selectedLabels = Array.from(checkboxes).map(cb => {
+                            return cb.parentElement.querySelector('label').textContent.trim();
+                        });
+                        label.textContent = selectedLabels.join(', ');
+                        label.style.color = '#000';
+                    }
+                });
+            }
+
+            // Flag to prevent duplicate initialization
+            if (window.classificationDropdownInitialized) {
+                // Just update labels for new instances
+                updateAllClassificationLabels();
+                return;
+            }
+            window.classificationDropdownInitialized = true;
+
+            // Initialize label on page load
+            document.addEventListener('DOMContentLoaded', function() {
+                // Initial update
+                updateAllClassificationLabels();
+                
+                // Update again after a short delay to catch any dynamically set checked attributes
+                setTimeout(updateAllClassificationLabels, 100);
+                
+                // Use event delegation on document to handle all classification checkboxes
+                document.addEventListener('change', function(e) {
+                    if (e.target && e.target.classList.contains('classification-checkbox')) {
+                        updateAllClassificationLabels();
+                    }
+                });
+                
+                // Prevent all classification dropdowns from closing when clicking inside
+                document.addEventListener('click', function(e) {
+                    if (e.target.closest('#classification-dropdown .dropdown-menu')) {
+                        e.stopPropagation();
+                    }
+                });
+            });
+            
+            // Also update when window is fully loaded
+            window.addEventListener('load', updateAllClassificationLabels);
+        })();
+    </script>
 
     <div class="mb-3">
         <button class="btn btn-secondary w-100" type="button" data-toggle="collapse" data-target="#metadataCollapse"

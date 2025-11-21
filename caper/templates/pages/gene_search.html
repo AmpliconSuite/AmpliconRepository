@@ -17,6 +17,76 @@
         width: 100%;
     }
 
+    /* Project filter styles */
+    .project-filters {
+        margin-top: 20px;
+        padding: 15px;
+        background-color: #ffffff;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+    }
+
+    .project-filters h5 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: #495057;
+    }
+
+    .filter-list {
+        max-height: 300px;
+        overflow-y: auto;
+        margin-bottom: 10px;
+    }
+
+    .filter-item {
+        display: flex;
+        align-items: center;
+        padding: 5px 0;
+        cursor: pointer;
+    }
+
+    .filter-item:hover {
+        background-color: #f8f9fa;
+    }
+
+    .filter-item input[type="checkbox"] {
+        margin-right: 8px;
+        cursor: pointer;
+    }
+
+    .filter-item label {
+        margin: 0;
+        cursor: pointer;
+        flex: 1;
+        font-size: 14px;
+    }
+
+    .filter-count {
+        color: #6c757d;
+        font-size: 13px;
+        margin-left: 5px;
+    }
+
+    .filter-actions {
+        display: flex;
+        gap: 5px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #dee2e6;
+    }
+
+    .filter-actions button {
+        font-size: 12px;
+        padding: 4px 8px;
+    }
+
+    .no-filters {
+        color: #6c757d;
+        font-style: italic;
+        font-size: 14px;
+    }
+
     mark {
         background-color: #ffeb3b !important; /* Brighter yellow */
         color: black; /* Ensures readability */
@@ -68,8 +138,38 @@
 {% block extra_js %}
 <script>
     $(document).ready(function () {
-        $('a[data-toggle="tab"]').on('shown.bs.tab', function () {
+        // Track enabled project filters for each tab
+        // Store checked projects - when all are checked, show all samples
+        let publicProjectFilters = new Set();
+        let privateProjectFilters = new Set();
+
+        // Initialize filter sets with all projects checked (matches the UI state)
+        // Do this synchronously BEFORE DataTables initialization
+        $('#public-project-filters .project-filter-checkbox').each(function() {
+            const projectId = $(this).data('project-id');
+            if (projectId) {
+                publicProjectFilters.add(String(projectId));
+            }
+        });
+        $('#private-project-filters .project-filter-checkbox').each(function() {
+            const projectId = $(this).data('project-id');
+            if (projectId) {
+                privateProjectFilters.add(String(projectId));
+            }
+        });
+
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
             $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+            
+            // Toggle filter panels based on active tab
+            const targetTab = $(e.target).attr('href');
+            if (targetTab === '#samples-tab' || targetTab === '#projects-tab') {
+                $('#public-project-filters').show();
+                $('#private-project-filters').hide();
+            } else if (targetTab === '#private-samples-tab' || targetTab === '#private-projects-tab') {
+                $('#public-project-filters').hide();
+                $('#private-project-filters').show();
+            }
         });
 
         // Live search filter
@@ -90,6 +190,84 @@
             }
         });
 
+        // Store project IDs for each row during DataTables initialization
+        let rowProjectIds = {};
+
+        // Custom search function for project filtering
+        // Register this AFTER filter sets are initialized
+        $.fn.dataTable.ext.search.push(function(settings, data, dataIndex) {
+            const tableId = settings.nTable.id;
+            let activeFilters;
+
+            // Determine which filter set to use based on table
+            if (tableId === 'public-samples-table') {
+                activeFilters = publicProjectFilters;
+            } else if (tableId === 'private-samples-table') {
+                activeFilters = privateProjectFilters;
+            } else {
+                return true; // No filtering for project tables
+            }
+
+            // If no filters active (all unchecked), hide all rows
+            if (activeFilters.size === 0) {
+                return false;
+            }
+
+            // Get project ID from the stored mapping using table and row index
+            const rowKey = `${tableId}_${dataIndex}`;
+            const projectId = rowProjectIds[rowKey];
+
+            // Show row if its project is in the active filter set
+            return activeFilters.has(projectId);
+        });
+
+        // Function to apply project filters
+        function applyProjectFilters(isPrivate) {
+            const table = isPrivate ? $('#private-samples-table').DataTable() : $('#public-samples-table').DataTable();
+            table.draw();
+        }
+
+        // Project filter checkbox change handler
+        $(document).on('change', '.project-filter-checkbox', function() {
+            const projectId = String($(this).data('project-id'));
+            const isPrivate = $(this).hasClass('private-filter');
+            const filterSet = isPrivate ? privateProjectFilters : publicProjectFilters;
+
+            if ($(this).is(':checked')) {
+                filterSet.add(projectId);
+            } else {
+                filterSet.delete(projectId);
+            }
+
+            applyProjectFilters(isPrivate);
+        });
+
+        // Select All filters button
+        $(document).on('click', '.select-all-filters', function() {
+            const isPrivate = $(this).hasClass('private-filters');
+            const filterContainer = isPrivate ? '#private-project-filters' : '#public-project-filters';
+            const filterSet = isPrivate ? privateProjectFilters : publicProjectFilters;
+            
+            $(filterContainer + ' .project-filter-checkbox').prop('checked', true).each(function() {
+                const projectId = String($(this).data('project-id'));
+                filterSet.add(projectId);
+            });
+
+            applyProjectFilters(isPrivate);
+        });
+
+        // Clear All filters button
+        $(document).on('click', '.clear-all-filters', function() {
+            const isPrivate = $(this).hasClass('private-filters');
+            const filterContainer = isPrivate ? '#private-project-filters' : '#public-project-filters';
+            const filterSet = isPrivate ? privateProjectFilters : publicProjectFilters;
+            
+            $(filterContainer + ' .project-filter-checkbox').prop('checked', false);
+            filterSet.clear();
+
+            applyProjectFilters(isPrivate);
+        });
+
         // Initialize DataTables with custom gene column rendering
         function initializeTable(tableSelector) {
             const table = $(tableSelector);
@@ -104,7 +282,7 @@
             });
 
             // Initialize DataTable with custom rendering for the genes column
-            table.DataTable({
+            const dtInstance = table.DataTable({
                 paging: true,
                 pageLength: 10,
                 lengthMenu: [10, 25, 50, 100],
@@ -114,6 +292,14 @@
                 autoWidth: false,
                 responsive: true,
                 order: [[1, 'asc']], // Default sort by Project Name column (index 1)
+                createdRow: function(row, data, dataIndex) {
+                    // Store the project ID for this row so we can access it during filtering
+                    const $row = $(row);
+                    const projectId = String($row.find('.sample-checkbox').data('project-id'));
+                    const tableId = table.attr('id');
+                    const rowKey = `${tableId}_${dataIndex}`;
+                    rowProjectIds[rowKey] = projectId;
+                },
                 columnDefs: [
                     {
                         targets: 0,
@@ -157,6 +343,7 @@
         $('#samples-tab table.table').each(function() { initializeTable(this); });
         $('#private-projects-tab table.table').each(function() { initializeTable(this); });
         $('#private-samples-tab table.table').each(function() { initializeTable(this); });
+
 
         // Handle click on the toggle button
         $(document).on('click', '.gene-toggle', function(e) {
@@ -444,28 +631,65 @@
 {% endblock %}
 
 {% block main %}
-<h2 class="mt-4">Search Query Information</h2>
+<h2 class="mt-4">Search Query Information </h2>
 
-<div class="card mb-4">
-    <div class="card-body">
-        <table class="table table-borderless mb-0">
-            <tbody>
-                {% for key, value in query_info.items %}
-                    {% if value %}
-                        <tr>
-                            <td class="fw-bold text-primary">{{ key|title }}:</td>
-                            <td>{{ value }}</td>
-                        </tr>
-                    {% endif %}
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
+
 <div class="search-container">
     <!-- Embedded Search Box from search.html -->
     <div class="search-box">
         {% include 'includes/searchbox.html' %}
+
+        <!-- Public Project Filters -->
+        <div class="project-filters" id="public-project-filters">
+            <h5>Filter by Project</h5>
+            {% if public_project_filters %}
+            <div class="filter-list">
+                {% for project in public_project_filters %}
+                <div class="filter-item">
+                    <input type="checkbox" 
+                           class="project-filter-checkbox" 
+                           id="public-filter-{{ project.id }}"
+                           data-project-id="{{ project.id }}"
+                           checked>
+                    <label for="public-filter-{{ project.id }}">
+                        {{ project.name }} <span class="filter-count">({{ project.count }})</span>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="filter-actions">
+                <button class="btn btn-sm btn-outline-primary select-all-filters">Select All</button>
+                <button class="btn btn-sm btn-outline-secondary clear-all-filters">Clear All</button>
+            </div>
+            {% else %}
+            <p class="no-filters">No projects in results</p>
+            {% endif %}
+        </div>
+
+        <!-- Private Project Filters (shown when viewing private samples tab) -->
+        {% if user.is_authenticated and private_project_filters %}
+        <div class="project-filters" id="private-project-filters" style="display: none;">
+            <h5>Filter by Project</h5>
+            <div class="filter-list">
+                {% for project in private_project_filters %}
+                <div class="filter-item">
+                    <input type="checkbox" 
+                           class="project-filter-checkbox private-filter" 
+                           id="private-filter-{{ project.id }}"
+                           data-project-id="{{ project.id }}"
+                           checked>
+                    <label for="private-filter-{{ project.id }}">
+                        {{ project.name }} <span class="filter-count">({{ project.count }})</span>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="filter-actions">
+                <button class="btn btn-sm btn-outline-primary select-all-filters private-filters">Select All</button>
+                <button class="btn btn-sm btn-outline-secondary clear-all-filters private-filters">Clear All</button>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Results (Right) -->
@@ -532,7 +756,7 @@
                     <span id="public-selected-count" class="selected-count">0 samples selected</span>
                 </div>
 
-                <table class="table">
+                <table class="table" id="public-samples-table">
                     <thead>
                         <tr>
                             <th><input type="checkbox" id="public-select-all-checkbox"></th>
@@ -605,7 +829,7 @@
                     <span id="private-selected-count" class="selected-count">0 samples selected</span>
                 </div>
 
-                <table class="table">
+                <table class="table" id="private-samples-table">
                     <thead>
                         <tr>
                             <th><input type="checkbox" id="private-select-all-checkbox"></th>
