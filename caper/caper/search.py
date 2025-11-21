@@ -127,7 +127,7 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         df = pd.DataFrame(features_list)
         df, extra_metadata_from_csv = add_extra_metadata(df)
 
-        if genequery:
+        if genequery and 'All_genes' in df.columns:
             # Parse gene query for multi-gene search with | (OR) and & (AND) operators
             if '&' in genequery:
                 # AND logic: sample must have ALL genes
@@ -166,14 +166,14 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
                     regex_patterns.append(re.escape(cq))
             
             # Combine all patterns with OR logic
-            if regex_patterns:
+            if regex_patterns and 'Classification' in df.columns:
                 combined_pattern = '|'.join(regex_patterns)
                 df = df[df['Classification'].str.contains(combined_pattern, case=False, na=False, regex=True)]
 
-        if metadata_sample_name:
+        if metadata_sample_name and 'Sample_name' in df.columns:
             df = df[df['Sample_name'].str.contains(metadata_sample_name, case=False, na=False)]
 
-        if metadata_sample_type:
+        if metadata_sample_type and 'Sample_type' in df.columns:
             df = df[df['Sample_type'].str.contains(metadata_sample_type, case=False, na=False)]
 
         # Combined search for Cancer Type or Tissue
@@ -194,7 +194,7 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
 
         # The original tissue_origin filter is not needed since we combined it above
         # Only keep this if you need backward compatibility with existing code
-        if metadata_tissue_origin:
+        if metadata_tissue_origin and 'Tissue_of_origin' in df.columns:
             df = df[df['Tissue_of_origin'].str.contains(metadata_tissue_origin, case=False, na=False)]
 
         if extra_metadata and ('extra_metadata_from_csv' in df.columns):
