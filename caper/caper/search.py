@@ -128,7 +128,24 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         df, extra_metadata_from_csv = add_extra_metadata(df)
 
         if genequery:
-            df = df[df['All_genes'].apply(lambda x: genequery.upper() in [gene.replace("'", "").strip().upper() for gene in x])]
+            # Parse gene query for multi-gene search with | (OR) and & (AND) operators
+            if '&' in genequery:
+                # AND logic: sample must have ALL genes
+                genes_to_find = [g.strip().upper() for g in genequery.split('&') if g.strip()]
+                df = df[df['All_genes'].apply(lambda x: all(
+                    gene in [g.replace("'", "").strip().upper() for g in x] 
+                    for gene in genes_to_find
+                ))]
+            elif '|' in genequery:
+                # OR logic: sample must have ANY of the genes
+                genes_to_find = [g.strip().upper() for g in genequery.split('|') if g.strip()]
+                df = df[df['All_genes'].apply(lambda x: any(
+                    gene in [g.replace("'", "").strip().upper() for g in x] 
+                    for gene in genes_to_find
+                ))]
+            else:
+                # Single gene exact match (existing logic)
+                df = df[df['All_genes'].apply(lambda x: genequery.upper() in [gene.replace("'", "").strip().upper() for gene in x])]
 
         if classquery:
             # Split multiple classifications (joined by |) and build OR pattern

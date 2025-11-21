@@ -18,7 +18,10 @@
     <div class="mb-3">
         <label for="genequery" class="form-label">Gene Name</label>
         <input type="text" class="form-control" name="genequery" id="genequery"
-               placeholder="Gene name (e.g. MYC)" value="{{ user_query.genequery|default:'' }}">
+               placeholder="e.g. MYC or MYC|EGFR or MYC&EGFR" value="{{ user_query.genequery|default:'' }}">
+        <small class="form-text text-muted">
+            Use <strong>|</strong> for OR (finds samples with any gene) or <strong>&</strong> for AND (finds samples with all genes)
+        </small>
     </div>
 
     <div class="mb-3">

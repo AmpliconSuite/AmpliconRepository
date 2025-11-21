@@ -1341,6 +1341,26 @@ def gene_search_page(request):
     public_sample_data = collect_class_data(public_projects)
     private_sample_data = collect_class_data(private_projects)
 
+    # Calculate project filter data with counts
+    def get_project_filters(sample_data):
+        """Generate a list of projects with sample counts for filtering"""
+        project_counts = {}
+        for sample in sample_data:
+            project_id = sample['project_linkid']
+            project_name = sample['project_name']
+            if project_id not in project_counts:
+                project_counts[project_id] = {
+                    'id': project_id,
+                    'name': project_name,
+                    'count': 0
+                }
+            project_counts[project_id]['count'] += 1
+        # Sort by project name
+        return sorted(project_counts.values(), key=lambda x: x['name'])
+
+    public_project_filters = get_project_filters(public_sample_data)
+    private_project_filters = get_project_filters(private_sample_data)
+
     # for display on the results page
     if len(classquery) == 0:
         classquery = "all amplicon types"
@@ -1348,6 +1368,8 @@ def gene_search_page(request):
     return render(request, "pages/gene_search.html",
                   {'public_projects': public_projects, 'private_projects': private_projects,
                    'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data,
+                   'public_project_filters': public_project_filters,
+                   'private_project_filters': private_project_filters,
                    'gene_query': genequery, 'class_query': classquery,
                    'query_info': {
                        "Project Name": request.GET.get("project_name", ""),
@@ -2887,6 +2909,26 @@ def search_results(request):
         public_samples_count = len(search_results["public_sample_data"])
         private_samples_count = len(search_results["private_sample_data"])
 
+        # Calculate project filter data with counts
+        def get_project_filters(sample_data):
+            """Generate a list of projects with sample counts for filtering"""
+            project_counts = {}
+            for sample in sample_data:
+                project_id = sample['project_linkid']
+                project_name = sample['project_name']
+                if project_id not in project_counts:
+                    project_counts[project_id] = {
+                        'id': project_id,
+                        'name': project_name,
+                        'count': 0
+                    }
+                project_counts[project_id]['count'] += 1
+            # Sort by project name
+            return sorted(project_counts.values(), key=lambda x: x['name'])
+
+        public_project_filters = get_project_filters(search_results["public_sample_data"])
+        private_project_filters = get_project_filters(search_results["private_sample_data"])
+
         query_info = {
             "Gene Name": gene_search,
             "Project Name": project_name,
@@ -2903,6 +2945,8 @@ def search_results(request):
             "private_projects": search_results["private_projects"],
             "public_sample_data": search_results["public_sample_data"],
             "private_sample_data": search_results["private_sample_data"],
+            "public_project_filters": public_project_filters,
+            "private_project_filters": private_project_filters,
             "public_projects_count": public_projects_count,
             "private_projects_count": private_projects_count,
             "public_samples_count": public_samples_count,
