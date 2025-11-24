@@ -32,7 +32,7 @@ from .views_admin import (
     admin_featured_projects, admin_version_details, admin_sendemail, admin_stats,
     admin_permanent_delete_project, admin_delete_user, admin_delete_project,
     user_stats_download, site_stats_regenerate, project_stats_download, sizeof_fmt,
-    fix_schema, data_qc
+    fix_schema, data_qc, admin_prepare_shutdown
 )
 
 # Import API views from separate module
@@ -338,6 +338,7 @@ def profile(request, message_to_user=None):
 
 def login(request):
     return render(request, "pages/login.html")
+
 
 
 def reference_genome_from_project(samples):
@@ -1341,6 +1342,26 @@ def gene_search_page(request):
     public_sample_data = collect_class_data(public_projects)
     private_sample_data = collect_class_data(private_projects)
 
+    # Calculate project filter data with counts
+    def get_project_filters(sample_data):
+        """Generate a list of projects with sample counts for filtering"""
+        project_counts = {}
+        for sample in sample_data:
+            project_id = sample['project_linkid']
+            project_name = sample['project_name']
+            if project_id not in project_counts:
+                project_counts[project_id] = {
+                    'id': project_id,
+                    'name': project_name,
+                    'count': 0
+                }
+            project_counts[project_id]['count'] += 1
+        # Sort by project name
+        return sorted(project_counts.values(), key=lambda x: x['name'])
+
+    public_project_filters = get_project_filters(public_sample_data)
+    private_project_filters = get_project_filters(private_sample_data)
+
     # for display on the results page
     if len(classquery) == 0:
         classquery = "all amplicon types"
@@ -1348,6 +1369,8 @@ def gene_search_page(request):
     return render(request, "pages/gene_search.html",
                   {'public_projects': public_projects, 'private_projects': private_projects,
                    'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data,
+                   'public_project_filters': public_project_filters,
+                   'private_project_filters': private_project_filters,
                    'gene_query': genequery, 'class_query': classquery,
                    'query_info': {
                        "Project Name": request.GET.get("project_name", ""),
@@ -2761,7 +2784,7 @@ def download_coamp_edges(request):
         logging.info(f"Constructing graph with {len(projects_df)} rows")
         graph = Graph(projects_df)
         
-        # Get edges dataframe (without sample IDs to keep file size manageable)
+        # Get edges dataframe (without sample ID to keep file size manageable)
         # Set include_sample_ids=True if you want to include sample ID columns
         include_sample_ids = request.GET.get('include_samples', 'false').lower() == 'true'
         edges_df = graph.get_edges_dataframe(include_sample_ids=include_sample_ids)
@@ -2838,53 +2861,90 @@ def search_results(request):
         # Extract search parameters from POST request
         gene_search = request.POST.get("genequery", "").upper()
         project_name = request.POST.get("project_name", "").upper()
-        classifications = request.POST.get("classquery", "").upper()
+        classifications_list = request.POST.getlist("classquery")  # Get multiple selections
+        classifications = "|".join(classifications_list).upper()  # Join with pipe for OR logic
         sample_name = request.POST.get("metadata_sample_name", "").upper()
         sample_type = request.POST.get("metadata_sample_type", "").upper()
 
         # Get the combined cancer/tissue field
         cancer_tissue = request.POST.get("metadata_cancer_tissue", "").upper()
 
-        # We'll set both parameters to the same value for the backend search
-        cancer_type = cancer_tissue
-        tissue_origin = ""  # Leave empty to avoid duplicate filtering
+        # Gene Search
+        if request.user.is_authenticated:
+            username = request.user.username
+            useremail = request.user.email
+            query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}],
+                         'Oncogenes': gen_query, 'delete': False}
 
-        extra_metadata = request.POST.get('metadata_extra', "").upper()
+            private_projects = list(collection_handle.find(query_obj))
+            # private_projects = get_projects_close_cursor(query_obj)
+        else:
+            private_projects = []
 
-        # Store user query for persistence in the form
-        user_query = {
-            "genequery": gene_search,
-            "project_name": project_name,
-            "classquery": classifications,
-            "metadata_sample_name": sample_name,
-            "metadata_sample_type": sample_type,
-            "metadata_cancer_tissue": cancer_tissue,  # New field
-            'extra_metadata': extra_metadata
-        }
+        public_projects = list(collection_handle.find({'private': False, 'Oncogenes': gen_query, 'delete': False}))
+        # public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
 
-        # Debugging logs
-        logging.info(f'Search terms: Gene={gene_search}, Project={project_name}, Class={classifications}, '
-                     f'Sample Name={sample_name}, Sample Type={sample_type}, Cancer/Tissue={cancer_tissue},'
-                     f' Extra Metadata={extra_metadata}')
+        for proj in private_projects:
+            prepare_project_linkid(proj)
+        for proj in public_projects:
+            prepare_project_linkid(proj)
 
-        # Run the search function
-        search_results = perform_search(
-            genequery=gene_search,
-            project_name=project_name,
-            classquery=classifications,
-            metadata_sample_name=sample_name,
-            metadata_sample_type=sample_type,
-            metadata_cancer_type=cancer_tissue,  # Use the combined term
-            metadata_tissue_origin=tissue_origin,  # Leave this empty
-            extra_metadata=extra_metadata,
-            user=request.user
-        )
+        def collect_class_data(projects):
+            sample_data = []
+            for project in projects:
+                project_name = project['project_name']
+                project_linkid = project['_id']
+                features = project['runs']
+                features_list = replace_space_to_underscore(features)
+                data = sample_data_from_feature_list(features_list)
 
-        # Count the number of matches for each category
-        public_projects_count = len(search_results["public_projects"])
-        private_projects_count = len(search_results["private_projects"])
-        public_samples_count = len(search_results["public_sample_data"])
-        private_samples_count = len(search_results["private_sample_data"])
+                for sample in data:
+                    sample['project_name'] = project_name
+                    sample['project_linkid'] = project_linkid
+
+                    # Gene and classification checks
+                    gene_match = (genequery in sample['Oncogenes'] or len(genequery) == 0)
+                    upperclass = list(map(str.upper, sample['Classifications']))
+                    class_match = (classquery in upperclass or len(classquery) == 0)
+
+                    # Cancer type or tissue of origin check
+                    cancer_tissue_match = True  # Default to True if no filter
+                    if metadata_cancer_tissue:
+                        cancer_type = sample.get('Cancer_type', '').lower()
+                        tissue_origin = sample.get('Tissue_of_origin', '').lower()
+                        cancer_tissue_match = (
+                                metadata_cancer_tissue.lower() in cancer_type or
+                                metadata_cancer_tissue.lower() in tissue_origin
+                        )
+
+                    # Only add the sample if all filters match
+                    if gene_match and class_match and cancer_tissue_match:
+                        sample_data.append(sample)
+
+            return sample_data
+
+        public_sample_data = collect_class_data(public_projects)
+        private_sample_data = collect_class_data(private_projects)
+
+        # Calculate project filter data with counts
+        def get_project_filters(sample_data):
+            """Generate a list of projects with sample counts for filtering"""
+            project_counts = {}
+            for sample in sample_data:
+                project_id = sample['project_linkid']
+                project_name = sample['project_name']
+                if project_id not in project_counts:
+                    project_counts[project_id] = {
+                        'id': project_id,
+                        'name': project_name,
+                        'count': 0
+                    }
+                project_counts[project_id]['count'] += 1
+            # Sort by project name
+            return sorted(project_counts.values(), key=lambda x: x['name'])
+
+        public_project_filters = get_project_filters(public_sample_data)
+        private_project_filters = get_project_filters(private_sample_data)
 
         query_info = {
             "Gene Name": gene_search,
@@ -2902,6 +2962,8 @@ def search_results(request):
             "private_projects": search_results["private_projects"],
             "public_sample_data": search_results["public_sample_data"],
             "private_sample_data": search_results["private_sample_data"],
+            "public_project_filters": public_project_filters,
+            "private_project_filters": private_project_filters,
             "public_projects_count": public_projects_count,
             "private_projects_count": private_projects_count,
             "public_samples_count": public_samples_count,

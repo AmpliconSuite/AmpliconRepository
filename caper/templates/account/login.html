@@ -57,6 +57,15 @@
 
       <!-- Register Tab -->
       <div class="tab-pane fade" id="register" role="tabpanel" aria-labelledby="register-tab">
+        {% if SHUTDOWN_PENDING %}
+        <!-- Maintenance message when shutdown is pending -->
+        <div class="alert alert-warning text-center" role="alert">
+          <h5 class="mb-3"><i class="fas fa-exclamation-triangle"></i> {% trans "Registration Temporarily Unavailable" %}</h5>
+          <p>{% trans "New user registrations are temporarily disabled for maintenance. Please try again later." %}</p>
+          <p class="mb-0 text-muted">{% trans "If you already have an account, please use the Login tab." %}</p>
+        </div>
+        {% else %}
+        <!-- Normal registration options when shutdown is not active -->
         <h5 class="mb-3">{% trans "Create a new account" %}</h5>
 
         <!-- Button to standard registration page -->
@@ -79,6 +88,7 @@
             {% include "socialaccount/snippets/provider_list.html" with process="signup" %}
           </ul>
         </div>
+        {% endif %}
         {% endif %}
       </div>
     </div>

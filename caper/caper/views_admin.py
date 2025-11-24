@@ -654,3 +654,26 @@ def data_qc(request):
         'sample_count_status': sample_count_status,
         'schema_report': schema_report,
     })
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_prepare_shutdown(request):
+    """Toggle shutdown pending mode"""
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    from .context_processor import get_shutdown_pending, set_shutdown_pending
+    
+    if request.method == "POST":
+        # Toggle the shutdown mode
+        current_status = get_shutdown_pending()
+        set_shutdown_pending(not current_status)
+        return redirect('/admin-prepare-shutdown')
+    
+    # Get current status
+    shutdown_status = get_shutdown_pending()
+    
+    return render(request, 'pages/admin_prepare_shutdown.html', {
+        'shutdown_pending': shutdown_status,
+        'user': request.user
+    })
