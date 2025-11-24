@@ -361,6 +361,7 @@ TEMPLATES = [
                 # 'caper.context_processors.get_files'
                 "caper.context_processor.context_processor",
                 "caper.context_processor.server_identification_banner",
+                "caper.context_processor.shutdown_mode",
 
             ],
             "loaders": [

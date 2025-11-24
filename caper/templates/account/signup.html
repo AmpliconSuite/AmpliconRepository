@@ -1,13 +1,28 @@
-{% extends "base.html" %}
-
-{% load crispy_forms_tags%}
-
 {% load i18n %}
 
 {% block head_title %}{% trans "Register" %}{% endblock %}
 
 {% block main %}
 {% block content %}
+
+{% if SHUTDOWN_PENDING %}
+<div class="container" style="max-width: 600px; margin: 100px auto;">
+  <div class="card">
+    <div class="card-body text-center">
+      <h4 class="card-title text-warning">
+        <i class="fas fa-exclamation-triangle"></i> {% trans "Registration Currently Unavailable" %}
+      </h4>
+      <p class="card-text mt-3">
+        {% trans "New user registrations are temporarily disabled as the server is preparing for scheduled maintenance." %}
+      </p>
+      <p class="card-text">
+        {% trans "Please try again later. If you already have an account, you can" %} <a href="{{ login_url }}">{% trans "sign in here" %}</a>.
+      </p>
+      <a href="/" class="btn btn-primary mt-3">{% trans "Return to Home" %}</a>
+    </div>
+  </div>
+</div>
+{% else %}
 <h4>{% trans "Create new account" %}</h4>
 <style>
 #id_captcha {
@@ -23,11 +38,11 @@
 
 <form class="signup" id="signup_form" method="post" action="{% url 'account_signup' %}">
   {% csrf_token %}
-  {{ form.username|as_crispy_field }}
-  {{ form.email|as_crispy_field }}
-  {{ form.password1|as_crispy_field }}
-  {{ form.password2|as_crispy_field }}
-  {{ form.captcha|as_crispy_field }}
+  {{ form.usernameas_crispy_field }}
+  {{ form.emailas_crispy_field }}
+  {{ form.password1as_crispy_field }}
+  {{ form.password2as_crispy_field }}
+  {{ form.captchaas_crispy_field }}
 
   {% if redirect_field_value %}
   <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
@@ -35,7 +50,9 @@
 
   <button type="submit">{% trans "Sign up" %}</button>
 </form>
+{% endif %}
 
 
 {% endblock %}
 {% endblock %}
+

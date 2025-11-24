@@ -14,9 +14,11 @@
       <li class="nav-item" role="presentation">
         <a class="nav-link active" id="login-tab" data-toggle="tab" href="#login" role="tab" aria-controls="login" aria-selected="true">{% trans "Login" %}</a>
       </li>
+      {% if not SHUTDOWN_PENDING %}
       <li class="nav-item" role="presentation">
         <a class="nav-link" id="register-tab" data-toggle="tab" href="#register" role="tab" aria-controls="register" aria-selected="false">{% trans "Register" %}</a>
       </li>
+      {% endif %}
     </ul>
 
     <!-- Tab content -->
@@ -54,6 +56,7 @@
         </div>
         {% endif %}
       </div>
+      {% if not SHUTDOWN_PENDING %}
 
       <!-- Register Tab -->
       <div class="tab-pane fade" id="register" role="tabpanel" aria-labelledby="register-tab">
@@ -79,6 +82,12 @@
             {% include "socialaccount/snippets/provider_list.html" with process="signup" %}
           </ul>
         </div>
+      {% else %}
+      <div class="alert alert-warning mt-3" role="alert">
+        <strong><i class="fas fa-exclamation-triangle"></i> {% trans "Registration Temporarily Unavailable" %}</strong>
+        <p class="mb-0 mt-2">{% trans "New user registrations are currently disabled as the server is preparing for scheduled maintenance. Please try again later." %}</p>
+      </div>
+      {% endif %}
         {% endif %}
       </div>
     </div>

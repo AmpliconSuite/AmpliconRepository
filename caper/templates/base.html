@@ -124,7 +124,58 @@
     {% endblock index %}
     <!-- Display the footer -->
     {% page_menu "includes/footer.html" %}
-    {% include "includes/footer_scripts.html" %}
+    
+    <!-- Shutdown mode handler -->
+    {% if SHUTDOWN_PENDING %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Function to show shutdown alert
+            function showShutdownAlert(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                alert('That feature is not available currently, server shutdown is pending. Please try again later.');
+                return false;
+            }
+            
+            // Disable create project links
+            const createProjectLinks = document.querySelectorAll('a[href="/create-project/"], a[href="/create-project"], a[href*="create-project"]');
+            createProjectLinks.forEach(link => {
+                link.style.opacity = '0.5';
+                link.style.cursor = 'not-allowed';
+                link.addEventListener('click', showShutdownAlert);
+            });
+            
+            // Disable edit project links
+            const editProjectLinks = document.querySelectorAll('a[href*="edit"]');
+            editProjectLinks.forEach(link => {
+                // Only disable if it's actually an edit project link (contains 'edit' in URL)
+                if (link.href.includes('/project/') && link.href.includes('/edit')) {
+                    link.style.opacity = '0.5';
+                    link.style.cursor = 'not-allowed';
+                    link.addEventListener('click', showShutdownAlert);
+                }
+            });
+            
+            // Disable edit icons on project and profile pages
+            const editIcons = document.querySelectorAll('a[data-toggle="tooltip"][title="Edit Project"]');
+            editIcons.forEach(icon => {
+                icon.style.opacity = '0.5';
+                icon.style.cursor = 'not-allowed';
+                icon.addEventListener('click', showShutdownAlert);
+            });
+            
+            // Also handle any links with edit_project_page in them
+            const allLinks = document.querySelectorAll('a');
+            allLinks.forEach(link => {
+                if (link.href && (link.href.includes('edit_project_page') || link.href.includes('create-project') || link.href.includes('create-empty-project'))) {
+                    link.style.opacity = '0.5';
+                    link.style.cursor = 'not-allowed';
+                    link.addEventListener('click', showShutdownAlert);
+                }
+            });
+        });
+    </script>
+    {% endif %}
 </body>
 
 

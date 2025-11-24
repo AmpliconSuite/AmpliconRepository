@@ -46,6 +46,7 @@ urlpatterns += [
     path('create-project/', views.create_project, name='create_project'),
     path('create-empty-project/', views.create_empty_project, name='create_empty_project'),
 
+    path('accounts/signup/', views.signup, name='account_signup'),
     path('accounts/', include('allauth.urls')),
     path("accounts/profile/", views.profile, name="profile"),
     path("profile-update-notification-preferences/", views.update_notification_preferences , name="profile-update-notification-preferences"),
@@ -80,6 +81,7 @@ urlpatterns += [
     path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
     path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),
     path('admin-delete-user/', views.admin_delete_user, name='admin_delete_user'),
+    path('admin-prepare-shutdown/', views.admin_prepare_shutdown, name='admin_prepare_shutdown'),
 
     path('data-qc/', views.data_qc, name='data_qc'),
     path('data-qc/change-database-dates', views.change_database_dates, name='change_database_dates'),
