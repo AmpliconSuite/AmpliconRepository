@@ -340,22 +340,6 @@ def login(request):
     return render(request, "pages/login.html")
 
 
-def signup(request):
-    """Custom signup view that blocks registration when shutdown is pending"""
-    from .context_processor import get_shutdown_pending
-    from django.contrib import messages
-    from allauth.account.views import SignupView
-    
-    # Check if shutdown mode is active
-    if get_shutdown_pending():
-        if request.method == 'POST':
-            # Block POST requests during shutdown
-            messages.error(request, 'New user registrations are temporarily disabled as the server is preparing for scheduled maintenance. Please try again later.')
-            return redirect('/accounts/login/')
-    
-    # If not in shutdown mode, use the default allauth signup view
-    return SignupView.as_view()(request)
-
 
 def reference_genome_from_project(samples):
     reference_genomes = list()

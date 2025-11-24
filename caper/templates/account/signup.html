@@ -1,58 +1,99 @@
+{% extends "base.html" %}
+
 {% load i18n %}
 
 {% block head_title %}{% trans "Register" %}{% endblock %}
 
 {% block main %}
-{% block content %}
+<div class="container" style="max-width: 500px; margin: 50px auto;">
+  <div class="card shadow-sm p-4">
+    <h4>{% trans "Create new account" %}</h4>
+    <style>
+    #id_captcha {
+        color: #ffffff;
+        border: 0px white;
+        margin-bottom: 60px;
+    }
+    #signup_form input[type="text"],
+    #signup_form input[type="email"],
+    #signup_form input[type="password"] {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        margin-left: auto;
+        display: block;
+    }
+    #signup_form .form-label {
+        text-align: left;
+        width: 100%;
+        margin-bottom: 5px;
+    }
+    #signup_form .text-right {
+        text-align: right;
+    }
+    </style>
+    <p>{% blocktrans %}Already have an account? Then please <a href="{{ login_url }}">sign in here</a>.{% endblocktrans %}</p>
 
-{% if SHUTDOWN_PENDING %}
-<div class="container" style="max-width: 600px; margin: 100px auto;">
-  <div class="card">
-    <div class="card-body text-center">
-      <h4 class="card-title text-warning">
-        <i class="fas fa-exclamation-triangle"></i> {% trans "Registration Currently Unavailable" %}
-      </h4>
-      <p class="card-text mt-3">
-        {% trans "New user registrations are temporarily disabled as the server is preparing for scheduled maintenance." %}
-      </p>
-      <p class="card-text">
-        {% trans "Please try again later. If you already have an account, you can" %} <a href="{{ login_url }}">{% trans "sign in here" %}</a>.
-      </p>
-      <a href="/" class="btn btn-primary mt-3">{% trans "Return to Home" %}</a>
-    </div>
+    <form class="signup" id="signup_form" method="post" action="{% url 'account_signup' %}">
+      {% csrf_token %}
+      
+      <div class="form-group mb-3">
+        <label for="{{ form.username.id_for_label }}" class="form-label">{{ form.username.label }}</label>
+        <div class="text-right">
+          {{ form.username }}
+        </div>
+        {% if form.username.errors %}
+          <div class="text-danger">{{ form.username.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group mb-3">
+        <label for="{{ form.email.id_for_label }}" class="form-label">{{ form.email.label }}</label>
+        <div class="text-right">
+          {{ form.email }}
+        </div>
+        {% if form.email.errors %}
+          <div class="text-danger">{{ form.email.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group mb-3">
+        <label for="{{ form.password1.id_for_label }}" class="form-label">{{ form.password1.label }}</label>
+        <div class="text-right">
+          {{ form.password1 }}
+        </div>
+        {% if form.password1.errors %}
+          <div class="text-danger">{{ form.password1.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group mb-3">
+        <label for="{{ form.password2.id_for_label }}" class="form-label">{{ form.password2.label }}</label>
+        <div class="text-right">
+          {{ form.password2 }}
+        </div>
+        {% if form.password2.errors %}
+          <div class="text-danger">{{ form.password2.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group mb-3">
+        <div class="text-right">
+          {{ form.captcha }}
+        </div>
+        {% if form.captcha.errors %}
+          <div class="text-danger">{{ form.captcha.errors }}</div>
+        {% endif %}
+      </div>
+
+      {% if redirect_field_value %}
+      <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
+      {% endif %}
+
+      <button class="btn btn-primary w-100 mt-3" type="submit">{% trans "Sign up" %}</button>
+    </form>
   </div>
 </div>
-{% else %}
-<h4>{% trans "Create new account" %}</h4>
-<style>
-#id_captcha {
-    color: #ffffff;
-    border: 0px white;
-    margin-bottom: 60px;
-}
-</style>
-<p>{% blocktrans %}Already have an account? Then please <a href="{{ login_url }}">sign in here</a>.{% endblocktrans %}</p>
-
-
-
-
-<form class="signup" id="signup_form" method="post" action="{% url 'account_signup' %}">
-  {% csrf_token %}
-  {{ form.usernameas_crispy_field }}
-  {{ form.emailas_crispy_field }}
-  {{ form.password1as_crispy_field }}
-  {{ form.password2as_crispy_field }}
-  {{ form.captchaas_crispy_field }}
-
-  {% if redirect_field_value %}
-  <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
-  {% endif %}
-
-  <button type="submit">{% trans "Sign up" %}</button>
-</form>
-{% endif %}
-
-
-{% endblock %}
 {% endblock %}
 
