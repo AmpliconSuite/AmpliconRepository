@@ -96,7 +96,13 @@ RUN /bin/bash -c "source /opt/venv/bin/activate && \
 
 
 # COPY ./start-server.sh /srv/caper/start-server.sh
-
+# install aws cli
+RUN cd /srv  && \
+    apt update && \
+    apt install -y unzip curl && \
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && \
+    ./aws/install
 #############################################
 ##      Start the webapp                   ##
 #############################################
