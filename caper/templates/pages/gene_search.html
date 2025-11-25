@@ -180,15 +180,20 @@
             });
         });
 
-        // Get search terms for gene highlighting
+        // Get search terms for gene highlighting from Django context
         const searchTerms = [];
-        document.querySelectorAll(".card-body table tbody tr").forEach(row => {
-            const key = row.cells[0].textContent.trim().replace(":", "");
-            const value = row.cells[1].textContent.trim();
-            if (key === "Gene Name" && value) {
-                searchTerms.push(value.toUpperCase());
-            }
-        });
+        let geneQuery = "";
+        {% if user_query.genequery %}
+        geneQuery = "{{ user_query.genequery|escapejs }}";
+        {% elif gene_query %}
+        geneQuery = "{{ gene_query|escapejs }}";
+        {% endif %}
+        
+        if (geneQuery) {
+            // Split by OR (|) and AND (&) operators and trim whitespace
+            const genes = geneQuery.split(/[|&]/).map(g => g.trim().toUpperCase()).filter(g => g);
+            searchTerms.push(...genes);
+        }
 
         // Store project IDs for each row during DataTables initialization
         let rowProjectIds = {};
@@ -310,7 +315,6 @@
                         render: function(data, type, row) {
                             if (type !== 'display') return data;
                             const genes = data.split(', ');
-                            if (genes.length <= 5) return data;
 
                             let reorganizedGenes = [...genes];
                             if (searchTerms.length > 0) {
@@ -323,6 +327,12 @@
                                 if (matched.length > 0) reorganizedGenes = [...matched, ...other];
                             }
 
+                            // If 5 or fewer genes, just display them all
+                            if (genes.length <= 5) {
+                                return reorganizedGenes.join(', ');
+                            }
+
+                            // If more than 5 genes, add expand/collapse functionality
                             return `
                                 <div class="gene-container">
                                     <div class="gene-content collapsed">${reorganizedGenes.slice(0, 5).join(', ')}</div>
