@@ -8,6 +8,7 @@ from collections import defaultdict
 import json
 import time
 import os
+import sys
 from intervaltree import IntervalTree
 from scipy.stats import expon
 from scipy.stats import gamma
@@ -16,6 +17,10 @@ from statsmodels.stats.multitest import fdrcorrection
 
 
 class Graph:
+    # Class-level cache for gene records from BED files
+    _gene_records_cache = {}
+    _cache_memory_usage = {}
+    
     def __init__(self, dataset=None, focal_amp="ecDNA", by_sample=False, merge_cutoff=50000,
                  pdD_model='gamma_random_breakage', construct_graph=True):
         """
@@ -173,10 +178,12 @@ class Graph:
             print(f"Error importing gene coordinates from {bed_file}: {e}")
 
         return locs
-
+    
     def create_gene_records_from_bed(self, bed_file):
         """
         Create gene records directly from BED file.
+        Uses class-level caching to avoid reloading the same file multiple times.
+        
         BED format: chr  start  end  gene_name  .  strand  transcript_id
 
         Parameters:
@@ -186,6 +193,22 @@ class Graph:
             gene_records (dict): {gene_name: record_dict}
             name_to_record (dict): {gene_name: record_dict} (includes all variants)
         """
+        # Check cache first
+        if bed_file in Graph._gene_records_cache:
+            print(f"✓ Using cached gene records for {os.path.basename(bed_file)}")
+            cached_size = Graph._cache_memory_usage.get(bed_file, 0)
+            print(f"  Cache memory usage: {cached_size / (1024*1024):.2f} MB")
+            
+            # Return deep copies to avoid mutation issues
+            cached_data = Graph._gene_records_cache[bed_file]
+            gene_records = self._deep_copy_gene_records(cached_data['gene_records'])
+            name_to_record = self._deep_copy_name_to_record(cached_data['name_to_record'], gene_records)
+            
+            return gene_records, name_to_record
+        
+        print(f"⟳ Loading gene records from {os.path.basename(bed_file)} (not in cache)...")
+        load_start = time.time()
+        
         gene_records = {}
 
         try:
@@ -221,11 +244,75 @@ class Graph:
                 for name in record['all_labels']:
                     name_to_record[name] = record
 
+            # Cache the results and calculate memory usage
+            cache_data = {
+                'gene_records': self._deep_copy_gene_records(gene_records),
+                'name_to_record': self._deep_copy_name_to_record(name_to_record, gene_records)
+            }
+            Graph._gene_records_cache[bed_file] = cache_data
+            
+            # Calculate memory usage
+            memory_size = self._calculate_cache_memory(cache_data)
+            Graph._cache_memory_usage[bed_file] = memory_size
+            
+            load_time = time.time() - load_start
+            print(f"  Loaded and cached {len(gene_records)} genes in {load_time:.2f}s")
+            print(f"  Cache memory usage: {memory_size / (1024*1024):.2f} MB")
+            print(f"  Total cache size: {len(Graph._gene_records_cache)} file(s), "
+                  f"{sum(Graph._cache_memory_usage.values()) / (1024*1024):.2f} MB total")
+
         except Exception as e:
             print(f"Error loading gene records from {bed_file}: {e}")
             raise
 
         return gene_records, name_to_record
+    
+    def _deep_copy_gene_records(self, gene_records):
+        """Create a deep copy of gene_records to avoid cache mutation."""
+        copied = {}
+        for gene_name, record in gene_records.items():
+            copied[gene_name] = {
+                'label': record['label'],
+                'all_labels': set(record['all_labels']),
+                'oncogene': record['oncogene'],
+                'features': set(),  # Always start empty
+                'samples': set(),   # Always start empty
+                'location': record['location'],
+                'intervals': defaultdict(lambda: defaultdict(int))  # Always start empty
+            }
+        return copied
+    
+    def _deep_copy_name_to_record(self, name_to_record, gene_records):
+        """Rebuild name_to_record mapping to point to new gene_records."""
+        copied = {}
+        for name, record in name_to_record.items():
+            # Find the corresponding record in the new gene_records
+            gene_name = record['label']
+            copied[name] = gene_records[gene_name]
+        return copied
+    
+    def _calculate_cache_memory(self, cache_data):
+        """Calculate approximate memory usage of cached data."""
+        total_size = 0
+        
+        # Calculate gene_records size
+        gene_records = cache_data['gene_records']
+        for gene_name, record in gene_records.items():
+            total_size += sys.getsizeof(gene_name)
+            total_size += sys.getsizeof(record)
+            total_size += sys.getsizeof(record['label'])
+            total_size += sys.getsizeof(record['all_labels'])
+            for label in record['all_labels']:
+                total_size += sys.getsizeof(label)
+            total_size += sys.getsizeof(record['location'])
+        
+        # Calculate name_to_record size (references, so less overhead)
+        name_to_record = cache_data['name_to_record']
+        total_size += sys.getsizeof(name_to_record)
+        for name in name_to_record.keys():
+            total_size += sys.getsizeof(name)
+        
+        return total_size
 
     def merge_intervals(self, location):
         """
@@ -636,6 +723,8 @@ class Graph:
             [1] multi interval
             [2] multi chromosomal
             [3] multi ecDNA
+        
+        OPTIMIZED: Combined classification and applicability detection in single pass
         """
         record_a = self.name_to_record[edge['source']]
         record_b = self.name_to_record[edge['target']]
@@ -654,21 +743,22 @@ class Graph:
         # Pre-compute chromosome compatibility (constant for all samples)
         same_chr = record_a['location'][0] == record_b['location'][0]
 
-        # Classify co-amplifications by type
-        coamp_counts = self._classify_coamplifications(edge, record_a, record_b, same_chr)
-
-        # Determine which tests are applicable by checking ALL samples
-        applicable_tests, log_data = self._determine_applicable_tests(edge, record_a, record_b, same_chr, verbose)
+        # OPTIMIZATION: Single-pass classification and applicability detection
+        coamp_counts, applicable_tests, log_data = self._classify_and_determine_tests(
+            edge, record_a, record_b, same_chr, verbose)
 
         # Prepare verbose logging
-        log = []
         if verbose:
-            log.append(f"{len(edge['inter'])} shared samples\n")
-            log.append(f"Co-amplification counts: {coamp_counts}\n")
-            log.append(f"Missing interval data: {'missing_interval_data' in edge}\n")
-            log.append(f"same_chr: {same_chr}\n")
+            log = [
+                f"{len(edge['inter'])} shared samples\n",
+                f"Co-amplification counts: {coamp_counts}\n",
+                f"Missing interval data: {'missing_interval_data' in edge}\n",
+                f"same_chr: {same_chr}\n"
+            ]
             if log_data:
                 log.extend(log_data)
+        else:
+            log = None
 
         # Execute only the applicable tests (no loops, no conditions)
         if applicable_tests[0]:  # single interval
@@ -700,141 +790,138 @@ class Graph:
                 log.append(f"Ran multi_ecDNA test: p={p_value:.3g}, OR={odds_ratio:.3g}\n")
 
         if verbose:
-            print("\n".join(log))
+            print("".join(log))
 
-    def _classify_coamplifications(self, edge, record_a, record_b, same_chr):
+    def _classify_and_determine_tests(self, edge, record_a, record_b, same_chr, verbose=False):
         """
-        Classify each co-amplification by type
+        OPTIMIZED: Single-pass classification AND applicability determination.
+        
+        Classify each co-amplification by type AND determine which tests apply,
+        all in a single iteration over samples.
 
         Returns:
-            dict with counts for each test type
+            tuple: (counts, applicable_tests, log_data)
+                counts: dict with counts for each test type
+                applicable_tests: list[bool] - [single_interval, multi_interval, multi_chromosomal, multi_ecDNA]
+                log_data: list[str] - verbose logging information (only if verbose=True)
         """
+        # Initialize counts
         counts = {
-            'single_interval': 0,  # same chr, same feature, same interval
-            'multi_interval': 0,  # same chr, same feature, diff interval
-            'multi_chromosomal': 0,  # diff chr
-            'multi_ecdna': 0,  # diff feature
+            'single_interval': 0,
+            'multi_interval': 0,
+            'multi_chromosomal': 0,
+            'multi_ecdna': 0,
             'total': len(edge['inter'])
         }
-
+        
+        # Initialize applicability flags
+        found_same_interval = False
+        found_diff_interval_same_feature = False
+        found_diff_feature = False
+        
+        # Verbose logging (only create if needed)
+        log_data = [] if verbose else None
+        first_sample_with_diff_feature = None
+        first_sample_with_same_interval = None
+        first_sample_with_diff_interval = None
+        
+        # Cache intervals for faster access
         samples = edge['inter']
         intervals_a_all = record_a['intervals']
         intervals_b_all = record_b['intervals']
-
+        
+        # Single pass over all samples
         for sample in samples:
+            # Get intervals once per sample (avoid repeated dict lookups)
             intervals_a = intervals_a_all[sample]
             intervals_b = intervals_b_all[sample]
+            
+            # Compute shared features once
             features_ab = set(intervals_a.keys()) & set(intervals_b.keys())
-
-            # Different chromosomes
+            
+            # Case 1: Different chromosomes
             if not same_chr:
                 counts['multi_chromosomal'] += 1
                 if not features_ab:  # Also different features
                     counts['multi_ecdna'] += 1
+                    if not found_diff_feature:
+                        found_diff_feature = True
+                        if verbose:
+                            first_sample_with_diff_feature = sample
+                    # For diff chr, once we find diff_feature we can stop checking applicability
+                    if found_diff_feature:
+                        # But still count remaining samples
+                        continue
                 continue
-
-            # Same chromosome, different features
+            
+            # Case 2: Same chromosome, different features
             if not features_ab:
                 counts['multi_ecdna'] += 1
+                if not found_diff_feature:
+                    found_diff_feature = True
+                    if verbose:
+                        first_sample_with_diff_feature = sample
+                # Early exit if we found all applicability conditions for same chr
+                if found_same_interval and found_diff_interval_same_feature:
+                    continue
                 continue
-
-            # Same chromosome, same feature - check intervals
+            
+            # Case 3: Same chromosome, same feature - check intervals
+            # Build list of interval pairs to check (filter None values)
             intervals_to_check = [(intervals_a[f], intervals_b[f])
                                   for f in features_ab
                                   if intervals_a[f] is not None and intervals_b[f] is not None]
-
+            
             if intervals_to_check:
-                if any(a == b for a, b in intervals_to_check):
+                # Check for same/different intervals
+                has_same = False
+                has_diff = False
+                for a, b in intervals_to_check:
+                    if a == b:
+                        has_same = True
+                    else:
+                        has_diff = True
+                    # Early exit if we found both
+                    if has_same and has_diff:
+                        break
+                
+                # Count this sample
+                if has_same:
                     counts['single_interval'] += 1
-                elif any(a != b for a, b in intervals_to_check):
-                    counts['multi_interval'] += 1
-
-        return counts
-
-    def _determine_applicable_tests(self, edge, record_a, record_b, same_chr, verbose=False):
-        """
-        Determine which tests apply by scanning all samples once.
-
-        Returns:
-            tuple: (applicable_tests, log_data)
-                applicable_tests: list[bool] - [single_interval, multi_interval, multi_chromosomal, multi_ecDNA]
-                log_data: list[str] - verbose logging information
-        """
-        applicable = [False, False, False, False]
-        log_data = []
-
-        # For same chromosome, check samples to determine other tests
-        samples = edge['inter']
-        intervals_a_all = record_a['intervals']
-        intervals_b_all = record_b['intervals']
-
-        found_same_interval = False
-        found_diff_interval_same_feature = False
-        found_diff_feature = False
-        first_sample_with_diff_feature = None
-
-        for sample in samples:
-            intervals_a = intervals_a_all[sample]
-            intervals_b = intervals_b_all[sample]
-            features_ab = set(intervals_a.keys()) & set(intervals_b.keys())
-
-            # Check for different features (multi ecDNA)
-            if not features_ab:
-                if not found_diff_feature:
-                    found_diff_feature = True
-                    first_sample_with_diff_feature = sample
-                # Continue checking for other conditions (don't early exit)
-                if not same_chr:
-                    # If different chromosomes, we can exit early after finding diff_feature
-                    if found_diff_feature:
-                        break
-                else:
-                    # If same chromosome, still need to check for interval conditions
-                    if found_same_interval and found_diff_interval_same_feature:
-                        break
-                continue
-
-            # Only check intervals if on same chromosome
-            if same_chr:
-                # Check intervals within shared features
-                intervals_to_check = [(intervals_a[f], intervals_b[f])
-                                      for f in features_ab
-                                      if intervals_a[f] is not None and intervals_b[f] is not None]
-
-                if intervals_to_check:
-                    has_same = any(a == b for a, b in intervals_to_check)
-                    has_diff = any(a != b for a, b in intervals_to_check)
-
-                    if has_same and not found_same_interval:
+                    if not found_same_interval:
                         found_same_interval = True
-                        first_sample_with_same_interval = sample
                         if verbose:
+                            first_sample_with_same_interval = sample
                             log_data.append(f"Sample '{sample}': same_interval=True, features={sorted(features_ab)}\n")
-
-                    if has_diff and not found_diff_interval_same_feature:
+                elif has_diff:
+                    counts['multi_interval'] += 1
+                    if not found_diff_interval_same_feature:
                         found_diff_interval_same_feature = True
-                        first_sample_with_diff_interval = sample
                         if verbose:
+                            first_sample_with_diff_interval = sample
                             log_data.append(f"Sample '{sample}': diff_interval=True, features={sorted(features_ab)}\n")
-
-                # Early exit if we found all conditions for same chromosome
+                
+                # Early exit if we found all applicability conditions
                 if found_same_interval and found_diff_interval_same_feature and found_diff_feature:
-                    break
-
-        # Set applicable tests based on what we found
-        applicable[0] = found_same_interval and same_chr  # single interval (only same chr)
-        applicable[1] = found_diff_interval_same_feature and same_chr  # multi interval (only same chr)
-        applicable[2] = not same_chr  # multi chromosomal (only diff chr)
-        applicable[3] = found_diff_feature  # multi ecDNA (any chromosome)
-
+                    continue
+        
+        # Build applicability array
+        applicable = [
+            found_same_interval and same_chr,  # [0] single interval (only same chr)
+            found_diff_interval_same_feature and same_chr,  # [1] multi interval (only same chr)
+            not same_chr,  # [2] multi chromosomal (only diff chr)
+            found_diff_feature  # [3] multi ecDNA (any chromosome)
+        ]
+        
+        # Add verbose logging summary
         if verbose:
             log_data.append(f"same_chr: {same_chr}\n")
-            if found_diff_feature:
+            if found_diff_feature and first_sample_with_diff_feature:
                 log_data.append(f"Sample '{first_sample_with_diff_feature}': different features (multi_ecDNA)\n")
             if not same_chr:
                 log_data.append("Different chromosomes - multi_chromosomal test applies\n")
-
-        return applicable, log_data
+        
+        return counts, applicable, log_data
 
     def chi_squared_helper(self, obs, exp, verbose=False):
         # apply Haldane correction if any observed category count is zero
@@ -1049,7 +1136,7 @@ class Graph:
 
         # Classify co-amplifications to get counts
         same_chr = sn['location'][0] == tn['location'][0]
-        coamp_counts = self._classify_coamplifications(edge, sn, tn, same_chr)
+        coamp_counts, _, _ = self._classify_and_determine_tests(edge, sn, tn, same_chr, verbose=False)
         print(f"Co-amplification counts: {coamp_counts}\n")
 
         # match-case
@@ -1142,4 +1229,49 @@ class Graph:
             return self.edges_df
         except:
             print('Error: build graph')
+    
+    @classmethod
+    def clear_gene_records_cache(cls):
+        """Clear the gene records cache to free memory."""
+        cache_size = len(cls._gene_records_cache)
+        memory_freed = sum(cls._cache_memory_usage.values())
+        cls._gene_records_cache.clear()
+        cls._cache_memory_usage.clear()
+        print(f"Cache cleared: {cache_size} file(s), {memory_freed / (1024*1024):.2f} MB freed")
+    
+    @classmethod
+    def get_cache_info(cls):
+        """Get information about the current cache state."""
+        total_files = len(cls._gene_records_cache)
+        total_memory = sum(cls._cache_memory_usage.values())
+        
+        info = {
+            'num_files_cached': total_files,
+            'total_memory_mb': total_memory / (1024*1024),
+            'files': {}
+        }
+        
+        for bed_file in cls._gene_records_cache.keys():
+            file_size = cls._cache_memory_usage.get(bed_file, 0)
+            num_genes = len(cls._gene_records_cache[bed_file]['gene_records'])
+            info['files'][os.path.basename(bed_file)] = {
+                'memory_mb': file_size / (1024*1024),
+                'num_genes': num_genes
+            }
+        
+        return info
+    
+    @classmethod
+    def print_cache_info(cls):
+        """Print formatted cache information."""
+        info = cls.get_cache_info()
+        print(f"\n=== Gene Records Cache Info ===")
+        print(f"Files cached: {info['num_files_cached']}")
+        print(f"Total memory: {info['total_memory_mb']:.2f} MB")
+        
+        if info['files']:
+            print(f"\nCached files:")
+            for filename, details in info['files'].items():
+                print(f"  - {filename}: {details['num_genes']} genes, {details['memory_mb']:.2f} MB")
+        print()
 
