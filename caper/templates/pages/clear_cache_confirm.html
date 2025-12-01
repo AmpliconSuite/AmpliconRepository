@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+
+{% block meta_title %}Graph Cache Management - Admin{% endblock %}
+
+{% block main %}
+
+<div class="container main-container" style="max-width:1400px; width:90%; margin:auto;">
+    <div class="row">
+        <div class="col-md-12">
+            <h2><i class="fas fa-database"></i> Graph Cache Management</h2>
+            <hr>
+            <p class="text-muted">View and manage cached coamplification graphs stored in Neo4j. This page is for administrators only.</p>
+        </div>
+    </div>
+
+    {% if total_caches > 0 %}
+    <div class="row" style="margin-top:20px">
+        <div class="col-md-12">
+            <div class="alert alert-info" role="alert">
+                <i class="fas fa-info-circle"></i> <strong>{{ total_caches }}</strong> cached graph(s) found. 
+                Clearing the cache will require regenerating the graphs on next use, but can help if data has been updated or to free up Neo4j storage.
+            </div>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table id="cacheTable" class="table table-hover table-striped">
+            <thead class="thead-dark">
+                <tr>
+                    <th>Cache Key</th>
+                    <th>Project IDs</th>
+                    <th>Created</th>
+                    <th>Nodes</th>
+                    <th>Edges</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cache in cached_graphs %}
+                <tr>
+                    <td><code style="font-size:0.8em;">{{ cache.cache_key|truncatechars:40 }}</code></td>
+                    <td style="font-size:0.9em;">{{ cache.project_ids|join:", "|truncatechars:100 }}</td>
+                    <td>{{ cache.timestamp|date:"M d, Y H:i" }}</td>
+                    <td><span class="badge badge-primary">{{ cache.node_count }}</span></td>
+                    <td><span class="badge badge-info">{{ cache.edge_count }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="row" style="margin-top:25px; margin-bottom:25px">
+        <div class="col-md-12">
+            <form method="get" action="{% url 'clear_cache' %}" onsubmit="return confirm('⚠️ Are you sure you want to clear ALL cached graphs?\n\nThis will:\n- Remove all {{ total_caches }} cached graph(s)\n- Require regeneration on next use (slower first load)\n- Free up Neo4j storage space\n\nThis action cannot be undone.');">
+                <input type="hidden" name="clear_all" value="true">
+                <button type="submit" class="btn btn-danger"><i class="fas fa-trash-alt"></i> Clear All Caches</button>
+                <a href="{% url 'coamplification_graph' %}" class="btn btn-secondary ml-2" style="margin-left:10px;"><i class="fas fa-arrow-left"></i> Back to Coamplification Graph</a>
+                <a href="{% url 'index' %}" class="btn btn-outline-secondary ml-2" style="margin-left:10px;">Back to Home</a>
+            </form>
+        </div>
+    </div>
+
+    {% else %}
+    <div class="row" style="margin-top:20px">
+        <div class="col-md-12">
+            <div class="alert alert-success" role="alert">
+                <i class="fas fa-check-circle"></i> <strong>No cached graphs found.</strong> Caches are created automatically when users generate coamplification graphs.
+            </div>
+            <a href="{% url 'coamplification_graph' %}" class="btn btn-primary"><i class="fas fa-project-diagram"></i> Go to Coamplification Graph</a>
+            <a href="{% url 'index' %}" class="btn btn-outline-secondary ml-2" style="margin-left:10px;">Back to Home</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    $(document).ready(function() {
+        // Initialize DataTable for better sorting/filtering
+        if ($('#cacheTable').length) {
+            $('#cacheTable').DataTable({
+                "pageLength": 25,
+                "order": [[2, "desc"]], // Sort by created date descending
+                "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]]
+            });
+        }
+    });
+</script>
+
+{% endblock %}
+

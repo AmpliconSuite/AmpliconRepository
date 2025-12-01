@@ -2826,6 +2826,54 @@ def visualizer(request):
         })
 
 
+@login_required
+def clear_cache(request):
+    """
+    Clear the Neo4j graph cache for selected projects or all projects.
+    Can be called via POST with selected_projects, or GET to clear all.
+    Restricted to administrators only.
+    """
+    from .neo4j_utils import clear_graph_cache
+    
+    # Check if user is staff/admin
+    if not request.user.is_staff:
+        messages.error(request, "You do not have permission to clear the graph cache. This action is restricted to administrators.")
+        return redirect('index')
+    
+    if request.method == 'POST':
+        # Clear cache for specific projects
+        selected_projects = request.POST.getlist('selected_projects')
+        
+        if selected_projects:
+            count = clear_graph_cache(project_ids=selected_projects)
+            messages.success(request, f"Cleared graph cache for {len(selected_projects)} selected project(s).")
+            logging.info(f"User {request.user.username} cleared cache for projects: {selected_projects}")
+        else:
+            messages.warning(request, "No projects selected to clear cache.")
+        
+        return redirect('coamplification_graph')
+    
+    elif request.method == 'GET':
+        # GET request with confirmation - clear all caches
+        clear_all = request.GET.get('clear_all', 'false').lower() == 'true'
+        
+        if clear_all:
+            count = clear_graph_cache()
+            messages.success(request, f"Cleared all graph caches ({count} entries removed).")
+            logging.info(f"User {request.user.username} cleared all graph caches")
+            return redirect('coamplification_graph')
+        else:
+            # Show confirmation page
+            from .neo4j_utils import list_cached_graphs
+            cached_graphs = list_cached_graphs()
+            return render(request, 'pages/clear_cache_confirm.html', {
+                'cached_graphs': cached_graphs,
+                'total_caches': len(cached_graphs)
+            })
+    
+    return redirect('coamplification_graph')
+
+
 def fetch_graph(request, gene_name):
     min_weight = request.GET.get('min_weight')
     min_samples = request.GET.get('min_samples')
