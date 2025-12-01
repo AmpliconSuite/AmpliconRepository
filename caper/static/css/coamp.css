@@ -365,6 +365,21 @@ tr:hover td {
     color: #888;
 }
 
+#data-table th {
+  user-select: none;
+  position: relative;
+}
+
+#data-table th.sort-asc::after {
+  content: ' ▲';
+  font-size: 0.7em;
+}
+
+#data-table th.sort-desc::after {
+  content: ' ▼';
+  font-size: 0.7em;
+}
+
 /* Tooltip Styling */
 .tippy-box[data-theme~='edge'],
 .tippy-box[data-theme~='node'] {
