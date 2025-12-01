@@ -2,6 +2,7 @@ import logging
 import os
 import gc
 import tracemalloc
+import traceback
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -445,6 +446,11 @@ def project_page(request, project_name, message=''):
     ### is is only run IF we need to reset a project and reload the data
 
     project = validate_project(get_one_project(project_name), project_name)
+    
+    # Handle case where project doesn't exist or is invalid
+    if project is None:
+        raise Http404("Project not found")
+    
     if 'FINISHED?' in project and project['FINISHED?'] == False:
         return render(request, "pages/loading.html", {"project_name":project_name})
 
@@ -2220,30 +2226,12 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def create_project(request):
-    if request.method == "POST":
-        ## preprocess request
-        # request = preprocess(request)
-
-        form = RunForm(request.POST)
-        if not form.is_valid():
-            raise Http404()
-        ## check multi files, send files to GP and run aggregator there:
-        file_fps = []
-        temp_proj_id = uuid.uuid4().hex ## to be changed
-        files = request.FILES.getlist('document')
-        project_data_path = f"tmp/{temp_proj_id}" ## to change
-        extra_metadata_file_fp = save_metadata_file(request, project_data_path)
-        for file in files:
-            fs = FileSystemStorage(location = project_data_path)
-            saved = fs.save(file.name, file)
-            print(f'file: {file.name} is saved')
-            fp = os.path.join(project_data_path, file.name)
-            file_fps.append(file.name)
-            file.close()
-
-        temp_directory = os.path.join('./tmp/', str(temp_proj_id))
-
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp):
+    """
+    Background thread function to process files and run aggregator.
+    Updates the project once aggregation is complete.
+    """
+    try:
         print(AmpliconSuiteAggregator.__file__)
         if hasattr(AmpliconSuiteAggregator, '__version__'):
             print(f"AmpliconSuiteAggregator version: {AmpliconSuiteAggregator.__version__}")
@@ -2255,17 +2243,24 @@ def create_project(request):
         agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
 
         if not agg.completed:
+            # Mark project as failed
+            collection_handle.update_one(
+                {'_id': ObjectId(temp_proj_id)},
+                {"$set": {
+                    'FINISHED?': True,
+                    'aggregation_failed': True,
+                    'error_message': 'Aggregation failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results.'
+                }}
+            )
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
-            ## redirect to edit page if aggregator fails
-            alert_message = "Create project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
-            return render(request, 'pages/create_project.html',
-                        {'run': form,
-                        'alert_message': alert_message,
-                        'all_alias':json.dumps(get_all_alias())})
-        ## after running aggregator, replace the requests file with the aggregated file:
-        logging.error(f"Aggregated filename: {agg.aggregated_filename}")
+            logging.error(f"Aggregation failed for project {temp_proj_id}")
+            return
 
+        ## after running aggregator, use the aggregated file for project creation:
+        logging.info(f"Aggregated filename: {agg.aggregated_filename}")
+
+        # Read the aggregated file and create a temporary uploaded file
         with open(agg.aggregated_filename, 'rb') as f:
             temp_file = TemporaryUploadedFile(
                 name=os.path.basename(agg.aggregated_filename),
@@ -2277,34 +2272,137 @@ def create_project(request):
             for chunk in iter(lambda: f.read(1024 * 1024), b''):
                 temp_file.write(chunk)
             temp_file.seek(0)
-            request.FILES['document'] = temp_file
-        f.close()
 
-        # return render(request, 'pages/loading.html')
-        new_id = _create_project(form, request, extra_metadata_file_fp)
+        # Create a mock request object with the aggregated file
+        from django.http import QueryDict
+        mock_request = type('obj', (object,), {
+            'FILES': {'document': temp_file},
+            'POST': QueryDict('', mutable=True),
+            'user': user
+        })()
+        mock_request.POST.update(form_data)
 
-        # can't delete it, if its being used in the other thread for metadata extraction
+        # Recreate form from saved data
+        form = RunForm(mock_request.POST)
+        
+        # Now process the aggregated file through _create_project
+        # Pass the placeholder project ID so it updates in place
+        success = _create_project(form, mock_request, extra_metadata_file_fp, 
+                                   placeholder_project_id=temp_proj_id)
+
+        # Clean up temp directory if not needed for metadata extraction
         if os.path.exists(temp_directory) and not extra_metadata_file_fp:
             shutil.rmtree(temp_directory)
 
-        if new_id is not None:
-            return redirect('project_page', project_name=new_id.inserted_id)
+        if not success:
+            # Mark project as failed
+            collection_handle.update_one(
+                {'_id': ObjectId(temp_proj_id)},
+                {"$set": {
+                    'FINISHED?': True,
+                    'aggregation_failed': True,
+                    'error_message': 'The input file was not a valid aggregation. Please see site documentation.'
+                }}
+            )
+            logging.error(f"Project creation failed for {temp_proj_id}")
         else:
-            alert_message = "The input file was not a valid aggregation. Please see site documentation."
+            logging.info(f"Project {temp_proj_id} aggregation complete")
 
-            return render(request, 'pages/create_project.html',
-                          {'run': form,
-                           'alert_message': alert_message,
-                           'all_alias' : json.dumps(get_all_alias())})
+    except Exception as e:
+        logging.error(f"Error in background aggregation for project {temp_proj_id}: {str(e)}")
+        logging.error(traceback.format_exc())
+        # Mark project as failed
+        try:
+            collection_handle.update_one(
+                {'_id': ObjectId(temp_proj_id)},
+                {"$set": {
+                    'FINISHED?': True,
+                    'aggregation_failed': True,
+                    'error_message': f'An error occurred during aggregation: {str(e)}'
+                }}
+            )
+        except:
+            pass
+
+
+def create_project(request):
+    if request.method == "POST":
+        ## preprocess request
+        # request = preprocess(request)
+
+        form = RunForm(request.POST)
+        if not form.is_valid():
+            raise Http404()
+        
+        ## check multi files, send files to GP and run aggregator there:
+        file_fps = []
+        temp_proj_id = str(ObjectId())  ## Generate a valid MongoDB ObjectId
+        files = request.FILES.getlist('document')
+        project_data_path = f"tmp/{temp_proj_id}" ## to change
+        extra_metadata_file_fp = save_metadata_file(request, project_data_path)
+        
+        # Save files to disk
+        for file in files:
+            fs = FileSystemStorage(location = project_data_path)
+            saved = fs.save(file.name, file)
+            print(f'file: {file.name} is saved')
+            fp = os.path.join(project_data_path, file.name)
+            file_fps.append(file.name)
+            file.close()
+
+        temp_directory = os.path.join('./tmp/', str(temp_proj_id))
+
+        # Create a placeholder "processing" project in the database
+        form_dict = form_to_dict(form)
+        project_name = form_dict.get('project_name', 'Unnamed Project')
+        
+        placeholder_project = {
+            '_id': ObjectId(temp_proj_id),  # temp_proj_id is already a valid ObjectId string
+            'project_name': f"{project_name} (Processing...)",
+            'original_project_name': project_name,
+            'linkid': temp_proj_id,
+            'FINISHED?': False,
+            'aggregation_in_progress': True,
+            'created_at': datetime.datetime.now(),
+            'owner': request.user.username if request.user.is_authenticated else 'anonymous',
+            'private': form_dict.get('private', False),
+            'sample_count': 0,
+            'runs': {},  # Empty dictionary, not list
+            'delete': False,  # Project is not deleted
+            'project_members': []  # Add project_members to avoid errors
+        }
+        
+        collection_handle.insert_one(placeholder_project)
+        
+        # Save form data for the background thread
+        form_data = dict(request.POST)
+        # Convert lists to single values for QueryDict compatibility
+        for key, value in form_data.items():
+            if isinstance(value, list) and len(value) == 1:
+                form_data[key] = value[0]
+        
+        # Start background thread to process and aggregate files
+        agg_thread = Thread(
+            target=_process_and_aggregate_files,
+            args=(file_fps, temp_proj_id, project_data_path, temp_directory, 
+                  form_data, request.user, extra_metadata_file_fp)
+        )
+        agg_thread.start()
+        
+        # Immediately redirect to the processing project page
+        return redirect('project_page', project_name=temp_proj_id)
     else:
         form = RunForm()
     return render(request, 'pages/create_project.html', {'run' : form,
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
-def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None):
+def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None):
     """
-    Creates the project
+    Creates or updates a project.
+    
+    If placeholder_project_id is provided, updates that existing project in place.
+    Otherwise, creates a new project.
     """
     # it could be a new file was provided at the same time as sampels to be
     # removed from the project. That can't be done until runs is populated in the project
@@ -2317,35 +2415,74 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
-    ## try to get metadata file
-    project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions, previous_views = previous_views, old_subscribers = old_subscribers)
-    if project is None or tmp_id is None:
-        return None
-
-    project_data_path = f"tmp/{tmp_id}"
-    new_id = collection_handle.insert_one(project)
-    add_project_to_site_statistics(project, project['private'])
-    # move the project location to a new name using the UUID to prevent name collisions
-    new_project_data_path = f"tmp/{new_id.inserted_id}"
-    os.rename(project_data_path, new_project_data_path)
-    project_data_path = new_project_data_path
+    
+    # If updating a placeholder, use that ID; otherwise generate new temp ID
+    if placeholder_project_id:
+        tmp_id = placeholder_project_id
+        project_id = ObjectId(placeholder_project_id)
+        project_data_path = f"tmp/{tmp_id}"
+    else:
+        ## try to get metadata file
+        project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions, previous_views = previous_views, old_subscribers = old_subscribers)
+        if project is None or tmp_id is None:
+            return None
+        project_data_path = f"tmp/{tmp_id}"
+        
+        # Create new project
+        new_id = collection_handle.insert_one(project)
+        add_project_to_site_statistics(project, project['private'])
+        project_id = new_id.inserted_id
+        
+        # move the project location to a new name using the UUID to prevent name collisions
+        new_project_data_path = f"tmp/{project_id}"
+        os.rename(project_data_path, new_project_data_path)
+        project_data_path = new_project_data_path
+    
+    # For placeholder updates, create the project data now
+    if placeholder_project_id:
+        project, _ = create_project_helper(form, user, request_file, tmp_id=tmp_id, 
+                                          previous_versions=previous_versions, 
+                                          previous_views=previous_views, 
+                                          old_subscribers=old_subscribers)
+        if project is None:
+            return False
+        
+        # Update the placeholder project with real data
+        project['_id'] = project_id
+        project['linkid'] = str(project_id)
+        
+        # Remove placeholder-specific fields and ensure project_name doesn't have "(Processing...)"
+        update_fields = {k: v for k, v in project.items() if k not in ['_id']}
+        
+        # Remove aggregation-specific placeholder fields
+        collection_handle.update_one(
+            {'_id': project_id},
+            {"$set": update_fields, 
+             "$unset": {
+                 'aggregation_in_progress': '',
+                 'original_project_name': '',
+                 'owner': ''
+             }}
+        )
+        add_project_to_site_statistics(project, project['private'])
+    
     file_location = f'{project_data_path}/{request_file.name}'
     logging.debug("file stats: " + str(os.stat(file_location).st_size))
 
     # extract the files async also
     extract_thread = Thread(target=extract_project_files,
-        args=(tarfile, file_location, project_data_path, new_id.inserted_id, extra_metadata_file_fp, old_extra_metadata, samples_to_remove))
+        args=(tarfile, file_location, project_data_path, project_id, extra_metadata_file_fp, old_extra_metadata, samples_to_remove))
 
     extract_thread.start()
 
     if settings.USE_S3_DOWNLOADS:
         # load the zip asynch to S3 for later use
-        file_location = f'{project_data_path}/{request_file.name}'
-
         s3_thread = Thread(target=upload_file_to_s3, args=(
-        f'{project_data_path}/{request_file.name}', f'{new_id.inserted_id}/{new_id.inserted_id}.tar.gz'))
+        f'{project_data_path}/{request_file.name}', f'{project_id}/{project_id}.tar.gz'))
         s3_thread.start()
-    return new_id
+    
+    # Return success (True) for placeholder updates, or the new_id for new projects
+    return True if placeholder_project_id else new_id
 
 
 ## make a create_project_helper for project creation code
