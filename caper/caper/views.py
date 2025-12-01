@@ -2712,7 +2712,8 @@ def visualizer(request):
         return redirect('coamplification_graph')
 
     # construct graph and load into neo4j - this returns the Graph object
-    graph = load_graph(projects_df)
+    # Pass project_ids for caching support
+    graph = load_graph(projects_df, project_ids=selected_projects)
     IMPORT_END = time.time()
     
     # Cache the graph object in session for CSV download
