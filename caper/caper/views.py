@@ -2713,8 +2713,10 @@ def visualizer(request):
 
     # construct graph and load into neo4j - this returns the Graph object
     # Pass project_ids for caching support
+    IMPORT_START = time.time()
     graph = load_graph(projects_df, project_ids=selected_projects)
     IMPORT_END = time.time()
+    logging.error("----- NEO4J load_graph time: " + str(IMPORT_END - IMPORT_START) + " seconds -----")
     
     # Cache the graph object in session for CSV download
     # We can't serialize the full Graph object, so we'll store a flag indicating it's available
