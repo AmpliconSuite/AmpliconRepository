@@ -40,12 +40,14 @@ except ImportError:
 
 
 class MemoryMonitor:
-    def __init__(self, pid=None, interval=5, output_file=None):
+    def __init__(self, pid=None, interval=5, output_file=None, track_all=False):
         self.pid = pid
         self.interval = interval
         self.output_file = output_file
         self.baseline_memory = None
         self.samples = []
+        self.track_all = track_all  # Track all Django processes
+        self.process_pids = []  # List of PIDs to track
         
     def find_django_process(self):
         """Find Django manage.py process"""
@@ -57,6 +59,24 @@ class MemoryMonitor:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         return None
+    
+    def find_all_django_processes(self):
+        """Find all Django-related processes (parent + workers)"""
+        pids = []
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'ppid']):
+            try:
+                cmdline = proc.info['cmdline']
+                if cmdline:
+                    cmdline_str = ' '.join(cmdline)
+                    # Look for manage.py, gunicorn, uwsgi, or Python processes with Django
+                    if ('manage.py' in cmdline_str or 
+                        'gunicorn' in cmdline_str or 
+                        'uwsgi' in cmdline_str or
+                        ('python' in cmdline_str.lower() and 'django' in cmdline_str.lower())):
+                        pids.append(proc.info['pid'])
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return pids
     
     def get_process_info(self, pid):
         """Get detailed process information"""
@@ -81,6 +101,44 @@ class MemoryMonitor:
             print(f"Access denied to process {pid}")
             return None
     
+    def get_all_processes_info(self, pids):
+        """Get aggregated information from multiple processes"""
+        total_rss = 0
+        total_vms = 0
+        total_threads = 0
+        total_fds = 0
+        total_cpu = 0
+        active_pids = []
+        
+        for pid in pids:
+            try:
+                process = psutil.Process(pid)
+                mem_info = process.memory_info()
+                total_rss += mem_info.rss / 1024 / 1024
+                total_vms += mem_info.vms / 1024 / 1024
+                total_threads += process.num_threads()
+                if hasattr(process, 'num_fds'):
+                    total_fds += process.num_fds()
+                total_cpu += process.cpu_percent(interval=0.1)
+                active_pids.append(pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        if not active_pids:
+            return None
+        
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'rss_mb': total_rss,
+            'vms_mb': total_vms,
+            'percent': total_rss / (psutil.virtual_memory().total / 1024 / 1024) * 100,
+            'num_threads': total_threads,
+            'num_fds': total_fds if total_fds > 0 else None,
+            'cpu_percent': total_cpu,
+            'num_processes': len(active_pids),
+            'pids': active_pids
+        }
+    
     def format_memory_mb(self, mb):
         """Format memory in MB"""
         if mb >= 1024:
@@ -93,6 +151,8 @@ class MemoryMonitor:
             return
             
         print(f"\n[{info['timestamp']}]")
+        if 'num_processes' in info:
+            print(f"  Tracking {info['num_processes']} process(es): {info['pids']}")
         print(f"  RSS Memory (Physical): {self.format_memory_mb(info['rss_mb'])} ← Monitor this for leaks!")
         print(f"  VMS Memory (Virtual):  {self.format_memory_mb(info['vms_mb'])} (includes mapped files/libs)")
         print(f"  Memory %:   {info['percent']:.1f}%")
@@ -128,21 +188,37 @@ class MemoryMonitor:
     
     def monitor(self):
         """Main monitoring loop"""
-        if self.pid is None:
+        if self.track_all:
+            print("Searching for all Django-related processes...")
+            self.process_pids = self.find_all_django_processes()
+            if not self.process_pids:
+                print("Error: Could not find any Django processes")
+                print("Please start Django server or use --pid to specify a specific process")
+                return 1
+            print(f"Found {len(self.process_pids)} Django process(es): {self.process_pids}")
+        elif self.pid is None:
             print("Searching for Django process...")
             self.pid = self.find_django_process()
             if self.pid is None:
                 print("Error: Could not find Django manage.py process")
                 print("Please start Django server or specify PID with --pid")
+                print("Tip: Use --all to track all Django-related processes")
                 return 1
+            self.process_pids = [self.pid]
+        else:
+            self.process_pids = [self.pid]
         
-        print(f"Monitoring process {self.pid}")
+        print(f"Monitoring {len(self.process_pids)} process(es)")
         print(f"Sampling every {self.interval} seconds")
         print("Press Ctrl+C to stop\n")
         
         try:
             # Get baseline
-            baseline_info = self.get_process_info(self.pid)
+            if self.track_all or len(self.process_pids) > 1:
+                baseline_info = self.get_all_processes_info(self.process_pids)
+            else:
+                baseline_info = self.get_process_info(self.process_pids[0])
+                
             if baseline_info:
                 self.baseline_memory = baseline_info['rss_mb']
                 print("=== BASELINE ===")
@@ -154,8 +230,21 @@ class MemoryMonitor:
                 time.sleep(self.interval)
                 sample_count += 1
                 
-                info = self.get_process_info(self.pid)
+                # Refresh process list every 5 samples when tracking all processes
+                if self.track_all and sample_count % 5 == 0:
+                    self.process_pids = self.find_all_django_processes()
+                    if not self.process_pids:
+                        print("Warning: No Django processes found")
+                        break
+                
+                # Get info from single or multiple processes
+                if self.track_all or len(self.process_pids) > 1:
+                    info = self.get_all_processes_info(self.process_pids)
+                else:
+                    info = self.get_process_info(self.process_pids[0])
+                
                 if info is None:
+                    print("No process information available")
                     break
                 
                 self.samples.append(info)
@@ -223,12 +312,33 @@ class MemoryMonitor:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Monitor Django process memory usage for leak detection'
+        description='Monitor Django process memory usage for leak detection',
+        epilog="""
+Examples:
+  # Auto-detect single Django process
+  python memory_monitor.py
+  
+  # Track ALL Django processes (parent + workers) - RECOMMENDED for Docker/production
+  python memory_monitor.py --all
+  
+  # Monitor specific PID
+  python memory_monitor.py --pid 12345
+  
+  # Track all processes with 10-second intervals
+  python memory_monitor.py --all --interval 10 --output memory_log.json
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
         '--pid',
         type=int,
         help='Process ID to monitor (auto-detect if not specified)'
+    )
+    parser.add_argument(
+        '--all',
+        action='store_true',
+        dest='track_all',
+        help='Track ALL Django-related processes (parent + workers). Use this for production/Docker deployments.'
     )
     parser.add_argument(
         '--interval',
@@ -244,10 +354,15 @@ def main():
     
     args = parser.parse_args()
     
+    if args.pid and args.track_all:
+        print("Error: Cannot specify both --pid and --all")
+        return 1
+    
     monitor = MemoryMonitor(
         pid=args.pid,
         interval=args.interval,
-        output_file=args.output
+        output_file=args.output,
+        track_all=args.track_all
     )
     
     return monitor.monitor()
