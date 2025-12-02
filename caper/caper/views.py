@@ -1663,7 +1663,6 @@ def edit_project_page(request, project_name):
                     # Clean up before returning
                     del agg
                     gc.collect()
-                    gc.collect()
                     return render(request, 'pages/edit_project.html',
                               {'project': project,
                                'run': form,
@@ -2520,8 +2519,8 @@ def create_project(request):
                 # Ensure file is closed even if error occurs
                 try:
                     file.close()
-                except:
-                    pass
+                except Exception as e:
+                    logging.error(f"Error closing file {getattr(file, 'name', repr(file))}: {e}", exc_info=True)
         temp_directory = os.path.join('./tmp/', str(temp_proj_id))
 
         # Create a placeholder "processing" project in the database
