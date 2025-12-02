@@ -9,7 +9,6 @@ import weakref
 from collections import defaultdict
 from datetime import datetime
 import threading
-import objgraph
 
 logger = logging.getLogger(__name__)
 
