@@ -3,6 +3,7 @@ import os
 import gc
 import tracemalloc
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -77,7 +78,6 @@ from django.core.files.uploadedfile import TemporaryUploadedFile
 
 from wsgiref.util import FileWrapper
 import boto3, botocore, fnmatch, uuid, datetime, time
-from threading import Thread
 import dateutil.parser
 
 ## Message framework
@@ -93,6 +93,7 @@ import AmpliconSuiteAggregator
 # search
 from .search import *
 
+_thread_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='caper_worker')
 
 # SET UP HANDLE
 def loading(request):
@@ -1614,6 +1615,7 @@ def edit_project_page(request, project_name):
 
                     # Clean up before returning
                     del agg
+                    gc.collect()
                     return render(request, 'pages/edit_project.html',
                               {'project': project,
                                'run': form,
@@ -1635,6 +1637,8 @@ def edit_project_page(request, project_name):
                     # Need to flush to ensure all data is written to the temp file
                     temp_file.file.flush()
                     request.FILES['document'] = temp_file
+                    # Note: Don't close temp_file here - Django needs it open for fs.save() later
+                    # Django will automatically clean it up after the request completes
 
                 # Explicitly delete aggregator object after use to free memory
                 del agg
@@ -2343,13 +2347,18 @@ def create_project(request):
         
         # Save files to disk
         for file in files:
-            fs = FileSystemStorage(location = project_data_path)
-            saved = fs.save(file.name, file)
-            print(f'file: {file.name} is saved')
-            fp = os.path.join(project_data_path, file.name)
-            file_fps.append(file.name)
-            file.close()
-
+            try:
+                fs = FileSystemStorage(location = project_data_path)
+                saved = fs.save(file.name, file)
+                print(f'file: {file.name} is saved')
+                fp = os.path.join(project_data_path, file.name)
+                file_fps.append(file.name)
+            finally:
+                # Ensure file is closed even if error occurs
+                try:
+                    file.close()
+                except Exception as e:
+                    logging.error(f"Error closing file {getattr(file, 'name', repr(file))}: {e}", exc_info=True)
         temp_directory = os.path.join('./tmp/', str(temp_proj_id))
 
         # Create a placeholder "processing" project in the database
@@ -2382,13 +2391,17 @@ def create_project(request):
                 form_data[key] = value[0]
         
         # Start background thread to process and aggregate files
-        agg_thread = Thread(
-            target=_process_and_aggregate_files,
-            args=(file_fps, temp_proj_id, project_data_path, temp_directory, 
-                  form_data, request.user, extra_metadata_file_fp)
+        #agg_thread = Thread(
+        #    target=_process_and_aggregate_files,
+        #    args=(file_fps, temp_proj_id, project_data_path, temp_directory, 
+        #          form_data, request.user, extra_metadata_file_fp)
+        #)
+        #agg_thread.start()
+        _thread_executor.submit(
+            _process_and_aggregate_files,
+            file_fps, temp_proj_id, project_data_path, temp_directory,
+            form_data, request.user, extra_metadata_file_fp
         )
-        agg_thread.start()
-        
         # Immediately redirect to the processing project page
         return redirect('project_page', project_name=temp_proj_id)
     else:
@@ -2469,17 +2482,20 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     file_location = f'{project_data_path}/{request_file.name}'
     logging.debug("file stats: " + str(os.stat(file_location).st_size))
 
-    # extract the files async also
-    extract_thread = Thread(target=extract_project_files,
-        args=(tarfile, file_location, project_data_path, project_id, extra_metadata_file_fp, old_extra_metadata, samples_to_remove))
-
-    extract_thread.start()
+    # extract the files async also using thread pool
+    _thread_executor.submit(
+        extract_project_files,
+        tarfile, file_location, project_data_path, project_id, 
+        extra_metadata_file_fp, old_extra_metadata, samples_to_remove
+    )
 
     if settings.USE_S3_DOWNLOADS:
         # load the zip asynch to S3 for later use
-        s3_thread = Thread(target=upload_file_to_s3, args=(
-        f'{project_data_path}/{request_file.name}', f'{project_id}/{project_id}.tar.gz'))
-        s3_thread.start()
+        _thread_executor.submit(
+            upload_file_to_s3,
+            f'{project_data_path}/{request_file.name}', 
+            f'{project_id}/{project_id}.tar.gz'
+        )
     
     # Return success (True) for placeholder updates, or the new_id for new projects
     return True if placeholder_project_id else new_id
@@ -2506,6 +2522,12 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
         if save:
             fs = FileSystemStorage(location=project_data_path)
             file = fs.save(request_file.name, request_file)
+            # Close the request_file now that it's been saved to disk
+            # All subsequent operations use the file on disk, not this file object
+            try:
+                request_file.close()
+            except Exception as e:
+                logging.warning(f"Failed to close request_file: {e}")
             #file_exists = os.path.exists(project_data_path+ "/" + request_file.name)
             #if settings.USE_S3_DOWNLOADS and file_exists:
             #    # we need to upload it to S3, we use the same path as here in the bucket to keep things simple
@@ -2564,9 +2586,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     finish_flag = f"{project_data_path}/results/finished_project_creation.txt"
     with open(finish_flag, 'w') as finish_flag_file:
         finish_flag_file.write("NOT_FINISHED")
-    finish_flag_file.close()
-
-
+    
     with open(run_path, 'r') as run_json:
         runs = samples_to_dict(run_json)
 
