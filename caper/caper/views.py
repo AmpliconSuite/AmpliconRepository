@@ -2523,6 +2523,12 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
         if save:
             fs = FileSystemStorage(location=project_data_path)
             file = fs.save(request_file.name, request_file)
+            # Close the request_file now that it's been saved to disk
+            # All subsequent operations use the file on disk, not this file object
+            try:
+                request_file.close()
+            except Exception as e:
+                logging.warning(f"Failed to close request_file: {e}")
             #file_exists = os.path.exists(project_data_path+ "/" + request_file.name)
             #if settings.USE_S3_DOWNLOADS and file_exists:
             #    # we need to upload it to S3, we use the same path as here in the bucket to keep things simple
