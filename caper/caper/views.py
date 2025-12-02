@@ -78,7 +78,6 @@ from django.core.files.uploadedfile import TemporaryUploadedFile
 
 from wsgiref.util import FileWrapper
 import boto3, botocore, fnmatch, uuid, datetime, time
-from threading import Thread
 import dateutil.parser
 
 ## Message framework
@@ -2484,19 +2483,20 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     file_location = f'{project_data_path}/{request_file.name}'
     logging.debug("file stats: " + str(os.stat(file_location).st_size))
 
-    # extract the files async also
-    extract_thread = Thread(target=extract_project_files,
-        args=(tarfile, file_location, project_data_path, project_id, extra_metadata_file_fp, old_extra_metadata, samples_to_remove))
-
-    extract_thread.start()
-    
-    
+    # extract the files async also using thread pool
+    _thread_executor.submit(
+        extract_project_files,
+        tarfile, file_location, project_data_path, project_id, 
+        extra_metadata_file_fp, old_extra_metadata, samples_to_remove
+    )
 
     if settings.USE_S3_DOWNLOADS:
         # load the zip asynch to S3 for later use
-        s3_thread = Thread(target=upload_file_to_s3, args=(
-        f'{project_data_path}/{request_file.name}', f'{project_id}/{project_id}.tar.gz'))
-        s3_thread.start()
+        _thread_executor.submit(
+            upload_file_to_s3,
+            f'{project_data_path}/{request_file.name}', 
+            f'{project_id}/{project_id}.tar.gz'
+        )
     
     # Return success (True) for placeholder updates, or the new_id for new projects
     return True if placeholder_project_id else new_id
@@ -2587,9 +2587,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     finish_flag = f"{project_data_path}/results/finished_project_creation.txt"
     with open(finish_flag, 'w') as finish_flag_file:
         finish_flag_file.write("NOT_FINISHED")
-    finish_flag_file.close()
-
-
+    
     with open(run_path, 'r') as run_json:
         runs = samples_to_dict(run_json)
 
