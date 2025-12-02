@@ -1616,7 +1616,6 @@ def edit_project_page(request, project_name):
                     # Clean up before returning
                     del agg
                     gc.collect()
-                    gc.collect()
                     return render(request, 'pages/edit_project.html',
                               {'project': project,
                                'run': form,
