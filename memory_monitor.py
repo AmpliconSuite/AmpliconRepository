@@ -3,10 +3,14 @@
 Memory Leak Monitoring Script for CAPER Django Application
 
 This script helps identify memory leaks by:
-1. Monitoring Django process memory usage over time
+1. Monitoring Django process memory usage over time (RSS = physical memory)
 2. Tracking Python object growth
 3. Identifying top memory consumers
 4. Logging memory snapshots before/after operations
+
+Key Metrics:
+- RSS (Resident Set Size): Physical RAM used by the process ← WATCH THIS FOR LEAKS
+- VMS (Virtual Memory Size): Virtual address space (can be huge, includes mapped files)
 
 Usage:
     python memory_monitor.py [--pid PID] [--interval SECONDS] [--output FILE]
@@ -89,8 +93,8 @@ class MemoryMonitor:
             return
             
         print(f"\n[{info['timestamp']}]")
-        print(f"  RSS Memory: {self.format_memory_mb(info['rss_mb'])}")
-        print(f"  VMS Memory: {self.format_memory_mb(info['vms_mb'])}")
+        print(f"  RSS Memory (Physical): {self.format_memory_mb(info['rss_mb'])} ← Monitor this for leaks!")
+        print(f"  VMS Memory (Virtual):  {self.format_memory_mb(info['vms_mb'])} (includes mapped files/libs)")
         print(f"  Memory %:   {info['percent']:.1f}%")
         print(f"  Threads:    {info['num_threads']}")
         if info['num_fds']:
@@ -99,7 +103,7 @@ class MemoryMonitor:
         
         if self.baseline_memory:
             diff_mb = info['rss_mb'] - self.baseline_memory
-            print(f"  Change from baseline: {'+' if diff_mb > 0 else ''}{diff_mb:.2f} MB")
+            print(f"  RSS Change from baseline: {'+' if diff_mb > 0 else ''}{diff_mb:.2f} MB")
     
     def check_python_objects(self):
         """Check for Python object growth"""
