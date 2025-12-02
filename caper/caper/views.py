@@ -3,6 +3,7 @@ import os
 import gc
 import tracemalloc
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -93,6 +94,7 @@ import AmpliconSuiteAggregator
 # search
 from .search import *
 
+_thread_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='caper_worker')
 
 # SET UP HANDLE
 def loading(request):
@@ -1614,6 +1616,8 @@ def edit_project_page(request, project_name):
 
                     # Clean up before returning
                     del agg
+                    gc.collect()
+                    gc.collect()
                     return render(request, 'pages/edit_project.html',
                               {'project': project,
                                'run': form,
@@ -1635,6 +1639,8 @@ def edit_project_page(request, project_name):
                     # Need to flush to ensure all data is written to the temp file
                     temp_file.file.flush()
                     request.FILES['document'] = temp_file
+                    # Note: Don't close temp_file here - Django needs it open for fs.save() later
+                    # Django will automatically clean it up after the request completes
 
                 # Explicitly delete aggregator object after use to free memory
                 del agg
@@ -2343,13 +2349,18 @@ def create_project(request):
         
         # Save files to disk
         for file in files:
-            fs = FileSystemStorage(location = project_data_path)
-            saved = fs.save(file.name, file)
-            print(f'file: {file.name} is saved')
-            fp = os.path.join(project_data_path, file.name)
-            file_fps.append(file.name)
-            file.close()
-
+            try:
+                fs = FileSystemStorage(location = project_data_path)
+                saved = fs.save(file.name, file)
+                print(f'file: {file.name} is saved')
+                fp = os.path.join(project_data_path, file.name)
+                file_fps.append(file.name)
+            finally:
+                # Ensure file is closed even if error occurs
+                try:
+                    file.close()
+                except:
+                    pass
         temp_directory = os.path.join('./tmp/', str(temp_proj_id))
 
         # Create a placeholder "processing" project in the database
@@ -2382,13 +2393,17 @@ def create_project(request):
                 form_data[key] = value[0]
         
         # Start background thread to process and aggregate files
-        agg_thread = Thread(
-            target=_process_and_aggregate_files,
-            args=(file_fps, temp_proj_id, project_data_path, temp_directory, 
-                  form_data, request.user, extra_metadata_file_fp)
+        #agg_thread = Thread(
+        #    target=_process_and_aggregate_files,
+        #    args=(file_fps, temp_proj_id, project_data_path, temp_directory, 
+        #          form_data, request.user, extra_metadata_file_fp)
+        #)
+        #agg_thread.start()
+        _thread_executor.submit(
+            _process_and_aggregate_files,
+            file_fps, temp_proj_id, project_data_path, temp_directory,
+            form_data, request.user, extra_metadata_file_fp
         )
-        agg_thread.start()
-        
         # Immediately redirect to the processing project page
         return redirect('project_page', project_name=temp_proj_id)
     else:
@@ -2474,6 +2489,8 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         args=(tarfile, file_location, project_data_path, project_id, extra_metadata_file_fp, old_extra_metadata, samples_to_remove))
 
     extract_thread.start()
+    
+    
 
     if settings.USE_S3_DOWNLOADS:
         # load the zip asynch to S3 for later use
