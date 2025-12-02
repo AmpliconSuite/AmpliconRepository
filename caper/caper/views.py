@@ -2762,6 +2762,61 @@ def coamplification_graph(request):
     return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
 
 
+def get_projects_metadata(project_list):
+    """
+    Get lightweight metadata about projects without loading full dataframes.
+    Returns sample counts per project for display purposes.
+    
+    Returns:
+        dict: {project_name: [total_samples, ecdna_samples]}
+    """
+    samples_per_project = {}
+    
+    for project_name in project_list:
+        try:
+            project = validate_project(get_one_project(project_name), project_name)
+            
+            total_samples = len(project['runs'])
+            ecdna_samples = 0
+            
+            # Count ecDNA samples by checking Classification field
+            for sample_data in project['runs'].values():
+                if isinstance(sample_data, list) and sample_data:
+                    # Check if any entry in the sample has ecDNA classification
+                    for entry in sample_data:
+                        if isinstance(entry, dict) and entry.get('Classification', '').lower() == 'ecdna':
+                            ecdna_samples += 1
+                            break  # Count each sample once
+            
+            samples_per_project[project_name] = [total_samples, ecdna_samples]
+        except Exception as e:
+            logging.warning(f"Could not get metadata for project {project_name}: {e}")
+            samples_per_project[project_name] = [0, 0]
+    
+    return samples_per_project
+
+
+def get_reference_genomes(project_list):
+    """
+    Get reference genomes from projects without loading full dataframes.
+    
+    Returns:
+        list: Unique reference genome names
+    """
+    ref_genomes = set()
+    
+    for project_name in project_list:
+        try:
+            project = validate_project(get_one_project(project_name), project_name)
+            ref_genome = reference_genome_from_project(project['runs'])
+            if ref_genome and ref_genome not in ['Unknown', 'Multiple']:
+                ref_genomes.add(ref_genome)
+        except Exception as e:
+            logging.warning(f"Could not get reference genome for project {project_name}: {e}")
+    
+    return list(ref_genomes) if ref_genomes else ["Unknown"]
+
+
 # concatenate projects specified by project_list into a single data frame
 def concat_projects(project_list):
     start_time = time.time()
@@ -2838,37 +2893,122 @@ def visualizer(request):
         messages.error(request, "No projects selected for visualization.")
         return redirect('coamplification_graph')
 
-    # combine selected projects
-    CONCAT_START = time.time()
-    projects_df, projects_info = concat_projects(selected_projects)
-    CONCAT_END = time.time()
-
-    # If no data, redirect back
-    if projects_df.empty:
-        messages.error(request, "No valid data found in selected projects.")
-        return redirect('coamplification_graph')
-
-    # construct graph and load into neo4j - this returns the Graph object
-    graph = load_graph(projects_df)
-    IMPORT_END = time.time()
+    # Import check_cached_graph here to avoid circular imports
+    from .neo4j_utils import check_cached_graph
     
-    # Cache the graph object in session for CSV download
-    # We can't serialize the full Graph object, so we'll store a flag indicating it's available
-    # The download function can reconstruct it quickly from the cached projects_df
-    request.session['graph_available'] = True
-    request.session['graph_timestamp'] = time.time()
+    # Check if graph is already cached - if so, skip expensive concatenation
+    CACHE_CHECK_START = time.time()
+    is_cached = check_cached_graph(selected_projects)
+    CACHE_CHECK_END = time.time()
+    
+    if is_cached:
+        logging.info(f"Graph cache hit! Skipping concat_projects (cache check: {CACHE_CHECK_END - CACHE_CHECK_START:.3f}s)")
+        # Get lightweight metadata without full concatenation
+        projects_info = get_projects_metadata(selected_projects)
+        ref_genomes = get_reference_genomes(selected_projects)
+        total_samples = sum(info[0] for info in projects_info.values())
+        
+        CONCAT_TIME = 0
+        IMPORT_START = time.time()
+        # No need to call load_graph - graph already exists in Neo4j
+        # Just set the session flag
+        request.session['graph_available'] = True
+        request.session['graph_timestamp'] = time.time()
+        IMPORT_END = time.time()
+        
+        return render(request, 'pages/visualizer.html', {
+            'test_size': total_samples,
+            'diff': CONCAT_TIME,
+            'import_time': IMPORT_END - IMPORT_START,
+            'reference_genomes': ref_genomes,
+            'projects_stats': projects_info,
+            'cached': True
+        })
+    else:
+        logging.info("Graph cache miss. Loading and concatenating projects...")
+        # combine selected projects
+        CONCAT_START = time.time()
+        projects_df, projects_info = concat_projects(selected_projects)
+        CONCAT_END = time.time()
+        logging.error("----- DataFrame concatenation time: " + str(CONCAT_END - CONCAT_START) + " seconds -----")
+        # If no data, redirect back
+        if projects_df.empty:
+            messages.error(request, "No valid data found in selected projects.")
+            return redirect('coamplification_graph')
 
-    # Get reference genomes information for display
-    ref_genomes = projects_df[
-        'Reference_version'].unique().tolist() if 'Reference_version' in projects_df.columns else ["Unknown"]
+        # construct graph and load into neo4j - this returns the Graph object
+        # Pass project_ids for caching support
+        IMPORT_START = time.time()
+        graph = load_graph(projects_df, project_ids=selected_projects)
+        IMPORT_END = time.time()
+        logging.error("----- NEO4J load_graph time: " + str(IMPORT_END - IMPORT_START) + " seconds -----")
+        
+        # Cache the graph object in session for CSV download
+        # We can't serialize the full Graph object, so we'll store a flag indicating it's available
+        # The download function can reconstruct it quickly from the cached projects_df
+        request.session['graph_available'] = True
+        request.session['graph_timestamp'] = time.time()
 
-    return render(request, 'pages/visualizer.html', {
-        'test_size': len(projects_df),
-        'diff': CONCAT_END - CONCAT_START,
-        'import_time': IMPORT_END - CONCAT_END,
-        'reference_genomes': ref_genomes,
-        'projects_stats': projects_info
-    })
+        # Get reference genomes information for display
+        ref_genomes = projects_df[
+            'Reference_version'].unique().tolist() if 'Reference_version' in projects_df.columns else ["Unknown"]
+
+        return render(request, 'pages/visualizer.html', {
+            'test_size': len(projects_df),
+            'diff': CONCAT_END - CONCAT_START,
+            'import_time': IMPORT_END - CONCAT_END,
+            'reference_genomes': ref_genomes,
+            'projects_stats': projects_info,
+            'cached': False
+        })
+
+
+@login_required
+def clear_cache(request):
+    """
+    Clear the Neo4j graph cache for selected projects or all projects.
+    Can be called via POST with selected_projects, or GET to clear all.
+    Restricted to administrators only.
+    """
+    from .neo4j_utils import clear_graph_cache
+    
+    # Check if user is staff/admin
+    if not request.user.is_staff:
+        messages.error(request, "You do not have permission to clear the graph cache. This action is restricted to administrators.")
+        return redirect('index')
+    
+    if request.method == 'POST':
+        # Clear cache for specific projects
+        selected_projects = request.POST.getlist('selected_projects')
+        
+        if selected_projects:
+            count = clear_graph_cache(project_ids=selected_projects)
+            messages.success(request, f"Cleared graph cache for {len(selected_projects)} selected project(s).")
+            logging.info(f"User {request.user.username} cleared cache for projects: {selected_projects}")
+        else:
+            messages.warning(request, "No projects selected to clear cache.")
+        
+        return redirect('coamplification_graph')
+    
+    elif request.method == 'GET':
+        # GET request with confirmation - clear all caches
+        clear_all = request.GET.get('clear_all', 'false').lower() == 'true'
+        
+        if clear_all:
+            count = clear_graph_cache()
+            messages.success(request, f"Cleared all graph caches ({count} entries removed).")
+            logging.info(f"User {request.user.username} cleared all graph caches")
+            return redirect('coamplification_graph')
+        else:
+            # Show confirmation page
+            from .neo4j_utils import list_cached_graphs
+            cached_graphs = list_cached_graphs()
+            return render(request, 'pages/clear_cache_confirm.html', {
+                'cached_graphs': cached_graphs,
+                'total_caches': len(cached_graphs)
+            })
+    
+    return redirect('coamplification_graph')
 
 
 def fetch_graph(request, gene_name):

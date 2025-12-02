@@ -8,6 +8,7 @@ from .coamp_graph import Graph
 import pandas as pd
 import json
 import time
+import hashlib
 
 neo4j_driver = None
 
@@ -22,6 +23,62 @@ def get_driver():
         uri = "bolt://localhost:7687"
         neo4j_driver = GraphDatabase.driver(uri, auth=("neo4j", os.environ['NEO4J_PASSWORD_SECRET']))
     return neo4j_driver
+
+
+def generate_cache_key(project_ids):
+    """
+    Generate a unique cache key from a list of project IDs.
+    Uses sorted concatenated string, or hash if too long.
+    
+    Parameters:
+        project_ids (list): List of project IDs (can be strings or ObjectIds)
+    
+    Returns:
+        str: Cache key for the project combination
+    """
+    # Convert all IDs to strings and sort them
+    sorted_ids = sorted([str(pid) for pid in project_ids])
+    concatenated = "_".join(sorted_ids)
+    
+    # If the concatenated string is too long (>100 chars), use hash
+    if len(concatenated) > 100:
+        # Use SHA256 hash for consistent, collision-resistant key
+        hash_obj = hashlib.sha256(concatenated.encode('utf-8'))
+        return hash_obj.hexdigest()
+    
+    return concatenated
+
+
+def check_cached_graph(project_ids):
+    """
+    Check if a graph for the given project IDs already exists in Neo4j.
+    
+    Parameters:
+        project_ids (list): List of project IDs
+    
+    Returns:
+        bool: True if cached graph exists, False otherwise
+    """
+    cache_key = generate_cache_key(project_ids)
+    driver = get_driver()
+    
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (m:GraphMetadata {cache_key: $cache_key})
+            RETURN m.cache_key as cache_key, m.timestamp as timestamp, m.node_count as node_count
+            """, cache_key=cache_key
+        )
+        record = result.single()
+        
+        if record:
+            print(f"Found cached graph for cache_key: {cache_key}")
+            print(f"  Timestamp: {record['timestamp']}")
+            print(f"  Node count: {record['node_count']}")
+            return True
+        else:
+            print(f"No cached graph found for cache_key: {cache_key}")
+            return False
+
 
 def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_edges):
     if all_edges:
@@ -173,8 +230,33 @@ def fetch_subgraph(gene_name, min_weight, min_samples, oncogenes, all_edges):
     return nodes, edges
 
 # CREATE ROUTE with csrf_exempt (optional?)
-def load_graph(dataset=None):
+def load_graph(dataset=None, project_ids=None, force_reload=False):
+    """
+    Load a graph into Neo4j from a dataset. If project_ids are provided,
+    checks for a cached version first.
+    
+    Parameters:
+        dataset: DataFrame containing the project data
+        project_ids: List of project IDs used to generate this dataset (for caching)
+        force_reload: If True, bypass cache and force regeneration
+    
+    Returns:
+        Graph object
+    """
     driver = get_driver()
+    
+    # Check if we can use cached graph
+    if project_ids and not force_reload:
+        cache_key = generate_cache_key(project_ids)
+        if check_cached_graph(project_ids):
+            print(f"Using cached graph for cache_key: {cache_key}")
+            # Graph already exists in Neo4j, just construct and return Graph object
+            # We still need to return a Graph object for CSV export functionality
+            START_TIME = time.process_time()
+            graph = Graph(dataset)
+            CONSTRUCT_TIME = time.process_time()
+            print(f'Construct graph object (cached Neo4j data): {CONSTRUCT_TIME-START_TIME} s')
+            return graph
 
     # construct graph
     START_TIME = time.process_time()
@@ -230,6 +312,25 @@ def load_graph(dataset=None):
             MERGE (a)-[:COAMP {weight: toFloat(row.weight), inter: row.inter, union: row.union, distance: toInteger(row.distance), p_values: row.p_values, odds_ratios: row.odds_ratios, q_values: row.q_values}]->(b)
             """, edges=edges
         )
+        
+        # Add metadata node for caching if project_ids provided
+        if project_ids:
+            cache_key = generate_cache_key(project_ids)
+            session.run("""
+                CREATE (m:GraphMetadata {
+                    cache_key: $cache_key,
+                    project_ids: $project_ids,
+                    timestamp: timestamp(),
+                    node_count: $node_count,
+                    edge_count: $edge_count
+                })
+                """, 
+                cache_key=cache_key,
+                project_ids=[str(pid) for pid in project_ids],
+                node_count=len(nodes),
+                edge_count=len(edges)
+            )
+            print(f"Stored graph metadata with cache_key: {cache_key}")
         # session.run("""
         #     UNWIND $edges AS row
         #     MATCH (a:Node {label: row.source}), (b:Node {label: row.target})
@@ -243,6 +344,77 @@ def load_graph(dataset=None):
 
     # Return the graph object so it can be cached for CSV export
     return graph
+
+
+def clear_graph_cache(project_ids=None):
+    """
+    Clear cached graph(s) from Neo4j.
+    
+    Parameters:
+        project_ids: List of project IDs to clear specific cache, or None to clear all
+    
+    Returns:
+        int: Number of cache entries cleared
+    """
+    driver = get_driver()
+    
+    with driver.session() as session:
+        if project_ids:
+            cache_key = generate_cache_key(project_ids)
+            result = session.run("""
+                MATCH (m:GraphMetadata {cache_key: $cache_key})
+                DELETE m
+                RETURN count(m) as deleted_count
+                """, cache_key=cache_key
+            )
+            count = result.single()['deleted_count']
+            print(f"Cleared cache for cache_key: {cache_key}")
+        else:
+            # Clear all metadata (but keep the graph nodes/edges for current session)
+            result = session.run("""
+                MATCH (m:GraphMetadata)
+                DELETE m
+                RETURN count(m) as deleted_count
+                """
+            )
+            count = result.single()['deleted_count']
+            print(f"Cleared all graph cache metadata ({count} entries)")
+        
+        return count
+
+
+def list_cached_graphs():
+    """
+    List all cached graphs in Neo4j with their metadata.
+    
+    Returns:
+        list: List of dictionaries containing cache information
+    """
+    driver = get_driver()
+    
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (m:GraphMetadata)
+            RETURN m.cache_key as cache_key, 
+                   m.project_ids as project_ids, 
+                   m.timestamp as timestamp,
+                   m.node_count as node_count,
+                   m.edge_count as edge_count
+            ORDER BY m.timestamp DESC
+            """
+        )
+        
+        cached_graphs = []
+        for record in result:
+            cached_graphs.append({
+                'cache_key': record['cache_key'],
+                'project_ids': record['project_ids'],
+                'timestamp': record['timestamp'],
+                'node_count': record['node_count'],
+                'edge_count': record['edge_count']
+            })
+        
+        return cached_graphs
 
 
 def test_fetch_subgraph():
