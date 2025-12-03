@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import gc
 import tracemalloc
 import traceback
@@ -1502,8 +1503,8 @@ def edit_project_page(request, project_name):
         if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
             return HttpResponse("Project does not exist")
     if request.method == "POST":
-        #tracemalloc.start()
-        #start_snapshot = tracemalloc.take_snapshot()
+       
+        
         try:
             metadata_file = request.FILES.get("metadataFile")
         except Exception as e:
@@ -1513,6 +1514,9 @@ def edit_project_page(request, project_name):
         samples_to_remove = request.POST.getlist('samples_to_remove')
 
         project = get_one_project(project_name)
+        
+
+        
         old_alias_name = None
         if 'alias_name' in project:
             old_alias_name = project['alias_name']
@@ -1603,8 +1607,10 @@ def edit_project_page(request, project_name):
                 # print(f"AFTERS FILE FPS LIST: {file_fps}")
                 # print(f'aggregating on: {file_fps}')
                 temp_directory = os.path.join('./tmp/', str(temp_proj_id))
+                
                 agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
-
+                
+         
                 if not agg.completed:
                     ## redirect to edit page if aggregator fails
 
@@ -1637,6 +1643,7 @@ def edit_project_page(request, project_name):
                     # Need to flush to ensure all data is written to the temp file
                     temp_file.file.flush()
                     request.FILES['document'] = temp_file
+                 
                     # Note: Don't close temp_file here - Django needs it open for fs.save() later
                     # Django will automatically clean it up after the request completes
 
@@ -1687,10 +1694,11 @@ def edit_project_page(request, project_name):
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
             ## get extra metadata from csv first (if exists in old project), add it to the new proj
             old_extra_metadata = get_extra_metadata_from_project(project)
-
+        
             # Clear the large project dict before creating new version
             project_id_for_redirect = None
             new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,  previous_versions = new_prev_versions, previous_views = [views, downloads], old_subscribers = old_subscribers)
+      
 
             # can't delete it, if its being used in the other thread for metadata extraction
             if os.path.exists(temp_directory) and not extra_metadata_file_fp:
@@ -1717,11 +1725,11 @@ def edit_project_page(request, project_name):
                 del project
                 del old_extra_metadata
                 del new_prev_versions
-                #end_snapshot2 = tracemalloc.take_snapshot()
-                #top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
-                #logging.error("[3 -- Memory usage differences at end of edit_project_page]")
-                #for stat in top_stats2[:10]:
-                #    logging.error(stat)
+                
+               
+                # Force garbage collection 
+                gc.collect()
+               
 
                 # go to the new project
                 return redirect('project_page', project_name=project_id_for_redirect)
@@ -1803,13 +1811,6 @@ def edit_project_page(request, project_name):
                 del project
                 del current_runs
                 del old_extra_metadata
-
-                #end_snapshot2 = tracemalloc.take_snapshot()
-                #top_stats2 = end_snapshot2.compare_to(start_snapshot, 'lineno')
-                #print("[2 -- Memory usage differences at end of edit_project_page]")
-                #for stat in top_stats2[:10]:
-                #    print(stat)
-
 
                 return redirect('project_page', project_name=project_name)
             else:
@@ -1943,14 +1944,18 @@ def update_notification_preferences(request):
 # for users as they create the project
 
 def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
-    #tracemalloc.start()
-    #start_snapshot = tracemalloc.take_snapshot()
+   
+    
     t_sa = time.time()
     logging.info("Extracting files from tar...")
     try:
+       
+        
         with tarfile.open(file_location, "r:gz") as tar_file:
             tar_file.extractall(path=project_data_path)
         logging.info("Tar file extracted.")
+        
+
 
         # get run.json
         run_path = f'{project_data_path}/results/run.json'
@@ -1964,6 +1969,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         feature_count = 0
         total_features = sum(len(features) for features in runs.values())
 
+ 
+
         # get cnv, image, bed files
         for sample, features in runs.items():
             for feature in features:
@@ -1972,6 +1979,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                     logging.info(f"Processing feature {feature_count}/{total_features}...")
                     # Force garbage collection every 100 features to free memory
                     gc.collect()
+                    
+                  
 
                 if len(feature) > 0:
                     # get paths
@@ -2022,6 +2031,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         }
         collection_handle.update_one(query, finish_flag)
         logging.info(f"Finished extracting from tar and updating database in {str(diff)} seconds")
+        
+       
 
     except Exception as anError:
         logging.error("Error occurred extracting project tarfile results into "+ project_data_path)
@@ -2036,11 +2047,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             print(anError.args, file = fh )  # arguments stored in .args
             print(anError, file=fh)
 
-    #end_snapshot4 = tracemalloc.take_snapshot()
-    #top_stats4 = end_snapshot4.compare_to(start_snapshot, 'lineno')
-    #logging.error("\n\n[4 -- Memory usage differences at end of extract_project_files]")
-    #for stat in top_stats4[:10]:
-    #    logging.error(stat)
+    
 
     finish_flag = f"{project_data_path}/results/finished_project_creation.txt"
     with open(finish_flag, 'w') as finish_flag_file:
