@@ -483,7 +483,7 @@ def project_page(request, project_name, message=''):
         reference_genome = 'N/A'
         sample_data = []
         aggregate = None
-        stacked_bar_plot = None
+        stackedbar_plot = None
         pc_fig = None
     # For regular projects, process as before
     elif 'metadata_stored' not in project:
