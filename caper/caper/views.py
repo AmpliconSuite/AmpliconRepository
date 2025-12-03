@@ -1503,27 +1503,7 @@ def edit_project_page(request, project_name):
         if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
             return HttpResponse("Project does not exist")
     if request.method == "POST":
-        # ==== MEMORY LEAK INSTRUMENTATION START ====
-        from .memory_tracker import (
-            MemorySnapshot, ObjectTracker, get_global_tracker,
-            analyze_large_objects, track_file_objects, track_project_dict_references
-        )
-        
-        # Start memory tracking
-        if not tracemalloc.is_tracing():
-            tracemalloc.start()
-        
-        # Create object tracker for this request
-        tracker = get_global_tracker()
-        
-        # Take initial snapshot
-        snapshot_start = MemorySnapshot("edit_project_POST_start")
-        logging.info(f"[MEMORY] edit_project_page started for project: {project_name}")
-        
-        # Track initial memory state
-        initial_file_handles = track_file_objects()
-        logging.info(f"[MEMORY] Initial open file handles: {len(initial_file_handles)}")
-        # ==== MEMORY LEAK INSTRUMENTATION END ====
+       
         
         try:
             metadata_file = request.FILES.get("metadataFile")
@@ -1535,15 +1515,7 @@ def edit_project_page(request, project_name):
 
         project = get_one_project(project_name)
         
-        # ==== MEMORY TRACKING: Track project dict ====
-        tracker.track(project, f"project_dict_{project_name}", {
-            'project_name': project.get('project_name', 'unknown'),
-            'runs_count': len(project.get('runs', {})),
-            'size_mb': sys.getsizeof(project) / 1024 / 1024
-        })
-        snapshot_after_project_load = MemorySnapshot("after_project_load")
-        snapshot_after_project_load.compare_to(snapshot_start, top_n=10)
-        # ==== END MEMORY TRACKING ====
+
         
         old_alias_name = None
         if 'alias_name' in project:
@@ -1636,22 +1608,9 @@ def edit_project_page(request, project_name):
                 # print(f'aggregating on: {file_fps}')
                 temp_directory = os.path.join('./tmp/', str(temp_proj_id))
                 
-                # ==== MEMORY TRACKING: Before aggregation ====
-                snapshot_before_agg = MemorySnapshot("before_aggregation")
-                logging.info(f"[MEMORY] Starting aggregation with {len(file_fps)} files")
-                # ==== END MEMORY TRACKING ====
-                
                 agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
                 
-                # ==== MEMORY TRACKING: Track aggregator object ====
-                tracker.track(agg, f"aggregator_{temp_proj_id}", {
-                    'file_count': len(file_fps),
-                    'temp_dir': temp_directory
-                })
-                snapshot_after_agg = MemorySnapshot("after_aggregation")
-                snapshot_after_agg.compare_to(snapshot_before_agg, top_n=15)
-                # ==== END MEMORY TRACKING ====
-
+         
                 if not agg.completed:
                     ## redirect to edit page if aggregator fails
 
@@ -1670,10 +1629,6 @@ def edit_project_page(request, project_name):
                                'all_alias' :get_all_alias()})
                 ## after running aggregator, replace the requests file with the aggregated file:
 
-                # ==== MEMORY TRACKING: Before creating temp file ====
-                snapshot_before_tempfile = MemorySnapshot("before_temp_file_creation")
-                # ==== END MEMORY TRACKING ====
-                
                 with open(agg.aggregated_filename, 'rb') as f:
                     temp_file = TemporaryUploadedFile(
                         name=os.path.basename(agg.aggregated_filename),
@@ -1688,17 +1643,7 @@ def edit_project_page(request, project_name):
                     # Need to flush to ensure all data is written to the temp file
                     temp_file.file.flush()
                     request.FILES['document'] = temp_file
-                    
-                    # ==== MEMORY TRACKING: Track temp_file ====
-                    tracker.track(temp_file, f"temp_uploaded_file_{temp_proj_id}", {
-                        'filename': temp_file.name,
-                        'size_mb': temp_file.size / 1024 / 1024,
-                        'closed': getattr(temp_file, 'closed', 'unknown')
-                    })
-                    snapshot_after_tempfile = MemorySnapshot("after_temp_file_creation")
-                    snapshot_after_tempfile.compare_to(snapshot_before_tempfile, top_n=10)
-                    logging.info(f"[MEMORY] Created temp file: {temp_file.name}, size: {temp_file.size / 1024 / 1024:.2f} MB")
-                    # ==== END MEMORY TRACKING ====
+                 
                     # Note: Don't close temp_file here - Django needs it open for fs.save() later
                     # Django will automatically clean it up after the request completes
 
@@ -1749,26 +1694,11 @@ def edit_project_page(request, project_name):
             extra_metadata_file_fp = save_metadata_file(request, project_data_path)
             ## get extra metadata from csv first (if exists in old project), add it to the new proj
             old_extra_metadata = get_extra_metadata_from_project(project)
-            
-            # ==== MEMORY TRACKING: Track metadata ====
-            if old_extra_metadata:
-                tracker.track(old_extra_metadata, f"old_extra_metadata_{project_name}", {
-                    'sample_count': len(old_extra_metadata),
-                    'size_kb': sys.getsizeof(old_extra_metadata) / 1024
-                })
-            snapshot_before_create = MemorySnapshot("before_create_project")
-            logging.info(f"[MEMORY] About to call _create_project (spawns background threads)")
-            # ==== END MEMORY TRACKING ====
-
+        
             # Clear the large project dict before creating new version
             project_id_for_redirect = None
             new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,  previous_versions = new_prev_versions, previous_views = [views, downloads], old_subscribers = old_subscribers)
-            
-            # ==== MEMORY TRACKING: After _create_project ====
-            snapshot_after_create = MemorySnapshot("after_create_project")
-            snapshot_after_create.compare_to(snapshot_before_create, top_n=15)
-            logging.info(f"[MEMORY] _create_project completed (background threads launched)")
-            # ==== END MEMORY TRACKING ====
+      
 
             # can't delete it, if its being used in the other thread for metadata extraction
             if os.path.exists(temp_directory) and not extra_metadata_file_fp:
@@ -1796,39 +1726,10 @@ def edit_project_page(request, project_name):
                 del old_extra_metadata
                 del new_prev_versions
                 
-                # ==== COMPREHENSIVE MEMORY LEAK DETECTION ====
-                snapshot_before_redirect = MemorySnapshot("before_redirect")
-                snapshot_before_redirect.compare_to(snapshot_start, top_n=25)
-                
-                # Check for tracked object leaks
-                logging.error("\n[MEMORY LEAK CHECK] Checking tracked objects...")
-                leaked_objects = tracker.check_leaks()
-                
-                # Analyze large objects still in memory
-                logging.error("\n[MEMORY LEAK CHECK] Analyzing large objects (>1MB)...")
-                analyze_large_objects(min_size_mb=1, top_n=20)
-                
-                # Check for open file handles
-                logging.error("\n[MEMORY LEAK CHECK] Checking file handles...")
-                final_file_handles = track_file_objects()
-                if len(final_file_handles) > len(initial_file_handles):
-                    logging.error(f"[MEMORY LEAK] File handle leak detected! Initial: {len(initial_file_handles)}, Final: {len(final_file_handles)}")
-                
-                # Check for lingering project dict references
-                logging.error("\n[MEMORY LEAK CHECK] Checking project dict references...")
-                track_project_dict_references(project_name)
-                
-                # Force garbage collection and report
-                collected = gc.collect()
-                logging.info(f"[MEMORY] GC collected {collected} objects before redirect")
-                
-                # Final memory summary
-                logging.error(f"\n{'='*80}")
-                logging.error(f"[MEMORY] edit_project_page COMPLETE for project: {project_name}")
-                logging.error(f"[MEMORY] Redirect to: {project_id_for_redirect}")
-                logging.error(f"[MEMORY] Potential leaks: {len(leaked_objects)} objects")
-                logging.error(f"{'='*80}\n")
-                # ==== END COMPREHENSIVE MEMORY LEAK DETECTION ====
+               
+                # Force garbage collection 
+                gc.collect()
+               
 
                 # go to the new project
                 return redirect('project_page', project_name=project_id_for_redirect)
@@ -1910,22 +1811,6 @@ def edit_project_page(request, project_name):
                 del project
                 del current_runs
                 del old_extra_metadata
-
-                # ==== MEMORY LEAK DETECTION (no file upload path) ====
-                snapshot_end_nofile = MemorySnapshot("end_no_file_upload")
-                snapshot_end_nofile.compare_to(snapshot_start, top_n=20)
-                
-                leaked_objects = tracker.check_leaks()
-                analyze_large_objects(min_size_mb=1, top_n=15)
-                final_file_handles = track_file_objects()
-                
-                if len(final_file_handles) > len(initial_file_handles):
-                    logging.error(f"[MEMORY LEAK] File handle leak! Initial: {len(initial_file_handles)}, Final: {len(final_file_handles)}")
-                
-                collected = gc.collect()
-                logging.info(f"[MEMORY] GC collected {collected} objects (no file path)")
-                logging.error(f"[MEMORY] edit_project_page COMPLETE (no file upload) - Potential leaks: {len(leaked_objects)}")
-                # ==== END MEMORY LEAK DETECTION ====
 
                 return redirect('project_page', project_name=project_name)
             else:
@@ -2059,32 +1944,18 @@ def update_notification_preferences(request):
 # for users as they create the project
 
 def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
-    # ==== THREAD MEMORY TRACKING START ====
-    from .memory_tracker import ThreadMemoryTracker, get_global_tracker, track_file_objects
-    
-    thread_tracker = ThreadMemoryTracker(f"extract_project_files_{project_id}")
-    thread_tracker.start()
-    tracker = get_global_tracker()
-    # ==== END THREAD MEMORY TRACKING ====
+   
     
     t_sa = time.time()
     logging.info("Extracting files from tar...")
     try:
-        # ==== THREAD MEMORY: Track old_extra_metadata if provided ====
-        if old_extra_metadata:
-            tracker.track(old_extra_metadata, f"thread_old_extra_metadata_{project_id}", {
-                'sample_count': len(old_extra_metadata),
-                'thread': 'extract_project_files'
-            })
-        # ==== END THREAD MEMORY ====
+       
         
         with tarfile.open(file_location, "r:gz") as tar_file:
             tar_file.extractall(path=project_data_path)
         logging.info("Tar file extracted.")
         
-        # ==== THREAD MEMORY: Checkpoint after extraction ====
-        thread_tracker.checkpoint("after_tar_extraction")
-        # ==== END THREAD MEMORY ====
+
 
         # get run.json
         run_path = f'{project_data_path}/results/run.json'
@@ -2098,13 +1969,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         feature_count = 0
         total_features = sum(len(features) for features in runs.values())
 
-        # ==== THREAD MEMORY: Track runs dict ====
-        tracker.track(runs, f"thread_runs_dict_{project_id}", {
-            'sample_count': len(runs),
-            'total_features': total_features,
-            'thread': 'extract_project_files'
-        })
-        # ==== END THREAD MEMORY ====
+ 
 
         # get cnv, image, bed files
         for sample, features in runs.items():
@@ -2115,10 +1980,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                     # Force garbage collection every 100 features to free memory
                     gc.collect()
                     
-                    # ==== THREAD MEMORY: Checkpoint every 100 features ====
-                    if feature_count % 500 == 0:  # More detailed checkpoint every 500
-                        thread_tracker.checkpoint(f"after_{feature_count}_features")
-                    # ==== END THREAD MEMORY ====
+                  
 
                 if len(feature) > 0:
                     # get paths
@@ -2170,9 +2032,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         collection_handle.update_one(query, finish_flag)
         logging.info(f"Finished extracting from tar and updating database in {str(diff)} seconds")
         
-        # ==== THREAD MEMORY: Checkpoint after DB update ====
-        thread_tracker.checkpoint("after_db_update")
-        # ==== END THREAD MEMORY ====
+       
 
     except Exception as anError:
         logging.error("Error occurred extracting project tarfile results into "+ project_data_path)
@@ -2187,22 +2047,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             print(anError.args, file = fh )  # arguments stored in .args
             print(anError, file=fh)
 
-    # ==== COMPREHENSIVE THREAD MEMORY LEAK DETECTION ====
-    logging.error(f"\n[THREAD MEMORY] extract_project_files ending for project {project_id}")
     
-    # Check for file handle leaks in thread
-    thread_file_handles = track_file_objects()
-    if thread_file_handles:
-        logging.error(f"[THREAD MEMORY LEAK] Thread has {len(thread_file_handles)} open file handles!")
-    
-    # Check tracked objects for this thread
-    leaked = tracker.check_leaks()
-    
-    # End thread tracking with full comparison
-    thread_tracker.end()
-    
-    logging.error(f"[THREAD MEMORY] Thread completed - Potential leaks: {len(leaked)}")
-    # ==== END THREAD MEMORY LEAK DETECTION ====
 
     finish_flag = f"{project_data_path}/results/finished_project_creation.txt"
     with open(finish_flag, 'w') as finish_flag_file:
