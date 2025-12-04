@@ -335,13 +335,13 @@ window.addEventListener('DOMContentLoaded', function () {
             const datacontainer = document.getElementById('data-container');
             datacontainer.innerHTML = ''; // Clear previous rows
 
-            let rownumber = 0;
+            // let rownumber = 0;
 
             cy.nodes().forEach(node => {
-                row = document.createElement('tr');
+                const row = document.createElement('tr');
 
-                rownumber_element = document.createElement('td');
-                rownumber_element.textContent = rownumber;
+                // rownumber_element = document.createElement('td');
+                // rownumber_element.textContent = rownumber;
 
                 const cellName = document.createElement('td');
                 const geneName = node.data('label');
@@ -361,7 +361,7 @@ window.addEventListener('DOMContentLoaded', function () {
                 edges = node.edgesWith(cy.$(nodeID[inputNode]));
                 cellWeight.textContent = String(edges[0]?.data('weight').toFixed(3) ?? 'N/A');
 
-                row.appendChild(rownumber_element);
+                // row.appendChild(rownumber_element);
                 row.appendChild(cellName);
                 row.appendChild(cellStatus);
                 row.appendChild(cellWeight);
@@ -369,7 +369,7 @@ window.addEventListener('DOMContentLoaded', function () {
 
                 datacontainer.appendChild(row);
 
-                rownumber++;
+                // rownumber++;
 
                 // Add click event to each row
                 row.addEventListener('click', (event) => {
@@ -382,6 +382,8 @@ window.addEventListener('DOMContentLoaded', function () {
                     console.log(clickedRow);
                 });
             });
+            // initialize sorted by co-amp frequency
+            sortTable(2, 'desc');
 
             // Resize elements on tap
             cy.on('tap', 'edge', (event) => {
@@ -641,7 +643,7 @@ window.addEventListener('DOMContentLoaded', function () {
 
     // ---------------------------- Table and Download -----------------------------
     // Function to sort the table when clicking on column headers
-    function sortTable(columnIndex) {
+    function sortTable(columnIndex, defaultOrder = null) {
         const table = document.getElementById('data-table');
         const tbody = document.getElementById('data-container');
         const rows = Array.from(tbody.querySelectorAll('tr'));
@@ -649,7 +651,12 @@ window.addEventListener('DOMContentLoaded', function () {
         // Remove the "No data available" row temporarily if present
         if (noDataRow) rows.splice(rows.indexOf(noDataRow), 1);
         // Toggle sort order
-        let sortOrder = table.dataset.sortOrder === 'asc' ? 'desc' : 'asc';
+        let sortOrder;
+        if (defaultOrder) {
+            sortOrder = defaultOrder;
+        } else {
+            sortOrder = table.dataset.sortOrder === 'asc' ? 'desc' : 'asc';
+        }
         table.dataset.sortOrder = sortOrder;
         // Sort rows based on the content of the selected column
         rows.sort((a, b) => {
@@ -665,18 +672,39 @@ window.addEventListener('DOMContentLoaded', function () {
                     : cellB.localeCompare(cellA);
             }
         });
-        let rownumber = 1;
-        // Re-add sorted rows to the tbody
-        rows.forEach(
-            row => {
-                row.children[0].innerText = rownumber;
-                tbody.appendChild(row);
-                rownumber++;
-            }
-        )
+
+        // let rownumber = 1;
+        // // Re-add sorted rows to the tbody
+        // rows.forEach(
+        //     row => {
+        //         row.children[0].innerText = rownumber;
+        //         tbody.appendChild(row);
+        //         rownumber++;
+        //     }
+        // )
+        rows.forEach(row => tbody.appendChild(row));
+
         // Re-add the "No data available" row if needed
         if (noDataRow && rows.length === 0) tbody.appendChild(noDataRow);
+
+        updateSortIndicators(columnIndex, sortOrder);
     }
+
+    // Add sort indicators (▲▼)
+    function updateSortIndicators(columnIndex, sortOrder) {
+        document.querySelectorAll('#data-table th').forEach((th, i) => {
+            th.classList.remove('sort-asc', 'sort-desc');
+            if (i === columnIndex) {
+            th.classList.add(sortOrder === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
+        });
+    }
+
+    // Attach click listeners for sorting
+    document.querySelectorAll('#data-table th').forEach((header, index) => {
+        header.style.cursor = 'pointer';
+        header.addEventListener('click', () => sortTable(index));
+    });
 
     // Helper function to format lists for csv, accounting for quotes
     function formatCell(cellContent) {

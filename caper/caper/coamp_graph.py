@@ -920,6 +920,7 @@ class Graph:
                   f"{record_a['label']} samples: {geneA_samples}\n" \
                   f"{record_b['label']} samples: {geneB_samples}\n" \
                   f"{record_a['label']} & {record_b['label']} (same interval): {O11}\n" \
+                  f"Union size: {total_amps}\n" \
                   f"Total co-amplifications: {total_coamps}\n" \
                   f"Non-applicable co-amps: {nonapplicable_coamps}\n" \
                   f"Total samples: {self.total_samples}\n" \
@@ -952,9 +953,9 @@ class Graph:
         # E11 = (geneA_samples) * (geneB_samples) * (1 - pdD) / self.total_samples
         E11 = (geneA_samples) * (geneB_samples) * M_SAME_CHR/ self.total_samples
         # E12 = geneA_samples * (self.total_samples - geneB_samples) / self.total_samples
-        E12 = geneA_samples - E11
+        E12 = max(0, geneA_samples - E11)
         # E21 = geneB_samples * (self.total_samples - geneA_samples) / self.total_samples
-        E21 = geneB_samples - E11
+        E21 = max(0, geneB_samples - E11)
         E22 = self.total_samples - (E11 + E12 + E21)
         exp = [E11, E12, E21, E22]
 
@@ -995,8 +996,8 @@ class Graph:
         E11 = (geneA_samples) * (geneB_samples) * (M_MULTI_CHR) / self.total_samples
         # E12 = geneA_samples * (self.total_samples - geneB_samples) / self.total_samples
         # E21 = geneB_samples * (self.total_samples - geneA_samples) / self.total_samples
-        E12 = geneA_samples - E11
-        E21 = geneB_samples - E11
+        E12 = max(0, geneA_samples - E11)
+        E21 = max(0, geneB_samples - E11)
         E22 = self.total_samples - (E11 + E12 + E21)
         exp = [E11, E12, E21, E22]
 
@@ -1033,8 +1034,8 @@ class Graph:
 
         # expected
         E11 = (geneA_samples) * (geneB_samples) * (M_ECDNA_SPECIES) / self.total_samples
-        E12 = geneA_samples - E11
-        E21 = geneB_samples - E11
+        E12 = max(0, geneA_samples - E11)
+        E21 = max(0, geneB_samples - E11)
         E22 = self.total_samples - (E11 + E12 + E21)
         exp = [E11, E12, E21, E22]
 
