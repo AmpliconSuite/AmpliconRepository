@@ -1683,9 +1683,10 @@ def edit_project_page(request, project_name):
             new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,  previous_versions = new_prev_versions, previous_views = [views, downloads], old_subscribers = old_subscribers)
       
 
-            # can't delete it, if its being used in the other thread for metadata extraction
-            if os.path.exists(temp_directory) and not extra_metadata_file_fp:
-                shutil.rmtree(temp_directory)
+            # Don't delete temp_directory yet - the background extraction thread needs access to the tar file
+            # The cleanup will happen in extract_project_files after extraction completes
+            # if os.path.exists(temp_directory) and not extra_metadata_file_fp:
+            #     shutil.rmtree(temp_directory)
 
             if new_id is not None:
                 project_id_for_redirect = new_id.inserted_id
@@ -2057,6 +2058,14 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
     with open(finish_flag, 'w') as finish_flag_file:
         finish_flag_file.write("FINISHED")
     finish_flag_file.close()
+    
+    # Clean up the tar file after successful extraction to save disk space
+    try:
+        if os.path.exists(file_location):
+            os.remove(file_location)
+            logging.info(f"Cleaned up tar file: {file_location}")
+    except Exception as e:
+        logging.warning(f"Failed to clean up tar file {file_location}: {e}")
 
 
 
@@ -2305,9 +2314,10 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         success = _create_project(form, mock_request, extra_metadata_file_fp, 
                                    placeholder_project_id=temp_proj_id)
 
-        # Clean up temp directory if not needed for metadata extraction
-        if os.path.exists(temp_directory) and not extra_metadata_file_fp:
-            shutil.rmtree(temp_directory)
+        # Don't clean up temp directory yet - the background extraction thread needs access to the tar file
+        # The cleanup will happen in extract_project_files after extraction completes
+        # if os.path.exists(temp_directory) and not extra_metadata_file_fp:
+        #     shutil.rmtree(temp_directory)
 
         if not success:
             # Mark project as failed
