@@ -2,7 +2,6 @@ import logging
 import os
 import sys
 import gc
-import tracemalloc
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
@@ -261,8 +260,6 @@ def update_sample_counts(request):
 
 
 def index(request):
-    t_sa = time.time()
-
     # Base query for non-deleted projects
     base_query = {'delete': False}
     projection = {'runs': 0}  # Exclude runs field from all queries
@@ -296,7 +293,6 @@ def index(request):
         private_projects = []
 
     site_stats = get_latest_site_statistics()
-    logging.info(f"Retrieved info for index page in {time.time() - t_sa} seconds")
     return render(request, "pages/index.html", {
         'public_projects': public_projects,
         'private_projects': private_projects,
@@ -413,8 +409,6 @@ def create_aggregate_df(project, samples):
     """
     creates the aggregate dataframe for figures:
     """
-    t_sa = time.time()
-
     dfl = []
     for _, dlist in samples.items():
         dfl.append(pd.DataFrame(dlist))
@@ -425,9 +419,6 @@ def create_aggregate_df(project, samples):
         os.system(f'mkdir -p tmp/{proj_id}')
     aggregate_save_fp = os.path.join('tmp', proj_id, f'{proj_id}_aggregated_df.csv')
     aggregate.to_csv(aggregate_save_fp)
-    t_sb = time.time()
-    diff = t_sb - t_sa
-    logging.info(f"Iteratively build project dataframe from samples in {diff} seconds")
 
     return aggregate, aggregate_save_fp
 
@@ -442,7 +433,6 @@ def project_page(request, project_name, message=''):
     will append sample_data, ref genome, feature_list to project json in the database
     for faster querying in the future.
     """
-    t_i = time.time()
     ## leaving this bit of code here
     ### this part will delete the metadata_stored field for a project
     ### is is only run IF we need to reset a project and reload the data
@@ -519,10 +509,6 @@ def project_page(request, project_name, message=''):
             
         stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
         pc_fig = piechart.pie_chart(aggregate, fa_cmap)
-
-    t_f = time.time()
-    diff = t_f - t_i
-    logging.info(f"Generated the project page for '{project['project_name']}' with views.py in {diff} seconds")
 
     # check for an error when project was created, but don't override a message that was already sent in
     if not message:
@@ -1421,13 +1407,11 @@ def project_delete(request, project_name):
         
         # Clean up large objects
         del project
-        gc.collect()
         
         return redirect('profile')
     else:
         # Clean up even on error path
         del project
-        gc.collect()
         return HttpResponse("Project does not exist")
 
 
@@ -1621,7 +1605,6 @@ def edit_project_page(request, project_name):
 
                     # Clean up before returning
                     del agg
-                    gc.collect()
                     return render(request, 'pages/edit_project.html',
                               {'project': project,
                                'run': form,
@@ -1725,11 +1708,8 @@ def edit_project_page(request, project_name):
                 del project
                 del old_extra_metadata
                 del new_prev_versions
-                
-               
-                # Force garbage collection 
-                gc.collect()
-               
+
+
 
                 # go to the new project
                 return redirect('project_page', project_name=project_id_for_redirect)
@@ -1944,21 +1924,50 @@ def update_notification_preferences(request):
 # for users as they create the project
 
 def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
-   
-    
-    t_sa = time.time()
     logging.info("Extracting files from tar...")
     try:
-       
+        # Check tar file structure before extraction
+        with tarfile.open(file_location, "r:gz") as tar_file:
+            member_names = tar_file.getnames()
+            logging.info(f"Tar file contains {len(member_names)} members")
+            logging.info(f"First 10 members: {member_names[:10]}")
+            # Check if run.json exists and where
+            run_json_members = [m for m in member_names if 'run.json' in m]
+            logging.info(f"run.json locations in tar: {run_json_members}")
         
         with tarfile.open(file_location, "r:gz") as tar_file:
             tar_file.extractall(path=project_data_path)
+        
+        # Verify extraction completed by checking if the path exists
+        if not os.path.exists(project_data_path):
+            logging.error(f"CRITICAL: Extraction target directory doesn't exist after extractall: {project_data_path}")
+            raise FileNotFoundError(f"Extraction directory not found: {project_data_path}")
+            
         logging.info("Tar file extracted.")
         
-
+        # Debug: Check what was actually extracted
+        logging.info(f"Checking extracted contents in {project_data_path}")
+        if os.path.exists(project_data_path):
+            contents = os.listdir(project_data_path)
+            logging.info(f"Top-level contents: {contents}")
+            if os.path.exists(f'{project_data_path}/results'):
+                results_contents = os.listdir(f'{project_data_path}/results')
+                logging.info(f"Results directory contents: {results_contents[:10]}")  # First 10 items
+        else:
+            logging.error(f"Project data path does not exist: {project_data_path}")
 
         # get run.json
         run_path = f'{project_data_path}/results/run.json'
+        if not os.path.exists(run_path):
+            logging.error(f"run.json not found at expected path: {run_path}")
+            # Try to find it
+            for root, dirs, files in os.walk(project_data_path):
+                if 'run.json' in files:
+                    actual_path = os.path.join(root, 'run.json')
+                    logging.info(f"Found run.json at: {actual_path}")
+                    run_path = actual_path
+                    break
+        
         with open(run_path, 'r') as run_json:
            runs = samples_to_dict(run_json)
 
@@ -1977,10 +1986,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                 feature_count += 1
                 if feature_count % 100 == 0:
                     logging.info(f"Processing feature {feature_count}/{total_features}...")
-                    # Force garbage collection every 100 features to free memory
-                    gc.collect()
-                    
-                  
+
 
                 if len(feature) > 0:
                     # get paths
@@ -2021,8 +2027,6 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         new_val["$set"].update(tool_versions)
 
         collection_handle.update_one(query, new_val)
-        t_sb = time.time()
-        diff = t_sb - t_sa
 
         finish_flag = {
             "$set" : {
@@ -2030,7 +2034,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             }
         }
         collection_handle.update_one(query, finish_flag)
-        logging.info(f"Finished extracting from tar and updating database in {str(diff)} seconds")
+        logging.info("Finished extracting from tar and updating database")
         
        
 
@@ -2558,7 +2562,6 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     #     tar_file.extractall(members=[x for x in tar_file.getmembers() if x.name in files_i_want],
     #                         path=project_data_path)
 
-    ti = time.time()
     failed = False
     # print(f'{file_location}')
     logging.debug("FILE LOCATION EXISTS: " + str(os.path.exists(file_location)))
@@ -2577,7 +2580,6 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
         # os.remove(file_location)
         return None, None
 
-    logging.debug(str(time.time() - ti) + " seconds for extraction of run.json")
 
     with open(file_location, "rb") as tar_file:
         project_tar_id = fs_handle.put(tar_file)
@@ -2846,15 +2848,12 @@ def get_reference_genomes(project_list):
 
 # concatenate projects specified by project_list into a single data frame
 def concat_projects(project_list):
-    start_time = time.time()
-
     # Pre-allocate lists for efficiency
     all_samples = []
     sample_count = 0
     samples_per_project = {}
 
     for project_name in project_list:
-        project_start = time.time()
         project = validate_project(get_one_project(project_name), project_name)
 
         # Get reference genome for this project - do this once per project
@@ -2890,9 +2889,8 @@ def concat_projects(project_list):
             project_df = pd.concat(project_samples, ignore_index=True)
             all_samples.append(project_df)
 
-        project_time = time.time() - project_start
         logging.debug(
-            f"Processed project {project_name} with {len(project_samples)} samples in {project_time:.3f} seconds")
+            f"Processed project {project_name} with {len(project_samples)} samples")
 
     # If no valid projects, return empty DataFrame
     if not all_samples:
@@ -2900,14 +2898,10 @@ def concat_projects(project_list):
         return pd.DataFrame(), {}
 
     # Final concatenation of all project DataFrames
-    concat_start = time.time()
     df = pd.concat(all_samples, ignore_index=True)
-    concat_time = time.time() - concat_start
 
-    total_time = time.time() - start_time
     logging.debug(
-        f"Concatenated {sample_count} samples from {len(project_list)} projects into DataFrame with {len(df)} rows in {total_time:.3f} seconds")
-    logging.debug(f"Final concatenation took {concat_time:.3f} seconds")
+        f"Concatenated {sample_count} samples from {len(project_list)} projects into DataFrame with {len(df)} rows")
 
     return df, samples_per_project
 
@@ -2924,23 +2918,18 @@ def visualizer(request):
     from .neo4j_utils import check_cached_graph
     
     # Check if graph is already cached - if so, skip expensive concatenation
-    CACHE_CHECK_START = time.time()
     is_cached = check_cached_graph(selected_projects)
-    CACHE_CHECK_END = time.time()
     
     if is_cached:
-        logging.info(f"Graph cache hit! Skipping concat_projects (cache check: {CACHE_CHECK_END - CACHE_CHECK_START:.3f}s)")
+        logging.info("Graph cache hit! Skipping concat_projects")
         # Get lightweight metadata without full concatenation
         projects_info = get_projects_metadata(selected_projects)
         ref_genomes = get_reference_genomes(selected_projects)
         total_samples = sum(info[0] for info in projects_info.values())
         
-        CONCAT_TIME = 0
-        IMPORT_START = time.time()
         # No need to call load_graph - graph already exists in Neo4j
         # Just set the session flag
         request.session['graph_available'] = True
-        request.session['graph_timestamp'] = time.time()
         IMPORT_END = time.time()
         
         return render(request, 'pages/visualizer.html', {
