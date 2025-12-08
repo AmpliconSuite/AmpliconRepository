@@ -2256,6 +2256,8 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
     Updates the project once aggregation is complete.
     """
     try:
+        logging.info(f"_process_and_aggregate_files - start ")
+
         print(AmpliconSuiteAggregator.__file__)
         if hasattr(AmpliconSuiteAggregator, '__version__'):
             print(f"AmpliconSuiteAggregator version: {AmpliconSuiteAggregator.__version__}")
@@ -2263,8 +2265,11 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
             print(f"Aggregator version: {Aggregator.__version__}")
         else:
             print("No version attribute found for Aggregator or AmpliconSuiteAggregator.")
+        logging.info(f"_process_and_aggregate_files - Aggregator start ")
 
         agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
+
+        logging.info(f"_process_and_aggregate_files - Aggregator END ")
 
         if not agg.completed:
             # Mark project as failed
@@ -2354,7 +2359,7 @@ def create_project(request):
     if request.method == "POST":
         ## preprocess request
         # request = preprocess(request)
-
+        logging.info(f"Starting create project")
         form = RunForm(request.POST)
         if not form.is_valid():
             raise Http404()
@@ -2365,7 +2370,7 @@ def create_project(request):
         files = request.FILES.getlist('document')
         project_data_path = f"tmp/{temp_proj_id}" ## to change
         extra_metadata_file_fp = save_metadata_file(request, project_data_path)
-        
+        logging.info(f"CreateProject - START save files to disk")
         # Save files to disk
         for file in files:
             try:
@@ -2381,7 +2386,7 @@ def create_project(request):
                 except Exception as e:
                     logging.error(f"Error closing file {getattr(file, 'name', repr(file))}: {e}", exc_info=True)
         temp_directory = os.path.join('./tmp/', str(temp_proj_id))
-
+        logging.info(f"CreateProject - FINISHED save files to disk")
         # Create a placeholder "processing" project in the database
         form_dict = form_to_dict(form)
         project_name = form_dict.get('project_name', 'Unnamed Project')
@@ -2403,7 +2408,7 @@ def create_project(request):
         }
         
         collection_handle.insert_one(placeholder_project)
-        
+        logging.info(f"CreateProject - placeholder insert complete")
         # Save form data for the background thread
         form_data = dict(request.POST)
         # Convert lists to single values for QueryDict compatibility
@@ -2418,12 +2423,15 @@ def create_project(request):
         #          form_data, request.user, extra_metadata_file_fp)
         #)
         #agg_thread.start()
+        logging.info(f"CreateProject - start background thread to _process_and_aggregate_files")
         _thread_executor.submit(
             _process_and_aggregate_files,
             file_fps, temp_proj_id, project_data_path, temp_directory,
             form_data, request.user, extra_metadata_file_fp
         )
         # Immediately redirect to the processing project page
+        logging.info(f"CreateProject - finished launch of background thread to _process_and_aggregate_files")
+
         return redirect('project_page', project_name=temp_proj_id)
     else:
         form = RunForm()
