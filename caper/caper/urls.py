@@ -39,6 +39,7 @@ urlpatterns += [
     # path('single-run/', views.single_run, name='single-run'),
     path('', views.index, name='index'),
     # path('runs/', views.run_list, name='run_list'),
+    path('coamplification-graph/ui-kit/', views.coamp_ui_kit, name='coamp_ui_kit'),
     path('coamplification-graph/visualizer/<gene_name>/', views.fetch_graph, name='fetch_graph'),
     path('coamplification-graph/', views.coamplification_graph, name='coamplification_graph'),
     path('coamplification-graph/visualizer/', views.visualizer, name='visualizer'),

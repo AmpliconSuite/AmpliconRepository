@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block extra_js %}
+<script src="{% static 'js/coamp_frontend.js' %}"></script>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/coamp.css' %}">
+{% endblock %}
+
+{% block main %}
+<button>Test button</button>
+{% endblock %}

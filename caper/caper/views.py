@@ -2733,6 +2733,8 @@ def visualizer(request):
         'projects_stats': projects_info
     })
 
+def coamp_ui_kit(request):
+    return render(request, 'pages/coamp_ui_kit.html')
 
 def fetch_graph(request, gene_name):
     min_weight = request.GET.get('min_weight')
