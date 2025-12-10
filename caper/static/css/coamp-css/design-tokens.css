@@ -1,1 +1,25 @@
-/* colors, spacing, fonts, shadows (style guide) */
+/* style guide */
+:root {
+    /* colors */
+    --primary-color: #4a90e2;
+    --secondary-color: #f5a623;
+    --accent-color: #50e3c2;
+    --text-color: #333;
+    --background-color: #fff;
+
+    /* typography */
+    --font-sans: "Inter", sans-serif;
+    --font-heading: "Montserrat", sans-serif;
+    --font-size-base: 16px;
+    --font-size-lg: 20px;
+
+    /* spacing */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 24px;
+
+    /* borders & shadows */
+    --border-radius: 6px;
+    --box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}

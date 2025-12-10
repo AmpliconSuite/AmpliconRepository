@@ -1,1 +1,25 @@
 /* page structure: grid, sidebar, header, main panel */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--space-md);
+}
+
+.row {
+    display: flex;
+    gap: var(--space-md);
+}
+
+.column {
+    flex: 1;
+}
+
+.header, .footer {
+    padding: var(--space-md);
+    background-color: var(--primary-color);
+    color: var(--background-color);
+}
+
+.main {
+    padding: var(--space-lg);
+}

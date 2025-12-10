@@ -2,11 +2,16 @@
 {% load static %}
 
 {% block extra_js %}
-<script src="{% static 'js/coamp_frontend.js' %}"></script>
+<script type="module" src="{% static 'js/coamp-js/main.js' %}"></script>
 {% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/coamp.css' %}">
+<!-- tokens, base, layout, components (add as needed) -->
+<link rel="stylesheet" href="{% static 'css/coamp-css/design-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'css/coamp-css/base.css' %}">
+<link rel="stylesheet" href="{% static 'css/coamp-css/layout.css' %}">
+<link rel="stylesheet" href="{% static 'css/coamp-css/components/button.css' %}">
+<link rel="stylesheet" href="{% static 'css/coamp-css/components/filter-panel.css' %}">
 {% endblock %}
 
 {% block main %}
