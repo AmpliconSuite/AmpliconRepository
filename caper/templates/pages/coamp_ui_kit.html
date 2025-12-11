@@ -11,9 +11,51 @@
 <link rel="stylesheet" href="{% static 'css/coamp-css/base.css' %}">
 <link rel="stylesheet" href="{% static 'css/coamp-css/layout.css' %}">
 <link rel="stylesheet" href="{% static 'css/coamp-css/components/button.css' %}">
+<link rel="stylesheet" href="{% static 'css/coamp-css/components/debug.css' %}">
 <link rel="stylesheet" href="{% static 'css/coamp-css/components/filter-panel.css' %}">
 {% endblock %}
 
 {% block main %}
-<button>Test button</button>
+<div class="header-frame frame">
+    <div class="search-panel panel">
+        <div class="debug-box">Search Box</div>
+    </div>
+    <div class="filter-button-panel panel">
+        <div class="debug-box debug-green">Filter Button</div>
+    </div>
+    <div class="filter-info-panel panel">
+        <div class="debug-box debug-red">Filter 1</div>
+        <div class="debug-box debug-red">Filter 2</div>
+        <div class="debug-box debug-red">Filter 3</div>
+    </div>
+    <div class="filter-popout-panel panel"></div>
+</div>
+
+<div class="gene-info-frame frame">
+    <div class="gene-info-panel panel">
+        <div class="debug-box debug-yellow">Gene Name</div>
+    </div>
+    <div class="gene-info-panel panel">
+        <div class="debug-box debug-yellow">Type</div>
+    </div>
+    <div class="gene-info-panel panel">
+        <div class="debug-box debug-yellow">Location</div>
+    </div>
+    <div class="gene-info-panel panel">
+        <div class="debug-box debug-yellow">Amplified In</div>
+    </div>
+    <div class="gene-info-panel panel">
+        <div class="debug-box debug-yellow">Across Projects</div>
+    </div>
+</div>
+
+<div class="main-frame frame">
+    <div class="primary-graph-panel panel">
+        <div class="large-box debug-box debug-blue">Primary</div>
+    </div>
+    <div class="scrollable-graphs-panel panel">
+        <div class="large-box debug-box debug-blue">Other</div>
+    </div>
+    <div class="table-panel panel"></div>
+</div>
 {% endblock %}

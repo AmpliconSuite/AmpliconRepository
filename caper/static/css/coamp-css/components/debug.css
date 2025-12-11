@@ -1,0 +1,27 @@
+.debug-box {
+    background: rgba(0, 150, 255, 0.15);
+    border: 1px dashed rgba(0, 150, 255, 0.4);
+    padding: 12px;
+    min-height: 30px;
+    border-radius: 4px;
+}
+
+.large-box {
+    min-height: 400px;
+    min-width: 400px;
+}
+
+.debug-red { 
+  background: rgba(255, 0, 0, 0.15);
+  border-color: rgba(255, 0, 0, 0.4);
+}
+
+.debug-green {
+  background: rgba(0, 200, 0, 0.15);
+  border-color: rgba(0, 200, 0, 0.4);
+}
+
+.debug-yellow {
+  background: rgba(200, 200, 0, 0.15);
+  border-color: rgba(200, 200, 0, 0.4);
+}

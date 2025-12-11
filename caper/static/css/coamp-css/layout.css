@@ -1,25 +1,46 @@
-/* page structure: grid, sidebar, header, main panel */
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: var(--space-md);
+/* TODO: convert to variables with design-tokens.css, refactor into modules */
+
+
+/* ====== GLOBAL LAYOUT RULES ====== */
+
+* {
+  box-sizing: border-box;
 }
 
-.row {
+.frame {
+    width: 100%;
     display: flex;
-    gap: var(--space-md);
+    flex-direction: row;
+    min-height: 60px;
 }
 
-.column {
+/* Panels inside frames */
+.panel {
+    display: flex;
+    /* flex: 1; */
+    align-items: center;
+    padding: 8px;
+    min-height: 40px;
+}
+
+/* ====== HEADER FRAME ====== */
+/* .header-frame {
+    align-items: flex-start;
+    justify-content: flex-start;
+  
+} */
+
+/* ====== GENE INFO FRAME ====== */
+.gene-info-panel {
     flex: 1;
 }
 
-.header, .footer {
-    padding: var(--space-md);
-    background-color: var(--primary-color);
-    color: var(--background-color);
-}
-
-.main {
-    padding: var(--space-lg);
+/* ====== MAIN FRAME ====== */
+.primary-graph-panel,
+.scrollable-graphs-panel,
+.table-panel {
+    display: flex;
+    flex-direction: row;
+    aspect-ratio: 1 / 1;
+    width: 100%;
 }
