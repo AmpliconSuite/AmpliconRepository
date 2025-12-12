@@ -2,6 +2,71 @@
 
 {% load mezzanine_tags %}
 {% load custom_filters %}
+{% block extra_css %}
+<style>
+    /* Search Slider Styles */
+    .search-slider {
+        position: fixed;
+        left: 0;
+        top: 50%;
+        transform: translate(-350px, -50%);
+        width: 350px;
+        max-height: 90vh;
+        background-color: white;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease-in-out;
+        z-index: 1000;
+        overflow-y: auto;
+        border-radius: 0 8px 8px 0;
+        border: 1px solid #e0e0e0;
+        border-radius: 5px;
+        
+    }
+    
+    .search-slider.open {
+        transform: translate(0, -50%);
+    }
+    
+    .search-slider-toggle {
+        position: fixed;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 40px;
+        height: 60px;
+        background-color: #0275d8;
+        color: white;
+        border: none;
+        border-radius: 0 5px 5px 0;
+        cursor: pointer;
+        font-size: 18px;
+        z-index: 999;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+        transition: left 0.3s ease-in-out;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .search-slider-toggle i {
+        pointer-events: none;
+    }
+    
+    .search-slider.open + .search-slider-toggle {
+        left: 350px;
+    }
+    
+    .search-slider-toggle:hover {
+        background-color: #025aa5;
+    }
+    
+    .search-slider-content {
+        padding: 2px;
+        
+    }
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script>
     // get the format and sort functions from the included file
@@ -62,8 +127,19 @@
         }
     });
 
-    
-
+    // Search Slider Toggle
+    $(document).ready(function() {
+        $('#search-slider-toggle').on('click', function() {
+            $('#search-slider').toggleClass('open');
+        });
+        
+        // Close slider when clicking outside
+        $(document).on('click', function(event) {
+            if (!$(event.target).closest('#search-slider, #search-slider-toggle').length) {
+                $('#search-slider').removeClass('open');
+            }
+        });
+    });
    
 </script>
 
@@ -80,6 +156,18 @@
         AmpliconRepository
     </title>
 </head>
+
+    <!-- Search Slider -->
+    <div id="search-slider" class="search-slider">
+        <div class="search-slider-content">
+            <div class="search-box" style="padding: 20px; background-color: #f8f9fa; border-radius: 5px; font-size: 0.9em;">
+                {% include 'includes/searchbox.html' %}
+            </div>
+        </div>
+    </div>
+    <button id="search-slider-toggle" class="search-slider-toggle" aria-label="Toggle search">
+        <i class="fas fa-search"></i>
+    </button>
 
     <div class="container main-container row" style="max-width:1400px; width:90%; margin:auto;">
     <div class="col-md-8">
