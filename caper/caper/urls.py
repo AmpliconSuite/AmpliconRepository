@@ -82,6 +82,7 @@ urlpatterns += [
     path('admin-delete-project/', views.admin_delete_project, name='admin_delete_project'),
     path('admin-delete-user/', views.admin_delete_user, name='admin_delete_user'),
     path('admin-prepare-shutdown/', views.admin_prepare_shutdown, name='admin_prepare_shutdown'),
+    path('admin-project-files-report/', views.admin_project_files_report, name='admin_project_files_report'),
 
     path('data-qc/', views.data_qc, name='data_qc'),
     path('data-qc/change-database-dates', views.change_database_dates, name='change_database_dates'),

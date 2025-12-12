@@ -327,6 +327,7 @@ MEDIA_ROOT = os.path.join(PROJECT_ROOT, MEDIA_URL.strip("/"))
 ROOT_URLCONF = "%s.urls" % PROJECT_APP
 
 # config for uploading/downloading files directly to S3
+
 USE_S3_DOWNLOADS = os.getenv('S3_FILE_DOWNLOADS') == 'TRUE'
 if USE_S3_DOWNLOADS:
     # config for BOTO, bucket etc here but not credentials

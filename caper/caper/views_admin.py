@@ -677,3 +677,113 @@ def admin_prepare_shutdown(request):
         'shutdown_pending': shutdown_status,
         'user': request.user
     })
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_project_files_report(request):
+    """Generate a report on project files both on server and S3"""
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    logger = logging.getLogger(__name__)
+    logger.info("Generating project files report...")
+    
+    # Get all projects (public and private)
+    all_projects = list(collection_handle.find({'current': True, 'delete': False}))
+    
+    # Initialize S3 client if S3 downloads are enabled
+    s3_client = None
+    s3_enabled = hasattr(settings, 'USE_S3_DOWNLOADS') and settings.USE_S3_DOWNLOADS
+    
+    if s3_enabled:
+        try:
+            session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+            s3_client = session.client('s3')
+        except Exception as e:
+            logger.error(f"Failed to initialize S3 client: {e}")
+            s3_enabled = False
+    
+    project_reports = []
+    
+    for project in all_projects:
+        project_id = str(project['_id'])
+        project_name = project.get('project_name', 'Unknown')
+        is_private = project.get('private', True)
+        
+        # Initialize report data for this project
+        report = {
+            'project_id': project_id,
+            'project_name': project_name,
+            'is_private': is_private,
+            'has_local_tar': False,
+            'has_s3_tar': False,
+            'local_ecDNA_files': [],
+            's3_ecDNA_files': []
+        }
+        
+        # Check for local tar file
+        local_tar_path = None
+        if os.path.exists(f"../tmp/{project_id}/"):
+            local_tar_path = f"../tmp/{project_id}/{project_id}.tar.gz"
+        else:
+            local_tar_path = f"tmp/{project_id}/{project_id}.tar.gz"
+        
+        if os.path.exists(local_tar_path):
+            report['has_local_tar'] = True
+        
+        # Check for S3 tar file
+        if s3_enabled:
+            s3_tar_key = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
+            try:
+                s3_client.head_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_tar_key)
+                report['has_s3_tar'] = True
+            except:
+                report['has_s3_tar'] = False
+        
+        # Check for local ecDNA context files
+        local_project_path = None
+        if os.path.exists(f"../tmp/{project_id}/"):
+            local_project_path = f"../tmp/{project_id}/"
+        else:
+            local_project_path = f"tmp/{project_id}/"
+        
+        if os.path.exists(local_project_path):
+            for root, dirs, files in os.walk(local_project_path):
+                for file in files:
+                    if file.endswith('_ecDNA_context_calls.tsv'):
+                        abs_path = os.path.abspath(os.path.join(root, file))
+                        report['local_ecDNA_files'].append(abs_path)
+        
+        # Check for S3 ecDNA context files
+        if s3_enabled:
+            s3_project_prefix = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/'
+            try:
+                paginator = s3_client.get_paginator('list_objects_v2')
+                for page in paginator.paginate(Bucket=settings.S3_DOWNLOADS_BUCKET, Prefix=s3_project_prefix):
+                    if 'Contents' in page:
+                        for obj in page['Contents']:
+                            key = obj['Key']
+                            if key.endswith('_ecDNA_context_calls.tsv'):
+                                # Get relative path (remove project prefix)
+                                relative_key = key[len(s3_project_prefix):]
+                                report['s3_ecDNA_files'].append(relative_key)
+            except Exception as e:
+                logger.error(f"Failed to list S3 objects for project {project_id}: {e}")
+        
+        project_reports.append(report)
+    
+    # Calculate summary statistics
+    projects_with_local_tar = sum(1 for r in project_reports if r['has_local_tar'])
+    projects_with_s3_tar = sum(1 for r in project_reports if r['has_s3_tar']) if s3_enabled else 0
+    
+    logger.info(f"Generated report for {len(project_reports)} projects")
+    
+    return render(request, 'pages/admin_project_files_report.html', {
+        'project_reports': project_reports,
+        's3_enabled': s3_enabled,
+        'projects_with_local_tar': projects_with_local_tar,
+        'projects_with_s3_tar': projects_with_s3_tar,
+        'user': request.user,
+        'SITE_TITLE': settings.SITE_TITLE
+    })
+
