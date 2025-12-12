@@ -2374,7 +2374,7 @@ def create_project(request):
         # Save files to disk
         for file in files:
             try:
-                fs = FileSystemStorage(location = project_data_path)
+                fs = FileSystemStorage(location=project_data_path)
                 saved = fs.save(file.name, file)
                 print(f'file: {file.name} is saved')
                 fp = os.path.join(project_data_path, file.name)
@@ -2825,13 +2825,14 @@ def get_projects_metadata(project_list):
             
             total_samples = len(project['runs'])
             ecdna_samples = 0
+            samples_per_project[project_name] = [total_samples, ecdna_samples]
             
             # Count ecDNA samples by checking Classification field
             for sample_data in project['runs'].values():
                 if isinstance(sample_data, list) and sample_data:
                     # Check if any entry in the sample has ecDNA classification
                     for entry in sample_data:
-                        if isinstance(entry, dict) and entry.get('Classification', '').lower() == 'ecdna':
+                        if isinstance(entry, dict) and str(entry.get('Classification') or '').lower() == 'ecdna':
                             ecdna_samples += 1
                             break  # Count each sample once
             
@@ -2952,8 +2953,8 @@ def visualizer(request):
         
         return render(request, 'pages/visualizer.html', {
             'test_size': total_samples,
-            'diff': CONCAT_TIME,
-            'import_time': IMPORT_END - IMPORT_START,
+            'diff': 0,
+            'import_time': 0,
             'reference_genomes': ref_genomes,
             'projects_stats': projects_info,
             'cached': True
