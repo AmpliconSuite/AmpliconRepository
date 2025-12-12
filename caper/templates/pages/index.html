@@ -13,38 +13,84 @@
         });
      
         $('#projectTable0').DataTable({
-            language: {
-                    searchPlaceholder: "Search projects"
-                    },
+            searching: false,
+            lengthChange: true,
+            autoWidth: false,
+            dom: 'rt<"bottom d-flex justify-content-between align-items-center"ilp>',
             columnDefs: [
                 {
-                    targets: 2, // 3rd column (zero-based index)
-                    type: 'custom-date'
+                    targets: 0, // Name column
+                    width: '25%'
+                },
+                {
+                    targets: 1, // Description column
+                    width: '40%'
+                },
+                {
+                    targets: 2, // Updated column
+                    type: 'custom-date',
+                    width: '20%'
+                },
+                {
+                    targets: 3, // #Sample column
+                    width: '15%'
                 }
             ],
             order: [[2, 'desc']] // Sort by date column (index 2) in descending order
         });
         $('#projectTable1').DataTable({
-            language: {
-                    searchPlaceholder: "Search projects"
-                    },
+            searching: false,
+            lengthChange: true,
+            autoWidth: false,
+            dom: 'rt<"bottom d-flex justify-content-between align-items-center"ilp>',
             columnDefs: [
                 {
-                    targets: 2, // 3rd column (zero-based index)
-                    type: 'custom-date'
+                    targets: 0, // Name column
+                    width: '25%'
+                },
+                {
+                    targets: 1, // Description column
+                    width: '40%'
+                },
+                {
+                    targets: 2, // Updated column
+                    type: 'custom-date',
+                    width: '20%'
+                },
+                {
+                    targets: 3, // #Sample column
+                    width: '15%'
                 }
             ],
             order: [[2, 'desc']] // Sort by date column (index 2) in descending order
 
         });
         $('#projectTable2').DataTable({
-            language: {
-                    searchPlaceholder: "Search projects"
-                    },
+            searching: false,
+            lengthChange: true,
+            autoWidth: false,
+            dom: 'rt<"bottom d-flex justify-content-between align-items-center"ilp>',
             columnDefs: [
                 {
-                    targets: 2, // 3rd column (zero-based index)
-                    type: 'custom-date'
+                    targets: 0, // Name column
+                    width: '20%'
+                },
+                {
+                    targets: 1, // Description column
+                    width: '25%'
+                },
+                {
+                    targets: 2, // Updated column
+                    type: 'custom-date',
+                    width: '20%'
+                },
+                {
+                    targets: 3, // Members column
+                    width: '20%'
+                },
+                {
+                    targets: 4, // #Sample column
+                    width: '15%'
                 }
             ],
             order: [[2, 'desc']] // Sort by date column (index 2) in descending order
@@ -81,8 +127,9 @@
     </title>
 </head>
 
-    <div class="container main-container row" style="max-width:1400px; width:90%; margin:auto;">
-    <div class="col-md-8">
+    <div class="container main-container row" style="max-width:1800px; width:100%; margin:auto;">
+        
+    <div class="col-md-10">
 
 
         <style>
@@ -107,42 +154,75 @@
             .col-lg-3 {
                 padding:0px
             }
+            
+            /* Position DataTables controls in one row at bottom */
+            .dataTables_wrapper .bottom {
+                display: flex !important;
+                justify-content: space-between;
+                align-items: center;
+                margin-top: 10px;
+            }
+            
+            .dataTables_wrapper .dataTables_info {
+                order: 1;
+                display: flex;
+                align-items: center;
+            }
+            
+            .dataTables_wrapper .dataTables_length {
+                order: 2;
+                display: flex;
+                align-items: center;
+                margin: 0;
+            }
+            
+            .dataTables_wrapper .dataTables_length label {
+                margin-bottom: 0;
+                display: flex;
+                align-items: center;
+            }
+            
+            .dataTables_wrapper .dataTables_paginate {
+                order: 3;
+                display: flex;
+                align-items: center;
+            }
         </style>
-            <div style="margin-top: 20px">
+            <div style="margin-top: 10px">
                 <img src="{{ STATIC_URL }}img/AmpliconRepository_Grey.png" width="100%">
                 <hr>
-                <div stlye="margin-top: 30px;">
+                <div style="margin-top: 15px;">
                     <p style="font-size:18px;">An online repository of AmpliconArchitect outputs. Explore and download focal amplification predictions and annotations.</p>
                 </div>
-                <div class="row">
+                <div class="row" style="margin-top: 10px;">
                     <div class="col-lg-3">
-                        <div class="card text-center" style="width:12rem; border:none;margin:auto; padding: 5px">
-				<img class="card-img-top" src="{{ STATIC_URL }}img/250w/exploration_cartoonAsset_1.png" style="max-height:20rem; max-width:10rem; margin:auto">
-                            <div class="card-body" style="margin-top:5px">
+                        <div class="card text-center" style="width:12rem; border:none;margin:auto; padding: 2px">
+				<img class="card-img-top" src="{{ STATIC_URL }}img/250w/exploration_cartoonAsset_1.png" style="height:70px; width:auto; margin:auto">
+                            <div class="card-body" style="margin-top:0px; padding-top: 5px; padding-bottom: 5px;">
                                 <p class="card-title">Copy-number data exploration</p>
                             </div>
                         </div>
                     </div>
                     <div class="col-lg-3">
-                        <div class="card text-center" style="width: 12rem; border:none;margin:auto; padding: 5px">
-                            <img class="card-img-top" src="{{ STATIC_URL }}img/250w/aa_viz_cartoonAsset_1.png" style="max-height:20rem; max-width:10rem; margin:auto">
-                            <div class="card-body" style="margin-top:18px">
+                        <div class="card text-center" style="width: 12rem; border:none;margin:auto; padding: 2px">
+                            <img class="card-img-top" src="{{ STATIC_URL }}img/250w/aa_viz_cartoonAsset_1.png" style="height:70px; width:auto; margin:auto">
+                            <div class="card-body" style="margin-top:5px; padding-top: 5px; padding-bottom: 5px;">
                                 <p class="card-title">AmpliconArchitect output files</p>
                             </div>
                         </div>
                     </div>
                     <div class="col-lg-3">
-                        <div class="card text-center" style="width: 12rem; border:none;margin:auto; padding: 5px">
-                            <img class="card-img-top" src="{{ STATIC_URL }}img/250w/classes_cartoonAsset_1.png" style="max-height:20rem; max-width:10rem; margin:auto">
-                            <div class="card-body" style="margin-top:18px">
+                        <div class="card text-center" style="width: 12rem; border:none;margin:auto; padding: 2px">
+                            <img class="card-img-top" src="{{ STATIC_URL }}img/250w/classes_cartoonAsset_1.png" style="height:70px; width:auto; margin:auto">
+                            <div class="card-body" style="margin-top:5px; padding-top: 5px; padding-bottom: 5px;">
                                 <p class="card-title">Focal amplification classifications</p>
                             </div>
                         </div>
                     </div>
                     <div class="col-lg-3">
-                        <div class="card text-center" style="width: 14rem; border:none;margin:auto; padding: 5px">
-                            <img class="card-img-top" src="{{ STATIC_URL }}img/250w/gene_coords_cartoonAsset_1.png" style="max-height:20rem; max-width:6rem; margin:auto">
-                            <div class="card-body" style="margin-top:3px">
+                        <div class="card text-center" style="width: 14rem; border:none;margin:auto; padding: 2px">
+                            <img class="card-img-top" src="{{ STATIC_URL }}img/250w/gene_coords_cartoonAsset_1.png" style="height:70px; width:auto; margin:auto">
+                            <div class="card-body" style="margin-top:0px; padding-top: 5px; padding-bottom: 5px;">
                                 <p class="card-title">Amplicon coordinates and gene contents</p>
                             </div>
                         </div>
@@ -150,32 +230,40 @@
             
                 </div>
         </div>
-        <hr>
-        <div style="margin-bottom: 20px; border: 0.5px solid grey; padding: 20px; border-radius: 10px;">
-            <div>
-                <div>
-                    <ul class="nav nav-tabs" role="tablist">
-                        <li class="nav-item">
-                            <a class="nav-link active" href="#tab-table0" data-toggle="tab">Featured Projects</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="#tab-table1" data-toggle="tab">Public Projects</a>
-                        </li>
-                        {% if user.is_authenticated %}
-                            <li class="nav-item">
-                                <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
-                            </li>
-                        {% endif %}
-                    </ul>
-                    <div class="tab-content" style="padding-top: 30px;">
+        
+        <div class="row">
+            <div class="col-md-4">
+                <!-- Left column content (25% width) -->
+                <div class="search-box" style="padding: 0px; background-color: #f8f9fa; border-radius: 5px; font-size: 0.9em;">
+                    {% include 'includes/searchbox.html' %}
+                </div>
+            </div>
+            <div class="col-md-8">
+                <div id="index-projects-div" style="margin-bottom: 20px; border: 0.5px solid grey; padding: 20px; border-radius: 10px;">
+                    <div>
+                        <div>
+                            <ul class="nav nav-tabs" role="tablist">
+                                <li class="nav-item">
+                                    <a class="nav-link active" href="#tab-table0" data-toggle="tab">Featured Projects</a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" href="#tab-table1" data-toggle="tab">Public Projects</a>
+                                </li>
+                                {% if user.is_authenticated %}
+                                    <li class="nav-item">
+                                        <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                    <div class="tab-content" >
                         <div class="tab-pane active" id="tab-table0" style="overflow-x: auto;">
                             <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
                                 <thead>
                                     <tr>
                                         <th>Name</th>
                                         <th>Description</th>
-                                        <th>Last Updated</th>
-                                        <th>Sample count</th>
+                                        <th>Updated</th>
+                                        <th># Sample </th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -199,8 +287,8 @@
                                     <tr>
                                         <th>Name</th>
                                         <th>Description</th>
-                                        <th>Last Updated</th>
-                                        <th>Sample count</th>
+                                        <th>Updated</th>
+                                        <th># Sample</th>
 
                                     </tr>
                                 </thead>
@@ -226,9 +314,9 @@
                                     <tr>
                                         <th>Name</th>
                                         <th>Description</th>
-                                        <th>Last Updated</th>
-                                        <th>Project Members</th>
-                                        <th>Sample count</th>
+                                        <th>Updated</th>
+                                        <th>Members</th>
+                                        <th># Sample</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -252,14 +340,16 @@
                     </div>
                 </div>
             </div>
+                </div>
+            </div>
         </div>
         
     </div>
-    <div class="col-md-4">
+    <div class="col-md-2" style="font-size:0.9em;">
         <br>
-        <h4 style="margin-top: 20px">News & Updates</h4>
+        <h4 style="margin-top: 20px;">News & Updates</h4>
 
-        <ul>
+        <ul style="font-size: 0.9em;">
             <li style="margin-bottom:10px">
                 <a href="https://www.nature.com/articles/s41588-024-01949-7" target="_blank">Leveraging large-scale genomic datasets to track extrachromosomal DNA across cancer stages <i class="fas fa-external-link-alt"></i></a>
             </li>
@@ -273,7 +363,7 @@
                 <a href="https://www.nih.gov/news-events/news-releases/four-multinational-interdisciplinary-teams-selected-address-major-challenges-cancer" target="_blank">Team eDyNAmiC receives $25 million grant to study the role of ecDNA in cancer <i class="fas fa-external-link-alt"></i></a>
             </li>
         </ul>
-        <div id="accordion" >
+        <div id="accordion" style="padding-left:0px;">
             <div class="card">
                 <style>
                     .btn-link:not([aria-expanded="false"]).collapsed::before {
@@ -321,14 +411,14 @@
                     }
                 </style>
 
-              <div class="card-header" id="headingOne" style="background:none;">
+              <div class="card-header" id="headingOne" style="background:none;padding-left:0px;">
                 <h4 class="mb-0">
                     <button class="btn btn-link collapsed" data-toggle="collapse" data-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne" style="padding: 0.25rem 0.5rem; font-weight: bold;">How to cite AmpliconRepository</button>
                 </h4>
               </div>
 
               <div id="collapseOne" class="collapse" aria-labelledby="headingOne" data-parent="#accordion" >
-                <div class="card-body">
+                <div class="card-body" style="font-size: 0.9em;">
                     <a href="https://www.biorxiv.org/content/10.1101/2024.05.06.592768v1" target="_blank">Luebeck J, Huang E, et al. "AmpliconSuite: an end-to-end workflow for analyzing focal amplifications in cancer genomes." bioRxiv. 2024.</a>
                     <br>
                     <br>
