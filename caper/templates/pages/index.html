@@ -64,6 +64,41 @@
         padding: 2px;
         
     }
+    
+    /* DataTables length selector styling */
+    #table-length-container {
+        display: flex !important;
+        align-items: center;
+    }
+    
+    #unifiedProjectTable_length {
+        margin: 0 !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center;
+    }
+    
+    #unifiedProjectTable_length label {
+        display: flex !important;
+        align-items: center;
+        margin: 0 !important;
+        white-space: nowrap;
+        font-weight: normal;
+    }
+    
+    #unifiedProjectTable_length select {
+        width: auto !important;
+        display: inline-block !important;
+        margin: 0 5px !important;
+        padding: 2px 8px !important;
+    }
+    
+    /* Make Sample count column wider to prevent header wrapping */
+    #unifiedProjectTable th:nth-child(5),
+    #unifiedProjectTable td:nth-child(5) {
+        min-width: 70px;
+        white-space: nowrap;
+    }
 </style>
 {% endblock %}
 
@@ -87,7 +122,7 @@
         // Initialize the single unified DataTable
         var unifiedTable = $('#unifiedProjectTable').DataTable({
             searching: true,
-            dom: 'lrtip', // Remove the default search box (l=length, r=processing, t=table, i=info, p=pagination)
+            dom: 'lrtip', // Keep default layout temporarily
             columnDefs: [
                 {
                     targets: 0, // "Type" column (zero-based index)
@@ -102,9 +137,14 @@
             pageLength: 10,
             language: {
                 emptyTable: "No projects found matching your search",
-                zeroRecords: "No projects found matching your search"
+                zeroRecords: "No projects found matching your search",
+                lengthMenu: "Show _MENU_ entries"
             }
         });
+        
+        // Manually move the length selector to our custom container
+        var lengthSelector = $('#unifiedProjectTable_length').detach();
+        $('#table-length-container').append(lengthSelector);
         
         // Connect the unified search box to the table
         $('#unified-project-search').on('keyup', function() {
@@ -229,10 +269,13 @@
         <div style="margin-bottom: 20px; border: 0.5px solid grey; padding: 20px; border-radius: 10px;">
             <div>
                 <div>
-                    <!-- Unified Search Box -->
-                    <div style="margin-bottom: 15px;">
-                        <label for="unified-project-search" style="font-weight: bold; margin-right: 10px;">Search projects:</label>
-                        <input type="text" id="unified-project-search" class="form-control" placeholder="Search by name and description" style="max-width: 500px; display: inline-block;">
+                    <!-- Unified Search Box and Length Selector -->
+                    <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; gap: 15px;">
+                        <div style="display: flex; align-items: center; flex: 0 0 auto;">
+                            <label for="unified-project-search" style="font-weight: bold; margin-right: 10px; white-space: nowrap;">Search projects:</label>
+                            <input type="text" id="unified-project-search" class="form-control" placeholder="Search by name and description" style="width: 300px;">
+                        </div>
+                        <div id="table-length-container" style="flex: 0 0 auto; display: flex; align-items: center;"></div>
                     </div>
                     
                     <!-- Single Unified Table -->
