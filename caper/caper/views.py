@@ -270,9 +270,15 @@ def index(request):
 
     # Extract featured projects from public projects
     featured_projects = [proj for proj in public_projects if proj.get('featured')]
+    
+    # Remove featured projects from public_projects to avoid duplication
+    public_projects = [proj for proj in public_projects if not proj.get('featured')]
 
     # Process project links
     for proj in public_projects:
+        prepare_project_linkid(proj)
+    
+    for proj in featured_projects:
         prepare_project_linkid(proj)
 
     # Handle private projects for authenticated users
