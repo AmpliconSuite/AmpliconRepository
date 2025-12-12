@@ -99,7 +99,7 @@
                 }
             ],
             order: [[0, 'asc'], [3, 'desc']], // Sort by Type first (Featured->Public->Private), then by date (newest first)
-            pageLength: 25,
+            pageLength: 10,
             language: {
                 emptyTable: "No projects found matching your search",
                 zeroRecords: "No projects found matching your search"
@@ -231,8 +231,8 @@
                 <div>
                     <!-- Unified Search Box -->
                     <div style="margin-bottom: 15px;">
-                        <label for="unified-project-search" style="font-weight: bold; margin-right: 10px;">Search all projects:</label>
-                        <input type="text" id="unified-project-search" class="form-control" placeholder="Search by name, description, or date" style="max-width: 500px; display: inline-block;">
+                        <label for="unified-project-search" style="font-weight: bold; margin-right: 10px;">Search projects:</label>
+                        <input type="text" id="unified-project-search" class="form-control" placeholder="Search by name and description" style="max-width: 500px; display: inline-block;">
                     </div>
                     
                     <!-- Single Unified Table -->
@@ -245,7 +245,6 @@
                                     <th>Description</th>
                                     <th>Last Updated</th>
                                     <th>Sample count</th>
-                                    <th style="{% if not user.is_authenticated %}display:none;{% endif %}">Project Members</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -258,7 +257,6 @@
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
                                     <td class="date">{{ project.date }}</td>
                                     <td>{{ project.sample_count }}</td>
-                                    <td style="{% if not user.is_authenticated %}display:none;{% endif %}"></td>
                                 </tr>
                                 {% endfor %}
                                 
@@ -271,21 +269,19 @@
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
                                     <td class="date">{{ project.date }}</td>
                                     <td>{{ project.sample_count }}</td>
-                                    <td style="{% if not user.is_authenticated %}display:none;{% endif %}"></td>
                                 </tr>
                                 {% endfor %}
                                 
                                 {% if user.is_authenticated %}
                                 {% for project in private_projects %}
                                 <tr data-project-type="private">
-                                    <td></td>
+                                    <td><span class="badge" style="background-color: #BBBBBB; color: white;">Private</span></td>
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                                       <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
                                     </td>
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
                                     <td class="date">{{ project.date }}</td>
                                     <td>{{ project.sample_count }}</td>
-                                    <td>{% for person in project.project_members %}{{ person }}<br>{% endfor%}</td>
                                 </tr>
                                 {% endfor %}
                                 {% endif %}
