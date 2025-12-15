@@ -324,7 +324,7 @@ def site_stats_regenerate(request):
 
 def project_stats_download(request):
     # Get public and private project data
-    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    public_projects = list(collection_handle.find({'private': False, 'delete': False, 'current': True}))
     for project in public_projects:
         if not 'project_downloads' in project:
             project['project_downloads_sum'] = 0
@@ -457,7 +457,7 @@ def admin_delete_user(request):
         elif action == 'delete_user':
 
             # for solo projects that are private, delete them
-            solo_projects = list(collection_handle.find({'project_members': [username]}))
+            solo_projects = list(collection_handle.find({'current': True, 'project_members': [username]}))
 
             for project in solo_projects:
                 project_name = project['project_name']
@@ -611,7 +611,7 @@ def data_qc(request):
         useremail = request.user.email
 
         # private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
-        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False, 'current': True}))
         for proj in private_projects:
             prepare_project_linkid(proj)
     else:
@@ -621,7 +621,7 @@ def data_qc(request):
     public_sample_count = 0
 
     # public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
-    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+    public_projects = list(collection_handle.find({'private' : False, 'delete': False, 'current': True}))
     for proj in public_projects:
         prepare_project_linkid(proj)
         public_proj_count = public_proj_count + 1

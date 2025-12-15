@@ -261,7 +261,7 @@ def update_sample_counts(request):
 
 def index(request):
     # Base query for non-deleted projects
-    base_query = {'delete': False}
+    base_query = {'delete': False, 'current': True}
     projection = {'runs': 0}  # Exclude runs field from all queries
 
     # Get public projects (including featured) in one query
@@ -1297,14 +1297,14 @@ def gene_search_page(request):
         username = request.user.username
         useremail = request.user.email
         query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}],
-                     'Oncogenes': gen_query, 'delete': False}
+                     'Oncogenes': gen_query, 'delete': False, 'current': True}
 
         private_projects = list(collection_handle.find(query_obj))
         # private_projects = get_projects_close_cursor(query_obj)
     else:
         private_projects = []
 
-    public_projects = list(collection_handle.find({'private': False, 'Oncogenes': gen_query, 'delete': False}))
+    public_projects = list(collection_handle.find({'private': False, 'Oncogenes': gen_query, 'delete': False, 'current': True}))
     # public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
 
     for proj in private_projects:
