@@ -3,34 +3,39 @@
 Script to check current and delete flags for all projects in the database.
 Shows project name, ID, and flag values (including when flags are missing).
 
-Usage:
+Usage (inside Django app directory):
+    cd /path/to/caper/caper
     python check_project_flags.py
     
-Or if using Django environment:
-    python manage.py shell < check_project_flags.py
+Or use the Django shell version (recommended for Docker):
+    python manage.py shell < check_project_flags_django.py
 """
 
 import os
 import sys
-from pymongo import MongoClient
 
-# Try to use Django settings if available
+# Set up Django environment - this is required for Docker containers
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'caper.settings')
+
 try:
     import django
     django.setup()
     from caper.utils import collection_handle
-    print("Using Django database connection")
+    print("✓ Using Django database connection")
     using_django = True
-except:
-    print("Django not available, using direct MongoDB connection")
-    using_django = False
-    # Fallback to direct connection - update these values for your server
-    MONGO_HOST = os.environ.get('MONGO_HOST', 'localhost')
-    MONGO_PORT = int(os.environ.get('MONGO_PORT', 27017))
-    MONGO_DB = os.environ.get('MONGO_DB', 'caper')
-    client = MongoClient(MONGO_HOST, MONGO_PORT)
-    db = client[MONGO_DB]
-    collection_handle = db['projects']
+except ImportError as e:
+    print(f"❌ ERROR: Could not import Django: {e}")
+    print("\nThis script must be run from within the Django app directory.")
+    print("Try running from: /path/to/caper/caper/")
+    print("\nOr use the Django shell version instead:")
+    print("  python manage.py shell < check_project_flags_django.py")
+    sys.exit(1)
+except Exception as e:
+    print(f"❌ ERROR: Could not set up Django environment: {e}")
+    print("\nMake sure you're in the correct directory and Django is properly configured.")
+    print("\nAlternatively, use the Django shell version:")
+    print("  python manage.py shell < check_project_flags_django.py")
+    sys.exit(1)
 
 def check_flag_value(project, flag_name):
     """
@@ -151,7 +156,87 @@ def main():
                 print(f"  delete:  {delete_value} {'⚠️  MISSING' if delete_status == 'missing' else ''}")
                 print()
     
-    print("="*100)
+    # Check for orphaned old versions (delete=False, current=False, but no other versions)
+    print("\n" + "="*100)
+    print("ORPHANED OLD VERSIONS CHECK")
+    print("="*100 + "\n")
+    print("Looking for projects with delete=False and current=False that have no other versions...")
+    print()
+    
+    # Find all projects with delete=False and current=False
+    old_versions = []
+    for project in all_projects:
+        delete_val = project.get('delete', None)
+        current_val = project.get('current', None)
+        
+        # Must have delete=False and current=False
+        if delete_val == False and current_val == False:
+            old_versions.append(project)
+    
+    if not old_versions:
+        print("✓ No projects found with delete=False and current=False")
+    else:
+        print(f"Found {len(old_versions)} project(s) with delete=False and current=False")
+        print("Checking if they have other versions...\n")
+        
+        orphaned_count = 0
+        orphaned_projects = []
+        
+        for project in old_versions:
+            project_name = project.get('project_name', 'UNNAMED')
+            project_id = str(project.get('_id', 'NO_ID'))
+            
+            # Look for other versions of this project by name
+            # (projects with same name but different IDs)
+            other_versions = list(collection_handle.find({
+                'project_name': project_name,
+                '_id': {'$ne': project['_id']}
+            }))
+            
+            if len(other_versions) == 0:
+                # No other versions found - this is orphaned!
+                orphaned_count += 1
+                orphaned_projects.append({
+                    'project': project,
+                    'name': project_name,
+                    'id': project_id
+                })
+        
+        if orphaned_count == 0:
+            print("✓ All old versions (current=False) have corresponding current versions")
+        else:
+            print(f"⚠️  FOUND {orphaned_count} ORPHANED OLD VERSION(S) ⚠️")
+            print(f"   These have delete=False and current=False but NO other versions exist")
+            print()
+            print("-" * 100)
+            print(f"{'Project Name':<50} {'ID':<26} {'Private':<10}")
+            print("-" * 100)
+            
+            for item in orphaned_projects:
+                project = item['project']
+                project_name = item['name'][:48]
+                project_id = item['id']
+                private = project.get('private', 'NOT SET')
+                
+                print(f"{project_name:<50} {project_id:<26} {str(private):<10}")
+            
+            print()
+            print("⚠️  RECOMMENDATION ⚠️")
+            print("These projects appear to be orphaned old versions with no current version.")
+            print("They should probably either:")
+            print("  1. Have 'current' set to True (if they should be the active version), OR")
+            print("  2. Have 'delete' set to True (if they should be hidden)")
+            print()
+            print("To fix by setting current=True:")
+            print("  from caper.utils import collection_handle")
+            print("  from bson.objectid import ObjectId")
+            print("  # For each orphaned project ID:")
+            print("  collection_handle.update_one(")
+            print("      {'_id': ObjectId('PROJECT_ID_HERE')},")
+            print("      {'$set': {'current': True}}")
+            print("  )")
+    
+    print("\n" + "="*100)
     print("Report complete.")
     print("="*100 + "\n")
 
