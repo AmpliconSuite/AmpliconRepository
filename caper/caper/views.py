@@ -328,7 +328,7 @@ def profile(request, message_to_user=None):
     # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
-    projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+    projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False, 'current': True}))
     # projects = get_projects_close_cursor({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False})
 
     for proj in projects:
@@ -528,6 +528,10 @@ def project_page(request, project_name, message=''):
     ## download & view statistics
     views, downloads = session_visit(request, project)
 
+    # DEBUG: Get delete and current flag values
+    debug_delete_flag = project.get('delete', 'NOT SET')
+    debug_current_flag = project.get('current', 'NOT SET')
+
     return render(request, "pages/project.html", {
         'project': project,
         'sample_data': sample_data,
@@ -542,6 +546,8 @@ def project_page(request, project_name, message=''):
         'proj_id': project_name,
         'viewing_old_project': viewing_old_project,
         'is_empty_project': is_empty_project,  # Pass this flag to the template
+        'debug_delete_flag': debug_delete_flag,  # DEBUG: display delete flag
+        'debug_current_flag': debug_current_flag,  # DEBUG: display current flag
     })
 
 
