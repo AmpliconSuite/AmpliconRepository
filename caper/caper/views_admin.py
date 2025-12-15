@@ -35,6 +35,7 @@ from .utils import (
 from .extra_metadata import *
 
 from .site_stats import get_latest_site_statistics, regenerate_site_statistics
+from .tar_utils import list_project_tar_contents
 
 def check_datetime(projects):
     import dateutil.parser
@@ -718,7 +719,8 @@ def admin_project_files_report(request):
             'has_local_tar': False,
             'has_s3_tar': False,
             'local_ecDNA_files': [],
-            's3_ecDNA_files': []
+            's3_ecDNA_files': [],
+            'gridfs_ecDNA_files': []
         }
         
         # Check for local tar file
@@ -769,6 +771,16 @@ def admin_project_files_report(request):
                                 report['s3_ecDNA_files'].append(relative_key)
             except Exception as e:
                 logger.error(f"Failed to list S3 objects for project {project_id}: {e}")
+        
+        # Check for ecDNA context files in GridFS tar
+        if 'tarfile' in project:
+            try:
+                tar_contents = list_project_tar_contents(project_id)
+                # Filter for files ending with _ecDNA_context_calls.tsv
+                ecDNA_files = [f for f in tar_contents if f.endswith('_ecDNA_context_calls.tsv')]
+                report['gridfs_ecDNA_files'] = ecDNA_files
+            except Exception as e:
+                logger.error(f"Failed to list GridFS tar contents for project {project_id}: {e}")
         
         project_reports.append(report)
     
