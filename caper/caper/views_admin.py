@@ -630,6 +630,32 @@ def data_qc(request):
     datetime_status = check_datetime(public_projects) + check_datetime(private_projects)
     sample_count_status = check_sample_count_status(private_projects) + check_sample_count_status(public_projects)
 
+    # Check for orphaned old versions (delete=False, current=False, but no other versions)
+    all_projects = list(collection_handle.find({}))
+    orphaned_projects = []
+    
+    for project in all_projects:
+        delete_val = project.get('delete', None)
+        current_val = project.get('current', None)
+        
+        # Must have delete=False and current=False
+        if delete_val == False and current_val == False:
+            project_id = str(project.get('_id', 'NO_ID'))
+            
+            # Check if this project is truly orphaned:
+            # 1. It should not have any entries in its own previous_versions array
+            has_previous = len(project.get('previous_versions', [])) > 0
+            
+            # 2. It should not be referenced in any other project's previous_versions
+            is_referenced = collection_handle.count_documents({
+                'previous_versions.linkid': project_id
+            }) > 0
+            
+            if not has_previous and not is_referenced:
+                # No other versions found - this is orphaned!
+                prepare_project_linkid(project)
+                orphaned_projects.append(project)
+
     # Run the schema validation directly
     try:
         from caper.schema_validate import run_validation
@@ -652,6 +678,7 @@ def data_qc(request):
         'private_projects': private_projects,
         'datetime_status': datetime_status,
         'sample_count_status': sample_count_status,
+        'orphaned_projects': orphaned_projects,
         'schema_report': schema_report,
     })
 
