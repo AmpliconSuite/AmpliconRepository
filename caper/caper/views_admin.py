@@ -689,6 +689,13 @@ def admin_project_files_report(request):
     logger = logging.getLogger(__name__)
     logger.info("Generating project files report...")
     
+    # Get file pattern from request parameter, default to _ecDNA_context_calls.tsv
+    file_pattern = request.GET.get('file_pattern', '_ecDNA_context_calls.tsv').strip()
+    if not file_pattern:
+        file_pattern = '_ecDNA_context_calls.tsv'
+    
+    logger.info(f"Searching for files matching pattern: {file_pattern}")
+    
     # Get all projects (public and private)
     all_projects = list(collection_handle.find({'current': True, 'delete': False}))
     
@@ -752,7 +759,7 @@ def admin_project_files_report(request):
         if os.path.exists(local_project_path):
             for root, dirs, files in os.walk(local_project_path):
                 for file in files:
-                    if file.endswith('_ecDNA_context_calls.tsv'):
+                    if file_pattern in file:
                         abs_path = os.path.abspath(os.path.join(root, file))
                         report['local_ecDNA_files'].append(abs_path)
         
@@ -765,7 +772,7 @@ def admin_project_files_report(request):
                     if 'Contents' in page:
                         for obj in page['Contents']:
                             key = obj['Key']
-                            if key.endswith('_ecDNA_context_calls.tsv'):
+                            if file_pattern in key:
                                 # Get relative path (remove project prefix)
                                 relative_key = key[len(s3_project_prefix):]
                                 report['s3_ecDNA_files'].append(relative_key)
@@ -776,8 +783,8 @@ def admin_project_files_report(request):
         if 'tarfile' in project:
             try:
                 tar_contents = list_project_tar_contents(project_id)
-                # Filter for files ending with _ecDNA_context_calls.tsv
-                ecDNA_files = [f for f in tar_contents if f.endswith('_ecDNA_context_calls.tsv')]
+                # Filter for files containing the pattern
+                ecDNA_files = [f for f in tar_contents if file_pattern in f]
                 report['gridfs_ecDNA_files'] = ecDNA_files
             except Exception as e:
                 logger.error(f"Failed to list GridFS tar contents for project {project_id}: {e}")
@@ -795,6 +802,7 @@ def admin_project_files_report(request):
         's3_enabled': s3_enabled,
         'projects_with_local_tar': projects_with_local_tar,
         'projects_with_s3_tar': projects_with_s3_tar,
+        'file_pattern': file_pattern,
         'user': request.user,
         'SITE_TITLE': settings.SITE_TITLE
     })

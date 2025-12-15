@@ -84,6 +84,33 @@
                     <strong>Note:</strong> S3 downloads are not enabled. S3 file information will not be available.
                 </div>
                 {% endif %}
+                
+                <!-- File Pattern Search Form -->
+                <div class="card" style="margin-top: 20px;">
+                    <div class="card-body">
+                        <h5 class="card-title">Search for File Pattern</h5>
+                        <form method="GET" action="" class="form-inline">
+                            <div class="form-group mr-3">
+                                <label for="file_pattern" class="mr-2">File Pattern:</label>
+                                <input type="text" 
+                                       class="form-control" 
+                                       id="file_pattern" 
+                                       name="file_pattern" 
+                                       value="{{ file_pattern }}" 
+                                       placeholder="_ecDNA_context_calls.tsv"
+                                       style="width: 300px;">
+                            </div>
+                            <button type="submit" class="btn btn-primary">Search</button>
+                            {% if file_pattern != "_ecDNA_context_calls.tsv" %}
+                            <a href="?" class="btn btn-secondary ml-2">Reset</a>
+                            {% endif %}
+                        </form>
+                        <small class="form-text text-muted" style="margin-top: 10px;">
+                            Enter a pattern to search for files containing this text anywhere in the filename. 
+                            Default: _ecDNA_context_calls.tsv
+                        </small>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -97,9 +124,9 @@
                             <th>Privacy</th>
                             <th>Local .tar.gz</th>
                             <th>S3 .tar.gz</th>
-                            <th>Local ecDNA Files</th>
-                            <th>S3 ecDNA Files</th>
-                            <th>GridFS ecDNA Files</th>
+                            <th>Local Matching Files</th>
+                            <th>S3 Matching Files</th>
+                            <th>GridFS Matching Files</th>
                         </tr>
                     </thead>
                     <tbody>
