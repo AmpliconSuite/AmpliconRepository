@@ -130,7 +130,7 @@
                             <th>ID</th>
                             <th>Private</th>
                             <th>Date</th>
-                            <th>Action</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -150,6 +150,12 @@
                                 <a href="/project/{{ project.linkid }}" target="_blank" class="btn btn-sm btn-primary">
                                     <i class="fa fa-eye"></i> View
                                 </a>
+                                <form method="POST" action="{% url 'make_project_current' project.linkid %}" style="display: inline;">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Set this project to current=True? This will make it visible in project listings.');">
+                                        <i class="fa fa-check"></i> Make Current
+                                    </button>
+                                </form>
                             </td>
                         </tr>
                         {% endfor %}

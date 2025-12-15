@@ -16,6 +16,7 @@ from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.contrib import messages
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
@@ -681,6 +682,33 @@ def data_qc(request):
         'orphaned_projects': orphaned_projects,
         'schema_report': schema_report,
     })
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def make_project_current(request, project_id):
+    """Set a project's current flag to True"""
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    if request.method == "POST":
+        from bson.objectid import ObjectId
+        
+        try:
+            # Update the project to set current=True
+            result = collection_handle.update_one(
+                {'_id': ObjectId(project_id)},
+                {'$set': {'current': True}}
+            )
+            
+            if result.modified_count > 0:
+                messages.success(request, f"Project {project_id} has been set to current=True")
+            else:
+                messages.warning(request, f"Project {project_id} was not modified (may already be current)")
+        except Exception as e:
+            messages.error(request, f"Error updating project: {str(e)}")
+    
+    # Redirect back to the data QC page
+    return redirect('data_qc')
 
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
