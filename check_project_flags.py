@@ -177,7 +177,7 @@ def main():
         print("✓ No projects found with delete=False and current=False")
     else:
         print(f"Found {len(old_versions)} project(s) with delete=False and current=False")
-        print("Checking if they have other versions...\n")
+        print("Checking if they have other versions using previous_versions field...\n")
         
         orphaned_count = 0
         orphaned_projects = []
@@ -186,14 +186,16 @@ def main():
             project_name = project.get('project_name', 'UNNAMED')
             project_id = str(project.get('_id', 'NO_ID'))
             
-            # Look for other versions of this project by name
-            # (projects with same name but different IDs)
-            other_versions = list(collection_handle.find({
-                'project_name': project_name,
-                '_id': {'$ne': project['_id']}
-            }))
+            # Check if this project is truly orphaned:
+            # 1. It should not have any entries in its own previous_versions array
+            has_previous = len(project.get('previous_versions', [])) > 0
             
-            if len(other_versions) == 0:
+            # 2. It should not be referenced in any other project's previous_versions
+            is_referenced = collection_handle.count_documents({
+                'previous_versions.linkid': project_id
+            }) > 0
+            
+            if not has_previous and not is_referenced:
                 # No other versions found - this is orphaned!
                 orphaned_count += 1
                 orphaned_projects.append({
