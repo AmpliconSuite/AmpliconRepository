@@ -2944,7 +2944,11 @@ def visualizer(request):
         return redirect('coamplification_graph')
 
     # Import check_cached_graph here to avoid circular imports
-    from .neo4j_utils import check_cached_graph
+    from .neo4j_utils import check_cached_graph, generate_cache_key
+    
+    # Store the cache_key in session for use by fetch_graph
+    cache_key = generate_cache_key(selected_projects)
+    request.session['active_cache_key'] = cache_key
     
     # Check if graph is already cached - if so, skip expensive concatenation
     is_cached = check_cached_graph(selected_projects)
@@ -3061,9 +3065,14 @@ def fetch_graph(request, gene_name):
     min_samples = request.GET.get('min_samples')
     oncogenes = request.GET.get('oncogenes', 'false').lower() == 'true'
     all_edges = request.GET.get('all_edges', 'false').lower() == 'true'
+    
+    # Get the active cache_key from session for multi-graph support
+    cache_key = request.session.get('active_cache_key')
+    if not cache_key:
+        logging.warning("No active_cache_key in session for fetch_graph")
 
     try:
-        nodes, edges = fetch_subgraph(gene_name, min_weight, min_samples, oncogenes, all_edges)
+        nodes, edges = fetch_subgraph(gene_name, min_weight, min_samples, oncogenes, all_edges, cache_key)
         # print(f"\nNumber of nodes: {len(nodes)}\nNumber of edges: {len(edges)}\n")
         return JsonResponse({
             'nodes': nodes,
