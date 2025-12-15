@@ -686,14 +686,22 @@ def data_qc(request):
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def make_project_current(request, project_id):
-    """Set a project's current flag to True"""
+    """Set a project's current flag to True and regenerate site statistics"""
     if not request.user.is_staff:
         return redirect('/accounts/logout')
     
     if request.method == "POST":
         from bson.objectid import ObjectId
+        from .site_stats import add_project_to_site_statistics
         
         try:
+            # Get the project first to check its privacy setting
+            project = collection_handle.find_one({'_id': ObjectId(project_id)})
+            
+            if not project:
+                messages.error(request, f"Project {project_id} not found")
+                return redirect('data_qc')
+            
             # Update the project to set current=True
             result = collection_handle.update_one(
                 {'_id': ObjectId(project_id)},
@@ -701,7 +709,11 @@ def make_project_current(request, project_id):
             )
             
             if result.modified_count > 0:
-                messages.success(request, f"Project {project_id} has been set to current=True")
+                # Add the project to site statistics
+                is_private = project.get('private', False)
+                add_project_to_site_statistics(project, is_private)
+                
+                messages.success(request, f"Project {project_id} has been set to current=True and added to site statistics")
             else:
                 messages.warning(request, f"Project {project_id} was not modified (may already be current)")
         except Exception as e:
