@@ -2420,6 +2420,7 @@ def create_project(request):
             'sample_count': 0,
             'runs': {},  # Empty dictionary, not list
             'delete': False,  # Project is not deleted
+            'current': True,  # Ensure project is marked as current version
             'project_members': []  # Add project_members to avoid errors
         }
         
