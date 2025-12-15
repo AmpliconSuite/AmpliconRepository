@@ -268,11 +268,15 @@ def index(request):
     public_query = {**base_query, 'private': False}
     public_projects = list(collection_handle.find(public_query, projection))
 
-    # Extract featured projects from public projects
-    featured_projects = [proj for proj in public_projects if proj.get('featured')]
-    
-    # Remove featured projects from public_projects to avoid duplication
-    public_projects = [proj for proj in public_projects if not proj.get('featured')]
+    # Partition public_projects into featured and non-featured in a single pass
+    featured_projects = []
+    non_featured_projects = []
+    for proj in public_projects:
+        if proj.get('featured'):
+            featured_projects.append(proj)
+        else:
+            non_featured_projects.append(proj)
+    public_projects = non_featured_projects
 
     # Process project links
     for proj in public_projects:
