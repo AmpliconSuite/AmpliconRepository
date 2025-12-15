@@ -2,68 +2,171 @@
 
 {% load mezzanine_tags %}
 {% load custom_filters %}
+{% block extra_css %}
+<style>
+    /* Search Slider Styles */
+    .search-slider {
+        position: fixed;
+        left: 0;
+        top: 50%;
+        transform: translate(-350px, -50%);
+        width: 350px;
+        max-height: 90vh;
+        background-color: white;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease-in-out;
+        z-index: 1000;
+        overflow-y: auto;
+        border-radius: 0 8px 8px 0;
+        border: 1px solid #e0e0e0;
+        border-radius: 5px;
+        
+    }
+    
+    .search-slider.open {
+        transform: translate(0, -50%);
+    }
+    
+    .search-slider-toggle {
+        position: fixed;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 40px;
+        height: 60px;
+        background-color: #0275d8;
+        color: white;
+        border: none;
+        border-radius: 0 5px 5px 0;
+        cursor: pointer;
+        font-size: 18px;
+        z-index: 999;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+        transition: left 0.3s ease-in-out;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .search-slider-toggle i {
+        pointer-events: none;
+    }
+    
+    .search-slider.open + .search-slider-toggle {
+        left: 350px;
+    }
+    
+    .search-slider-toggle:hover {
+        background-color: #025aa5;
+    }
+    
+    .search-slider-content {
+        padding: 2px;
+        
+    }
+    
+    /* DataTables length selector styling */
+    #table-length-container {
+        display: flex !important;
+        align-items: center;
+    }
+    
+    #unifiedProjectTable_length {
+        margin: 0 !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center;
+    }
+    
+    #unifiedProjectTable_length label {
+        display: flex !important;
+        align-items: center;
+        margin: 0 !important;
+        white-space: nowrap;
+        font-weight: normal;
+    }
+    
+    #unifiedProjectTable_length select {
+        width: auto !important;
+        display: inline-block !important;
+        margin: 0 5px !important;
+        padding: 2px 8px !important;
+    }
+    
+    /* Make Sample count column wider to prevent header wrapping */
+    #unifiedProjectTable th:nth-child(5),
+    #unifiedProjectTable td:nth-child(5) {
+        min-width: 70px;
+        white-space: nowrap;
+    }
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script>
     // get the format and sort functions from the included file
     {% include 'includes/datatable_date_utils.html' %}
 
     $(document).ready(function () {
-        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
-        });
-     
-        $('#projectTable0').DataTable({
-            language: {
-                    searchPlaceholder: "Search projects"
-                    },
+        // Custom sorting for the Type column (Featured -> Public -> Private)
+        $.fn.dataTable.ext.type.order['project-type-pre'] = function(data) {
+            // Extract the text from the badge span
+            var type = $(data).text().trim().toLowerCase();
+            // Return sort order: Featured=1, Public=2, Private=3
+            if (type === 'featured') return 1;
+            if (type === 'public') return 2;
+            if (type === 'private') return 3;
+            return 4; // fallback for any unknown types
+        };
+        
+        // Initialize the single unified DataTable
+        var unifiedTable = $('#unifiedProjectTable').DataTable({
+            searching: true,
+            dom: 'lrtip', // Keep default layout temporarily
             columnDefs: [
                 {
-                    targets: 2, // 3rd column (zero-based index)
+                    targets: 0, // "Type" column (zero-based index)
+                    type: 'project-type'
+                },
+                {
+                    targets: 3, // "Last Updated" column (zero-based index)
                     type: 'custom-date'
                 }
             ],
-            order: [[2, 'desc']] // Sort by date column (index 2) in descending order
-        });
-        $('#projectTable1').DataTable({
+            order: [[0, 'asc'], [3, 'desc']], // Sort by Type first (Featured->Public->Private), then by date (newest first)
+            pageLength: 10,
             language: {
-                    searchPlaceholder: "Search projects"
-                    },
-            columnDefs: [
-                {
-                    targets: 2, // 3rd column (zero-based index)
-                    type: 'custom-date'
-                }
-            ],
-            order: [[2, 'desc']] // Sort by date column (index 2) in descending order
-
+                emptyTable: "No projects found matching your search",
+                zeroRecords: "No projects found matching your search",
+                lengthMenu: "Show _MENU_ entries"
+            }
         });
-        $('#projectTable2').DataTable({
-            language: {
-                    searchPlaceholder: "Search projects"
-                    },
-            columnDefs: [
-                {
-                    targets: 2, // 3rd column (zero-based index)
-                    type: 'custom-date'
-                }
-            ],
-            order: [[2, 'desc']] // Sort by date column (index 2) in descending order
+        
+        // Manually move the length selector to our custom container
+        var lengthSelector = $('#unifiedProjectTable_length').detach();
+        $('#table-length-container').append(lengthSelector);
+        
+        // Connect the unified search box to the table
+        $('#unified-project-search').on('keyup', function() {
+            unifiedTable.search(this.value).draw();
         });
     });
     // Call the formatDates function when the page is loaded
     document.addEventListener('DOMContentLoaded', formatDates);
-    
-    window.addEventListener('DOMContentLoaded', function() {
-        var tabContent = document.getElementById('tab-table0');
-        if (tabContent.scrollWidth > tabContent.clientWidth) {
-            tabContent.style.overflowX = 'scroll';
-        } else {
-            tabContent.style.overflowX = 'hidden';
-        }
+
+    // Search Slider Toggle
+    $(document).ready(function() {
+        $('#search-slider-toggle').on('click', function() {
+            $('#search-slider').toggleClass('open');
+        });
+        
+        // Close slider when clicking outside
+        $(document).on('click', function(event) {
+            if (!$(event.target).closest('#search-slider, #search-slider-toggle').length) {
+                $('#search-slider').removeClass('open');
+            }
+        });
     });
-
-    
-
    
 </script>
 
@@ -80,6 +183,18 @@
         AmpliconRepository
     </title>
 </head>
+
+    <!-- Search Slider -->
+    <div id="search-slider" class="search-slider">
+        <div class="search-slider-content">
+            <div class="search-box" style="padding: 20px; background-color: #f8f9fa; border-radius: 5px; font-size: 0.9em;">
+                {% include 'includes/searchbox.html' %}
+            </div>
+        </div>
+    </div>
+    <button id="search-slider-toggle" class="search-slider-toggle" aria-label="Toggle search" title="Advanced Search">
+        <i class="fas fa-search"></i>
+    </button>
 
     <div class="container main-container row" style="max-width:1400px; width:90%; margin:auto;">
     <div class="col-md-8">
@@ -154,101 +269,67 @@
         <div style="margin-bottom: 20px; border: 0.5px solid grey; padding: 20px; border-radius: 10px;">
             <div>
                 <div>
-                    <ul class="nav nav-tabs" role="tablist">
-                        <li class="nav-item">
-                            <a class="nav-link active" href="#tab-table0" data-toggle="tab">Featured Projects</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="#tab-table1" data-toggle="tab">Public Projects</a>
-                        </li>
-                        {% if user.is_authenticated %}
-                            <li class="nav-item">
-                                <a class='nav-link' href="#tab-table2" data-toggle="tab">Private Projects</a>
-                            </li>
-                        {% endif %}
-                    </ul>
-                    <div class="tab-content" style="padding-top: 30px;">
-                        <div class="tab-pane active" id="tab-table0" style="overflow-x: auto;">
-                            <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Description</th>
-                                        <th>Last Updated</th>
-                                        <th>Sample count</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for project in featured_projects %}
-                                    <tr>
-                                        <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                                          <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
-                                        </td>
-                                        <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
-                                        <td class="date">{{ project.date }}</td>
-                                        <td>{{ project.sample_count }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
+                    <!-- Unified Search Box and Length Selector -->
+                    <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; gap: 15px;">
+                        <div style="display: flex; align-items: center; flex: 0 0 auto;">
+                            <label for="unified-project-search" style="font-weight: bold; margin-right: 10px; white-space: nowrap; margin-bottom: 0;">Search projects:</label>
+                            <input type="text" id="unified-project-search" class="form-control" placeholder="Project name or description" style="width: 300px; margin-bottom: 0;">
                         </div>
-
-                        <div class="tab-pane " id="tab-table1" style="overflow-x: auto;">
-                            <table name='projectTable1' id='projectTable1' class="table" style="padding-top: 20px; width:100%">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Description</th>
-                                        <th>Last Updated</th>
-                                        <th>Sample count</th>
-
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for project in public_projects %}
-                                    <tr>
-                                        <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                                          <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
-                                        </td>
-                                        <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
-                                        <td class="date">{{ project.date }}</td>
-                                        <td>{{ project.sample_count }}</td>
-
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% if user.is_authenticated %}
-                        <div class="tab-pane" id="tab-table2" style="overflow-x: auto;">
-                            <table id='projectTable2' class="table" style="padding-top: 20px; width:100%">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Description</th>
-                                        <th>Last Updated</th>
-                                        <th>Project Members</th>
-                                        <th>Sample count</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for project in private_projects %}
-                                    <tr>
-                                        <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                                          <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
-                                        </td>
-                                        <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
-                                        <td class="date" >{{ project.date }}</td>
-                                        <td>{% for person in project.project_members %}
-                                            {{ person }}<br>
-                                        {% endfor%}</td>
-                                        <td>{{ project.sample_count }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% endif %}
+                        <div id="table-length-container" style="flex: 0 0 auto; display: flex; align-items: center;"></div>
+                    </div>
+                    
+                    <!-- Single Unified Table -->
+                    <div style="overflow-x: auto;">
+                        <table id='unifiedProjectTable' class="table" style="padding-top: 20px; width:100%">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th>Name</th>
+                                    <th>Description</th>
+                                    <th>Last Updated</th>
+                                    <th>Sample count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for project in featured_projects %}
+                                <tr data-project-type="featured">
+                                    <td><span class="badge badge-primary">Featured</span></td>
+                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
+                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                                    </td>
+                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
+                                    <td class="date">{{ project.date }}</td>
+                                    <td>{{ project.sample_count }}</td>
+                                </tr>
+                                {% endfor %}
+                                
+                                {% for project in public_projects %}
+                                <tr data-project-type="public">
+                                    <td><span class="badge badge-success">Public</span></td>
+                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
+                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                                    </td>
+                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
+                                    <td class="date">{{ project.date }}</td>
+                                    <td>{{ project.sample_count }}</td>
+                                </tr>
+                                {% endfor %}
+                                
+                                {% if user.is_authenticated %}
+                                {% for project in private_projects %}
+                                <tr data-project-type="private">
+                                    <td><span class="badge" style="background-color: #BBBBBB; color: white;">Private</span></td>
+                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
+                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                                    </td>
+                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
+                                    <td class="date">{{ project.date }}</td>
+                                    <td>{{ project.sample_count }}</td>
+                                </tr>
+                                {% endfor %}
+                                {% endif %}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>

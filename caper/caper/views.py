@@ -268,11 +268,21 @@ def index(request):
     public_query = {**base_query, 'private': False}
     public_projects = list(collection_handle.find(public_query, projection))
 
-    # Extract featured projects from public projects
-    featured_projects = [proj for proj in public_projects if proj.get('featured')]
+    # Partition public_projects into featured and non-featured in a single pass
+    featured_projects = []
+    non_featured_projects = []
+    for proj in public_projects:
+        if proj.get('featured'):
+            featured_projects.append(proj)
+        else:
+            non_featured_projects.append(proj)
+    public_projects = non_featured_projects
 
     # Process project links
     for proj in public_projects:
+        prepare_project_linkid(proj)
+    
+    for proj in featured_projects:
         prepare_project_linkid(proj)
 
     # Handle private projects for authenticated users
@@ -2374,7 +2384,7 @@ def create_project(request):
         # Save files to disk
         for file in files:
             try:
-                fs = FileSystemStorage(location = project_data_path)
+                fs = FileSystemStorage(location=project_data_path)
                 saved = fs.save(file.name, file)
                 print(f'file: {file.name} is saved')
                 fp = os.path.join(project_data_path, file.name)
@@ -2825,13 +2835,14 @@ def get_projects_metadata(project_list):
             
             total_samples = len(project['runs'])
             ecdna_samples = 0
+            samples_per_project[project_name] = [total_samples, ecdna_samples]
             
             # Count ecDNA samples by checking Classification field
             for sample_data in project['runs'].values():
                 if isinstance(sample_data, list) and sample_data:
                     # Check if any entry in the sample has ecDNA classification
                     for entry in sample_data:
-                        if isinstance(entry, dict) and entry.get('Classification', '').lower() == 'ecdna':
+                        if isinstance(entry, dict) and str(entry.get('Classification') or '').lower() == 'ecdna':
                             ecdna_samples += 1
                             break  # Count each sample once
             
@@ -2952,8 +2963,8 @@ def visualizer(request):
         
         return render(request, 'pages/visualizer.html', {
             'test_size': total_samples,
-            'diff': CONCAT_TIME,
-            'import_time': IMPORT_END - IMPORT_START,
+            'diff': 0,
+            'import_time': 0,
             'reference_genomes': ref_genomes,
             'projects_stats': projects_info,
             'cached': True
