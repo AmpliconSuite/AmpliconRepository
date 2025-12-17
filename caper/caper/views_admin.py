@@ -8,6 +8,7 @@ import os
 import csv
 import subprocess
 import shutil
+import datetime
 from pathlib import Path
 
 from django.http import HttpResponse
@@ -16,6 +17,7 @@ from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.utils import timezone
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
@@ -29,7 +31,7 @@ from .utils import (
     collection_handle, collection_handle_primary, fs_handle,
     get_one_project, get_one_deleted_project, prepare_project_linkid,
     check_if_db_field_exists, get_date_short, previous_versions,
-    form_to_dict, get_date
+    form_to_dict, get_date, db_handle_primary
 )
 
 from .extra_metadata import *
@@ -687,13 +689,78 @@ def admin_project_files_report(request):
         return redirect('/accounts/logout')
     
     logger = logging.getLogger(__name__)
-    logger.info("Generating project files report...")
     
-    # Get file pattern from request parameter, default to _ecDNA_context_calls.tsv
-    file_pattern = request.GET.get('file_pattern', '_ecDNA_context_calls.tsv').strip()
+    # Get collection for saved reports
+    saved_reports_collection = db_handle_primary['project_files_reports']
+    
+    # Handle POST requests (delete only - save is now automatic)
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        
+        if action == 'delete':
+            # Delete a saved report
+            report_id = request.POST.get('report_id')
+            if report_id:
+                saved_reports_collection.delete_one({'_id': ObjectId(report_id)})
+                logger.info(f"Deleted saved report {report_id}")
+            return redirect('/admin-project-files-report/')
+    
+    # Check if we're loading a saved report
+    load_report_id = request.GET.get('load_report')
+    if load_report_id:
+        saved_report = saved_reports_collection.find_one({'_id': ObjectId(load_report_id)})
+        if saved_report:
+            # Get list of all saved reports
+            all_saved_reports = list(saved_reports_collection.find().sort('created_at', -1))
+            
+            # Convert _id to string for Django templates (can't access underscore-prefixed attributes)
+            for report in all_saved_reports:
+                report['id_str'] = str(report['_id'])
+            
+            # Convert project_reports to JSON for JavaScript
+            import json
+            project_reports_json = json.dumps(saved_report['project_reports'])
+            
+            return render(request, 'pages/admin_project_files_report.html', {
+                'project_reports': saved_report['project_reports'],
+                'project_reports_json': project_reports_json,
+                's3_enabled': saved_report['s3_enabled'],
+                'projects_with_local_tar': saved_report['projects_with_local_tar'],
+                'projects_with_s3_tar': saved_report['projects_with_s3_tar'],
+                'file_pattern': saved_report['file_pattern'],
+                'user': request.user,
+                'SITE_TITLE': settings.SITE_TITLE,
+                'saved_reports': all_saved_reports,
+                'is_loaded_report': True,
+                'loaded_report_date': saved_report['created_at']
+            })
+    
+    # Check if file_pattern parameter is provided
+    file_pattern = request.GET.get('file_pattern', '').strip()
+    
+    # Get list of all saved reports
+    all_saved_reports = list(saved_reports_collection.find().sort('created_at', -1))
+    
+    # Convert _id to string for Django templates (can't access underscore-prefixed attributes)
+    for report in all_saved_reports:
+        report['id_str'] = str(report['_id'])
+    
+    # If no file_pattern provided, just show the empty form
     if not file_pattern:
-        file_pattern = '_ecDNA_context_calls.tsv'
+        s3_enabled = hasattr(settings, 'USE_S3_DOWNLOADS') and settings.USE_S3_DOWNLOADS
+        return render(request, 'pages/admin_project_files_report.html', {
+            'project_reports': [],
+            'project_reports_json': '[]',
+            's3_enabled': s3_enabled,
+            'projects_with_local_tar': 0,
+            'projects_with_s3_tar': 0,
+            'file_pattern': '',
+            'user': request.user,
+            'SITE_TITLE': settings.SITE_TITLE,
+            'saved_reports': all_saved_reports
+        })
     
+    logger.info("Generating project files report...")
     logger.info(f"Searching for files matching pattern: {file_pattern}")
     
     # Get all projects (public and private)
@@ -797,13 +864,41 @@ def admin_project_files_report(request):
     
     logger.info(f"Generated report for {len(project_reports)} projects")
     
+    # Automatically save the report
+    import json
+    saved_report = {
+        'file_pattern': file_pattern,
+        'created_at': timezone.now(),
+        'created_by': request.user.username,
+        'project_reports': project_reports,
+        's3_enabled': s3_enabled,
+        'projects_with_local_tar': projects_with_local_tar,
+        'projects_with_s3_tar': projects_with_s3_tar,
+        'total_projects': len(project_reports)
+    }
+    
+    saved_reports_collection.insert_one(saved_report)
+    logger.info(f"Auto-saved report for pattern '{file_pattern}' by {request.user.username}")
+    
+    # Refresh the saved reports list to include the newly saved report
+    all_saved_reports = list(saved_reports_collection.find().sort('created_at', -1))
+    for report in all_saved_reports:
+        report['id_str'] = str(report['_id'])
+    
+    # Convert project_reports to JSON for JavaScript
+    project_reports_json = json.dumps(project_reports)
+    
     return render(request, 'pages/admin_project_files_report.html', {
         'project_reports': project_reports,
+        'project_reports_json': project_reports_json,
         's3_enabled': s3_enabled,
         'projects_with_local_tar': projects_with_local_tar,
         'projects_with_s3_tar': projects_with_s3_tar,
         'file_pattern': file_pattern,
         'user': request.user,
-        'SITE_TITLE': settings.SITE_TITLE
+        'SITE_TITLE': settings.SITE_TITLE,
+        'saved_reports': all_saved_reports,
+        'is_loaded_report': False,
+        'report_auto_saved': True
     })
 

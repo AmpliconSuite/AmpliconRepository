@@ -98,24 +98,74 @@
                                        name="file_pattern" 
                                        value="{{ file_pattern }}" 
                                        placeholder="_ecDNA_context_calls.tsv"
-                                       style="width: 300px;">
+                                       style="width: 300px;"
+                                       required>
                             </div>
                             <button type="submit" class="btn btn-primary">Search</button>
-                            {% if file_pattern != "_ecDNA_context_calls.tsv" %}
-                            <a href="?" class="btn btn-secondary ml-2">Reset</a>
+                            {% if file_pattern %}
+                            <a href="?" class="btn btn-secondary ml-2">Clear</a>
                             {% endif %}
                         </form>
                         <small class="form-text text-muted" style="margin-top: 10px;">
-                            Enter a pattern to search for files containing this text anywhere in the filename. 
-                            Default: _ecDNA_context_calls.tsv
+                            Enter a pattern to search for files containing this text anywhere in the filename (e.g., _ecDNA_context_calls.tsv).
                         </small>
                     </div>
                 </div>
+
+                <!-- Saved Reports Table -->
+                {% if saved_reports %}
+                <div class="card" style="margin-top: 20px;">
+                    <div class="card-body">
+                        <h5 class="card-title">Saved Reports</h5>
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>File Pattern</th>
+                                    <th>Created</th>
+                                    <th>Created By</th>
+                                    <th>Total Projects</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for report in saved_reports %}
+                                <tr>
+                                    <td><strong>{{ report.file_pattern }}</strong></td>
+                                    <td>{{ report.created_at|date:"Y-m-d H:i:s" }}</td>
+                                    <td>{{ report.created_by }}</td>
+                                    <td>{{ report.total_projects }}</td>
+                                    <td>
+                                        <a href="?load_report={{ report.id_str }}" class="btn btn-sm btn-info">Load</a>
+                                        <form method="POST" style="display:inline;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="report_id" value="{{ report.id_str }}">
+                                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this saved report?');">Delete</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
+    </div>
+</div>
 
-        <div class="row" style="margin-top: 20px;">
-            <div class="col-md-12">
+{% if file_pattern %}
+<div class="row" style="margin-top: 20px;">
+    <div class="col-md-12">
+                <div style="margin-bottom: 15px;">
+                    <h4 style="margin: 0;">Search Results for: "{{ file_pattern }}"</h4>
+                    {% if is_loaded_report %}
+                    <small class="text-muted">Loaded from saved report (Created: {{ loaded_report_date|date:"Y-m-d H:i:s" }})</small>
+                    {% elif report_auto_saved %}
+                    <small class="text-success"><i class="fa fa-check-circle"></i> Report automatically saved</small>
+                    {% endif %}
+                </div>
                 <table id='projectFilesTable' class="table table-striped table-bordered" style="width:100%">
                     <thead>
                         <tr>
@@ -222,8 +272,15 @@
                 </ul>
             </div>
         </div>
-    </div>
-</div>
+        {% else %}
+        <div class="row" style="margin-top: 30px; margin-bottom: 30px;">
+            <div class="col-md-12">
+                <div class="alert alert-info" role="alert">
+                    <strong>No search performed yet.</strong> Enter a file pattern above and click "Search" to generate the report.
+                </div>
+            </div>
+        </div>
+        {% endif %}
 
 {% endblock %}
 
