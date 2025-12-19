@@ -42,7 +42,7 @@
                     </ul>
                     
                     <p class="text-muted">
-                        <strong>Note:</strong> The shutdown mode flag will automatically reset to "off" when the server restarts.
+                        <strong>Note:</strong> The shutdown mode setting is stored in the database and will persist across server restarts.
                     </p>
 
                     <form method="post" onsubmit="return confirm('Are you sure you want to {% if shutdown_pending %}disable{% else %}enable{% endif %} shutdown mode?');">
@@ -93,7 +93,7 @@
                     </ul>
                     
                     <p class="text-muted">
-                        <strong>Note:</strong> The registration disabled flag will automatically reset to "off" when the server restarts.
+                        <strong>Note:</strong> The registration disabled setting is stored in the database and will persist across server restarts.
                     </p>
 
                     <form method="post" onsubmit="return confirm('Are you sure you want to {% if registration_disabled %}enable{% else %}disable{% endif %} user registration?');">

@@ -82,14 +82,6 @@ class CustomAccountAdapter(DefaultAccountAdapter):
             return False
         return super().is_open_for_signup(request)
     
-    def get_signup_redirect_url(self, request):
-        """Override to handle closed signup redirect"""
-        from .context_processor import get_registration_disabled
-        if get_registration_disabled():
-            from django.contrib import messages
-            messages.error(request, 'Registration is currently closed. Please contact the administrator for assistance.')
-        return super().get_signup_redirect_url(request)
-    
     def clean_username(self, username, *args, **kwargs):
         User = get_user_model()
         users = User.objects.filter(email=username)
