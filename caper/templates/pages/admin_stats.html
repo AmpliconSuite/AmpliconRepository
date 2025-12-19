@@ -11,10 +11,30 @@
             }).columns.adjust();
         });
      
+        // Custom date parser for Django's date format: "July 7, 2025, 5:11 p.m."
+        function parseDjangoDate(dateStr) {
+            if (!dateStr || dateStr === 'None') return 0;
+            // Replace a.m./p.m. with AM/PM for better parsing
+            var normalizedDate = dateStr.replace(' a.m.', ' AM').replace(' p.m.', ' PM');
+            var timestamp = new Date(normalizedDate).getTime();
+            return isNaN(timestamp) ? 0 : timestamp;
+        }
+     
         $('#projectTable').DataTable({
             language: {
                     searchPlaceholder: "Search projects"
                     },
+            columnDefs: [
+                {
+                    targets: [2], // Last Updated column
+                    render: function(data, type, row) {
+                        if (type === 'sort' || type === 'type') {
+                            return parseDjangoDate(data);
+                        }
+                        return data;
+                    }
+                }
+            ],
             "footerCallback": function ( row, data, start, end, display ) {
                 var api = this.api(), data;
         
@@ -49,8 +69,19 @@
 
         $('#userTable').DataTable({
             language: {
-                    searchPlaceholder: "Search projects"
+                    searchPlaceholder: "Search users"
                     },
+            columnDefs: [
+                {
+                    targets: [2, 3], // Joined and Last Login columns
+                    render: function(data, type, row) {
+                        if (type === 'sort' || type === 'type') {
+                            return parseDjangoDate(data);
+                        }
+                        return data;
+                    }
+                }
+            ]
         });
 
 
