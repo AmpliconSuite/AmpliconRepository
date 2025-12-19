@@ -70,7 +70,6 @@ from .search import perform_search
 
 import subprocess
 import shutil
-import tarfile
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart

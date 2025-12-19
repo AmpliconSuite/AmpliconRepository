@@ -15,6 +15,7 @@ import re
 import os
 from django.forms.models import model_to_dict
 import datetime
+import tarfile
 
 # def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED
 #                   ):
