@@ -8,6 +8,7 @@ import os
 import csv
 import subprocess
 import shutil
+import datetime
 from pathlib import Path
 
 from django.http import HttpResponse
@@ -16,7 +17,10 @@ from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User
 from django.conf import settings
+
+from django.utils import timezone
 from django.contrib import messages
+
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
@@ -30,12 +34,13 @@ from .utils import (
     collection_handle, collection_handle_primary, fs_handle,
     get_one_project, get_one_deleted_project, prepare_project_linkid,
     check_if_db_field_exists, get_date_short, previous_versions,
-    form_to_dict, get_date
+    form_to_dict, get_date, db_handle_primary
 )
 
 from .extra_metadata import *
 
 from .site_stats import get_latest_site_statistics, regenerate_site_statistics
+from .tar_utils import list_project_tar_contents
 
 def check_datetime(projects):
     import dateutil.parser
@@ -744,3 +749,225 @@ def admin_prepare_shutdown(request):
         'shutdown_pending': shutdown_status,
         'user': request.user
     })
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_project_files_report(request):
+    """Generate a report on project files both on server and S3"""
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    logger = logging.getLogger(__name__)
+    
+    # Get collection for saved reports
+    saved_reports_collection = db_handle_primary['project_files_reports']
+    
+    # Handle POST requests (delete only - save is now automatic)
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        
+        if action == 'delete':
+            # Delete a saved report
+            report_id = request.POST.get('report_id')
+            if report_id:
+                saved_reports_collection.delete_one({'_id': ObjectId(report_id)})
+                logger.info(f"Deleted saved report {report_id}")
+            return redirect('/admin-project-files-report/')
+    
+    # Check if we're loading a saved report
+    load_report_id = request.GET.get('load_report')
+    if load_report_id:
+        saved_report = saved_reports_collection.find_one({'_id': ObjectId(load_report_id)})
+        if saved_report:
+            # Get list of all saved reports
+            all_saved_reports = list(saved_reports_collection.find().sort('created_at', -1))
+            
+            # Convert _id to string for Django templates (can't access underscore-prefixed attributes)
+            for report in all_saved_reports:
+                report['id_str'] = str(report['_id'])
+            
+            # Convert project_reports to JSON for JavaScript
+            import json
+            project_reports_json = json.dumps(saved_report['project_reports'])
+            
+            return render(request, 'pages/admin_project_files_report.html', {
+                'project_reports': saved_report['project_reports'],
+                'project_reports_json': project_reports_json,
+                's3_enabled': saved_report['s3_enabled'],
+                'projects_with_local_tar': saved_report['projects_with_local_tar'],
+                'projects_with_s3_tar': saved_report['projects_with_s3_tar'],
+                'file_pattern': saved_report['file_pattern'],
+                'user': request.user,
+                'SITE_TITLE': settings.SITE_TITLE,
+                'saved_reports': all_saved_reports,
+                'is_loaded_report': True,
+                'loaded_report_date': saved_report['created_at']
+            })
+    
+    # Check if file_pattern parameter is provided
+    file_pattern = request.GET.get('file_pattern', '').strip()
+    
+    # Get list of all saved reports
+    all_saved_reports = list(saved_reports_collection.find().sort('created_at', -1))
+    
+    # Convert _id to string for Django templates (can't access underscore-prefixed attributes)
+    for report in all_saved_reports:
+        report['id_str'] = str(report['_id'])
+    
+    # If no file_pattern provided, just show the empty form
+    if not file_pattern:
+        s3_enabled = hasattr(settings, 'USE_S3_DOWNLOADS') and settings.USE_S3_DOWNLOADS
+        return render(request, 'pages/admin_project_files_report.html', {
+            'project_reports': [],
+            'project_reports_json': '[]',
+            's3_enabled': s3_enabled,
+            'projects_with_local_tar': 0,
+            'projects_with_s3_tar': 0,
+            'file_pattern': '',
+            'user': request.user,
+            'SITE_TITLE': settings.SITE_TITLE,
+            'saved_reports': all_saved_reports
+        })
+    
+    logger.info("Generating project files report...")
+    logger.info(f"Searching for files matching pattern: {file_pattern}")
+    
+    # Get all projects (public and private)
+    all_projects = list(collection_handle.find({'current': True, 'delete': False}))
+    
+    # Initialize S3 client if S3 downloads are enabled
+    s3_client = None
+    s3_enabled = hasattr(settings, 'USE_S3_DOWNLOADS') and settings.USE_S3_DOWNLOADS
+    
+    if s3_enabled:
+        try:
+            session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+            s3_client = session.client('s3')
+        except Exception as e:
+            logger.error(f"Failed to initialize S3 client: {e}")
+            s3_enabled = False
+    
+    project_reports = []
+    
+    for project in all_projects:
+        project_id = str(project['_id'])
+        project_name = project.get('project_name', 'Unknown')
+        is_private = project.get('private', True)
+        
+        # Initialize report data for this project
+        report = {
+            'project_id': project_id,
+            'project_name': project_name,
+            'is_private': is_private,
+            'has_local_tar': False,
+            'has_s3_tar': False,
+            'local_ecDNA_files': [],
+            's3_ecDNA_files': [],
+            'gridfs_ecDNA_files': []
+        }
+        
+        # Check for local tar file
+        local_tar_path = None
+        if os.path.exists(f"../tmp/{project_id}/"):
+            local_tar_path = f"../tmp/{project_id}/{project_id}.tar.gz"
+        else:
+            local_tar_path = f"tmp/{project_id}/{project_id}.tar.gz"
+        
+        if os.path.exists(local_tar_path):
+            report['has_local_tar'] = True
+        
+        # Check for S3 tar file
+        if s3_enabled:
+            s3_tar_key = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/{project_id}.tar.gz'
+            try:
+                s3_client.head_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_tar_key)
+                report['has_s3_tar'] = True
+            except:
+                report['has_s3_tar'] = False
+        
+        # Check for local ecDNA context files
+        local_project_path = None
+        if os.path.exists(f"../tmp/{project_id}/"):
+            local_project_path = f"../tmp/{project_id}/"
+        else:
+            local_project_path = f"tmp/{project_id}/"
+        
+        if os.path.exists(local_project_path):
+            for root, dirs, files in os.walk(local_project_path):
+                for file in files:
+                    if file_pattern in file:
+                        abs_path = os.path.abspath(os.path.join(root, file))
+                        report['local_ecDNA_files'].append(abs_path)
+        
+        # Check for S3 ecDNA context files
+        if s3_enabled:
+            s3_project_prefix = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_id}/'
+            try:
+                paginator = s3_client.get_paginator('list_objects_v2')
+                for page in paginator.paginate(Bucket=settings.S3_DOWNLOADS_BUCKET, Prefix=s3_project_prefix):
+                    if 'Contents' in page:
+                        for obj in page['Contents']:
+                            key = obj['Key']
+                            if file_pattern in key:
+                                # Get relative path (remove project prefix)
+                                relative_key = key[len(s3_project_prefix):]
+                                report['s3_ecDNA_files'].append(relative_key)
+            except Exception as e:
+                logger.error(f"Failed to list S3 objects for project {project_id}: {e}")
+        
+        # Check for ecDNA context files in GridFS tar
+        if 'tarfile' in project:
+            try:
+                tar_contents = list_project_tar_contents(project_id)
+                # Filter for files containing the pattern
+                ecDNA_files = [f for f in tar_contents if file_pattern in f]
+                report['gridfs_ecDNA_files'] = ecDNA_files
+            except Exception as e:
+                logger.error(f"Failed to list GridFS tar contents for project {project_id}: {e}")
+        
+        project_reports.append(report)
+    
+    # Calculate summary statistics
+    projects_with_local_tar = sum(1 for r in project_reports if r['has_local_tar'])
+    projects_with_s3_tar = sum(1 for r in project_reports if r['has_s3_tar']) if s3_enabled else 0
+    
+    logger.info(f"Generated report for {len(project_reports)} projects")
+    
+    # Automatically save the report
+    import json
+    saved_report = {
+        'file_pattern': file_pattern,
+        'created_at': timezone.now(),
+        'created_by': request.user.username,
+        'project_reports': project_reports,
+        's3_enabled': s3_enabled,
+        'projects_with_local_tar': projects_with_local_tar,
+        'projects_with_s3_tar': projects_with_s3_tar,
+        'total_projects': len(project_reports)
+    }
+    
+    saved_reports_collection.insert_one(saved_report)
+    logger.info(f"Auto-saved report for pattern '{file_pattern}' by {request.user.username}")
+    
+    # Refresh the saved reports list to include the newly saved report
+    all_saved_reports = list(saved_reports_collection.find().sort('created_at', -1))
+    for report in all_saved_reports:
+        report['id_str'] = str(report['_id'])
+    
+    # Convert project_reports to JSON for JavaScript
+    project_reports_json = json.dumps(project_reports)
+    
+    return render(request, 'pages/admin_project_files_report.html', {
+        'project_reports': project_reports,
+        'project_reports_json': project_reports_json,
+        's3_enabled': s3_enabled,
+        'projects_with_local_tar': projects_with_local_tar,
+        'projects_with_s3_tar': projects_with_s3_tar,
+        'file_pattern': file_pattern,
+        'user': request.user,
+        'SITE_TITLE': settings.SITE_TITLE,
+        'saved_reports': all_saved_reports,
+        'is_loaded_report': False,
+        'report_auto_saved': True
+    })
+

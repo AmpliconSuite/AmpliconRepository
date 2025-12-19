@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load custom_filters %}
 
 {% block extra_js %}
 <script>
@@ -302,6 +303,7 @@
                 <th>Feature ID</th>
                 <th>Classification</th>
                 <th>Oncogenes</th>
+                <th>Context</th>
                 <th>Location</th>
                 <th>Downloads</th>
             </tr>
@@ -323,6 +325,7 @@
                 <td display:flex onclick="handleTableRowClick('{{ feature.AA_amplicon_number }}', '{{ feature.Location|join:", " }}')"><b>{{ feature.Feature_ID }}</b></td>
                 <td>{{ feature.Classification }}</td>
                 <td>{{ feature.Oncogenes|join:", " }}</td>
+                <td>{% if feature.Feature_ID in ecDNA_context %}{{ ecDNA_context|lookup:feature.Feature_ID }}{% endif %}</td>
                 <td>
                     {% for coord in feature.Location %}
                         {% if not forloop.first %}, {% endif %}

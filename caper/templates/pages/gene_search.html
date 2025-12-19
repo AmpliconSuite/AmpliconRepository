@@ -319,11 +319,16 @@
                             let reorganizedGenes = [...genes];
                             if (searchTerms.length > 0) {
                                 const matched = [], other = [];
-                                genes.forEach(gene =>
-                                    searchTerms.some(term => gene.toUpperCase().includes(term))
-                                        ? matched.push(`<mark>${gene}</mark>`)
-                                        : other.push(gene)
-                                );
+                                genes.forEach(gene => {
+                                    // Use exact match instead of includes to avoid partial matches
+                                    // e.g., "EGFR" should not match "EGFR-AS1"
+                                    const isMatch = searchTerms.some(term => gene.toUpperCase() === term);
+                                    if (isMatch) {
+                                        matched.push(`<mark>${gene}</mark>`);
+                                    } else {
+                                        other.push(gene);
+                                    }
+                                });
                                 if (matched.length > 0) reorganizedGenes = [...matched, ...other];
                             }
 

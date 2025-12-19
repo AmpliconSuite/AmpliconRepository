@@ -34,7 +34,7 @@ from .views_admin import (
     admin_featured_projects, admin_version_details, admin_sendemail, admin_stats,
     admin_permanent_delete_project, admin_delete_user, admin_delete_project,
     user_stats_download, site_stats_regenerate, project_stats_download, sizeof_fmt,
-    fix_schema, data_qc, admin_prepare_shutdown, make_project_current
+    fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report,  make_project_current
 )
 
 # Import API views from separate module
@@ -70,6 +70,7 @@ from .search import perform_search
 
 import subprocess
 import shutil
+import tarfile
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.project_pie_chart as piechart
@@ -436,6 +437,91 @@ def create_aggregate_df(project, samples):
         
 
 
+def initialize_ecDNA_context(project):
+    """
+    Check for and initialize the ecDNA_context dictionary in a project.
+    
+    If the ecDNA_context dictionary already exists in the project, return immediately.
+    If it doesn't exist, create a dictionary populated from ecDNA_context_calls.tsv files 
+    in the project's tar file and save it to the project in the database.
+    
+    Args:
+        project: The project dictionary from the database
+        
+    Returns:
+        None - modifies the project in the database if needed
+    """
+    # Check if ecDNA_context already exists
+    if 'ecDNA_context' in project:
+        logging.debug(f"Project {project.get('project_name', project['_id'])} already has ecDNA_context")
+        return
+    
+    # Create ecDNA_context dictionary
+    logging.info(f"Initializing ecDNA_context for project {project.get('project_name', project['_id'])}")
+    ecDNA_context = {}
+    
+    # Check if project has a tarfile
+    if 'tarfile' not in project:
+        logging.warning(f"Project {project.get('project_name', project['_id'])} has no tarfile, storing empty ecDNA_context")
+    else:
+        # Get the tar file from GridFS and extract ecDNA_context_calls.tsv files
+        try:
+            tar_id = project['tarfile']
+            tar_gridfs_file = fs_handle.get(ObjectId(tar_id))
+            logging.debug(f"Retrieved tarfile from GridFS for project {project.get('project_name', project['_id'])}")
+            
+            # Open tar file and look for ecDNA_context_calls.tsv files
+            with tarfile.open(fileobj=tar_gridfs_file, mode='r:gz') as tar:
+                # Find all members ending with ecDNA_context_calls.tsv
+                context_files = [m for m in tar.getmembers() if m.name.endswith('ecDNA_context_calls.tsv')]
+                
+                logging.info(f"Found {len(context_files)} ecDNA_context_calls.tsv file(s) in project tar")
+                
+                # Process each file
+                for member in context_files:
+                    try:
+                        # Extract and read the file
+                        file_obj = tar.extractfile(member)
+                        if file_obj:
+                            content = file_obj.read().decode('utf-8')
+                            lines = content.strip().split('\n')
+                            
+                            logging.debug(f"Processing {member.name} with {len(lines)} line(s)")
+                            
+                            # Parse each line
+                            for line in lines:
+                                line = line.strip()
+                                if line:  # Skip empty lines
+                                    parts = line.split(None, 1)  # Split on first whitespace
+                                    if len(parts) >= 2:
+                                        key = parts[0]
+                                        value = parts[1].strip()
+                                        ecDNA_context[key] = value
+                                        logging.debug(f"Added ecDNA_context: {key} -> {value}")
+                                    elif len(parts) == 1:
+                                        # Handle case where there's only a key with no value
+                                        key = parts[0]
+                                        ecDNA_context[key] = ""
+                                        logging.debug(f"Added ecDNA_context: {key} -> (empty)")
+                    except Exception as e:
+                        logging.error(f"Error processing {member.name}: {e}")
+                        
+            logging.info(f"Populated ecDNA_context with {len(ecDNA_context)} entries")
+            
+        except Exception as e:
+            logging.error(f"Error reading tarfile for ecDNA_context: {e}")
+            logging.exception("Full traceback:")
+    
+    # Update the project in the database
+    query = {'_id': project['_id'], 'delete': False}
+    new_values = {"$set": {'ecDNA_context': ecDNA_context}}
+    collection_handle.update_one(query, new_values)
+    
+    # Update the local project object as well
+    project['ecDNA_context'] = ecDNA_context
+    logging.debug(f"ecDNA_context initialized and saved for project {project.get('project_name', project['_id'])}")
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -495,6 +581,9 @@ def project_page(request, project_name, message=''):
         pc_fig = None
     # For regular projects, process as before
     elif needs_metadata:
+        # Initialize ecDNA_context for this project
+        initialize_ecDNA_context(project)
+        
         samples = project['runs'].copy()
         features_list = replace_space_to_underscore(samples)
         reference_genome = reference_genome_from_project(samples)
@@ -515,6 +604,10 @@ def project_page(request, project_name, message=''):
         stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
         pc_fig = piechart.pie_chart(aggregate, fa_cmap)
     else:
+        logging.info('Already have the lists in DB')
+        # Initialize ecDNA_context for this project
+        initialize_ecDNA_context(project)
+        
         samples = project['runs']
         reference_genome = project['reference_genome']
         sample_data = project['sample_data']
@@ -838,6 +931,9 @@ def sample_page(request, project_name, sample_name):
             ## when we embed the django template, we can separate filters, and there's one that's "safe", and will
             ## have the IGV button in the features table
             ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
+    # Get ecDNA_context dictionary from project, default to empty dict if not present
+    ecDNA_context = project.get('ecDNA_context', {})
+    
     return render(request, "pages/sample.html",
                   {'project': project,
                    'project_name': project_name,
@@ -854,6 +950,7 @@ def sample_page(request, project_name, sample_name):
                    'download_links': json.dumps(download_png),
                    'reference_versions': json.dumps(reference_version),
                    'ec3d_available': ec3d_available,  # New context variable
+                   'ecDNA_context': ecDNA_context,  # Add ecDNA_context dictionary
         }
     )
 

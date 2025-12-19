@@ -21,3 +21,13 @@ def sort_dict_by_value_desc(dictionary):
         return []
     return sorted(dictionary.items(), key=lambda x: x[1], reverse=True)
 
+@register.filter
+def lookup(dictionary, key):
+    """
+    Look up a value in a dictionary by key.
+    Returns empty string if key not found.
+    """
+    if not dictionary:
+        return ''
+    return dictionary.get(key, '')
+

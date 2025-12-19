@@ -41,6 +41,14 @@
             //alert("Nothing to say")
         }
 
+        // Hide plotly_plots div if there's only one sample
+        var sampleCount = {{ sample_data|length|default:0 }};
+        if (sampleCount === 1) {
+            $('#plotly_plots').hide();
+        } else {
+            $('#plotly_plots').show();
+        }
+
     } );
     function show_div() {
         var x = document.getElementById("prev_versions_table");
@@ -157,14 +165,7 @@
 {% endblock %}
 
 {% block main %}
-<!-- DEBUG: Display delete and current flags -->
-<div class="container">
-    <div class="alert alert-warning" role="alert" style="margin-top: 10px; background-color: #fff3cd; border: 2px solid #ffc107; padding: 10px;">
-        <strong>🔧 DEBUG INFO:</strong> 
-        <span style="margin-left: 15px;"><strong>delete flag:</strong> <code>{{ debug_delete_flag }}</code></span>
-        <span style="margin-left: 15px;"><strong>current flag:</strong> <code>{{ debug_current_flag }}</code></span>
-    </div>
-</div>
+
 
 <div class="container">
     <nav aria-label="breadcrumb">
@@ -356,7 +357,7 @@
         <div id = "project_statistics"> Views: {{ views }} | Downloads: <span id = 'downloads'>{{downloads}}</span></div>
     </div>
     
-    <div  style="margin:auto; border: 0.5px solid grey; padding: 0px">
+    <div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; display:none;">
         <span style="display:inline-block">{{ stackedbar_graph|safe }}
         {% block plotly_js %}
         <script type="text/javascript">
