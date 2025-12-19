@@ -1,4 +1,5 @@
 import logging
+from collections import Counter
 
 import pandas as pd
 from bson import ObjectId
@@ -251,7 +252,14 @@ def sample_data_from_feature_list(features_list):
         subset = df.iloc[indices]
         sample_dict['Sample_name'] = sample_name
         sample_dict['Oncogenes'] = sorted(set(flatten(subset['Oncogenes'].values.tolist())))
-        sample_dict['Classifications'] = list(set(flatten(subset['Classification'].values.tolist())))
+        # sample_dict['Classifications'] = list(set(flatten(subset['Classification'].values.tolist())))
+        classifications = flatten(subset['Classification'].values.tolist())
+        sample_dict['Classifications'] = list(set(classifications))
+        class_counts = Counter(classifications)
+        sample_dict['Classifications_counted'] = [
+            f"{c} ({count})" if count > 1 else c
+            for c, count in sorted(class_counts.items())
+        ]
         if len(sample_dict['Oncogenes']) == 0 and len(sample_dict['Classifications']) == 0:
             sample_dict['Features'] = 0
         else:

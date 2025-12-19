@@ -477,6 +477,14 @@ def project_page(request, project_name, message=''):
     # Check if user is actually a project member (for subscription checkbox visibility)
     is_project_member = is_user_a_project_member(project, request)
 
+    # Check if metadata needs regeneration
+    needs_metadata = (
+            'metadata_stored' not in project or
+            'sample_data' not in project or
+            any('Classifications_counted' not in item for item in project.get('sample_data', []))
+    )
+    logging.info(f'project needs metadata generation: {needs_metadata}')
+
     # For empty projects, set defaults
     if is_empty_project:
         samples = {}
@@ -486,7 +494,7 @@ def project_page(request, project_name, message=''):
         stackedbar_plot = None
         pc_fig = None
     # For regular projects, process as before
-    elif 'metadata_stored' not in project:
+    elif needs_metadata:
         samples = project['runs'].copy()
         features_list = replace_space_to_underscore(samples)
         reference_genome = reference_genome_from_project(samples)
@@ -506,8 +514,7 @@ def project_page(request, project_name, message=''):
 
         stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
         pc_fig = piechart.pie_chart(aggregate, fa_cmap)
-    elif 'metadata_stored' in project:
-        logging.info('Already have the lists in DB')
+    else:
         samples = project['runs']
         reference_genome = project['reference_genome']
         sample_data = project['sample_data']
