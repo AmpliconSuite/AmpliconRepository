@@ -72,6 +72,24 @@ def create_run_display(project):
 # where the 'username' matches an existing account's email address.
 # We also don't want an email address that matches an existing username
 class CustomAccountAdapter(DefaultAccountAdapter):
+    def is_open_for_signup(self, request):
+        """
+        Check if new user registrations are allowed.
+        Returns False if registration is disabled by admin.
+        """
+        from .context_processor import get_registration_disabled
+        if get_registration_disabled():
+            return False
+        return super().is_open_for_signup(request)
+    
+    def get_signup_redirect_url(self, request):
+        """Override to handle closed signup redirect"""
+        from .context_processor import get_registration_disabled
+        if get_registration_disabled():
+            from django.contrib import messages
+            messages.error(request, 'Registration is currently closed. Please contact the administrator for assistance.')
+        return super().get_signup_redirect_url(request)
+    
     def clean_username(self, username, *args, **kwargs):
         User = get_user_model()
         users = User.objects.filter(email=username)
@@ -90,6 +108,16 @@ class CustomAccountAdapter(DefaultAccountAdapter):
 
 
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
+    def is_open_for_signup(self, request, sociallogin):
+        """
+        Check if new user registrations via social login are allowed.
+        Returns False if registration is disabled by admin.
+        """
+        from .context_processor import get_registration_disabled
+        if get_registration_disabled():
+            return False
+        return super().is_open_for_signup(request, sociallogin)
+    
     def pre_social_login(self, request, sociallogin):
         """
         Invoked just after a user successfully authenticates via a

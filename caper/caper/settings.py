@@ -363,6 +363,7 @@ TEMPLATES = [
                 "caper.context_processor.context_processor",
                 "caper.context_processor.server_identification_banner",
                 "caper.context_processor.shutdown_mode",
+                "caper.context_processor.registration_mode",
 
             ],
             "loaders": [
