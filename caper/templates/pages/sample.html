@@ -12,6 +12,7 @@
         );
     } );
 </script>
+
 <script src="https://cdn.jsdelivr.net/npm/igv@2.13.7/dist/igv.min.js"></script>
 
 <script>
@@ -77,6 +78,18 @@
     }
 
 </script>
+
+<script>
+    $(document).ready(function() {
+        // Initialize tooltips
+        $('[data-toggle="tooltip"]').tooltip({
+            html: true,
+            boundary: 'window',
+            template: '<div class="tooltip" role="tooltip"><div class="arrow"></div><div class="tooltip-inner" style="max-width: 250px; text-align: left;"></div></div>'
+        });
+    });
+</script>
+
 <style>
 .igv-container {
     margin: auto;
@@ -303,8 +316,20 @@
                 <th>Feature ID</th>
                 <th>Classification</th>
                 <th>Oncogenes</th>
-                <th>Context</th>
-                <th>Location</th>
+                <th>
+                    Context
+                    <span class="info-tooltip" data-toggle="tooltip" data-placement="top"
+                          title="Annotation for ecDNA type based on patterns in SV and CN profiles.">
+                        <i class="fas fa-question-circle" style="font-size: 0.9em; color: #6c757d; cursor: help;"></i>
+                    </span>
+                </th>
+                <th>
+                    Location
+                    <span class="info-tooltip" data-toggle="tooltip" data-placement="top"
+                          title="Genomic coordinates this feature captures. Not representative of amplification structure.">
+                        <i class="fas fa-question-circle" style="font-size: 0.9em; color: #6c757d; cursor: help;"></i>
+                    </span>
+                </th>
                 <th>Downloads</th>
             </tr>
         </thead>

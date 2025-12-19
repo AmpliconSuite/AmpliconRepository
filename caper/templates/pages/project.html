@@ -410,7 +410,7 @@
                 <td><a href="/project/{{project.linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
                 <td>{{ sample.Features }}</td>
                 <td>{{ sample.Oncogenes|join:", " }}</td>
-                <td>{{ sample.Classifications|join:", " }}</td>
+                <td>{{ sample.Classifications_counted|join:", " }}</td>
 
                 <!-- <td>{% for gene in sample.Oncogenes %}
                     {{ gene|wordwrap:5 }}

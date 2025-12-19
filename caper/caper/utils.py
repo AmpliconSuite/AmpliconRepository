@@ -1,4 +1,5 @@
 import logging
+from collections import Counter
 
 import pandas as pd
 from bson import ObjectId
@@ -14,6 +15,7 @@ import re
 import os
 from django.forms.models import model_to_dict
 import datetime
+import tarfile
 
 # def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED
 #                   ):
@@ -233,6 +235,92 @@ def get_one_sample(project_name, sample_name):
     return project, sample_out, prev_sample, next_sample
 
 
+def initialize_ecDNA_context(project):
+    """
+    Check for and initialize the ecDNA_context dictionary in a project.
+
+    If the ecDNA_context dictionary already exists in the project, return immediately.
+    If it doesn't exist, create a dictionary populated from ecDNA_context_calls.tsv files
+    in the project's tar file and save it to the project in the database.
+
+    Args:
+        project: The project dictionary from the database
+
+    Returns:
+        None - modifies the project in the database if needed
+    """
+    # Check if ecDNA_context already exists
+    if 'ecDNA_context' in project:
+        logging.debug(f"Project {project.get('project_name', project['_id'])} already has ecDNA_context")
+        return
+
+    # Create ecDNA_context dictionary
+    logging.info(f"Initializing ecDNA_context for project {project.get('project_name', project['_id'])}")
+    ecDNA_context = {}
+
+    # Check if project has a tarfile
+    if 'tarfile' not in project:
+        logging.warning(
+            f"Project {project.get('project_name', project['_id'])} has no tarfile, storing empty ecDNA_context")
+    else:
+        # Get the tar file from GridFS and extract ecDNA_context_calls.tsv files
+        try:
+            tar_id = project['tarfile']
+            tar_gridfs_file = fs_handle.get(ObjectId(tar_id))
+            logging.debug(f"Retrieved tarfile from GridFS for project {project.get('project_name', project['_id'])}")
+
+            # Open tar file and look for ecDNA_context_calls.tsv files
+            with tarfile.open(fileobj=tar_gridfs_file, mode='r:gz') as tar:
+                # Find all members ending with ecDNA_context_calls.tsv
+                context_files = [m for m in tar.getmembers() if m.name.endswith('ecDNA_context_calls.tsv')]
+
+                logging.info(f"Found {len(context_files)} ecDNA_context_calls.tsv file(s) in project tar")
+
+                # Process each file
+                for member in context_files:
+                    try:
+                        # Extract and read the file
+                        file_obj = tar.extractfile(member)
+                        if file_obj:
+                            content = file_obj.read().decode('utf-8')
+                            lines = content.strip().split('\n')
+
+                            logging.debug(f"Processing {member.name} with {len(lines)} line(s)")
+
+                            # Parse each line
+                            for line in lines:
+                                line = line.strip()
+                                if line:  # Skip empty lines
+                                    parts = line.split(None, 1)  # Split on first whitespace
+                                    if len(parts) >= 2:
+                                        key = parts[0]
+                                        value = parts[1].strip()
+                                        ecDNA_context[key] = value
+                                        logging.debug(f"Added ecDNA_context: {key} -> {value}")
+                                    elif len(parts) == 1:
+                                        # Handle case where there's only a key with no value
+                                        key = parts[0]
+                                        ecDNA_context[key] = ""
+                                        logging.debug(f"Added ecDNA_context: {key} -> (empty)")
+                    except Exception as e:
+                        logging.error(f"Error processing {member.name}: {e}")
+
+            logging.info(f"Populated ecDNA_context with {len(ecDNA_context)} entries")
+
+        except Exception as e:
+            logging.error(f"Error reading tarfile for ecDNA_context: {e}")
+            logging.exception("Full traceback:")
+
+    # Update the project in the database
+    query = {'_id': project['_id'], 'delete': False}
+    new_values = {"$set": {'ecDNA_context': ecDNA_context}}
+    collection_handle.update_one(query, new_values)
+
+    # Update the local project object as well
+    project['ecDNA_context'] = ecDNA_context
+    logging.debug(f"ecDNA_context initialized and saved for project {project.get('project_name', project['_id'])}")
+
+
 def sample_data_from_feature_list(features_list):
     """
     extracts sample data from a list of features
@@ -251,7 +339,14 @@ def sample_data_from_feature_list(features_list):
         subset = df.iloc[indices]
         sample_dict['Sample_name'] = sample_name
         sample_dict['Oncogenes'] = sorted(set(flatten(subset['Oncogenes'].values.tolist())))
-        sample_dict['Classifications'] = list(set(flatten(subset['Classification'].values.tolist())))
+        # sample_dict['Classifications'] = list(set(flatten(subset['Classification'].values.tolist())))
+        classifications = flatten(subset['Classification'].values.tolist())
+        sample_dict['Classifications'] = list(set(classifications))
+        class_counts = Counter(classifications)
+        sample_dict['Classifications_counted'] = [
+            f"{c} ({count})" if count > 1 else c
+            for c, count in sorted(class_counts.items())
+        ]
         if len(sample_dict['Oncogenes']) == 0 and len(sample_dict['Classifications']) == 0:
             sample_dict['Features'] = 0
         else:
