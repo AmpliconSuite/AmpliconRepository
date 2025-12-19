@@ -34,7 +34,7 @@ from .views_admin import (
     admin_featured_projects, admin_version_details, admin_sendemail, admin_stats,
     admin_permanent_delete_project, admin_delete_user, admin_delete_project,
     user_stats_download, site_stats_regenerate, project_stats_download, sizeof_fmt,
-    fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report
+    fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report,  make_project_current
 )
 
 # Import API views from separate module
@@ -261,7 +261,7 @@ def update_sample_counts(request):
 
 def index(request):
     # Base query for non-deleted projects
-    base_query = {'delete': False}
+    base_query = {'delete': False, 'current': True}
     projection = {'runs': 0}  # Exclude runs field from all queries
 
     # Get public projects (including featured) in one query
@@ -328,7 +328,7 @@ def profile(request, message_to_user=None):
     # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
-    projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False}))
+    projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False, 'current': True}))
     # projects = get_projects_close_cursor({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False})
 
     for proj in projects:
@@ -528,6 +528,10 @@ def project_page(request, project_name, message=''):
     ## download & view statistics
     views, downloads = session_visit(request, project)
 
+    # DEBUG: Get delete and current flag values
+    debug_delete_flag = project.get('delete', 'NOT SET')
+    debug_current_flag = project.get('current', 'NOT SET')
+
     return render(request, "pages/project.html", {
         'project': project,
         'sample_data': sample_data,
@@ -542,6 +546,8 @@ def project_page(request, project_name, message=''):
         'proj_id': project_name,
         'viewing_old_project': viewing_old_project,
         'is_empty_project': is_empty_project,  # Pass this flag to the template
+        'debug_delete_flag': debug_delete_flag,  # DEBUG: display delete flag
+        'debug_current_flag': debug_current_flag,  # DEBUG: display current flag
     })
 
 
@@ -1297,14 +1303,14 @@ def gene_search_page(request):
         username = request.user.username
         useremail = request.user.email
         query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}],
-                     'Oncogenes': gen_query, 'delete': False}
+                     'Oncogenes': gen_query, 'delete': False, 'current': True}
 
         private_projects = list(collection_handle.find(query_obj))
         # private_projects = get_projects_close_cursor(query_obj)
     else:
         private_projects = []
 
-    public_projects = list(collection_handle.find({'private': False, 'Oncogenes': gen_query, 'delete': False}))
+    public_projects = list(collection_handle.find({'private': False, 'Oncogenes': gen_query, 'delete': False, 'current': True}))
     # public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
 
     for proj in private_projects:
@@ -2414,6 +2420,7 @@ def create_project(request):
             'sample_count': 0,
             'runs': {},  # Empty dictionary, not list
             'delete': False,  # Project is not deleted
+            'current': True,  # Ensure project is marked as current version
             'project_members': []  # Add project_members to avoid errors
         }
         
@@ -2944,7 +2951,11 @@ def visualizer(request):
         return redirect('coamplification_graph')
 
     # Import check_cached_graph here to avoid circular imports
-    from .neo4j_utils import check_cached_graph
+    from .neo4j_utils import check_cached_graph, generate_cache_key
+    
+    # Store the cache_key in session for use by fetch_graph
+    cache_key = generate_cache_key(selected_projects)
+    request.session['active_cache_key'] = cache_key
     
     # Check if graph is already cached - if so, skip expensive concatenation
     is_cached = check_cached_graph(selected_projects)
@@ -3061,9 +3072,14 @@ def fetch_graph(request, gene_name):
     min_samples = request.GET.get('min_samples')
     oncogenes = request.GET.get('oncogenes', 'false').lower() == 'true'
     all_edges = request.GET.get('all_edges', 'false').lower() == 'true'
+    
+    # Get the active cache_key from session for multi-graph support
+    cache_key = request.session.get('active_cache_key')
+    if not cache_key:
+        logging.warning("No active_cache_key in session for fetch_graph")
 
     try:
-        nodes, edges = fetch_subgraph(gene_name, min_weight, min_samples, oncogenes, all_edges)
+        nodes, edges = fetch_subgraph(gene_name, min_weight, min_samples, oncogenes, all_edges, cache_key)
         # print(f"\nNumber of nodes: {len(nodes)}\nNumber of edges: {len(edges)}\n")
         return JsonResponse({
             'nodes': nodes,

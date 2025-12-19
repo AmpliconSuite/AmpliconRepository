@@ -17,7 +17,7 @@ def perform_search(genequery=None,
     if user.is_authenticated:
         username = user.username
         useremail = user.email
-        query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}], 'delete': False}
+        query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}], 'delete': False, 'current': True}
 
         if project_name:
             query_obj['project_name'] = {'$regex': project_name, '$options': 'i'}
@@ -26,7 +26,7 @@ def perform_search(genequery=None,
     else:
         private_projects = []
 
-    public_query = {'private': False, 'delete': False}
+    public_query = {'private': False, 'delete': False, 'current': True}
     
     if project_name:
         public_query['project_name'] = {'$regex': project_name, '$options': 'i'}

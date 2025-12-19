@@ -107,7 +107,7 @@ USE_MODELTRANSLATION = False
 
 # Hosts/domain names that are valid for this site; required if DEBUG is False
 # See https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = ["localhost", '127.0.0.1','www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137', 'host.docker.internal', '172.31.85.178','3.92.238.157','172.31.40.50','54.164.111.51', '172.31.39.87']
+ALLOWED_HOSTS = ["localhost", '127.0.0.1','www.ampliconrepository.org', 'ampliconrepository.org','dev.ampliconrepository.org','172.31.29.144','50.19.227.137', 'host.docker.internal', '172.31.85.178','3.92.238.157','172.31.40.50','54.164.111.51', '172.31.39.87','172.31.2.150']
 
 # Add CSRF trusted origins
 CSRF_TRUSTED_ORIGINS = ['https://ampliconrepository.org','https://www.ampliconrepository.org','https://dev.ampliconrepository.org', 'http://127.0.0.1:8888/']

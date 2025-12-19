@@ -104,6 +104,91 @@
             </div>
         
             <hr>
+            <h3>Orphaned Old Versions Check
+                {% if orphaned_projects|length == 0 %}
+                    <i class="fa fa-check" style="color: green;" aria-hidden="true"></i>
+                {% else %}
+                    <i class="fa fa-exclamation-triangle" style="color: orange;" aria-hidden="true"></i>
+                {% endif %}
+            </h3>
+            <p>Projects with delete=False and current=False that have no version chain (no predecessors or successors).</p>
+            
+            {% if orphaned_projects|length == 0 %}
+                <div class="alert alert-success" role="alert">
+                    <i class="fa fa-check-circle"></i> No orphaned old versions found. All projects with current=False have proper version chains.
+                </div>
+            {% else %}
+                <div class="alert alert-warning" role="alert">
+                    <i class="fa fa-exclamation-triangle"></i> Found {{ orphaned_projects|length }} orphaned old version(s).
+                    These projects should either be set to current=True (if they should be active) or delete=True (if they should be hidden).
+                </div>
+                
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Project Name</th>
+                            <th>ID</th>
+                            <th>Private</th>
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for project in orphaned_projects %}
+                        <tr>
+                            <td>{{ project.project_name }}</td>
+                            <td><code>{{ project.linkid }}</code></td>
+                            <td>
+                                {% if project.private %}
+                                    <span class="badge badge-warning">Private</span>
+                                {% else %}
+                                    <span class="badge badge-info">Public</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ project.date|default:"N/A" }}</td>
+                            <td>
+                                <a href="/project/{{ project.linkid }}" target="_blank" class="btn btn-sm btn-primary">
+                                    <i class="fa fa-eye"></i> View
+                                </a>
+                                <form method="POST" action="{% url 'make_project_current' project.linkid %}" style="display: inline;">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Set this project to current=True? This will make it visible in project listings.');">
+                                        <i class="fa fa-check"></i> Make Current
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <h5 class="card-title">How to Fix Orphaned Projects</h5>
+                        <p class="card-text">
+                            These projects are marked as old versions (current=False) but have no version chain.
+                            To fix them, use Django shell:
+                        </p>
+                        <pre class="bg-light p-3">
+# Set a project to current (make it active):
+from caper.utils import collection_handle
+from bson.objectid import ObjectId
+
+collection_handle.update_one(
+    {'_id': ObjectId('PROJECT_ID_HERE')},
+    {'$set': {'current': True}}
+)
+
+# Or mark as deleted (hide it):
+collection_handle.update_one(
+    {'_id': ObjectId('PROJECT_ID_HERE')},
+    {'$set': {'delete': True}}
+)</pre>
+                    </div>
+                </div>
+            {% endif %}
+
+            <hr>
             <h3>Project Schema Validation</h3>
             <pre>{{ schema_report }}</pre>
             <hr><form method="POST" action="{% url 'fix_schema' %}">

@@ -157,6 +157,15 @@
 {% endblock %}
 
 {% block main %}
+<!-- DEBUG: Display delete and current flags -->
+<div class="container">
+    <div class="alert alert-warning" role="alert" style="margin-top: 10px; background-color: #fff3cd; border: 2px solid #ffc107; padding: 10px;">
+        <strong>🔧 DEBUG INFO:</strong> 
+        <span style="margin-left: 15px;"><strong>delete flag:</strong> <code>{{ debug_delete_flag }}</code></span>
+        <span style="margin-left: 15px;"><strong>current flag:</strong> <code>{{ debug_current_flag }}</code></span>
+    </div>
+</div>
+
 <div class="container">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb">

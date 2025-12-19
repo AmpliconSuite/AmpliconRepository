@@ -17,7 +17,10 @@ from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User
 from django.conf import settings
+
 from django.utils import timezone
+from django.contrib import messages
+
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
@@ -327,7 +330,7 @@ def site_stats_regenerate(request):
 
 def project_stats_download(request):
     # Get public and private project data
-    public_projects = list(collection_handle.find({'private': False, 'delete': False}))
+    public_projects = list(collection_handle.find({'private': False, 'delete': False, 'current': True}))
     for project in public_projects:
         if not 'project_downloads' in project:
             project['project_downloads_sum'] = 0
@@ -460,7 +463,7 @@ def admin_delete_user(request):
         elif action == 'delete_user':
 
             # for solo projects that are private, delete them
-            solo_projects = list(collection_handle.find({'project_members': [username]}))
+            solo_projects = list(collection_handle.find({'current': True, 'project_members': [username]}))
 
             for project in solo_projects:
                 project_name = project['project_name']
@@ -614,7 +617,7 @@ def data_qc(request):
         useremail = request.user.email
 
         # private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
-        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False}))
+        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False, 'current': True}))
         for proj in private_projects:
             prepare_project_linkid(proj)
     else:
@@ -624,7 +627,7 @@ def data_qc(request):
     public_sample_count = 0
 
     # public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
-    public_projects = list(collection_handle.find({'private' : False, 'delete': False}))
+    public_projects = list(collection_handle.find({'private' : False, 'delete': False, 'current': True}))
     for proj in public_projects:
         prepare_project_linkid(proj)
         public_proj_count = public_proj_count + 1
@@ -632,6 +635,32 @@ def data_qc(request):
 
     datetime_status = check_datetime(public_projects) + check_datetime(private_projects)
     sample_count_status = check_sample_count_status(private_projects) + check_sample_count_status(public_projects)
+
+    # Check for orphaned old versions (delete=False, current=False, but no other versions)
+    all_projects = list(collection_handle.find({}))
+    orphaned_projects = []
+    
+    for project in all_projects:
+        delete_val = project.get('delete', None)
+        current_val = project.get('current', None)
+        
+        # Must have delete=False and current=False
+        if delete_val == False and current_val == False:
+            project_id = str(project.get('_id', 'NO_ID'))
+            
+            # Check if this project is truly orphaned:
+            # 1. It should not have any entries in its own previous_versions array
+            has_previous = len(project.get('previous_versions', [])) > 0
+            
+            # 2. It should not be referenced in any other project's previous_versions
+            is_referenced = collection_handle.count_documents({
+                'previous_versions.linkid': project_id
+            }) > 0
+            
+            if not has_previous and not is_referenced:
+                # No other versions found - this is orphaned!
+                prepare_project_linkid(project)
+                orphaned_projects.append(project)
 
     # Run the schema validation directly
     try:
@@ -655,8 +684,48 @@ def data_qc(request):
         'private_projects': private_projects,
         'datetime_status': datetime_status,
         'sample_count_status': sample_count_status,
+        'orphaned_projects': orphaned_projects,
         'schema_report': schema_report,
     })
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def make_project_current(request, project_id):
+    """Set a project's current flag to True and regenerate site statistics"""
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    
+    if request.method == "POST":
+        from bson.objectid import ObjectId
+        from .site_stats import add_project_to_site_statistics
+        
+        try:
+            # Get the project first to check its privacy setting
+            project = collection_handle.find_one({'_id': ObjectId(project_id)})
+            
+            if not project:
+                messages.error(request, f"Project {project_id} not found")
+                return redirect('data_qc')
+            
+            # Update the project to set current=True
+            result = collection_handle.update_one(
+                {'_id': ObjectId(project_id)},
+                {'$set': {'current': True}}
+            )
+            
+            if result.modified_count > 0:
+                # Add the project to site statistics
+                is_private = project.get('private', False)
+                add_project_to_site_statistics(project, is_private)
+                
+                messages.success(request, f"Project {project_id} has been set to current=True and added to site statistics")
+            else:
+                messages.warning(request, f"Project {project_id} was not modified (may already be current)")
+        except Exception as e:
+            messages.error(request, f"Error updating project: {str(e)}")
+    
+    # Redirect back to the data QC page
+    return redirect('data_qc')
 
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
