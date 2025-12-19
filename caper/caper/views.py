@@ -34,7 +34,7 @@ from .views_admin import (
     admin_featured_projects, admin_version_details, admin_sendemail, admin_stats,
     admin_permanent_delete_project, admin_delete_user, admin_delete_project,
     user_stats_download, site_stats_regenerate, project_stats_download, sizeof_fmt,
-    fix_schema, data_qc, admin_prepare_shutdown, make_project_current
+    fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report,  make_project_current
 )
 
 # Import API views from separate module
