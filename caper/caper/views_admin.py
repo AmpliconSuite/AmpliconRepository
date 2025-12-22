@@ -730,23 +730,36 @@ def make_project_current(request, project_id):
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_prepare_shutdown(request):
-    """Toggle shutdown pending mode"""
+    """Toggle shutdown pending mode and registration disabled mode"""
     if not request.user.is_staff:
         return redirect('/accounts/logout')
     
-    from .context_processor import get_shutdown_pending, set_shutdown_pending
+    from .context_processor import (
+        get_shutdown_pending, set_shutdown_pending,
+        get_registration_disabled, set_registration_disabled
+    )
     
     if request.method == "POST":
-        # Toggle the shutdown mode
-        current_status = get_shutdown_pending()
-        set_shutdown_pending(not current_status)
+        action = request.POST.get('action')
+        
+        if action == 'toggle_shutdown':
+            # Toggle the shutdown mode
+            current_status = get_shutdown_pending()
+            set_shutdown_pending(not current_status)
+        elif action == 'toggle_registration':
+            # Toggle the registration disabled mode
+            current_status = get_registration_disabled()
+            set_registration_disabled(not current_status)
+        
         return redirect('/admin-prepare-shutdown')
     
-    # Get current status
+    # Get current status for both flags
     shutdown_status = get_shutdown_pending()
+    registration_disabled_status = get_registration_disabled()
     
-    return render(request, 'pages/admin_prepare_shutdown.html', {
+    return render(request, 'pages/admin_settings.html', {
         'shutdown_pending': shutdown_status,
+        'registration_disabled': registration_disabled_status,
         'user': request.user
     })
 

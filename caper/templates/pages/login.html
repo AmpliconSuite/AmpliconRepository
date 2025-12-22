@@ -11,13 +11,22 @@
 <div class="col-md-4" style="margin:auto">
 <div class="card">
     <article class="card-body">
+        {% if not REGISTRATION_DISABLED %}
         <a href='/accounts/signup/' class="float-right btn btn-outline-primary">Sign up</a>
+        {% endif %}
         <h4 class="card-title mb-4 mt-1">Sign in</h4>
+        {% if not REGISTRATION_DISABLED %}
         <p>
             <a class="btn btn-block btn-outline-info" title="Globus" class="socialaccount_provider globus" href="/accounts/globus/login/?process=login">Login via Globus</a>
             <a title="Google" class="btn btn-block btn-outline-primary" class="socialaccount_provider google" href="/accounts/google/login/?process=login" >Login via Google</a>
         </p>
         <hr>
+        {% endif %}
+        {% if REGISTRATION_DISABLED %}
+        <div class="alert alert-info" role="alert">
+            <small>New user registration is currently disabled. Existing users can still log in below.</small>
+        </div>
+        {% endif %}
         <form class="login form-group" method="post" action="/accounts/login/">
             {% csrf_token %}
             <div class="form-group">
