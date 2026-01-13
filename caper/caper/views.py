@@ -695,6 +695,135 @@ def project_download(request, project_name):
     #except:
        # raise Http404()
 
+
+def project_summary_download(request, project_name):
+    """
+    Download the project summary table as JSON or CSV format.
+    This reads run.json from the filesystem where it was extracted during project creation.
+    
+    Query parameters:
+        format: 'json' (default) or 'csv'
+    """
+    project = get_one_project(project_name)
+    
+    if not project:
+        message = f"Project {project_name} not found."
+        messages.error(request, message)
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+    
+    # Check if user has access to private project
+    if project.get('private', False) and not is_user_a_project_member(project, request):
+        message = "You do not have permission to access this project."
+        messages.error(request, message)
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+    
+    # Get the project linkid for the filesystem path
+    if '_id' in project:
+        project_id = str(project['_id'])
+    elif 'linkid' in project:
+        project_id = project['linkid']
+    else:
+        message = f"Could not determine project ID for {project_name}."
+        messages.error(request, message)
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+    
+    # Path to run.json in filesystem
+    run_json_path = f'tmp/{project_id}/results/run.json'
+    
+    if not os.path.exists(run_json_path):
+        message = f"Summary data file not found for project {project_name}."
+        messages.error(request, message)
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+    
+    # Get the requested format (default to json)
+    output_format = request.GET.get('format', 'json').lower()
+    
+    try:
+        with open(run_json_path, 'r') as run_json_file:
+            run_json_data = json.load(run_json_file)
+        
+        # Get the project name for the filename
+        real_project_name = project.get('project_name', project_name)
+        safe_filename = real_project_name.replace(' ', '_').replace('/', '_')
+        
+        if output_format == 'csv':
+            # Convert run.json to CSV format
+            csv_content = convert_runs_to_csv(run_json_data.get('runs', {}))
+            
+            response = HttpResponse(
+                csv_content,
+                content_type='text/csv'
+            )
+            response['Content-Disposition'] = f'attachment; filename="{safe_filename}_summary.csv"'
+        else:
+            # Return JSON format
+            response = HttpResponse(
+                json.dumps(run_json_data, indent=2),
+                content_type='application/json'
+            )
+            response['Content-Disposition'] = f'attachment; filename="{safe_filename}_run.json"'
+        
+        return response
+        
+    except Exception as e:
+        logging.error(f"Error reading run.json for project {project_name}: {str(e)}")
+        message = f"Error retrieving summary data for project {project_name}."
+        messages.error(request, message)
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+
+
+def convert_runs_to_csv(runs):
+    """
+    Convert the runs dictionary from run.json into CSV format.
+    Each row represents a feature, with sample name included.
+    """
+    import csv
+    import io
+    
+    if not runs:
+        return ""
+    
+    # Collect all features and determine all unique column names
+    all_features = []
+    all_columns = set()
+    
+    for sample_name, features in runs.items():
+        for feature in features:
+            all_columns.update(feature.keys())
+            all_features.append(feature)
+    
+    # Define preferred column order (most important columns first)
+    ordered_columns = ['Sample_name', 'AA_amplicon_number', 'Feature_ID', 'Classification', 'Oncogenes']
+    
+    # Sort remaining columns alphabetically
+    remaining_columns = sorted(list(all_columns - set(ordered_columns)))
+    
+    # Final column order
+    columns = [col for col in ordered_columns if col in all_columns] + remaining_columns
+    
+    # Create CSV content
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write header
+    writer.writerow(columns)
+    
+    # Write data rows
+    for feature in all_features:
+        row = []
+        for col in columns:
+            val = feature.get(col, '')
+            # Handle list values (like Oncogenes)
+            if isinstance(val, list):
+                val = '; '.join(str(v) for v in val if v)
+            elif val is None:
+                val = ''
+            row.append(str(val))
+        writer.writerow(row)
+    
+    return output.getvalue()
+
+
 def igv_features_creation(locations):
     """
     Locations should look like: ["'chr11:56595156-58875237'", " 'chr11:66684707-68055335'", " 'chr11:69975662-70290667'"]

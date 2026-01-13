@@ -5,6 +5,10 @@
 
 {% block extra_js %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<!-- DataTables Buttons extension for CSV export -->
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
+<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
 <script>
     $(document).ready( function () {
       // Flag to track if we've already auto-generated a key for this page load
@@ -24,6 +28,15 @@
     
     
         $('#myTable1').DataTable({
+            dom: 'Bfrtip',
+            buttons: [
+                {
+                    extend: 'csv',
+                    text: 'Download CSV',
+                    filename: '{{ project.project_name|default:"project" }}_summary',
+                    title: null
+                }
+            ]
         }
         );
     } );
@@ -273,7 +286,8 @@
 
     {% if not is_empty_project %}
     <div class="col-md-3">
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px;" onclick = "downloadAndReload();" >Download Project Data</a><br>
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px;" onclick = "downloadAndReload();" >Download Project Data</a>
+        <a class="btn btn-secondary" style="color: white; margin-bottom: 12px;" href="/project/{{ project.linkid }}/download_summary?format=csv" >Download Summary Table</a><br>
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}
         <p><b>Project Members:</b> {% for person in project.project_members %}
             {{ person }}
