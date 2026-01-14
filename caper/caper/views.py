@@ -796,7 +796,7 @@ def project_summary_download(request, project_name):
                             tar.extract('results/run.json', path=f'tmp/{project_id}')
                             logging.info(f"Successfully extracted run.json from S3 to {run_json_path}")
                         except KeyError:
-                            logging.warning("run.json not found in S3 tarfile")
+                            logging.warning("run.json not found in S3 tarfile "+temp_tar_path)
                     
                     # Clean up temp tar file
                     os.remove(temp_tar_path)
