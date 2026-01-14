@@ -5,10 +5,6 @@
 
 {% block extra_js %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-<!-- DataTables Buttons extension for CSV export -->
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
 <style>
     .wait-cursor,
     .wait-cursor * {
@@ -33,17 +29,7 @@
       });
     
     
-        var table = $('#myTable1').DataTable({
-            dom: 'Bfrtip',
-            buttons: [
-                {
-                    extend: 'csv',
-                    text: 'Download CSV',
-                    filename: '{{ project.project_name|default:"project" }}_AmpRepository_brief',
-                    title: null
-                }
-            ]
-        });
+        var table = $('#myTable1').DataTable();
 
         // Update filtered count display
         function updateFilteredCount() {
@@ -242,17 +228,34 @@
         // Add wait cursor class to body
         document.body.classList.add('wait-cursor');
         
-        // Create an invisible iframe for download to detect when it completes
-        var iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = "/project/{{ project.linkid }}/download_summary?format=csv";
-        document.body.appendChild(iframe);
-        
-        // Remove wait cursor after delay and cleanup iframe
-        setTimeout(function() {
-            document.body.classList.remove('wait-cursor');
-            document.body.removeChild(iframe);
-        }, 6000);
+        // Use fetch API to download the file
+        fetch("/project/{{ project.linkid }}/download_summary?format=csv")
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                // Create a download link and trigger it
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = '{{ project.project_name|default:"project" }}_summary.csv';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                // Remove wait cursor
+                document.body.classList.remove('wait-cursor');
+            })
+            .catch(error => {
+                console.error('Download failed:', error);
+                alert('Failed to download summary table. Please try again.');
+                document.body.classList.remove('wait-cursor');
+            });
     }
 
     function downloadAndReload() {
@@ -439,7 +442,7 @@
 
     {% if not is_empty_project %}
     <div class="col-md-3">
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px;" onclick = "downloadAndReload();" >Download Project Data</a>
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px;" onclick = "downloadAndReload();" >Download Raw Data</a>
         <a class="btn btn-secondary" style="color: white; margin-bottom: 12px; cursor: pointer;" onclick="downloadSummaryTable();" >Download Summary Table</a><br>
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}
         <p><b>Project Members:</b> {% for person in project.project_members %}
