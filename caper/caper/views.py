@@ -731,6 +731,86 @@ def project_summary_download(request, project_name):
     run_json_path = f'tmp/{project_id}/results/run.json'
     
     if not os.path.exists(run_json_path):
+        # Try to get run.json from GridFS (from the tarfile)
+        logging.info(f"run.json not found at {run_json_path}, attempting to retrieve from GridFS or S3")
+        
+        try:
+            import tarfile
+            import tempfile
+            
+            # Ensure the directory exists
+            os.makedirs(f'tmp/{project_id}/results', exist_ok=True)
+            
+            # First, try to get it from GridFS
+            if 'tarfile' in project and project['tarfile']:
+                try:
+                    logging.info(f"Attempting to extract run.json from GridFS tarfile")
+                    tar_id = project['tarfile']
+                    
+                    # Create a temporary file to write the tar data
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.tar.gz') as temp_tar:
+                        temp_tar_path = temp_tar.name
+                        tar_file_data = fs_handle.get(ObjectId(tar_id)).read()
+                        temp_tar.write(tar_file_data)
+                    
+                    # Extract run.json from the tar file
+                    with tarfile.open(temp_tar_path, 'r:gz') as tar:
+                        try:
+                            tar.extract('results/run.json', path=f'tmp/{project_id}')
+                            logging.info(f"Successfully extracted run.json from GridFS to {run_json_path}")
+                        except KeyError:
+                            logging.warning("run.json not found in GridFS tarfile")
+                    
+                    # Clean up temp tar file
+                    os.remove(temp_tar_path)
+                    
+                except Exception as e:
+                    logging.warning(f"Failed to extract run.json from GridFS: {e}")
+            
+            # If still not found and S3 is enabled, try S3
+            if not os.path.exists(run_json_path) and settings.USE_S3_DOWNLOADS:
+                try:
+                    logging.info(f"Attempting to download run.json from S3")
+                    
+                    # Determine project linkid
+                    project_linkid = project.get('linkid', str(project['_id']))
+                    s3_file_location = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_linkid}/{project_linkid}.tar.gz'
+                    
+                    if not settings.AWS_PROFILE_NAME:
+                        settings.AWS_PROFILE_NAME = 'default'
+                    
+                    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+                    s3client = session.client('s3')
+                    
+                    # Check if file exists in S3
+                    s3client.head_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_file_location)
+                    
+                    # Download tar file to temp location
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.tar.gz') as temp_tar:
+                        temp_tar_path = temp_tar.name
+                        s3client.download_file(settings.S3_DOWNLOADS_BUCKET, s3_file_location, temp_tar_path)
+                    
+                    # Extract run.json from the tar file
+                    with tarfile.open(temp_tar_path, 'r:gz') as tar:
+                        try:
+                            tar.extract('results/run.json', path=f'tmp/{project_id}')
+                            logging.info(f"Successfully extracted run.json from S3 to {run_json_path}")
+                        except KeyError:
+                            logging.warning("run.json not found in S3 tarfile")
+                    
+                    # Clean up temp tar file
+                    os.remove(temp_tar_path)
+                    
+                except botocore.exceptions.ClientError as e:
+                    logging.warning(f"Failed to download run.json from S3: {e}")
+                except Exception as e:
+                    logging.warning(f"Error extracting run.json from S3: {e}")
+            
+        except Exception as e:
+            logging.error(f"Error attempting to retrieve run.json: {e}")
+    
+    # Final check if run.json exists
+    if not os.path.exists(run_json_path):
         message = f"Summary data file not found for project {project_name}."
         messages.error(request, message)
         return redirect(request.META.get('HTTP_REFERER', '/'))
