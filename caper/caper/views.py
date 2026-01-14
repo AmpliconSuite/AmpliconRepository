@@ -783,6 +783,13 @@ def convert_runs_to_csv(runs):
     if not runs:
         return ""
     
+    # Columns to exclude (file and directory paths)
+    exclude_columns = {
+        "AA PDF file", "AA PNG file", "AA directory", "AA summary file",
+        "CNV BED file", "Feature BED file", "Run metadata JSON",
+        "Sample metadata JSON", "cnvkit directory"
+    }
+    
     # Collect all features and determine all unique column names
     all_features = []
     all_columns = set()
@@ -791,6 +798,9 @@ def convert_runs_to_csv(runs):
         for feature in features:
             all_columns.update(feature.keys())
             all_features.append(feature)
+    
+    # Remove excluded columns
+    all_columns -= exclude_columns
     
     # Define preferred column order (most important columns first)
     ordered_columns = ['Sample_name', 'AA_amplicon_number', 'Feature_ID', 'Classification', 'Oncogenes']
