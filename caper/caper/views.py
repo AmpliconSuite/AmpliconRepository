@@ -784,7 +784,7 @@ def project_summary_download(request, project_name):
                     
                     # Check if file exists in S3
                     s3client.head_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_file_location)
-                    
+                    logging.warning(f"downloading tar file from S3: s3://{settings.S3_DOWNLOADS_BUCKET}/{s3_file_location}")
                     # Download tar file to temp location
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.tar.gz') as temp_tar:
                         temp_tar_path = temp_tar.name
