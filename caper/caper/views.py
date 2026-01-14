@@ -883,7 +883,8 @@ def convert_runs_to_csv(runs):
     all_columns -= exclude_columns
     
     # Define preferred column order (most important columns first)
-    ordered_columns = ['Feature_ID', 'Sample_name', 'AA_amplicon_number', 'Classification', 'Oncogenes']
+    ordered_columns = ['Feature ID', 'Sample name', 'AA amplicon number', 'Classification', 'Oncogenes']
+    
     
     # Sort remaining columns alphabetically
     remaining_columns = sorted(list(all_columns - set(ordered_columns)))
