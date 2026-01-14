@@ -571,28 +571,59 @@
                 return;
             }
 
-            // Show loading message
-            const loadingModal = $('<div>', {
-                'class': 'modal fade',
-                'id': 'loadingModal',
-                'tabindex': '-1',
-                'role': 'dialog',
-                'aria-hidden': 'true',
-                'data-backdrop': 'static',
-                'data-keyboard': 'false'
-            }).append(
-                $('<div>', {'class': 'modal-dialog modal-dialog-centered'}).append(
-                    $('<div>', {'class': 'modal-content'}).append(
-                        $('<div>', {'class': 'modal-body text-center'}).append(
-                            $('<div>', {'class': 'spinner-border text-primary mb-3', 'role': 'status'}).append(
-                                $('<span>', {'class': 'sr-only'}).text('Loading...')
-                            ),
-                            $('<h5>').text('Gathering samples, please wait.'),
-                            $('<p>').text('This can take a few minutes for large downloads...')
+            // Check if sample count > 20 to determine if we should email results
+            const shouldEmailResults = samples.length > 20;
+            const userEmail = "{{ user.email|default:user.username }}";
+
+            // Show loading message or email notification based on sample count
+            let loadingModal;
+            if (shouldEmailResults) {
+                // Show email notification message for large downloads
+                loadingModal = $('<div>', {
+                    'class': 'modal fade',
+                    'id': 'loadingModal',
+                    'tabindex': '-1',
+                    'role': 'dialog',
+                    'aria-hidden': 'true',
+                    'data-backdrop': 'static',
+                    'data-keyboard': 'false'
+                }).append(
+                    $('<div>', {'class': 'modal-dialog modal-dialog-centered'}).append(
+                        $('<div>', {'class': 'modal-content'}).append(
+                            $('<div>', {'class': 'modal-body text-center'}).append(
+                                $('<i>', {'class': 'fas fa-envelope fa-3x text-primary mb-3'}),
+                                $('<h5>', {'class': 'mb-3'}).text('Email Download Link'),
+                                $('<p>').html('You have selected <strong>' + samples.length + ' samples</strong>.'),
+                                $('<p>').html('A download link will be emailed to:<br><strong>' + userEmail + '</strong>'),
+                                $('<p>', {'class': 'text-muted small mt-3'}).text('The link will be valid for 7 days.')
+                            )
                         )
                     )
-                )
-            );
+                );
+            } else {
+                // Show standard loading message for immediate downloads
+                loadingModal = $('<div>', {
+                    'class': 'modal fade',
+                    'id': 'loadingModal',
+                    'tabindex': '-1',
+                    'role': 'dialog',
+                    'aria-hidden': 'true',
+                    'data-backdrop': 'static',
+                    'data-keyboard': 'false'
+                }).append(
+                    $('<div>', {'class': 'modal-dialog modal-dialog-centered'}).append(
+                        $('<div>', {'class': 'modal-content'}).append(
+                            $('<div>', {'class': 'modal-body text-center'}).append(
+                                $('<div>', {'class': 'spinner-border text-primary mb-3', 'role': 'status'}).append(
+                                    $('<span>', {'class': 'sr-only'}).text('Loading...')
+                                ),
+                                $('<h5>').text('Gathering samples, please wait.'),
+                                $('<p>').text('This can take a few minutes for large downloads...')
+                            )
+                        )
+                    )
+                );
+            }
 
             $('body').append(loadingModal);
             $('#loadingModal').modal('show');
@@ -626,6 +657,15 @@
                 'name': 'is_private',
                 'value': isPrivate ? '1' : '0'
             }));
+
+            // Add emailResults flag if sample count > 20
+            if (shouldEmailResults) {
+                form.append($('<input>', {
+                    'type': 'hidden',
+                    'name': 'emailResults',
+                    'value': 'true'
+                }));
+            }
 
             // Submit the form
             $('body').append(form);
