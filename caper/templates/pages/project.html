@@ -9,6 +9,12 @@
 <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
 <script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
+<style>
+    .wait-cursor,
+    .wait-cursor * {
+        cursor: wait !important;
+    }
+</style>
 <script>
     $(document).ready( function () {
       // Flag to track if we've already auto-generated a key for this page load
@@ -233,29 +239,25 @@
     document.addEventListener('DOMContentLoaded', formatDates);
 
     function downloadSummaryTable() {
-        // Change cursor to wait
-        document.body.style.cursor = 'wait';
+        // Add wait cursor class to body
+        document.body.classList.add('wait-cursor');
         
-        // Create an invisible anchor element
-        const a = document.createElement('a');
-        // Set the href to the file URL
-        a.href = "/project/{{ project.linkid }}/download_summary?format=csv";
-        // Append the anchor to the body
-        document.body.appendChild(a);
-        // Trigger the download by simulating a click
-        a.click();
-        // Remove the anchor from the body
-        document.body.removeChild(a);
+        // Create an invisible iframe for download to detect when it completes
+        var iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = "/project/{{ project.linkid }}/download_summary?format=csv";
+        document.body.appendChild(iframe);
         
-        // Reset cursor after a short delay
+        // Remove wait cursor after delay and cleanup iframe
         setTimeout(function() {
-            document.body.style.cursor = 'default';
-        }, 1000);
+            document.body.classList.remove('wait-cursor');
+            document.body.removeChild(iframe);
+        }, 3000);
     }
 
     function downloadAndReload() {
-        // Change cursor to wait
-        document.body.style.cursor = 'wait';
+        // Add wait cursor class to body
+        document.body.classList.add('wait-cursor');
         
         // Create an invisible anchor element
         const a = document.createElement('a');
@@ -268,6 +270,12 @@
         a.click();
         // Remove the anchor from the body
         document.body.removeChild(a);
+        
+        // Remove wait cursor after delay
+        setTimeout(function() {
+            document.body.classList.remove('wait-cursor');
+        }, 2000);
+        
         // Reload the page after a short delay to ensure the download starts
 
         //updating the number, this number will be increased automatically in database
