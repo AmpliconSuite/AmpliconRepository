@@ -232,7 +232,31 @@
     // Call the formatDates function when the page is loaded
     document.addEventListener('DOMContentLoaded', formatDates);
 
+    function downloadSummaryTable() {
+        // Change cursor to wait
+        document.body.style.cursor = 'wait';
+        
+        // Create an invisible anchor element
+        const a = document.createElement('a');
+        // Set the href to the file URL
+        a.href = "/project/{{ project.linkid }}/download_summary?format=csv";
+        // Append the anchor to the body
+        document.body.appendChild(a);
+        // Trigger the download by simulating a click
+        a.click();
+        // Remove the anchor from the body
+        document.body.removeChild(a);
+        
+        // Reset cursor after a short delay
+        setTimeout(function() {
+            document.body.style.cursor = 'default';
+        }, 1000);
+    }
+
     function downloadAndReload() {
+        // Change cursor to wait
+        document.body.style.cursor = 'wait';
+        
         // Create an invisible anchor element
         const a = document.createElement('a');
         // Set the href to the file URL
@@ -408,7 +432,7 @@
     {% if not is_empty_project %}
     <div class="col-md-3">
         <a class="btn btn-primary" style="color: white; margin-bottom: 12px;" onclick = "downloadAndReload();" >Download Project Data</a>
-        <a class="btn btn-secondary" style="color: white; margin-bottom: 12px;" href="/project/{{ project.linkid }}/download_summary?format=csv" >Download Summary Table</a><br>
+        <a class="btn btn-secondary" style="color: white; margin-bottom: 12px; cursor: pointer;" onclick="downloadSummaryTable();" >Download Summary Table</a><br>
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}
         <p><b>Project Members:</b> {% for person in project.project_members %}
             {{ person }}
