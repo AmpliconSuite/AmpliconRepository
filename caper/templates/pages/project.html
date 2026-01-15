@@ -584,29 +584,78 @@
     </div>
 
     {% if not is_empty_project %}
-    <div class="col-md-3">
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px;"
+    <div class="col-md-3" style="text-align:right;">
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; width: 192px; display: block; margin-left: auto;"
            onclick="downloadAndReload();">
             <i class="fas fa-download"></i> Download Project
         </a>
 
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer;"
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer; width: 192px; display: block; margin-left: auto;"
            onclick="downloadSummaryTable();">
             <i class="fas fa-download"></i> Download Summary
         </a>
-        {% if  project.private %}Visibility: <b>Private</b>{% endif %}
-        <p><b>Project Members:</b> {% for person in project.project_members %}
-            {{ person }}
-        {% endfor %}
-        </p>
+        {% if  project.private %}<div style="text-align: right;">Visibility: <b>Private</b></div>{% endif %}
+        <div id="project-members-accordion" style="margin-bottom: 15px; text-align: right;">
+            <style>
+                .members-toggle:not(.expanded)::before,
+                .members-toggle-empty:not(.expanded)::before {
+                    content: "";
+                    display: inline-block;
+                    border-style: solid;
+                    border-width: 0.4em 0 0.4em 0.4em;
+                    border-color: transparent transparent transparent #000;
+                    margin-right: 0.5em;
+                    transform: rotate(0deg);
+                    vertical-align: middle;
+                }
 
+                .members-toggle.expanded::before,
+                .members-toggle-empty.expanded::before {
+                    content: "";
+                    display: inline-block;
+                    border-style: solid;
+                    border-width: 0.4em 0 0.4em 0.4em;
+                    border-color: transparent transparent transparent #000;
+                    margin-right: 0.5em;
+                    transform: rotate(90deg);
+                    vertical-align: middle;
+                }
+            </style>
+            <div style="display: inline-block; text-align: left; width: 192px;">
+                <span class="members-toggle" onclick="toggleMembers()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
+            </div>
+            <div id="members-list" style="display: none; margin-top: 8px; text-align: left; margin-left: auto; width: 192px;">
+                {% for person in project.project_members %}
+                    <div style="padding: 3px 0;">{{ person }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <script>
+        function toggleMembers() {
+            var list = document.getElementById('members-list');
+            var toggle = document.querySelector('.members-toggle');
+            
+            if (list.style.display === 'none') {
+                list.style.display = 'block';
+                toggle.classList.add('expanded');
+            } else {
+                list.style.display = 'none';
+                toggle.classList.remove('expanded');
+            }
+        }
+        </script>
+
+        <div id="project_statistics" style="text-align: right;"><div style="display: inline-block; text-align: left; width: 192px;">Views: {{ views }} | Downloads: <span id='downloads'>{{downloads}}</span></div></div>
+        
         {% if user.is_authenticated and not is_project_member %}
-        <div style="margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 5px;">
+        <div style="margin-top: 10px; padding: 10px; border-radius: 5px; text-align: right;">
+            <div style="display: inline-block; text-align: left; width: 192px;">
             <label style="cursor: pointer; user-select: none;">
                 <input type="checkbox" id="subscription-checkbox" style="margin-right: 5px;">
                 <span id="subscription-label">Subscribe to project updates</span>
             </label>
             <div id="subscription-message" style="margin-top: 5px; font-size: 0.9em;"></div>
+            </div>
         </div>
         <script>
         $(document).ready(function() {
@@ -673,8 +722,6 @@
         }
         </script>
         {% endif %}
-
-        <div id = "project_statistics"> Views: {{ views }} | Downloads: <span id = 'downloads'>{{downloads}}</span></div>
     </div>
     
     <div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; display:none;">
@@ -699,10 +746,30 @@
     {% else %}
         <div class="col-md-3">
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}
-        <p><b>Project Members:</b> {% for person in project.project_members %}
-            {{ person }}
-        {% endfor %}
-        </p>
+        <div id="project-members-accordion-empty" style="margin-bottom: 15px;">
+            <div>
+                <span class="members-toggle-empty" onclick="toggleMembersEmpty()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
+            </div>
+            <div id="members-list-empty" style="display: none; margin-top: 8px;">
+                {% for person in project.project_members %}
+                    <div style="padding: 3px 0;">{{ person }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <script>
+        function toggleMembersEmpty() {
+            var list = document.getElementById('members-list-empty');
+            var toggle = document.querySelector('.members-toggle-empty');
+            
+            if (list.style.display === 'none') {
+                list.style.display = 'block';
+                toggle.classList.add('expanded');
+            } else {
+                list.style.display = 'none';
+                toggle.classList.remove('expanded');
+            }
+        }
+        </script>
 
         </div>
         <div class="col-md-12 text-center" style="margin-top: 50px; margin-bottom: 50px;">
