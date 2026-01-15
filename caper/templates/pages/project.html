@@ -442,8 +442,15 @@
 
     {% if not is_empty_project %}
     <div class="col-md-3">
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px;" onclick = "downloadAndReload();" >Download Raw Data</a>
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer;" onclick="downloadSummaryTable();" >Download Summary Table</a><br>
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px;"
+           onclick="downloadAndReload();">
+            <i class="fas fa-download"></i> Download Project
+        </a>
+
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer;"
+           onclick="downloadSummaryTable();">
+            <i class="fas fa-download"></i> Download Summary
+        </a>
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}
         <p><b>Project Members:</b> {% for person in project.project_members %}
             {{ person }}
