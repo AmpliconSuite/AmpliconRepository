@@ -367,6 +367,61 @@
     // Call the formatDates function when the page is loaded
     document.addEventListener('DOMContentLoaded', formatDates);
 
+    // Description truncation and toggle
+    document.addEventListener('DOMContentLoaded', function() {
+        const fullDescription = "{{ project.description|escapejs }}";
+        const descriptionContainer = document.getElementById('description-container');
+        const descriptionShort = document.getElementById('description-short');
+        const descriptionFull = document.getElementById('description-full');
+        const descriptionToggle = document.getElementById('description-toggle');
+        
+        if (!fullDescription || fullDescription.trim() === '') {
+            return;
+        }
+        
+        const maxLength = 70;
+        
+        // If description is 70 characters or less, display it normally
+        if (fullDescription.length <= maxLength) {
+            descriptionShort.textContent = fullDescription;
+            descriptionFull.style.display = 'none';
+            descriptionToggle.style.display = 'none';
+        } else {
+            // Description is longer than 70 characters, truncate at word boundary
+            let truncated = fullDescription.substring(0, maxLength);
+            
+            // Find the last space before position 70 to avoid cutting words
+            const lastSpace = truncated.lastIndexOf(' ');
+            if (lastSpace > 0) {
+                truncated = truncated.substring(0, lastSpace);
+            }
+            
+            // Set the truncated text
+            descriptionShort.textContent = truncated + '... ';
+            descriptionToggle.textContent = '(more)';
+            descriptionToggle.style.display = 'inline';
+            descriptionFull.style.display = 'none';
+        }
+    });
+    
+    function toggleDescription() {
+        const descriptionShort = document.getElementById('description-short');
+        const descriptionFull = document.getElementById('description-full');
+        const descriptionToggle = document.getElementById('description-toggle');
+        
+        if (descriptionFull.style.display === 'none') {
+            // Expand
+            descriptionShort.style.display = 'none';
+            descriptionFull.style.display = 'inline';
+            descriptionToggle.textContent = ' (less)';
+        } else {
+            // Collapse
+            descriptionShort.style.display = 'inline';
+            descriptionFull.style.display = 'none';
+            descriptionToggle.textContent = '(more)';
+        }
+    }
+
     function downloadSummaryTable() {
         // Add wait cursor class to body
         document.body.classList.add('wait-cursor');
@@ -570,7 +625,11 @@
         {% endif %}
 
         <br>
-        <h5>Description: <span style="font-weight: 200">{{ project.description }}</span></h5>
+        <h5>Description: <span id="description-container" style="font-weight: 200">
+            <span id="description-short"></span>
+            <span id="description-full" style="display: none;">{{ project.description }}</span>
+            <a href="javascript:void(0);" id="description-toggle" style="font-style: italic; display: none;" onclick="toggleDescription()"></a>
+        </span></h5>
         <h5>Publication link: <span style="font-weight: 200">{{ project.publication_link|escape|replace_urls|safe }}</span></h5>
         {% if not is_empty_project %}
         <h5>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h5>
