@@ -168,7 +168,7 @@
         }
 
         // Hide plotly_plots div if there's only one sample
-        var sampleCount = {{ sample_data|length|default:0 }};
+        var sampleCount = parseInt("{{ sample_data|length|default:0 }}".replace(/,/g, ''));
         if (sampleCount === 1) {
             $('#plotly_plots').hide();
         } else {
