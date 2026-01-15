@@ -708,12 +708,12 @@
         
         {% if user.is_authenticated and not is_project_member %}
         <div style="margin-top: 10px; padding: 10px; border-radius: 5px; text-align: right;">
-            <div style="display: inline-block; text-align: left; width: 205px;">
+            <div style="display: inline-block; text-align: left; width: 205px;padding-left:10px;font-size:0.8em;">
             <label style="cursor: pointer; user-select: none;">
-                <input type="checkbox" id="subscription-checkbox" style="margin-right: 5px;padding-left:10px;font-size:0.9em;">
+                <input type="checkbox" id="subscription-checkbox" style="margin-right: 5px;">
                 <span id="subscription-label">Subscribe to project updates</span>
             </label>
-            <div id="subscription-message" style="margin-top: 5px; font-size: 0.9em;"></div>
+            <div id="subscription-message" style="margin-top: 5px; "></div>
             </div>
         </div>
         <script>
