@@ -695,6 +695,278 @@ def project_download(request, project_name):
     #except:
        # raise Http404()
 
+
+def project_summary_download(request, project_name):
+    """
+    Download the project summary table as JSON or CSV format.
+    This reads run.json from the filesystem where it was extracted during project creation.
+    
+    Query parameters:
+        format: 'json' (default) or 'csv'
+    """
+    project = get_one_project(project_name)
+    
+    if not project:
+        message = f"Project {project_name} not found."
+        messages.error(request, message)
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+    
+    # Check if user has access to private project
+    if project.get('private', False) and not is_user_a_project_member(project, request):
+        message = "You do not have permission to access this project."
+        messages.error(request, message)
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+    
+    # Get the project linkid for the filesystem path
+    if '_id' in project:
+        project_id = str(project['_id'])
+    elif 'linkid' in project:
+        project_id = project['linkid']
+    else:
+        message = f"Could not determine project ID for {project_name}."
+        messages.error(request, message)
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+    
+    # Path to run.json in filesystem
+    run_json_path = f'tmp/{project_id}/results/run.json'
+    
+    if not os.path.exists(run_json_path):
+        # Try to get run.json from GridFS (from the tarfile)
+        logging.info(f"run.json not found at {run_json_path}, attempting to retrieve from GridFS or S3")
+        
+        try:
+            import tarfile
+            import tempfile
+            
+            # Ensure the directory exists
+            os.makedirs(f'tmp/{project_id}/results', exist_ok=True)
+            
+            # First, try to get it from GridFS
+            if 'tarfile' in project and project['tarfile']:
+                try:
+                    logging.info(f"Attempting to extract run.json from GridFS tarfile")
+                    tar_id = project['tarfile']
+                    
+                    # Create a temporary file to write the tar data
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.tar.gz') as temp_tar:
+                        temp_tar_path = temp_tar.name
+                        tar_file_data = fs_handle.get(ObjectId(tar_id)).read()
+                        temp_tar.write(tar_file_data)
+                    
+                    # Extract run.json from the tar file
+                    with tarfile.open(temp_tar_path, 'r:gz') as tar:
+                        # List all members to find run.json
+                        member_names = tar.getnames()
+                        logging.info(f"GridFS tar contains {len(member_names)} files")
+                        run_json_members = [name for name in member_names if 'run.json' in name]
+                        logging.info(f"Found run.json candidates in GridFS tar: {run_json_members}")
+                        
+                        try:
+                            tar.extract('results/run.json', path=f'tmp/{project_id}')
+                            logging.info(f"Successfully extracted run.json from GridFS to {run_json_path}")
+                        except KeyError:
+                            logging.warning(f"'results/run.json' not found in GridFS tarfile. First 20 members: {member_names[:20]}")
+                            # Try alternative path if run.json exists with different structure
+                            if run_json_members:
+                                logging.info(f"Attempting to extract alternative path: {run_json_members[0]}")
+                                member = tar.getmember(run_json_members[0])
+                                tar.extract(member, path=f'tmp/{project_id}')
+                                # Move to expected location if different
+                                extracted_path = os.path.join(f'tmp/{project_id}', run_json_members[0])
+                                if extracted_path != run_json_path:
+                                    os.makedirs(os.path.dirname(run_json_path), exist_ok=True)
+                                    shutil.move(extracted_path, run_json_path)
+                                    logging.info(f"Moved {extracted_path} to {run_json_path}")
+                    
+                    # Clean up temp tar file
+                    os.remove(temp_tar_path)
+                    
+                except Exception as e:
+                    logging.warning(f"Failed to extract run.json from GridFS: {e}")
+            
+            # If still not found and S3 is enabled, try S3
+            if not os.path.exists(run_json_path) and settings.USE_S3_DOWNLOADS:
+                temp_tar_path = None
+                try:
+                    logging.info(f"Attempting to download run.json from S3")
+                    
+                    # Determine project linkid
+                    project_linkid = project.get('linkid', str(project['_id']))
+                    s3_file_location = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{project_linkid}/{project_linkid}.tar.gz'
+                    
+                    if not settings.AWS_PROFILE_NAME:
+                        settings.AWS_PROFILE_NAME = 'default'
+                    
+                    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+                    s3client = session.client('s3')
+                    
+                    # Check if file exists in S3
+                    s3client.head_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_file_location)
+                    logging.info(f"Downloading tar file from S3: s3://{settings.S3_DOWNLOADS_BUCKET}/{s3_file_location}")
+                    
+                    # Download tar file to temp location
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.tar.gz') as temp_tar:
+                        temp_tar_path = temp_tar.name
+                        s3client.download_file(settings.S3_DOWNLOADS_BUCKET, s3_file_location, temp_tar_path)
+                    
+                    logging.info(f"Downloaded tar to {temp_tar_path}, size: {os.path.getsize(temp_tar_path)} bytes")
+                    
+                    # Extract run.json from the tar file
+                    with tarfile.open(temp_tar_path, 'r:gz') as tar:
+                        # List all members to find run.json
+                        member_names = tar.getnames()
+                        logging.info(f"S3 tar contains {len(member_names)} files")
+                        run_json_members = [name for name in member_names if 'run.json' in name]
+                        logging.info(f"Found run.json candidates in S3 tar: {run_json_members}")
+                        
+                        extracted = False
+                        try:
+                            tar.extract('results/run.json', path=f'tmp/{project_id}')
+                            logging.info(f"Successfully extracted run.json from S3 to {run_json_path}")
+                            extracted = True
+                        except KeyError:
+                            logging.warning(f"'results/run.json' not found in S3 tarfile. First 20 members: {member_names[:20]}")
+                            # Try alternative path if run.json exists with different structure
+                            if run_json_members:
+                                logging.info(f"Attempting to extract alternative path: {run_json_members[0]}")
+                                member = tar.getmember(run_json_members[0])
+                                tar.extract(member, path=f'tmp/{project_id}')
+                                # Move to expected location if different
+                                extracted_path = os.path.join(f'tmp/{project_id}', run_json_members[0])
+                                if extracted_path != run_json_path:
+                                    os.makedirs(os.path.dirname(run_json_path), exist_ok=True)
+                                    shutil.move(extracted_path, run_json_path)
+                                    logging.info(f"Moved {extracted_path} to {run_json_path}")
+                                extracted = True
+                        
+                        if not extracted:
+                            # Keep temp file for debugging
+                            logging.error(f"Could not extract run.json. Temp tar file preserved at: {temp_tar_path}")
+                            temp_tar_path = None  # Don't delete it
+                    
+                    # Clean up temp tar file only if extraction was successful
+                    if temp_tar_path and os.path.exists(temp_tar_path):
+                        os.remove(temp_tar_path)
+                        logging.info("Cleaned up temporary tar file")
+                    
+                except botocore.exceptions.ClientError as e:
+                    logging.warning(f"Failed to download run.json from S3: {e}")
+                    if temp_tar_path and os.path.exists(temp_tar_path):
+                        os.remove(temp_tar_path)
+                except Exception as e:
+                    logging.error(f"Error extracting run.json from S3: {e}")
+                    if temp_tar_path and os.path.exists(temp_tar_path):
+                        logging.error(f"Temp tar file preserved at: {temp_tar_path}")
+            
+        except Exception as e:
+            logging.error(f"Error attempting to retrieve run.json: {e}")
+    
+    # Final check if run.json exists
+    if not os.path.exists(run_json_path):
+        message = f"Summary data file not found for project {project_name}."
+        messages.error(request, message)
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+    
+    # Get the requested format (default to json)
+    output_format = request.GET.get('format', 'json').lower()
+    
+    try:
+        with open(run_json_path, 'r') as run_json_file:
+            run_json_data = json.load(run_json_file)
+        
+        # Get the project name for the filename
+        real_project_name = project.get('project_name', project_name)
+        safe_filename = real_project_name.replace(' ', '_').replace('/', '_')
+        
+        if output_format == 'csv':
+            # Convert run.json to CSV format
+            csv_content = convert_runs_to_csv(run_json_data.get('runs', {}))
+            
+            response = HttpResponse(
+                csv_content,
+                content_type='text/csv'
+            )
+            response['Content-Disposition'] = f'attachment; filename="{safe_filename}_summary.csv"'
+        else:
+            # Return JSON format
+            response = HttpResponse(
+                json.dumps(run_json_data, indent=2),
+                content_type='application/json'
+            )
+            response['Content-Disposition'] = f'attachment; filename="{safe_filename}_run.json"'
+        
+        return response
+        
+    except Exception as e:
+        logging.error(f"Error reading run.json for project {project_name}: {str(e)}")
+        message = f"Error retrieving summary data for project {project_name}."
+        messages.error(request, message)
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+
+
+def convert_runs_to_csv(runs):
+    """
+    Convert the runs dictionary from run.json into CSV format.
+    Each row represents a feature, with sample name included.
+    """
+    import csv
+    import io
+    
+    if not runs:
+        return ""
+    
+    # Columns to exclude (file and directory paths)
+    exclude_columns = {
+        "AA PDF file", "AA PNG file", "AA directory", "AA summary file",
+        "CNV BED file", "Feature BED file", "Run metadata JSON",
+        "Sample metadata JSON", "cnvkit directory"
+    }
+    
+    # Collect all features and determine all unique column names
+    all_features = []
+    all_columns = set()
+    
+    for sample_name, features in runs.items():
+        for feature in features:
+            all_columns.update(feature.keys())
+            all_features.append(feature)
+    
+    # Remove excluded columns
+    all_columns -= exclude_columns
+    
+    # Define preferred column order (most important columns first)
+    ordered_columns = ['Feature ID', 'Sample name', 'AA amplicon number', 'Classification', 'Oncogenes']
+    
+    
+    # Sort remaining columns alphabetically
+    remaining_columns = sorted(list(all_columns - set(ordered_columns)))
+    
+    # Final column order
+    columns = [col for col in ordered_columns if col in all_columns] + remaining_columns
+    
+    # Create CSV content
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write header
+    writer.writerow(columns)
+    
+    # Write data rows
+    for feature in all_features:
+        row = []
+        for col in columns:
+            val = feature.get(col, '')
+            # Handle list values (like Oncogenes)
+            if isinstance(val, list):
+                val = '; '.join(str(v) for v in val if v)
+            elif val is None:
+                val = ''
+            row.append(str(val))
+        writer.writerow(row)
+    
+    return output.getvalue()
+
+
 def igv_features_creation(locations):
     """
     Locations should look like: ["'chr11:56595156-58875237'", " 'chr11:66684707-68055335'", " 'chr11:69975662-70290667'"]

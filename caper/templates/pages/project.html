@@ -5,6 +5,12 @@
 
 {% block extra_js %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<style>
+    .wait-cursor,
+    .wait-cursor * {
+        cursor: wait !important;
+    }
+</style>
 <script>
     $(document).ready( function () {
       // Flag to track if we've already auto-generated a key for this page load
@@ -23,9 +29,129 @@
       });
     
     
-        $('#myTable1').DataTable({
+        var table = $('#myTable1').DataTable();
+
+        // Update filtered count display
+        function updateFilteredCount() {
+            var info = table.page.info();
+            var filteredCount = info.recordsDisplay;
+            var totalCount = info.recordsTotal;
+            
+            if (filteredCount === totalCount) {
+                $('#filtered-count').text('(' + totalCount + ' samples)');
+            } else {
+                $('#filtered-count').text('(' + filteredCount + ' of ' + totalCount + ' samples shown)');
+            }
         }
-        );
+
+        // Update count on table draw
+        table.on('draw', function() {
+            updateFilteredCount();
+        });
+
+        // Initial count update
+        updateFilteredCount();
+
+        // Handle download filtered samples button click
+        $('#download-filtered-samples').on('click', function() {
+            var filteredSamples = [];
+            var projectId = '{{ project.linkid }}';
+            
+            // Get all filtered rows
+            table.rows({ search: 'applied' }).every(function() {
+                var data = this.data();
+                // Extract sample name from the first column (which contains an <a> tag)
+                var sampleName = $(data[0]).text();
+                // Format as projectId:sampleName to match backend expectations
+                filteredSamples.push(projectId + ':' + sampleName);
+            });
+
+            if (filteredSamples.length === 0) {
+                alert('No samples to download.');
+                return;
+            }
+
+            // Check if too many samples are selected
+            if (filteredSamples.length > 1000) {
+                alert('You have selected too many samples. Please filter to 1000 or fewer samples.');
+                return;
+            }
+
+            // Check if user is logged in
+            if (!{% if user.is_authenticated %}true{% else %}false{% endif %}) {
+                alert('You must be logged in to batch download samples. Please log in and try again.');
+                window.location.href = '/accounts/login/?next=' + encodeURIComponent(window.location.pathname);
+                return;
+            }
+
+            // Show loading message
+            var loadingModal = $('<div>', {
+                'class': 'modal fade',
+                'id': 'loadingModal',
+                'tabindex': '-1',
+                'role': 'dialog',
+                'aria-hidden': 'true',
+                'data-backdrop': 'static',
+                'data-keyboard': 'false'
+            }).append(
+                $('<div>', {'class': 'modal-dialog modal-dialog-centered'}).append(
+                    $('<div>', {'class': 'modal-content'}).append(
+                        $('<div>', {'class': 'modal-body text-center'}).append(
+                            $('<div>', {'class': 'spinner-border text-primary mb-3', 'role': 'status'}).append(
+                                $('<span>', {'class': 'sr-only'}).text('Loading...')
+                            ),
+                            $('<h5>').text('Gathering samples, please wait.'),
+                            $('<p>').text('This can take a few minutes for large downloads...')
+                        )
+                    )
+                )
+            );
+
+            $('body').append(loadingModal);
+            $('#loadingModal').modal('show');
+
+            // Create a form for submission
+            var form = $('<form>', {
+                'method': 'POST',
+                'action': '/batch-sample-download/',
+                'style': 'display: none'
+            });
+
+            // Add CSRF token
+            form.append($('<input>', {
+                'type': 'hidden',
+                'name': 'csrfmiddlewaretoken',
+                'value': getCookie('csrftoken')
+            }));
+
+            // Add filtered samples
+            filteredSamples.forEach(function(sample) {
+                form.append($('<input>', {
+                    'type': 'hidden',
+                    'name': 'samples',
+                    'value': sample
+                }));
+            });
+
+            // Add flag for private samples
+            form.append($('<input>', {
+                'type': 'hidden',
+                'name': 'is_private',
+                'value': {% if project.private %}'1'{% else %}'0'{% endif %}
+            }));
+
+            // Submit the form
+            $('body').append(form);
+            form.submit();
+
+            // Hide the loading modal after a short delay to allow download to start
+            setTimeout(function() {
+                $('#loadingModal').modal('hide');
+                $('#loadingModal').remove();
+                $('.modal-backdrop').remove();
+                $('body').removeClass('modal-open');
+            }, 10000);
+        });
     } );
     $(document).ready( function () {
         $('#myTable2').DataTable({
@@ -42,7 +168,7 @@
         }
 
         // Hide plotly_plots div if there's only one sample
-        var sampleCount = {{ sample_data|length|default:0 }};
+        var sampleCount = parseInt("{{ sample_data|length|default:0 }}".replace(/,/g, ''));
         if (sampleCount === 1) {
             $('#plotly_plots').hide();
         } else {
@@ -98,7 +224,44 @@
     // Call the formatDates function when the page is loaded
     document.addEventListener('DOMContentLoaded', formatDates);
 
+    function downloadSummaryTable() {
+        // Add wait cursor class to body
+        document.body.classList.add('wait-cursor');
+        
+        // Use fetch API to download the file
+        fetch("/project/{{ project.linkid }}/download_summary?format=csv")
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                // Create a download link and trigger it
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = '{{ project.project_name|default:"project" }}_summary.csv';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                // Remove wait cursor
+                document.body.classList.remove('wait-cursor');
+            })
+            .catch(error => {
+                console.error('Download failed:', error);
+                alert('Failed to download summary table. Please try again.');
+                document.body.classList.remove('wait-cursor');
+            });
+    }
+
     function downloadAndReload() {
+        // Add wait cursor class to body
+        document.body.classList.add('wait-cursor');
+        
         // Create an invisible anchor element
         const a = document.createElement('a');
         // Set the href to the file URL
@@ -110,6 +273,12 @@
         a.click();
         // Remove the anchor from the body
         document.body.removeChild(a);
+        
+        // Remove wait cursor after delay
+        setTimeout(function() {
+            document.body.classList.remove('wait-cursor');
+        }, 2000);
+        
         // Reload the page after a short delay to ensure the download starts
 
         //updating the number, this number will be increased automatically in database
@@ -273,7 +442,15 @@
 
     {% if not is_empty_project %}
     <div class="col-md-3">
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px;" onclick = "downloadAndReload();" >Download Project Data</a><br>
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px;"
+           onclick="downloadAndReload();">
+            <i class="fas fa-download"></i> Download Project
+        </a>
+
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer;"
+           onclick="downloadSummaryTable();">
+            <i class="fas fa-download"></i> Download Summary
+        </a>
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}
         <p><b>Project Members:</b> {% for person in project.project_members %}
             {{ person }}
@@ -393,6 +570,12 @@
 <br>
 <div class="container">
   {% if not is_empty_project %}  
+<div style="margin-bottom: 15px;">
+    <button id="download-filtered-samples" class="btn btn-primary" style="color: white;">
+        <i class="fas fa-download"></i> Download Filtered Samples
+    </button>
+    <span id="filtered-count" style="margin-left: 10px; color: #666;"></span>
+</div>
 <div class="table-responsive">
     <table id='myTable1' class="table table-hover table-sm stripe no-border">
         <thead>
