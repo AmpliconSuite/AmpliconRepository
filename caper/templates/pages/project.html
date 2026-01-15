@@ -644,12 +644,12 @@
 
     {% if not is_empty_project %}
     <div class="col-md-3" style="text-align:right;">
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; width: 192px; display: block; margin-left: auto;"
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; width: 205px; display: block; margin-left: auto;"
            onclick="downloadAndReload();">
             <i class="fas fa-download"></i> Download Project
         </a>
 
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer; width: 192px; display: block; margin-left: auto;"
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer; width: 205px; display: block; margin-left: auto;"
            onclick="downloadSummaryTable();">
             <i class="fas fa-download"></i> Download Summary
         </a>
@@ -680,10 +680,10 @@
                     vertical-align: middle;
                 }
             </style>
-            <div style="display: inline-block; text-align: left; width: 192px;">
+            <div style="display: inline-block; text-align: left; width: 205px;">
                 <span class="members-toggle" onclick="toggleMembers()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
             </div>
-            <div id="members-list" style="display: none; margin-top: 8px; text-align: left; margin-left: auto; width: 192px;">
+            <div id="members-list" style="display: none; margin-top: 8px; text-align: left; margin-left: auto; width: 205px;">
                 {% for person in project.project_members %}
                     <div style="padding: 3px 0;">{{ person }}</div>
                 {% endfor %}
@@ -704,13 +704,13 @@
         }
         </script>
 
-        <div id="project_statistics" style="text-align: right;"><div style="display: inline-block; text-align: left; width: 192px;">Views: {{ views }} | Downloads: <span id='downloads'>{{downloads}}</span></div></div>
+        <div id="project_statistics" style="text-align: right;"><div style="display: inline-block; text-align: left; width: 205px;">Views: {{ views }} | Downloads: <span id='downloads'>{{downloads}}</span></div></div>
         
         {% if user.is_authenticated and not is_project_member %}
         <div style="margin-top: 10px; padding: 10px; border-radius: 5px; text-align: right;">
-            <div style="display: inline-block; text-align: left; width: 192px;">
+            <div style="display: inline-block; text-align: left; width: 205px;">
             <label style="cursor: pointer; user-select: none;">
-                <input type="checkbox" id="subscription-checkbox" style="margin-right: 5px;">
+                <input type="checkbox" id="subscription-checkbox" style="margin-right: 5px;padding-left:10px;font-size:0.9em;">
                 <span id="subscription-label">Subscribe to project updates</span>
             </label>
             <div id="subscription-message" style="margin-top: 5px; font-size: 0.9em;"></div>
