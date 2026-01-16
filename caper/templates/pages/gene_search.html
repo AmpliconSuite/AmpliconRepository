@@ -686,51 +686,26 @@
 
             $('body').append(loadingModal);
             
-            // Create a form for submission
-            const form = $('<form>', {
-                'method': 'POST',
-                'action': '/batch-sample-download/',
-                'style': 'display: none'
-            });
-
-            // Add CSRF token
-            form.append($('<input>', {
-                'type': 'hidden',
-                'name': 'csrfmiddlewaretoken',
-                'value': $('[name=csrfmiddlewaretoken]').val()
-            }));
-
+            // Prepare form data for XHR submission
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', $('[name=csrfmiddlewaretoken]').val());
+            
             // Add selected samples
             samples.forEach(function(sample) {
-                form.append($('<input>', {
-                    'type': 'hidden',
-                    'name': 'samples',
-                    'value': sample
-                }));
+                formData.append('samples', sample);
             });
 
             // Add flag for private samples
-            form.append($('<input>', {
-                'type': 'hidden',
-                'name': 'is_private',
-                'value': isPrivate ? '1' : '0'
-            }));
+            formData.append('is_private', isPrivate ? '1' : '0');
 
             // Add emailResults flag if sample count > 100
             if (shouldEmailResults) {
-                form.append($('<input>', {
-                    'type': 'hidden',
-                    'name': 'emailResults',
-                    'value': 'true'
-                }));
+                formData.append('emailResults', 'true');
             }
             
-            // Handle form submission differently for email vs immediate downloads
+            // Handle submission differently for email vs immediate downloads
             if (shouldEmailResults) {
-                // For email downloads: handlers are already attached to buttons
-                
-                // Get the closeHandler from modal data
-                const closeHandler = loadingModal.data('closeHandler');
+                // For email downloads: use XHR to track when request completes
                 
                 // Also listen for ESC key and backdrop click via Bootstrap event
                 $('#loadingModal').on('hide.bs.modal', function(e) {
@@ -751,35 +726,101 @@
                 console.log('Showing email modal');
                 $('#loadingModal').modal('show');
                 
-                // Submit form after a brief delay to allow close buttons to work
+                // Submit via XHR after a brief delay to allow close buttons to work
                 setTimeout(function() {
                     const submitted = loadingModal.data('formSubmitted');
                     console.log('Timeout fired, formSubmitted:', submitted, 'modal visible:', $('#loadingModal').is(':visible'));
                     if (!submitted && $('#loadingModal').is(':visible')) {
-                        console.log('Submitting form');
+                        console.log('Submitting via XHR');
                         loadingModal.data('formSubmitted', true);
-                        $('body').append(form);
-                        form.submit();
-                        // Page will redirect, no need for cleanup
+                        
+                        $.ajax({
+                            url: '/batch-sample-download/',
+                            type: 'POST',
+                            data: formData,
+                            processData: false,
+                            contentType: false,
+                            success: function(response, status, xhr) {
+                                // Email was sent - keep modal visible for 3 seconds before redirect
+                                console.log('Email request successful');
+                                setTimeout(function() {
+                                    window.location.reload();
+                                }, 3000);
+                            },
+                            error: function(xhr, status, error) {
+                                console.error('Email request failed:', error);
+                                // Close modal and show error
+                                $('#loadingModal').modal('hide');
+                                setTimeout(function() {
+                                    $('#loadingModal').remove();
+                                    $('.modal-backdrop').remove();
+                                    $('body').removeClass('modal-open');
+                                    alert('Error processing download request. Please try again.');
+                                }, 300);
+                            }
+                        });
                     }
                 }, 500); // 500ms delay allows close buttons to work
             } else {
-                // For immediate downloads: show modal and submit right away
+                // For immediate downloads: use XHR with blob response
                 $('#loadingModal').modal('show');
                 
-                $('body').append(form);
-                form.submit();
-                
-                // Give the download a moment to start, then close the modal
-                setTimeout(function() {
-                    $('#loadingModal').modal('hide');
-                    // Clean up the modal from DOM after it's hidden
-                    setTimeout(function() {
-                        $('#loadingModal').remove();
-                        $('.modal-backdrop').remove();
-                        $('body').removeClass('modal-open');
-                    }, 300); // Wait for Bootstrap's fade animation
-                }, 6000); // Keep modal visible for 6 seconds so user sees it
+                $.ajax({
+                    url: '/batch-sample-download/',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    xhrFields: {
+                        responseType: 'blob'
+                    },
+                    success: function(blob, status, xhr) {
+                        console.log('Download ready, triggering file download');
+                        
+                        // Get filename from Content-Disposition header if available
+                        const disposition = xhr.getResponseHeader('Content-Disposition');
+                        let filename = 'batch_samples.zip';
+                        if (disposition && disposition.indexOf('filename=') !== -1) {
+                            const filenameMatch = disposition.match(/filename="?(.+)"?/);
+                            if (filenameMatch && filenameMatch[1]) {
+                                filename = filenameMatch[1];
+                            }
+                        }
+                        
+                        // Create a download link and trigger it
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.style.display = 'none';
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        // Keep modal visible for exactly 6 seconds
+                        setTimeout(function() {
+                            $('#loadingModal').modal('hide');
+                            // Clean up the modal from DOM after it's hidden
+                            setTimeout(function() {
+                                $('#loadingModal').remove();
+                                $('.modal-backdrop').remove();
+                                $('body').removeClass('modal-open');
+                            }, 300); // Wait for Bootstrap's fade animation
+                        }, 6000); // Keep modal visible for 6 seconds so user sees it
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Download request failed:', error);
+                        // Close modal immediately on error
+                        $('#loadingModal').modal('hide');
+                        setTimeout(function() {
+                            $('#loadingModal').remove();
+                            $('.modal-backdrop').remove();
+                            $('body').removeClass('modal-open');
+                            alert('Error processing download request. Please try again.');
+                        }, 300);
+                    }
+                });
             }
         }
 
