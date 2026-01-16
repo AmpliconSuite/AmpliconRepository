@@ -653,7 +653,7 @@
            onclick="downloadSummaryTable();">
             <i class="fas fa-download"></i> Download Summary
         </a>
-        {% if  project.private %}<div style="text-align: right;">Visibility: <b>Private</b></div>{% endif %}
+        {% if  project.private %}<div style="text-align: right;margin-right:85px;">Visibility: <b>Private</b></div>{% endif %}
         <div id="project-members-accordion" style="margin-bottom: 15px; text-align: right;">
             <style>
                 .members-toggle:not(.expanded)::before,
@@ -684,9 +684,7 @@
                 <span class="members-toggle" onclick="toggleMembers()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
             </div>
             <div id="members-list" style="display: none; margin-top: 8px; text-align: left; margin-left: auto; width: 205px;">
-                {% for person in project.project_members %}
-                    <div style="padding: 3px 0;">{{ person }}</div>
-                {% endfor %}
+                {{ project.project_members|join:", " }}
             </div>
         </div>
         <script>
@@ -810,9 +808,7 @@
                 <span class="members-toggle-empty" onclick="toggleMembersEmpty()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
             </div>
             <div id="members-list-empty" style="display: none; margin-top: 8px;">
-                {% for person in project.project_members %}
-                    <div style="padding: 3px 0;">{{ person }}</div>
-                {% endfor %}
+                {{ project.project_members|join:", " }}
             </div>
         </div>
         <script>
