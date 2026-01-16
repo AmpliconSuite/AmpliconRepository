@@ -84,8 +84,8 @@
                 return;
             }
 
-            // Check if sample count > 20 to determine if we should email results
-            var shouldEmailResults = filteredSamples.length > 20;
+            // Check if sample count > 100 to determine if we should email results
+            var shouldEmailResults = filteredSamples.length > 100;
             var userEmail = "{{ user.email|default:user.username }}";
 
             // Show loading message or email notification based on sample count
@@ -229,7 +229,7 @@
                 'value': {% if project.private %}'1'{% else %}'0'{% endif %}
             }));
 
-            // Add emailResults flag if sample count > 20
+            // Add emailResults flag if sample count > 100
             if (shouldEmailResults) {
                 form.append($('<input>', {
                     'type': 'hidden',
@@ -292,7 +292,7 @@
                         $('.modal-backdrop').remove();
                         $('body').removeClass('modal-open');
                     }, 300); // Wait for Bootstrap's fade animation
-                }, 2000); // Keep modal visible for 2 seconds so user sees it
+                }, 10000); // Keep modal visible for 10 seconds so user sees it
             }
         });
     } );
@@ -475,7 +475,7 @@
         // Remove wait cursor after delay
         setTimeout(function() {
             document.body.classList.remove('wait-cursor');
-        }, 2000);
+        }, 6000);
         
         // Reload the page after a short delay to ensure the download starts
 
@@ -643,18 +643,18 @@
     </div>
 
     {% if not is_empty_project %}
-    <div class="col-md-3" style="text-align:right;">
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; width: 205px; display: block; margin-left: auto;"
+    <div class="col-md-3" style="text-align:left;">
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; width: 205px; display: block;"
            onclick="downloadAndReload();">
             <i class="fas fa-download"></i> Download Project
         </a>
 
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer; width: 205px; display: block; margin-left: auto;"
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer; width: 205px; display: block;"
            onclick="downloadSummaryTable();">
             <i class="fas fa-download"></i> Download Summary
         </a>
-        {% if  project.private %}<div style="text-align: right;margin-right:85px;">Visibility: <b>Private</b></div>{% endif %}
-        <div id="project-members-accordion" style="margin-bottom: 15px; text-align: right;">
+        {% if  project.private %}<div style="">Visibility: <b>Private</b></div>{% endif %}
+        <div id="project-members-accordion" style="margin-bottom: 15px; ">
             <style>
                 .members-toggle:not(.expanded)::before,
                 .members-toggle-empty:not(.expanded)::before {
@@ -680,10 +680,10 @@
                     vertical-align: middle;
                 }
             </style>
-            <div style="display: inline-block; text-align: left; width: 205px;">
+            <div style="display: inline-block; text-align: left;">
                 <span class="members-toggle" onclick="toggleMembers()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
             </div>
-            <div id="members-list" style="display: none; margin-top: 8px; text-align: left; margin-left: auto; width: 205px;">
+            <div id="members-list" style="display: none; margin-top: 8px; text-align: left; width: 205px;">
                 {{ project.project_members|join:", " }}
             </div>
         </div>
@@ -702,11 +702,10 @@
         }
         </script>
 
-        <div id="project_statistics" style="text-align: right;"><div style="display: inline-block; text-align: left; width: 205px;">Views: {{ views }} | Downloads: <span id='downloads'>{{downloads}}</span></div></div>
-        
+       
         {% if user.is_authenticated and not is_project_member %}
-        <div style="margin-top: 10px; padding: 10px; border-radius: 5px; text-align: right;">
-            <div style="display: inline-block; text-align: left; width: 205px;padding-left:10px;font-size:0.8em;">
+        <div style="margin-top: 10px; border-radius: 5px;">
+            <div style="display: inline-block; text-align: left;">
             <label style="cursor: pointer; user-select: none;">
                 <input type="checkbox" id="subscription-checkbox" style="margin-right: 5px;">
                 <span id="subscription-label">Subscribe to project updates</span>
@@ -779,6 +778,8 @@
         }
         </script>
         {% endif %}
+          <div id="project_statistics" style="text-align:left;"><div style="display: inline-block; text-align: left;">Views: {{ views }} | Downloads: <span id='downloads'>{{downloads}}</span></div></div>
+       
     </div>
     
     <div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; display:none;">

@@ -582,24 +582,7 @@ def find_one(pattern, path):
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
-    if check_if_db_field_exists(project, 'project_downloads'):
-        project_download_data = project['project_downloads']
-        if isinstance(project_download_data, int):
-            temp_data = project_download_data
-            project_download_data = dict()
-            project_download_data[get_date_short()] = temp_data
-        elif get_date_short() in project_download_data:
-            project_download_data[get_date_short()] += 1
-        else:
-            project_download_data[get_date_short()] = 1
-    else:
-        project_download_data = dict()
-        project_download_data[get_date_short()] = 1
-
-    query = {'_id': ObjectId(project_name)}
-    new_val = { "$set": {'project_downloads': project_download_data} }
-    collection_handle.update_one(query, new_val)
-    collection_handle.update_one(query, {'$inc':{'downloads':1}})
+    update_project_download_count(project, project_name)
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     try:
         real_project_name = project['project_name']
@@ -710,7 +693,9 @@ def project_summary_download(request, project_name):
         message = f"Project {project_name} not found."
         messages.error(request, message)
         return redirect(request.META.get('HTTP_REFERER', '/'))
-    
+
+    update_project_download_count(project, project_name)
+
     # Check if user has access to private project
     if project.get('private', False) and not is_user_a_project_member(project, request):
         message = "You do not have permission to access this project."
@@ -902,6 +887,26 @@ def project_summary_download(request, project_name):
         message = f"Error retrieving summary data for project {project_name}."
         messages.error(request, message)
         return redirect(request.META.get('HTTP_REFERER', '/'))
+
+
+def update_project_download_count(project, project_name):
+    if check_if_db_field_exists(project, 'project_downloads'):
+        project_download_data = project['project_downloads']
+        if isinstance(project_download_data, int):
+            temp_data = project_download_data
+            project_download_data = dict()
+            project_download_data[get_date_short()] = temp_data
+        elif get_date_short() in project_download_data:
+            project_download_data[get_date_short()] += 1
+        else:
+            project_download_data[get_date_short()] = 1
+    else:
+        project_download_data = dict()
+        project_download_data[get_date_short()] = 1
+    query = {'_id': ObjectId(project_name)}
+    new_val = {"$set": {'project_downloads': project_download_data}}
+    collection_handle.update_one(query, new_val)
+    collection_handle.update_one(query, {'$inc': {'downloads': 1}})
 
 
 def convert_runs_to_csv(runs):
@@ -1566,9 +1571,9 @@ def batch_sample_download(request):
         alert_message = "No samples were selected. Please select at least one sample to download."
         return redirect('gene_search_page', alert_message=alert_message)
 
-    if len(samples) > 1000:
-        alert_message = "Too many samples selected. Please download relevant projects directly."
-        return redirect('gene_search_page', alert_message=alert_message)
+    #if len(samples) > 1000:
+    #    alert_message = "Too many samples selected. Please download relevant projects directly."
+    #    return redirect('gene_search_page', alert_message=alert_message)
 
     # Create a temporary directory for the batch
     batch_id = uuid.uuid4()

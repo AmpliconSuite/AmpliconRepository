@@ -571,8 +571,8 @@
                 return;
             }
 
-            // Check if sample count > 20 to determine if we should email results
-            const shouldEmailResults = samples.length > 20;
+            // Check if sample count > 100 to determine if we should email results
+            const shouldEmailResults = samples.length > 100;
             const userEmail = "{{ user.email|default:user.username }}";
 
             // Show loading message or email notification based on sample count
@@ -716,7 +716,7 @@
                 'value': isPrivate ? '1' : '0'
             }));
 
-            // Add emailResults flag if sample count > 20
+            // Add emailResults flag if sample count > 100
             if (shouldEmailResults) {
                 form.append($('<input>', {
                     'type': 'hidden',
@@ -779,7 +779,7 @@
                         $('.modal-backdrop').remove();
                         $('body').removeClass('modal-open');
                     }, 300); // Wait for Bootstrap's fade animation
-                }, 2000); // Keep modal visible for 2 seconds so user sees it
+                }, 6000); // Keep modal visible for 6 seconds so user sees it
             }
         }
 
