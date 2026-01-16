@@ -1408,24 +1408,167 @@ def sample_download(request, project_name, sample_name):
     return create_zip_response(sample_data_path, sample_name)
 
 
+def handle_email_results(request, batch_dir, zip_filename):
+    """
+    Upload the zip file to S3, generate a presigned URL, and email it to the user.
+    
+    Args:
+        request: The HTTP request object
+        batch_dir: Directory containing the files to zip
+        zip_filename: Name of the zip file (without .zip extension)
+    
+    Returns:
+        HttpResponse with a message about the email
+    """
+    from django.core.mail import EmailMessage
+    from django.template.loader import render_to_string
+    from django.utils.html import strip_tags
+    
+    zip_path = None
+    s3_key = None
+    
+    try:
+        # Check if S3 downloads are configured first
+        if not settings.USE_S3_DOWNLOADS:
+            messages.error(request, "Email results feature requires S3 to be configured.")
+            return redirect('gene_search_page')
+        
+        # Set up AWS profile and create S3 client
+        if not settings.AWS_PROFILE_NAME:
+            settings.AWS_PROFILE_NAME = 'default'
+        
+        session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+        s3_client = session.client('s3')
+        bucket_name = settings.S3_DOWNLOADS_BUCKET
+        
+        # Create a unique key for the file in S3
+        s3_key = f"batch_downloads/{request.user.username}/{uuid.uuid4()}/{zip_filename}.zip"
+        
+        # Create the zip archive with full path
+        # shutil.make_archive base_name should NOT include .zip extension
+        # It will create the file at: <parent_of_batch_dir>/<zip_filename>.zip
+        parent_dir = os.path.dirname(batch_dir)
+        zip_base_path = os.path.join(parent_dir, zip_filename)
+        zip_path = f"{zip_base_path}.zip"
+        
+        logging.info(f"Creating zip file at: {zip_path}")
+        shutil.make_archive(zip_base_path, 'zip', batch_dir)
+        
+        if not os.path.exists(zip_path):
+            raise FileNotFoundError(f"Zip file was not created at expected location: {zip_path}")
+        
+        logging.info(f"Uploading {zip_path} to S3: s3://{bucket_name}/{s3_key}")
+        
+        with open(zip_path, 'rb') as zip_file:
+            s3_client.upload_fileobj(zip_file, bucket_name, s3_key)
+        
+        logging.info(f"Successfully uploaded to S3: {s3_key}")
+        
+        # Generate presigned URL (valid for 7 days)
+        presigned_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket_name, 'Key': s3_key},
+            ExpiresIn=604800  # 7 days in seconds
+        )
+        
+        # Get user email
+        user_email = request.user.email
+        if not user_email:
+            messages.error(request, "Your account does not have an email address. Please update your profile.")
+            # Clean up S3 file
+            s3_client.delete_object(Bucket=bucket_name, Key=s3_key)
+            return redirect('gene_search_page')
+        
+        # Send email
+        subject = f"Your batch sample download is ready - {zip_filename}"
+        
+        # Prepare email context
+        email_context = {
+            'username': request.user.username,
+            'download_url': presigned_url,
+            'filename': f"{zip_filename}.zip",
+            'expiration_days': 7,
+            'SITE_TITLE': settings.SITE_TITLE,
+            'SITE_URL': settings.SITE_URL,
+        }
+        
+        # Render email body from template or create simple text
+        email_body = f"""
+Dear {request.user.username},
+
+Your batch sample download is ready!
+
+Download URL: {presigned_url}
+
+Filename: {zip_filename}.zip
+
+This link will expire in 7 days.
+
+Best regards,
+{settings.SITE_TITLE} Team
+{settings.SITE_URL}
+"""
+        
+        # Send the email
+        email = EmailMessage(
+            subject,
+            email_body,
+            settings.EMAIL_HOST_USER,
+            [user_email],
+            reply_to=[settings.EMAIL_HOST_USER]
+        )
+        email.send(fail_silently=False)
+        
+        logging.info(f"Download link emailed to {user_email}")
+        messages.success(request, f"A download link has been sent to {user_email}. The link will be valid for 7 days.")
+        
+        return redirect('gene_search_page')
+        
+    except Exception as e:
+        logging.exception(f"Error handling email results: {e}")
+        messages.error(request, f"Error processing your request: {str(e)}")
+        
+        # Try to clean up S3 file if it was uploaded
+        if s3_key:
+            try:
+                session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+                s3_client = session.client('s3')
+                s3_client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_key)
+            except Exception as cleanup_error:
+                logging.exception(f"Error cleaning up S3 file: {cleanup_error}")
+        
+        return redirect('gene_search_page')
+        
+    finally:
+        # Clean up local zip file
+        if zip_path and os.path.exists(zip_path):
+            try:
+                os.remove(zip_path)
+                logging.debug(f"Cleaned up local zip file: {zip_path}")
+            except Exception as e:
+                logging.error(f"Failed to clean up zip file {zip_path}: {e}")
+
+
 @login_required(login_url='/accounts/login/')
 def batch_sample_download(request):
     """
     Download multiple samples organized by project.
+    If emailResults is set to 'true', uploads the zip to S3 and emails a presigned URL.
     """
     if request.method != 'POST':
         alert_message = "Invalid request method. Please use the selection checkboxes to choose samples."
-        return redirect('search_page', alert_message=alert_message)
+        return redirect('gene_search_page', alert_message=alert_message)
 
     samples = request.POST.getlist('samples')
+    email_results = request.POST.get('emailResults', 'false').lower() == 'true'
 
     if not samples:
         alert_message = "No samples were selected. Please select at least one sample to download."
-        return redirect('search_page', alert_message=alert_message)
+        return redirect('gene_search_page', alert_message=alert_message)
 
     if len(samples) > 1000:
         alert_message = "Too many samples selected. Please download relevant projects directly."
-        return redirect('search_page', alert_message=alert_message)
+        return redirect('gene_search_page', alert_message=alert_message)
 
     # Create a temporary directory for the batch
     batch_id = uuid.uuid4()
@@ -1484,8 +1627,12 @@ def batch_sample_download(request):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         zip_filename = f"batch_samples_{timestamp}"
 
-        # Return the response
-        return create_zip_response(batch_dir, zip_filename)
+        # If emailResults is true, upload to S3 and send email
+        if email_results:
+            return handle_email_results(request, batch_dir, zip_filename)
+        else:
+            # Return the response directly
+            return create_zip_response(batch_dir, zip_filename)
 
     finally:
         # Clean up the temporary directory
