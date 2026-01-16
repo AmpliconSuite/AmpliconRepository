@@ -32,15 +32,15 @@ def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFER
             read_preference=read_preference,
             maxPoolSize=50,
             minPoolSize=10,
-            maxIdleTimeMS=45000,
-            connectTimeoutMS=5000,
-            socketTimeoutMS=5000,
-            serverSelectionTimeoutMS=5000,
-            waitQueueTimeoutMS=2500,  # Wait max 2.5 seconds for available connection
+            maxIdleTimeMS=300000,           # 5 minutes - keep connections alive during long operations
+            connectTimeoutMS=30000,         # 30 seconds - initial connection timeout
+            socketTimeoutMS=None,           # No timeout - allows long-running GridFS operations
+            serverSelectionTimeoutMS=30000, # 30 seconds - time to select a server
+            waitQueueTimeoutMS=10000,       # 10 seconds - wait for available connection from pool
             retryWrites=False,
             retryReads=False,
             w='majority',
-            wtimeoutMS=5000
+            wtimeoutMS=60000                # 60 seconds - write operation acknowledgment timeout
         )
 
         # Verify connection is working
