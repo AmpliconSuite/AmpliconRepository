@@ -1428,7 +1428,7 @@ def handle_email_results(request, batch_dir, zip_filename):
     from django.core.mail import EmailMessage
     from django.template.loader import render_to_string
     from django.utils.html import strip_tags
-    
+    logging.error("handle email results called")
     zip_path = None
     s3_key = None
     
@@ -1563,7 +1563,7 @@ def batch_sample_download(request):
     if request.method != 'POST':
         alert_message = "Invalid request method. Please use the selection checkboxes to choose samples."
         return redirect('gene_search_page', alert_message=alert_message)
-
+    logging.error("begin batch download")
     samples = request.POST.getlist('samples')
     email_results = request.POST.get('emailResults', 'false').lower() == 'true'
 
