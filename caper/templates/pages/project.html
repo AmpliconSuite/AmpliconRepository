@@ -86,15 +86,16 @@
             var loadingModal;
             if (shouldEmailResults) {
                 // Show email notification message for large downloads
-                // Track if form has been submitted
+                // Track if form has been submitted or cancelled
                 var formSubmitted = false;
+                var cancelled = false;
                 
-                // Function to handle modal close
-                var closeEmailModal = function(e) {
-                    console.log('Close button clicked!', e);
-                    if (!formSubmitted) {
-                        console.log('Preventing form submission and closing modal');
-                        formSubmitted = true; // Prevent form submission
+                // Function to handle cancel
+                var cancelEmailModal = function(e) {
+                    console.log('Cancel button clicked!', e);
+                    if (!formSubmitted && !cancelled) {
+                        console.log('Cancelling download request');
+                        cancelled = true;
                         $('#loadingModal').modal('hide');
                         // Clean up after animation
                         setTimeout(function() {
@@ -105,28 +106,78 @@
                     }
                 };
                 
-                // Create close buttons and attach handlers DIRECTLY to the jQuery objects
+                // Function to handle send confirmation
+                var sendEmailLink = function(e) {
+                    console.log('Send Link button clicked!', e);
+                    if (!formSubmitted && !cancelled) {
+                        console.log('User confirmed - sending email link');
+                        formSubmitted = true;
+                        
+                        // Update modal to show "sending" state
+                        $('#loadingModal .modal-body').html(
+                            $('<div>').append(
+                                $('<div>', {'class': 'spinner-border text-primary mb-3', 'role': 'status'}).append(
+                                    $('<span>', {'class': 'sr-only'}).text('Sending...')
+                                ),
+                                $('<h5>').text('Sending email link...'),
+                                $('<p>').text('Please wait while we process your request.'),
+                                $('<p>', {'class': 'text-muted small mt-3'}).html('<i class="fas fa-info-circle"></i> You can navigate away from this page. The link will be emailed to you.')
+                            )
+                        );
+                        
+                        // Replace buttons with a Close button
+                        var closeBtn = $('<button>', {
+                            'type': 'button',
+                            'class': 'btn btn-secondary'
+                        }).text('Close').on('click', function() {
+                            $('#loadingModal').modal('hide');
+                            setTimeout(function() {
+                                $('#loadingModal').remove();
+                                $('.modal-backdrop').remove();
+                                $('body').removeClass('modal-open');
+                            }, 300);
+                        });
+                        $('#loadingModal .modal-footer').html(closeBtn);
+                        
+                        // Submit the form
+                        $('body').append(form);
+                        form.submit();
+                        // Note: For form submission, page will redirect on success
+                        // The modal will remain visible until page reloads
+                    }
+                };
+                
+                // Create close button for header
                 var closeBtn = $('<button>', {
                     'type': 'button',
                     'class': 'close',
                     'aria-label': 'Close'
                 }).append(
                     $('<span>', {'aria-hidden': 'true'}).html('&times;')
-                ).on('click', closeEmailModal);  // Attach handler directly
+                ).on('click', cancelEmailModal);
                 
-                var closeFooterBtn = $('<button>', {
+                // Create Cancel button
+                var cancelBtn = $('<button>', {
                     'type': 'button',
                     'class': 'btn btn-secondary'
-                }).text('Close').on('click', closeEmailModal);  // Attach handler directly
+                }).text('Cancel').on('click', cancelEmailModal);
                 
-                console.log('Close buttons created with handlers attached');
+                // Create Send Link button
+                var sendBtn = $('<button>', {
+                    'type': 'button',
+                    'class': 'btn btn-primary'
+                }).text('Send Link').on('click', sendEmailLink);
+                
+                console.log('Modal buttons created with handlers attached');
                 
                 loadingModal = $('<div>', {
                     'class': 'modal fade',
                     'id': 'loadingModal',
                     'tabindex': '-1',
                     'role': 'dialog',
-                    'aria-hidden': 'true'
+                    'aria-hidden': 'true',
+                    'data-backdrop': 'static',
+                    'data-keyboard': 'false'
                 }).append(
                     $('<div>', {'class': 'modal-dialog modal-dialog-centered'}).append(
                         $('<div>', {'class': 'modal-content'}).append(
@@ -137,19 +188,20 @@
                             $('<div>', {'class': 'modal-body text-center'}).append(
                                 $('<i>', {'class': 'fas fa-envelope fa-3x text-primary mb-3'}),
                                 $('<p>').html('You have selected <strong>' + filteredSamples.length + ' samples</strong>.'),
-                                $('<p>').html('A download link will be emailed to:<br><strong>' + userEmail + '</strong>'),
+                                $('<p>').html('Due to the large number of samples, a download link will be emailed to:<br><strong>' + userEmail + '</strong>'),
                                 $('<p>', {'class': 'text-muted small mt-3'}).text('The link will be valid for 7 days.')
                             ),
                             $('<div>', {'class': 'modal-footer'}).append(
-                                closeFooterBtn
+                                cancelBtn,
+                                sendBtn
                             )
                         )
                     )
                 );
                 
-                // Store formSubmitted in a place accessible to the timeout
+                // Store state flags
                 loadingModal.data('formSubmitted', false);
-                loadingModal.data('closeHandler', closeEmailModal);
+                loadingModal.data('cancelled', false);
             } else {
                 // Show standard loading message for immediate downloads
                 loadingModal = $('<div>', {
@@ -234,42 +286,12 @@
             
             // Handle form submission differently for email vs immediate downloads
             if (shouldEmailResults) {
-                // For email downloads: handlers are already attached to buttons
+                // For email downloads: show modal and wait for user to click Send Link or Cancel
+                // The submission is handled by the sendEmailLink function attached to the button
                 
-                // Get the closeHandler from modal data
-                var closeHandler = loadingModal.data('closeHandler');
-                
-                // Also listen for ESC key and backdrop click via Bootstrap event
-                $('#loadingModal').on('hide.bs.modal', function(e) {
-                    var submitted = loadingModal.data('formSubmitted');
-                    console.log('hide.bs.modal fired, formSubmitted:', submitted);
-                    if (!submitted) {
-                        loadingModal.data('formSubmitted', true);
-                        // Cleanup will happen via Bootstrap's normal hide process
-                        setTimeout(function() {
-                            $('#loadingModal').remove();
-                            $('.modal-backdrop').remove();
-                            $('body').removeClass('modal-open');
-                        }, 300);
-                    }
-                });
-                
-                // Show the modal
-                console.log('Showing email modal');
+                // Show the modal - backdrop is static to prevent accidental dismissal
+                console.log('Showing email confirmation modal');
                 $('#loadingModal').modal('show');
-                
-                // Submit form after a brief delay to allow close buttons to work
-                setTimeout(function() {
-                    var submitted = loadingModal.data('formSubmitted');
-                    console.log('Timeout fired, formSubmitted:', submitted, 'modal visible:', $('#loadingModal').is(':visible'));
-                    if (!submitted && $('#loadingModal').is(':visible')) {
-                        console.log('Submitting form');
-                        loadingModal.data('formSubmitted', true);
-                        $('body').append(form);
-                        form.submit();
-                        // Page will redirect, no need for cleanup
-                    }
-                }, 500); // 500ms delay allows close buttons to work
             } else {
                 // For immediate downloads: show modal and submit right away
                 $('#loadingModal').modal('show');
