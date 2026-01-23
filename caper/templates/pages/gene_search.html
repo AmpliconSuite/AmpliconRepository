@@ -557,12 +557,6 @@
         function downloadSelectedSamples(samples, isPrivate) {
             if (samples.length === 0) return;
 
-            // Check if too many samples are selected
-            if (samples.length > 1000) {
-                alert('You have selected too many samples. Please select 1000 or fewer samples.');
-                return;
-            }
-
             // Check if user is logged in
             if (!{% if user.is_authenticated %}true{% else %}false{% endif %}) {
                 // Show login modal or redirect to login page
