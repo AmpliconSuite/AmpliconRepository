@@ -1604,9 +1604,10 @@ def batch_sample_download(request):
         except (ValueError, Exception) as e:
             logging.exception(f"Error processing sample string {sample_str}: {e}")
             continue
-
+    logging.error("batch download - processing samples ")
     try:
         # Process each project's samples
+        processed_count = 0
         for project_id, project_info in projects_and_samples.items():
             project = project_info['project']
             project_dir = f"{batch_dir}/{project['project_name']}"
@@ -1623,10 +1624,16 @@ def batch_sample_download(request):
                     # Process the sample
                     sample_dir = f"{project_dir}/{sample_name}"
                     process_sample_data(project, sample_name, sample_data, sample_dir)
+                    
+                    processed_count += 1
+                    if processed_count % 20 == 0:
+                        logging.info(f"Processed {processed_count} samples so far...")
 
                 except Exception as e:
                     logging.exception(f"Error processing sample {sample_name}: {e}")
                     continue
+        
+        logging.info(f"Completed processing {processed_count} samples total")
 
         # Create the zip file with timestamp
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
