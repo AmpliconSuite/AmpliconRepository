@@ -71,12 +71,6 @@
                 return;
             }
 
-            // Check if too many samples are selected
-            if (filteredSamples.length > 1000) {
-                alert('You have selected too many samples. Please filter to 1000 or fewer samples.');
-                return;
-            }
-
             // Check if user is logged in
             if (!{% if user.is_authenticated %}true{% else %}false{% endif %}) {
                 alert('You must be logged in to batch download samples. Please log in and try again.');
