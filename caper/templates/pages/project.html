@@ -139,13 +139,87 @@
                         });
                         $('#loadingModal .modal-footer').html(closeBtn);
                         
-                        // Submit the form
-                        $('body').append(form);
-                        console.log("about to submit form");
-                        form.submit();
-                        console.log("back from submitting form");
-                        // Note: For form submission, page will redirect on success
-                        // The modal will remain visible until page reloads
+                        // Prepare form data for AJAX submission
+                        var formData = new FormData();
+                        formData.append('csrfmiddlewaretoken', getCookie('csrftoken'));
+                        
+                        // Add all form inputs to formData
+                        filteredSamples.forEach(function(sample) {
+                            formData.append('samples', sample);
+                        });
+                        formData.append('is_private', {% if project.private %}'1'{% else %}'0'{% endif %});
+                        formData.append('emailResults', 'true');
+                        
+                        // Submit via AJAX instead of form submission
+                        $.ajax({
+                            url: '/batch-sample-download/',
+                            type: 'POST',
+                            data: formData,
+                            processData: false,
+                            contentType: false,
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            success: function(response, status, xhr) {
+                                // Email was sent - update modal to show success
+                                console.log('Email request successful');
+                                $('#loadingModal .modal-body').html(
+                                    $('<div>').append(
+                                        $('<i>', {'class': 'fas fa-check-circle fa-3x text-success mb-3'}),
+                                        $('<h5>').text('Email sent successfully!'),
+                                        $('<p>').text('Check your email for the download link.'),
+                                        $('<p>', {'class': 'text-muted small'}).text('The link will be valid for 7 days.')
+                                    )
+                                );
+                                // Auto-close the modal after 90 seconds
+                                setTimeout(function() {
+                                    $('#loadingModal').modal('hide');
+                                    setTimeout(function() {
+                                        $('#loadingModal').remove();
+                                        $('.modal-backdrop').remove();
+                                        $('body').removeClass('modal-open');
+                                    }, 300);
+                                }, 90000); // 90 seconds
+                            },
+                            error: function(xhr, status, error) {
+                                console.log('AJAX request ended with status:', status, 'error:', error);
+                                
+                                // Check if this is a timeout or connection issue (server still processing)
+                                if (status === 'timeout' || status === 'error' || xhr.status === 0) {
+                                    // Timeout or connection closed - server is still processing
+                                    console.log('Connection timeout/closed - server is still processing');
+                                    $('#loadingModal .modal-body').html(
+                                        $('<div>').append(
+                                            $('<i>', {'class': 'fas fa-hourglass-half fa-3x text-info mb-3'}),
+                                            $('<h5>').text('Processing your request...'),
+                                            $('<p>').text('Your download request is being processed on the server.'),
+                                            $('<p>').text('You will receive an email with the download link when it\'s ready.'),
+                                            $('<p>', {'class': 'text-muted small mt-3'}).html('<i class="fas fa-info-circle"></i> The link will be valid for 7 days.')
+                                        )
+                                    );
+                                } else {
+                                    // Actual error from server
+                                    console.error('Email request failed with server error:', error);
+                                    $('#loadingModal .modal-body').html(
+                                        $('<div>').append(
+                                            $('<i>', {'class': 'fas fa-exclamation-circle fa-3x text-danger mb-3'}),
+                                            $('<h5>').text('Error sending email'),
+                                            $('<p>').text('There was an error processing your download request. Please try again.')
+                                        )
+                                    );
+                                }
+                                
+                                // Auto-close the modal after 90 seconds
+                                setTimeout(function() {
+                                    $('#loadingModal').modal('hide');
+                                    setTimeout(function() {
+                                        $('#loadingModal').remove();
+                                        $('.modal-backdrop').remove();
+                                        $('body').removeClass('modal-open');
+                                    }, 300);
+                                }, 90000); // 90 seconds
+                            }
+                        });
                     }
                 };
                 

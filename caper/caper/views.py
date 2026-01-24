@@ -1525,13 +1525,21 @@ Best regards,
         email.send(fail_silently=False)
         
         logging.info(f"Download link emailed to {user_email}")
-        messages.success(request, f"A download link has been sent to {user_email}. The link will be valid for 7 days.")
         
-        return redirect('gene_search_page')
+        # Check if this is an AJAX request
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        
+        if is_ajax:
+            return JsonResponse({
+                'success': True,
+                'message': f"A download link has been sent to {user_email}. The link will be valid for 7 days."
+            })
+        else:
+            messages.success(request, f"A download link has been sent to {user_email}. The link will be valid for 7 days.")
+            return redirect('gene_search_page')
         
     except Exception as e:
         logging.exception(f"Error handling email results: {e}")
-        messages.error(request, f"Error processing your request: {str(e)}")
         
         # Try to clean up S3 file if it was uploaded
         if s3_key:
@@ -1542,7 +1550,17 @@ Best regards,
             except Exception as cleanup_error:
                 logging.exception(f"Error cleaning up S3 file: {cleanup_error}")
         
-        return redirect('gene_search_page')
+        # Check if this is an AJAX request
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        
+        if is_ajax:
+            return JsonResponse({
+                'success': False,
+                'error': f"Error processing your request: {str(e)}"
+            }, status=500)
+        else:
+            messages.error(request, f"Error processing your request: {str(e)}")
+            return redirect('gene_search_page')
         
     finally:
         # Clean up local zip file
