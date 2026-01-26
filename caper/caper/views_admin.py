@@ -278,10 +278,15 @@ def admin_stats(request):
             project['project_downloads'] = {}
 
         if 'sample_downloads' in project:
-            # Process sample download stats
-            pass
+            # Process sample download stats - sum the values from the dictionary
+            if isinstance(project['sample_downloads'], dict):
+                project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
+            else:
+                # Handle legacy integer format
+                project['sample_downloads_sum'] = project['sample_downloads']
         else:
             project['sample_downloads'] = {}
+            project['sample_downloads_sum'] = 0
 
     repo_stats = get_latest_site_statistics()
 
