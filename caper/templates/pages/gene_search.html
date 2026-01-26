@@ -229,7 +229,58 @@
         // Function to apply project filters
         function applyProjectFilters(isPrivate) {
             const table = isPrivate ? $('#private-samples-table').DataTable() : $('#public-samples-table').DataTable();
+            const filterSet = isPrivate ? privateProjectFilters : publicProjectFilters;
+            const selectAllCheckbox = isPrivate ? $('#private-select-all-checkbox') : $('#public-select-all-checkbox');
+            const isSelectAllChecked = selectAllCheckbox.is(':checked');
+
+            // Process all rows
+            table.rows().every(function() {
+                const row = this.node();
+                const $row = $(row);
+                const checkbox = $row.find('.sample-checkbox');
+                const projectId = String(checkbox.data('project-id'));
+                const sampleName = checkbox.data('sample-name');
+                const key = `${projectId}:${sampleName}`;
+
+                // Determine if this row will be visible after filtering
+                const willBeVisible = filterSet.has(projectId) && filterSet.size > 0;
+
+                if (!willBeVisible) {
+                    // Row is being hidden - always uncheck it
+                    checkbox.prop('checked', false);
+                    // Remove from selected samples array
+                    if (isPrivate) {
+                        privateSelectedSamples = privateSelectedSamples.filter(item => item !== key);
+                    } else {
+                        publicSelectedSamples = publicSelectedSamples.filter(item => item !== key);
+                    }
+                } else if (willBeVisible && isSelectAllChecked) {
+                    // Row is being shown and "select all" is checked
+                    // Check the checkbox for ALL visible rows (not just current page)
+                    checkbox.prop('checked', true);
+                    // Add to selected samples array if not already there
+                    if (isPrivate) {
+                        if (!privateSelectedSamples.includes(key)) {
+                            privateSelectedSamples.push(key);
+                        }
+                    } else {
+                        if (!publicSelectedSamples.includes(key)) {
+                            publicSelectedSamples.push(key);
+                        }
+                    }
+                }
+                // If willBeVisible && !isSelectAllChecked: do nothing, keep current state (unchecked)
+            });
+
+            // Redraw the table to apply filters
             table.draw();
+
+            // Update the selection count
+            if (isPrivate) {
+                updatePrivateSelection();
+            } else {
+                updatePublicSelection();
+            }
         }
 
         // Project filter checkbox change handler
@@ -515,10 +566,10 @@
             updatePrivateSelection();
         });
 
-        // Header checkbox: Select/deselect all on current page — public samples
+        // Header checkbox: Select/deselect ALL filtered rows across all pages — public samples
         $('#public-select-all-checkbox').on('change', function() {
             const isChecked = $(this).is(':checked');
-            publicTable.rows({ page: 'current' }).every(function() {
+            publicTable.rows({ search: 'applied' }).every(function() {
                 const $row = $(this.node());
                 const checkbox = $row.find('.public-sample-checkbox');
                 checkbox.prop('checked', isChecked);
@@ -534,10 +585,10 @@
             updatePublicSelection();
         });
 
-        // Header checkbox: Select/deselect all on current page — private samples
+        // Header checkbox: Select/deselect ALL filtered rows across all pages — private samples
         $('#private-select-all-checkbox').on('change', function() {
             const isChecked = $(this).is(':checked');
-            privateTable.rows({ page: 'current' }).every(function() {
+            privateTable.rows({ search: 'applied' }).every(function() {
                 const $row = $(this.node());
                 const checkbox = $row.find('.private-sample-checkbox');
                 checkbox.prop('checked', isChecked);

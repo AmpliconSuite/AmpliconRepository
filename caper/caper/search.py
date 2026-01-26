@@ -208,9 +208,10 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
             sample_dict = row.to_dict()
             sample_dict['project_name'] = project_name
             sample_dict['project_linkid'] = project_linkid
-            # Only process All_genes if it exists in the sample
+            # Only process All_genes if it exists in the row
             if 'All_genes' in sample_dict and sample_dict['All_genes'] is not None:
                 sample_dict['All_genes'] = [i.replace("'", "").strip() for i in sample_dict['All_genes']]
+
             sample_data.append(sample_dict)
 
     return sample_data
