@@ -271,7 +271,7 @@
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor %}</td>
-                                <td>{{ project.project_downloads_sum }}
+                                <td>{{ project.downloads }}
                                 </td>
                                 <td>
                                     {{ project.sample_downloads_sum }}
@@ -281,6 +281,7 @@
                         </tbody>
                         <tfoot>
                             <tr>
+                                <th></th>
                                 <th></th>
                                 <th></th>
                                 <th></th>
