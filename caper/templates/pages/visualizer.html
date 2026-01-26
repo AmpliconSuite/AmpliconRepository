@@ -165,25 +165,31 @@
     
     <!-- Hidden tooltip templates -->
     <div id="node-template" style="display: none;">
-        <strong>Gene:</strong> <span id="ntip-name"></span><br>
-        <strong>Location:</strong> <span id="ntip-location"></span><br>
-        <strong>Oncogene:</strong> <span id="ntip-oncogene"></span><br>
-        <strong>Amplified in:</strong> <span id="ntip-nsamples"></span> sample(s)<br>
-        <strong>Sample(s):</strong> <span id="ntip-samples"></span>
+        <div style="position: relative;">
+            <button class="tooltip-close-btn" style="position: absolute; top: -5px; right: -5px; background: #333; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;">&times;</button>
+            <strong>Gene:</strong> <span id="ntip-name"></span><br>
+            <strong>Location:</strong> <span id="ntip-location"></span><br>
+            <strong>Oncogene:</strong> <span id="ntip-oncogene"></span><br>
+            <strong>Amplified in:</strong> <span id="ntip-nsamples"></span> sample(s)<br>
+            <strong>Sample(s):</strong> <span id="ntip-samples"></span>
+        </div>
     </div>
     <div id="edge-template" style="display: none;">
-        <strong>Relationship:</strong> <span id="etip-name"></span><br>
-        <strong>Coamplification frequency:</strong> <span id="etip-weight"></span><br>
-        <strong>Coamplification fraction:</strong> <span id="etip-frac"></span><br>
-        <strong>Distance:</strong> <span id="etip-distance"></span><strong>bp</strong><br>
-        <strong>Significance Testing Results:</strong>
-        <ul>
-            <li><strong>Single Interval:</strong> p = <span id="etip-pval-single_interval"></span>, q = <span id="etip-qval-single_interval"></span>, OR = <span id="etip-odds_ratio-single_interval"></span></li>
-            <li><strong>Multi Interval:</strong> p = <span id="etip-pval-multi_interval"></span>, q = <span id="etip-qval-multi_interval"></span>, OR = <span id="etip-odds_ratio-multi_interval"></span></li>
-            <li><strong>Multi Chromosomal:</strong> p = <span id="etip-pval-multi_chromosomal"></span>, q = <span id="etip-qval-multi_chromosomal"></span>, OR = <span id="etip-odds_ratio-multi_chromosomal"></span></li>
-        </ul>
-        <strong>Coamplified in:</strong> <span id="etip-nsamples"></span> sample(s)<br>
-        <strong>Sample(s):</strong> <span id="etip-samples"></span>
+        <div style="position: relative;">
+            <button class="tooltip-close-btn" style="position: absolute; top: -5px; right: -5px; background: #333; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;">&times;</button>
+            <strong>Relationship:</strong> <span id="etip-name"></span><br>
+            <strong>Coamplification frequency:</strong> <span id="etip-weight"></span><br>
+            <strong>Coamplification fraction:</strong> <span id="etip-frac"></span><br>
+            <strong>Distance:</strong> <span id="etip-distance"></span><strong>bp</strong><br>
+            <strong>Significance Testing Results:</strong>
+            <ul>
+                <li><strong>Single Interval:</strong> p = <span id="etip-pval-single_interval"></span>, q = <span id="etip-qval-single_interval"></span>, OR = <span id="etip-odds_ratio-single_interval"></span></li>
+                <li><strong>Multi Interval:</strong> p = <span id="etip-pval-multi_interval"></span>, q = <span id="etip-qval-multi_interval"></span>, OR = <span id="etip-odds_ratio-multi_interval"></span></li>
+                <li><strong>Multi Chromosomal:</strong> p = <span id="etip-pval-multi_chromosomal"></span>, q = <span id="etip-qval-multi_chromosomal"></span>, OR = <span id="etip-odds_ratio-multi_chromosomal"></span></li>
+            </ul>
+            <strong>Coamplified in:</strong> <span id="etip-nsamples"></span> sample(s)<br>
+            <strong>Sample(s):</strong> <span id="etip-samples"></span>
+        </div>
     </div>
 
 {% endblock %}
