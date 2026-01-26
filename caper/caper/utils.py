@@ -41,6 +41,7 @@ def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFER
             retryReads=False,
             w='majority',
             wtimeoutMS=60000  # 60 seconds - write operation acknowledgment timeout
+
         )
 
         # Verify connection is working

@@ -71,12 +71,6 @@
                 return;
             }
 
-            // Check if too many samples are selected
-            if (filteredSamples.length > 1000) {
-                alert('You have selected too many samples. Please filter to 1000 or fewer samples.');
-                return;
-            }
-
             // Check if user is logged in
             if (!{% if user.is_authenticated %}true{% else %}false{% endif %}) {
                 alert('You must be logged in to batch download samples. Please log in and try again.');
@@ -84,31 +78,248 @@
                 return;
             }
 
-            // Show loading message
-            var loadingModal = $('<div>', {
-                'class': 'modal fade',
-                'id': 'loadingModal',
-                'tabindex': '-1',
-                'role': 'dialog',
-                'aria-hidden': 'true',
-                'data-backdrop': 'static',
-                'data-keyboard': 'false'
-            }).append(
-                $('<div>', {'class': 'modal-dialog modal-dialog-centered'}).append(
-                    $('<div>', {'class': 'modal-content'}).append(
-                        $('<div>', {'class': 'modal-body text-center'}).append(
-                            $('<div>', {'class': 'spinner-border text-primary mb-3', 'role': 'status'}).append(
-                                $('<span>', {'class': 'sr-only'}).text('Loading...')
+            // Check if sample count > 100 to determine if we should email results
+            var shouldEmailResults = filteredSamples.length > 100;
+            var userEmail = "{{ user.email|default:user.username }}";
+
+            // Show loading message or email notification based on sample count
+            var loadingModal;
+            if (shouldEmailResults) {
+                // Show email notification message for large downloads
+                // Track if form has been submitted or cancelled
+                var formSubmitted = false;
+                var cancelled = false;
+                
+                // Function to handle cancel
+                var cancelEmailModal = function(e) {
+                    console.log('Cancel button clicked!', e);
+                    if (!formSubmitted && !cancelled) {
+                        console.log('Cancelling download request');
+                        cancelled = true;
+                        $('#loadingModal').modal('hide');
+                        // Clean up after animation
+                        setTimeout(function() {
+                            $('#loadingModal').remove();
+                            $('.modal-backdrop').remove();
+                            $('body').removeClass('modal-open');
+                        }, 300);
+                    }
+                };
+                
+                // Function to handle send confirmation
+                var sendEmailLink = function(e) {
+                    console.log('Send Link button clicked!', e);
+                    if (!formSubmitted && !cancelled) {
+                        console.log('User confirmed - sending email link');
+                        formSubmitted = true;
+                        
+                        // Update modal to show "sending" state
+                        $('#loadingModal .modal-body').html(
+                            $('<div>').append(
+                                $('<div>', {'class': 'spinner-border text-primary mb-3', 'role': 'status'}).append(
+                                    $('<span>', {'class': 'sr-only'}).text('Sending...')
+                                ),
+                                $('<h5>').text('Sending email link...'),
+                                $('<p>').text('Please wait while we process your request.'),
+                                $('<p>', {'class': 'text-muted small mt-3'}).html('<i class="fas fa-info-circle"></i> You can navigate away from this page. The link will be emailed to you.')
+                            )
+                        );
+                        
+                        // Replace buttons with a Close button
+                        var closeBtn = $('<button>', {
+                            'type': 'button',
+                            'class': 'btn btn-secondary'
+                        }).text('Close').on('click', function() {
+                            $('#loadingModal').modal('hide');
+                            setTimeout(function() {
+                                $('#loadingModal').remove();
+                                $('.modal-backdrop').remove();
+                                $('body').removeClass('modal-open');
+                            }, 300);
+                        });
+                        $('#loadingModal .modal-footer').html(closeBtn);
+                        
+                        // Prepare form data for AJAX submission
+                        var formData = new FormData();
+                        formData.append('csrfmiddlewaretoken', getCookie('csrftoken'));
+                        
+                        // Add all form inputs to formData
+                        filteredSamples.forEach(function(sample) {
+                            formData.append('samples', sample);
+                        });
+                        formData.append('is_private', {% if project.private %}'1'{% else %}'0'{% endif %});
+                        formData.append('emailResults', 'true');
+                        
+                        // Submit via AJAX instead of form submission
+                        $.ajax({
+                            url: '/batch-sample-download/',
+                            type: 'POST',
+                            data: formData,
+                            processData: false,
+                            contentType: false,
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            success: function(response, status, xhr) {
+                                // Email was sent - update modal to show success
+                                console.log('Email request successful');
+                                $('#loadingModal .modal-body').html(
+                                    $('<div>').append(
+                                        $('<i>', {'class': 'fas fa-check-circle fa-3x text-success mb-3'}),
+                                        $('<h5>').text('Email sent successfully!'),
+                                        $('<p>').text('Check your email for the download link.'),
+                                        $('<p>', {'class': 'text-muted small'}).text('The link will be valid for 7 days.')
+                                    )
+                                );
+                                // Auto-close the modal after 90 seconds
+                                setTimeout(function() {
+                                    $('#loadingModal').modal('hide');
+                                    setTimeout(function() {
+                                        $('#loadingModal').remove();
+                                        $('.modal-backdrop').remove();
+                                        $('body').removeClass('modal-open');
+                                    }, 300);
+                                }, 90000); // 90 seconds
+                            },
+                            error: function(xhr, status, error) {
+                                console.log('AJAX request ended with status:', status, 'error:', error);
+                                
+                                // Check if this is a timeout or connection issue (server still processing)
+                                if (status === 'timeout' || status === 'error' || xhr.status === 0) {
+                                    // Timeout or connection closed - server is still processing
+                                    console.log('Connection timeout/closed - server is still processing');
+                                    $('#loadingModal .modal-body').html(
+                                        $('<div>').append(
+                                            $('<i>', {'class': 'fas fa-hourglass-half fa-3x text-info mb-3'}),
+                                            $('<h5>').text('Processing your request...'),
+                                            $('<p>').text('Your download request is being processed on the server.'),
+                                            $('<p>').text('You will receive an email with the download link when it\'s ready.'),
+                                            $('<p>', {'class': 'text-muted small mt-3'}).html('<i class="fas fa-info-circle"></i> The link will be valid for 7 days.')
+                                        )
+                                    );
+                                } else {
+                                    // Actual error from server
+                                    console.error('Email request failed with server error:', error);
+                                    $('#loadingModal .modal-body').html(
+                                        $('<div>').append(
+                                            $('<i>', {'class': 'fas fa-exclamation-circle fa-3x text-danger mb-3'}),
+                                            $('<h5>').text('Error sending email'),
+                                            $('<p>').text('There was an error processing your download request. Please try again.')
+                                        )
+                                    );
+                                }
+                                
+                                // Auto-close the modal after 90 seconds
+                                setTimeout(function() {
+                                    $('#loadingModal').modal('hide');
+                                    setTimeout(function() {
+                                        $('#loadingModal').remove();
+                                        $('.modal-backdrop').remove();
+                                        $('body').removeClass('modal-open');
+                                    }, 300);
+                                }, 90000); // 90 seconds
+                            }
+                        });
+                    }
+                };
+                
+                // Create close button for header
+                var closeBtn = $('<button>', {
+                    'type': 'button',
+                    'class': 'close',
+                    'aria-label': 'Close'
+                }).append(
+                    $('<span>', {'aria-hidden': 'true'}).html('&times;')
+                ).on('click', cancelEmailModal);
+                
+                // Create Cancel button
+                var cancelBtn = $('<button>', {
+                    'type': 'button',
+                    'class': 'btn btn-secondary'
+                }).text('Cancel').on('click', cancelEmailModal);
+                
+                // Create Send Link button
+                var sendBtn = $('<button>', {
+                    'type': 'button',
+                    'class': 'btn btn-primary'
+                }).text('Send Link').on('click', sendEmailLink);
+                
+                console.log('Modal buttons created with handlers attached');
+                
+                loadingModal = $('<div>', {
+                    'class': 'modal fade',
+                    'id': 'loadingModal',
+                    'tabindex': '-1',
+                    'role': 'dialog',
+                    'aria-hidden': 'true',
+                    'data-backdrop': 'static',
+                    'data-keyboard': 'false'
+                }).append(
+                    $('<div>', {'class': 'modal-dialog modal-dialog-centered'}).append(
+                        $('<div>', {'class': 'modal-content'}).append(
+                            $('<div>', {'class': 'modal-header'}).append(
+                                $('<h5>', {'class': 'modal-title'}).text('Email Download Link'),
+                                closeBtn
                             ),
-                            $('<h5>').text('Gathering samples, please wait.'),
-                            $('<p>').text('This can take a few minutes for large downloads...')
+                            $('<div>', {'class': 'modal-body text-center'}).append(
+                                $('<i>', {'class': 'fas fa-envelope fa-3x text-primary mb-3'}),
+                                $('<p>').html('You have selected <strong>' + filteredSamples.length + ' samples</strong>.'),
+                                $('<p>').html('Due to the large number of samples, a download link will be emailed to:<br><strong>' + userEmail + '</strong>'),
+                                $('<p>', {'class': 'text-muted small mt-3'}).text('The link will be valid for 7 days.')
+                            ),
+                            $('<div>', {'class': 'modal-footer'}).append(
+                                cancelBtn,
+                                sendBtn
+                            )
                         )
                     )
-                )
-            );
+                );
+                
+                // Store state flags
+                loadingModal.data('formSubmitted', false);
+                loadingModal.data('cancelled', false);
+            } else {
+                // Show standard loading message for immediate downloads
+                loadingModal = $('<div>', {
+                    'class': 'modal fade',
+                    'id': 'loadingModal',
+                    'tabindex': '-1',
+                    'role': 'dialog',
+                    'aria-hidden': 'true'
+                }).append(
+                    $('<div>', {'class': 'modal-dialog modal-dialog-centered'}).append(
+                        $('<div>', {'class': 'modal-content'}).append(
+                            $('<div>', {'class': 'modal-header'}).append(
+                                $('<h5>', {'class': 'modal-title'}).text('Preparing Download'),
+                                $('<button>', {
+                                    'type': 'button',
+                                    'class': 'close',
+                                    'data-dismiss': 'modal',
+                                    'aria-label': 'Close'
+                                }).append(
+                                    $('<span>', {'aria-hidden': 'true'}).html('&times;')
+                                )
+                            ),
+                            $('<div>', {'class': 'modal-body text-center'}).append(
+                                $('<div>', {'class': 'spinner-border text-primary mb-3', 'role': 'status'}).append(
+                                    $('<span>', {'class': 'sr-only'}).text('Loading...')
+                                ),
+                                $('<h5>').text('Gathering samples, please wait.'),
+                                $('<p>').text('This can take a few minutes for large downloads...')
+                            ),
+                            $('<div>', {'class': 'modal-footer'}).append(
+                                $('<button>', {
+                                    'type': 'button',
+                                    'class': 'btn btn-secondary',
+                                    'data-dismiss': 'modal'
+                                }).text('Close')
+                            )
+                        )
+                    )
+                );
+            }
 
             $('body').append(loadingModal);
-            $('#loadingModal').modal('show');
 
             // Create a form for submission
             var form = $('<form>', {
@@ -140,17 +351,41 @@
                 'value': {% if project.private %}'1'{% else %}'0'{% endif %}
             }));
 
-            // Submit the form
-            $('body').append(form);
-            form.submit();
-
-            // Hide the loading modal after a short delay to allow download to start
-            setTimeout(function() {
-                $('#loadingModal').modal('hide');
-                $('#loadingModal').remove();
-                $('.modal-backdrop').remove();
-                $('body').removeClass('modal-open');
-            }, 10000);
+            // Add emailResults flag if sample count > 100
+            if (shouldEmailResults) {
+                form.append($('<input>', {
+                    'type': 'hidden',
+                    'name': 'emailResults',
+                    'value': 'true'
+                }));
+            }
+            
+            // Handle form submission differently for email vs immediate downloads
+            if (shouldEmailResults) {
+                // For email downloads: show modal and wait for user to click Send Link or Cancel
+                // The submission is handled by the sendEmailLink function attached to the button
+                
+                // Show the modal - backdrop is static to prevent accidental dismissal
+                console.log('Showing email confirmation modal');
+                $('#loadingModal').modal('show');
+            } else {
+                // For immediate downloads: show modal and submit right away
+                $('#loadingModal').modal('show');
+                
+                $('body').append(form);
+                form.submit();
+                
+                // Give the download a moment to start, then close the modal
+                setTimeout(function() {
+                    $('#loadingModal').modal('hide');
+                    // Clean up the modal from DOM after it's hidden
+                    setTimeout(function() {
+                        $('#loadingModal').remove();
+                        $('.modal-backdrop').remove();
+                        $('body').removeClass('modal-open');
+                    }, 300); // Wait for Bootstrap's fade animation
+                }, 10000); // Keep modal visible for 10 seconds so user sees it
+            }
         });
     } );
     $(document).ready( function () {
@@ -224,6 +459,61 @@
     // Call the formatDates function when the page is loaded
     document.addEventListener('DOMContentLoaded', formatDates);
 
+    // Description truncation and toggle
+    document.addEventListener('DOMContentLoaded', function() {
+        const fullDescription = "{{ project.description|escapejs }}";
+        const descriptionContainer = document.getElementById('description-container');
+        const descriptionShort = document.getElementById('description-short');
+        const descriptionFull = document.getElementById('description-full');
+        const descriptionToggle = document.getElementById('description-toggle');
+        
+        if (!fullDescription || fullDescription.trim() === '') {
+            return;
+        }
+        
+        const maxLength = 70;
+        
+        // If description is 70 characters or less, display it normally
+        if (fullDescription.length <= maxLength) {
+            descriptionShort.textContent = fullDescription;
+            descriptionFull.style.display = 'none';
+            descriptionToggle.style.display = 'none';
+        } else {
+            // Description is longer than 70 characters, truncate at word boundary
+            let truncated = fullDescription.substring(0, maxLength);
+            
+            // Find the last space before position 70 to avoid cutting words
+            const lastSpace = truncated.lastIndexOf(' ');
+            if (lastSpace > 0) {
+                truncated = truncated.substring(0, lastSpace);
+            }
+            
+            // Set the truncated text
+            descriptionShort.textContent = truncated + '... ';
+            descriptionToggle.textContent = '(more)';
+            descriptionToggle.style.display = 'inline';
+            descriptionFull.style.display = 'none';
+        }
+    });
+    
+    function toggleDescription() {
+        const descriptionShort = document.getElementById('description-short');
+        const descriptionFull = document.getElementById('description-full');
+        const descriptionToggle = document.getElementById('description-toggle');
+        
+        if (descriptionFull.style.display === 'none') {
+            // Expand
+            descriptionShort.style.display = 'none';
+            descriptionFull.style.display = 'inline';
+            descriptionToggle.textContent = ' (less)';
+        } else {
+            // Collapse
+            descriptionShort.style.display = 'inline';
+            descriptionFull.style.display = 'none';
+            descriptionToggle.textContent = '(more)';
+        }
+    }
+
     function downloadSummaryTable() {
         // Add wait cursor class to body
         document.body.classList.add('wait-cursor');
@@ -277,7 +567,7 @@
         // Remove wait cursor after delay
         setTimeout(function() {
             document.body.classList.remove('wait-cursor');
-        }, 2000);
+        }, 6000);
         
         // Reload the page after a short delay to ensure the download starts
 
@@ -427,7 +717,11 @@
         {% endif %}
 
         <br>
-        <h5>Description: <span style="font-weight: 200">{{ project.description }}</span></h5>
+        <h5>Description: <span id="description-container" style="font-weight: 200">
+            <span id="description-short"></span>
+            <span id="description-full" style="display: none;">{{ project.description }}</span>
+            <a href="javascript:void(0);" id="description-toggle" style="font-style: italic; display: none;" onclick="toggleDescription()"></a>
+        </span></h5>
         <h5>Publication link: <span style="font-weight: 200">{{ project.publication_link|escape|replace_urls|safe }}</span></h5>
         {% if not is_empty_project %}
         <h5>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h5>
@@ -441,29 +735,75 @@
     </div>
 
     {% if not is_empty_project %}
-    <div class="col-md-3">
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px;"
+    <div class="col-md-3" style="text-align:left;">
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; width: 205px; display: block;"
            onclick="downloadAndReload();">
             <i class="fas fa-download"></i> Download Project
         </a>
 
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer;"
+        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer; width: 205px; display: block;"
            onclick="downloadSummaryTable();">
             <i class="fas fa-download"></i> Download Summary
         </a>
-        {% if  project.private %}Visibility: <b>Private</b>{% endif %}
-        <p><b>Project Members:</b> {% for person in project.project_members %}
-            {{ person }}
-        {% endfor %}
-        </p>
+        {% if  project.private %}<div style="">Visibility: <b>Private</b></div>{% endif %}
+        <div id="project-members-accordion" style="margin-bottom: 15px; ">
+            <style>
+                .members-toggle:not(.expanded)::before,
+                .members-toggle-empty:not(.expanded)::before {
+                    content: "";
+                    display: inline-block;
+                    border-style: solid;
+                    border-width: 0.4em 0 0.4em 0.4em;
+                    border-color: transparent transparent transparent #000;
+                    margin-right: 0.5em;
+                    transform: rotate(0deg);
+                    vertical-align: middle;
+                }
 
+                .members-toggle.expanded::before,
+                .members-toggle-empty.expanded::before {
+                    content: "";
+                    display: inline-block;
+                    border-style: solid;
+                    border-width: 0.4em 0 0.4em 0.4em;
+                    border-color: transparent transparent transparent #000;
+                    margin-right: 0.5em;
+                    transform: rotate(90deg);
+                    vertical-align: middle;
+                }
+            </style>
+            <div style="display: inline-block; text-align: left;">
+                <span class="members-toggle" onclick="toggleMembers()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
+            </div>
+            <div id="members-list" style="display: none; margin-top: 8px; text-align: left; width: 205px;">
+                {{ project.project_members|join:", " }}
+            </div>
+        </div>
+        <script>
+        function toggleMembers() {
+            var list = document.getElementById('members-list');
+            var toggle = document.querySelector('.members-toggle');
+            
+            if (list.style.display === 'none') {
+                list.style.display = 'block';
+                toggle.classList.add('expanded');
+            } else {
+                list.style.display = 'none';
+                toggle.classList.remove('expanded');
+            }
+        }
+        </script>
+
+       
         {% if user.is_authenticated and not is_project_member %}
-        <div style="margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 5px;">
+        <div style="margin-top: 10px; border-radius: 5px;">
+            <div style="display: inline-block; text-align: left;">
             <label style="cursor: pointer; user-select: none;">
                 <input type="checkbox" id="subscription-checkbox" style="margin-right: 5px;">
                 <span id="subscription-label">Subscribe to project updates</span>
             </label>
-            <div id="subscription-message" style="margin-top: 5px; font-size: 0.9em;"></div>
+            <div id="subscription-message" style="margin-top: 5px; "></div>
+            </div>
         </div>
         <script>
         $(document).ready(function() {
@@ -530,8 +870,8 @@
         }
         </script>
         {% endif %}
-
-        <div id = "project_statistics"> Views: {{ views }} | Downloads: <span id = 'downloads'>{{downloads}}</span></div>
+          <div id="project_statistics" style="text-align:left;"><div style="display: inline-block; text-align: left;">Views: {{ views }} | Downloads: <span id='downloads'>{{downloads}}</span></div></div>
+       
     </div>
     
     <div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; display:none;">
@@ -556,10 +896,28 @@
     {% else %}
         <div class="col-md-3">
         {% if  project.private %}Visibility: <b>Private</b>{% endif %}
-        <p><b>Project Members:</b> {% for person in project.project_members %}
-            {{ person }}
-        {% endfor %}
-        </p>
+        <div id="project-members-accordion-empty" style="margin-bottom: 15px;">
+            <div>
+                <span class="members-toggle-empty" onclick="toggleMembersEmpty()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
+            </div>
+            <div id="members-list-empty" style="display: none; margin-top: 8px;">
+                {{ project.project_members|join:", " }}
+            </div>
+        </div>
+        <script>
+        function toggleMembersEmpty() {
+            var list = document.getElementById('members-list-empty');
+            var toggle = document.querySelector('.members-toggle-empty');
+            
+            if (list.style.display === 'none') {
+                list.style.display = 'block';
+                toggle.classList.add('expanded');
+            } else {
+                list.style.display = 'none';
+                toggle.classList.remove('expanded');
+            }
+        }
+        </script>
 
         </div>
         <div class="col-md-12 text-center" style="margin-top: 50px; margin-bottom: 50px;">
