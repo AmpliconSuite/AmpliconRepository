@@ -246,30 +246,43 @@
                 const willBeVisible = filterSet.has(projectId) && filterSet.size > 0;
 
                 if (!willBeVisible) {
-                    // Row is being hidden - always uncheck it
-                    checkbox.prop('checked', false);
-                    // Remove from selected samples array
-                    if (isPrivate) {
-                        privateSelectedSamples = privateSelectedSamples.filter(item => item !== key);
-                    } else {
-                        publicSelectedSamples = publicSelectedSamples.filter(item => item !== key);
+                    // Row is being hidden - uncheck it if checked
+                    const wasChecked = checkbox.is(':checked');
+                    if (wasChecked) {
+                        checkbox.prop('checked', false);
+                        // Decrement count for this sample
+                        if (isPrivate) {
+                            const currentCount = privateSelectedSamples.get(key) || 0;
+                            if (currentCount <= 1) {
+                                privateSelectedSamples.delete(key);
+                            } else {
+                                privateSelectedSamples.set(key, currentCount - 1);
+                            }
+                        } else {
+                            const currentCount = publicSelectedSamples.get(key) || 0;
+                            if (currentCount <= 1) {
+                                publicSelectedSamples.delete(key);
+                            } else {
+                                publicSelectedSamples.set(key, currentCount - 1);
+                            }
+                        }
                     }
                 } else if (willBeVisible && isSelectAllChecked) {
                     // Row is being shown and "select all" is checked
-                    // Check the checkbox for ALL visible rows (not just current page)
-                    checkbox.prop('checked', true);
-                    // Add to selected samples array if not already there
-                    if (isPrivate) {
-                        if (!privateSelectedSamples.includes(key)) {
-                            privateSelectedSamples.push(key);
-                        }
-                    } else {
-                        if (!publicSelectedSamples.includes(key)) {
-                            publicSelectedSamples.push(key);
+                    const wasChecked = checkbox.is(':checked');
+                    if (!wasChecked) {
+                        checkbox.prop('checked', true);
+                        // Increment count for this sample
+                        if (isPrivate) {
+                            const currentCount = privateSelectedSamples.get(key) || 0;
+                            privateSelectedSamples.set(key, currentCount + 1);
+                        } else {
+                            const currentCount = publicSelectedSamples.get(key) || 0;
+                            publicSelectedSamples.set(key, currentCount + 1);
                         }
                     }
                 }
-                // If willBeVisible && !isSelectAllChecked: do nothing, keep current state (unchecked)
+                // If willBeVisible && !isSelectAllChecked: do nothing, keep current state
             });
 
             // Redraw the table to apply filters
@@ -432,9 +445,10 @@
         });
 
         // Batch sample download functionality
-        // Variables to track selection
-        let publicSelectedSamples = [];
-        let privateSelectedSamples = [];
+        // Variables to track selection - use Maps to count checkboxes per sample
+        // Key: "projectId:sampleName", Value: count of checked checkboxes for that sample
+        let publicSelectedSamples = new Map();
+        let privateSelectedSamples = new Map();
 
         // Get references to the DataTables instances
         const publicTable = $('#samples-tab table').DataTable();
@@ -442,14 +456,14 @@
 
         // Function to update selected count and button state for public samples
         function updatePublicSelection() {
-            const count = publicSelectedSamples.length;
+            const count = publicSelectedSamples.size;
             $('#public-selected-count').text(count + ' sample' + (count !== 1 ? 's' : '') + ' selected');
             $('#download-public-selected').prop('disabled', count === 0);
         }
 
         // Function to update selected count and button state for private samples
         function updatePrivateSelection() {
-            const count = privateSelectedSamples.length;
+            const count = privateSelectedSamples.size;
             $('#private-selected-count').text(count + ' sample' + (count !== 1 ? 's' : '') + ' selected');
             $('#download-private-selected').prop('disabled', count === 0);
         }
@@ -461,11 +475,18 @@
             const key = `${projectId}:${sampleName}`;
 
             if ($(this).is(':checked')) {
-                if (!publicSelectedSamples.includes(key)) {
-                    publicSelectedSamples.push(key);
-                }
+                // Increment the count for this sample
+                const currentCount = publicSelectedSamples.get(key) || 0;
+                publicSelectedSamples.set(key, currentCount + 1);
             } else {
-                publicSelectedSamples = publicSelectedSamples.filter(item => item !== key);
+                // Decrement the count for this sample
+                const currentCount = publicSelectedSamples.get(key) || 0;
+                if (currentCount <= 1) {
+                    // Remove from map if this was the last checkbox
+                    publicSelectedSamples.delete(key);
+                } else {
+                    publicSelectedSamples.set(key, currentCount - 1);
+                }
             }
 
             updatePublicSelection();
@@ -478,11 +499,18 @@
             const key = `${projectId}:${sampleName}`;
 
             if ($(this).is(':checked')) {
-                if (!privateSelectedSamples.includes(key)) {
-                    privateSelectedSamples.push(key);
-                }
+                // Increment the count for this sample
+                const currentCount = privateSelectedSamples.get(key) || 0;
+                privateSelectedSamples.set(key, currentCount + 1);
             } else {
-                privateSelectedSamples = privateSelectedSamples.filter(item => item !== key);
+                // Decrement the count for this sample
+                const currentCount = privateSelectedSamples.get(key) || 0;
+                if (currentCount <= 1) {
+                    // Remove from map if this was the last checkbox
+                    privateSelectedSamples.delete(key);
+                } else {
+                    privateSelectedSamples.set(key, currentCount - 1);
+                }
             }
 
             updatePrivateSelection();
@@ -491,7 +519,7 @@
         // Public samples - Select All button using DataTables API
         $('#select-all-public').on('click', function() {
             // Clear current selection
-            publicSelectedSamples = [];
+            publicSelectedSamples.clear();
 
             // Process all rows, not just visible ones
             publicTable.rows({ search: 'applied' }).every(function(rowIdx) {
@@ -502,7 +530,9 @@
 
                 if (projectId && sampleName) {
                     const key = `${projectId}:${sampleName}`;
-                    publicSelectedSamples.push(key);
+                    // Increment count for this sample (to track multiple checkboxes per sample)
+                    const currentCount = publicSelectedSamples.get(key) || 0;
+                    publicSelectedSamples.set(key, currentCount + 1);
                     checkbox.prop('checked', true);
                 }
             });
@@ -515,7 +545,7 @@
 
         // Public samples - Deselect All button
         $('#deselect-all-public').on('click', function() {
-            publicSelectedSamples = [];
+            publicSelectedSamples.clear();
 
             // Uncheck all checkboxes, using DataTables API
             publicTable.rows().every(function(rowIdx) {
@@ -530,7 +560,7 @@
         // Private samples - Select All button using DataTables API
         $('#select-all-private').on('click', function() {
             // Clear current selection
-            privateSelectedSamples = [];
+            privateSelectedSamples.clear();
 
             // Process all rows, not just visible ones
             privateTable.rows({ search: 'applied' }).every(function(rowIdx) {
@@ -541,7 +571,9 @@
 
                 if (projectId && sampleName) {
                     const key = `${projectId}:${sampleName}`;
-                    privateSelectedSamples.push(key);
+                    // Increment count for this sample (to track multiple checkboxes per sample)
+                    const currentCount = privateSelectedSamples.get(key) || 0;
+                    privateSelectedSamples.set(key, currentCount + 1);
                     checkbox.prop('checked', true);
                 }
             });
@@ -554,7 +586,7 @@
 
         // Private samples - Deselect All button
         $('#deselect-all-private').on('click', function() {
-            privateSelectedSamples = [];
+            privateSelectedSamples.clear();
 
             // Uncheck all checkboxes, using DataTables API
             privateTable.rows().every(function(rowIdx) {
@@ -572,14 +604,24 @@
             publicTable.rows({ search: 'applied' }).every(function() {
                 const $row = $(this.node());
                 const checkbox = $row.find('.public-sample-checkbox');
+                const wasChecked = checkbox.is(':checked');
                 checkbox.prop('checked', isChecked);
                 const projectId = checkbox.data('project-id');
                 const sampleName = checkbox.data('sample-name');
                 const key = `${projectId}:${sampleName}`;
-                if (isChecked) {
-                    if (!publicSelectedSamples.includes(key)) publicSelectedSamples.push(key);
-                } else {
-                    publicSelectedSamples = publicSelectedSamples.filter(item => item !== key);
+                
+                if (isChecked && !wasChecked) {
+                    // Checkbox being checked - increment count
+                    const currentCount = publicSelectedSamples.get(key) || 0;
+                    publicSelectedSamples.set(key, currentCount + 1);
+                } else if (!isChecked && wasChecked) {
+                    // Checkbox being unchecked - decrement count
+                    const currentCount = publicSelectedSamples.get(key) || 0;
+                    if (currentCount <= 1) {
+                        publicSelectedSamples.delete(key);
+                    } else {
+                        publicSelectedSamples.set(key, currentCount - 1);
+                    }
                 }
             });
             updatePublicSelection();
@@ -591,14 +633,24 @@
             privateTable.rows({ search: 'applied' }).every(function() {
                 const $row = $(this.node());
                 const checkbox = $row.find('.private-sample-checkbox');
+                const wasChecked = checkbox.is(':checked');
                 checkbox.prop('checked', isChecked);
                 const projectId = checkbox.data('project-id');
                 const sampleName = checkbox.data('sample-name');
                 const key = `${projectId}:${sampleName}`;
-                if (isChecked) {
-                    if (!privateSelectedSamples.includes(key)) privateSelectedSamples.push(key);
-                } else {
-                    privateSelectedSamples = privateSelectedSamples.filter(item => item !== key);
+                
+                if (isChecked && !wasChecked) {
+                    // Checkbox being checked - increment count
+                    const currentCount = privateSelectedSamples.get(key) || 0;
+                    privateSelectedSamples.set(key, currentCount + 1);
+                } else if (!isChecked && wasChecked) {
+                    // Checkbox being unchecked - decrement count
+                    const currentCount = privateSelectedSamples.get(key) || 0;
+                    if (currentCount <= 1) {
+                        privateSelectedSamples.delete(key);
+                    } else {
+                        privateSelectedSamples.set(key, currentCount - 1);
+                    }
                 }
             });
             updatePrivateSelection();
@@ -941,12 +993,16 @@
 
         // Public samples - Download Selected button
         $('#download-public-selected').on('click', function() {
-            downloadSelectedSamples(publicSelectedSamples, false);
+            // Convert Map keys to array for download function
+            const samplesArray = Array.from(publicSelectedSamples.keys());
+            downloadSelectedSamples(samplesArray, false);
         });
 
         // Private samples - Download Selected button
         $('#download-private-selected').on('click', function() {
-            downloadSelectedSamples(privateSelectedSamples, true);
+            // Convert Map keys to array for download function
+            const samplesArray = Array.from(privateSelectedSamples.keys());
+            downloadSelectedSamples(samplesArray, true);
         });
     });
 </script>

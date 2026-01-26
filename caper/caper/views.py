@@ -1824,13 +1824,25 @@ def gene_search_page(request):
         for sample in sample_data:
             project_id = sample['project_linkid']
             project_name = sample['project_name']
+            sample_name = sample.get('Sample_name')
+            
             if project_id not in project_counts:
                 project_counts[project_id] = {
                     'id': project_id,
                     'name': project_name,
-                    'count': 0
+                    'count': 0,
+                    'unique_samples': set()  # Track unique sample names
                 }
-            project_counts[project_id]['count'] += 1
+            
+            # Add sample to the set (automatically handles duplicates)
+            if sample_name:
+                project_counts[project_id]['unique_samples'].add(sample_name)
+        
+        # Convert sets to counts and remove the sets before returning
+        for project_id in project_counts:
+            project_counts[project_id]['count'] = len(project_counts[project_id]['unique_samples'])
+            del project_counts[project_id]['unique_samples']
+        
         # Sort by project name
         return sorted(project_counts.values(), key=lambda x: x['name'])
 
@@ -3710,8 +3722,11 @@ def search_results(request):
         # Count the number of matches for each category
         public_projects_count = len(search_results["public_projects"])
         private_projects_count = len(search_results["private_projects"])
-        public_samples_count = len(search_results["public_sample_data"])
-        private_samples_count = len(search_results["private_sample_data"])
+        # Count unique combinations of Sample_name and project_name
+        public_samples_count = len(set((sample.get('Sample_name'), sample.get('project_name')) 
+                                      for sample in search_results["public_sample_data"]))
+        private_samples_count = len(set((sample.get('Sample_name'), sample.get('project_name')) 
+                                       for sample in search_results["private_sample_data"]))
 
         # Calculate project filter data with counts
         def get_project_filters(sample_data):
@@ -3720,13 +3735,25 @@ def search_results(request):
             for sample in sample_data:
                 project_id = sample['project_linkid']
                 project_name = sample['project_name']
+                sample_name = sample.get('Sample_name')
+                
                 if project_id not in project_counts:
                     project_counts[project_id] = {
                         'id': project_id,
                         'name': project_name,
-                        'count': 0
+                        'count': 0,
+                        'unique_samples': set()  # Track unique sample names
                     }
-                project_counts[project_id]['count'] += 1
+                
+                # Add sample to the set (automatically handles duplicates)
+                if sample_name:
+                    project_counts[project_id]['unique_samples'].add(sample_name)
+            
+            # Convert sets to counts and remove the sets before returning
+            for project_id in project_counts:
+                project_counts[project_id]['count'] = len(project_counts[project_id]['unique_samples'])
+                del project_counts[project_id]['unique_samples']
+            
             # Sort by project name
             return sorted(project_counts.values(), key=lambda x: x['name'])
 
