@@ -442,6 +442,88 @@ def create_aggregate_df(project, samples):
     return aggregate, aggregate_save_fp
 
 
+def get_cached_chart(project, chart_type, generator_func, *args, **kwargs):
+    """
+    Get cached chart HTML or generate new one.
+    Cache key includes project ID and a version indicator (update_date or version number).
+    Cache is invalidated when project is updated.
+    
+    Args:
+        project: Project dictionary with _id and update_date/version
+        chart_type: Type of chart ('stackedbar', 'piechart', etc.)
+        generator_func: Function to generate chart if not cached
+        *args, **kwargs: Arguments to pass to generator_func
+    
+    Returns:
+        Chart HTML string
+    """
+    from django.core.cache import cache
+    import hashlib
+    
+    project_id = str(project['_id'])
+    # Use update_date as version indicator, or default to 'v1'
+    version = project.get('update_date', project.get('date', 'v1'))
+    # Create a hash of the version for shorter cache keys
+    version_hash = hashlib.md5(str(version).encode()).hexdigest()[:8]
+    
+    cache_key = f"chart_{project_id}_{chart_type}_{version_hash}"
+    
+    # Try to get from cache
+    try:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            logging.info(f"Chart cache HIT for {chart_type} (project {project_id})")
+            return cached
+    except Exception as e:
+        logging.debug(f"Cache unavailable for charts: {e}")
+    
+    # Cache miss - generate chart
+    logging.info(f"Chart cache MISS for {chart_type} (project {project_id})")
+    import time
+    t_start = time.time()
+    
+    chart_html = generator_func(*args, **kwargs)
+    
+    generation_time = time.time() - t_start
+    logging.info(f"[PERF] {chart_type} generation took {generation_time:.3f}s")
+    
+    # Cache for 1 hour (charts valid until project update)
+    try:
+        cache.set(cache_key, chart_html, 3600)
+        logging.debug(f"Cached {chart_type} chart for project {project_id}")
+    except Exception as e:
+        logging.debug(f"Could not cache chart: {e}")
+    
+    return chart_html
+
+
+def invalidate_project_charts(project_id):
+    """
+    Invalidate all cached charts for a project.
+    Call this when a project is updated.
+    
+    Args:
+        project_id: Project ID (string or ObjectId)
+    """
+    from django.core.cache import cache
+    
+    project_id = str(project_id)
+    
+    # Try to delete chart caches
+    # Note: This is a simple approach. For Redis, you could use delete_pattern
+    chart_types = ['stackedbar', 'piechart']
+    
+    for chart_type in chart_types:
+        # We can't know the exact version hash, so we rely on cache expiration
+        # or use Redis KEYS pattern matching if available
+        try:
+            # If using Redis, this would work:
+            # cache.delete_pattern(f"chart_{project_id}_{chart_type}_*")
+            logging.info(f"Chart cache invalidation requested for {chart_type} (project {project_id})")
+        except Exception as e:
+            logging.debug(f"Could not invalidate chart cache: {e}")
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -449,11 +531,18 @@ def project_page(request, project_name, message=''):
     will append sample_data, ref genome, feature_list to project json in the database
     for faster querying in the future.
     """
+    import time
+    t_total_start = time.time()
+    
+    logging.info(f"[PERF] Loading project page for {project_name}")
+    
     ## leaving this bit of code here
     ### this part will delete the metadata_stored field for a project
     ### is is only run IF we need to reset a project and reload the data
 
+    t_query = time.time()
     project = validate_project(get_one_project(project_name), project_name)
+    logging.info(f"[PERF] Project query took {time.time() - t_query:.3f}s")
     
     # Handle case where project doesn't exist or is invalid
     if project is None:
@@ -522,8 +611,17 @@ def project_page(request, project_name, message=''):
         collection_handle.update_one(query, new_values)
         logging.debug('Insert complete')
 
-        stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
-        pc_fig = piechart.pie_chart(aggregate, fa_cmap)
+        # Use cached chart generation
+        stackedbar_plot = get_cached_chart(
+            project, 'stackedbar',
+            stacked_bar.StackedBarChart,
+            aggregate, fa_cmap
+        )
+        pc_fig = get_cached_chart(
+            project, 'piechart',
+            piechart.pie_chart,
+            aggregate, fa_cmap
+        )
     else:
         logging.info('Already have the necessary lists in DB')
         samples = project['runs']
@@ -535,8 +633,17 @@ def project_page(request, project_name, message=''):
         else:
             aggregate = pd.read_csv(aggregate_df_fp)
             
-        stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
-        pc_fig = piechart.pie_chart(aggregate, fa_cmap)
+        # Use cached chart generation
+        stackedbar_plot = get_cached_chart(
+            project, 'stackedbar',
+            stacked_bar.StackedBarChart,
+            aggregate, fa_cmap
+        )
+        pc_fig = get_cached_chart(
+            project, 'piechart',
+            piechart.pie_chart,
+            aggregate, fa_cmap
+        )
 
     # check for an error when project was created, but don't override a message that was already sent in
     if not message:
@@ -549,6 +656,10 @@ def project_page(request, project_name, message=''):
     # DEBUG: Get delete and current flag values
     debug_delete_flag = project.get('delete', 'NOT SET')
     debug_current_flag = project.get('current', 'NOT SET')
+
+    # Log total page generation time
+    total_time = time.time() - t_total_start
+    logging.info(f"[PERF] Total project_page processing for {project_name}: {total_time:.3f}s")
 
     return render(request, "pages/project.html", {
         'project': project,
