@@ -1102,11 +1102,14 @@ def sample_page(request, project_name, sample_name):
     # Check if ec3D visualization is available
     ec3d_available = check_ec3d_available(project['project_name'], sample_name)
 
+    t_plot_start = time.time()
     if sample_data_processed[0]['AA_amplicon_number'] == None:
         plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
-
     else:
         plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
+    logging.info(f"[PERF] Plot generation in view took {time.time() - t_plot_start:.3f}s")
+    
+    if sample_data_processed[0]['AA_amplicon_number'] != None:
         for feature in sample_data_processed:
             reference_version.append(feature['Reference_version'])
             download_png.append({
