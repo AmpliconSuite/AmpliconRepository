@@ -180,6 +180,19 @@ logging.debug(f"SERVER_IDENTIFICATION_BANNER: {SERVER_IDENTIFICATION_BANNER}")
 
 SECRET_KEY = 'c4nc3r'
 
+# Cache configuration - File-based cache that works across Gunicorn workers
+# This allows chart caching and GridFS caching to work properly
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': '/tmp/django_cache',  # Use /tmp for cache storage
+        'TIMEOUT': 3600,  # Default timeout: 1 hour
+        'OPTIONS': {
+            'MAX_ENTRIES': 1000,  # Maximum number of cache entries
+        }
+    }
+}
+
 # The numeric mode to set newly-uploaded files to. The value should be
 # a mode you'd pass directly to os.chmod.
 FILE_UPLOAD_PERMISSIONS = 0o644
