@@ -14,16 +14,92 @@ class CaperConfig(AppConfig):
     def ready(self):
         """
         This method is called when Django starts up.
-        It syncs static files to S3 in a background thread.
+        It syncs static files to S3 in a background thread and ensures database indexes exist.
         """
         # Only run this once (Django loads apps multiple times in certain scenarios)
         if os.environ.get('RUN_MAIN') != 'true':
             return
         
+        # Ensure MongoDB indexes exist for optimal query performance
+        try:
+            self.ensure_indexes()
+            logger.info("Successfully ensured MongoDB indexes exist")
+        except Exception as e:
+            logger.warning(f"Failed to create MongoDB indexes: {str(e)}")
+        
         # Start the S3 sync in a background thread
         sync_thread = threading.Thread(target=self.sync_static_to_s3, daemon=True)
         sync_thread.start()
         logger.info("Started background thread for syncing static files to S3")
+
+    def ensure_indexes(self):
+        """
+        Ensure MongoDB indexes exist for optimal query performance.
+        Creates indexes if they don't exist, or does nothing if they already exist.
+        This is safe to call on every startup.
+        
+        Note: These indexes are compatible with both MongoDB and Amazon DocumentDB.
+        DocumentDB supports compound indexes with the same syntax as MongoDB.
+        """
+        try:
+            from .utils import collection_handle
+            
+            # Index 1: For public projects query on index page
+            # Query pattern: {'delete': False, 'current': True, 'private': False}
+            # This speeds up the main index page query for public projects
+            try:
+                collection_handle.create_index(
+                    [
+                        ('delete', 1),
+                        ('current', 1),
+                        ('private', 1),
+                        ('featured', 1)
+                    ],
+                    name='idx_index_public_projects',
+                    background=True  # Don't block other operations
+                )
+                logger.info("✓ Index 'idx_index_public_projects' ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'idx_index_public_projects': {str(e)}")
+            
+            # Index 2: For private projects query on index page
+            # Query pattern: {'delete': False, 'current': True, 'private': True, 'project_members': <user>}
+            # This speeds up queries for authenticated users' private projects
+            try:
+                collection_handle.create_index(
+                    [
+                        ('delete', 1),
+                        ('current', 1),
+                        ('private', 1),
+                        ('project_members', 1)
+                    ],
+                    name='idx_index_private_projects',
+                    background=True
+                )
+                logger.info("✓ Index 'idx_index_private_projects' ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'idx_index_private_projects': {str(e)}")
+            
+            # Index 3: For project lookups by _id and delete status
+            # This is used throughout the application
+            try:
+                collection_handle.create_index(
+                    [
+                        ('_id', 1),
+                        ('delete', 1)
+                    ],
+                    name='idx_project_id_delete',
+                    background=True
+                )
+                logger.info("✓ Index 'idx_project_id_delete' ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'idx_project_id_delete': {str(e)}")
+                
+        except Exception as e:
+            # Log but don't crash the application if index creation fails
+            logger.error(f"Error in ensure_indexes: {str(e)}", exc_info=True)
+            raise
+
 
     def sync_static_to_s3(self):
         """
