@@ -219,16 +219,10 @@ def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
 
 
 def get_one_sample(project_name, sample_name):
-    # Optimized: Use projection to only fetch fields needed for sample page
-    # Fields needed: _id, project_name, private, project_members, runs, ecDNA_context
+    # Optimized: Use projection to only exclude large fields not needed for sample page
+    # MongoDB doesn't allow mixing inclusion and exclusion (except for _id)
+    # So we exclude only the large unnecessary fields
     projection = {
-        'runs': 1,
-        '_id': 1,
-        'project_name': 1,
-        'private': 1,
-        'project_members': 1,
-        'ecDNA_context': 1,
-        # Explicitly exclude large fields
         'Oncogenes': 0,
         'Classification': 0,
         'sample_data': 0,
