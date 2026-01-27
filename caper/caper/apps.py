@@ -94,6 +94,36 @@ class CaperConfig(AppConfig):
                 logger.info("✓ Index 'idx_project_id_delete' ensured")
             except Exception as e:
                 logger.warning(f"Could not create index 'idx_project_id_delete': {str(e)}")
+            
+            # Index 4: For project lookups by alias_name
+            # Used in sample pages and project lookups
+            try:
+                collection_handle.create_index(
+                    [
+                        ('alias_name', 1),
+                        ('delete', 1)
+                    ],
+                    name='idx_project_alias_delete',
+                    background=True
+                )
+                logger.info("✓ Index 'idx_project_alias_delete' ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'idx_project_alias_delete': {str(e)}")
+            
+            # Index 5: For project lookups by project_name (fallback)
+            # Used when _id and alias lookups fail
+            try:
+                collection_handle.create_index(
+                    [
+                        ('project_name', 1),
+                        ('delete', 1)
+                    ],
+                    name='idx_project_name_delete',
+                    background=True
+                )
+                logger.info("✓ Index 'idx_project_name_delete' ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'idx_project_name_delete': {str(e)}")
                 
         except Exception as e:
             # Log but don't crash the application if index creation fails

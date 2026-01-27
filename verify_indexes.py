@@ -34,7 +34,9 @@ def verify_indexes():
     expected_indexes = {
         'idx_index_public_projects': ['delete', 'current', 'private', 'featured'],
         'idx_index_private_projects': ['delete', 'current', 'private', 'project_members'],
-        'idx_project_id_delete': ['_id', 'delete']
+        'idx_project_id_delete': ['_id', 'delete'],
+        'idx_project_alias_delete': ['alias_name', 'delete'],
+        'idx_project_name_delete': ['project_name', 'delete']
     }
     
     # Get all indexes
