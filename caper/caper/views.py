@@ -1069,8 +1069,14 @@ def add_metadata(request, project_id):
 
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
-    logging.info(f"Loading sample page for {sample_name}")
+    import time
+    t_total_start = time.time()
+    
+    logging.info(f"[PERF] Loading sample page for {sample_name}")
+    
+    t1 = time.time()
     project, sample_data, prev_sample, next_sample = get_one_sample(project_name, sample_name)
+    logging.info(f"[PERF] get_one_sample took {time.time() - t1:.3f}s")
     project_linkid = project['_id']
     if project['private'] and not is_user_a_project_member(project, request):
         return redirect('/accounts/login')
