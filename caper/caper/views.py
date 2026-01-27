@@ -262,7 +262,16 @@ def update_sample_counts(request):
 def index(request):
     # Base query for non-deleted projects
     base_query = {'delete': False, 'current': True}
-    projection = {'runs': 0}  # Exclude runs field from all queries
+    # Exclude large fields that aren't needed for the index page
+    projection = {
+        'runs': 0,
+        'Oncogenes': 0,
+        'Classification': 0,
+        'sample_data': 0,
+        'aggregate_df': 0,
+        'previous_versions': 0,
+        'tarfile': 0
+    }
 
     # Get public projects (including featured) in one query
     public_query = {**base_query, 'private': False}
