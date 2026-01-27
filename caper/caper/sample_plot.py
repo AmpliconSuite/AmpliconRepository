@@ -374,7 +374,13 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
                                 }
                                }
 
-        return fig.to_html(full_html=False, config=updated_config_dict, div_id='plotly_div')
+        plot_html = fig.to_html(full_html=False, config=updated_config_dict, div_id='plotly_div')
+        
+        # Log total plot generation time
+        total_plot_time = time.time() - t_plot_start
+        logging.info(f"[PERF] Plot generation complete for {sample_name}: {total_plot_time:.3f}s total")
+        
+        return plot_html
 
     else:
         plot = go.Figure(go.Scatter(x=[2], y = [2],

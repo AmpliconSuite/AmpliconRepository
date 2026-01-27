@@ -27,6 +27,13 @@ class CaperConfig(AppConfig):
         except Exception as e:
             logger.warning(f"Failed to create MongoDB indexes: {str(e)}")
         
+        # Verify cache backend is configured and working
+        try:
+            self.verify_cache_backend()
+            logger.info("Cache backend verified and ready for GridFS caching")
+        except Exception as e:
+            logger.warning(f"Cache backend verification failed: {str(e)}")
+        
         # Start the S3 sync in a background thread
         sync_thread = threading.Thread(target=self.sync_static_to_s3, daemon=True)
         sync_thread.start()
@@ -130,6 +137,61 @@ class CaperConfig(AppConfig):
             logger.error(f"Error in ensure_indexes: {str(e)}", exc_info=True)
             raise
 
+    def verify_cache_backend(self):
+        """
+        Verify that Django's cache backend is configured and working.
+        Tests basic cache operations needed for GridFS caching.
+        """
+        try:
+            from django.core.cache import cache
+            from django.conf import settings
+            
+            # Get cache configuration
+            cache_config = settings.CACHES.get('default', {})
+            backend = cache_config.get('BACKEND', 'Not configured')
+            
+            logger.info(f"Cache backend: {backend}")
+            
+            # Test cache operations
+            test_key = 'amplicon_cache_test'
+            test_value = 'cache_working'
+            
+            # Test SET
+            cache.set(test_key, test_value, 10)
+            
+            # Test GET
+            retrieved = cache.get(test_key)
+            
+            if retrieved == test_value:
+                logger.info("✓ Cache backend is working correctly")
+                
+                # Provide recommendations based on backend type
+                if 'locmem' in backend.lower() or 'dummycache' in backend.lower():
+                    logger.warning(
+                        "⚠️  Using in-memory cache (locmem). "
+                        "For production, consider using Redis or Memcached for better performance "
+                        "and persistence across server restarts."
+                    )
+                elif 'redis' in backend.lower():
+                    logger.info("✓ Using Redis cache - optimal for production")
+                elif 'memcached' in backend.lower():
+                    logger.info("✓ Using Memcached - good for production")
+                
+                # Clean up test key
+                cache.delete(test_key)
+            else:
+                logger.warning(
+                    f"⚠️  Cache test failed: expected '{test_value}', got '{retrieved}'. "
+                    "GridFS caching may not work correctly."
+                )
+                
+        except Exception as e:
+            logger.error(f"Error verifying cache backend: {str(e)}", exc_info=True)
+            logger.warning(
+                "Cache backend verification failed. GridFS caching will fall back to "
+                "direct database reads. Consider configuring Django's CACHES setting."
+            )
+            raise
 
     def sync_static_to_s3(self):
         """

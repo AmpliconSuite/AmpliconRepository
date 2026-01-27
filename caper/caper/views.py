@@ -1129,6 +1129,10 @@ def sample_page(request, project_name, sample_name):
     # Get ecDNA_context dictionary from project, default to empty dict if not present
     ecDNA_context = project.get('ecDNA_context', {})
     
+    # Log total page generation time
+    total_time = time.time() - t_total_start
+    logging.info(f"[PERF] Total sample_page processing for {sample_name}: {total_time:.3f}s")
+    
     return render(request, "pages/sample.html",
                   {'project': project,
                    'project_name': project_name,
