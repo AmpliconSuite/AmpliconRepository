@@ -445,11 +445,10 @@ def create_aggregate_df(project, samples):
 def get_cached_chart(project, chart_type, generator_func, *args, **kwargs):
     """
     Get cached chart HTML or generate new one.
-    Cache key includes project ID and a version indicator (update_date or version number).
-    Cache is invalidated when project is updated.
+    Cache key uses project ID only - charts are cached until manually invalidated.
     
     Args:
-        project: Project dictionary with _id and update_date/version
+        project: Project dictionary with _id
         chart_type: Type of chart ('stackedbar', 'piechart', etc.)
         generator_func: Function to generate chart if not cached
         *args, **kwargs: Arguments to pass to generator_func
@@ -458,28 +457,24 @@ def get_cached_chart(project, chart_type, generator_func, *args, **kwargs):
         Chart HTML string
     """
     from django.core.cache import cache
-    import hashlib
+    import time
     
     project_id = str(project['_id'])
-    # Use update_date as version indicator, or default to 'v1'
-    version = project.get('update_date', project.get('date', 'v1'))
-    # Create a hash of the version for shorter cache keys
-    version_hash = hashlib.md5(str(version).encode()).hexdigest()[:8]
-    
-    cache_key = f"chart_{project_id}_{chart_type}_{version_hash}"
+    # Use simple cache key without version - charts rarely change
+    # This maximizes cache hit rate for infrequent access patterns
+    cache_key = f"chart_{project_id}_{chart_type}"
     
     # Try to get from cache
     try:
         cached = cache.get(cache_key)
         if cached is not None:
-            logging.info(f"Chart cache HIT for {chart_type} (project {project_id})")
+            logging.info(f"[CACHE] Chart cache HIT for {chart_type} (project {project_id})")
             return cached
     except Exception as e:
-        logging.debug(f"Cache unavailable for charts: {e}")
+        logging.warning(f"Cache get failed for {cache_key}: {e}")
     
     # Cache miss - generate chart
-    logging.info(f"Chart cache MISS for {chart_type} (project {project_id})")
-    import time
+    logging.info(f"[CACHE] Chart cache MISS for {chart_type} (project {project_id}, key: {cache_key})")
     t_start = time.time()
     
     chart_html = generator_func(*args, **kwargs)
@@ -490,9 +485,9 @@ def get_cached_chart(project, chart_type, generator_func, *args, **kwargs):
     # Cache for 1 hour (charts valid until project update)
     try:
         cache.set(cache_key, chart_html, 3600)
-        logging.debug(f"Cached {chart_type} chart for project {project_id}")
+        logging.info(f"[CACHE] Cached {chart_type} chart for project {project_id} (key: {cache_key})")
     except Exception as e:
-        logging.debug(f"Could not cache chart: {e}")
+        logging.warning(f"Cache set failed for {cache_key}: {e}")
     
     return chart_html
 
@@ -509,16 +504,16 @@ def invalidate_project_charts(project_id):
     
     project_id = str(project_id)
     
-    # Try to delete chart caches
-    # Note: This is a simple approach. For Redis, you could use delete_pattern
+    # Delete specific chart caches
     chart_types = ['stackedbar', 'piechart']
     
     for chart_type in chart_types:
-        # We can't know the exact version hash, so we rely on cache expiration
-        # or use Redis KEYS pattern matching if available
+        cache_key = f"chart_{project_id}_{chart_type}"
         try:
-            # If using Redis, this would work:
-            # cache.delete_pattern(f"chart_{project_id}_{chart_type}_*")
+            cache.delete(cache_key)
+            logging.info(f"[CACHE] Invalidated {chart_type} chart cache for project {project_id}")
+        except Exception as e:
+            logging.warning(f"Could not invalidate chart cache {cache_key}: {e}")
             logging.info(f"Chart cache invalidation requested for {chart_type} (project {project_id})")
         except Exception as e:
             logging.debug(f"Could not invalidate chart cache: {e}")
