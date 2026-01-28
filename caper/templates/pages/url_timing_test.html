@@ -189,10 +189,8 @@
         <h1>URL Timing Test</h1>
         
         <div class="info">
-            <strong>Note:</strong> This tool measures the time it takes to fetch a URL.<br>
-            <strong>Direct mode:</strong> Tests URLs from the same origin (no CORS issues).<br>
-            <strong>Proxy mode:</strong> Check "Use Proxy" to test cross-origin URLs (e.g., test production from dev).
-            The proxy will forward requests with browser-like headers.
+            <strong>Note:</strong> This tool measures the time it takes to fetch a URL from the same origin.
+            Due to browser security (CORS), you can only test URLs from the same domain where this page is served.
         </div>
 
         <form id="timingForm">
@@ -207,13 +205,6 @@
                 <label for="iterationsInput">Number of Iterations:</label>
                 <input type="number" id="iterationsInput" name="iterations" 
                        value="10" min="1" max="100" required>
-            </div>
-            
-            <div class="form-group">
-                <label style="display: flex; align-items: center; font-weight: normal;">
-                    <input type="checkbox" id="useProxy" name="useProxy" style="width: auto; margin-right: 8px;">
-                    <span>Use Proxy (for testing cross-origin URLs like production from dev)</span>
-                </label>
             </div>
             
             <button type="submit" id="startBtn">Start Test</button>
@@ -475,7 +466,6 @@
         async function runTimingTest(url, iterations) {
             const timings = [];
             const errors = [];
-            const useProxy = document.getElementById('useProxy').checked;
 
             for (let i = 0; i < iterations; i++) {
                 if (shouldStop) {
@@ -488,44 +478,29 @@
                 document.getElementById('progressFill').textContent = progress + '%';
 
                 try {
-                    let duration;
-                    let responseOk;
-                    let statusCode;
+                    const startTime = performance.now();
+                    
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        cache: 'no-cache',
+                        headers: {
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        }
+                    });
 
-                    if (useProxy) {
-                        // Use proxy mode for cross-origin requests
-                        const result = await fetchViaProxy(url);
-                        duration = result.duration;
-                        responseOk = result.ok;
-                        statusCode = result.status;
-                    } else {
-                        // Use direct fetch for same-origin requests
-                        const startTime = performance.now();
-                        
-                        const response = await fetch(url, {
-                            method: 'GET',
-                            cache: 'no-cache',
-                            headers: {
-                                'Cache-Control': 'no-cache',
-                                'Pragma': 'no-cache'
-                            }
-                        });
+                    // Read the response to ensure full download
+                    await response.text();
 
-                        // Read the response to ensure full download
-                        await response.text();
+                    const endTime = performance.now();
+                    const duration = endTime - startTime;
 
-                        const endTime = performance.now();
-                        duration = endTime - startTime;
-                        responseOk = response.ok;
-                        statusCode = response.status;
-                    }
-
-                    if (responseOk) {
+                    if (response.ok) {
                         timings.push(duration);
                         addTimingToList(i + 1, duration, true);
                     } else {
-                        errors.push(`Request ${i + 1}: HTTP ${statusCode}`);
-                        addTimingToList(i + 1, duration, false, `HTTP ${statusCode}`);
+                        errors.push(`Request ${i + 1}: HTTP ${response.status}`);
+                        addTimingToList(i + 1, duration, false, `HTTP ${response.status}`);
                     }
                 } catch (error) {
                     errors.push(`Request ${i + 1}: ${error.message}`);
@@ -556,28 +531,6 @@
             }
         }
 
-        async function fetchViaProxy(url) {
-            const response = await fetch('/url-timing-proxy/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ url: url })
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Proxy request failed');
-            }
-
-            const data = await response.json();
-            
-            if (data.status === 0) {
-                throw new Error(data.error || 'Request failed');
-            }
-            
-            return data;
-        }
 
         function calculateStats(timings) {
             const sorted = [...timings].sort((a, b) => a - b);
