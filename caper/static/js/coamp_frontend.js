@@ -495,6 +495,16 @@ window.addEventListener('DOMContentLoaded', function () {
                 const popperRef = ele.popperRef();
                 // Create tooltip
                 const tooltip = tippyFactory(popperRef, content, theme);
+                
+                // Add event listener for close button after tooltip is shown
+                tooltip.popper.addEventListener('click', (event) => {
+                    if (event.target.classList.contains('tooltip-close-btn')) {
+                        ele.removeClass('highlighted');
+                        tooltip.hide();
+                        event.stopPropagation();
+                    }
+                });
+                
                 // Show/hide tooltip on click
                 ele.on('tap', () => {
                     ele.toggleClass('highlighted');
