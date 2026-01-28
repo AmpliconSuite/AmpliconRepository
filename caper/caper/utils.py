@@ -219,7 +219,46 @@ def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
 
 
 def get_one_sample(project_name, sample_name):
-    project = validate_project(get_one_project(project_name), project_name)
+    # Optimized: Use projection to only exclude large fields not needed for sample page
+    # MongoDB doesn't allow mixing inclusion and exclusion (except for _id)
+    # So we exclude only the large unnecessary fields
+    projection = {
+        'Oncogenes': 0,
+        'Classification': 0,
+        'sample_data': 0,
+        'aggregate_df': 0,
+        'previous_versions': 0,
+        'tarfile': 0
+    }
+    
+    # Fetch project with optimized projection
+    try:
+        project = collection_handle.find_one(
+            {'_id': ObjectId(project_name), 'delete': False},
+            projection
+        )
+        if project is None:
+            # Try by alias
+            project = collection_handle.find_one(
+                {'alias_name': project_name, 'delete': False},
+                projection
+            )
+        if project is None:
+            # Try by project name
+            project = collection_handle.find_one(
+                {'project_name': project_name, 'delete': False},
+                projection
+            )
+    except Exception:
+        # Fallback to old method if ObjectId conversion fails
+        project = collection_handle.find_one(
+            {'project_name': project_name, 'delete': False},
+            projection
+        )
+    
+    project = validate_project(project, project_name)
+    prepare_project_linkid(project)
+    
     # print("ID --- ", project['_id'])
     runs = project['runs']
     

@@ -14,16 +14,184 @@ class CaperConfig(AppConfig):
     def ready(self):
         """
         This method is called when Django starts up.
-        It syncs static files to S3 in a background thread.
+        It syncs static files to S3 in a background thread and ensures database indexes exist.
         """
         # Only run this once (Django loads apps multiple times in certain scenarios)
         if os.environ.get('RUN_MAIN') != 'true':
             return
         
+        # Ensure MongoDB indexes exist for optimal query performance
+        try:
+            self.ensure_indexes()
+            logger.info("Successfully ensured MongoDB indexes exist")
+        except Exception as e:
+            logger.warning(f"Failed to create MongoDB indexes: {str(e)}")
+        
+        # Verify cache backend is configured and working
+        try:
+            self.verify_cache_backend()
+            logger.info("Cache backend verified and ready for GridFS caching")
+        except Exception as e:
+            logger.warning(f"Cache backend verification failed: {str(e)}")
+        
         # Start the S3 sync in a background thread
         sync_thread = threading.Thread(target=self.sync_static_to_s3, daemon=True)
         sync_thread.start()
         logger.info("Started background thread for syncing static files to S3")
+
+    def ensure_indexes(self):
+        """
+        Ensure MongoDB indexes exist for optimal query performance.
+        Creates indexes if they don't exist, or does nothing if they already exist.
+        This is safe to call on every startup.
+        
+        Note: These indexes are compatible with both MongoDB and Amazon DocumentDB.
+        DocumentDB supports compound indexes with the same syntax as MongoDB.
+        """
+        try:
+            from .utils import collection_handle
+            
+            # Index 1: For public projects query on index page
+            # Query pattern: {'delete': False, 'current': True, 'private': False}
+            # This speeds up the main index page query for public projects
+            try:
+                collection_handle.create_index(
+                    [
+                        ('delete', 1),
+                        ('current', 1),
+                        ('private', 1),
+                        ('featured', 1)
+                    ],
+                    name='idx_index_public_projects',
+                    background=True  # Don't block other operations
+                )
+                logger.info("✓ Index 'idx_index_public_projects' ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'idx_index_public_projects': {str(e)}")
+            
+            # Index 2: For private projects query on index page
+            # Query pattern: {'delete': False, 'current': True, 'private': True, 'project_members': <user>}
+            # This speeds up queries for authenticated users' private projects
+            try:
+                collection_handle.create_index(
+                    [
+                        ('delete', 1),
+                        ('current', 1),
+                        ('private', 1),
+                        ('project_members', 1)
+                    ],
+                    name='idx_index_private_projects',
+                    background=True
+                )
+                logger.info("✓ Index 'idx_index_private_projects' ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'idx_index_private_projects': {str(e)}")
+            
+            # Index 3: For project lookups by _id and delete status
+            # This is used throughout the application
+            try:
+                collection_handle.create_index(
+                    [
+                        ('_id', 1),
+                        ('delete', 1)
+                    ],
+                    name='idx_project_id_delete',
+                    background=True
+                )
+                logger.info("✓ Index 'idx_project_id_delete' ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'idx_project_id_delete': {str(e)}")
+            
+            # Index 4: For project lookups by alias_name
+            # Used in sample pages and project lookups
+            try:
+                collection_handle.create_index(
+                    [
+                        ('alias_name', 1),
+                        ('delete', 1)
+                    ],
+                    name='idx_project_alias_delete',
+                    background=True
+                )
+                logger.info("✓ Index 'idx_project_alias_delete' ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'idx_project_alias_delete': {str(e)}")
+            
+            # Index 5: For project lookups by project_name (fallback)
+            # Used when _id and alias lookups fail
+            try:
+                collection_handle.create_index(
+                    [
+                        ('project_name', 1),
+                        ('delete', 1)
+                    ],
+                    name='idx_project_name_delete',
+                    background=True
+                )
+                logger.info("✓ Index 'idx_project_name_delete' ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'idx_project_name_delete': {str(e)}")
+                
+        except Exception as e:
+            # Log but don't crash the application if index creation fails
+            logger.error(f"Error in ensure_indexes: {str(e)}", exc_info=True)
+            raise
+
+    def verify_cache_backend(self):
+        """
+        Verify that Django's cache backend is configured and working.
+        Tests basic cache operations needed for GridFS caching.
+        """
+        try:
+            from django.core.cache import cache
+            from django.conf import settings
+            
+            # Get cache configuration
+            cache_config = settings.CACHES.get('default', {})
+            backend = cache_config.get('BACKEND', 'Not configured')
+            
+            logger.info(f"Cache backend: {backend}")
+            
+            # Test cache operations
+            test_key = 'amplicon_cache_test'
+            test_value = 'cache_working'
+            
+            # Test SET
+            cache.set(test_key, test_value, 10)
+            
+            # Test GET
+            retrieved = cache.get(test_key)
+            
+            if retrieved == test_value:
+                logger.info("✓ Cache backend is working correctly")
+                
+                # Provide recommendations based on backend type
+                if 'locmem' in backend.lower() or 'dummycache' in backend.lower():
+                    logger.warning(
+                        "⚠️  Using in-memory cache (locmem). "
+                        "For production, consider using Redis or Memcached for better performance "
+                        "and persistence across server restarts."
+                    )
+                elif 'redis' in backend.lower():
+                    logger.info("✓ Using Redis cache - optimal for production")
+                elif 'memcached' in backend.lower():
+                    logger.info("✓ Using Memcached - good for production")
+                
+                # Clean up test key
+                cache.delete(test_key)
+            else:
+                logger.warning(
+                    f"⚠️  Cache test failed: expected '{test_value}', got '{retrieved}'. "
+                    "GridFS caching may not work correctly."
+                )
+                
+        except Exception as e:
+            logger.error(f"Error verifying cache backend: {str(e)}", exc_info=True)
+            logger.warning(
+                "Cache backend verification failed. GridFS caching will fall back to "
+                "direct database reads. Consider configuring Django's CACHES setting."
+            )
+            raise
 
     def sync_static_to_s3(self):
         """

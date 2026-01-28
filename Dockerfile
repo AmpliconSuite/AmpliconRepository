@@ -108,6 +108,7 @@ RUN cd /srv  && \
 #############################################
 RUN mkdir -p /srv/logs/
 COPY ./run-manage-py.sh /srv/run-manage-py.sh
+COPY ./gunicorn_config.py /srv/gunicorn_config.py
 RUN apt-get update && apt-get install vim --yes
 
 # Create user if specified

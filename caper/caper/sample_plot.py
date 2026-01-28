@@ -59,11 +59,16 @@ def get_chrom_num(location: str):
 
 
 def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
+    """
+    Generates an interactive Plotly plot for a sample's amplicon data.
+    """
     # SET UP HANDLE
     # collection_handle = get_collection_handle(db_handle, 'projects')
     fs_handle = gridfs.GridFS(db_handle)
 
     start_time = time.time()
+    logging.info(f"[PERF] Starting plot generation for {sample_name}")
+    
     potential_ref_genomes = set()
     for item in sample:
         ## look for what reference genome is used
@@ -374,7 +379,13 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
                                 }
                                }
 
-        return fig.to_html(full_html=False, config=updated_config_dict, div_id='plotly_div')
+        plot_html = fig.to_html(full_html=False, config=updated_config_dict, div_id='plotly_div')
+        
+        # Log total plot generation time
+        total_plot_time = time.time() - start_time
+        logging.info(f"[PERF] Plot generation complete for {sample_name}: {total_plot_time:.3f}s total")
+        
+        return plot_html
 
     else:
         plot = go.Figure(go.Scatter(x=[2], y = [2],

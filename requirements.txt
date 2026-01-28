@@ -85,3 +85,4 @@ zipp==3.10.0
 genepattern-python==24.1
 AmpliconSuiteAggregator==2.1.3
 openpyxl
+gunicorn==21.2.0

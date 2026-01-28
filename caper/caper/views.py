@@ -262,7 +262,16 @@ def update_sample_counts(request):
 def index(request):
     # Base query for non-deleted projects
     base_query = {'delete': False, 'current': True}
-    projection = {'runs': 0}  # Exclude runs field from all queries
+    # Exclude large fields that aren't needed for the index page
+    projection = {
+        'runs': 0,
+        'Oncogenes': 0,
+        'Classification': 0,
+        'sample_data': 0,
+        'aggregate_df': 0,
+        'previous_versions': 0,
+        'tarfile': 0
+    }
 
     # Get public projects (including featured) in one query
     public_query = {**base_query, 'private': False}
@@ -433,6 +442,83 @@ def create_aggregate_df(project, samples):
     return aggregate, aggregate_save_fp
 
 
+def get_cached_chart(project, chart_type, generator_func, *args, **kwargs):
+    """
+    Get cached chart HTML or generate new one.
+    Cache key uses project ID only - charts are cached until manually invalidated.
+    
+    Args:
+        project: Project dictionary with _id
+        chart_type: Type of chart ('stackedbar', 'piechart', etc.)
+        generator_func: Function to generate chart if not cached
+        *args, **kwargs: Arguments to pass to generator_func
+    
+    Returns:
+        Chart HTML string
+    """
+    from django.core.cache import cache
+    import time
+    
+    project_id = str(project['_id'])
+    # Use simple cache key without version - charts rarely change
+    # This maximizes cache hit rate for infrequent access patterns
+    cache_key = f"chart_{project_id}_{chart_type}"
+    
+    # Try to get from cache
+    try:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            logging.info(f"[CACHE] Chart cache HIT for {chart_type} (project {project_id})")
+            return cached
+    except Exception as e:
+        logging.warning(f"Cache get failed for {cache_key}: {e}")
+    
+    # Cache miss - generate chart
+    logging.info(f"[CACHE] Chart cache MISS for {chart_type} (project {project_id}, key: {cache_key})")
+    t_start = time.time()
+    
+    chart_html = generator_func(*args, **kwargs)
+    
+    generation_time = time.time() - t_start
+    logging.info(f"[PERF] {chart_type} generation took {generation_time:.3f}s")
+    
+    # Cache for 1 hour (charts valid until project update)
+    try:
+        cache.set(cache_key, chart_html, 3600)
+        logging.info(f"[CACHE] Cached {chart_type} chart for project {project_id} (key: {cache_key})")
+    except Exception as e:
+        logging.warning(f"Cache set failed for {cache_key}: {e}")
+    
+    return chart_html
+
+
+def invalidate_project_charts(project_id):
+    """
+    Invalidate all cached charts for a project.
+    Call this when a project is updated.
+    
+    Args:
+        project_id: Project ID (string or ObjectId)
+    """
+    from django.core.cache import cache
+    
+    project_id = str(project_id)
+    
+    # Delete specific chart caches
+    chart_types = ['stackedbar', 'piechart']
+    
+    for chart_type in chart_types:
+        cache_key = f"chart_{project_id}_{chart_type}"
+        try:
+            cache.delete(cache_key)
+            logging.info(f"[CACHE] Invalidated {chart_type} chart cache for project {project_id}")
+        except Exception as e:
+            logging.warning(f"Could not invalidate chart cache {cache_key}: {e}")
+            logging.info(f"Chart cache invalidation requested for {chart_type} (project {project_id})")
+        except Exception as e:
+            logging.debug(f"Could not invalidate chart cache: {e}")
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -440,11 +526,18 @@ def project_page(request, project_name, message=''):
     will append sample_data, ref genome, feature_list to project json in the database
     for faster querying in the future.
     """
+    import time
+    t_total_start = time.time()
+    
+    logging.info(f"[PERF] Loading project page for {project_name}")
+    
     ## leaving this bit of code here
     ### this part will delete the metadata_stored field for a project
     ### is is only run IF we need to reset a project and reload the data
 
+    t_query = time.time()
     project = validate_project(get_one_project(project_name), project_name)
+    logging.info(f"[PERF] Project query took {time.time() - t_query:.3f}s")
     
     # Handle case where project doesn't exist or is invalid
     if project is None:
@@ -513,8 +606,17 @@ def project_page(request, project_name, message=''):
         collection_handle.update_one(query, new_values)
         logging.debug('Insert complete')
 
-        stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
-        pc_fig = piechart.pie_chart(aggregate, fa_cmap)
+        # Use cached chart generation
+        stackedbar_plot = get_cached_chart(
+            project, 'stackedbar',
+            stacked_bar.StackedBarChart,
+            aggregate, fa_cmap
+        )
+        pc_fig = get_cached_chart(
+            project, 'piechart',
+            piechart.pie_chart,
+            aggregate, fa_cmap
+        )
     else:
         logging.info('Already have the necessary lists in DB')
         samples = project['runs']
@@ -526,8 +628,17 @@ def project_page(request, project_name, message=''):
         else:
             aggregate = pd.read_csv(aggregate_df_fp)
             
-        stackedbar_plot = stacked_bar.StackedBarChart(aggregate, fa_cmap)
-        pc_fig = piechart.pie_chart(aggregate, fa_cmap)
+        # Use cached chart generation
+        stackedbar_plot = get_cached_chart(
+            project, 'stackedbar',
+            stacked_bar.StackedBarChart,
+            aggregate, fa_cmap
+        )
+        pc_fig = get_cached_chart(
+            project, 'piechart',
+            piechart.pie_chart,
+            aggregate, fa_cmap
+        )
 
     # check for an error when project was created, but don't override a message that was already sent in
     if not message:
@@ -540,6 +651,10 @@ def project_page(request, project_name, message=''):
     # DEBUG: Get delete and current flag values
     debug_delete_flag = project.get('delete', 'NOT SET')
     debug_current_flag = project.get('current', 'NOT SET')
+
+    # Log total page generation time
+    total_time = time.time() - t_total_start
+    logging.info(f"[PERF] Total project_page processing for {project_name}: {total_time:.3f}s")
 
     return render(request, "pages/project.html", {
         'project': project,
@@ -1060,8 +1175,14 @@ def add_metadata(request, project_id):
 
 # @cache_page(600) # 10 minutes
 def sample_page(request, project_name, sample_name):
-    logging.info(f"Loading sample page for {sample_name}")
+    import time
+    t_total_start = time.time()
+    
+    logging.info(f"[PERF] Loading sample page for {sample_name}")
+    
+    t1 = time.time()
     project, sample_data, prev_sample, next_sample = get_one_sample(project_name, sample_name)
+    logging.info(f"[PERF] get_one_sample took {time.time() - t1:.3f}s")
     project_linkid = project['_id']
     if project['private'] and not is_user_a_project_member(project, request):
         return redirect('/accounts/login')
@@ -1087,11 +1208,14 @@ def sample_page(request, project_name, sample_name):
     # Check if ec3D visualization is available
     ec3d_available = check_ec3d_available(project['project_name'], sample_name)
 
+    t_plot_start = time.time()
     if sample_data_processed[0]['AA_amplicon_number'] == None:
         plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
-
     else:
         plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
+    logging.info(f"[PERF] Plot generation in view took {time.time() - t_plot_start:.3f}s")
+    
+    if sample_data_processed[0]['AA_amplicon_number'] != None:
         for feature in sample_data_processed:
             reference_version.append(feature['Reference_version'])
             download_png.append({
@@ -1119,6 +1243,10 @@ def sample_page(request, project_name, sample_name):
             ## https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#safe
     # Get ecDNA_context dictionary from project, default to empty dict if not present
     ecDNA_context = project.get('ecDNA_context', {})
+    
+    # Log total page generation time
+    total_time = time.time() - t_total_start
+    logging.info(f"[PERF] Total sample_page processing for {sample_name}: {total_time:.3f}s")
     
     return render(request, "pages/sample.html",
                   {'project': project,
