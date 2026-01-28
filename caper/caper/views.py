@@ -3319,6 +3319,22 @@ def robots(request):
     return HttpResponse(robots_txt, content_type="text/plain")
 
 
+@login_required(login_url='/accounts/login/')
+def url_timing_test(request):
+    """
+    View for the URL timing test tool page.
+    Admin only.
+    """
+    if not request.user.is_staff:
+        messages.error(request, "You do not have permission to access the URL timing test tool. This page is restricted to administrators.")
+        return redirect('index')
+    
+    return render(request, "pages/url_timing_test.html")
+
+
+@login_required(login_url='/accounts/login/')
+
+
 def get_reference_class(ref_genome):
     """
     Map reference genome to its compatibility class
