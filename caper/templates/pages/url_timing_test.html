@@ -283,7 +283,146 @@
             <h3>Individual Timings:</h3>
             <div class="timings-list" id="timingsList"></div>
         </div>
+
+        <div style="margin-top: 30px; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+            <h2 style="color: #333; margin-top: 0;">Alternative: Browser Console Script</h2>
+            <p style="color: #666; margin-bottom: 15px;">
+                Copy and paste this script into your browser's console (F12) to run timing tests directly on any page without CORS issues.
+                This method uses the page's origin for all requests.
+            </p>
+            <div style="position: relative;">
+                <button id="copyScriptBtn" style="position: absolute; top: 10px; right: 10px; padding: 8px 16px; font-size: 14px;">
+                    Copy Script
+                </button>
+                <pre id="consoleScript" style="background-color: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 4px; overflow-x: auto; margin: 0; padding-right: 100px;"><code>// URL Timing Test Script
+// Usage: Change the URL and iterations below, then run this entire script in the console
+
+(async function() {
+    const url = window.location.href;  // Uses current page URL (change if needed)
+    const iterations = 10;  // Change number of iterations
+    
+    console.log(`Starting timing test for ${url} with ${iterations} iterations...`);
+    console.log('---------------------------------------------------');
+    
+    const timings = [];
+    const errors = [];
+    
+    for (let i = 0; i < iterations; i++) {
+        try {
+            const startTime = performance.now();
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                cache: 'no-cache',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
+            
+            await response.text();
+            const endTime = performance.now();
+            const duration = endTime - startTime;
+            
+            if (response.ok) {
+                timings.push(duration);
+                console.log(`✓ Request ${i + 1}: ${duration.toFixed(2)} ms`);
+            } else {
+                errors.push(`Request ${i + 1}: HTTP ${response.status}`);
+                console.error(`✗ Request ${i + 1}: HTTP ${response.status}`);
+            }
+        } catch (error) {
+            errors.push(`Request ${i + 1}: ${error.message}`);
+            console.error(`✗ Request ${i + 1}: ${error.message}`);
+        }
+        
+        // Small delay between requests
+        if (i < iterations - 1) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    }
+    
+    console.log('---------------------------------------------------');
+    
+    if (timings.length > 0) {
+        const sorted = [...timings].sort((a, b) => a - b);
+        const n = sorted.length;
+        const min = sorted[0];
+        const max = sorted[n - 1];
+        const mean = sorted.reduce((sum, val) => sum + val, 0) / n;
+        const median = n % 2 === 0 ? 
+            (sorted[n / 2 - 1] + sorted[n / 2]) / 2 : 
+            sorted[Math.floor(n / 2)];
+        const variance = sorted.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / n;
+        const stdDev = Math.sqrt(variance);
+        
+        console.log('RESULTS:');
+        console.log(`URL: ${url}`);
+        console.log(`Total Requests: ${iterations}`);
+        console.log(`Successful: ${timings.length}`);
+        console.log(`Failed: ${errors.length}`);
+        console.log(`Min Time: ${min.toFixed(2)} ms`);
+        console.log(`Max Time: ${max.toFixed(2)} ms`);
+        console.log(`Mean Time: ${mean.toFixed(2)} ms`);
+        console.log(`Median Time: ${median.toFixed(2)} ms`);
+        console.log(`Std Deviation: ${stdDev.toFixed(2)} ms`);
+        
+        // Create table data for easy copying to spreadsheet
+        console.log('\n---------------------------------------------------');
+        console.log('SPREADSHEET DATA (copy from here):');
+        console.table([
+            { Metric: 'URL', Value: url },
+            { Metric: 'Total Requests', Value: iterations },
+            { Metric: 'Successful', Value: timings.length },
+            { Metric: 'Failed', Value: errors.length },
+            { Metric: 'Min Time (ms)', Value: min.toFixed(2) },
+            { Metric: 'Max Time (ms)', Value: max.toFixed(2) },
+            { Metric: 'Mean Time (ms)', Value: mean.toFixed(2) },
+            { Metric: 'Median Time (ms)', Value: median.toFixed(2) },
+            { Metric: 'Std Deviation (ms)', Value: stdDev.toFixed(2) }
+        ]);
+    } else {
+        console.error('No successful requests completed!');
+        if (errors.length > 0) {
+            console.error('Errors:', errors);
+        }
+    }
+})();</code></pre>
+            </div>
+            <p style="color: #666; margin-top: 15px; font-size: 14px;">
+                <strong>Instructions:</strong>
+                <ol style="margin: 5px 0;">
+                    <li>Open your browser's Developer Tools (Press F12 or right-click → Inspect)</li>
+                    <li>Go to the "Console" tab</li>
+                    <li>Click "Copy Script" button above or manually select and copy the entire script</li>
+                    <li>Paste the script into the console</li>
+                    <li>Edit the <code>url</code> and <code>iterations</code> values if desired</li>
+                    <li>Press Enter to run the test</li>
+                    <li>Results will be displayed in the console, including a table you can copy to a spreadsheet</li>
+                </ol>
+            </p>
+        </div>
     </div>
+
+    <script>
+        // Copy script button functionality
+        document.getElementById('copyScriptBtn').addEventListener('click', () => {
+            const scriptText = document.getElementById('consoleScript').textContent;
+            navigator.clipboard.writeText(scriptText).then(() => {
+                const btn = document.getElementById('copyScriptBtn');
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.style.backgroundColor = '#4CAF50';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.backgroundColor = '';
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy. Please select and copy manually.');
+            });
+        });
+    </script>
 
     <script>
         let isRunning = false;

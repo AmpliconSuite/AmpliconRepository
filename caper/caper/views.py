@@ -3191,11 +3191,85 @@ def robots(request):
     return HttpResponse(robots_txt, content_type="text/plain")
 
 
+@login_required(login_url='/accounts/login/')
 def url_timing_test(request):
     """
     View for the URL timing test tool page.
+    Admin only.
     """
+    if not request.user.is_staff:
+        messages.error(request, "You do not have permission to access the URL timing test tool. This page is restricted to administrators.")
+        return redirect('index')
+    
     return render(request, "pages/url_timing_test.html")
+
+
+@login_required(login_url='/accounts/login/')
+def url_timing_proxy(request):
+    """
+    Proxy endpoint to forward requests to avoid CORS issues.
+    This allows testing production URLs from dev environment.
+    Uses browser-like headers to avoid security filters.
+    Admin only.
+    """
+    import requests
+    
+    # Check if user is staff
+    if not request.user.is_staff:
+        return JsonResponse({'error': 'Unauthorized. Admin access required.'}, status=403)
+    
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST method is allowed'}, status=405)
+    
+    try:
+        import json
+        data = json.loads(request.body)
+        target_url = data.get('url')
+        
+        if not target_url:
+            return JsonResponse({'error': 'URL is required'}, status=400)
+        
+        # Use browser-like headers to avoid security filters
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+        }
+        
+        # Forward the request to the target URL
+        start_time = time.time()
+        response = requests.get(
+            target_url,
+            headers=headers,
+            timeout=30,
+            allow_redirects=True
+        )
+        end_time = time.time()
+        
+        duration_ms = (end_time - start_time) * 1000
+        
+        return JsonResponse({
+            'status': response.status_code,
+            'duration': duration_ms,
+            'ok': response.ok,
+            'size': len(response.content)
+        })
+        
+    except requests.exceptions.Timeout:
+        return JsonResponse({'error': 'Request timeout', 'status': 0}, status=504)
+    except requests.exceptions.RequestException as e:
+        return JsonResponse({'error': str(e), 'status': 0}, status=500)
+    except Exception as e:
+        return JsonResponse({'error': str(e), 'status': 0}, status=500)
 
 
 def get_reference_class(ref_genome):
