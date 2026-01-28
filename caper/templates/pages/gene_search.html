@@ -456,16 +456,28 @@
 
         // Function to update selected count and button state for public samples
         function updatePublicSelection() {
-            const count = publicSelectedSamples.size;
-            $('#public-selected-count').text(count + ' sample' + (count !== 1 ? 's' : '') + ' selected');
-            $('#download-public-selected').prop('disabled', count === 0);
+            const sampleCount = publicSelectedSamples.size;
+            // Calculate total number of rows (amplifications) by summing all values in the Map
+            let rowCount = 0;
+            publicSelectedSamples.forEach(count => rowCount += count);
+            
+            const rowText = rowCount + ' amplification' + (rowCount !== 1 ? 's' : '');
+            const sampleText = sampleCount + ' sample' + (sampleCount !== 1 ? 's' : '');
+            $('#public-selected-count').text(rowText + ' selected (' + sampleText + ')');
+            $('#download-public-selected').prop('disabled', sampleCount === 0);
         }
 
         // Function to update selected count and button state for private samples
         function updatePrivateSelection() {
-            const count = privateSelectedSamples.size;
-            $('#private-selected-count').text(count + ' sample' + (count !== 1 ? 's' : '') + ' selected');
-            $('#download-private-selected').prop('disabled', count === 0);
+            const sampleCount = privateSelectedSamples.size;
+            // Calculate total number of rows (amplifications) by summing all values in the Map
+            let rowCount = 0;
+            privateSelectedSamples.forEach(count => rowCount += count);
+            
+            const rowText = rowCount + ' amplification' + (rowCount !== 1 ? 's' : '');
+            const sampleText = sampleCount + ' sample' + (sampleCount !== 1 ? 's' : '');
+            $('#private-selected-count').text(rowText + ' selected (' + sampleText + ')');
+            $('#download-private-selected').prop('disabled', sampleCount === 0);
         }
 
         // Handle individual checkbox clicks for public samples
@@ -1131,7 +1143,7 @@
                     <button id="select-all-public" class="btn btn-sm btn-outline-secondary">Select All</button>
                     <button id="deselect-all-public" class="btn btn-sm btn-outline-secondary">Deselect All</button>
                     <button id="download-public-selected" class="btn btn-sm btn-primary" disabled>Download Selected Samples</button>
-                    <span id="public-selected-count" class="selected-count">0 samples selected</span>
+                    <span id="public-selected-count" class="selected-count">0 amplifications selected (0 samples)</span>
                 </div>
 
                 <table class="table" id="public-samples-table">
@@ -1204,7 +1216,7 @@
                     <button id="select-all-private" class="btn btn-sm btn-outline-secondary">Select All</button>
                     <button id="deselect-all-private" class="btn btn-sm btn-outline-secondary">Deselect All</button>
                     <button id="download-private-selected" class="btn btn-sm btn-primary" disabled>Download Selected Samples</button>
-                    <span id="private-selected-count" class="selected-count">0 samples selected</span>
+                    <span id="private-selected-count" class="selected-count">0 amplifications selected (0 samples)</span>
                 </div>
 
                 <table class="table" id="private-samples-table">
