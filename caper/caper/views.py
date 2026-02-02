@@ -2060,6 +2060,11 @@ def download_file(url, save_path):
     # Raise an error for bad status codes
     response.raise_for_status()
 
+    # Ensure the directory exists before writing the file
+    save_dir = os.path.dirname(save_path)
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+
     # Write the content to the specified file location
     with open(save_path, 'wb') as file:
         file.write(response.content)
@@ -2210,6 +2215,10 @@ def edit_project_page(request, project_name):
             # Create temporary directory for name map
             temp_name_map_dir = f"tmp/name_map_{uuid.uuid4().hex}"
             name_map_file_path = create_name_map_from_metadata(metadata_file, temp_name_map_dir)
+            
+            # Reset file pointer after reading so subsequent operations can read the file
+            if hasattr(metadata_file, 'seek'):
+                metadata_file.seek(0)
             
             if name_map_file_path:
                 logging.info(f"Name map file created at: {name_map_file_path}")
@@ -3119,15 +3128,18 @@ def create_project(request):
         temp_proj_id = str(ObjectId())  ## Generate a valid MongoDB ObjectId
         files = request.FILES.getlist('document')
         project_data_path = f"tmp/{temp_proj_id}" ## to change
-        extra_metadata_file_fp = save_metadata_file(request, project_data_path)
         
-        # Create name map file if remapping is requested and metadata file is provided
+        # Create name map file BEFORE save_metadata_file consumes the uploaded file
         name_map_file_path = None
         if remap_sample_names:
             metadata_file = request.FILES.get("metadataFile")
             if metadata_file:
                 # Create name map in the project data path
                 name_map_file_path = create_name_map_from_metadata(metadata_file, project_data_path)
+                
+                # Reset file pointer so save_metadata_file can read it
+                if hasattr(metadata_file, 'seek'):
+                    metadata_file.seek(0)
                 
                 if name_map_file_path:
                     logging.info(f"Name map file created at: {name_map_file_path}")
@@ -3137,6 +3149,9 @@ def create_project(request):
                     print("Warning: Could not create name map file. Proceeding without remapping.")
             else:
                 logging.warning("Remap requested but no metadata file provided")
+        
+        # Now save the metadata file (this will consume the file)
+        extra_metadata_file_fp = save_metadata_file(request, project_data_path)
         
         logging.info(f"CreateProject - START save files to disk")
         # Save files to disk
