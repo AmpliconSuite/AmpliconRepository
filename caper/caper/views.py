@@ -3332,8 +3332,6 @@ def url_timing_test(request):
     return render(request, "pages/url_timing_test.html")
 
 
-@login_required(login_url='/accounts/login/')
-
 
 def get_reference_class(ref_genome):
     """
@@ -3394,6 +3392,7 @@ def validate_reference_compatibility(project_list):
 
 
 # redirect to visualizer upon project selection
+@login_required(login_url='/accounts/login/')
 def coamplification_graph(request):
     if request.method == 'POST':
         # get list of selected projects
