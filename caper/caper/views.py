@@ -2098,6 +2098,91 @@ def remove_samples_from_runs(runs, samples_to_remove):
 
     return updated_runs
 
+
+def create_name_map_from_metadata(metadata_file, output_dir):
+    """
+    Creates a 2-column name map file from metadata file containing sample_name and sample_name_alias columns.
+    
+    Args:
+        metadata_file: The uploaded metadata file (CSV, TSV, or XLSX)
+        output_dir: Directory where the name map file should be saved
+        
+    Returns:
+        str: Path to the created name map file, or None if sample_name_alias column not found
+    """
+    import pandas as pd
+    
+    if not metadata_file:
+        logging.warning("No metadata file provided for name map creation")
+        return None
+    
+    try:
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Reset file pointer to the beginning (in case it was already read)
+        if hasattr(metadata_file, 'seek'):
+            metadata_file.seek(0)
+        
+        # Read the metadata file based on extension
+        file_name = metadata_file.name.lower()
+        
+        if file_name.endswith('.xlsx'):
+            # For Excel files, reset again just before reading
+            if hasattr(metadata_file, 'seek'):
+                metadata_file.seek(0)
+            df = pd.read_excel(metadata_file)
+        elif file_name.endswith('.csv'):
+            # For CSV files, reset again just before reading
+            if hasattr(metadata_file, 'seek'):
+                metadata_file.seek(0)
+            df = pd.read_csv(metadata_file)
+        elif file_name.endswith('.tsv'):
+            # For TSV files, reset again just before reading
+            if hasattr(metadata_file, 'seek'):
+                metadata_file.seek(0)
+            df = pd.read_csv(metadata_file, delimiter='\t')
+        else:
+            logging.error(f"Unsupported metadata file format: {file_name}")
+            return None
+        
+        # Normalize column names to lowercase for case-insensitive matching
+        df.columns = df.columns.str.strip()
+        column_map = {col: col.lower() for col in df.columns}
+        df_lower = df.rename(columns=column_map)
+        
+        # Check if both required columns exist
+        if 'sample_name' not in df_lower.columns:
+            logging.error("Metadata file missing 'sample_name' column")
+            return None
+            
+        if 'sample_name_alias' not in df_lower.columns:
+            logging.warning("Metadata file missing 'sample_name_alias' column - no name map created")
+            return None
+        
+        # Extract the two columns
+        name_map_df = df_lower[['sample_name', 'sample_name_alias']].copy()
+        
+        # Remove rows with missing values in either column
+        name_map_df = name_map_df.dropna()
+        
+        if name_map_df.empty:
+            logging.warning("No valid sample_name/sample_name_alias pairs found in metadata")
+            return None
+        
+        # Save as tab-separated file (2 columns)
+        name_map_path = os.path.join(output_dir, 'sample_name_map.tsv')
+        name_map_df.to_csv(name_map_path, sep='\t', index=False, header=False)
+        
+        logging.info(f"Created name map file with {len(name_map_df)} entries at: {name_map_path}")
+        return name_map_path
+        
+    except Exception as e:
+        logging.error(f"Error creating name map from metadata: {e}")
+        logging.exception(e)
+        return None
+
+
 def edit_project_page(request, project_name):
     if request.method == "GET":
         project = get_one_project(project_name)
@@ -2106,7 +2191,7 @@ def edit_project_page(request, project_name):
             return HttpResponse("Project does not exist")
     if request.method == "POST":
        
-        
+        metadata_file = None
         try:
             metadata_file = request.FILES.get("metadataFile")
         except Exception as e:
@@ -2114,6 +2199,25 @@ def edit_project_page(request, project_name):
             print(e)
 
         samples_to_remove = request.POST.getlist('samples_to_remove')
+        
+        # Get the remap_sample_names parameter from POST request
+        remap_sample_names = request.POST.get('remap_sample_names', 'false').lower() == 'true'
+        print(f'Remap sample names with sample_name_alias: {remap_sample_names}')
+        
+        # Create name map file if remapping is requested and metadata file is provided
+        name_map_file_path = None
+        if remap_sample_names and metadata_file:
+            # Create temporary directory for name map
+            temp_name_map_dir = f"tmp/name_map_{uuid.uuid4().hex}"
+            name_map_file_path = create_name_map_from_metadata(metadata_file, temp_name_map_dir)
+            
+            if name_map_file_path:
+                logging.info(f"Name map file created at: {name_map_file_path}")
+                print(f"Name map file created for sample remapping: {name_map_file_path}")
+            else:
+                logging.warning("Failed to create name map file - sample_name_alias column may be missing")
+                print("Warning: Could not create name map file. Proceeding without remapping.")
+                # Note: We don't fail the entire operation, just proceed without remapping
 
         project = get_one_project(project_name)
         
@@ -2210,7 +2314,14 @@ def edit_project_page(request, project_name):
                 # print(f'aggregating on: {file_fps}')
                 temp_directory = os.path.join('./tmp/', str(temp_proj_id))
                 
-                agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
+                # Pass name_map_file_path to Aggregator if provided
+                if name_map_file_path:
+                    logging.info(f"Edit Project - Using name map file for sample remapping: {name_map_file_path}")
+                    agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', 
+                                   name_remap_file=name_map_file_path, uuid=str(temp_proj_id))
+                else:
+                    agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', 
+                                   uuid=str(temp_proj_id))
                 
          
                 if not agg.completed:
@@ -2868,10 +2979,20 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp):
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
+    
+    Args:
+        file_fps: List of file paths to aggregate
+        temp_proj_id: Temporary project ID
+        project_data_path: Path to project data directory
+        temp_directory: Temporary directory for aggregation
+        form_data: Form data dictionary
+        user: User object
+        extra_metadata_file_fp: Path to extra metadata file (optional)
+        name_map_file_path: Path to name map file for sample remapping (optional)
     """
     try:
         logging.info(f"_process_and_aggregate_files - start ")
@@ -2885,7 +3006,14 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
             print("No version attribute found for Aggregator or AmpliconSuiteAggregator.")
         logging.info(f"_process_and_aggregate_files - Aggregator start ")
 
-        agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', uuid=str(temp_proj_id))
+        # Pass name_map_file_path to Aggregator if provided
+        if name_map_file_path:
+            logging.info(f"Using name map file for sample remapping: {name_map_file_path}")
+            agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', 
+                           name_remap_file=name_map_file_path, uuid=str(temp_proj_id))
+        else:
+            agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', 
+                           uuid=str(temp_proj_id))
 
         logging.info(f"_process_and_aggregate_files - Aggregator END ")
 
@@ -2982,12 +3110,34 @@ def create_project(request):
         if not form.is_valid():
             raise Http404()
         
+        # Get the remap_sample_names parameter from POST request
+        remap_sample_names = request.POST.get('remap_sample_names', 'false').lower() == 'true'
+        print(f'Remap sample names with sample_name_alias: {remap_sample_names}')
+        
         ## check multi files, send files to GP and run aggregator there:
         file_fps = []
         temp_proj_id = str(ObjectId())  ## Generate a valid MongoDB ObjectId
         files = request.FILES.getlist('document')
         project_data_path = f"tmp/{temp_proj_id}" ## to change
         extra_metadata_file_fp = save_metadata_file(request, project_data_path)
+        
+        # Create name map file if remapping is requested and metadata file is provided
+        name_map_file_path = None
+        if remap_sample_names:
+            metadata_file = request.FILES.get("metadataFile")
+            if metadata_file:
+                # Create name map in the project data path
+                name_map_file_path = create_name_map_from_metadata(metadata_file, project_data_path)
+                
+                if name_map_file_path:
+                    logging.info(f"Name map file created at: {name_map_file_path}")
+                    print(f"Name map file created for sample remapping: {name_map_file_path}")
+                else:
+                    logging.warning("Failed to create name map file - sample_name_alias column may be missing")
+                    print("Warning: Could not create name map file. Proceeding without remapping.")
+            else:
+                logging.warning("Remap requested but no metadata file provided")
+        
         logging.info(f"CreateProject - START save files to disk")
         # Save files to disk
         for file in files:
@@ -3046,7 +3196,7 @@ def create_project(request):
         _thread_executor.submit(
             _process_and_aggregate_files,
             file_fps, temp_proj_id, project_data_path, temp_directory,
-            form_data, request.user, extra_metadata_file_fp
+            form_data, request.user, extra_metadata_file_fp, name_map_file_path
         )
         # Immediately redirect to the processing project page
         logging.info(f"CreateProject - finished launch of background thread to _process_and_aggregate_files")

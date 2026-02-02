@@ -49,6 +49,8 @@
 </style>
 
 {% block main %}
+<!-- SheetJS library for Excel file parsing -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 
 <h1>Create New Project</h1>
 
@@ -206,6 +208,8 @@
                         <li><strong>The first column</strong> is <b>"sample_name"</b> (e.g., "Sample_001").</li>
                         <li><strong>The second column</strong> is <b>"cancer_type"</b> (e.g., "Lung Cancer").</li>
                         <li><strong>All other columns</strong> are metadata fields associated with the sample.</li>
+                        <li>If a column named <strong>sample_name_alias</strong> is included, you will have the option of renaming samples names to the alias names after the project is created.</li>
+                        
                     </ul>
                 </p>
 
@@ -251,6 +255,16 @@
                 <div style="margin-bottom: 5px;">
                     <label for="metadataFileInput">Upload Metadata File:</label>
                     <input id="metadataFileInput" type="file" name="metadataFile" accept=".csv, .xlsx, .tsv">
+                </div>
+                
+                <!-- Checkbox for sample_name_alias remapping -->
+                <div id="remapSampleNamesDiv" style="display: none; margin-top: 15px; padding: 10px; background-color: #f0f8ff; border: 1px solid #ccc; border-radius: 4px;">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="remap_sample_names" id="remapSampleNamesCheckbox" value="true">
+                        <label class="form-check-label" for="remapSampleNamesCheckbox">
+                            <strong>Remap sample_names with sample_name_alias from metadata</strong>
+                        </label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -437,6 +451,19 @@
       filesArray.forEach(file => {
         fd.append('document', file);
       });
+      
+      // Add metadata file if selected
+      const metadataFileInput = document.getElementById('metadataFileInput');
+      if (metadataFileInput && metadataFileInput.files.length > 0) {
+        const metadataFile = metadataFileInput.files[0];
+        fd.append('metadataFile', metadataFile);
+      }
+      
+      // Add the remap_sample_names checkbox value if checked
+      const remapCheckbox = document.getElementById('remapSampleNamesCheckbox');
+      if (remapCheckbox && remapCheckbox.checked) {
+        fd.append('remap_sample_names', 'true');
+      }
   
       const xhr = new XMLHttpRequest();
       xhr.open('POST', uploadForm.action, true);
@@ -528,6 +555,64 @@
       }
     }
 
+    // Function to check if metadata file contains sample_name_alias column
+    function checkForSampleNameAlias(file) {
+        const fileName = file.name.toLowerCase();
+        const remapDiv = document.getElementById('remapSampleNamesDiv');
+        
+        if (fileName.endsWith('.csv') || fileName.endsWith('.tsv')) {
+            // Read CSV/TSV file
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const delimiter = fileName.endsWith('.tsv') ? '\t' : ',';
+                const lines = text.split('\n');
+                
+                if (lines.length > 0) {
+                    // Get header row and check for sample_name_alias (case insensitive)
+                    const headers = lines[0].split(delimiter).map(h => h.trim().toLowerCase());
+                    if (headers.includes('sample_name_alias')) {
+                        remapDiv.style.display = 'block';
+                    } else {
+                        remapDiv.style.display = 'none';
+                    }
+                }
+            };
+            reader.readAsText(file);
+        } else if (fileName.endsWith('.xlsx')) {
+            // For Excel files, use SheetJS
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    // Try to use SheetJS if available
+                    if (typeof XLSX !== 'undefined') {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, {type: 'array'});
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const jsonData = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+                        
+                        if (jsonData.length > 0) {
+                            const headers = jsonData[0].map(h => String(h).toLowerCase());
+                            if (headers.includes('sample_name_alias')) {
+                                remapDiv.style.display = 'block';
+                            } else {
+                                remapDiv.style.display = 'none';
+                            }
+                        }
+                    } else {
+                        // SheetJS not available, show warning and hide checkbox
+                        console.warn('SheetJS library not loaded. Cannot check Excel file for sample_name_alias column.');
+                        remapDiv.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Error reading Excel file:', error);
+                    remapDiv.style.display = 'none';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    }
+
 
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -554,6 +639,20 @@
           
         //  call it initially to set correct state
         updateSubmitButtonState();
+        
+        // Add event listener for metadata file to check for sample_name_alias column
+        const metadataInput = document.getElementById('metadataFileInput');
+        if (metadataInput) {
+            metadataInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    checkForSampleNameAlias(file);
+                } else {
+                    // Hide the checkbox if no file is selected
+                    document.getElementById('remapSampleNamesDiv').style.display = 'none';
+                }
+            });
+        }
     });
 
 
