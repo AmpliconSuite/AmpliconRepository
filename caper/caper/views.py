@@ -2297,14 +2297,17 @@ def edit_project_page(request, project_name):
                     logging.info(f"Successfully saved file to {file_path}")
                     print(f'file: {file.name} is saved')
                     file_fps.append(file.name)
+                    
+                    # Reset file pointer if possible, in case file is reused later
+                    if hasattr(file, 'seek'):
+                        try:
+                            file.seek(0)
+                        except:
+                            pass  # File may not support seeking or may be closed
                 except Exception as e:
                     logging.error(f"Error saving file {file.name}: {e}", exc_info=True)
                     raise
-                finally:
-                    try:
-                        file.close()
-                    except Exception as e:
-                        logging.error(f"Error closing file {getattr(file, 'name', repr(file))}: {e}", exc_info=True)
+                # Note: Don't close the file here - it may be reused or passed to other functions
 
             ## download old project file here and run it through aggregator
             ## build download URL
@@ -2369,23 +2372,24 @@ def edit_project_page(request, project_name):
                                'all_alias' :get_all_alias()})
                 ## after running aggregator, replace the requests file with the aggregated file:
 
+                temp_file = TemporaryUploadedFile(
+                    name=os.path.basename(agg.aggregated_filename),
+                    content_type='application/gzip',
+                    size=os.path.getsize(agg.aggregated_filename),
+                    charset=None
+                )
                 with open(agg.aggregated_filename, 'rb') as f:
-                    temp_file = TemporaryUploadedFile(
-                        name=os.path.basename(agg.aggregated_filename),
-                        content_type='application/gzip',
-                        size=os.path.getsize(agg.aggregated_filename),
-                        charset=None
-                    )
                     # Copy file in chunks
                     for chunk in iter(lambda: f.read(1024 * 1024), b''):
                         temp_file.write(chunk)
-                    temp_file.seek(0)
-                    # Need to flush to ensure all data is written to the temp file
-                    temp_file.file.flush()
-                    request.FILES['document'] = temp_file
-                 
-                    # Note: Don't close temp_file here - Django needs it open for fs.save() later
-                    # Django will automatically clean it up after the request completes
+                
+                temp_file.seek(0)
+                # Need to flush to ensure all data is written to the temp file
+                temp_file.file.flush()
+                request.FILES['document'] = temp_file
+             
+                # Note: Don't close temp_file here - Django needs it open for create_project_helper() later
+                # Django will automatically clean it up after the request completes
 
                 # Explicitly delete aggregator object after use to free memory
                 del agg
