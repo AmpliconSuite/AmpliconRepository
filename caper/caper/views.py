@@ -2279,13 +2279,32 @@ def edit_project_page(request, project_name):
         try:
             files = request.FILES.getlist('document')
             project_data_path = f"tmp/{temp_proj_id}" ## to change
+            # Ensure the directory exists
+            os.makedirs(project_data_path, exist_ok=True)
+            
             for file in files:
-                fs = FileSystemStorage(location = project_data_path)
-                saved = fs.save(file.name, file)
-                print(f'file: {file.name} is saved')
-                fp = os.path.join(project_data_path, file.name)
-                file_fps.append(file.name)
-                file.close()
+                try:
+                    # Save the file manually instead of using fs.save() to avoid temp file issues in Docker
+                    file_path = os.path.join(project_data_path, file.name)
+                    with open(file_path, 'wb') as destination:
+                        # If file is in memory, it has chunks()
+                        if hasattr(file, 'chunks'):
+                            for chunk in file.chunks():
+                                destination.write(chunk)
+                        # Otherwise read the file directly
+                        else:
+                            destination.write(file.read())
+                    logging.info(f"Successfully saved file to {file_path}")
+                    print(f'file: {file.name} is saved')
+                    file_fps.append(file.name)
+                except Exception as e:
+                    logging.error(f"Error saving file {file.name}: {e}", exc_info=True)
+                    raise
+                finally:
+                    try:
+                        file.close()
+                    except Exception as e:
+                        logging.error(f"Error closing file {getattr(file, 'name', repr(file))}: {e}", exc_info=True)
 
             ## download old project file here and run it through aggregator
             ## build download URL
@@ -3155,13 +3174,27 @@ def create_project(request):
         
         logging.info(f"CreateProject - START save files to disk")
         # Save files to disk
+        # Ensure the directory exists
+        os.makedirs(project_data_path, exist_ok=True)
+        
         for file in files:
             try:
-                fs = FileSystemStorage(location=project_data_path)
-                saved = fs.save(file.name, file)
+                # Save the file manually instead of using fs.save() to avoid temp file issues in Docker
+                file_path = os.path.join(project_data_path, file.name)
+                with open(file_path, 'wb') as destination:
+                    # If file is in memory, it has chunks()
+                    if hasattr(file, 'chunks'):
+                        for chunk in file.chunks():
+                            destination.write(chunk)
+                    # Otherwise read the file directly
+                    else:
+                        destination.write(file.read())
+                logging.info(f"Successfully saved file to {file_path}")
                 print(f'file: {file.name} is saved')
-                fp = os.path.join(project_data_path, file.name)
                 file_fps.append(file.name)
+            except Exception as e:
+                logging.error(f"Error saving file {file.name}: {e}", exc_info=True)
+                raise
             finally:
                 # Ensure file is closed even if error occurs
                 try:
@@ -3333,14 +3366,32 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
         project_data_path = f"tmp/{tmp_id}"
         # create a new instance of FileSystemStorage
         if save:
-            fs = FileSystemStorage(location=project_data_path)
-            file = fs.save(request_file.name, request_file)
-            # Close the request_file now that it's been saved to disk
-            # All subsequent operations use the file on disk, not this file object
+            # Ensure the directory exists
+            os.makedirs(project_data_path, exist_ok=True)
+            
+            # Save the file manually instead of using fs.save() to avoid temp file issues in Docker
+            file_path = os.path.join(project_data_path, request_file.name)
             try:
-                request_file.close()
+                with open(file_path, 'wb') as destination:
+                    # If file is in memory, it has chunks()
+                    if hasattr(request_file, 'chunks'):
+                        for chunk in request_file.chunks():
+                            destination.write(chunk)
+                    # Otherwise read the file directly
+                    else:
+                        destination.write(request_file.read())
+                logging.info(f"Successfully saved file to {file_path}")
+                file = request_file.name
             except Exception as e:
-                logging.warning(f"Failed to close request_file: {e}")
+                logging.error(f"Error saving file to {file_path}: {e}")
+                raise
+            finally:
+                # Close the request_file now that it's been saved to disk
+                # All subsequent operations use the file on disk, not this file object
+                try:
+                    request_file.close()
+                except Exception as e:
+                    logging.warning(f"Failed to close request_file: {e}")
             #file_exists = os.path.exists(project_data_path+ "/" + request_file.name)
             #if settings.USE_S3_DOWNLOADS and file_exists:
             #    # we need to upload it to S3, we use the same path as here in the bucket to keep things simple
