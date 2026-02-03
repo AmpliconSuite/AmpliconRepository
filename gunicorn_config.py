@@ -20,7 +20,9 @@ worker_connections = 1000
 # With 32GB RAM, we can handle more requests before recycling
 max_requests = 2000
 max_requests_jitter = 100
-timeout = 180  # Increased for potential long-running amplicon analysis requests
+# Increased timeout for large file uploads and long-running amplicon analysis requests
+# Set to 15 minutes to accommodate large uploads (adjust higher if needed)
+timeout = 900
 keepalive = 5
 
 # Preload application for better memory efficiency across workers
