@@ -90,7 +90,20 @@
           {% endif %}
       {% endfor %}
   <div class="uk-margin">
-            <h5>AmpliconSuite-pipeline output files (.zip or .tar.gz)*</h5>
+          <div class="alert alert-info" role="alert" style="margin-bottom: 15px;">
+        <strong>📦 What to upload:</strong> A <code>.tar.gz</code> of your AmpliconSuite-pipeline output files.
+        <button class="btn btn-link btn-sm" type="button" data-toggle="collapse" data-target="#uploadHelp"
+                aria-expanded="false" style="padding: 0; font-size: 1em; vertical-align: baseline;">
+            Expand details →
+        </button>
+        <div class="collapse" id="uploadHelp" style="margin-top: 10px;">
+            <p style="margin-bottom: 8px;">Include CNVkit directories, AmpliconArchitect output directories, and AmpliconClassifier directories.
+               To package your files:</p>
+            <pre style="background-color: #f8f9fa; padding: 10px; border-radius: 4px; font-size: 0.85em;"><code>tar --exclude='*.gz' --exclude='*.bam*' -czf project_name.tar.gz your_consolidated_directory/</code></pre>
+            <small class="text-muted">⚠️ Do not include .fastq or .bam files. See <a href="https://docs.ampliconrepository.org/en/latest/getting-started/" target="_blank">documentation</a> for details.</small>
+        </div>
+    </div>
+
     <div id="file-drop-area" class="uk-placeholder uk-text-center js-upload">
       <span uk-icon="icon: cloud-upload"></span>
       <span class="uk-text-middle">Drag files here or</span>
@@ -277,21 +290,6 @@
 </form>
 
 <br />
-
-<p>
-  <b>What file do I upload?</b> <br />
-  A .tar.gz of your AmpliconSuite-pipeline output files, including all samples in your project.
-    This includes the CNVkit directories, AmpliconArchitect output folder and AmpliconClassifier output folder.
-    The site will unpack these files and if they are named correctly will be able to create a project.
-  >. Please do not include .fastq and .bam files
-  from this packaging. Please refer to the
-  <a href="https://docs.ampliconrepository.org/en/latest/getting-started/"
-    >documentation</a
-  >
-  for more detailed instructions.
-</p>
-
-<p>
 
 <p>
   <b>Need help?</b> <br />
