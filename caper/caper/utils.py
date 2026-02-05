@@ -752,16 +752,29 @@ def validate_project(project, project_name):
         logging.error(f"Cannot validate project: project is None for {project_name}")
         return None
 
-    ## check for 1
+    ## check for 1 and numeric Sample_name values
     update = False
     runs = None
     for sample in project['runs'].keys():
         for feature in project['runs'][sample]:
+            # Check for spaces in keys (original check)
             for key in feature.keys():
                 if ' ' in key:
                     runs = replace_underscore_keys(project['runs'])
                     update = True
                     break
+            
+            # Check for numeric Sample_name values
+            if not update and 'Sample_name' in feature:
+                if isinstance(feature['Sample_name'], (int, float)):
+                    runs = replace_underscore_keys(project['runs'])
+                    update = True
+                    break
+            
+            if update:
+                break
+        if update:
+            break
     if update and runs is not None:
         new_values = {"$set": {
             'runs': runs
@@ -781,10 +794,16 @@ def replace_underscore_keys(runs_from_proj_creation):
     """
     Replaces spaces with underscores in the keys from runs at project creation step.
     Returns a new dictionary with transformed keys.
+    Also ensures Sample_name field values are strings, not integers.
     """
     return {
-        sample: [
-            {key.replace(" ", "_"): value for key, value in feature.items()}
+        str(sample): [
+            {
+                key.replace(" ", "_"): (
+                    str(value) if key in ["Sample_name", "Sample name"] else value
+                )
+                for key, value in feature.items()
+            }
             for feature in features
         ]
         for sample, features in runs_from_proj_creation.items()

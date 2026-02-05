@@ -133,7 +133,9 @@ def check_project_exists(project_id):
 
 
 def samples_to_dict(form_file):
-    return json.load(form_file)['runs']
+    runs = json.load(form_file)['runs']
+    # Ensure all sample names (keys) are strings, not integers
+    return {str(sample_name): features for sample_name, features in runs.items()}
 
 
 
@@ -973,6 +975,11 @@ def project_summary_download(request, project_name):
     try:
         with open(run_json_path, 'r') as run_json_file:
             run_json_data = json.load(run_json_file)
+        
+        # Ensure sample names are strings when extracting runs data
+        if 'runs' in run_json_data:
+            runs_data = {str(sample_name): features for sample_name, features in run_json_data['runs'].items()}
+            run_json_data['runs'] = runs_data
         
         # Get the project name for the filename
         real_project_name = project.get('project_name', project_name)
