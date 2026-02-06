@@ -2305,7 +2305,6 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             print("Warning: Could not create name map file. Proceeding without remapping.")
             # Note: We don't fail the entire operation, just proceed without remapping
     
-    agg = None  # Initialize to None for cleanup
     try:
         files = request.FILES.getlist('document')
         
@@ -2370,70 +2369,19 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                         file_fps.append(os.path.join('download.tar.gz'))
                     except Exception as e:
                         logging.error(f'Failed to download the file: {e}')
-            
-            temp_directory = os.path.join('./tmp/', str(temp_proj_id))
-            
-            # Pass name_map_file_path to Aggregator if provided
-            if name_map_file_path:
-                logging.info(f"Edit Project - Using name map file for sample remapping: {name_map_file_path}")
-                agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3',
-                                 name_remap_file=name_map_file_path, uuid=str(temp_proj_id))
-            else:
-                agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3',
-                                 uuid=str(temp_proj_id))
-
-            if not agg.completed:
-                ## redirect to edit page if aggregator fails
-                if os.path.exists(temp_directory):
-                    shutil.rmtree(temp_directory)
-                # Clean up before returning
-                alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
-
-                # Clean up before returning
-                del agg
-                return render(request, 'pages/edit_project.html',
-                              {'project': project,
-                               'run': form,
-                               'alert_message': alert_message,
-                               'all_alias': get_all_alias()})
-            
-            ## after running aggregator, replace the requests file with the aggregated file:
-            temp_file = TemporaryUploadedFile(
-                name=os.path.basename(agg.aggregated_filename),
-                content_type='application/gzip',
-                size=os.path.getsize(agg.aggregated_filename),
-                charset=None
-            )
-            with open(agg.aggregated_filename, 'rb') as f:
-                # Copy file in chunks
-                for chunk in iter(lambda: f.read(1024 * 1024), b''):
-                    temp_file.write(chunk)
-            
-            temp_file.seek(0)
-            # Need to flush to ensure all data is written to the temp file
-            temp_file.file.flush()
-            request.FILES['document'] = temp_file
-
-            # Explicitly delete aggregator object after use to free memory
-            del agg
-            agg = None
         except:
             ## download failed, don't run aggregator
             print(f'download failed ... ')
-            if agg is not None:
-                del agg
     except:
         print('no file uploaded')
-        if agg is not None:
-            del agg
 
     try:
-        request_file = request.FILES['document']
+        request_file = request.FILES.get('document')
     except:
         request_file = None
 
-    if request_file is not None:
-        ## save all files, run through aggregator.
+    # Check if we have files to aggregate
+    if len(file_fps) > 0:
         # mark the current project as updated
         update_project = project_update(request, project_name)
         # mark current project as deleted as well
@@ -2463,24 +2411,101 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
         ## get extra metadata from csv first (if exists in old project), add it to the new proj
         old_extra_metadata = get_extra_metadata_from_project(project)
 
-        # Clear the large project dict before creating new version
-        project_id_for_redirect = None
-        new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,
-                                  previous_versions=new_prev_versions, previous_views=[views, downloads],
-                                  old_subscribers=old_subscribers)
-
-        if new_id is not None:
-            project_id_for_redirect = new_id.inserted_id
-            # Notify subscribers about the project update
+        # Create a placeholder project ID that will be updated by _process_and_aggregate_files
+        placeholder_project_id = str(ObjectId())
+        
+        # Prepare form data for _process_and_aggregate_files
+        temp_directory = os.path.join('./tmp/', str(temp_proj_id))
+        
+        # Save form data to pass to _process_and_aggregate_files
+        # Note: Django forms expect string 'True'/'False' for BooleanField in POST data
+        saved_form_data = {
+            'project_name': form_dict['project_name'],
+            'description': form_dict['description'],
+            'private': str(form_dict['private']),  # Convert boolean to string 'True' or 'False'
+            'project_members': ', '.join(form_dict['project_members']),
+            'publication_link': form_dict.get('publication_link', ''),
+            'AA_version': form_dict.get('AA_version', 'NA'),
+            'AC_version': form_dict.get('AC_version', 'NA'),
+            'ASP_version': form_dict.get('ASP_version', 'NA'),
+            'accept_license': 'True',  # Always set to True for edit operations (user already accepted on create)
+        }
+        
+        # Add alias if present
+        if 'alias' in form_dict:
+            saved_form_data['alias'] = form_dict['alias']
+        
+        # Call _process_and_aggregate_files synchronously (not in a background thread for edit operations)
+        # This will run the aggregator and create the project
+        try:
+            # Create a placeholder project in the database that _process_and_aggregate_files can update
+            placeholder_project = {
+                '_id': ObjectId(placeholder_project_id),
+                'project_name': f"{form_dict['project_name']} (Processing...)",
+                'original_project_name': form_dict['project_name'],
+                'linkid': placeholder_project_id,
+                'FINISHED?': False,
+                'aggregation_in_progress': True,
+                'created_at': datetime.datetime.now(),
+                'owner': get_current_user(request),
+                'private': form_dict.get('private', False),
+                'sample_count': 0,
+                'runs': {},
+                'delete': False,
+                'current': True,
+                'project_members': form_dict.get('project_members', [])
+            }
+            collection_handle.insert_one(placeholder_project)
+            
+            # Run aggregation and project creation
+            _process_and_aggregate_files(
+                file_fps, 
+                placeholder_project_id, 
+                project_data_path, 
+                temp_directory, 
+                saved_form_data, 
+                request.user, 
+                extra_metadata_file_fp,
+                name_map_file_path,
+                previous_versions=new_prev_versions,
+                previous_views=[views, downloads],
+                old_subscribers=old_subscribers
+            )
+            
+            # Check if aggregation succeeded
+            result_project = collection_handle.find_one({'_id': ObjectId(placeholder_project_id)})
+            
+            if not result_project:
+                # Project wasn't created - aggregation must have failed catastrophically
+                alert_message = "An error occurred during project update. The project was not created."
+                return render(request, 'pages/edit_project.html',
+                              {'project': project,
+                               'run': form,
+                               'alert_message': alert_message,
+                               'all_alias': get_all_alias()})
+            
+            if result_project.get('aggregation_failed', False):
+                # Aggregation failed - show error to user
+                alert_message = result_project.get('error_message', 
+                    "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results.")
+                
+                # Clean up the failed project
+                collection_handle.delete_one({'_id': ObjectId(placeholder_project_id)})
+                
+                return render(request, 'pages/edit_project.html',
+                              {'project': project,
+                               'run': form,
+                               'alert_message': alert_message,
+                               'all_alias': get_all_alias()})
+            
+            # Aggregation succeeded - notify subscribers about the project update
             try:
-                # Get the new project to determine sample count - use projection to limit data
                 new_project = collection_handle.find_one(
-                    {'_id': ObjectId(str(project_id_for_redirect))},
+                    {'_id': ObjectId(placeholder_project_id)},
                     {'sample_count': 1, 'runs': 1}
                 )
                 new_sample_count = new_project.get('sample_count', len(new_project.get('runs', {})))
-                notify_subscribers_of_project_update(project, project_id_for_redirect, new_sample_count)
-                # Clean up the limited new_project dict
+                notify_subscribers_of_project_update(project, placeholder_project_id, new_sample_count)
                 del new_project
             except Exception as e:
                 logging.error(f"Failed to notify subscribers of project update: {str(e)}")
@@ -2491,9 +2516,19 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             del new_prev_versions
 
             # go to the new project
-            return redirect('project_page', project_name=project_id_for_redirect)
-        else:
-            alert_message = "The input file was not a valid aggregation. Please see site documentation."
+            return redirect('project_page', project_name=placeholder_project_id)
+            
+        except Exception as e:
+            logging.error(f"Error during project edit aggregation: {str(e)}")
+            logging.error(traceback.format_exc())
+            
+            # Clean up the failed project if it exists
+            try:
+                collection_handle.delete_one({'_id': ObjectId(placeholder_project_id)})
+            except:
+                pass
+            
+            alert_message = f"An error occurred during project update: {str(e)}"
             return render(request, 'pages/edit_project.html',
                           {'project': project,
                            'run': form,
@@ -3052,7 +3087,7 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None):
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
@@ -3066,6 +3101,9 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         user: User object
         extra_metadata_file_fp: Path to extra metadata file (optional)
         name_map_file_path: Path to name map file for sample remapping (optional)
+        previous_versions: List of previous project versions (optional, for edit operations)
+        previous_views: List containing [views, downloads] counts (optional, for edit operations)
+        old_subscribers: List of subscriber emails (optional, for edit operations)
     """
     try:
         logging.info(f"_process_and_aggregate_files - start ")
@@ -3133,10 +3171,35 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         # Recreate form from saved data
         form = RunForm(mock_request.POST)
         
+        # Validate the form before passing to _create_project
+        if not form.is_valid():
+            logging.error(f"Form validation failed in _process_and_aggregate_files: {form.errors}")
+            # Mark project as failed
+            collection_handle.update_one(
+                {'_id': ObjectId(temp_proj_id)},
+                {"$set": {
+                    'FINISHED?': True,
+                    'aggregation_failed': True,
+                    'error_message': 'Form validation failed. Please check your project information.'
+                }}
+            )
+            if os.path.exists(temp_directory):
+                shutil.rmtree(temp_directory)
+            logging.error(f"Form validation failed for project {temp_proj_id}")
+            return
+        
         # Now process the aggregated file through _create_project
         # Pass the placeholder project ID so it updates in place
-        success = _create_project(form, mock_request, extra_metadata_file_fp, 
-                                   placeholder_project_id=temp_proj_id)
+        # Also pass version history parameters if provided (for edit operations)
+        if previous_versions is not None or previous_views is not None or old_subscribers is not None:
+            success = _create_project(form, mock_request, extra_metadata_file_fp, 
+                                       placeholder_project_id=temp_proj_id,
+                                       previous_versions=previous_versions or [],
+                                       previous_views=previous_views or [0, 0],
+                                       old_subscribers=old_subscribers)
+        else:
+            success = _create_project(form, mock_request, extra_metadata_file_fp, 
+                                       placeholder_project_id=temp_proj_id)
 
         # Don't clean up temp directory yet - the background extraction thread needs access to the tar file
         # The cleanup will happen in extract_project_files after extraction completes
