@@ -23,6 +23,7 @@ from rest_framework.response import Response
 
 from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
 from .site_stats import get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
+from .user_preferences import notify_subscribers_of_project_update
 
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
@@ -2188,6 +2189,320 @@ def create_name_map_from_metadata(metadata_file, output_dir):
         return None
 
 
+def edit_project_without_reversioning(request, project_name, project, form_dict, form, metadata_file, samples_to_remove, old_privacy, new_privacy):
+    """
+    Handle simple project edits that don't require creating a new version:
+    - Title (project_name)
+    - Description
+    - Membership (project_members)
+    - Version strings (AA_version, AC_version, ASP_version)
+    - Metadata updates
+    - Sample removal
+    """
+    if 'file' in form_dict:
+        runs = samples_to_dict(form_dict['file'])
+    else:
+        runs = 0
+
+    if check_project_exists(project_name):
+        new_project_name = form_dict['project_name']
+
+        logging.info(f"project name: {project_name}  change to {new_project_name}")
+        # Create a deep copy to avoid holding reference to original
+        current_runs = dict(project['runs'])
+
+        if runs != 0:
+            current_runs.update(runs)
+        query = {'_id': ObjectId(project_name)}
+        try:
+            alias_name = form_dict['alias']
+        except:
+            print('no alias to be found')
+            alias_name = None
+
+        old_extra_metadata = get_extra_metadata_from_project(project)
+        current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file, old_extra_metadata=old_extra_metadata)
+
+        # Initialize sample_data from existing project
+        sample_data = project.get('sample_data', None)
+
+        if project.get('sample_data', False) and samples_to_remove and len(samples_to_remove) > 0:
+            # Create a copy to avoid modifying the original
+            sample_data = list(project['sample_data'])
+            current_runs = remove_samples_from_runs(current_runs, samples_to_remove)
+            # Use list comprehension instead of modifying in place
+            sample_data = [s for s in sample_data if s['Sample_name'] not in samples_to_remove]
+        else:
+            sample_data = project.get('sample_data', [])
+
+        # Remove any project members from the subscribers list
+        current_subscribers = project.get('subscribers', [])
+        updated_subscribers = [email for email in current_subscribers if email not in form_dict['project_members']]
+
+        new_val = {"$set": {'project_name': new_project_name, 'runs': current_runs,
+                            'description': form_dict['description'], 'date': get_date(),
+                            'private': form_dict['private'],
+                            'sample_data': sample_data,
+                            'project_members': form_dict['project_members'],
+                            'subscribers': updated_subscribers,
+                            'publication_link': form_dict['publication_link'],
+                            'Oncogenes': get_project_oncogenes(current_runs),
+                            'alias_name': alias_name}}
+
+        if project.get('sample_data', False) and samples_to_remove and len(samples_to_remove) > 0:
+            new_val["$unset"] = {'metadata_stored': ""}
+
+        # After form_dict is created and before new_val is defined
+        for version_field in ['ASP_version', 'AA_version', 'AC_version']:
+            value = form.cleaned_data.get(version_field, 'NA').strip()
+            if value and value != 'NA':
+                # Add to new_val to be saved in mongo
+                new_val.setdefault('$set', {})[version_field] = value
+
+        if form.is_valid():
+            collection_handle.update_one(query, new_val)
+            edit_proj_privacy(project, old_privacy, new_privacy)
+            logging.debug("Updated collection_handle with new data")
+
+            # Clean up large objects before redirect
+            del project
+            del current_runs
+            del old_extra_metadata
+
+            return redirect('project_page', project_name=project_name)
+        else:
+            raise Http404()
+
+    else:
+        return HttpResponse("Project does not exist")
+
+
+def edit_project_into_new_version(request, project_name, project, form_dict, form, metadata_file, 
+                                   samples_to_remove, remap_sample_names, file_fps, temp_proj_id, 
+                                   project_data_path):
+    """
+    Handle project edits that require creating a new version:
+    - Adding new samples
+    - Uploading new data files
+    - Running aggregator
+    """
+    # Create name map file if remapping is requested and metadata file is provided
+    name_map_file_path = None
+    if remap_sample_names and metadata_file:
+        # Create temporary directory for name map
+        temp_name_map_dir = f"tmp/name_map_{uuid.uuid4().hex}"
+        name_map_file_path = create_name_map_from_metadata(metadata_file, temp_name_map_dir)
+        
+        # Reset file pointer after reading so subsequent operations can read the file
+        if hasattr(metadata_file, 'seek'):
+            metadata_file.seek(0)
+        
+        if name_map_file_path:
+            logging.info(f"Name map file created at: {name_map_file_path}")
+            print(f"Name map file created for sample remapping: {name_map_file_path}")
+        else:
+            logging.warning("Failed to create name map file - sample_name_alias column may be missing")
+            print("Warning: Could not create name map file. Proceeding without remapping.")
+            # Note: We don't fail the entire operation, just proceed without remapping
+    
+    agg = None  # Initialize to None for cleanup
+    try:
+        files = request.FILES.getlist('document')
+        
+        # Ensure the directory exists
+        os.makedirs(project_data_path, exist_ok=True)
+        
+        for file in files:
+            try:
+                # Save the file manually instead of using fs.save() to avoid temp file issues in Docker
+                file_path = os.path.join(project_data_path, file.name)
+                with open(file_path, 'wb') as destination:
+                    # If file is in memory, it has chunks()
+                    if hasattr(file, 'chunks'):
+                        for chunk in file.chunks():
+                            destination.write(chunk)
+                    # Otherwise read the file directly
+                    else:
+                        destination.write(file.read())
+                logging.info(f"Successfully saved file to {file_path}")
+                print(f'file: {file.name} is saved')
+                file_fps.append(file.name)
+                
+                # Reset file pointer if possible, in case file is reused later
+                if hasattr(file, 'seek'):
+                    try:
+                        file.seek(0)
+                    except:
+                        pass  # File may not support seeking or may be closed
+            except Exception as e:
+                logging.error(f"Error saving file {file.name}: {e}", exc_info=True)
+                raise
+
+        ## download old project file here and run it through aggregator
+        ## build download URL
+        url = f'http://localhost:8000/project/{project["linkid"]}/download'
+        download_path = project_data_path + '/download.tar.gz'
+
+        if samples_to_remove and len(samples_to_remove) > 0:
+            # strip them from the current project runs before aggregation
+            try:
+                os.makedirs(project_data_path, exist_ok=True)
+            except Exception as e:
+                logging.error(f'Failed to make directory {project_data_path}')
+                logging.error(e)
+
+            stripped_tar = remove_samples_from_tar(project, samples_to_remove, download_path, url)
+            file_fps.append(os.path.basename(stripped_tar))
+
+        try:
+            ## try to download old project file
+            print(f"PREVIOUS FILE FPS LIST: {file_fps}")
+            ### if replace project, don't download old project
+            try:
+                if request.POST['replace_project'] == 'on':
+                    print('Replacing project with new uploaded file')
+            except:
+                # when removing samples we want the stripped tar file to be aggregated
+                # pulling the old one would have the stripped samples still in it
+                if not (samples_to_remove and len(samples_to_remove) > 0):
+                    try:
+                        download_file(url, download_path)
+                        file_fps.append(os.path.join('download.tar.gz'))
+                    except Exception as e:
+                        logging.error(f'Failed to download the file: {e}')
+            
+            temp_directory = os.path.join('./tmp/', str(temp_proj_id))
+            
+            # Pass name_map_file_path to Aggregator if provided
+            if name_map_file_path:
+                logging.info(f"Edit Project - Using name map file for sample remapping: {name_map_file_path}")
+                agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3',
+                                 name_remap_file=name_map_file_path, uuid=str(temp_proj_id))
+            else:
+                agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3',
+                                 uuid=str(temp_proj_id))
+
+            if not agg.completed:
+                ## redirect to edit page if aggregator fails
+                if os.path.exists(temp_directory):
+                    shutil.rmtree(temp_directory)
+                # Clean up before returning
+                alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
+
+                # Clean up before returning
+                del agg
+                return render(request, 'pages/edit_project.html',
+                              {'project': project,
+                               'run': form,
+                               'alert_message': alert_message,
+                               'all_alias': get_all_alias()})
+            
+            ## after running aggregator, replace the requests file with the aggregated file:
+            temp_file = TemporaryUploadedFile(
+                name=os.path.basename(agg.aggregated_filename),
+                content_type='application/gzip',
+                size=os.path.getsize(agg.aggregated_filename),
+                charset=None
+            )
+            with open(agg.aggregated_filename, 'rb') as f:
+                # Copy file in chunks
+                for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                    temp_file.write(chunk)
+            
+            temp_file.seek(0)
+            # Need to flush to ensure all data is written to the temp file
+            temp_file.file.flush()
+            request.FILES['document'] = temp_file
+
+            # Explicitly delete aggregator object after use to free memory
+            del agg
+            agg = None
+        except:
+            ## download failed, don't run aggregator
+            print(f'download failed ... ')
+            if agg is not None:
+                del agg
+    except:
+        print('no file uploaded')
+        if agg is not None:
+            del agg
+
+    try:
+        request_file = request.FILES['document']
+    except:
+        request_file = None
+
+    if request_file is not None:
+        ## save all files, run through aggregator.
+        # mark the current project as updated
+        update_project = project_update(request, project_name)
+        # mark current project as deleted as well
+        delete_project = project_delete(request, project_name)
+
+        ## get list of previous versions before this and insert it along with the _create project function .
+        new_prev_versions = []
+        if 'previous_versions' in project:
+            new_prev_versions = project['previous_versions']
+
+        ## update for current
+        new_prev_versions.append(
+            {
+                'date': str(project['date']),
+                'linkid': str(project['linkid'])
+            }
+        )
+
+        views = project['views']
+        downloads = project['downloads']
+        # Preserve subscribers from the old project version
+        old_subscribers = project.get('subscribers', [])
+        # Remove any new project members from the subscribers list
+        old_subscribers = [email for email in old_subscribers if email not in form_dict['project_members']]
+        # create a new one with the new form
+        extra_metadata_file_fp = save_metadata_file(request, project_data_path)
+        ## get extra metadata from csv first (if exists in old project), add it to the new proj
+        old_extra_metadata = get_extra_metadata_from_project(project)
+
+        # Clear the large project dict before creating new version
+        project_id_for_redirect = None
+        new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,
+                                  previous_versions=new_prev_versions, previous_views=[views, downloads],
+                                  old_subscribers=old_subscribers)
+
+        if new_id is not None:
+            project_id_for_redirect = new_id.inserted_id
+            # Notify subscribers about the project update
+            try:
+                # Get the new project to determine sample count - use projection to limit data
+                new_project = collection_handle.find_one(
+                    {'_id': ObjectId(str(project_id_for_redirect))},
+                    {'sample_count': 1, 'runs': 1}
+                )
+                new_sample_count = new_project.get('sample_count', len(new_project.get('runs', {})))
+                notify_subscribers_of_project_update(project, project_id_for_redirect, new_sample_count)
+                # Clean up the limited new_project dict
+                del new_project
+            except Exception as e:
+                logging.error(f"Failed to notify subscribers of project update: {str(e)}")
+
+            # Explicitly clear large objects before redirect
+            del project
+            del old_extra_metadata
+            del new_prev_versions
+
+            # go to the new project
+            return redirect('project_page', project_name=project_id_for_redirect)
+        else:
+            alert_message = "The input file was not a valid aggregation. Please see site documentation."
+            return render(request, 'pages/edit_project.html',
+                          {'project': project,
+                           'run': form,
+                           'alert_message': alert_message,
+                           'all_alias': json.dumps(get_all_alias())})
+    
+    return None  # Indicate no new version was created
+
+
 def edit_project_page(request, project_name):
     if request.method == "GET":
         project = get_one_project(project_name)
@@ -2208,39 +2523,21 @@ def edit_project_page(request, project_name):
         # Get the remap_sample_names parameter from POST request
         remap_sample_names = request.POST.get('remap_sample_names', 'false').lower() == 'true'
         print(f'Remap sample names with sample_name_alias: {remap_sample_names}')
-        
-        # Create name map file if remapping is requested and metadata file is provided
-        name_map_file_path = None
-        if remap_sample_names and metadata_file:
-            # Create temporary directory for name map
-            temp_name_map_dir = f"tmp/name_map_{uuid.uuid4().hex}"
-            name_map_file_path = create_name_map_from_metadata(metadata_file, temp_name_map_dir)
-            
-            # Reset file pointer after reading so subsequent operations can read the file
-            if hasattr(metadata_file, 'seek'):
-                metadata_file.seek(0)
-            
-            if name_map_file_path:
-                logging.info(f"Name map file created at: {name_map_file_path}")
-                print(f"Name map file created for sample remapping: {name_map_file_path}")
-            else:
-                logging.warning("Failed to create name map file - sample_name_alias column may be missing")
-                print("Warning: Could not create name map file. Proceeding without remapping.")
-                # Note: We don't fail the entire operation, just proceed without remapping
 
         project = get_one_project(project_name)
-        
-
         
         old_alias_name = None
         if 'alias_name' in project:
             old_alias_name = project['alias_name']
             print(f'THE OLD ALIAS NAME SHOULD BE: {old_alias_name}')
+        
         # no edits for non-project members unless admin on a public project
         is_admin = getattr(request.user, 'is_staff', False)
         if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
             return HttpResponse("Project does not exist")
+        
         form = UpdateForm(request.POST, request.FILES)
+        
         ## give the new project the old project alias.
         if form.data['alias'] == '':
             if old_alias_name:
@@ -2251,8 +2548,10 @@ def edit_project_page(request, project_name):
                 query = {'_id': ObjectId(project_name)}
                 new_val = { "$set": {'alias_name' : None}}
                 collection_handle.update_one(query, new_val)
+        
         ## new project information is stored in form_dict
         form_dict = form_to_dict(form)
+        
         # Build project member list. Avoid auto-adding admins editing public projects when they are not members.
         is_member = is_user_a_project_member(project, request)
         is_public = not project.get('private', True)
@@ -2260,6 +2559,7 @@ def edit_project_page(request, project_name):
         if getattr(request.user, 'is_staff', False) and is_public and not is_member:
             add_self = False
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request), add_current_user=add_self)
+        
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
         old_membership = project['project_members']
@@ -2270,296 +2570,37 @@ def edit_project_page(request, project_name):
             notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
         except:
             print("Failed to notify users of project membership change")
-            #error_message = "Failed to notify users of project membership change. Please check your email settings."
 
-        ## check multi files,  run aggregator :
-        file_fps = []
-        temp_proj_id = uuid.uuid4().hex ## to be changed
-        agg = None  # Initialize to None for cleanup
-        try:
-            files = request.FILES.getlist('document')
-            project_data_path = f"tmp/{temp_proj_id}" ## to change
-            # Ensure the directory exists
-            os.makedirs(project_data_path, exist_ok=True)
+        # Determine if we need to create a new version or just update metadata
+        # New version is required if:
+        # 1. New sample files are being uploaded (request.FILES.getlist('document'))
+        # 2. Metadata file is being uploaded with name remapping
+        # 3. Name remapping is requested (requires re-aggregation)
+        
+        files_uploaded = request.FILES.getlist('document')
+        needs_new_version = (len(files_uploaded) > 0 or 
+                            metadata_file is not None or 
+                            remap_sample_names)
+        
+        if needs_new_version:
+            # Create a new version with aggregation
+            file_fps = []
+            temp_proj_id = uuid.uuid4().hex
+            project_data_path = f"tmp/{temp_proj_id}"
             
-            for file in files:
-                try:
-                    # Save the file manually instead of using fs.save() to avoid temp file issues in Docker
-                    file_path = os.path.join(project_data_path, file.name)
-                    with open(file_path, 'wb') as destination:
-                        # If file is in memory, it has chunks()
-                        if hasattr(file, 'chunks'):
-                            for chunk in file.chunks():
-                                destination.write(chunk)
-                        # Otherwise read the file directly
-                        else:
-                            destination.write(file.read())
-                    logging.info(f"Successfully saved file to {file_path}")
-                    print(f'file: {file.name} is saved')
-                    file_fps.append(file.name)
-                    
-                    # Reset file pointer if possible, in case file is reused later
-                    if hasattr(file, 'seek'):
-                        try:
-                            file.seek(0)
-                        except:
-                            pass  # File may not support seeking or may be closed
-                except Exception as e:
-                    logging.error(f"Error saving file {file.name}: {e}", exc_info=True)
-                    raise
-                # Note: Don't close the file here - it may be reused or passed to other functions
-
-            ## download old project file here and run it through aggregator
-            ## build download URL
-            url = f'http://localhost:8000/project/{project["linkid"]}/download'
-            download_path = project_data_path+'/download.tar.gz'
-
-            if samples_to_remove and len(samples_to_remove) > 0:
-                # strip them from the current project runs before aggregation
-                try:
-                    os.makedirs(project_data_path, exist_ok=True)
-                except Exception as e:
-                    logging.error(f'Failed to make directory {project_data_path}')
-                    logging.error(e)
-
-                stripped_tar = remove_samples_from_tar(project, samples_to_remove, download_path, url)
-                file_fps.append(os.path.basename(stripped_tar) )
-
-            try:
-                ## try to download old project file
-                print(f"PREVIOUS FILE FPS LIST: {file_fps}")
-                ### if replace project, don't download old project
-                try:
-                    if request.POST['replace_project'] == 'on':
-                        print('Replacing project with new uploaded file')
-                except:
-                    # when removing samples we want the stripped tar file to be aggregated
-                    # pulling the old one would have the stripped samples still in it
-                    if not (samples_to_remove and len(samples_to_remove) > 0):
-                        try:
-                            download_file(url, download_path)
-                            file_fps.append(os.path.join('download.tar.gz'))
-                        except Exception as e:
-                            logging.error(f'Failed to download the file: {e}')
-                # print(f"AFTERS FILE FPS LIST: {file_fps}")
-                # print(f'aggregating on: {file_fps}')
-                temp_directory = os.path.join('./tmp/', str(temp_proj_id))
-                
-                # Pass name_map_file_path to Aggregator if provided
-                if name_map_file_path:
-                    logging.info(f"Edit Project - Using name map file for sample remapping: {name_map_file_path}")
-                    agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', 
-                                   name_remap_file=name_map_file_path, uuid=str(temp_proj_id))
-                else:
-                    agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', 
-                                   uuid=str(temp_proj_id))
-                
-         
-                if not agg.completed:
-                    ## redirect to edit page if aggregator fails
-
-                    if os.path.exists(temp_directory):
-                        shutil.rmtree(temp_directory)
-                    # Clean up before returning
-                    alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
-
-                    # Clean up before returning
-                    del agg
-                    return render(request, 'pages/edit_project.html',
-                              {'project': project,
-                               'run': form,
-                               'alert_message': alert_message,
-                               'all_alias' :get_all_alias()})
-                ## after running aggregator, replace the requests file with the aggregated file:
-
-                temp_file = TemporaryUploadedFile(
-                    name=os.path.basename(agg.aggregated_filename),
-                    content_type='application/gzip',
-                    size=os.path.getsize(agg.aggregated_filename),
-                    charset=None
-                )
-                with open(agg.aggregated_filename, 'rb') as f:
-                    # Copy file in chunks
-                    for chunk in iter(lambda: f.read(1024 * 1024), b''):
-                        temp_file.write(chunk)
-                
-                temp_file.seek(0)
-                # Need to flush to ensure all data is written to the temp file
-                temp_file.file.flush()
-                request.FILES['document'] = temp_file
-             
-                # Note: Don't close temp_file here - Django needs it open for create_project_helper() later
-                # Django will automatically clean it up after the request completes
-
-                # Explicitly delete aggregator object after use to free memory
-                del agg
-                agg = None
-            except:
-                ## download failed, don't run aggregator
-                print(f'download failed ... ')
-                if agg is not None:
-                    del agg
-        except:
-            print('no file uploaded')
-            if agg is not None:
-                del agg
-        try:
-            request_file = request.FILES['document']
-        except:
-            request_file = None
-
-        if request_file is not None:
-            ## save all files, run through aggregator.
-            # mark the current project as updated
-            update_project = project_update(request, project_name)
-            # mark current project as deleted as well
-            delete_project = project_delete(request, project_name)
-
-            ## get list of previous versions before this and insert it along with the _create project function .
-            new_prev_versions = []
-            if 'previous_versions' in project:
-                new_prev_versions = project['previous_versions']
-
-            ## update for current
-            new_prev_versions.append(
-                {
-                    'date':str(project['date']),
-                    'linkid':str(project['linkid'])
-                }
+            result = edit_project_into_new_version(
+                request, project_name, project, form_dict, form, metadata_file,
+                samples_to_remove, remap_sample_names, file_fps, temp_proj_id, project_data_path
             )
-
-            views = project['views']
-            downloads = project['downloads']
-            # Preserve subscribers from the old project version
-            old_subscribers = project.get('subscribers', [])
-            # Remove any new project members from the subscribers list
-            old_subscribers = [email for email in old_subscribers if email not in form_dict['project_members']]
-            # create a new one with the new form
-            extra_metadata_file_fp = save_metadata_file(request, project_data_path)
-            ## get extra metadata from csv first (if exists in old project), add it to the new proj
-            old_extra_metadata = get_extra_metadata_from_project(project)
+            
+            if result is not None:
+                return result
         
-            # Clear the large project dict before creating new version
-            project_id_for_redirect = None
-            new_id = _create_project(form, request, extra_metadata_file_fp, old_extra_metadata=old_extra_metadata,  previous_versions = new_prev_versions, previous_views = [views, downloads], old_subscribers = old_subscribers)
-      
-
-            # Don't delete temp_directory yet - the background extraction thread needs access to the tar file
-            # The cleanup will happen in extract_project_files after extraction completes
-            # if os.path.exists(temp_directory) and not extra_metadata_file_fp:
-            #     shutil.rmtree(temp_directory)
-
-            if new_id is not None:
-                project_id_for_redirect = new_id.inserted_id
-                # Notify subscribers about the project update
-                try:
-                    from .user_preferences import notify_subscribers_of_project_update
-                    # Get the new project to determine sample count - use projection to limit data
-                    new_project = collection_handle.find_one(
-                        {'_id': ObjectId(str(project_id_for_redirect))},
-                        {'sample_count': 1, 'runs': 1}
-                    )
-                    new_sample_count = new_project.get('sample_count', len(new_project.get('runs', {})))
-                    notify_subscribers_of_project_update(project, project_id_for_redirect, new_sample_count)
-                    # Clean up the limited new_project dict
-                    del new_project
-                except Exception as e:
-                    logging.error(f"Failed to notify subscribers of project update: {str(e)}")
-
-                # Explicitly clear large objects before redirect
-                del project
-                del old_extra_metadata
-                del new_prev_versions
-
-
-
-                # go to the new project
-                return redirect('project_page', project_name=project_id_for_redirect)
-            else:
-                alert_message = "The input file was not a valid aggregation. Please see site documentation."
-                return render(request, 'pages/edit_project.html',
-                              {'project': project,
-                               'run': form,
-                               'alert_message': alert_message,
-                               'all_alias' :json.dumps(get_all_alias())})
-        
-        
-        if 'file' in form_dict:
-            runs = samples_to_dict(form_dict['file'])
-        else:
-            runs = 0
-
-        if check_project_exists(project_name):
-            new_project_name = form_dict['project_name']
-
-            logging.info(f"project name: {project_name}  change to {new_project_name}")
-            # Create a deep copy to avoid holding reference to original
-            current_runs = dict(project['runs'])
-
-            if runs != 0:
-                current_runs.update(runs)
-            query = {'_id': ObjectId(project_name)}
-            try:
-                alias_name = form_dict['alias']
-                # print(alias_name)
-            except:
-                print('no alias to be found')
-
-            old_extra_metadata = get_extra_metadata_from_project(project)
-            current_runs = process_metadata_no_request(current_runs, metadata_file=metadata_file, old_extra_metadata = old_extra_metadata)
-
-            # Initialize sample_data from existing project
-            sample_data = project.get('sample_data', None)
-
-            if project.get('sample_data',False) and samples_to_remove and len(samples_to_remove) > 0:
-                # Create a copy to avoid modifying the original
-                sample_data = list(project['sample_data'])
-                current_runs = remove_samples_from_runs(current_runs, samples_to_remove)
-                # Use list comprehension instead of modifying in place
-                sample_data = [s for s in sample_data if s['Sample_name'] not in samples_to_remove]
-            else:
-                sample_data = project.get('sample_data', [])
-
-            # Remove any project members from the subscribers list
-            current_subscribers = project.get('subscribers', [])
-            updated_subscribers = [email for email in current_subscribers if email not in form_dict['project_members']]
-
-            new_val = { "$set": {'project_name':new_project_name, 'runs' : current_runs,
-                                 'description': form_dict['description'], 'date': get_date(),
-                                 'private': form_dict['private'],
-                                 'sample_data': sample_data,
-                                 'project_members': form_dict['project_members'],
-                                 'subscribers': updated_subscribers,
-                                 'publication_link': form_dict['publication_link'],
-                                 'Oncogenes': get_project_oncogenes(current_runs),
-                                 'alias_name' : alias_name}}
-
-            if project.get('sample_data', False) and samples_to_remove and len(samples_to_remove) > 0:
-                new_val["$unset"] = {'metadata_stored': ""}
-
-            # After form_dict is created and before new_val is defined
-            for version_field in ['ASP_version', 'AA_version', 'AC_version']:
-                value = form.cleaned_data.get(version_field, 'NA').strip()
-                if value and value != 'NA':
-                    # Add to new_val to be saved in mongo
-                    new_val.setdefault('$set', {})[version_field] = value
-
-            if form.is_valid():
-                collection_handle.update_one(query, new_val)
-                edit_proj_privacy(project, old_privacy, new_privacy)
-                logging.debug("Updated collection_handle with new data")
-
-                # Clean up large objects before redirect
-                del project
-                del current_runs
-                del old_extra_metadata
-
-                return redirect('project_page', project_name=project_name)
-            else:
-                raise Http404()
-
-        else:
-            return HttpResponse("Project does not exist")
+        # If no new version was created, handle simple updates (metadata, title, description, membership, versions)
+        return edit_project_without_reversioning(
+            request, project_name, project, form_dict, form, metadata_file,
+            samples_to_remove, old_privacy, new_privacy
+        )
     else:
         # get method handling
         project = get_one_project(project_name)
