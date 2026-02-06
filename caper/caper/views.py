@@ -2358,6 +2358,19 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
         
         logging.info(f"Files to aggregate: {file_fps}")
         
+        # Track files to clean up after aggregation
+        files_to_cleanup = []
+        if name_map_file_path:
+            files_to_cleanup.append(name_map_file_path)
+        if not replace_project:
+            # Add downloaded old project file and any stripped tar files
+            if os.path.exists(download_path):
+                files_to_cleanup.append(download_path)
+            # Check for stripped tar file
+            stripped_tar_path = os.path.join(project_data_path, f'{placeholder_project_id}_stripped.tar.gz')
+            if os.path.exists(stripped_tar_path):
+                files_to_cleanup.append(stripped_tar_path)
+        
         # Call _process_and_aggregate_files to do the actual aggregation and project creation
         _process_and_aggregate_files(
             file_fps, 
@@ -2372,6 +2385,29 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             previous_views=previous_views,
             old_subscribers=old_subscribers
         )
+        
+        # Clean up temporary files (downloaded old project and name map) after aggregation
+        for file_path in files_to_cleanup:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    logging.info(f"Cleaned up temporary file: {file_path}")
+                # If it's a directory (like name map directory), remove it
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+                    logging.info(f"Cleaned up temporary directory: {file_path}")
+            except Exception as e:
+                logging.warning(f"Failed to clean up file {file_path}: {e}")
+        
+        # Also clean up the name map directory if it exists
+        if name_map_file_path:
+            try:
+                temp_name_map_dir = os.path.dirname(name_map_file_path)
+                if os.path.exists(temp_name_map_dir) and temp_name_map_dir.startswith('tmp/name_map_'):
+                    shutil.rmtree(temp_name_map_dir)
+                    logging.info(f"Cleaned up name map directory: {temp_name_map_dir}")
+            except Exception as e:
+                logging.warning(f"Failed to clean up name map directory: {e}")
         
         # After successful processing, notify subscribers about the project update
         try:
