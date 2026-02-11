@@ -178,7 +178,8 @@ logging.debug(f"SERVER_IDENTIFICATION_BANNER: {SERVER_IDENTIFICATION_BANNER}")
 
 #ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = os.environ['ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS']
 
-SECRET_KEY = 'c4nc3r'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'change-me')
+
 
 # Cache configuration - File-based cache that works across Gunicorn workers
 # This allows chart caching and GridFS caching to work properly
