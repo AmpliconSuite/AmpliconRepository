@@ -549,7 +549,7 @@ def project_page(request, project_name, message=''):
         return render(request, "pages/loading.html", {"project_name":project_name})
 
     # Check if this is an empty project
-    is_empty_project = 'EMPTY?' in project and project['EMPTY?'] == True
+    is_empty_project = ('EMPTY?' in project and project['EMPTY?'] == True) or (not project.get('runs')) or (len(project.get('runs', {})) == 0)
 
     if project['private'] and not is_user_a_project_member(project, request):
         return redirect('/accounts/login?next=/project/' + project_name)
