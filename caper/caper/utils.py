@@ -589,7 +589,7 @@ def previous_versions(project):
     cursor.close()
     if len(data) == 1:
         res = data[0]['previous_versions']
-        res.append({'date': data[0]['date'],
+        res.append({'date': data[0].get('date', '1999-01-01T00:00:00.000000'),
                     'linkid': str(data[0]['_id']),
                     'AC_version': data[0].get('AC_version', 'NA'),
                     'AA_version': data[0].get('AA_version', 'NA'),
@@ -604,7 +604,7 @@ def previous_versions(project):
             res = project['previous_versions']
         # add current main version to the list
 
-        res.append({'date': project['date'],
+        res.append({'date': project.get('date', '1999-01-01T00:00:00.000000'),
                     'linkid': str(project['linkid']),
                     'AC_version': project.get('AC_version', 'NA'),
                     'AA_version': project.get('AA_version', 'NA'),
