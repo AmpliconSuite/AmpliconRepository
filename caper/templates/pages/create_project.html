@@ -428,6 +428,15 @@
     }
   
     function uploadFiles() {
+      if (!validateFiles()) {
+        alert("Please select a .tar.gz file before submitting.");
+        return;
+      }
+
+      if (!validateForm()) {
+        return;
+      }  
+        
       showUploadOverlay();
       const fd = new FormData();
       fd.append('csrfmiddlewaretoken', csrf[0].value);
@@ -479,6 +488,10 @@
 
     function validateForm() {
       // Add form validation logic here
+      if (!uploadForm.checkValidity()) {
+        uploadForm.reportValidity();
+        return false;
+      }
       return true;
     }
 
