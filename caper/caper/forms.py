@@ -30,7 +30,12 @@ class RunForm(forms.ModelForm):
             'private': 'Visibility'
         }
         help_texts = {
-            'private': format_html('&nbsp;<b>Private</b>: Only you and project members can view the project.<br>&nbsp;<b>Public</b>: Anyone may view the project.<br>&nbsp;Only you and project members may edit the project. Visibility settings can be updated later.'),
+            'private': format_html(
+                '&nbsp;<b>Private</b>: Only you and project members can view the project.<br>'
+                '&nbsp;<b>Public</b>: Anyone may view the project.<br>'
+                '&nbsp;<b>Hidden Public - visible to anyone with the link</b>: Anyone with the link can view the project, but it won\'t appear in public listings.<br>'
+                '&nbsp;Only you and project members may edit the project. Visibility settings can be updated later.'
+            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -87,7 +92,11 @@ class UpdateForm(forms.ModelForm):
         }
         help_texts = {
             'private': format_html(
-                '&nbsp;<b>Private</b>: Only you and project members can view the project.<br>&nbsp;<b>Public</b>: Anyone may view the project.<br>&nbsp;Only you and project members may edit the project.'),
+                '&nbsp;<b>Private</b>: Only you and project members can view the project.<br>'
+                '&nbsp;<b>Public</b>: Anyone may view the project.<br>'
+                '&nbsp;<b>Hidden Public - visible to anyone with the link</b>: Anyone with the link can view the project, but it won\'t appear in public listings.<br>'
+                '&nbsp;Only you and project members may edit the project.'
+            ),
         }
     
     def __init__(self, *args, **kwargs):

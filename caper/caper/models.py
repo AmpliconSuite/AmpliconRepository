@@ -7,9 +7,12 @@ class Run(models.Model):
     project_name = models.CharField(max_length=1000)
     description = models.CharField(max_length=1000)
     publication_link = models.CharField(max_length=1000, blank=True)
-    #private = models.BooleanField(default=True)
-    BOOL_CHOICES = ((True, 'Private'), (False, 'Public'))
-    private = models.BooleanField(choices=BOOL_CHOICES,default=True)
+    VISIBILITY_CHOICES = (
+        ('private', 'Private'),
+        ('public', 'Public'),
+        ('hidden_public', 'Hidden Public - visible to anyone with the link'),
+    )
+    private = models.CharField(max_length=20, choices=VISIBILITY_CHOICES, default='private')
     project_members = models.CharField(max_length=1000, blank = True)
     alias = models.CharField(max_length = 300, blank =True, null = True)
 
