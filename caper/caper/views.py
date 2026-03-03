@@ -24,7 +24,7 @@ from rest_framework.response import Response
 from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
 from .site_stats import get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
 from .user_preferences import notify_subscribers_of_project_update
-from .utils import normalize_visibility_field, is_project_private, is_project_public, is_project_hidden_public
+from .utils import normalize_visibility_field, is_project_private, is_project_public, is_project_hidden_public, format_visibility_for_display
 
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
@@ -278,7 +278,14 @@ def index(request):
     }
 
     # Get public projects (including featured) in one query
-    public_query = {**base_query, 'private': False}
+    # Handle both legacy boolean False and new string 'public'
+    public_query = {
+        **base_query,
+        '$or': [
+            {'private': False},
+            {'private': 'public'}
+        ]
+    }
     public_projects = list(collection_handle.find(public_query, projection))
 
     # Partition public_projects into featured and non-featured in a single pass
@@ -294,24 +301,46 @@ def index(request):
     # Process project links
     for proj in public_projects:
         prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', False))
     
     for proj in featured_projects:
         prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', False))
 
     # Handle private projects for authenticated users
     if request.user.is_authenticated:
+        # Include both legacy boolean True and new string 'private' and 'hidden_public'
         private_query = {
             **base_query,
-            'private': True,
             '$or': [
-                {'project_members': request.user.username},
-                {'project_members': request.user.email}
+                {
+                    'private': True,
+                    '$or': [
+                        {'project_members': request.user.username},
+                        {'project_members': request.user.email}
+                    ]
+                },
+                {
+                    'private': 'private',
+                    '$or': [
+                        {'project_members': request.user.username},
+                        {'project_members': request.user.email}
+                    ]
+                },
+                {
+                    'private': 'hidden_public',
+                    '$or': [
+                        {'project_members': request.user.username},
+                        {'project_members': request.user.email}
+                    ]
+                }
             ]
         }
         private_projects = list(collection_handle.find(private_query, projection))
 
         for proj in private_projects:
             prepare_project_linkid(proj)
+            proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
     else:
         private_projects = []
 
@@ -348,6 +377,8 @@ def profile(request, message_to_user=None):
         prepare_project_linkid(proj)
         test = get_extra_metadata_from_project(proj)
         proj['sample_metadata_available'] = has_sample_metadata(proj)
+        # Format visibility for display
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
 
     prefs = get_user_preferences(request.user)
     form = UserPreferencesForm(prefs)
@@ -686,6 +717,7 @@ def project_page(request, project_name, message=''):
         'is_empty_project': is_empty_project,  # Pass this flag to the template
         'debug_delete_flag': debug_delete_flag,  # DEBUG: display delete flag
         'debug_current_flag': debug_current_flag,  # DEBUG: display current flag
+        'visibility_display': format_visibility_for_display(project.get('private', True)),  # Formatted visibility
     })
 
 
@@ -1829,7 +1861,13 @@ def batch_sample_download(request):
 def feature_page(request, project_name, sample_name, feature_name):
     project, sample_data, feature = get_one_feature(project_name,sample_name, feature_name)
     feature_data = replace_space_to_underscore(feature)
-    return render(request, "pages/feature.html", {'project': project, 'sample_name': sample_name, 'feature_name': feature_name, 'feature' : feature_data})
+    return render(request, "pages/feature.html", {
+        'project': project,
+        'sample_name': sample_name,
+        'feature_name': feature_name,
+        'feature': feature_data,
+        'visibility_display': format_visibility_for_display(project.get('private', True))
+    })
 
 
 def feature_download(request, project_name, sample_name, feature_name, feature_id):
@@ -3892,6 +3930,8 @@ def coamplification_graph(request):
                 # Add reference genome and class to project object
                 proj['reference_genome'] = ref_genome
                 proj['reference_class'] = get_reference_class(ref_genome)
+                # Add formatted visibility
+                proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
                 filtered_projects.append(proj)
 
     return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})

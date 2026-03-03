@@ -88,7 +88,7 @@
                         </td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
                         <td class="date">{{ project.date }}</td>
-                        <td>{% if  project.private %}private{%  else  %}public{% endif %}</td>
+                        <td>{{ project.visibility_display }}</td>
                         <td>{% if project.sample_metadata_available %}
                                 <i class="fas fa-check-square" style="color: green;"></i>
                             {% else %}

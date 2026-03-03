@@ -915,3 +915,31 @@ def is_project_hidden_public(visibility):
     """
     return visibility == 'hidden_public'
 
+
+def format_visibility_for_display(private_value):
+    """
+    Format visibility value for display to users.
+    
+    Converts both legacy boolean values and new string values to
+    user-friendly display strings.
+    
+    Args:
+        private_value: Boolean (True/False) or string ('private', 'public', 'hidden_public')
+    
+    Returns:
+        Display string: 'Private', 'Public', or 'Hidden Public'
+    """
+    # First normalize the value
+    normalized = normalize_visibility_field(private_value)
+    
+    # Convert to display format
+    if normalized == 'private':
+        return 'Private'
+    elif normalized == 'public':
+        return 'Public'
+    elif normalized == 'hidden_public':
+        return 'Hidden Public'
+    else:
+        return 'Private'  # Default fallback
+
+

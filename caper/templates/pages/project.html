@@ -745,7 +745,7 @@
            onclick="downloadSummaryTable();">
             <i class="fas fa-download"></i> Download Summary
         </a>
-        {% if  project.private %}<div style="">Visibility: <b>Private</b></div>{% endif %}
+        {% if visibility_display != 'Public' %}<div style="">Visibility: <b>{{ visibility_display }}</b></div>{% endif %}
         <div id="project-members-accordion" style="margin-bottom: 15px; ">
             <style>
                 .members-toggle:not(.expanded)::before,
@@ -895,7 +895,7 @@
     </div>
     {% else %}
         <div class="col-md-3">
-        {% if  project.private %}Visibility: <b>Private</b>{% endif %}
+        {% if visibility_display != 'Public' %}Visibility: <b>{{ visibility_display }}</b>{% endif %}
         <div id="project-members-accordion-empty" style="margin-bottom: 15px;">
             <div>
                 <span class="members-toggle-empty" onclick="toggleMembersEmpty()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
