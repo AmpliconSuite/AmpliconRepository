@@ -1,6 +1,6 @@
 import datetime
 
-from .utils import get_collection_handle, collection_handle, db_handle, replace_space_to_underscore, preprocess_sample_data, get_one_sample, sample_data_from_feature_list
+from .utils import get_collection_handle, collection_handle, db_handle, replace_space_to_underscore, preprocess_sample_data, get_one_sample, sample_data_from_feature_list, is_project_private, is_project_public, normalize_visibility_field
 
 site_statistics_handle = get_collection_handle(db_handle,'site_statistics')
 
@@ -57,10 +57,19 @@ def regenerate_site_statistics():
     pub_tissue_counts = dict()
     priv_tissue_counts = dict()
 
-    # just get stats for all private
+    # Get all private projects (including hidden_public which are treated as private)
     all_private_proj_count = 0
     all_private_sample_count = 0
-    all_private_projects = list(collection_handle.find({'private': True, 'delete': False, 'current': True}))
+    # Query for both legacy boolean True and new string values 'private' or 'hidden_public'
+    all_private_projects = list(collection_handle.find({
+        '$or': [
+            {'private': True},
+            {'private': 'private'},
+            {'private': 'hidden_public'}
+        ],
+        'delete': False,
+        'current': True
+    }))
     for proj in all_private_projects:
         class_keys, amplicon_counts = get_project_amplicon_counts(proj)
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts)
@@ -70,9 +79,17 @@ def regenerate_site_statistics():
         all_private_sample_count = all_private_sample_count + len(proj['runs'])
     # end private stats
 
+    # Get all public projects (legacy boolean False or new string value 'public')
     public_proj_count = 0
     public_sample_count = 0
-    public_projects = list(collection_handle.find({'private': False, 'delete': False, 'current': True}))
+    public_projects = list(collection_handle.find({
+        '$or': [
+            {'private': False},
+            {'private': 'public'}
+        ],
+        'delete': False,
+        'current': True
+    }))
     for proj in public_projects:
         class_keys, amplicon_counts = get_project_amplicon_counts(proj)
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, pub_amplicon_counts)
@@ -227,16 +244,26 @@ def delete_project_from_site_statistics(project, is_private):
 def edit_proj_privacy(project, old_privacy, new_privacy):
     """
     Edits site stats based on old and new project privacy settings.
+    
+    Handles both legacy boolean values and new string visibility values.
+    Treats 'hidden_public' as private for statistics purposes.
     """
-    ## going from private to public:
-    if (old_privacy == True) and (new_privacy == False):
-        delete_project_from_site_statistics(project, is_private=True)  # Remove from private stats
-        add_project_to_site_statistics(project, is_private=False)  # Add to public stats
-
-    ## going from public to private:
-    elif (old_privacy == False) and (new_privacy == True):
-        delete_project_from_site_statistics(project, is_private=False)  # Remove from public stats
-        add_project_to_site_statistics(project, is_private=True)  # Add to private stats
+    # Normalize values to handle legacy booleans
+    old_privacy_normalized = normalize_visibility_field(old_privacy)
+    new_privacy_normalized = normalize_visibility_field(new_privacy)
+    
+    old_is_private = is_project_private(old_privacy_normalized)
+    new_is_private = is_project_private(new_privacy_normalized)
+    
+    # Only update stats if privacy status (private/public) actually changed
+    if old_is_private and not new_is_private:
+        # Going from private/hidden_public to public
+        delete_project_from_site_statistics(project, is_private=True)
+        add_project_to_site_statistics(project, is_private=False)
+    elif not old_is_private and new_is_private:
+        # Going from public to private/hidden_public
+        delete_project_from_site_statistics(project, is_private=False)
+        add_project_to_site_statistics(project, is_private=True)
 
 
 def get_project_amplicon_counts(project):

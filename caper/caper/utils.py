@@ -842,3 +842,104 @@ def get_projects_close_cursor(query):
     cursor.close()
 
     return projs
+
+
+def normalize_visibility_field(private_value):
+    """
+    Normalize legacy boolean private field to new string visibility format.
+    
+    For backward compatibility with API calls that use boolean values:
+    - True -> 'private'
+    - False -> 'public'
+    - String values are returned as-is
+    
+    Args:
+        private_value: Boolean (True/False) or string ('private', 'public', 'hidden_public')
+    
+    Returns:
+        String visibility value ('private', 'public', or 'hidden_public')
+    """
+    if isinstance(private_value, bool):
+        return 'private' if private_value else 'public'
+    elif isinstance(private_value, str):
+        if private_value in ('private', 'public', 'hidden_public'):
+            return private_value
+        # Handle string representations of booleans (from URL params, etc.)
+        if private_value.lower() in ('true', '1', 'yes'):
+            return 'private'
+        elif private_value.lower() in ('false', '0', 'no'):
+            return 'public'
+    return 'private'  # Default to private for safety
+
+
+def is_project_private(visibility):
+    """
+    Check if a project should be treated as private.
+    
+    Returns True for 'private' and 'hidden_public' (hidden_public is private
+    in terms of statistics and access control, just visible to anyone with the link).
+    
+    Args:
+        visibility: String visibility value ('private', 'public', or 'hidden_public')
+    
+    Returns:
+        Boolean indicating if project is private
+    """
+    return visibility in ('private', 'hidden_public')
+
+
+def is_project_public(visibility):
+    """
+    Check if a project is fully public.
+    
+    Returns True only for 'public'.
+    
+    Args:
+        visibility: String visibility value ('private', 'public', or 'hidden_public')
+    
+    Returns:
+        Boolean indicating if project is public
+    """
+    return visibility == 'public'
+
+
+def is_project_hidden_public(visibility):
+    """
+    Check if a project is hidden_public.
+    
+    Args:
+        visibility: String visibility value ('private', 'public', or 'hidden_public')
+    
+    Returns:
+        Boolean indicating if project is hidden_public
+    """
+    return visibility == 'hidden_public'
+
+
+def format_visibility_for_display(private_value):
+    """
+    Format visibility value for display to users.
+    
+    Converts both legacy boolean values and new string values to
+    user-friendly display strings.
+    
+    Args:
+        private_value: Boolean (True/False) or string ('private', 'public', 'hidden_public')
+    
+    Returns:
+        Display string: 'Private', 'Public', or 'Hidden Public'
+    """
+    # First normalize the value
+    normalized = normalize_visibility_field(private_value)
+    
+    # Convert to display format
+    if normalized == 'private':
+        return 'Private'
+    elif normalized == 'public':
+        return 'Public'
+    elif normalized == 'hidden_public':
+        return 'Hidden Public'
+    else:
+        return 'Private'  # Default fallback
+
+

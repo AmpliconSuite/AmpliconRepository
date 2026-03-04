@@ -151,7 +151,7 @@
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor%}</td>
-                                <td>{% if project.private %}<i>private</i>{% else %}<b>PUBLIC</b>{% endif %}</td>
+                                <td>{{ project.visibility_display }}</td>
                            </tr>
                             {% endfor %}
                         </tbody>

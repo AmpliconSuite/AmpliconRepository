@@ -24,6 +24,7 @@ from rest_framework.response import Response
 from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
 from .site_stats import get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
 from .user_preferences import notify_subscribers_of_project_update
+from .utils import normalize_visibility_field, is_project_private, is_project_public, is_project_hidden_public, format_visibility_for_display
 
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
@@ -277,7 +278,14 @@ def index(request):
     }
 
     # Get public projects (including featured) in one query
-    public_query = {**base_query, 'private': False}
+    # Handle both legacy boolean False and new string 'public'
+    public_query = {
+        **base_query,
+        '$or': [
+            {'private': False},
+            {'private': 'public'}
+        ]
+    }
     public_projects = list(collection_handle.find(public_query, projection))
 
     # Partition public_projects into featured and non-featured in a single pass
@@ -293,24 +301,46 @@ def index(request):
     # Process project links
     for proj in public_projects:
         prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', False))
     
     for proj in featured_projects:
         prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', False))
 
     # Handle private projects for authenticated users
     if request.user.is_authenticated:
+        # Include both legacy boolean True and new string 'private' and 'hidden_public'
         private_query = {
             **base_query,
-            'private': True,
             '$or': [
-                {'project_members': request.user.username},
-                {'project_members': request.user.email}
+                {
+                    'private': True,
+                    '$or': [
+                        {'project_members': request.user.username},
+                        {'project_members': request.user.email}
+                    ]
+                },
+                {
+                    'private': 'private',
+                    '$or': [
+                        {'project_members': request.user.username},
+                        {'project_members': request.user.email}
+                    ]
+                },
+                {
+                    'private': 'hidden_public',
+                    '$or': [
+                        {'project_members': request.user.username},
+                        {'project_members': request.user.email}
+                    ]
+                }
             ]
         }
         private_projects = list(collection_handle.find(private_query, projection))
 
         for proj in private_projects:
             prepare_project_linkid(proj)
+            proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
     else:
         private_projects = []
 
@@ -347,6 +377,8 @@ def profile(request, message_to_user=None):
         prepare_project_linkid(proj)
         test = get_extra_metadata_from_project(proj)
         proj['sample_metadata_available'] = has_sample_metadata(proj)
+        # Format visibility for display
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
 
     prefs = get_user_preferences(request.user)
     form = UserPreferencesForm(prefs)
@@ -421,7 +453,12 @@ def set_project_edit_OK_flag(project, request):
         is_admin = getattr(request.user, 'is_staff', False)
     except Exception:
         is_admin = False
-    if is_user_a_project_member(project, request) or (is_admin and not project.get('private', True)):
+    
+    # Normalize visibility field to handle legacy boolean values
+    visibility = normalize_visibility_field(project.get('private', 'private'))
+    
+    # Only members can edit. Admins can edit public projects but not private ones.
+    if is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility)):
         project['current_user_may_edit'] = True
     else:
         project['current_user_may_edit'] = False
@@ -552,8 +589,13 @@ def project_page(request, project_name, message=''):
     # Check if this is an empty project
     is_empty_project = ('EMPTY?' in project and project['EMPTY?'] == True) or (not project.get('runs')) or (len(project.get('runs', {})) == 0)
 
-    if project['private'] and not is_user_a_project_member(project, request):
-        return redirect('/accounts/login?next=/project/' + project_name)
+    # Handle access control based on visibility
+    visibility = normalize_visibility_field(project.get('private', 'private'))
+    if is_project_private(visibility) and not is_user_a_project_member(project, request):
+        # For private and hidden_public projects, members can view
+        # For private, non-members must login
+        if not is_project_hidden_public(visibility):
+            return redirect('/accounts/login?next=/project/' + project_name)
 
     # if we got here by an OLD project id (prior to edits) then we want to redirect to the new one
     if not project_name == str(project['linkid']):
@@ -675,6 +717,7 @@ def project_page(request, project_name, message=''):
         'is_empty_project': is_empty_project,  # Pass this flag to the template
         'debug_delete_flag': debug_delete_flag,  # DEBUG: display delete flag
         'debug_current_flag': debug_current_flag,  # DEBUG: display current flag
+        'visibility_display': format_visibility_for_display(project.get('private', True)),  # Formatted visibility
     })
 
 
@@ -815,7 +858,8 @@ def project_summary_download(request, project_name):
     update_project_download_count(project, project_name)
 
     # Check if user has access to private project
-    if project.get('private', False) and not is_user_a_project_member(project, request):
+    visibility = normalize_visibility_field(project.get('private', 'private'))
+    if is_project_private(visibility) and not is_project_hidden_public(visibility) and not is_user_a_project_member(project, request):
         message = "You do not have permission to access this project."
         messages.error(request, message)
         return redirect(request.META.get('HTTP_REFERER', '/'))
@@ -1192,8 +1236,14 @@ def sample_page(request, project_name, sample_name):
     project, sample_data, prev_sample, next_sample = get_one_sample(project_name, sample_name)
     logging.info(f"[PERF] get_one_sample took {time.time() - t1:.3f}s")
     project_linkid = project['_id']
-    if project['private'] and not is_user_a_project_member(project, request):
-        return redirect('/accounts/login')
+    
+    # Handle access control based on visibility
+    visibility = normalize_visibility_field(project.get('private', 'private'))
+    if is_project_private(visibility) and not is_user_a_project_member(project, request):
+        # For private and hidden_public projects, members can view
+        # For private, non-members must login
+        if not is_project_hidden_public(visibility):
+            return redirect('/accounts/login')
     
     # Extract sample names from prev_sample and next_sample
     prev_sample_name = None
@@ -1743,7 +1793,9 @@ def batch_sample_download(request):
 
             # Skip if no access
             project = get_one_project(project_id)
-            if project['private'] and not is_user_a_project_member(project, request):
+            visibility = normalize_visibility_field(project.get('private', 'private'))
+            # Allow access for members, or for hidden_public/public projects
+            if is_project_private(visibility) and not is_project_hidden_public(visibility) and not is_user_a_project_member(project, request):
                 continue
 
             # Add to our grouping
@@ -1809,7 +1861,13 @@ def batch_sample_download(request):
 def feature_page(request, project_name, sample_name, feature_name):
     project, sample_data, feature = get_one_feature(project_name,sample_name, feature_name)
     feature_data = replace_space_to_underscore(feature)
-    return render(request, "pages/feature.html", {'project': project, 'sample_name': sample_name, 'feature_name': feature_name, 'feature' : feature_data})
+    return render(request, "pages/feature.html", {
+        'project': project,
+        'sample_name': sample_name,
+        'feature_name': feature_name,
+        'feature': feature_data,
+        'visibility_display': format_visibility_for_display(project.get('private', True))
+    })
 
 
 def feature_download(request, project_name, sample_name, feature_name, feature_id):
@@ -2023,13 +2081,14 @@ def project_delete(request, project_name):
     project = get_one_project(project_name)
     deleter = get_current_user(request)
     is_admin = getattr(request.user, 'is_staff', False)
-    allowed = is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))
+    visibility = normalize_visibility_field(project.get('private', 'private'))
+    allowed = is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility))
     if check_project_exists(project_name) and allowed:
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
-        delete_project_from_site_statistics(project, project['private'])
+        delete_project_from_site_statistics(project, is_project_private(visibility))
         
         # Clean up large objects
         del project
@@ -2049,7 +2108,8 @@ def project_update(request, project_name):
     """
     project = get_one_project_sans_runs(project_name)
     is_admin = getattr(request.user, 'is_staff', False)
-    allowed = is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))
+    visibility = normalize_visibility_field(project.get('private', 'private'))
+    allowed = is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility))
     if check_project_exists(project_name) and allowed:
         query = {'_id': project['_id']}
         ## 2 new fields: current, and update_date, $set will add a new field with the specified value.
@@ -2248,7 +2308,7 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
 
         new_val = {"$set": {'project_name': new_project_name, 'runs': current_runs,
                             'description': form_dict['description'], 'date': get_date(),
-                            'private': form_dict['private'],
+                            'private': normalize_visibility_field(form_dict['private']),
                             'sample_data': sample_data,
                             'project_members': form_dict['project_members'],
                             'subscribers': updated_subscribers,
@@ -2647,7 +2707,8 @@ def edit_project_page(request, project_name):
     if request.method == "GET":
         project = get_one_project(project_name)
         is_admin = getattr(request.user, 'is_staff', False)
-        if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
+        visibility = normalize_visibility_field(project.get('private', 'private'))
+        if not (is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility))):
             return HttpResponse("Project does not exist")
     if request.method == "POST":
        
@@ -2673,7 +2734,8 @@ def edit_project_page(request, project_name):
         
         # no edits for non-project members unless admin on a public project
         is_admin = getattr(request.user, 'is_staff', False)
-        if not (is_user_a_project_member(project, request) or (is_admin and not project.get('private', True))):
+        visibility = normalize_visibility_field(project.get('private', 'private'))
+        if not (is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility))):
             return HttpResponse("Project does not exist")
         
         form = UpdateForm(request.POST, request.FILES)
@@ -2790,7 +2852,6 @@ def edit_project_page(request, project_name):
                    'all_alias' :json.dumps(get_all_alias()),
                    "is_empty_project": is_empty_project,
                    })
-
 
 
 def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
@@ -3008,7 +3069,6 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             logging.info(f"Cleaned up tar file: {file_location}")
     except Exception as e:
         logging.warning(f"Failed to clean up tar file {file_location}: {e}")
-
 
 
 def sizeof_fmt(num, suffix="B"):
@@ -3404,7 +3464,6 @@ def create_project(request):
                     else:
                         destination.write(file.read())
                 logging.info(f"Successfully saved file to {file_path}")
-                print(f'file: {file.name} is saved')
                 file_fps.append(file.name)
             except Exception as e:
                 logging.error(f"Error saving file {file.name}: {e}", exc_info=True)
@@ -3488,7 +3547,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
-    
+
     # If updating a placeholder, use that ID; otherwise generate new temp ID
     if placeholder_project_id:
         tmp_id = placeholder_project_id
@@ -3500,37 +3559,37 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         if project is None or tmp_id is None:
             return None
         project_data_path = f"tmp/{tmp_id}"
-        
+
         # Create new project
         new_id = collection_handle.insert_one(project)
         add_project_to_site_statistics(project, project['private'])
         project_id = new_id.inserted_id
-        
+
         # move the project location to a new name using the UUID to prevent name collisions
         new_project_data_path = f"tmp/{project_id}"
         os.rename(project_data_path, new_project_data_path)
         project_data_path = new_project_data_path
-    
+
     # For placeholder updates, create the project data now
     if placeholder_project_id:
-        project, _ = create_project_helper(form, user, request_file, tmp_id=tmp_id, 
-                                          previous_versions=previous_versions, 
-                                          previous_views=previous_views, 
+        project, _ = create_project_helper(form, user, request_file, tmp_id=tmp_id,
+                                          previous_versions=previous_versions,
+                                          previous_views=previous_views,
                                           old_subscribers=old_subscribers)
         if project is None:
             return False
-        
+
         # Update the placeholder project with real data
         project['_id'] = project_id
         project['linkid'] = str(project_id)
-        
+
         # Remove placeholder-specific fields and ensure project_name doesn't have "(Processing...)"
         update_fields = {k: v for k, v in project.items() if k not in ['_id']}
-        
+
         # Remove aggregation-specific placeholder fields
         collection_handle.update_one(
             {'_id': project_id},
-            {"$set": update_fields, 
+            {"$set": update_fields,
              "$unset": {
                  'aggregation_in_progress': '',
                  'original_project_name': '',
@@ -3538,14 +3597,14 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
              }}
         )
         add_project_to_site_statistics(project, project['private'])
-    
+
     file_location = f'{project_data_path}/{request_file.name}'
     logging.debug("file stats: " + str(os.stat(file_location).st_size))
 
     # extract the files async also using thread pool
     _thread_executor.submit(
         extract_project_files,
-        tarfile, file_location, project_data_path, project_id, 
+        tarfile, file_location, project_data_path, project_id,
         extra_metadata_file_fp, old_extra_metadata, samples_to_remove
     )
 
@@ -3553,10 +3612,10 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         # load the zip asynch to S3 for later use
         _thread_executor.submit(
             upload_file_to_s3,
-            f'{project_data_path}/{request_file.name}', 
+            f'{project_data_path}/{request_file.name}',
             f'{project_id}/{project_id}.tar.gz'
         )
-    
+
     # Return success (True) for placeholder updates, or the new_id for new projects
     return True if placeholder_project_id else new_id
 
@@ -3605,7 +3664,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
                 try:
                     request_file.close()
                 except Exception as e:
-                    logging.warning(f"Failed to close request_file: {e}")
+                    logging.error(f"Error closing request_file {getattr(request_file, 'name', repr(request_file))}: {e}", exc_info=True)
             #file_exists = os.path.exists(project_data_path+ "/" + request_file.name)
             #if settings.USE_S3_DOWNLOADS and file_exists:
             #    # we need to upload it to S3, we use the same path as here in the bucket to keep things simple
@@ -3675,7 +3734,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['tarfile'] = project_tar_id
     project['date_created'] = get_date()
     project['date'] = get_date()
-    project['private'] = form_dict['private']
+    project['private'] = normalize_visibility_field(form_dict['private'])
     project['delete'] = False
     project['current'] = True
     project['previous_versions'] = previous_versions
@@ -3868,6 +3927,8 @@ def coamplification_graph(request):
                 # Add reference genome and class to project object
                 proj['reference_genome'] = ref_genome
                 proj['reference_class'] = get_reference_class(ref_genome)
+                # Add formatted visibility
+                proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
                 filtered_projects.append(proj)
 
     return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
@@ -4321,12 +4382,12 @@ def search_results(request):
                 # Add sample to the set (automatically handles duplicates)
                 if sample_name:
                     project_counts[project_id]['unique_samples'].add(sample_name)
-            
+        
             # Convert sets to counts and remove the sets before returning
             for project_id in project_counts:
                 project_counts[project_id]['count'] = len(project_counts[project_id]['unique_samples'])
                 del project_counts[project_id]['unique_samples']
-            
+        
             # Sort by project name
             return sorted(project_counts.values(), key=lambda x: x['name'])
 
@@ -4399,4 +4460,26 @@ def check_ec3d_available(project_name, sample_name):
     logging.debug(f"ec3d_path is {ec3d_path}")
 
     return os.path.exists(ec3d_path)
+
+
+@login_required
+def username_autocomplete(request):
+    """
+    Returns a JSON list of usernames matching the query term.
+    Only returns usernames (never email addresses) to avoid privacy leaks.
+    Requires the user to be logged in.
+    """
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2:
+        return JsonResponse([], safe=False)
+
+    # Query by username only, exclude the requesting user, limit to 10
+    users = (
+        User.objects
+        .filter(username__icontains=q)
+        .exclude(username=request.user.username)
+        .values_list('username', flat=True)
+        .order_by('username')[:10]
+    )
+    return JsonResponse(list(users), safe=False)
 

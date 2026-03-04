@@ -34,7 +34,7 @@ from .utils import (
     collection_handle, collection_handle_primary, fs_handle,
     get_one_project, get_one_deleted_project, prepare_project_linkid,
     check_if_db_field_exists, get_date_short, previous_versions,
-    form_to_dict, get_date, db_handle_primary
+    form_to_dict, get_date, db_handle_primary, format_visibility_for_display
 )
 
 from .extra_metadata import *
@@ -86,7 +86,15 @@ def admin_featured_projects(request):
         new_val = {"$set": {'featured': featured}}
         collection_handle_primary.update_one(query, new_val)
 
-    public_projects = list(collection_handle_primary.find({'private': False, 'delete': False}))
+    # Handle both legacy boolean False and new string 'public'
+    public_projects = list(collection_handle_primary.find({
+        '$or': [
+            {'private': False},
+            {'private': 'public'}
+        ],
+        'delete': False,
+        'current': True
+    }))
     for proj in public_projects:
         prepare_project_linkid(proj)
 
@@ -455,6 +463,10 @@ def admin_delete_user(request):
 
         if action == 'select_user':
             solo_projects = list(collection_handle.find({'current': True, 'project_members': [username]}))
+            # Add formatted visibility to solo projects
+            for proj in solo_projects:
+                proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
+            
             # Member projects: username is one of the members, but not the only one
             # Query for projects where the username is in the project_members array
             member_projects = list(collection_handle.find({
@@ -464,6 +476,9 @@ def admin_delete_user(request):
 
             # Filter the results to ensure the project_members array has more than one member
             member_projects = [project for project in member_projects if len(project.get('project_members', [])) > 1]
+            # Add formatted visibility to member projects
+            for proj in member_projects:
+                proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
 
         elif action == 'delete_user':
 
@@ -625,6 +640,7 @@ def data_qc(request):
         private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False, 'current': True}))
         for proj in private_projects:
             prepare_project_linkid(proj)
+            proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
     else:
         private_projects = []
 
@@ -635,6 +651,7 @@ def data_qc(request):
     public_projects = list(collection_handle.find({'private' : False, 'delete': False, 'current': True}))
     for proj in public_projects:
         prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
         public_proj_count = public_proj_count + 1
         public_sample_count = public_sample_count + len(proj['runs'])
 
@@ -665,6 +682,7 @@ def data_qc(request):
             if not has_previous and not is_referenced:
                 # No other versions found - this is orphaned!
                 prepare_project_linkid(project)
+                project['visibility_display'] = format_visibility_for_display(project.get('private', True))
                 orphaned_projects.append(project)
 
     # Run the schema validation directly

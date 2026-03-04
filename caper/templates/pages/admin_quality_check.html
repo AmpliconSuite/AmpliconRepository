@@ -139,10 +139,10 @@
                             <td>{{ project.project_name }}</td>
                             <td><code>{{ project.linkid }}</code></td>
                             <td>
-                                {% if project.private %}
-                                    <span class="badge badge-warning">Private</span>
-                                {% else %}
+                                {% if project.visibility_display == 'Public' %}
                                     <span class="badge badge-info">Public</span>
+                                {% else %}
+                                    <span class="badge badge-warning">{{ project.visibility_display }}</span>
                                 {% endif %}
                             </td>
                             <td>{{ project.date|default:"N/A" }}</td>
