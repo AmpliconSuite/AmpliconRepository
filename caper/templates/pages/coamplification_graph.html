@@ -163,7 +163,7 @@
                         </td>
                         <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                         <td>{{ project.description }}</td>
-                        <td>{% if project.private %}Private{% else %}Public{% endif %}</td>
+                        <td>{{ project.visibility_display }}</td>
                         <td>{{ project.reference_genome }}</td>
                         <td>{{ project.sample_count|default:"0" }}</td>
                     </tr>

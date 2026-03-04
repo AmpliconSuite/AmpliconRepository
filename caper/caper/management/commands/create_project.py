@@ -13,6 +13,7 @@ from django.utils.datastructures import MultiValueDict
 from django.http import QueryDict
 
 from caper.views import create_project
+from caper.utils import normalize_visibility_field
 
 
 class Command(BaseCommand):
@@ -25,8 +26,9 @@ class Command(BaseCommand):
                           help='Path to the tar.gz file to upload (local path, HTTP URL, or S3 URI)')
         parser.add_argument('--description', type=str, default='Created via command line', 
                           help='Project description')
-        parser.add_argument('--private', action='store_true', default=True, 
-                          help='Whether the project is private (default: True)')
+        parser.add_argument('--visibility', type=str, default='private', 
+                          choices=['private', 'public', 'hidden_public', 'true', 'false'],
+                          help='Project visibility: private (members only), public (anyone), hidden_public (link-only), or legacy boolean values (true/false)')
         parser.add_argument('--members', type=str, default='', 
                           help='Comma-separated list of additional project members')
         parser.add_argument('--alias', type=str, default='', 
@@ -41,7 +43,7 @@ class Command(BaseCommand):
         username = options['username']
         file_path = options['file_path']
         description = options['description']
-        private = options['private']
+        visibility = normalize_visibility_field(options['visibility'])  # Normalize to handle legacy booleans
         members = options['members']
         alias = options['alias']
         publication = options['publication']
@@ -93,7 +95,7 @@ class Command(BaseCommand):
             post_data.update({
                 'project_name': project_name,
                 'description': description,
-                'private': private,
+                'private': visibility,
                 'project_members': username + (f', {members}' if members else ''),
                 'alias': alias,
                 'publication_link': publication,
