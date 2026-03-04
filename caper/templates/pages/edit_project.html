@@ -589,6 +589,7 @@
 
 // Helper to add/remove explanation spans
     function setDisabledWithMessage(element, disabled, message, spanId) {
+        if (!element) return;
         element.disabled = disabled;
         let span = document.getElementById(spanId);
         if (disabled) {
@@ -611,12 +612,14 @@
         // Set disabled property for all checkboxes
         sampleCheckboxes.forEach(cb => cb.disabled = disabled);
         // Show or clear the message
-        if (disabled && message) {
-            msgDiv.style.display = 'block';
-            msgDiv.innerHTML = `<span style="color:red;">${message}</span>`;
-        } else {
-            msgDiv.style.display = 'none';
-            msgDiv.innerHTML = '';
+        if (msgDiv) {
+            if (disabled && message) {
+                msgDiv.style.display = 'block';
+                msgDiv.innerHTML = `<span style="color:red;">${message}</span>`;
+            } else {
+                msgDiv.style.display = 'none';
+                msgDiv.innerHTML = '';
+            }
         }
     }
 
@@ -628,6 +631,7 @@
         var inputField = document.getElementById('id_alias');
         var result = document.getElementById('result');
         
+        if (inputField && result) {
         inputField.addEventListener('input', function() {
             var userInput = inputField.value;
             
@@ -639,6 +643,7 @@
                 result.style.color = 'green';
             }
         });
+        }
         
             const sampleCheckboxes = document.querySelectorAll('.sample-checkbox');
     const fileInput = document.getElementById('fileuploadfield');
@@ -666,23 +671,26 @@
         });
     }
 
-    form.addEventListener('submit', function(e) {
-        const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
-        const filesSelected = fileInput && fileInput.files.length > 0;
-        const metadataSelected = metadataInput && metadataInput.files.length > 0;
-        if (samplesSelected && (filesSelected || metadataSelected)) {
-            e.preventDefault();
-            alert('While deleting samples, new data or metadata cannot be uploaded. Please unselect either the files or the samples to delete.');
-        }
-        if ((filesSelected || metadataSelected) && samplesSelected) {
-            e.preventDefault();
-            alert('While uploading files, you cannot select samples to delete. Please unselect either the files or the samples to delete.');
-        }
-    });
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
+            const filesSelected = fileInput && fileInput.files.length > 0;
+            const metadataSelected = metadataInput && metadataInput.files.length > 0;
+            if (samplesSelected && (filesSelected || metadataSelected)) {
+                e.preventDefault();
+                alert('While deleting samples, new data or metadata cannot be uploaded. Please unselect either the files or the samples to delete.');
+            }
+            if ((filesSelected || metadataSelected) && samplesSelected) {
+                e.preventDefault();
+                alert('While uploading files, you cannot select samples to delete. Please unselect either the files or the samples to delete.');
+            }
+        });
+    }
 
     updateInputs(); // Initial state
-        
+
         // --- Username autocomplete for project_members field ---
+        // Called last so any earlier error cannot prevent this from running
         initUsernameAutocomplete('id_project_members', '{% url "username_autocomplete" %}');
     });
 
