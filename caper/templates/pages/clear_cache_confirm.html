@@ -2,28 +2,46 @@
 
 {% load mezzanine_tags %}
 
-{% block meta_title %}Graph Cache Management - Admin{% endblock %}
+{% block meta_title %}Cache Management - Admin{% endblock %}
 
 {% block main %}
 
 <div class="container main-container" style="max-width:1400px; width:90%; margin:auto;">
     <div class="row">
         <div class="col-md-12">
-            <h2><i class="fas fa-database"></i> Graph Cache Management</h2>
+            <h2><i class="fas fa-database"></i> Cache Management</h2>
             <hr>
-            <p class="text-muted">View and manage cached coamplification graphs stored in Neo4j. This page is for administrators only.</p>
+            <p class="text-muted">View and manage cached coamplification graphs (Neo4j) and chart visualizations (Django). This page is for administrators only.</p>
+        </div>
+    </div>
+
+    <div class="row" style="margin-top:20px">
+        <div class="col-md-12">
+            {% if total_caches > 0 %}
+            <div class="alert alert-info" role="alert">
+                <i class="fas fa-info-circle"></i> <strong>{{ total_caches }}</strong> Neo4j graph cache(s) found. 
+                Clearing the cache will require regenerating the graphs on next use, but can help if data has been updated or to free up Neo4j storage.
+            </div>
+            {% else %}
+            <div class="alert alert-success" role="alert">
+                <i class="fas fa-check-circle"></i> <strong>No Neo4j graph caches found.</strong> Graph caches are created automatically when users generate coamplification graphs.
+            </div>
+            {% endif %}
+            
+            {% if total_chart_caches > 0 %}
+            <div class="alert alert-info" role="alert">
+                <i class="fas fa-chart-bar"></i> <strong>{% if chart_count_is_estimate %}~{% endif %}{{ total_chart_caches }}</strong> Django chart cache{% if total_chart_caches != 1 %}s{% endif %} {% if chart_count_is_estimate %}may exist{% else %}found{% endif %} (stackedbar and piechart for each project). 
+                Clearing chart caches will force regeneration of project visualization charts on next view.
+            </div>
+            {% else %}
+            <div class="alert alert-success" role="alert">
+                <i class="fas fa-check-circle"></i> <strong>No Django chart caches found.</strong> Chart caches are created automatically when users view project pages with visualizations.
+            </div>
+            {% endif %}
         </div>
     </div>
 
     {% if total_caches > 0 %}
-    <div class="row" style="margin-top:20px">
-        <div class="col-md-12">
-            <div class="alert alert-info" role="alert">
-                <i class="fas fa-info-circle"></i> <strong>{{ total_caches }}</strong> cached graph(s) found. 
-                Clearing the cache will require regenerating the graphs on next use, but can help if data has been updated or to free up Neo4j storage.
-            </div>
-        </div>
-    </div>
 
     <div class="table-responsive">
         <table id="cacheTable" class="table table-hover table-striped">
@@ -52,23 +70,33 @@
 
     <div class="row" style="margin-top:25px; margin-bottom:25px">
         <div class="col-md-12">
-            <form method="get" action="{% url 'clear_cache' %}" onsubmit="return confirm('⚠️ Are you sure you want to clear ALL cached graphs?\n\nThis will:\n- Remove all {{ total_caches }} cached graph(s)\n- Require regeneration on next use (slower first load)\n- Free up Neo4j storage space\n\nThis action cannot be undone.');">
+            <form method="get" action="{% url 'clear_cache' %}" onsubmit="return confirm('⚠️ Are you sure you want to clear ALL cached graphs?\n\nThis will:\n- Remove all {{ total_caches }} cached graph(s)\n' + (document.getElementById('clear_charts_checkbox').checked ? '- Clear {{ total_chart_caches }} chart cache(s)\n' : '') + '- Require regeneration on next use (slower first load)\n- Free up cache storage space\n\nThis action cannot be undone.');">
                 <input type="hidden" name="clear_all" value="true">
+                <div class="form-check mb-3">
+                    <input type="checkbox" class="form-check-input" id="clear_charts_checkbox" name="clear_charts" value="true" checked>
+                    <label class="form-check-label" for="clear_charts_checkbox">
+                        <i class="fas fa-chart-bar"></i> Also clear Django chart caches (stackedbar and piechart for all projects)
+                    </label>
+                </div>
                 <button type="submit" class="btn btn-danger"><i class="fas fa-trash-alt"></i> Clear All Caches</button>
-                <a href="{% url 'coamplification_graph' %}" class="btn btn-secondary ml-2" style="margin-left:10px;"><i class="fas fa-arrow-left"></i> Back to Coamplification Graph</a>
-                <a href="{% url 'index' %}" class="btn btn-outline-secondary ml-2" style="margin-left:10px;">Back to Home</a>
+                <a href="{% url 'index' %}" class="btn btn-secondary ml-2" style="margin-left:10px;"><i class="fas fa-arrow-left"></i> Back to Home</a>
             </form>
         </div>
     </div>
 
     {% else %}
-    <div class="row" style="margin-top:20px">
+    <div class="row" style="margin-top:20px; margin-bottom:25px">
         <div class="col-md-12">
-            <div class="alert alert-success" role="alert">
-                <i class="fas fa-check-circle"></i> <strong>No cached graphs found.</strong> Caches are created automatically when users generate coamplification graphs.
-            </div>
-            <a href="{% url 'coamplification_graph' %}" class="btn btn-primary"><i class="fas fa-project-diagram"></i> Go to Coamplification Graph</a>
-            <a href="{% url 'index' %}" class="btn btn-outline-secondary ml-2" style="margin-left:10px;">Back to Home</a>
+            {% if total_chart_caches > 0 %}
+            <form method="get" action="{% url 'clear_cache' %}" onsubmit="return confirm('⚠️ Are you sure you want to clear all chart caches?\n\nThis will:\n- Clear {{ total_chart_caches }} chart cache(s)\n- Require regeneration on next project view (slower first load)\n\nThis action cannot be undone.');">
+                <input type="hidden" name="clear_all" value="true">
+                <input type="hidden" name="clear_charts" value="true">
+                <button type="submit" class="btn btn-warning"><i class="fas fa-trash-alt"></i> Clear Chart Caches</button>
+                <a href="{% url 'index' %}" class="btn btn-secondary ml-2" style="margin-left:10px;"><i class="fas fa-arrow-left"></i> Back to Home</a>
+            </form>
+            {% else %}
+            <a href="{% url 'index' %}" class="btn btn-primary"><i class="fas fa-arrow-left"></i> Back to Home</a>
+            {% endif %}
         </div>
     </div>
     {% endif %}
