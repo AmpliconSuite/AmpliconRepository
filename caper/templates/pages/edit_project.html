@@ -4,7 +4,40 @@
 
 <head>
     <title>Edit {{ project.project_name }}</title>
-    
+    <style>
+        /* Username autocomplete dropdown */
+        .username-autocomplete-container {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        .username-autocomplete-dropdown {
+            position: absolute;
+            z-index: 1050;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            max-height: 200px;
+            overflow-y: auto;
+            width: 100%;
+            display: none;
+        }
+        .username-autocomplete-dropdown .autocomplete-item {
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 0.95em;
+        }
+        .username-autocomplete-dropdown .autocomplete-item:hover,
+        .username-autocomplete-dropdown .autocomplete-item.active {
+            background-color: #e9f0fb;
+        }
+        .username-autocomplete-hint {
+            font-size: 0.82em;
+            color: #6c757d;
+            margin-top: 2px;
+        }
+    </style>
 </head>
 
 <style>
@@ -556,6 +589,7 @@
 
 // Helper to add/remove explanation spans
     function setDisabledWithMessage(element, disabled, message, spanId) {
+        if (!element) return;
         element.disabled = disabled;
         let span = document.getElementById(spanId);
         if (disabled) {
@@ -578,12 +612,14 @@
         // Set disabled property for all checkboxes
         sampleCheckboxes.forEach(cb => cb.disabled = disabled);
         // Show or clear the message
-        if (disabled && message) {
-            msgDiv.style.display = 'block';
-            msgDiv.innerHTML = `<span style="color:red;">${message}</span>`;
-        } else {
-            msgDiv.style.display = 'none';
-            msgDiv.innerHTML = '';
+        if (msgDiv) {
+            if (disabled && message) {
+                msgDiv.style.display = 'block';
+                msgDiv.innerHTML = `<span style="color:red;">${message}</span>`;
+            } else {
+                msgDiv.style.display = 'none';
+                msgDiv.innerHTML = '';
+            }
         }
     }
 
@@ -595,6 +631,7 @@
         var inputField = document.getElementById('id_alias');
         var result = document.getElementById('result');
         
+        if (inputField && result) {
         inputField.addEventListener('input', function() {
             var userInput = inputField.value;
             
@@ -606,6 +643,7 @@
                 result.style.color = 'green';
             }
         });
+        }
         
             const sampleCheckboxes = document.querySelectorAll('.sample-checkbox');
     const fileInput = document.getElementById('fileuploadfield');
@@ -633,24 +671,147 @@
         });
     }
 
-    form.addEventListener('submit', function(e) {
-        const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
-        const filesSelected = fileInput && fileInput.files.length > 0;
-        const metadataSelected = metadataInput && metadataInput.files.length > 0;
-        if (samplesSelected && (filesSelected || metadataSelected)) {
-            e.preventDefault();
-            alert('While deleting samples, new data or metadata cannot be uploaded. Please unselect either the files or the samples to delete.');
-        }
-        if ((filesSelected || metadataSelected) && samplesSelected) {
-            e.preventDefault();
-            alert('While uploading files, you cannot select samples to delete. Please unselect either the files or the samples to delete.');
-        }
-    });
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
+            const filesSelected = fileInput && fileInput.files.length > 0;
+            const metadataSelected = metadataInput && metadataInput.files.length > 0;
+            if (samplesSelected && (filesSelected || metadataSelected)) {
+                e.preventDefault();
+                alert('While deleting samples, new data or metadata cannot be uploaded. Please unselect either the files or the samples to delete.');
+            }
+            if ((filesSelected || metadataSelected) && samplesSelected) {
+                e.preventDefault();
+                alert('While uploading files, you cannot select samples to delete. Please unselect either the files or the samples to delete.');
+            }
+        });
+    }
 
     updateInputs(); // Initial state
-        
-        
+
+        // --- Username autocomplete for project_members field ---
+        // Called last so any earlier error cannot prevent this from running
+        initUsernameAutocomplete('id_project_members', '{% url "username_autocomplete" %}');
     });
+
+    /**
+     * Attach username autocomplete to a textarea/input field.
+     * Parses the last space/comma-separated token and fetches matching usernames.
+     */
+    function initUsernameAutocomplete(fieldId, apiUrl) {
+        const field = document.getElementById(fieldId);
+        if (!field) return;
+
+        // Add a hint below the field
+        const hint = document.createElement('div');
+        hint.className = 'username-autocomplete-hint';
+        hint.textContent = '💡 Type a username to get suggestions. Suggestions show registered usernames only (not email addresses).';
+        field.parentNode.insertBefore(hint, field.nextSibling);
+
+        // Wrap the field in a container for dropdown positioning
+        const wrapper = document.createElement('div');
+        wrapper.className = 'username-autocomplete-container';
+        field.parentNode.insertBefore(wrapper, field);
+        wrapper.appendChild(field);
+        wrapper.appendChild(hint);
+
+        // Create dropdown
+        const dropdown = document.createElement('div');
+        dropdown.className = 'username-autocomplete-dropdown';
+        wrapper.appendChild(dropdown);
+
+        let debounceTimer = null;
+        let activeIndex = -1;
+
+        function getLastToken(value) {
+            // Split on spaces or commas, return the last non-empty part
+            const tokens = value.split(/[\s,]+/);
+            return tokens[tokens.length - 1] || '';
+        }
+
+        function replaceLastToken(value, replacement) {
+            // Replace the last token with the chosen username
+            const parts = value.split(/[\s,]+/);
+            parts[parts.length - 1] = replacement;
+            // Rejoin with ', ' for readability, add trailing comma+space for next entry
+            return parts.filter(p => p).join(', ') + ', ';
+        }
+
+        function showDropdown(usernames) {
+            dropdown.innerHTML = '';
+            activeIndex = -1;
+            if (!usernames.length) {
+                dropdown.style.display = 'none';
+                return;
+            }
+            usernames.forEach(function(username, idx) {
+                const item = document.createElement('div');
+                item.className = 'autocomplete-item';
+                item.textContent = username;
+                item.addEventListener('mousedown', function(e) {
+                    e.preventDefault(); // prevent blur before click
+                    selectUsername(username);
+                });
+                dropdown.appendChild(item);
+            });
+            dropdown.style.display = 'block';
+        }
+
+        function selectUsername(username) {
+            field.value = replaceLastToken(field.value, username);
+            dropdown.style.display = 'none';
+            field.focus();
+        }
+
+        function hideDropdown() {
+            dropdown.style.display = 'none';
+            activeIndex = -1;
+        }
+
+        field.addEventListener('input', function() {
+            clearTimeout(debounceTimer);
+            const token = getLastToken(field.value);
+            if (token.length < 2) {
+                hideDropdown();
+                return;
+            }
+            debounceTimer = setTimeout(function() {
+                fetch(apiUrl + '?q=' + encodeURIComponent(token), {
+                    headers: {'X-Requested-With': 'XMLHttpRequest'}
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(usernames) { showDropdown(usernames); })
+                .catch(function() { hideDropdown(); });
+            }, 200);
+        });
+
+        // Keyboard navigation
+        field.addEventListener('keydown', function(e) {
+            const items = dropdown.querySelectorAll('.autocomplete-item');
+            if (!items.length || dropdown.style.display === 'none') return;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                activeIndex = Math.min(activeIndex + 1, items.length - 1);
+                items.forEach(function(el, i) { el.classList.toggle('active', i === activeIndex); });
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                activeIndex = Math.max(activeIndex - 1, 0);
+                items.forEach(function(el, i) { el.classList.toggle('active', i === activeIndex); });
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                if (activeIndex >= 0 && items[activeIndex]) {
+                    e.preventDefault();
+                    selectUsername(items[activeIndex].textContent);
+                }
+            } else if (e.key === 'Escape') {
+                hideDropdown();
+            }
+        });
+
+        field.addEventListener('blur', function() {
+            // slight delay so mousedown on item fires first
+            setTimeout(hideDropdown, 150);
+        });
+    }
 
     // Function to check if metadata file contains sample_name_alias column
     function checkForSampleNameAlias(file) {

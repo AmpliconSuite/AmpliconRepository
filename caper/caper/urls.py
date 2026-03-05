@@ -98,7 +98,8 @@ urlpatterns += [
     path('search_results/', views.search_results, name='search_results'),
     path('ec3d/<str:sample_name>/', views.ec3d_visualization, name='ec3d_visualization'),
     path('url-timing-test/', views.url_timing_test, name='url_timing_test'),
-    
+    path('api/username-autocomplete/', views.username_autocomplete, name='username_autocomplete'),
+
 ]
 
 urlpatterns += static(settings.PROJECT_DATA_URL, document_root=settings.PROJECT_DATA_ROOT)

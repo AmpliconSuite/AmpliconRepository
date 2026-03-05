@@ -2896,7 +2896,6 @@ def edit_project_page(request, project_name):
                    })
 
 
-
 def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
     # remove the sample data for the samples removed
     # from the project zip file. They will be in a directory in the tar file called
@@ -3112,7 +3111,6 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             logging.info(f"Cleaned up tar file: {file_location}")
     except Exception as e:
         logging.warning(f"Failed to clean up tar file {file_location}: {e}")
-
 
 
 def sizeof_fmt(num, suffix="B"):
@@ -3508,7 +3506,6 @@ def create_project(request):
                     else:
                         destination.write(file.read())
                 logging.info(f"Successfully saved file to {file_path}")
-                print(f'file: {file.name} is saved')
                 file_fps.append(file.name)
             except Exception as e:
                 logging.error(f"Error saving file {file.name}: {e}", exc_info=True)
@@ -3592,7 +3589,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     # file download
     request_file = request.FILES['document'] if 'document' in request.FILES else None
     logging.debug("request_file var:" + str(request.FILES['document'].name))
-    
+
     # If updating a placeholder, use that ID; otherwise generate new temp ID
     if placeholder_project_id:
         tmp_id = placeholder_project_id
@@ -3604,37 +3601,37 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         if project is None or tmp_id is None:
             return None
         project_data_path = f"tmp/{tmp_id}"
-        
+
         # Create new project
         new_id = collection_handle.insert_one(project)
         add_project_to_site_statistics(project, project['private'])
         project_id = new_id.inserted_id
-        
+
         # move the project location to a new name using the UUID to prevent name collisions
         new_project_data_path = f"tmp/{project_id}"
         os.rename(project_data_path, new_project_data_path)
         project_data_path = new_project_data_path
-    
+
     # For placeholder updates, create the project data now
     if placeholder_project_id:
-        project, _ = create_project_helper(form, user, request_file, tmp_id=tmp_id, 
-                                          previous_versions=previous_versions, 
-                                          previous_views=previous_views, 
+        project, _ = create_project_helper(form, user, request_file, tmp_id=tmp_id,
+                                          previous_versions=previous_versions,
+                                          previous_views=previous_views,
                                           old_subscribers=old_subscribers)
         if project is None:
             return False
-        
+
         # Update the placeholder project with real data
         project['_id'] = project_id
         project['linkid'] = str(project_id)
-        
+
         # Remove placeholder-specific fields and ensure project_name doesn't have "(Processing...)"
         update_fields = {k: v for k, v in project.items() if k not in ['_id']}
-        
+
         # Remove aggregation-specific placeholder fields
         collection_handle.update_one(
             {'_id': project_id},
-            {"$set": update_fields, 
+            {"$set": update_fields,
              "$unset": {
                  'aggregation_in_progress': '',
                  'original_project_name': '',
@@ -3642,14 +3639,14 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
              }}
         )
         add_project_to_site_statistics(project, project['private'])
-    
+
     file_location = f'{project_data_path}/{request_file.name}'
     logging.debug("file stats: " + str(os.stat(file_location).st_size))
 
     # extract the files async also using thread pool
     _thread_executor.submit(
         extract_project_files,
-        tarfile, file_location, project_data_path, project_id, 
+        tarfile, file_location, project_data_path, project_id,
         extra_metadata_file_fp, old_extra_metadata, samples_to_remove
     )
 
@@ -3657,10 +3654,10 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         # load the zip asynch to S3 for later use
         _thread_executor.submit(
             upload_file_to_s3,
-            f'{project_data_path}/{request_file.name}', 
+            f'{project_data_path}/{request_file.name}',
             f'{project_id}/{project_id}.tar.gz'
         )
-    
+
     # Return success (True) for placeholder updates, or the new_id for new projects
     return True if placeholder_project_id else new_id
 
@@ -3709,7 +3706,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
                 try:
                     request_file.close()
                 except Exception as e:
-                    logging.warning(f"Failed to close request_file: {e}")
+                    logging.error(f"Error closing request_file {getattr(request_file, 'name', repr(request_file))}: {e}", exc_info=True)
             #file_exists = os.path.exists(project_data_path+ "/" + request_file.name)
             #if settings.USE_S3_DOWNLOADS and file_exists:
             #    # we need to upload it to S3, we use the same path as here in the bucket to keep things simple
@@ -4478,12 +4475,12 @@ def search_results(request):
                 # Add sample to the set (automatically handles duplicates)
                 if sample_name:
                     project_counts[project_id]['unique_samples'].add(sample_name)
-            
+        
             # Convert sets to counts and remove the sets before returning
             for project_id in project_counts:
                 project_counts[project_id]['count'] = len(project_counts[project_id]['unique_samples'])
                 del project_counts[project_id]['unique_samples']
-            
+        
             # Sort by project name
             return sorted(project_counts.values(), key=lambda x: x['name'])
 
@@ -4556,4 +4553,26 @@ def check_ec3d_available(project_name, sample_name):
     logging.debug(f"ec3d_path is {ec3d_path}")
 
     return os.path.exists(ec3d_path)
+
+
+@login_required
+def username_autocomplete(request):
+    """
+    Returns a JSON list of usernames matching the query term.
+    Only returns usernames (never email addresses) to avoid privacy leaks.
+    Requires the user to be logged in.
+    """
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2:
+        return JsonResponse([], safe=False)
+
+    # Query by username only, exclude the requesting user, limit to 10
+    users = (
+        User.objects
+        .filter(username__icontains=q)
+        .exclude(username=request.user.username)
+        .values_list('username', flat=True)
+        .order_by('username')[:10]
+    )
+    return JsonResponse(list(users), safe=False)
 
