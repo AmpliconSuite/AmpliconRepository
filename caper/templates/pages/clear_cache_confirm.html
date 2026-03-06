@@ -2,76 +2,99 @@
 
 {% load mezzanine_tags %}
 
-{% block meta_title %}Graph Cache Management - Admin{% endblock %}
+{% block meta_title %}Cache Management - Admin{% endblock %}
 
 {% block main %}
 
 <div class="container main-container" style="max-width:1400px; width:90%; margin:auto;">
     <div class="row">
         <div class="col-md-12">
-            <h2><i class="fas fa-database"></i> Graph Cache Management</h2>
+            <h2><i class="fas fa-database"></i> Cache Management</h2>
             <hr>
-            <p class="text-muted">View and manage cached coamplification graphs stored in Neo4j. This page is for administrators only.</p>
+            <p class="text-muted">View and manage cached coamplification graphs (Neo4j) and chart visualizations (Django). This page is for administrators only.</p>
         </div>
     </div>
 
-    {% if total_caches > 0 %}
+    {# ── Django Chart Caches ── #}
     <div class="row" style="margin-top:20px">
         <div class="col-md-12">
+            <h4><i class="fas fa-chart-bar"></i> Django Chart Caches</h4>
+            {% if total_chart_caches > 0 %}
             <div class="alert alert-info" role="alert">
-                <i class="fas fa-info-circle"></i> <strong>{{ total_caches }}</strong> cached graph(s) found. 
+                <i class="fas fa-chart-bar"></i> <strong>{% if chart_count_is_estimate %}~{% endif %}{{ total_chart_caches }}</strong> Django chart cache{% if total_chart_caches != 1 %}s{% endif %} {% if chart_count_is_estimate %}may exist{% else %}found{% endif %} (stackedbar and piechart for each project).
+                Clearing chart caches will force regeneration of project visualization charts on next view.
+            </div>
+            <form method="get" action="{% url 'clear_cache' %}" onsubmit="return confirm('⚠️ Are you sure you want to clear all chart caches?\n\nThis will:\n- Clear {% if chart_count_is_estimate %}~{% endif %}{{ total_chart_caches }} chart cache(s)\n- Require regeneration on next project view (slower first load)\n\nThis action cannot be undone.');" style="margin-bottom:10px;">
+                <input type="hidden" name="clear_charts" value="true">
+                <button type="submit" class="btn btn-warning"><i class="fas fa-trash-alt"></i> Clear Chart Caches</button>
+            </form>
+            {% else %}
+            <div class="alert alert-success" role="alert">
+                <i class="fas fa-check-circle"></i> <strong>No Django chart caches found.</strong> Chart caches are created automatically when users view project pages with visualizations.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <hr>
+
+    {# ── Neo4j Graph Caches ── #}
+    <div class="row" style="margin-top:20px">
+        <div class="col-md-12">
+            <h4><i class="fas fa-project-diagram"></i> Neo4j Graph Caches</h4>
+            {% if neo4j_error %}
+            <div class="alert alert-warning" role="alert">
+                <i class="fas fa-exclamation-triangle"></i> <strong>Could not connect to Neo4j.</strong> {{ neo4j_error }}
+                <br><small class="text-muted">Neo4j graph cache information is unavailable.</small>
+            </div>
+            {% elif total_caches > 0 %}
+            <div class="alert alert-info" role="alert">
+                <i class="fas fa-info-circle"></i> <strong>{{ total_caches }}</strong> Neo4j graph cache(s) found.
                 Clearing the cache will require regenerating the graphs on next use, but can help if data has been updated or to free up Neo4j storage.
             </div>
-        </div>
-    </div>
 
-    <div class="table-responsive">
-        <table id="cacheTable" class="table table-hover table-striped">
-            <thead class="thead-dark">
-                <tr>
-                    <th>Cache Key</th>
-                    <th>Project IDs</th>
-                    <th>Created</th>
-                    <th>Nodes</th>
-                    <th>Edges</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for cache in cached_graphs %}
-                <tr>
-                    <td><code style="font-size:0.8em;">{{ cache.cache_key|truncatechars:40 }}</code></td>
-                    <td style="font-size:0.9em;">{{ cache.project_ids|join:", "|truncatechars:100 }}</td>
-                    <td>{{ cache.timestamp|date:"M d, Y H:i" }}</td>
-                    <td><span class="badge badge-primary">{{ cache.node_count }}</span></td>
-                    <td><span class="badge badge-info">{{ cache.edge_count }}</span></td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <div class="row" style="margin-top:25px; margin-bottom:25px">
-        <div class="col-md-12">
-            <form method="get" action="{% url 'clear_cache' %}" onsubmit="return confirm('⚠️ Are you sure you want to clear ALL cached graphs?\n\nThis will:\n- Remove all {{ total_caches }} cached graph(s)\n- Require regeneration on next use (slower first load)\n- Free up Neo4j storage space\n\nThis action cannot be undone.');">
-                <input type="hidden" name="clear_all" value="true">
-                <button type="submit" class="btn btn-danger"><i class="fas fa-trash-alt"></i> Clear All Caches</button>
-                <a href="{% url 'coamplification_graph' %}" class="btn btn-secondary ml-2" style="margin-left:10px;"><i class="fas fa-arrow-left"></i> Back to Coamplification Graph</a>
-                <a href="{% url 'index' %}" class="btn btn-outline-secondary ml-2" style="margin-left:10px;">Back to Home</a>
-            </form>
-        </div>
-    </div>
-
-    {% else %}
-    <div class="row" style="margin-top:20px">
-        <div class="col-md-12">
-            <div class="alert alert-success" role="alert">
-                <i class="fas fa-check-circle"></i> <strong>No cached graphs found.</strong> Caches are created automatically when users generate coamplification graphs.
+            <div class="table-responsive" style="margin-top:15px;">
+                <table id="cacheTable" class="table table-hover table-striped">
+                    <thead class="thead-dark">
+                        <tr>
+                            <th>Cache Key</th>
+                            <th>Project IDs</th>
+                            <th>Created</th>
+                            <th>Nodes</th>
+                            <th>Edges</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cache in cached_graphs %}
+                        <tr>
+                            <td><code style="font-size:0.8em;">{{ cache.cache_key|truncatechars:40 }}</code></td>
+                            <td style="font-size:0.9em;">{{ cache.project_ids|join:", "|truncatechars:100 }}</td>
+                            <td>{{ cache.timestamp|date:"M d, Y H:i" }}</td>
+                            <td><span class="badge badge-primary">{{ cache.node_count }}</span></td>
+                            <td><span class="badge badge-info">{{ cache.edge_count }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
-            <a href="{% url 'coamplification_graph' %}" class="btn btn-primary"><i class="fas fa-project-diagram"></i> Go to Coamplification Graph</a>
-            <a href="{% url 'index' %}" class="btn btn-outline-secondary ml-2" style="margin-left:10px;">Back to Home</a>
+
+            <form method="get" action="{% url 'clear_cache' %}" onsubmit="return confirm('⚠️ Are you sure you want to clear all Neo4j graph caches?\n\nThis will:\n- Remove all {{ total_caches }} cached graph(s)\n- Require regeneration on next use (slower first load)\n- Free up Neo4j storage space\n\nThis action cannot be undone.');" style="margin-top:10px; margin-bottom:10px;">
+                <input type="hidden" name="clear_graphs" value="true">
+                <button type="submit" class="btn btn-danger"><i class="fas fa-trash-alt"></i> Clear Graph Caches</button>
+            </form>
+            {% else %}
+            <div class="alert alert-success" role="alert">
+                <i class="fas fa-check-circle"></i> <strong>No Neo4j graph caches found.</strong> Graph caches are created automatically when users generate coamplification graphs.
+            </div>
+            {% endif %}
         </div>
     </div>
-    {% endif %}
+
+    <div class="row" style="margin-top:20px; margin-bottom:30px">
+        <div class="col-md-12">
+            <a href="{% url 'index' %}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Home</a>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -88,4 +111,3 @@
 </script>
 
 {% endblock %}
-

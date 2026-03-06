@@ -43,7 +43,6 @@ urlpatterns += [
     path('coamplification-graph/', views.coamplification_graph, name='coamplification_graph'),
     path('coamplification-graph/visualizer/', views.visualizer, name='visualizer'),
     path('coamplification-graph/download-edges/', views.download_coamp_edges, name='download_coamp_edges'),
-    path('coamplification-graph/clear-cache/', views.clear_cache, name='clear_cache'),
     path('create-project/', views.create_project, name='create_project'),
     path('create-empty-project/', views.create_empty_project, name='create_empty_project'),
 
@@ -77,6 +76,7 @@ urlpatterns += [
     path('admin-stats/download/project/',views.project_stats_download,name="project_stats_download"),
     path('admin-stats/site_statistics/regenerate/', views.site_stats_regenerate, name="site_stats_regenerate"),
     path('admin-sendemail/', views.admin_sendemail, name='admin_sendemail'),
+    path('admin-clear-cache/', views.clear_cache, name='clear_cache'),
     path('project/<str:project_id>/add_metadata', views.add_metadata, name='add_metadata'),
     path('project/<str:project_id>/process_metadata', views.process_metadata, name='process_metadata'),
     path('admin-version-details/', views.admin_version_details, name='admin_version_details'),
