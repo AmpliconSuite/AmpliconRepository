@@ -359,6 +359,16 @@
         
 
       <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
+
+        <!-- Reaggregate project checkbox -->
+        <div class="form-check" style="margin-bottom: 15px;">
+            <input class="form-check-input" type="checkbox" name="reaggregate_project" id="reaggregateProjectCheckbox" value="on">
+            <label class="form-check-label" for="reaggregateProjectCheckbox">
+                <strong>Reaggregate project</strong>
+                <small class="text-muted d-block">Re-run the aggregator on the existing project data even if no new files have been provided.</small>
+            </label>
+        </div>
+
         {{ run.accept_license | as_crispy_field }}
         
         <input
@@ -521,6 +531,12 @@
       const remapCheckbox = document.getElementById('remapSampleNamesCheckbox');
       if (remapCheckbox && remapCheckbox.checked) {
         fd.append('remap_sample_names', 'true');
+      }
+
+      // Add the reaggregate_project checkbox value if checked
+      const reaggregateCheckbox = document.getElementById('reaggregateProjectCheckbox');
+      if (reaggregateCheckbox && reaggregateCheckbox.checked) {
+        fd.append('reaggregate_project', 'on');
       }
   
       const xhr = new XMLHttpRequest();
