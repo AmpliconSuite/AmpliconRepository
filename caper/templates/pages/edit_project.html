@@ -199,11 +199,11 @@
                     <div style="display:flex; gap:16px; flex-wrap:wrap;">
 
                         <label for="mode_append" id="label_append" style="flex:1; min-width:200px; cursor:pointer;
-                               border:2px solid #28a745; border-radius:8px; padding:16px;
-                               background:#f0fff4; transition:border-color 0.2s, background-color 0.2s;">
+                               border:2px solid #ccc; border-radius:8px; padding:16px;
+                               background:#f8f9fa; transition:border-color 0.2s, background-color 0.2s;">
                             <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
                                 <input type="radio" name="replace_project" id="mode_append" value="off"
-                                       style="width:18px; height:18px; cursor:pointer;" checked>
+                                       style="width:18px; height:18px; cursor:pointer;">
                                 <strong style="font-size:1.05em;">➕ Append Samples</strong>
                             </div>
                             <div style="color:#555; font-size:0.9em; margin-left:28px;">
@@ -226,6 +226,13 @@
                             </div>
                         </label>
 
+                    </div>
+
+                    <!-- Validation error: shown when files selected but no mode chosen -->
+                    <div id="replace-mode-error" style="display:none; margin-top:12px;
+                         background:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; padding:10px; color:#721c24;">
+                        <strong>⚠ Please select how files should be added</strong> — choose
+                        <em>Append Samples</em> or <em>Replace Entire Project</em> above before submitting.
                     </div>
 
                     <!-- Confirmation warning shown only when Replace is selected -->
@@ -747,6 +754,23 @@
             const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
             const filesSelected = fileInput && fileInput.files.length > 0;
             const metadataSelected = metadataInput && metadataInput.files.length > 0;
+
+            // If files are being uploaded, a mode must be explicitly selected
+            if (filesSelected) {
+                const appendRadio  = document.getElementById('mode_append');
+                const replaceRadio = document.getElementById('mode_replace');
+                const modeError    = document.getElementById('replace-mode-error');
+                if (!appendRadio.checked && !replaceRadio.checked) {
+                    e.preventDefault();
+                    if (modeError) modeError.style.display = 'block';
+                    document.getElementById('collapseOne').scrollIntoView({behavior: 'smooth', block: 'center'});
+                    // Highlight both cards in amber
+                    document.getElementById('label_append').style.borderColor  = '#ffc107';
+                    document.getElementById('label_replace').style.borderColor = '#ffc107';
+                    return;
+                }
+            }
+
             if (samplesSelected && (filesSelected || metadataSelected)) {
                 e.preventDefault();
                 alert('While deleting samples, new data or metadata cannot be uploaded. Please unselect either the files or the samples to delete.');
@@ -956,6 +980,7 @@
         const $confirmCb     = $('#replace_confirm_checkbox');
         const $fileInput     = $('#fileuploadfield');
         const $submitButton  = $('#createProjectBtn');
+        const $modeError     = $('#replace-mode-error');
         const projectIsEmpty = {% if is_empty_project %}true{% else %}false{% endif %};
 
         // If project is empty, force "Replace" and lock the choice
@@ -970,25 +995,41 @@
             $('#collapseOne').collapse('show');
         }
 
+        function noneSelected() {
+            return !$appendRadio.is(':checked') && !$replaceRadio.is(':checked');
+        }
+
         function updateReplaceUI() {
+            $modeError.hide();
             if ($replaceRadio.is(':checked')) {
                 $labelReplace.css({'border-color': '#c0392b', 'background': '#fff0ee'});
-                $labelAppend.css({'border-color': '#ccc',     'background': '#f8f9fa'});
+                $labelAppend.css({'border-color':  '#ccc',    'background': '#f8f9fa'});
                 $replaceWarn.show();
-            } else {
-                $labelAppend.css({'border-color': '#28a745',  'background': '#f0fff4'});
+            } else if ($appendRadio.is(':checked')) {
+                $labelAppend.css({'border-color':  '#28a745', 'background': '#f0fff4'});
                 $labelReplace.css({'border-color': '#ccc',    'background': '#f8f9fa'});
                 $replaceWarn.hide();
                 if (!projectIsEmpty) { $confirmCb.prop('checked', false); }
+            } else {
+                // Neither selected — neutral state
+                $labelAppend.css({'border-color':  '#ccc', 'background': '#f8f9fa'});
+                $labelReplace.css({'border-color': '#ccc', 'background': '#f8f9fa'});
+                $replaceWarn.hide();
             }
             enforceSubmitButton();
         }
 
         function enforceSubmitButton() {
-            const isReplace      = $replaceRadio.is(':checked');
-            const confirmed      = $confirmCb.is(':checked');
-            const filesUploaded  = $fileInput[0] && $fileInput[0].files.length > 0;
+            const isReplace     = $replaceRadio.is(':checked');
+            const confirmed     = $confirmCb.is(':checked');
+            const filesUploaded = $fileInput[0] && $fileInput[0].files.length > 0;
 
+            // Files selected but no mode chosen → block submit
+            if (filesUploaded && noneSelected()) {
+                $submitButton.prop('disabled', true);
+                $submitButton.attr('title', 'Please choose Append or Replace before submitting.');
+                return;
+            }
             // Replace chosen but not yet confirmed → block submit
             if (isReplace && !confirmed) {
                 $submitButton.prop('disabled', true);
@@ -1008,7 +1049,16 @@
         $appendRadio.on('change', updateReplaceUI);
         $replaceRadio.on('change', updateReplaceUI);
         $confirmCb.on('change', enforceSubmitButton);
-        $fileInput.on('change', enforceSubmitButton);
+        $fileInput.on('change', function() {
+            updateReplaceUI();
+            // If files have just been added and no mode chosen, open accordion and highlight the choice
+            if ($(this)[0].files.length > 0 && noneSelected()) {
+                $('#collapseOne').collapse('show');
+                $labelAppend.css('border-color', '#ffc107');
+                $labelReplace.css('border-color', '#ffc107');
+                $modeError.show();
+            }
+        });
 
         // Set initial visual state
         updateReplaceUI();
