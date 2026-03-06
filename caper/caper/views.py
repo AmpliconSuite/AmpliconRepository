@@ -4210,36 +4210,49 @@ def clear_cache(request):
         return redirect('clear_cache')
     
     elif request.method == 'GET':
-        # GET request with confirmation - clear all caches
-        clear_all = request.GET.get('clear_all', 'false').lower() == 'true'
+        # GET request with confirmation - clear_graphs and clear_charts are independent
+        clear_graphs = request.GET.get('clear_graphs', 'false').lower() == 'true'
         clear_charts = request.GET.get('clear_charts', 'false').lower() == 'true'
-        
-        if clear_all:
-            # Clear graph cache
-            graph_count = clear_graph_cache()
-            
-            # Clear all chart caches if requested
-            chart_count = 0
-            if clear_charts:
+
+        if clear_graphs or clear_charts:
+            msgs = []
+
+            if clear_graphs:
+                # Clear Neo4j graph cache only
                 try:
-                    # Get all project IDs to clear their chart caches
+                    graph_count = clear_graph_cache()
+                    msgs.append(f"Cleared all Neo4j graph caches ({graph_count} entries removed).")
+                    logging.info(f"User {request.user.username} cleared all Neo4j graph caches ({graph_count} entries)")
+                except Exception as e:
+                    logging.warning(f"Error clearing graph caches: {e}")
+                    msgs.append(f"Error clearing Neo4j graph caches: {e}")
+
+            if clear_charts:
+                # Clear Django chart caches only
+                chart_count = 0
+                try:
                     projects = list(collection_handle.find({}, {'_id': 1}))
                     for project in projects:
                         invalidate_project_charts(project['_id'])
                         chart_count += 2  # stackedbar + piechart per project
+                    msgs.append(f"Cleared {chart_count} Django chart cache(s).")
+                    logging.info(f"User {request.user.username} cleared {chart_count} Django chart caches")
                 except Exception as e:
                     logging.warning(f"Error clearing chart caches: {e}")
-            
-            msg = f"Cleared all graph caches ({graph_count} entries removed)."
-            if clear_charts:
-                msg += f" Also cleared {chart_count} chart cache(s)."
-            messages.success(request, msg)
-            logging.info(f"User {request.user.username} cleared all graph caches and {chart_count} chart caches")
+                    msgs.append(f"Error clearing chart caches: {e}")
+
+            messages.success(request, " ".join(msgs))
             return redirect('clear_cache')
         else:
             # Show confirmation page
             from .neo4j_utils import list_cached_graphs
-            cached_graphs = list_cached_graphs()
+            neo4j_error = None
+            cached_graphs = []
+            try:
+                cached_graphs = list_cached_graphs()
+            except Exception as e:
+                logging.warning(f"Could not connect to Neo4j when loading clear_cache page: {e}")
+                neo4j_error = f"Could not connect to Neo4j: {e}"
             
             # Count actual chart caches
             actual_chart_count = count_chart_caches()
@@ -4262,7 +4275,8 @@ def clear_cache(request):
                 'cached_graphs': cached_graphs,
                 'total_caches': len(cached_graphs),
                 'total_chart_caches': total_chart_caches,
-                'chart_count_is_estimate': is_estimate
+                'chart_count_is_estimate': is_estimate,
+                'neo4j_error': neo4j_error,
             })
     
     return redirect('index')
