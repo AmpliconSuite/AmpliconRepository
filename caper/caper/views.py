@@ -36,7 +36,8 @@ from .views_admin import (
     admin_featured_projects, admin_version_details, admin_sendemail, admin_stats,
     admin_permanent_delete_project, admin_delete_user, admin_delete_project,
     user_stats_download, site_stats_regenerate, project_stats_download, sizeof_fmt,
-    fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report,  make_project_current
+    fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report, make_project_current,
+    admin_audit_log,
 )
 
 # Import API views from separate module
@@ -52,7 +53,7 @@ from .forms import RunForm, UpdateForm, UserPreferencesForm
 
 # Import utils functions
 from .utils import (
-    collection_handle, collection_handle_primary, fs_handle,
+    collection_handle, collection_handle_primary, fs_handle, audit_log_handle,
     get_one_project, get_one_sample, get_one_deleted_project,
     prepare_project_linkid, check_if_db_field_exists,
     get_date, get_date_short, previous_versions, form_to_dict,
@@ -2119,6 +2120,57 @@ def get_current_user(request):
     return current_user
 
 
+def _get_project_s3_uri(project_linkid):
+    """
+    Returns the raw S3 URI for a project's tar.gz file, mirroring the path used
+    by project_download().  Returns None when S3 downloads are not configured.
+    """
+    if not getattr(settings, 'USE_S3_DOWNLOADS', False):
+        return None
+    bucket = getattr(settings, 'S3_DOWNLOADS_BUCKET', '')
+    bucket_path = getattr(settings, 'S3_DOWNLOADS_BUCKET_PATH', '')
+    return f's3://{bucket}/{bucket_path}{project_linkid}/{project_linkid}.tar.gz'
+
+
+def log_project_audit_event(user, project_uuid, project_name, is_new_version,
+                             aa_version, ac_version, asp_version, s3_uri):
+    """
+    Writes a single audit-log document to the project_audit_log MongoDB collection.
+
+    Args:
+        user:           Django User object (or username string as fallback)
+        project_uuid:   The project linkid / UUID string
+        project_name:   Human-readable project name
+        is_new_version: True when a brand-new project record is being created
+                        (create_project or edit_project_into_new_version)
+        aa_version:     AA version string (may be 'NA')
+        ac_version:     AC version string (may be 'NA')
+        asp_version:    ASP version string (may be 'NA')
+        s3_uri:         Raw S3 URI of the tar.gz file (None when S3 not configured)
+    """
+    try:
+        if hasattr(user, 'email'):
+            user_email = user.email or user.username
+        else:
+            user_email = str(user)
+
+        audit_entry = {
+            'timestamp': datetime.datetime.utcnow(),
+            'user_email': user_email,
+            'project_uuid': str(project_uuid),
+            'project_name': project_name,
+            'new_version': bool(is_new_version),
+            'AA_version': aa_version or 'NA',
+            'AC_version': ac_version or 'NA',
+            'ASP_version': asp_version or 'NA',
+            's3_uri': s3_uri,
+        }
+        audit_log_handle.insert_one(audit_entry)
+        logging.info(f"Audit log written for project {project_uuid} by {user_email}")
+    except Exception as e:
+        logging.error(f"Failed to write audit log for project {project_uuid}: {e}")
+
+
 def project_delete(request, project_name):
     project = get_one_project(project_name)
     deleter = get_current_user(request)
@@ -2372,6 +2424,20 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
             collection_handle.update_one(query, new_val)
             edit_proj_privacy(project, old_privacy, new_privacy)
             logging.debug("Updated collection_handle with new data")
+            # Audit log: record the edit_project (no new version) event
+            _aa = form.cleaned_data.get('AA_version', '') or project.get('AA_version', 'NA')
+            _ac = form.cleaned_data.get('AC_version', '') or project.get('AC_version', 'NA')
+            _asp = form.cleaned_data.get('ASP_version', '') or project.get('ASP_version', 'NA')
+            log_project_audit_event(
+                user=request.user,
+                project_uuid=project_name,
+                project_name=new_project_name,
+                is_new_version=False,
+                aa_version=_aa,
+                ac_version=_ac,
+                asp_version=_asp,
+                s3_uri=_get_project_s3_uri(project_name),
+            )
 
             # Clean up large objects before redirect
             del project
@@ -2684,6 +2750,17 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 'project_members': form_dict.get('project_members', [])
             }
             collection_handle.insert_one(placeholder_project)
+            # Audit log: record the edit_project (new version) event
+            log_project_audit_event(
+                user=request.user,
+                project_uuid=placeholder_project_id,
+                project_name=form_dict['project_name'],
+                is_new_version=True,
+                aa_version=form_dict.get('AA_version', 'NA'),
+                ac_version=form_dict.get('AC_version', 'NA'),
+                asp_version=form_dict.get('ASP_version', 'NA'),
+                s3_uri=_get_project_s3_uri(placeholder_project_id),
+            )
             
             # Start background thread to process and aggregate files
             logging.info(f"EditProject - start background thread to _process_edit_and_notify")
@@ -3541,6 +3618,17 @@ def create_project(request):
         
         collection_handle.insert_one(placeholder_project)
         logging.info(f"CreateProject - placeholder insert complete")
+        # Audit log: record the create_project event
+        log_project_audit_event(
+            user=request.user,
+            project_uuid=temp_proj_id,
+            project_name=project_name,
+            is_new_version=True,
+            aa_version=form_dict.get('AA_version', 'NA'),
+            ac_version=form_dict.get('AC_version', 'NA'),
+            asp_version=form_dict.get('ASP_version', 'NA'),
+            s3_uri=_get_project_s3_uri(temp_proj_id),
+        )
         # Save form data for the background thread
         form_data = dict(request.POST)
         # Convert lists to single values for QueryDict compatibility

@@ -31,10 +31,11 @@ from bson.objectid import ObjectId
 
 from .forms import FeaturedProjectForm, DeletedProjectForm, SendEmailForm
 from .utils import (
-    collection_handle, collection_handle_primary, fs_handle,
+    collection_handle, collection_handle_primary, fs_handle, audit_log_handle,
     get_one_project, get_one_deleted_project, prepare_project_linkid,
     check_if_db_field_exists, get_date_short, previous_versions,
-    form_to_dict, get_date, db_handle_primary, format_visibility_for_display
+    form_to_dict, get_date, db_handle_primary, format_visibility_for_display,
+    get_project_version_chain,
 )
 
 from .extra_metadata import *
@@ -1005,5 +1006,56 @@ def admin_project_files_report(request):
         'saved_reports': all_saved_reports,
         'is_loaded_report': False,
         'report_auto_saved': True
+    })
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_audit_log(request):
+    """
+    Admin-only view to query and display the project audit log.
+    Supports searching by project name, alias, or UUID.
+    Follows version chains so all events for the same logical project are shown together.
+    """
+    query_term = request.GET.get('q', '').strip()
+    entries = []
+    display_name = None
+    matched_uuids = []
+    error_message = None
+    total_entries = 0
+
+    if query_term:
+        try:
+            matched_uuids, display_name = get_project_version_chain(query_term)
+
+            if matched_uuids:
+                raw_entries = list(
+                    audit_log_handle.find(
+                        {'project_uuid': {'$in': matched_uuids}}
+                    ).sort('timestamp', -1)
+                )
+                for entry in raw_entries:
+                    entry['id_str'] = str(entry['_id'])
+                    # Format timestamp for display
+                    ts = entry.get('timestamp')
+                    if isinstance(ts, datetime.datetime):
+                        entry['timestamp_display'] = ts.strftime('%Y-%m-%d %H:%M:%S UTC')
+                    else:
+                        entry['timestamp_display'] = str(ts) if ts else '—'
+                entries = raw_entries
+                total_entries = len(entries)
+            else:
+                error_message = f'No project found matching "{query_term}".'
+        except Exception as e:
+            logging.error(f"Error querying audit log for '{query_term}': {e}")
+            error_message = f'Error querying audit log: {e}'
+
+    return render(request, 'pages/admin_audit_log.html', {
+        'query_term': query_term,
+        'display_name': display_name,
+        'matched_uuids': matched_uuids,
+        'entries': entries,
+        'total_entries': total_entries,
+        'error_message': error_message,
+        'SITE_TITLE': settings.SITE_TITLE,
     })
 
