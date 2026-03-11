@@ -159,8 +159,76 @@ db_handle_primary, mongo_client_primary = get_db_handle(os.getenv('DB_NAME', def
 
 collection_handle = get_collection_handle(db_handle,'projects')
 collection_handle_primary = get_collection_handle(db_handle_primary,'projects')
+audit_log_handle = get_collection_handle(db_handle_primary,'project_audit_log')
 
 fs_handle = gridfs.GridFS(db_handle)
+
+
+def get_project_version_chain(search_term):
+    """
+    Given a project name (current or historical) or UUID, return:
+      - a list of all project UUIDs in the version chain (strings)
+      - the display name to use for the chain
+
+    Traverses previous_versions links so that audit-log queries span all
+    versions and renames of the same logical project.
+    """
+    uuids = set()
+    display_name = search_term
+
+    # Try to find a current project matching the term
+    project = None
+    try:
+        project = collection_handle_primary.find_one(
+            {'_id': ObjectId(search_term), 'delete': False}
+        )
+    except Exception:
+        pass
+
+    if project is None:
+        project = collection_handle_primary.find_one(
+            {'alias_name': search_term, 'delete': False}
+        )
+    if project is None:
+        # case-insensitive name search, pick the most recent current one
+        project = collection_handle_primary.find_one(
+            {'project_name': {'$regex': f'^{re.escape(search_term)}$', '$options': 'i'},
+             'delete': False, 'current': True}
+        )
+    if project is None:
+        # fall back to any project (including old versions / deleted) with that name
+        project = collection_handle_primary.find_one(
+            {'project_name': {'$regex': f'^{re.escape(search_term)}$', '$options': 'i'}}
+        )
+
+    if project is None:
+        return list(uuids), display_name
+
+    display_name = project.get('project_name', search_term)
+
+    # Collect UUID of this project
+    uuids.add(str(project['_id']))
+
+    # Collect all previous_versions UUIDs embedded in this document
+    for pv in project.get('previous_versions', []):
+        pv_id = pv.get('linkid')
+        if pv_id:
+            uuids.add(str(pv_id))
+
+    # Also look forward: find any current project that lists this one in its previous_versions
+    descendants = list(collection_handle_primary.find(
+        {'previous_versions.linkid': str(project['_id'])},
+        {'_id': 1, 'project_name': 1, 'previous_versions': 1}
+    ))
+    for desc in descendants:
+        uuids.add(str(desc['_id']))
+        display_name = desc.get('project_name', display_name)
+        for pv in desc.get('previous_versions', []):
+            pv_id = pv.get('linkid')
+            if pv_id:
+                uuids.add(str(pv_id))
+
+    return list(uuids), display_name
 
 
 def replace_space_to_underscore(runs):

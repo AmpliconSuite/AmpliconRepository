@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    .audit-search-bar {
+        max-width: 600px;
+    }
+    .audit-table th {
+        white-space: nowrap;
+    }
+    .badge-new-version {
+        background-color: #17a2b8;
+        color: #fff;
+    }
+    .badge-edit {
+        background-color: #6c757d;
+        color: #fff;
+    }
+    .uuid-cell {
+        font-family: monospace;
+        font-size: 0.82em;
+        word-break: break-all;
+    }
+    .s3-uri-cell {
+        font-family: monospace;
+        font-size: 0.78em;
+        word-break: break-all;
+        max-width: 320px;
+    }
+    .version-chain-box {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 8px 14px;
+        font-family: monospace;
+        font-size: 0.82em;
+        margin-bottom: 16px;
+    }
+    .version-chain-box ul {
+        margin-bottom: 0;
+        padding-left: 18px;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        $('#auditTable').DataTable({
+            order: [[0, 'desc']],
+            pageLength: 25,
+            language: {
+                searchPlaceholder: "Filter results"
+            },
+            columnDefs: [
+                { orderable: false, targets: [7] }
+            ]
+        });
+    });
+</script>
+{% endblock %}
+
+{% block meta_title %}Project Audit Log{% endblock %}
+
+{% block main %}
+<div class="container-fluid" style="margin-top: 20px;">
+    <h3>Project Audit Log</h3>
+    <p class="text-muted">
+        Search by project name, alias, or UUID.  All versions and renames of the same project are shown together.
+    </p>
+
+    <form method="get" action="" class="form-inline mb-4 audit-search-bar">
+        <div class="input-group w-100">
+            <input
+                type="text"
+                name="q"
+                class="form-control"
+                placeholder="Project name, alias, or UUID…"
+                        value="{{ query_term|default:'' }}"
+                autofocus
+            />
+            <div class="input-group-append">
+                <button class="btn btn-primary" type="submit">Search</button>
+            </div>
+        </div>
+    </form>
+
+    {% if error_message %}
+    <div class="alert alert-warning" role="alert">
+        {{ error_message }}
+    </div>
+    {% endif %}
+
+    {% if query_term and not error_message %}
+        <div class="mb-2">
+            <strong>Results for:</strong>
+            {% if display_name %}
+                <span class="text-primary">{{ display_name }}</span>
+            {% else %}
+                <span class="text-muted">(no matching project found)</span>
+            {% endif %}
+            &nbsp;&mdash;&nbsp;
+            <strong>{{ total_entries }}</strong> audit log
+            {% if total_entries == 1 %}entry{% else %}entries{% endif %}
+        </div>
+
+        {% if matched_uuids %}
+        <div class="version-chain-box">
+            <strong>Project version chain ({{ matched_uuids|length }} UUID{% if matched_uuids|length != 1 %}s{% endif %} searched):</strong>
+            <ul>
+                {% for uid in matched_uuids %}
+                <li>{{ uid }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if entries %}
+        <div class="table-responsive">
+            <table id="auditTable" class="table table-sm table-hover audit-table">
+                <thead class="thead-light">
+                    <tr>
+                        <th>Timestamp (UTC)</th>
+                        <th>User</th>
+                        <th>Project Name</th>
+                        <th>UUID</th>
+                        <th>New Version?</th>
+                        <th>AA Version</th>
+                        <th>AC Version</th>
+                        <th>ASP Version</th>
+                        <th>S3 URI</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                    <tr>
+                        <td style="white-space:nowrap;">{{ entry.timestamp_display }}</td>
+                        <td>{{ entry.user_email|default:"N/A" }}</td>
+                        <td>{{ entry.project_name|default:"N/A" }}</td>
+                        <td class="uuid-cell">
+                            <a href="/project/{{ entry.project_uuid }}" target="_blank" title="Open project">
+                                {{ entry.project_uuid }}
+                            </a>
+                        </td>
+                        <td>
+                            {% if entry.new_version %}
+                                <span class="badge badge-new-version">Yes</span>
+                            {% else %}
+                                <span class="badge badge-edit">No</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ entry.AA_version|default:"NA" }}</td>
+                        <td>{{ entry.AC_version|default:"NA" }}</td>
+                        <td>{{ entry.ASP_version|default:"NA" }}</td>
+                        <td class="s3-uri-cell">
+                            {% if entry.s3_uri %}
+                                <span title="{{ entry.s3_uri }}">{{ entry.s3_uri }}</span>
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+            {% if matched_uuids %}
+            <div class="alert alert-info">
+                No audit log entries found for this project (the audit log only records events since this feature was deployed).
+            </div>
+            {% endif %}
+        {% endif %}
+
+    {% elif not query_term %}
+        <div class="alert alert-secondary">
+            Enter a project name, alias, or UUID above to view its audit log.
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
