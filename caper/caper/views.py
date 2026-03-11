@@ -2826,16 +2826,11 @@ def edit_project_page(request, project_name):
         # 4. reaggregate_project is requested (force re-aggregation on existing data)
         
         files_uploaded = request.FILES.getlist('document')
-<<<<<<< issue--510
-        needs_new_version = (len(files_uploaded) > 0 or remap_sample_names)
-=======
         reaggregate_project = request.POST.get('reaggregate_project') == 'on'
-        needs_new_version = (len(files_uploaded) > 0 or 
-                            metadata_file is not None or 
+        needs_new_version = (len(files_uploaded) > 0 or
                             remap_sample_names or
                             reaggregate_project)
->>>>>>> main
-        
+
         if needs_new_version:
             # Create a new version with aggregation
             file_fps = []
