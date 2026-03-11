@@ -1,9 +1,12 @@
-from .utils import *
-import pandas as pd
 import csv
+import time
+
+import pandas as pd
+
+from .utils import *
 
 
-
+# This function may be deprecated? I cannot find usages of it. Jens, March 2026
 def process_metadata(request, project_id):
     if request.method == 'POST':
         print(f"Project ID from URL: {project_id}")
@@ -73,7 +76,8 @@ def process_metadata(request, project_id):
     else:
         return "Invalid request method"
 
-def process_metadata_no_request(project_runs, metadata_file=None, old_extra_metadata = None, file_path=None):
+
+def process_metadata_no_request(project_runs, metadata_file=None, old_extra_metadata=None, file_path=None):
     """
     Updates the 'runs' field of a project dictionary with metadata from an uploaded file or a file path.
 
@@ -89,22 +93,25 @@ def process_metadata_no_request(project_runs, metadata_file=None, old_extra_meta
     Raises:
         ValueError: If neither `metadata_file` nor `file_path` is provided or there is an error in processing.
     """
+    start_time = time.time()
+
     if not metadata_file and not file_path and not old_extra_metadata:
-        #raise ValueError("Either 'metadata_file' or 'file_path' must be provided.")
+        # raise ValueError("Either 'metadata_file' or 'file_path' must be provided.")
+        logging.info(f"process_metadata_no_request: No metadata to process - took {time.time() - start_time:.4f}s")
         return project_runs
     elif not metadata_file and not file_path and old_extra_metadata:
-        # add the old extra metadata 
+        # add the old extra metadata
         for sample_key, sample_list in project_runs.items():
             for sample in sample_list:
                 sample_name = sample.get('Sample_name')
                 if sample_name and sample_name in old_extra_metadata:
                     if "extra_metadata_from_csv" not in sample:
                         sample["extra_metadata_from_csv"] = {}
-                    sample["extra_metadata_from_csv"].update(old_extra_metadata[sample_name])   
+                    sample["extra_metadata_from_csv"].update(old_extra_metadata[sample_name])
+        logging.info(f"process_metadata_no_request: Applied old metadata - took {time.time() - start_time:.4f}s")
         return project_runs
-    
+
     # gold old metadata and also a new file is provided
-        
 
     try:
         # Determine the file source and load it into a Pandas DataFrame
@@ -128,6 +135,9 @@ def process_metadata_no_request(project_runs, metadata_file=None, old_extra_meta
         else:
             raise ValueError("Invalid file source. Provide either 'metadata_file' or 'file_path'.")
 
+        file_read_time = time.time()
+        logging.info(f"process_metadata_no_request: File read took {file_read_time - start_time:.4f}s")
+
         # Convert DataFrame to a list of dictionaries
         records = df.to_dict(orient='records')
 
@@ -139,16 +149,15 @@ def process_metadata_no_request(project_runs, metadata_file=None, old_extra_meta
                 continue  # Skip rows without a sample_name
             if old_extra_metadata and sample_name and sample_name in old_extra_metadata:
                 this_samples_old_metadata = old_extra_metadata[sample_name]
-            else: 
+            else:
                 this_samples_old_metadata = None
 
             # Find and update all corresponding samples in the runs
             for sample_key, sample_list in project_runs.items():
                 for sample in sample_list:
                     if sample.get('Sample_name') == sample_name:
-                        
-                        
-                        logging.error(f" -- loading metadata for sample {sample_name} -- ")
+
+                        # logging.error(f" -- loading metadata for sample {sample_name} -- ")
                         if "extra_metadata_from_csv" not in sample:
                             sample["extra_metadata_from_csv"] = {}
 
@@ -156,8 +165,7 @@ def process_metadata_no_request(project_runs, metadata_file=None, old_extra_meta
                         # but then update with new metadata
                         if this_samples_old_metadata:
                             sample["extra_metadata_from_csv"].update(this_samples_old_metadata)
-                            
-                            
+
                         for key, value in row.items():
                             if key != 'sample_name':
                                 sample["extra_metadata_from_csv"][key] = value
@@ -170,6 +178,9 @@ def process_metadata_no_request(project_runs, metadata_file=None, old_extra_meta
                             if key.lower() == 'tissue_of_origin':
                                 sample["Tissue_of_origin"] = value
 
+        end_time = time.time()
+        logging.info(
+            f"process_metadata_no_request: Metadata processing complete - total time {end_time - start_time:.4f}s")
         return project_runs
 
     except Exception as e:
