@@ -2826,11 +2826,15 @@ def edit_project_page(request, project_name):
         # 4. reaggregate_project is requested (force re-aggregation on existing data)
         
         files_uploaded = request.FILES.getlist('document')
+<<<<<<< issue--510
+        needs_new_version = (len(files_uploaded) > 0 or remap_sample_names)
+=======
         reaggregate_project = request.POST.get('reaggregate_project') == 'on'
         needs_new_version = (len(files_uploaded) > 0 or 
                             metadata_file is not None or 
                             remap_sample_names or
                             reaggregate_project)
+>>>>>>> main
         
         if needs_new_version:
             # Create a new version with aggregation
@@ -3031,8 +3035,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         feature_count = 0
         total_features = sum(len(features) for features in runs.values())
 
- 
-
+        gfs_start_time = time.time()
         # get cnv, image, bed files
         for sample, features in runs.items():
             for feature in features:
@@ -3056,6 +3059,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             id_var = "Not Provided"
                         feature[k] = id_var
 
+        gfs_end_time = time.time()
+        logging.info(f"Putting files in GridFS took {gfs_end_time - gfs_start_time:.4f}s")
         logging.info("All features processed. Updating project in database...")
 
         # Now update the project with the updated runs

@@ -1,79 +1,168 @@
-from .utils import *
-import pandas as pd
 import csv
+import time
+import os
 
+import pandas as pd
+
+from .utils import *
+
+
+def _build_metadata_lookup_from_dataframe(df):
+    """
+    Helper function to build a metadata lookup dictionary from a DataFrame.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing metadata with 'sample_name' column
+
+    Returns:
+        dict: Dictionary mapping sample_name -> metadata row dict
+    """
+    records = df.to_dict(orient='records')
+    metadata_lookup = {}
+    for row in records:
+        # look for sample name, case insensitive
+        sample_name = {k.lower(): v for k, v in row.items()}.get('sample_name')
+        if sample_name:
+            metadata_lookup[sample_name] = row
+    return metadata_lookup
+
+
+def _read_metadata_file(metadata_file=None, file_path=None):
+    """
+    Helper function to read metadata from either an uploaded file or file path.
+
+    Args:
+        metadata_file (UploadedFile, optional): Uploaded file object
+        file_path (str, optional): Path to metadata file on disk
+
+    Returns:
+        pd.DataFrame: DataFrame containing the metadata
+
+    Raises:
+        ValueError: If file type is unsupported or neither argument is provided
+    """
+    if metadata_file:
+        file_name = metadata_file.name
+        if file_name.endswith('.xlsx'):
+            return pd.read_excel(metadata_file.open())
+        elif file_name.endswith('.csv') or file_name.endswith('.tsv'):
+            delimiter = '\t' if file_name.endswith('.tsv') else ','
+            return pd.read_csv(metadata_file, delimiter=delimiter)
+        else:
+            raise ValueError("Unsupported file type. Please upload a .csv, .tsv, or .xlsx file.")
+    elif file_path:
+        if file_path.endswith('.xlsx'):
+            return pd.read_excel(file_path)
+        elif file_path.endswith('.csv') or file_path.endswith('.tsv'):
+            delimiter = '\t' if file_path.endswith('.tsv') else ','
+            return pd.read_csv(file_path, delimiter=delimiter)
+        else:
+            raise ValueError("Unsupported file type. Please provide a .csv, .tsv, or .xlsx file.")
+    else:
+        raise ValueError("Invalid file source. Provide either 'metadata_file' or 'file_path'.")
+
+
+def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=None):
+    """
+    Helper function to apply metadata to project runs.
+
+    Args:
+        project_runs (dict): The 'runs' field of the project
+        metadata_lookup (dict): Dictionary mapping sample_name -> metadata row
+        old_extra_metadata (dict, optional): Existing metadata to preserve
+
+    Returns:
+        int: Number of samples updated
+    """
+    samples_updated = 0
+
+    for sample_key, sample_list in project_runs.items():
+        for sample in sample_list:
+            sample_name = sample.get('Sample_name')
+            if not sample_name:
+                continue
+
+            # O(1) lookup instead of O(n) nested iteration
+            row = metadata_lookup.get(sample_name)
+            if not row:
+                continue
+
+            samples_updated += 1
+
+            if "extra_metadata_from_csv" not in sample:
+                sample["extra_metadata_from_csv"] = {}
+
+            # If there is old metadata for this sample, preserve it
+            if old_extra_metadata and sample_name in old_extra_metadata:
+                sample["extra_metadata_from_csv"].update(old_extra_metadata[sample_name])
+
+            # Update with new metadata
+            for key, value in row.items():
+                if key != 'sample_name':
+                    sample["extra_metadata_from_csv"][key] = value
+                if key.lower() == 'sample_name':
+                    sample["Sample_name"] = value
+                if key.lower() == 'cancer_type':
+                    sample["Cancer_type"] = value
+                if key.lower() == 'sample_type':
+                    sample["Sample_type"] = value
+                if key.lower() == 'tissue_of_origin':
+                    sample["Tissue_of_origin"] = value
+
+    return samples_updated
 
 
 def process_metadata(request, project_id):
-    if request.method == 'POST':
-        print(f"Project ID from URL: {project_id}")
-        uploaded_file = request.FILES.get('metadataFile')
-        if not uploaded_file:
-            return "No file uploaded"
+    """
+    Process metadata from a request and update the project in the database.
 
-        try:
-            # Determine the file type and read the file into a Pandas DataFrame
-            file_name = uploaded_file.name
-            if file_name.endswith('.xlsx'):
-                df = pd.read_excel(uploaded_file.open())  # Read Excel file
-            elif file_name.endswith('.csv') or file_name.endswith('.tsv'):
-                delimiter = '\t' if file_name.endswith('.tsv') else ','
-                df = pd.read_csv(uploaded_file, delimiter=delimiter)  # Read CSV/TSV file
-            else:
-                return "Unsupported file type. Please upload a .csv, .tsv, or .xlsx file."
+    Args:
+        request: HTTP request containing the metadata file
+        project_id: ID of the project to update
 
-            # Convert DataFrame to a list of dictionaries
-            records = df.to_dict(orient='records')
-
-            # Retrieve the project using project_id
-            project = collection_handle.find_one({'_id': ObjectId(project_id)})
-            if not project:
-                return "Project not found"
-
-            # Access the 'runs' field of the project
-            runs = project.get('runs', {})
-
-            # Iterate through the records and update metadata
-            for row in records:
-                sample_name = row.get('sample_name')
-                if not sample_name:
-                    continue  # Skip rows without a sample_name
-
-                # Find the corresponding sample in the runs
-                sample_found = False
-                for sample_key, sample_list in runs.items():
-                    for sample in sample_list:
-                        if sample.get('Sample_name') == sample_name:
-                            sample_found = True
-                            # Add metadata fields into `extra_metadata_from_csv`
-                            if "extra_metadata_from_csv" not in sample:
-                                sample["extra_metadata_from_csv"] = {}
-
-                            for key, value in row.items():
-                                if key != 'sample_name':  # Skip sample_name column
-                                    sample["extra_metadata_from_csv"][key] = value
-                            break
-                    if sample_found:
-                        break
-
-                if not sample_found:
-                    print(f"Sample {sample_name} not found in project {project_id}")
-
-            # Update the project document in the database
-            collection_handle.update_one(
-                {'_id': ObjectId(project_id)},
-                {'$set': {'runs': runs}}
-            )
-            return "complete"
-
-        except Exception as e:
-            logging.exception("Error processing metadata")
-            return f"Error processing file: {str(e)}"
-
-    else:
+    Returns:
+        str: Status message
+    """
+    if request.method != 'POST':
         return "Invalid request method"
 
-def process_metadata_no_request(project_runs, metadata_file=None, old_extra_metadata = None, file_path=None):
+    uploaded_file = request.FILES.get('metadataFile')
+    if not uploaded_file:
+        return "No file uploaded"
+
+    try:
+        # Read the metadata file
+        df = _read_metadata_file(metadata_file=uploaded_file)
+
+        # Build metadata lookup
+        metadata_lookup = _build_metadata_lookup_from_dataframe(df)
+
+        # Retrieve the project
+        project = collection_handle.find_one({'_id': ObjectId(project_id)})
+        if not project:
+            return "Project not found"
+
+        # Access the 'runs' field of the project
+        runs = project.get('runs', {})
+
+        # Apply metadata to runs
+        samples_updated = _apply_metadata_to_runs(runs, metadata_lookup)
+
+        logging.info(f"Updated {samples_updated} samples with metadata for project {project_id}")
+
+        # Update the project document in the database
+        collection_handle.update_one(
+            {'_id': ObjectId(project_id)},
+            {'$set': {'runs': runs}}
+        )
+        return "complete"
+
+    except Exception as e:
+        logging.exception("Error processing metadata")
+        return f"Error processing file: {str(e)}"
+
+
+def process_metadata_no_request(project_runs, metadata_file=None, old_extra_metadata=None, file_path=None):
     """
     Updates the 'runs' field of a project dictionary with metadata from an uploaded file or a file path.
 
@@ -89,115 +178,70 @@ def process_metadata_no_request(project_runs, metadata_file=None, old_extra_meta
     Raises:
         ValueError: If neither `metadata_file` nor `file_path` is provided or there is an error in processing.
     """
+    start_time = time.time()
+
     if not metadata_file and not file_path and not old_extra_metadata:
-        #raise ValueError("Either 'metadata_file' or 'file_path' must be provided.")
+        logging.info(f"process_metadata_no_request: No metadata to process - took {time.time() - start_time:.4f}s")
         return project_runs
-    elif not metadata_file and not file_path and old_extra_metadata:
-        # add the old extra metadata 
+
+    if not metadata_file and not file_path and old_extra_metadata:
+        # add the old extra metadata
         for sample_key, sample_list in project_runs.items():
             for sample in sample_list:
                 sample_name = sample.get('Sample_name')
                 if sample_name and sample_name in old_extra_metadata:
                     if "extra_metadata_from_csv" not in sample:
                         sample["extra_metadata_from_csv"] = {}
-                    sample["extra_metadata_from_csv"].update(old_extra_metadata[sample_name])   
+                    sample["extra_metadata_from_csv"].update(old_extra_metadata[sample_name])
+        logging.info(f"process_metadata_no_request: Applied old metadata - took {time.time() - start_time:.4f}s")
         return project_runs
-    
-    # gold old metadata and also a new file is provided
-        
 
     try:
-        # Determine the file source and load it into a Pandas DataFrame
-        if metadata_file:
-            file_name = metadata_file.name
-            if file_name.endswith('.xlsx'):
-                df = pd.read_excel(metadata_file.open())  # Read Excel file
-            elif file_name.endswith('.csv') or file_name.endswith('.tsv'):
-                delimiter = '\t' if file_name.endswith('.tsv') else ','
-                df = pd.read_csv(metadata_file, delimiter=delimiter)  # Read CSV/TSV file
-            else:
-                raise ValueError("Unsupported file type. Please upload a .csv, .tsv, or .xlsx file.")
-        elif file_path:
-            if file_path.endswith('.xlsx'):
-                df = pd.read_excel(file_path)  # Read Excel file
-            elif file_path.endswith('.csv') or file_path.endswith('.tsv'):
-                delimiter = '\t' if file_path.endswith('.tsv') else ','
-                df = pd.read_csv(file_path, delimiter=delimiter)  # Read CSV/TSV file
-            else:
-                raise ValueError("Unsupported file type. Please provide a .csv, .tsv, or .xlsx file.")
-        else:
-            raise ValueError("Invalid file source. Provide either 'metadata_file' or 'file_path'.")
+        # Read metadata file
+        df = _read_metadata_file(metadata_file=metadata_file, file_path=file_path)
 
-        # Convert DataFrame to a list of dictionaries
-        records = df.to_dict(orient='records')
+        file_read_time = time.time()
+        logging.info(f"process_metadata_no_request: File read took {file_read_time - start_time:.4f}s")
 
-        # Iterate through the records and update metadata
-        for row in records:
-            # look for sample name, case insensitive
-            sample_name = {k.lower(): v for k, v in row.items()}.get('sample_name')
-            if not sample_name:
-                continue  # Skip rows without a sample_name
-            if old_extra_metadata and sample_name and sample_name in old_extra_metadata:
-                this_samples_old_metadata = old_extra_metadata[sample_name]
-            else: 
-                this_samples_old_metadata = None
+        # Build metadata lookup dictionary
+        metadata_lookup = _build_metadata_lookup_from_dataframe(df)
 
-            # Find and update all corresponding samples in the runs
-            for sample_key, sample_list in project_runs.items():
-                for sample in sample_list:
-                    if sample.get('Sample_name') == sample_name:
-                        
-                        
-                        logging.error(f" -- loading metadata for sample {sample_name} -- ")
-                        if "extra_metadata_from_csv" not in sample:
-                            sample["extra_metadata_from_csv"] = {}
+        dict_build_time = time.time()
+        logging.info(
+            f"process_metadata_no_request: Metadata dict built in {dict_build_time - file_read_time:.4f}s ({len(metadata_lookup)} samples)")
 
-                        # If there is old metadata for this sample, preserve it
-                        # but then update with new metadata
-                        if this_samples_old_metadata:
-                            sample["extra_metadata_from_csv"].update(this_samples_old_metadata)
-                            
-                            
-                        for key, value in row.items():
-                            if key != 'sample_name':
-                                sample["extra_metadata_from_csv"][key] = value
-                            if key.lower() == 'sample_name':
-                                sample["Sample_name"] = value
-                            if key.lower() == 'cancer_type':
-                                sample["Cancer_type"] = value
-                            if key.lower() == 'sample_type':
-                                sample["Sample_type"] = value
-                            if key.lower() == 'tissue_of_origin':
-                                sample["Tissue_of_origin"] = value
+        # Apply metadata to runs
+        samples_updated = _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata)
+
+        end_time = time.time()
+        logging.info(
+            f"process_metadata_no_request: Updated {samples_updated} samples in {end_time - dict_build_time:.4f}s")
+        logging.info(
+            f"process_metadata_no_request: Metadata processing complete - total time {end_time - start_time:.4f}s")
 
         return project_runs
 
     except Exception as e:
-        print('hello i am here')
         logging.exception("Error processing metadata")
         raise ValueError(f"Error processing file: {str(e)}")
 
+
 def get_metadata_file_from_request(request):
-    
     """
     Gets the metadata file from request
     expecting the field in the form to be "metadataFile"
     """
-    
     if request.method == "POST":
         try:
             metadata_file = request.FILES.get("metadataFile")
-            print(metadata_file)
-            print(type(metadata_file))
             return metadata_file
         except Exception as e:
-            print(f'Failed to get the metadata file from the form')
-            print(e)
+            logging.error(f'Failed to get the metadata file from the form: {e}')
             return None
+    return None
 
-import os
 
-def save_metadata_file(request, project_data_path, old_project_extra_metadata = None):
+def save_metadata_file(request, project_data_path, old_project_extra_metadata=None):
     """
     Saves the 'metadataFile' from the request to the specified project data path.
 
@@ -214,10 +258,9 @@ def save_metadata_file(request, project_data_path, old_project_extra_metadata = 
     # Get the 'metadataFile' from the request
     metadata_file = request.FILES.get("metadataFile")
     if not metadata_file:
-        print("No 'metadataFile' found in the request.")
+        logging.info("No 'metadataFile' found in the request.")
         return None
-    
-    
+
     # Ensure the target directory exists
     os.makedirs(project_data_path, exist_ok=True)
 
@@ -234,8 +277,8 @@ def save_metadata_file(request, project_data_path, old_project_extra_metadata = 
 
     except Exception as e:
         raise IOError(f"Failed to save metadata file: {str(e)}")
-    
-    
+
+
 def get_extra_metadata_from_project(project):
     """
     Retrieves the extra metadata from the project's runs.
@@ -252,6 +295,7 @@ def get_extra_metadata_from_project(project):
         for sample in sample_list
         if 'extra_metadata_from_csv' in sample
     }
+
 
 def has_sample_metadata(project):
     """
