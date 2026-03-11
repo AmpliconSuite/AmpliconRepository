@@ -765,12 +765,42 @@ def project_page(request, project_name, message=''):
 
 
 def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
+    import os
+    import threading
+
     session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
     s3client = session.client('s3')
-    logging.info(f'==== XXX STARTING upload of {file_path_and_location_local} to s3://{settings.S3_DOWNLOADS_BUCKET}/{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
-    s3client.upload_file(f'{file_path_and_location_local}', settings.S3_DOWNLOADS_BUCKET,
-                         f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}')
-    logging.info('==== XXX uploaded to bucket ')
+
+    file_size = os.path.getsize(file_path_and_location_local)
+    logging.info(f'==== XXX STARTING upload of {file_path_and_location_local} to '
+                 f's3://{settings.S3_DOWNLOADS_BUCKET}/{settings.S3_DOWNLOADS_BUCKET_PATH}'
+                 f'{file_path_and_name_in_bucket} (size: {file_size} bytes)')
+
+    transferred = {'bytes': 0}
+    last_log = {'time': 0.0}
+    lock = threading.Lock()
+
+    def progress_callback(bytes_transferred):
+        import time
+        with lock:
+            transferred['bytes'] += bytes_transferred
+            now = time.monotonic()
+            if now - last_log['time'] >= 30:
+                last_log['time'] = now
+                pct = (transferred['bytes'] / file_size * 100) if file_size else 0
+                logging.info(
+                    f'[S3 UPLOAD] {file_path_and_name_in_bucket}: '
+                    f'{transferred["bytes"]}/{file_size} bytes ({pct:.1f}%)'
+                )
+
+    s3client.upload_file(
+        f'{file_path_and_location_local}',
+        settings.S3_DOWNLOADS_BUCKET,
+        f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}',
+        Callback=progress_callback
+    )
+    logging.info('==== XXX uploaded to bucket')
+
 
 
 
