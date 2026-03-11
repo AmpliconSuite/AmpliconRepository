@@ -234,7 +234,7 @@ def get_one_sample(project_name, sample_name):
     # Fetch project with optimized projection
     try:
         project = collection_handle.find_one(
-            {'_id': ObjectId(project_name), 'delete': False},
+            {'_id': ObjectId(project_name)},
             projection
         )
         if project is None:
@@ -258,7 +258,7 @@ def get_one_sample(project_name, sample_name):
     
     project = validate_project(project, project_name)
     prepare_project_linkid(project)
-    
+
     # print("ID --- ", project['_id'])
     runs = project['runs']
     
