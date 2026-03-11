@@ -43,6 +43,96 @@ from .extra_metadata import *
 from .site_stats import get_latest_site_statistics, regenerate_site_statistics
 from .tar_utils import list_project_tar_contents
 
+
+def _get_s3_file_size_bytes_admin(s3_uri):
+    """
+    Returns the size in bytes of the S3 object at *s3_uri*, or None on any error.
+    Mirrors the helper in views.py but lives here to avoid a circular import.
+    """
+    if not s3_uri:
+        return None
+    try:
+        without_prefix = s3_uri[len('s3://'):]
+        bucket, _, key = without_prefix.partition('/')
+        if not bucket or not key:
+            return None
+        profile = getattr(settings, 'AWS_PROFILE_NAME', None) or 'default'
+        session = boto3.Session(profile_name=profile)
+        s3client = session.client('s3')
+        resp = s3client.head_object(Bucket=bucket, Key=key)
+        return resp.get('ContentLength')
+    except Exception as e:
+        logging.debug(f"Could not get S3 file size for {s3_uri}: {e}")
+        return None
+
+
+def _run_audit_checks(project, latest_entry):
+    """
+    Compare *latest_entry* (an audit-log document) against the live *project* document.
+    Fetches the current S3 file size via head_object.
+
+    Returns a dict:
+        {
+            'checks':       list of check dicts (field/log_value/live_value/match/missing),
+            'all_match':    True  – every present field matches,
+            'any_mismatch': True  – at least one present field differs,
+            'status':       'pass' | 'mismatch' | 'missing_data',
+        }
+    """
+    def _str(v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s not in ('', 'None') else None
+
+    def _make_check(field, log_raw, live_raw, *, numeric=False):
+        log_val  = _str(log_raw)
+        live_val = _str(live_raw)
+        if numeric and log_val is not None and live_val is not None:
+            try:
+                match = int(log_val) == int(live_val)
+            except (ValueError, TypeError):
+                match = log_val == live_val
+        else:
+            match = log_val == live_val
+        return {
+            'field':      field,
+            'log_value':  log_val  if log_val  is not None else '—',
+            'live_value': live_val if live_val is not None else '—',
+            'match':      match,
+            'missing':    log_val is None or live_val is None,
+        }
+
+    s3_uri = latest_entry.get('s3_uri')
+    live_s3_size = _get_s3_file_size_bytes_admin(s3_uri) if s3_uri else None
+    live_sample_count = project.get('sample_count') or len(project.get('runs', {}))
+
+    checks = [
+        _make_check('AA Version',          latest_entry.get('AA_version'),          project.get('AA_version')),
+        _make_check('AC Version',          latest_entry.get('AC_version'),          project.get('AC_version')),
+        _make_check('ASP Version',         latest_entry.get('ASP_version'),         project.get('ASP_version')),
+        _make_check('Sample Count',        latest_entry.get('sample_count'),        live_sample_count, numeric=True),
+        _make_check('tar.gz Size (bytes)', latest_entry.get('s3_file_size_bytes'),  live_s3_size,      numeric=True),
+    ]
+
+    any_mismatch = any(not c['match'] and not c['missing'] for c in checks)
+    all_match    = not any_mismatch and all(c['match'] or c['missing'] for c in checks)
+    has_missing  = any(c['missing'] for c in checks)
+
+    if any_mismatch:
+        status = 'mismatch'
+    elif has_missing:
+        status = 'missing_data'
+    else:
+        status = 'pass'
+
+    return {
+        'checks':       checks,
+        'all_match':    all_match,
+        'any_mismatch': any_mismatch,
+        'status':       status,
+    }
+
 def check_datetime(projects):
     import dateutil.parser
     errors = 0
@@ -1012,45 +1102,93 @@ def admin_project_files_report(request):
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_audit_log(request):
     """
-    Admin-only view to query and display the project audit log.
-    Supports searching by project name, alias, or UUID.
-    Follows version chains so all events for the same logical project are shown together.
+    Admin-only view to display the project audit log as a master-detail layout.
+    The top section shows all current projects; clicking one loads its audit log below.
     """
-    query_term = request.GET.get('q', '').strip()
+    # Master: load all current, non-deleted projects for the project table
+    all_projects = list(collection_handle.find({'current': True, 'delete': False}))
+    for proj in all_projects:
+        prepare_project_linkid(proj)
+        proj['id_str'] = str(proj['_id'])
+
+    # Sort projects by name for easy browsing
+    all_projects.sort(key=lambda p: (p.get('project_name') or '').lower())
+
+    # For each project, find its most recent audit-log entry and run validation checks
+    for proj in all_projects:
+        search_term = proj.get('project_name') or proj['id_str']
+        try:
+            matched_uuids, _ = get_project_version_chain(search_term)
+            latest_entry = None
+            if matched_uuids:
+                latest_entry = audit_log_handle.find_one(
+                    {'project_uuid': {'$in': matched_uuids}},
+                    sort=[('timestamp', -1)]
+                )
+            if latest_entry:
+                result = _run_audit_checks(proj, latest_entry)
+                proj['validation_status'] = result['status']  # 'pass' | 'mismatch' | 'missing_data'
+            else:
+                proj['validation_status'] = 'no_log'
+        except Exception as e:
+            logging.warning(f"Could not compute validation status for {proj['id_str']}: {e}")
+            proj['validation_status'] = 'error'
+
+    # Detail: load audit log for selected project
+    selected_project_id = request.GET.get('project_id', '').strip()
+
     entries = []
     display_name = None
     matched_uuids = []
     error_message = None
     total_entries = 0
+    selected_project = None
 
-    if query_term:
+    if selected_project_id:
         try:
-            matched_uuids, display_name = get_project_version_chain(query_term)
+            # Find the selected project in the master list
+            selected_project = next(
+                (p for p in all_projects if p['id_str'] == selected_project_id), None
+            )
+            if selected_project is None:
+                # Try to find it even if it's been marked deleted/non-current
+                raw_proj = collection_handle.find_one({'_id': ObjectId(selected_project_id)})
+                if raw_proj:
+                    raw_proj['id_str'] = str(raw_proj['_id'])
+                    prepare_project_linkid(raw_proj)
+                    selected_project = raw_proj
 
-            if matched_uuids:
-                raw_entries = list(
-                    audit_log_handle.find(
-                        {'project_uuid': {'$in': matched_uuids}}
-                    ).sort('timestamp', -1)
-                )
-                for entry in raw_entries:
-                    entry['id_str'] = str(entry['_id'])
-                    # Format timestamp for display
-                    ts = entry.get('timestamp')
-                    if isinstance(ts, datetime.datetime):
-                        entry['timestamp_display'] = ts.strftime('%Y-%m-%d %H:%M:%S UTC')
-                    else:
-                        entry['timestamp_display'] = str(ts) if ts else '—'
-                entries = raw_entries
-                total_entries = len(entries)
+            if selected_project:
+                search_term = selected_project.get('project_name') or selected_project_id
+                matched_uuids, display_name = get_project_version_chain(search_term)
+
+                if matched_uuids:
+                    raw_entries = list(
+                        audit_log_handle.find(
+                            {'project_uuid': {'$in': matched_uuids}}
+                        ).sort('timestamp', -1)
+                    )
+                    for entry in raw_entries:
+                        entry['id_str'] = str(entry['_id'])
+                        ts = entry.get('timestamp')
+                        if isinstance(ts, datetime.datetime):
+                            entry['timestamp_display'] = ts.strftime('%Y-%m-%d %H:%M:%S UTC')
+                        else:
+                            entry['timestamp_display'] = str(ts) if ts else '—'
+                    entries = raw_entries
+                    total_entries = len(entries)
+                else:
+                    error_message = 'No audit log version chain found for this project.'
             else:
-                error_message = f'No project found matching "{query_term}".'
+                error_message = 'Project not found.'
         except Exception as e:
-            logging.error(f"Error querying audit log for '{query_term}': {e}")
+            logging.error(f"Error querying audit log for project_id '{selected_project_id}': {e}")
             error_message = f'Error querying audit log: {e}'
 
     return render(request, 'pages/admin_audit_log.html', {
-        'query_term': query_term,
+        'all_projects': all_projects,
+        'selected_project_id': selected_project_id,
+        'selected_project': selected_project,
         'display_name': display_name,
         'matched_uuids': matched_uuids,
         'entries': entries,
@@ -1058,4 +1196,65 @@ def admin_audit_log(request):
         'error_message': error_message,
         'SITE_TITLE': settings.SITE_TITLE,
     })
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_audit_log_validate(request):
+    """
+    AJAX endpoint: compares the most recent audit-log entry for a project against
+    the live project document and the current S3 tar.gz file size.
+
+    GET params:
+        project_id  – MongoDB _id string of the project
+
+    Returns JSON with a list of check results, each:
+        { field, log_value, live_value, match: true|false }
+    """
+    from django.http import JsonResponse
+
+    project_id = request.GET.get('project_id', '').strip()
+    if not project_id:
+        return JsonResponse({'error': 'project_id is required'}, status=400)
+
+    try:
+        # ── 1. Load live project ──────────────────────────────────────────────
+        project = collection_handle.find_one({'_id': ObjectId(project_id)})
+        if project is None:
+            return JsonResponse({'error': 'Project not found'}, status=404)
+
+        prepare_project_linkid(project)
+
+        # ── 2. Find the most recent audit-log entry for this project ──────────
+        from .utils import get_project_version_chain
+        search_term = project.get('project_name') or project_id
+        matched_uuids, _ = get_project_version_chain(search_term)
+
+        latest_entry = None
+        if matched_uuids:
+            latest_entry = audit_log_handle.find_one(
+                {'project_uuid': {'$in': matched_uuids}},
+                sort=[('timestamp', -1)]
+            )
+
+        if latest_entry is None:
+            return JsonResponse({'error': 'No audit log entries found for this project'}, status=404)
+
+        # ── 3. Run shared checks ──────────────────────────────────────────────
+        result = _run_audit_checks(project, latest_entry)
+
+        ts = latest_entry.get('timestamp')
+        ts_display = ts.strftime('%Y-%m-%d %H:%M:%S UTC') if isinstance(ts, datetime.datetime) else str(ts)
+
+        return JsonResponse({
+            'checks':         result['checks'],
+            'log_timestamp':  ts_display,
+            'log_event_type': latest_entry.get('event_type') or ('edit_new_version' if latest_entry.get('new_version') else 'edit_no_version'),
+            'all_match':      result['all_match'],
+            'any_mismatch':   result['any_mismatch'],
+        })
+
+    except Exception as e:
+        logging.error(f"admin_audit_log_validate error for project_id '{project_id}': {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
 

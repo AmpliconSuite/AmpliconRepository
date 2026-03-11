@@ -38,6 +38,7 @@ from .views_admin import (
     user_stats_download, site_stats_regenerate, project_stats_download, sizeof_fmt,
     fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report, make_project_current,
     admin_audit_log,
+    admin_audit_log_validate,
 )
 
 # Import API views from separate module
@@ -2162,8 +2163,38 @@ def _get_project_s3_uri(project_linkid):
     return f's3://{bucket}/{bucket_path}{project_linkid}/{project_linkid}.tar.gz'
 
 
+def _get_s3_file_size_bytes(s3_uri):
+    """
+    Returns the size in bytes of the S3 object at *s3_uri* (s3://bucket/key),
+    or None if it cannot be determined (object missing, no S3 config, any error).
+    """
+    if not s3_uri:
+        return None
+    try:
+        # Parse s3://bucket/key
+        without_prefix = s3_uri[len('s3://'):]
+        bucket, _, key = without_prefix.partition('/')
+        if not bucket or not key:
+            return None
+        profile = getattr(settings, 'AWS_PROFILE_NAME', None) or 'default'
+        session = boto3.Session(profile_name=profile)
+        s3client = session.client('s3')
+        resp = s3client.head_object(Bucket=bucket, Key=key)
+        return resp.get('ContentLength')
+    except Exception as e:
+        logging.debug(f"Could not get S3 file size for {s3_uri}: {e}")
+        return None
+
+
+# Canonical event-type constants used in the audit log
+AUDIT_EVENT_CREATE = 'create'
+AUDIT_EVENT_EDIT_NEW_VERSION = 'edit_new_version'
+AUDIT_EVENT_EDIT_NO_VERSION = 'edit_no_version'
+
+
 def log_project_audit_event(user, project_uuid, project_name, is_new_version,
-                             aa_version, ac_version, asp_version, s3_uri):
+                             aa_version, ac_version, asp_version, s3_uri,
+                             event_type=None, sample_count=None):
     """
     Writes a single audit-log document to the project_audit_log MongoDB collection.
 
@@ -2177,6 +2208,9 @@ def log_project_audit_event(user, project_uuid, project_name, is_new_version,
         ac_version:     AC version string (may be 'NA')
         asp_version:    ASP version string (may be 'NA')
         s3_uri:         Raw S3 URI of the tar.gz file (None when S3 not configured)
+        event_type:     One of AUDIT_EVENT_CREATE / AUDIT_EVENT_EDIT_NEW_VERSION /
+                        AUDIT_EVENT_EDIT_NO_VERSION  (inferred from is_new_version when omitted)
+        sample_count:   Number of samples in the project at the time of the event
     """
     try:
         if hasattr(user, 'email'):
@@ -2184,19 +2218,30 @@ def log_project_audit_event(user, project_uuid, project_name, is_new_version,
         else:
             user_email = str(user)
 
+        # Infer event_type when not explicitly supplied (backwards-compat)
+        if event_type is None:
+            event_type = AUDIT_EVENT_EDIT_NEW_VERSION if is_new_version else AUDIT_EVENT_EDIT_NO_VERSION
+
+        # Best-effort S3 file size (non-blocking – errors are swallowed)
+        s3_file_size_bytes = _get_s3_file_size_bytes(s3_uri)
+
         audit_entry = {
             'timestamp': datetime.datetime.utcnow(),
             'user_email': user_email,
             'project_uuid': str(project_uuid),
             'project_name': project_name,
+            'event_type': event_type,
             'new_version': bool(is_new_version),
             'AA_version': aa_version or 'NA',
             'AC_version': ac_version or 'NA',
             'ASP_version': asp_version or 'NA',
             's3_uri': s3_uri,
+            's3_file_size_bytes': s3_file_size_bytes,
+            'sample_count': sample_count,
         }
         audit_log_handle.insert_one(audit_entry)
-        logging.info(f"Audit log written for project {project_uuid} by {user_email}")
+        logging.info(f"Audit log written for project {project_uuid} ({event_type}) by {user_email}, "
+                     f"samples={sample_count}, s3_size={s3_file_size_bytes}")
     except Exception as e:
         logging.error(f"Failed to write audit log for project {project_uuid}: {e}")
 
@@ -2458,6 +2503,7 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
             _aa = form.cleaned_data.get('AA_version', '') or project.get('AA_version', 'NA')
             _ac = form.cleaned_data.get('AC_version', '') or project.get('AC_version', 'NA')
             _asp = form.cleaned_data.get('ASP_version', '') or project.get('ASP_version', 'NA')
+            _sample_count = project.get('sample_count') or len(project.get('runs', {}))
             log_project_audit_event(
                 user=request.user,
                 project_uuid=project_name,
@@ -2467,6 +2513,8 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
                 ac_version=_ac,
                 asp_version=_asp,
                 s3_uri=_get_project_s3_uri(project_name),
+                event_type=AUDIT_EVENT_EDIT_NO_VERSION,
+                sample_count=_sample_count,
             )
 
             # Clean up large objects before redirect
@@ -2792,6 +2840,8 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 ac_version=form_dict.get('AC_version', 'NA'),
                 asp_version=form_dict.get('ASP_version', 'NA'),
                 s3_uri=_get_project_s3_uri(placeholder_project_id),
+                event_type=AUDIT_EVENT_EDIT_NEW_VERSION,
+                sample_count=project.get('sample_count') or len(project.get('runs', {})),
             )
             
             # Start background thread to process and aggregate files
@@ -3665,6 +3715,8 @@ def create_project(request):
             ac_version=form_dict.get('AC_version', 'NA'),
             asp_version=form_dict.get('ASP_version', 'NA'),
             s3_uri=_get_project_s3_uri(temp_proj_id),
+            event_type=AUDIT_EVENT_CREATE,
+            sample_count=0,
         )
         # Save form data for the background thread
         form_data = dict(request.POST)
