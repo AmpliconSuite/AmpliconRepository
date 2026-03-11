@@ -192,7 +192,63 @@
             </div>
             <div id="collapseOne" class="collapse" aria-labelledby="headingOne" data-parent="#accordion">
               <div class="card-body">
-                {{ run.replace_project | as_crispy_field }}
+
+                <!-- Explicit Append / Replace selector (replaces old replace_project checkbox) -->
+                <div class="mb-3">
+                    <label class="font-weight-bold d-block mb-2">How should uploaded files be added to the project?</label>
+                    <div style="display:flex; gap:16px; flex-wrap:wrap;">
+
+                        <label for="mode_append" id="label_append" style="flex:1; min-width:200px; cursor:pointer;
+                               border:2px solid #ccc; border-radius:8px; padding:16px;
+                               background:#f8f9fa; transition:border-color 0.2s, background-color 0.2s;">
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                                <input type="radio" name="replace_project" id="mode_append" value="off"
+                                       style="width:18px; height:18px; cursor:pointer;">
+                                <strong style="font-size:1.05em;">➕ Append Samples</strong>
+                            </div>
+                            <div style="color:#555; font-size:0.9em; margin-left:28px;">
+                                Add the uploaded files as <em>new samples</em> to the existing project.
+                                Previous samples are kept.
+                            </div>
+                        </label>
+
+                        <label for="mode_replace" id="label_replace" style="flex:1; min-width:200px; cursor:pointer;
+                               border:2px solid #ccc; border-radius:8px; padding:16px;
+                               background:#f8f9fa; transition:border-color 0.2s, background-color 0.2s;">
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                                <input type="radio" name="replace_project" id="mode_replace" value="on"
+                                       style="width:18px; height:18px; cursor:pointer;">
+                                <strong style="font-size:1.05em; color:#c0392b;">🔄 Replace Entire Project</strong>
+                            </div>
+                            <div style="color:#555; font-size:0.9em; margin-left:28px;">
+                                <span style="color:#c0392b; font-weight:bold;">⚠ Destructive:</span>
+                                Discard all existing samples and replace with the uploaded files.
+                            </div>
+                        </label>
+
+                    </div>
+
+                    <!-- Validation error: shown when files selected but no mode chosen -->
+                    <div id="replace-mode-error" style="display:none; margin-top:12px;
+                         background:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; padding:10px; color:#721c24;">
+                        <strong>⚠ Please select how files should be added</strong> — choose
+                        <em>Append Samples</em> or <em>Replace Entire Project</em> above before submitting.
+                    </div>
+
+                    <!-- Confirmation warning shown only when Replace is selected -->
+                    <div id="replace-warning" style="display:none; margin-top:12px;
+                         background:#fff3cd; border:1px solid #ffc107; border-radius:6px; padding:12px;">
+                        <strong>⚠ You have selected "Replace Entire Project".</strong>
+                        All current samples will be permanently removed and replaced with your uploaded files.
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="replace_confirm_checkbox">
+                            <label class="form-check-label" for="replace_confirm_checkbox">
+                                I understand this will delete all existing samples.
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="uk-margin">
                   <div id="file-drop-area" class="uk-placeholder uk-text-center js-upload">
                     <span uk-icon="icon: cloud-upload"></span>
@@ -359,6 +415,16 @@
         
 
       <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
+
+        <!-- Reaggregate project checkbox -->
+        <div class="form-check" style="margin-bottom: 15px;">
+            <input class="form-check-input" type="checkbox" name="reaggregate_project" id="reaggregateProjectCheckbox" value="on">
+            <label class="form-check-label" for="reaggregateProjectCheckbox">
+                <strong>Reaggregate project</strong>
+                <small class="text-muted d-block">Re-run the aggregator on the existing project data even if no new files have been provided.</small>
+            </label>
+        </div>
+
         {{ run.accept_license | as_crispy_field }}
         
         <input
@@ -517,10 +583,22 @@
         fd.append('metadataFile', metadataFile);
       };
       
+      // Add the replace_project radio button value
+      const replaceRadio = document.getElementById('mode_replace');
+      if (replaceRadio && replaceRadio.checked) {
+        fd.append('replace_project', 'on');
+      }
+
       // Add the remap_sample_names checkbox value if checked
       const remapCheckbox = document.getElementById('remapSampleNamesCheckbox');
       if (remapCheckbox && remapCheckbox.checked) {
         fd.append('remap_sample_names', 'true');
+      }
+
+      // Add the reaggregate_project checkbox value if checked
+      const reaggregateCheckbox = document.getElementById('reaggregateProjectCheckbox');
+      if (reaggregateCheckbox && reaggregateCheckbox.checked) {
+        fd.append('reaggregate_project', 'on');
       }
   
       const xhr = new XMLHttpRequest();
@@ -676,6 +754,23 @@
             const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
             const filesSelected = fileInput && fileInput.files.length > 0;
             const metadataSelected = metadataInput && metadataInput.files.length > 0;
+
+            // If files are being uploaded, a mode must be explicitly selected
+            if (filesSelected) {
+                const appendRadio  = document.getElementById('mode_append');
+                const replaceRadio = document.getElementById('mode_replace');
+                const modeError    = document.getElementById('replace-mode-error');
+                if (!appendRadio.checked && !replaceRadio.checked) {
+                    e.preventDefault();
+                    if (modeError) modeError.style.display = 'block';
+                    document.getElementById('collapseOne').scrollIntoView({behavior: 'smooth', block: 'center'});
+                    // Highlight both cards in amber
+                    document.getElementById('label_append').style.borderColor  = '#ffc107';
+                    document.getElementById('label_replace').style.borderColor = '#ffc107';
+                    return;
+                }
+            }
+
             if (samplesSelected && (filesSelected || metadataSelected)) {
                 e.preventDefault();
                 alert('While deleting samples, new data or metadata cannot be uploaded. Please unselect either the files or the samples to delete.');
@@ -877,57 +972,97 @@
 
 
     $(document).ready(function() {
-        // Get references to the checkbox, file input, and submit button
-        const $checkbox = $('#custom_id_replace_project');
-        const $fileInput = $('#fileuploadfield');
-        const $submitButton = $('#createProjectBtn');
+        const $appendRadio   = $('#mode_append');
+        const $replaceRadio  = $('#mode_replace');
+        const $labelAppend   = $('#label_append');
+        const $labelReplace  = $('#label_replace');
+        const $replaceWarn   = $('#replace-warning');
+        const $confirmCb     = $('#replace_confirm_checkbox');
+        const $fileInput     = $('#fileuploadfield');
+        const $submitButton  = $('#createProjectBtn');
+        const $modeError     = $('#replace-mode-error');
         const projectIsEmpty = {% if is_empty_project %}true{% else %}false{% endif %};
-    
-        // If project is empty, automatically check the checkbox
+
+        // If project is empty, force "Replace" and lock the choice
         if (projectIsEmpty) {
-            $checkbox.prop('checked', true);
-            // Make it readonly by preventing click/change events
-            $checkbox.click(function(e) {
-                if (projectIsEmpty) {
-                    e.preventDefault();
-                    return false;
-                }
-            });
-            // Add a hidden input with the same name to ensure the value is submitted
-            $checkbox.after('<input type="hidden" name="' + $checkbox.attr('name') + '" value="on">');
-            
-            // Style the checkbox to look disabled but still be submittable
-            $checkbox.css('opacity', '0.6');
-            $checkbox.css('cursor', 'not-allowed');
-            // trigger the change event to update any dependent UI elements
-            $checkbox.trigger('change');
-            // open the accordian so files will be added
+            $replaceRadio.prop('checked', true);
+            $appendRadio.prop('disabled', true);
+            $replaceRadio.prop('disabled', true);
+            // Auto-check and lock the confirmation so the user doesn't have to click it
+            $confirmCb.prop('checked', true);
+            $confirmCb.prop('disabled', true);
+            // Open the accordion so files can be added
             $('#collapseOne').collapse('show');
         }
 
-    // Function to toggle the submit button based on checkbox and file input status
-    function toggleSubmitButton() {
-        const isChecked = $checkbox.is(':checked'); // Check if checkbox is checked
-        
-        const filesUploaded = $fileInput[0].files.length; // Get the number of uploaded files
-        console.log('Checkbox checked:', isChecked);
-        console.log('Files uploaded:', filesUploaded);
-
-        if (isChecked && filesUploaded === 0) {
-            $submitButton.prop('disabled', true); // Disable submit button
-            console.log('Submit button disabled');
-        } else {
-            $submitButton.prop('disabled', false); // Enable submit button
-            console.log('Submit button enabled');
+        function noneSelected() {
+            return !$appendRadio.is(':checked') && !$replaceRadio.is(':checked');
         }
-    }
 
-    // Event listener for checkbox change
-    $checkbox.change(toggleSubmitButton);
+        function updateReplaceUI() {
+            $modeError.hide();
+            if ($replaceRadio.is(':checked')) {
+                $labelReplace.css({'border-color': '#c0392b', 'background': '#fff0ee'});
+                $labelAppend.css({'border-color':  '#ccc',    'background': '#f8f9fa'});
+                $replaceWarn.show();
+            } else if ($appendRadio.is(':checked')) {
+                $labelAppend.css({'border-color':  '#28a745', 'background': '#f0fff4'});
+                $labelReplace.css({'border-color': '#ccc',    'background': '#f8f9fa'});
+                $replaceWarn.hide();
+                if (!projectIsEmpty) { $confirmCb.prop('checked', false); }
+            } else {
+                // Neither selected — neutral state
+                $labelAppend.css({'border-color':  '#ccc', 'background': '#f8f9fa'});
+                $labelReplace.css({'border-color': '#ccc', 'background': '#f8f9fa'});
+                $replaceWarn.hide();
+            }
+            enforceSubmitButton();
+        }
 
-    // Event listener for file input change
-    $fileInput.change(toggleSubmitButton);
-});
+        function enforceSubmitButton() {
+            const isReplace     = $replaceRadio.is(':checked');
+            const confirmed     = $confirmCb.is(':checked');
+            const filesUploaded = $fileInput[0] && $fileInput[0].files.length > 0;
+
+            // Files selected but no mode chosen → block submit
+            if (filesUploaded && noneSelected()) {
+                $submitButton.prop('disabled', true);
+                $submitButton.attr('title', 'Please choose Append or Replace before submitting.');
+                return;
+            }
+            // Replace chosen but not yet confirmed → block submit
+            if (isReplace && !confirmed) {
+                $submitButton.prop('disabled', true);
+                $submitButton.attr('title', 'You must confirm the replace action above before submitting.');
+                return;
+            }
+            // Replace confirmed but no file selected → block submit
+            if (isReplace && !filesUploaded) {
+                $submitButton.prop('disabled', true);
+                $submitButton.attr('title', 'Please select a file to upload.');
+                return;
+            }
+            $submitButton.prop('disabled', false);
+            $submitButton.attr('title', '');
+        }
+
+        $appendRadio.on('change', updateReplaceUI);
+        $replaceRadio.on('change', updateReplaceUI);
+        $confirmCb.on('change', enforceSubmitButton);
+        $fileInput.on('change', function() {
+            updateReplaceUI();
+            // If files have just been added and no mode chosen, open accordion and highlight the choice
+            if ($(this)[0].files.length > 0 && noneSelected()) {
+                $('#collapseOne').collapse('show');
+                $labelAppend.css('border-color', '#ffc107');
+                $labelReplace.css('border-color', '#ffc107');
+                $modeError.show();
+            }
+        });
+
+        // Set initial visual state
+        updateReplaceUI();
+    });
 
 
 

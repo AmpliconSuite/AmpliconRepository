@@ -2389,7 +2389,8 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
 def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path, temp_directory, 
                              form_data, user, extra_metadata_file_fp,
                              previous_versions, previous_views, old_subscribers, old_project_data,
-                             download_url, samples_to_remove, replace_project, remap_sample_names):
+                             download_url, samples_to_remove, replace_project, remap_sample_names,
+                             reaggregate_project=False):
     """
     Wrapper function for edit operations that handles notification and then calls _process_and_aggregate_files.
     This runs in a background thread for edit operations.
@@ -2410,9 +2411,10 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
         samples_to_remove: List of sample names to remove from old project
         replace_project: Boolean indicating if we should replace the entire project (skip download)
         remap_sample_names: Boolean indicating if we should create a name map for sample remapping
+        reaggregate_project: Boolean indicating if we should reaggregate the project without new files
     """
     try:
-        logging.info(f"_process_edit_and_notify - starting for project {placeholder_project_id}")
+        logging.info(f"_process_edit_and_notify - starting for project {placeholder_project_id} (reaggregate_project={reaggregate_project})")
         
         # Create name map file if remapping is requested and metadata file was saved
         name_map_file_path = None
@@ -2549,7 +2551,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
 
 def edit_project_into_new_version(request, project_name, project, form_dict, form, metadata_file, 
                                    samples_to_remove, remap_sample_names, file_fps, temp_proj_id, 
-                                   project_data_path):
+                                   project_data_path, reaggregate_project=False):
     """
     Handle project edits that require creating a new version:
     - Adding new samples
@@ -2713,7 +2715,8 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 download_url,
                 samples_to_remove,
                 replace_project,
-                remap_sample_names
+                remap_sample_names,
+                reaggregate_project
             )
             logging.info(f"EditProject - finished launch of background thread to _process_edit_and_notify")
 
@@ -2820,11 +2823,14 @@ def edit_project_page(request, project_name):
         # 1. New sample files are being uploaded (request.FILES.getlist('document'))
         # 2. Metadata file is being uploaded with name remapping
         # 3. Name remapping is requested (requires re-aggregation)
+        # 4. reaggregate_project is requested (force re-aggregation on existing data)
         
         files_uploaded = request.FILES.getlist('document')
+        reaggregate_project = request.POST.get('reaggregate_project') == 'on'
         needs_new_version = (len(files_uploaded) > 0 or 
                             metadata_file is not None or 
-                            remap_sample_names)
+                            remap_sample_names or
+                            reaggregate_project)
         
         if needs_new_version:
             # Create a new version with aggregation
@@ -2834,7 +2840,8 @@ def edit_project_page(request, project_name):
             
             result = edit_project_into_new_version(
                 request, project_name, project, form_dict, form, metadata_file,
-                samples_to_remove, remap_sample_names, file_fps, temp_proj_id, project_data_path
+                samples_to_remove, remap_sample_names, file_fps, temp_proj_id, project_data_path,
+                reaggregate_project=reaggregate_project
             )
             
             if result is not None:
