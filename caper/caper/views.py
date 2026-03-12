@@ -89,6 +89,9 @@ from django.utils.safestring import mark_safe
 from .view_download_stats import *
 
 ## aggregator
+_aggregator_dev_path = getattr(settings, 'AGGREGATOR_DEV_PATH', '')
+if _aggregator_dev_path and _aggregator_dev_path not in sys.path:
+    sys.path.insert(0, _aggregator_dev_path)
 from AmpliconSuiteAggregator import *
 import AmpliconSuiteAggregator
 

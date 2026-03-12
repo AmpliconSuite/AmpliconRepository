@@ -5,6 +5,7 @@ This module contains all API endpoints for file uploads and project management.
 
 import logging
 import os
+import sys
 import uuid
 import tarfile
 
@@ -197,6 +198,9 @@ class ProjectFileAddView(APIView):
 
     def process_file_in_background(self, request, project, username, uploaded_file, api_id):
         from django.core.files.uploadedfile import TemporaryUploadedFile
+        _aggregator_dev_path = getattr(settings, 'AGGREGATOR_DEV_PATH', '')
+        if _aggregator_dev_path and _aggregator_dev_path not in sys.path:
+            sys.path.insert(0, _aggregator_dev_path)
         from AmpliconSuiteAggregator import Aggregator
         from .views import (
             project_update, project_delete, download_file, 
