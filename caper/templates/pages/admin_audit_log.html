@@ -106,7 +106,7 @@ $(document).ready(function () {
 /* Human-readable file size */
 function fmtBytes(bytes) {
     if (bytes == null || bytes === '') return 'N/A';
-    bytes = parseInt(bytes, 10);
+    bytes = parseInt(bytes.replace(/,/g, ''), 10);
     if (isNaN(bytes)) return 'N/A';
     if (bytes < 1024)        return bytes + ' B';
     if (bytes < 1048576)     return (bytes / 1024).toFixed(1) + ' KB';

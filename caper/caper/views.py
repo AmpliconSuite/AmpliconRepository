@@ -766,7 +766,19 @@ def project_page(request, project_name, message=''):
 
 
 
-def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket):
+def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket,
+                      on_upload_complete=None):
+    """
+    Upload a local file to S3.
+
+    Args:
+        file_path_and_location_local:  Local path of the file to upload.
+        file_path_and_name_in_bucket:  Key suffix within the bucket (bucket_path is prepended).
+        on_upload_complete:            Optional callable invoked as
+                                       on_upload_complete(s3_uri, file_size_bytes) after a
+                                       successful upload.  Errors in the callback are logged
+                                       but do not propagate.
+    """
     import os
     import threading
 
@@ -774,9 +786,10 @@ def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket
     s3client = session.client('s3')
 
     file_size = os.path.getsize(file_path_and_location_local)
+    full_s3_key = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}'
+    s3_uri = f's3://{settings.S3_DOWNLOADS_BUCKET}/{full_s3_key}'
     logging.info(f'==== XXX STARTING upload of {file_path_and_location_local} to '
-                 f's3://{settings.S3_DOWNLOADS_BUCKET}/{settings.S3_DOWNLOADS_BUCKET_PATH}'
-                 f'{file_path_and_name_in_bucket} (size: {file_size} bytes)')
+                 f'{s3_uri} (size: {file_size} bytes)')
 
     transferred = {'bytes': 0}
     last_log = {'time': 0.0}
@@ -798,10 +811,16 @@ def upload_file_to_s3(file_path_and_location_local, file_path_and_name_in_bucket
     s3client.upload_file(
         f'{file_path_and_location_local}',
         settings.S3_DOWNLOADS_BUCKET,
-        f'{settings.S3_DOWNLOADS_BUCKET_PATH}{file_path_and_name_in_bucket}',
+        full_s3_key,
         Callback=progress_callback
     )
     logging.info('==== XXX uploaded to bucket')
+
+    if on_upload_complete is not None:
+        try:
+            on_upload_complete(s3_uri, file_size)
+        except Exception as cb_exc:
+            logging.error(f'on_upload_complete callback failed for {s3_uri}: {cb_exc}')
 
 
 
@@ -2499,20 +2518,22 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
             collection_handle.update_one(query, new_val)
             edit_proj_privacy(project, old_privacy, new_privacy)
             logging.debug("Updated collection_handle with new data")
-            # Audit log: record the edit_project (no new version) event
+            # Audit log: record the edit_project (no new version) event.
+            # Use the stored linkid (not the URL param) to build the correct S3 URI.
             _aa = form.cleaned_data.get('AA_version', '') or project.get('AA_version', 'NA')
             _ac = form.cleaned_data.get('AC_version', '') or project.get('AC_version', 'NA')
             _asp = form.cleaned_data.get('ASP_version', '') or project.get('ASP_version', 'NA')
             _sample_count = project.get('sample_count') or len(project.get('runs', {}))
+            _linkid = str(project.get('linkid', project_name))
             log_project_audit_event(
                 user=request.user,
-                project_uuid=project_name,
+                project_uuid=_linkid,
                 project_name=new_project_name,
                 is_new_version=False,
                 aa_version=_aa,
                 ac_version=_ac,
                 asp_version=_asp,
-                s3_uri=_get_project_s3_uri(project_name),
+                s3_uri=_get_project_s3_uri(_linkid),
                 event_type=AUDIT_EVENT_EDIT_NO_VERSION,
                 sample_count=_sample_count,
             )
@@ -2626,21 +2647,24 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             if os.path.exists(stripped_tar_path):
                 files_to_cleanup.append(stripped_tar_path)
         
-        # Call _process_and_aggregate_files to do the actual aggregation and project creation
+        # Call _process_and_aggregate_files to do the actual aggregation and project creation.
+        # Passing audit_event_type causes the audit log to be written inside
+        # upload_file_to_s3 once the S3 upload finishes, so the real file size is captured.
         _process_and_aggregate_files(
-            file_fps, 
-            placeholder_project_id, 
-            project_data_path, 
-            temp_directory, 
-            form_data, 
-            user, 
+            file_fps,
+            placeholder_project_id,
+            project_data_path,
+            temp_directory,
+            form_data,
+            user,
             extra_metadata_file_fp,
             name_map_file_path,
             previous_versions=previous_versions,
             previous_views=previous_views,
-            old_subscribers=old_subscribers
+            old_subscribers=old_subscribers,
+            audit_event_type=AUDIT_EVENT_EDIT_NEW_VERSION,
         )
-        
+
         # Clean up temporary files (downloaded old project and name map) after aggregation
         for file_path in files_to_cleanup:
             try:
@@ -2653,7 +2677,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
                     logging.info(f"Cleaned up temporary directory: {file_path}")
             except Exception as e:
                 logging.warning(f"Failed to clean up file {file_path}: {e}")
-        
+
         # Also clean up the name map directory if it exists
         if name_map_file_path:
             try:
@@ -2663,22 +2687,23 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
                     logging.info(f"Cleaned up name map directory: {temp_name_map_dir}")
             except Exception as e:
                 logging.warning(f"Failed to clean up name map directory: {e}")
-        
-        # After successful processing, notify subscribers about the project update
+
+        # Notify subscribers after aggregation
         try:
             from .user_preferences import notify_subscribers_of_project_update
-            
+
             # Check if aggregation was successful by looking at the project status
             result_project = collection_handle.find_one({'_id': ObjectId(placeholder_project_id)})
-            
-            if result_project and not result_project.get('aggregation_failed', False):
+            aggregation_failed = (not result_project) or result_project.get('aggregation_failed', False)
+            new_sample_count = 0 if aggregation_failed else result_project.get('sample_count', len(result_project.get('runs', {})))
+
+            if not aggregation_failed:
                 # Aggregation succeeded - notify subscribers
-                new_sample_count = result_project.get('sample_count', len(result_project.get('runs', {})))
                 notify_subscribers_of_project_update(old_project_data, placeholder_project_id, new_sample_count)
                 logging.info(f"Successfully notified subscribers for project {placeholder_project_id}")
             else:
                 logging.info(f"Skipping subscriber notification due to aggregation failure for project {placeholder_project_id}")
-                
+
         except Exception as e:
             logging.error(f"Failed to notify subscribers of project update for {placeholder_project_id}: {str(e)}")
             logging.error(traceback.format_exc())
@@ -2830,20 +2855,9 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 'project_members': form_dict.get('project_members', [])
             }
             collection_handle.insert_one(placeholder_project)
-            # Audit log: record the edit_project (new version) event
-            log_project_audit_event(
-                user=request.user,
-                project_uuid=placeholder_project_id,
-                project_name=form_dict['project_name'],
-                is_new_version=True,
-                aa_version=form_dict.get('AA_version', 'NA'),
-                ac_version=form_dict.get('AC_version', 'NA'),
-                asp_version=form_dict.get('ASP_version', 'NA'),
-                s3_uri=_get_project_s3_uri(placeholder_project_id),
-                event_type=AUDIT_EVENT_EDIT_NEW_VERSION,
-                sample_count=project.get('sample_count') or len(project.get('runs', {})),
-            )
-            
+            # Audit log is written in the background thread (_process_edit_and_notify)
+            # after aggregation completes, so it captures the real S3 URI and file size.
+
             # Start background thread to process and aggregate files
             logging.info(f"EditProject - start background thread to _process_edit_and_notify")
             
@@ -3458,7 +3472,7 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None):
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
@@ -3475,6 +3489,9 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         previous_versions: List of previous project versions (optional, for edit operations)
         previous_views: List containing [views, downloads] counts (optional, for edit operations)
         old_subscribers: List of subscriber emails (optional, for edit operations)
+        audit_event_type: If not None, a project audit log entry is written at every outcome
+                          (success or failure) using this event type string.  Pass None when
+                          the caller (e.g. _process_edit_and_notify) will write the log itself.
     """
     try:
         logging.info(f"_process_and_aggregate_files - start ")
@@ -3512,6 +3529,22 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
             logging.error(f"Aggregation failed for project {temp_proj_id}")
+            if audit_event_type is not None:
+                try:
+                    log_project_audit_event(
+                        user=user,
+                        project_uuid=temp_proj_id,
+                        project_name=form_data.get('project_name', ''),
+                        is_new_version=True,
+                        aa_version=form_data.get('AA_version', 'NA'),
+                        ac_version=form_data.get('AC_version', 'NA'),
+                        asp_version=form_data.get('ASP_version', 'NA'),
+                        s3_uri=_get_project_s3_uri(temp_proj_id),
+                        event_type=audit_event_type,
+                        sample_count=0,
+                    )
+                except Exception as audit_exc:
+                    logging.error(f"Failed to write audit log for project {temp_proj_id}: {audit_exc}")
             return
 
         ## after running aggregator, use the aggregated file for project creation:
@@ -3557,25 +3590,57 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
             logging.error(f"Form validation failed for project {temp_proj_id}")
+            if audit_event_type is not None:
+                try:
+                    log_project_audit_event(
+                        user=user,
+                        project_uuid=temp_proj_id,
+                        project_name=form_data.get('project_name', ''),
+                        is_new_version=True,
+                        aa_version=form_data.get('AA_version', 'NA'),
+                        ac_version=form_data.get('AC_version', 'NA'),
+                        asp_version=form_data.get('ASP_version', 'NA'),
+                        s3_uri=_get_project_s3_uri(temp_proj_id),
+                        event_type=audit_event_type,
+                        sample_count=0,
+                    )
+                except Exception as audit_exc:
+                    logging.error(f"Failed to write audit log for project {temp_proj_id}: {audit_exc}")
             return
         
         # Now process the aggregated file through _create_project
         # Pass the placeholder project ID so it updates in place
         # Also pass version history parameters if provided (for edit operations)
+        # Build audit_params to pass into _create_project so the log is written
+        # after the S3 upload finishes (real URI + file size available).
+        # NOTE: sample_count is intentionally omitted here; the on_complete callback
+        # inside _create_project fetches it live from MongoDB after the project document
+        # has been fully written, so the count reflects the new samples.
+        cp_audit_params = None
+        if audit_event_type is not None:
+            cp_audit_params = {
+                'user': user,
+                'project_name': form_data.get('project_name', ''),
+                'aa_version': form_data.get('AA_version', 'NA'),
+                'ac_version': form_data.get('AC_version', 'NA'),
+                'asp_version': form_data.get('ASP_version', 'NA'),
+                'event_type': audit_event_type,
+            }
+
         if previous_versions is not None or previous_views is not None or old_subscribers is not None:
-            success = _create_project(form, mock_request, extra_metadata_file_fp, 
+            success = _create_project(form, mock_request, extra_metadata_file_fp,
                                        placeholder_project_id=temp_proj_id,
                                        previous_versions=previous_versions or [],
                                        previous_views=previous_views or [0, 0],
-                                       old_subscribers=old_subscribers)
+                                       old_subscribers=old_subscribers,
+                                       audit_params=cp_audit_params)
         else:
-            success = _create_project(form, mock_request, extra_metadata_file_fp, 
-                                       placeholder_project_id=temp_proj_id)
+            success = _create_project(form, mock_request, extra_metadata_file_fp,
+                                       placeholder_project_id=temp_proj_id,
+                                       audit_params=cp_audit_params)
 
         # Don't clean up temp directory yet - the background extraction thread needs access to the tar file
         # The cleanup will happen in extract_project_files after extraction completes
-        # if os.path.exists(temp_directory) and not extra_metadata_file_fp:
-        #     shutil.rmtree(temp_directory)
 
         if not success:
             # Mark project as failed
@@ -3588,8 +3653,26 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                 }}
             )
             logging.error(f"Project creation failed for {temp_proj_id}")
+            # _create_project did not reach the upload step so log here directly
+            if audit_event_type is not None:
+                try:
+                    log_project_audit_event(
+                        user=user,
+                        project_uuid=temp_proj_id,
+                        project_name=form_data.get('project_name', ''),
+                        is_new_version=True,
+                        aa_version=form_data.get('AA_version', 'NA'),
+                        ac_version=form_data.get('AC_version', 'NA'),
+                        asp_version=form_data.get('ASP_version', 'NA'),
+                        s3_uri=None,
+                        event_type=audit_event_type,
+                        sample_count=0,
+                    )
+                except Exception as audit_exc:
+                    logging.error(f"Failed to write audit log for project {temp_proj_id}: {audit_exc}")
         else:
             logging.info(f"Project {temp_proj_id} aggregation complete")
+            # Audit log is handled inside _create_project / upload_file_to_s3 callback
 
 
     except Exception as e:
@@ -3607,6 +3690,22 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
             )
         except:
             pass
+        if audit_event_type is not None:
+            try:
+                log_project_audit_event(
+                    user=user,
+                    project_uuid=temp_proj_id,
+                    project_name=form_data.get('project_name', ''),
+                    is_new_version=True,
+                    aa_version=form_data.get('AA_version', 'NA'),
+                    ac_version=form_data.get('AC_version', 'NA'),
+                    asp_version=form_data.get('ASP_version', 'NA'),
+                    s3_uri=_get_project_s3_uri(temp_proj_id),
+                    event_type=audit_event_type,
+                    sample_count=0,
+                )
+            except Exception as audit_exc:
+                logging.error(f"Failed to write audit log for project {temp_proj_id}: {audit_exc}")
 
 
 def create_project(request):
@@ -3705,19 +3804,8 @@ def create_project(request):
         
         collection_handle.insert_one(placeholder_project)
         logging.info(f"CreateProject - placeholder insert complete")
-        # Audit log: record the create_project event
-        log_project_audit_event(
-            user=request.user,
-            project_uuid=temp_proj_id,
-            project_name=project_name,
-            is_new_version=True,
-            aa_version=form_dict.get('AA_version', 'NA'),
-            ac_version=form_dict.get('AC_version', 'NA'),
-            asp_version=form_dict.get('ASP_version', 'NA'),
-            s3_uri=_get_project_s3_uri(temp_proj_id),
-            event_type=AUDIT_EVENT_CREATE,
-            sample_count=0,
-        )
+        # Audit log is written inside _process_and_aggregate_files after aggregation
+        # completes (or fails), so it captures the real S3 URI, file size, and sample count.
         # Save form data for the background thread
         form_data = dict(request.POST)
         # Convert lists to single values for QueryDict compatibility
@@ -3736,7 +3824,8 @@ def create_project(request):
         _thread_executor.submit(
             _process_and_aggregate_files,
             file_fps, temp_proj_id, project_data_path, temp_directory,
-            form_data, request.user, extra_metadata_file_fp, name_map_file_path
+            form_data, request.user, extra_metadata_file_fp, name_map_file_path,
+            None, None, None, AUDIT_EVENT_CREATE
         )
         # Immediately redirect to the processing project page
         logging.info(f"CreateProject - finished launch of background thread to _process_and_aggregate_files")
@@ -3748,12 +3837,19 @@ def create_project(request):
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
-def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None):
+def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, audit_params=None):
     """
     Creates or updates a project.
     
     If placeholder_project_id is provided, updates that existing project in place.
     Otherwise, creates a new project.
+
+    audit_params: optional dict with keys user, project_name, aa_version, ac_version,
+                  asp_version, event_type, sample_count.  When provided, a project audit
+                  log entry is written:
+                    - after the S3 upload completes (if S3 is enabled) so the real file
+                      size is captured, or
+                    - immediately after project creation (if S3 is not enabled).
     """
     # it could be a new file was provided at the same time as sampels to be
     # removed from the project. That can't be done until runs is populated in the project
@@ -3828,11 +3924,65 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     )
 
     if settings.USE_S3_DOWNLOADS:
+        # Build the audit callback so the log is written only after the upload
+        # finishes and the real S3 URI / file size are known.
+        s3_key_suffix = f'{project_id}/{project_id}.tar.gz'
+        on_complete = None
+        if audit_params:
+            _ap = audit_params  # capture for closure
+            _pid = project_id   # capture for closure
+            def on_complete(s3_uri, file_size_bytes):
+                # Fetch sample_count here, after _create_project has written the
+                # real project document to MongoDB, so the count is accurate.
+                try:
+                    _proj = collection_handle.find_one({'_id': ObjectId(str(_pid))})
+                    _sample_count = (
+                        _proj.get('sample_count', len(_proj.get('runs', {})))
+                        if _proj else 0
+                    )
+                except Exception:
+                    _sample_count = 0
+                log_project_audit_event(
+                    user=_ap['user'],
+                    project_uuid=str(_pid),
+                    project_name=_ap.get('project_name', ''),
+                    is_new_version=True,
+                    aa_version=_ap.get('aa_version', 'NA'),
+                    ac_version=_ap.get('ac_version', 'NA'),
+                    asp_version=_ap.get('asp_version', 'NA'),
+                    s3_uri=s3_uri,
+                    event_type=_ap.get('event_type'),
+                    sample_count=_sample_count,
+                )
         # load the zip asynch to S3 for later use
         _thread_executor.submit(
             upload_file_to_s3,
             f'{project_data_path}/{request_file.name}',
-            f'{project_id}/{project_id}.tar.gz'
+            s3_key_suffix,
+            on_complete
+        )
+    elif audit_params:
+        # S3 not configured – write the log immediately (no file size available).
+        # Fetch sample_count live so it reflects what _create_project just wrote.
+        try:
+            _proj = collection_handle.find_one({'_id': ObjectId(str(project_id))})
+            _sample_count = (
+                _proj.get('sample_count', len(_proj.get('runs', {})))
+                if _proj else 0
+            )
+        except Exception:
+            _sample_count = 0
+        log_project_audit_event(
+            user=audit_params['user'],
+            project_uuid=str(project_id),
+            project_name=audit_params.get('project_name', ''),
+            is_new_version=True,
+            aa_version=audit_params.get('aa_version', 'NA'),
+            ac_version=audit_params.get('ac_version', 'NA'),
+            asp_version=audit_params.get('asp_version', 'NA'),
+            s3_uri=None,
+            event_type=audit_params.get('event_type'),
+            sample_count=_sample_count,
         )
 
     # Return success (True) for placeholder updates, or the new_id for new projects
