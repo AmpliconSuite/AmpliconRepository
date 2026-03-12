@@ -72,11 +72,14 @@
 $(document).ready(function () {
     /* ── Master projects DataTable ── */
     $('#projectsTable').DataTable({
-        order: [[0, 'asc']],
+        order: [[4, 'desc']],
         pageLength: 15,
         lengthMenu: [10, 15, 25, 50],
         language: { searchPlaceholder: "Filter projects…" },
-        columnDefs: [{ orderable: false, targets: [-1] }]
+        columnDefs: [
+            { orderable: false, targets: [-1] },
+            { type: 'num', targets: [4] } // Ensure the hidden timestamp can be sorted numerically if needed, but the display string should work too
+        ]
     });
 
     /* ── Audit-log DataTable (initialised when a project is selected) ── */
@@ -204,6 +207,7 @@ function validateAuditLog(projectId) {
                     <th>Visibility</th>
                     <th>UUID / Link ID</th>
                     <th>Audit Status</th>
+                    <th>Latest Change (UTC)</th>
                     <th>View Audit Log</th>
                 </tr>
             </thead>
@@ -233,6 +237,7 @@ function validateAuditLog(projectId) {
                             <span class="badge badge-secondary" title="Could not determine status">—</span>
                         {% endif %}
                     </td>
+                    <td>{{ proj.latest_audit_timestamp_display|default:"—" }}</td>
                     <td>
                         <a href="?project_id={{ proj.id_str }}"
                            class="btn btn-xs btn-outline-primary btn-sm"
@@ -243,7 +248,7 @@ function validateAuditLog(projectId) {
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="5" class="text-center text-muted">No projects found.</td></tr>
+                <tr><td colspan="6" class="text-center text-muted">No projects found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

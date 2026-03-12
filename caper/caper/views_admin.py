@@ -1128,11 +1128,27 @@ def admin_audit_log(request):
             if latest_entry:
                 result = _run_audit_checks(proj, latest_entry)
                 proj['validation_status'] = result['status']  # 'pass' | 'mismatch' | 'missing_data'
+                ts = latest_entry.get('timestamp')
+                proj['latest_audit_timestamp'] = ts
+                if isinstance(ts, datetime.datetime):
+                    proj['latest_audit_timestamp_display'] = ts.strftime('%Y-%m-%d %H:%M:%S UTC')
+                else:
+                    proj['latest_audit_timestamp_display'] = str(ts) if ts else '—'
             else:
                 proj['validation_status'] = 'no_log'
+                proj['latest_audit_timestamp'] = None
+                proj['latest_audit_timestamp_display'] = '—'
         except Exception as e:
             logging.warning(f"Could not compute validation status for {proj['id_str']}: {e}")
             proj['validation_status'] = 'error'
+            proj['latest_audit_timestamp'] = None
+            proj['latest_audit_timestamp_display'] = '—'
+
+    # Sort projects by most recent audit log entry first, then by name
+    all_projects.sort(key=lambda p: (
+        p.get('latest_audit_timestamp') or datetime.datetime.min,
+        (p.get('project_name') or '').lower()
+    ), reverse=True)
 
     # Detail: load audit log for selected project
     selected_project_id = request.GET.get('project_id', '').strip()
