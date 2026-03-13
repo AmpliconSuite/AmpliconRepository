@@ -24,6 +24,9 @@ def _build_metadata_lookup_from_dataframe(df):
         sample_name = {k.lower(): v for k, v in row.items()}.get('sample_name')
         if sample_name:
             metadata_lookup[sample_name] = row
+        sample_name_alias = {k.lower(): v for k, v in row.items()}.get('sample_name_alias')
+        if sample_name_alias:
+            metadata_lookup[sample_name_alias] = row
     return metadata_lookup
 
 
@@ -85,6 +88,8 @@ def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=No
             # O(1) lookup instead of O(n) nested iteration
             row = metadata_lookup.get(sample_name)
             if not row:
+                # If no metadata found for this sample, keep existing metadata if it exists in sample['Sample_metadata_JSON']
+                
                 continue
 
             samples_updated += 1
@@ -101,6 +106,9 @@ def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=No
                 if key != 'sample_name':
                     sample["extra_metadata_from_csv"][key] = value
                 if key.lower() == 'sample_name':
+                    sample["Sample_name"] = value
+                # make sure to do alias after sample_name so the alias is used 
+                if key.lower() == 'sample_name_alias':
                     sample["Sample_name"] = value
                 if key.lower() == 'cancer_type':
                     sample["Cancer_type"] = value

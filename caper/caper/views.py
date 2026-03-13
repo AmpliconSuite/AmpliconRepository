@@ -2673,6 +2673,8 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
         extra_metadata_file_fp = save_metadata_file(request, project_data_path)
         ## get extra metadata from csv first (if exists in old project), add it to the new proj
         old_extra_metadata = get_extra_metadata_from_project(project)
+        
+        oldFeatured = project.get('featured', False)
 
         # Create a placeholder project ID that will be updated by _process_and_aggregate_files
         placeholder_project_id = str(ObjectId())
@@ -3611,7 +3613,7 @@ def create_project(request):
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
-def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None):
+def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, oldFeatured=False):
     """
     Creates or updates a project.
     
