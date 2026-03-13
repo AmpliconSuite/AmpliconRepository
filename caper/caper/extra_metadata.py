@@ -65,7 +65,7 @@ def _read_metadata_file(metadata_file=None, file_path=None):
         raise ValueError("Invalid file source. Provide either 'metadata_file' or 'file_path'.")
 
 
-def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=None):
+def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=None, remap_name_to_alias=False):
     """
     Helper function to apply metadata to project runs.
 
@@ -109,7 +109,8 @@ def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=No
                     sample["Sample_name"] = value
                 # make sure to do alias after sample_name so the alias is used 
                 if key.lower() == 'sample_name_alias':
-                    sample["Sample_name"] = value
+                    if remap_name_to_alias:
+                        sample["Sample_name"] = value
                 if key.lower() == 'cancer_type':
                     sample["Cancer_type"] = value
                 if key.lower() == 'sample_type':
@@ -120,7 +121,7 @@ def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=No
     return samples_updated
 
 
-def process_metadata(request, project_id):
+def process_metadata(request, project_id, remap_name_to_alias=False):
     """
     Process metadata from a request and update the project in the database.
 
@@ -154,7 +155,7 @@ def process_metadata(request, project_id):
         runs = project.get('runs', {})
 
         # Apply metadata to runs
-        samples_updated = _apply_metadata_to_runs(runs, metadata_lookup)
+        samples_updated = _apply_metadata_to_runs(runs, metadata_lookup, remap_name_to_alias=remap_name_to_alias)
 
         logging.info(f"Updated {samples_updated} samples with metadata for project {project_id}")
 
@@ -170,7 +171,7 @@ def process_metadata(request, project_id):
         return f"Error processing file: {str(e)}"
 
 
-def process_metadata_no_request(project_runs, metadata_file=None, old_extra_metadata=None, file_path=None):
+def process_metadata_no_request(project_runs, metadata_file=None, old_extra_metadata=None, file_path=None, remap_name_to_alias=False):
     """
     Updates the 'runs' field of a project dictionary with metadata from an uploaded file or a file path.
 
@@ -219,7 +220,7 @@ def process_metadata_no_request(project_runs, metadata_file=None, old_extra_meta
             f"process_metadata_no_request: Metadata dict built in {dict_build_time - file_read_time:.4f}s ({len(metadata_lookup)} samples)")
 
         # Apply metadata to runs
-        samples_updated = _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata)
+        samples_updated = _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata, remap_name_to_alias=remap_name_to_alias)
 
         end_time = time.time()
         logging.info(

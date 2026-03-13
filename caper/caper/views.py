@@ -3013,7 +3013,7 @@ def update_notification_preferences(request):
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
 
-def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
+def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove, remap_names_to_alias=False):
     logging.info("Extracting files from tar...")
     try:
         # Check tar file structure before extraction
@@ -3100,13 +3100,13 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         project = get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
         if extra_metadata_filepath:
-            runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath, old_extra_metadata = old_extra_metadata)
+            runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath, old_extra_metadata = old_extra_metadata, remap_name_to_alias=remap_names_to_alias)
             parent_dir = os.path.dirname(extra_metadata_filepath)
 
             if os.path.exists(parent_dir):
                 shutil.rmtree(parent_dir)
         else:
-            runs = process_metadata_no_request(replace_underscore_keys(runs), old_extra_metadata = old_extra_metadata)
+            runs = process_metadata_no_request(replace_underscore_keys(runs), old_extra_metadata = old_extra_metadata, remap_name_to_alias=remap_names_to_alias )
 
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
@@ -3450,10 +3450,10 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                                        previous_versions=previous_versions or [],
                                        previous_views=previous_views or [0, 0],
                                        old_subscribers=old_subscribers,
-                                       oldFeatured=oldFeatured)
+                                       oldFeatured=oldFeatured, remap_name_to_alias=(name_map_file_path is not None))
         else:
             success = _create_project(form, mock_request, extra_metadata_file_fp, 
-                                       placeholder_project_id=temp_proj_id)
+                                       placeholder_project_id=temp_proj_id, remap_name_to_alias=(name_map_file_path is not None))
 
         # Don't clean up temp directory yet - the background extraction thread needs access to the tar file
         # The cleanup will happen in extract_project_files after extraction completes
@@ -3618,7 +3618,7 @@ def create_project(request):
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
-def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, oldFeatured=False):
+def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, oldFeatured=False, remap_name_to_alias=False):
     """
     Creates or updates a project.
     
@@ -3699,7 +3699,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     _thread_executor.submit(
         extract_project_files,
         tarfile, file_location, project_data_path, project_id,
-        extra_metadata_file_fp, old_extra_metadata, samples_to_remove
+        extra_metadata_file_fp, old_extra_metadata, samples_to_remove, remap_names_to_alias=remap_name_to_alias
     )
 
     if settings.USE_S3_DOWNLOADS:
