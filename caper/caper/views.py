@@ -2630,9 +2630,11 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
     download_url = f'http://localhost:8000/project/{project["linkid"]}/download'
     
     # Check if user wants to replace the entire project
+    # Read from new 3-way radio button (project_mode) or legacy field
     replace_project = False
     try:
-        if request.POST.get('replace_project') == 'on':
+        project_mode = request.POST.get('project_mode', '')
+        if project_mode == 'replace' or request.POST.get('replace_project') == 'on':
             replace_project = True
             print('Replacing project with new uploaded file')
     except:
@@ -2859,7 +2861,18 @@ def edit_project_page(request, project_name):
         # 4. reaggregate_project is requested (force re-aggregation on existing data)
         
         files_uploaded = request.FILES.getlist('document')
-        reaggregate_project = request.POST.get('reaggregate_project') == 'on'
+
+        # Determine mode from the new 3-way radio button (project_mode) or fall back
+        # to the legacy individual boolean fields sent by the XHR path.
+        project_mode = request.POST.get('project_mode', '')  # 'append' | 'replace' | 'reaggregate'
+        if project_mode == 'reaggregate':
+            reaggregate_project = True
+        elif project_mode in ('append', 'replace'):
+            reaggregate_project = False
+        else:
+            # Legacy / XHR fallback
+            reaggregate_project = request.POST.get('reaggregate_project') == 'on'
+
         needs_new_version = (len(files_uploaded) > 0 or
                             remap_sample_names or
                             reaggregate_project)
