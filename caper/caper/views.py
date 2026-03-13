@@ -2423,7 +2423,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
                              form_data, user, extra_metadata_file_fp,
                              previous_versions, previous_views, old_subscribers, old_project_data,
                              download_url, samples_to_remove, replace_project, remap_sample_names,
-                             reaggregate_project=False):
+                             reaggregate_project=False, oldFeatured=False):
     """
     Wrapper function for edit operations that handles notification and then calls _process_and_aggregate_files.
     This runs in a background thread for edit operations.
@@ -2445,6 +2445,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
         replace_project: Boolean indicating if we should replace the entire project (skip download)
         remap_sample_names: Boolean indicating if we should create a name map for sample remapping
         reaggregate_project: Boolean indicating if we should reaggregate the project without new files
+        oldFeatured: Boolean indicating if the old project was featured (to be transferred to new version)
     """
     try:
         logging.info(f"_process_edit_and_notify - starting for project {placeholder_project_id} (reaggregate_project={reaggregate_project})")
@@ -2527,7 +2528,8 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             name_map_file_path,
             previous_versions=previous_versions,
             previous_views=previous_views,
-            old_subscribers=old_subscribers
+            old_subscribers=old_subscribers,
+            oldFeatured=oldFeatured
         )
         
         # Clean up temporary files (downloaded old project and name map) after aggregation
@@ -2751,7 +2753,8 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 samples_to_remove,
                 replace_project,
                 remap_sample_names,
-                reaggregate_project
+                reaggregate_project,
+                oldFeatured
             )
             logging.info(f"EditProject - finished launch of background thread to _process_edit_and_notify")
 
@@ -3336,7 +3339,7 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None):
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, oldFeatured=False):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
@@ -3353,6 +3356,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         previous_versions: List of previous project versions (optional, for edit operations)
         previous_views: List containing [views, downloads] counts (optional, for edit operations)
         old_subscribers: List of subscriber emails (optional, for edit operations)
+        oldFeatured: Boolean indicating if the old project was featured (optional, for edit operations)
     """
     try:
         logging.info(f"_process_and_aggregate_files - start ")
@@ -3445,7 +3449,8 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                                        placeholder_project_id=temp_proj_id,
                                        previous_versions=previous_versions or [],
                                        previous_views=previous_views or [0, 0],
-                                       old_subscribers=old_subscribers)
+                                       old_subscribers=old_subscribers,
+                                       oldFeatured=oldFeatured)
         else:
             success = _create_project(form, mock_request, extra_metadata_file_fp, 
                                        placeholder_project_id=temp_proj_id)
@@ -3666,6 +3671,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         # Update the placeholder project with real data
         project['_id'] = project_id
         project['linkid'] = str(project_id)
+        
 
         # Remove placeholder-specific fields and ensure project_name doesn't have "(Processing...)"
         update_fields = {k: v for k, v in project.items() if k not in ['_id']}
@@ -3680,6 +3686,10 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
                  'owner': ''
              }}
         )
+        if oldFeatured:
+            project['featured'] = True
+            collection_handle.update_one({'_id': project_id}, {"$set": {'featured': True}})
+        
         add_project_to_site_statistics(project, project['private'])
 
     file_location = f'{project_data_path}/{request_file.name}'
