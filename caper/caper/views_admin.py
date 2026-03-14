@@ -883,7 +883,9 @@ def admin_project_files_report(request):
     """Generate a report on project files both on server and S3"""
     if not request.user.is_staff:
         return redirect('/accounts/logout')
-    
+
+    audit_ctx = _get_audit_log_context(request)
+
     logger = logging.getLogger(__name__)
     
     # Get collection for saved reports
@@ -928,7 +930,8 @@ def admin_project_files_report(request):
                 'SITE_TITLE': settings.SITE_TITLE,
                 'saved_reports': all_saved_reports,
                 'is_loaded_report': True,
-                'loaded_report_date': saved_report['created_at']
+                'loaded_report_date': saved_report['created_at'],
+                **audit_ctx,
             })
     
     # Check if file_pattern parameter is provided
@@ -953,7 +956,8 @@ def admin_project_files_report(request):
             'file_pattern': '',
             'user': request.user,
             'SITE_TITLE': settings.SITE_TITLE,
-            'saved_reports': all_saved_reports
+            'saved_reports': all_saved_reports,
+            **audit_ctx,
         })
     
     logger.info("Generating project files report...")
@@ -1095,17 +1099,15 @@ def admin_project_files_report(request):
         'SITE_TITLE': settings.SITE_TITLE,
         'saved_reports': all_saved_reports,
         'is_loaded_report': False,
-        'report_auto_saved': True
+        'report_auto_saved': True,
+        **audit_ctx,
     })
 
 
-@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
-def admin_audit_log(request):
+def _get_audit_log_context(request):
     """
-    Admin-only view to display the project audit log as a master-detail layout.
-    The top section shows all current projects; clicking one loads its audit log below.
+    Build the audit log context dict shared by admin_project_files_report and admin_audit_log.
     """
-    # Master: load all current, non-deleted projects for the project table
     all_projects = list(collection_handle.find({'current': True, 'delete': False}))
     for proj in all_projects:
         prepare_project_linkid(proj)
@@ -1201,17 +1203,26 @@ def admin_audit_log(request):
             logging.error(f"Error querying audit log for project_id '{selected_project_id}': {e}")
             error_message = f'Error querying audit log: {e}'
 
-    return render(request, 'pages/admin_audit_log.html', {
-        'all_projects': all_projects,
+    return {
+        'audit_all_projects': all_projects,
         'selected_project_id': selected_project_id,
         'selected_project': selected_project,
         'display_name': display_name,
         'matched_uuids': matched_uuids,
         'entries': entries,
         'total_entries': total_entries,
-        'error_message': error_message,
-        'SITE_TITLE': settings.SITE_TITLE,
-    })
+        'audit_error_message': error_message,
+    }
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_audit_log(request):
+    """Backward-compat redirect — audit log is now part of the project files report page."""
+    qs = request.GET.urlencode()
+    url = '/admin-project-files-report/'
+    if qs:
+        url += '?' + qs
+    return redirect(url)
 
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
