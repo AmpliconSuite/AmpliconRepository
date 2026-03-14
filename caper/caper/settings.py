@@ -353,7 +353,8 @@ if USE_S3_DOWNLOADS:
 
     # assume UUIDs are unique across servers so we can all use the same bucket
     S3_DOWNLOADS_BUCKET='amprepo-private'
-    S3_DOWNLOADS_BUCKET_PATH=os.getenv('S3_DOWNLOADS_BUCKET_PATH', default="")
+    _raw_bucket_path = os.getenv('S3_DOWNLOADS_BUCKET_PATH', default="")
+    S3_DOWNLOADS_BUCKET_PATH = (_raw_bucket_path.rstrip('/') + '/') if _raw_bucket_path else ""
 
 
 

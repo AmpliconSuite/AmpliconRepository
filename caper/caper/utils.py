@@ -193,6 +193,9 @@ def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
     if copy:
         sample_data = [feature.copy() for feature in sample_data]
 
+    _sentinel_fields = {'AA_amplicon_number', 'Classification'}
+    _na_strings = {'NA', 'None', 'Not Provided', ''}
+
     # sample_data.sort(key=lambda x: (int(x['AA_amplicon_number']), x['Feature_ID']))
     for feature in sample_data:
         for key, value in feature.items():
@@ -202,6 +205,9 @@ def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
 
                 else:
                     feature[key] = round(value, 1)
+
+            elif key in _sentinel_fields and type(value) == str and value in _na_strings:
+                feature[key] = None
 
             elif type(value) == str and value.startswith('['):
                 feature[key] = ', \n'.join(value[2:-2].split("', '"))
@@ -399,18 +405,16 @@ def sample_data_from_feature_list(features_list):
         subset = df.iloc[indices]
         sample_dict['Sample_name'] = sample_name
         sample_dict['Oncogenes'] = sorted(set(flatten(subset['Oncogenes'].values.tolist())))
-        # sample_dict['Classifications'] = list(set(flatten(subset['Classification'].values.tolist())))
-        classifications = flatten(subset['Classification'].values.tolist())
+        _invalid_classes = {None, 'NA', 'None', 'Not Provided', ''}
+        all_classifications = flatten(subset['Classification'].values.tolist())
+        classifications = [c for c in all_classifications if c not in _invalid_classes]
         sample_dict['Classifications'] = list(set(classifications))
         class_counts = Counter(classifications)
         sample_dict['Classifications_counted'] = [
             f"{c} ({count})" if count > 1 else c
             for c, count in sorted(class_counts.items())
         ]
-        if len(sample_dict['Oncogenes']) == 0 and len(sample_dict['Classifications']) == 0:
-            sample_dict['Features'] = 0
-        else:
-            sample_dict['Features'] = len(subset['Feature_ID'])
+        sample_dict['Features'] = len(classifications) if classifications else 0
         
         # if 'extra_metadata_from_csv' in subset.columns:
         #     try:
@@ -569,7 +573,7 @@ def previous_versions(project):
     # cursor = collection_handle.find(
     #    {'current': True, 'previous_versions.linkid' : str(project['_id'])}, {'date': 1, 'previous_versions':1}).sort('date', -1)
     # data = list(cursor)
-    fields = ['date', 'previous_versions', 'AC_version', 'AA_version', 'AP_version']
+    fields = ['date', 'previous_versions', 'AC_version', 'AA_version', 'AP_version', 'aggregator_version']
     cursor = collection_handle.find(
         {'current': True, 'previous_versions.linkid': str(project['_id'])},
         {field: 1 for field in fields}
@@ -593,7 +597,8 @@ def previous_versions(project):
                     'linkid': str(data[0]['_id']),
                     'AC_version': data[0].get('AC_version', 'NA'),
                     'AA_version': data[0].get('AA_version', 'NA'),
-                    'ASP_version': data[0].get('ASP_version', 'NA')})
+                    'ASP_version': data[0].get('ASP_version', 'NA'),
+                    'aggregator_version': data[0].get('aggregator_version', 'NA')})
         res.reverse()
         msg = f"Viewing an older version of the project. View latest version <a href = '/project/{str(data[0]['_id'])}'>here</a>"
 
@@ -608,7 +613,8 @@ def previous_versions(project):
                     'linkid': str(project['linkid']),
                     'AC_version': project.get('AC_version', 'NA'),
                     'AA_version': project.get('AA_version', 'NA'),
-                    'ASP_version': project.get('ASP_version', 'NA')
+                    'ASP_version': project.get('ASP_version', 'NA'),
+                    'aggregator_version': project.get('aggregator_version', 'NA')
                     })
         res.reverse()
 

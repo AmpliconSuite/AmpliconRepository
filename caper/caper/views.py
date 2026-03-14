@@ -3,6 +3,8 @@ import os
 import sys
 import gc
 import traceback
+import json
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
@@ -74,11 +76,12 @@ import subprocess
 import shutil
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
-import caper.project_pie_chart as piechart
+import caper.summarybar as summarybar
 from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import TemporaryUploadedFile
 
 from wsgiref.util import FileWrapper
+import requests
 import boto3, botocore, fnmatch, uuid, datetime, time
 import dateutil.parser
 
@@ -92,8 +95,8 @@ from .view_download_stats import *
 _aggregator_dev_path = getattr(settings, 'AGGREGATOR_DEV_PATH', '')
 if _aggregator_dev_path and _aggregator_dev_path not in sys.path:
     sys.path.insert(0, _aggregator_dev_path)
-from AmpliconSuiteAggregator import *
 import AmpliconSuiteAggregator
+from AmpliconSuiteAggregator import Aggregator
 
 # search
 from .search import *
@@ -160,7 +163,7 @@ def get_project_classifications(runs):
         feature['Classification'].upper()
         for sample in runs
         for feature in runs[sample]
-        if feature['Classification']
+        if feature['Classification'] and feature['Classification'] != 'NA'
     })
 
 
@@ -380,6 +383,7 @@ def profile(request, message_to_user=None):
         prepare_project_linkid(proj)
         test = get_extra_metadata_from_project(proj)
         proj['sample_metadata_available'] = has_sample_metadata(proj)
+        proj['sample_count'] = len(proj.get('runs', {}))
         # Format visibility for display
         proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
 
@@ -551,7 +555,7 @@ def count_chart_caches():
     try:
         # Get all project IDs and check if their chart caches exist
         projects = list(collection_handle.find({}, {'_id': 1}))
-        chart_types = ['stackedbar', 'piechart']
+        chart_types = ['stackedbar', 'summarybar']
         
         logging.info(f"[CACHE] Counting chart caches for {len(projects)} projects...")
         
@@ -590,7 +594,7 @@ def invalidate_project_charts(project_id):
     project_id = str(project_id)
     
     # Delete specific chart caches
-    chart_types = ['stackedbar', 'piechart']
+    chart_types = ['stackedbar', 'summarybar']
     
     for chart_type in chart_types:
         cache_key = f"chart_{project_id}_{chart_type}"
@@ -703,8 +707,8 @@ def project_page(request, project_name, message=''):
             aggregate, fa_cmap
         )
         pc_fig = get_cached_chart(
-            project, 'piechart',
-            piechart.pie_chart,
+            project, 'summarybar',
+            summarybar.summarybar,
             aggregate, fa_cmap
         )
     else:
@@ -725,8 +729,8 @@ def project_page(request, project_name, message=''):
             aggregate, fa_cmap
         )
         pc_fig = get_cached_chart(
-            project, 'piechart',
-            piechart.pie_chart,
+            project, 'summarybar',
+            summarybar.summarybar,
             aggregate, fa_cmap
         )
 
@@ -742,6 +746,18 @@ def project_page(request, project_name, message=''):
     debug_delete_flag = project.get('delete', 'NOT SET')
     debug_current_flag = project.get('current', 'NOT SET')
 
+    # Strip invalid classifications from sample_data regardless of cache path
+    _invalid_classes = {None, 'NA', 'None', 'Not Provided', ''}
+    for item in sample_data:
+        valid = [c for c in item.get('Classifications', []) if c not in _invalid_classes]
+        class_counts = Counter(valid)
+        item['Classifications'] = list(set(valid))
+        item['Classifications_counted'] = [
+            f"{c} ({count})" if count > 1 else c
+            for c, count in sorted(class_counts.items())
+        ]
+        item['Features'] = len(valid) if valid else 0
+
     # Log total page generation time
     total_time = time.time() - t_total_start
     logging.info(f"[PERF] Total project_page processing for {project_name}: {total_time:.3f}s")
@@ -751,7 +767,7 @@ def project_page(request, project_name, message=''):
         'sample_data': sample_data,
         'reference_genome': reference_genome,
         'stackedbar_graph': stackedbar_plot,
-        'piechart': pc_fig,
+        'summarybar': pc_fig,
         'prev_versions': prev_versions,
         'prev_versions_length': len(prev_versions),
         'views': views,
@@ -1341,15 +1357,16 @@ def sample_page(request, project_name, sample_name):
     # Check if ec3D visualization is available
     ec3d_available = check_ec3d_available(project['project_name'], sample_name)
 
+    # Filter out features with no valid amplicon number for the table; pass full data to plot
+    # (sample_plot handles null AA_amplicon_number internally via dropna)
+    sample_data_for_table = [f for f in sample_data_processed if f.get('AA_amplicon_number') is not None]
+
     t_plot_start = time.time()
-    if sample_data_processed[0]['AA_amplicon_number'] == None:
-        plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
-    else:
-        plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
+    plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
     logging.info(f"[PERF] Plot generation in view took {time.time() - t_plot_start:.3f}s")
-    
-    if sample_data_processed[0]['AA_amplicon_number'] != None:
-        for feature in sample_data_processed:
+
+    if sample_data_for_table:
+        for feature in sample_data_for_table:
             reference_version.append(feature['Reference_version'])
             download_png.append({
                 'aa_amplicon_number': feature['AA_amplicon_number'],
@@ -1385,7 +1402,7 @@ def sample_page(request, project_name, sample_name):
                   {'project': project,
                    'project_name': project_name,
                    'project_linkid': project_linkid,
-                   'sample_data': sample_data_processed,
+                   'sample_data': sample_data_for_table,
                    'sample_metadata': dict(sample_metadata),
                    'reference_genome': reference_genome,
                    'sample_name': sample_name,
@@ -1567,17 +1584,16 @@ def process_sample_data(project, sample_name, sample_data, output_dir=None):
 
         if feature.get('AA_directory', 'Not Provided') != 'Not Provided':
             aa_directory_id = feature['AA_directory']
-            # Update the path in the feature copy
-            updated_feature['AA_directory'] = f"aa_directory.tar.gz"
+            # Retrieve the original archive name from GridFS metadata (new-format projects).
+            # Old-format projects were stored without a filename, so fall back to the legacy name.
+            try:
+                aa_archive_name = fs_handle.get(ObjectId(aa_directory_id)).filename or 'aa_directory.tar.gz'
+            except Exception:
+                aa_archive_name = 'aa_directory.tar.gz'
+            updated_feature['AA_directory'] = aa_archive_name
         else:
             aa_directory_id = False
-
-        if feature.get('cnvkit_directory', 'Not Provided') != 'Not Provided':
-            cnvkit_directory_id = feature['cnvkit_directory']
-            # Update the path in the feature copy
-            updated_feature['cnvkit_directory'] = f"cnvkit_directory.tar.gz"
-        else:
-            cnvkit_directory_id = False
+            aa_archive_name = 'aa_directory.tar.gz'
 
         # Add the updated feature to our list
         updated_data.append(updated_feature)
@@ -1613,20 +1629,10 @@ def process_sample_data(project, sample_name, sample_data, output_dir=None):
                 png_file_tmp.write(png_file)
 
         if aa_directory_id:
-            if not os.path.exists(f'{sample_data_path}/aa_directory.tar.gz'):
+            if not os.path.exists(f'{sample_data_path}/{aa_archive_name}'):
                 aa_directory_file = fs_handle.get(ObjectId(aa_directory_id)).read()
-                with open(f'{sample_data_path}/aa_directory.tar.gz', "wb+") as aa_directory_tmp:
+                with open(f'{sample_data_path}/{aa_archive_name}', "wb+") as aa_directory_tmp:
                     aa_directory_tmp.write(aa_directory_file)
-
-        if cnvkit_directory_id:
-            if not os.path.exists(f'{sample_data_path}/cnvkit_directory.tar.gz'):
-                cnvkit_directory_file = fs_handle.get(ObjectId(cnvkit_directory_id)).read()
-                with open(f'{sample_data_path}/cnvkit_directory.tar.gz', "wb+") as cnvkit_directory_tmp:
-                    cnvkit_directory_tmp.write(cnvkit_directory_file)
-
-    # Generate JSON file using the updated data
-    with open(f'{sample_data_path}/{sample_name}_result_data.json', 'w') as json_file:
-        json.dump(updated_data, json_file, indent=2, cls=JSONEncoder)
 
     # Generate TSV file using the updated data
     with open(f'{sample_data_path}/{sample_name}_result_data.tsv', 'w') as tsv_file:
@@ -3092,8 +3098,13 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
 
                 if len(feature) > 0:
                     # get paths
+                    # 'AA graph file' and 'AA cycles file' are new keys (new-format archives only)
+                    # stored individually in GridFS for direct access.
+                    # 'AA directory' is handled separately below: old-format archives supply a
+                    # .tar.gz file; new-format archives supply a plain directory that we tar
+                    # in-memory before storing in GridFS.
                     key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON',
-                                 'AA directory', 'cnvkit directory']
+                                 'AA graph file', 'AA cycles file']
                     for k in key_names:
                         try:
                             path_var = feature[k]
@@ -3104,6 +3115,28 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         except:
                             id_var = "Not Provided"
                         feature[k] = id_var
+
+                    # Handle AA directory: new-format archives supply a plain directory;
+                    # old-format archives supply a .tar.gz file.  Either way we end up with
+                    # a named tar.gz blob in GridFS.
+                    try:
+                        import io
+                        path_var = feature['AA directory']
+                        full_path = f'{project_data_path}/results/{path_var}'
+                        if os.path.isdir(full_path):
+                            dir_name = os.path.basename(path_var.rstrip('/'))
+                            archive_name = f'{dir_name}.tar.gz'
+                            buf = io.BytesIO()
+                            with tarfile.open(fileobj=buf, mode='w:gz') as tar:
+                                tar.add(full_path, arcname=dir_name)
+                            buf.seek(0)
+                            id_var = fs_handle.put(buf, filename=archive_name)
+                        else:
+                            with open(full_path, 'rb') as file_var:
+                                id_var = fs_handle.put(file_var)
+                    except:
+                        id_var = 'Not Provided'
+                    feature['AA directory'] = id_var
 
         gfs_end_time = time.time()
         logging.info(f"Putting files in GridFS took {gfs_end_time - gfs_start_time:.4f}s")
@@ -3356,7 +3389,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
-    
+
     Args:
         file_fps: List of file paths to aggregate
         temp_proj_id: Temporary project ID
@@ -3372,27 +3405,26 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         oldFeatured: Boolean indicating if the old project was featured (optional, for edit operations)
     """
     try:
-        logging.info(f"_process_and_aggregate_files - start ")
+        logging.info(f"_process_and_aggregate_files - start")
 
         print(AmpliconSuiteAggregator.__file__)
-        if hasattr(AmpliconSuiteAggregator, '__version__'):
-            print(f"AmpliconSuiteAggregator version: {AmpliconSuiteAggregator.__version__}")
-        elif hasattr(Aggregator, '__version__'):
-            print(f"Aggregator version: {Aggregator.__version__}")
-        else:
-            print("No version attribute found for Aggregator or AmpliconSuiteAggregator.")
-        logging.info(f"_process_and_aggregate_files - Aggregator start ")
+        print(f"AmpliconSuiteAggregator version: {AmpliconSuiteAggregator.__version__}")
+        logging.info(f"_process_and_aggregate_files - Aggregator start")
 
-        # Pass name_map_file_path to Aggregator if provided
-        if name_map_file_path:
-            logging.info(f"Using name map file for sample remapping: {name_map_file_path}")
-            agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', 
-                           name_remap_file=name_map_file_path, uuid=str(temp_proj_id))
-        else:
-            agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', 
-                           uuid=str(temp_proj_id))
+        # Aggregator writes results/ relative to cwd — run it inside temp_directory
+        orig_dir = os.getcwd()
+        os.chdir(temp_directory)
+        try:
+            agg = Aggregator(
+                input_paths=file_fps,
+                project_name=str(temp_proj_id),
+                name_map_file=name_map_file_path,
+                work_dir=temp_directory,
+            )
+        finally:
+            os.chdir(orig_dir)
 
-        logging.info(f"_process_and_aggregate_files - Aggregator END ")
+        logging.info(f"_process_and_aggregate_files - Aggregator END")
 
         if not agg.completed:
             # Mark project as failed
@@ -3485,7 +3517,12 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
             )
             logging.error(f"Project creation failed for {temp_proj_id}")
         else:
-            logging.info(f"Project {temp_proj_id} aggregation complete")
+            agg_version = getattr(AmpliconSuiteAggregator, '__version__', None) or 'NA'
+            collection_handle.update_one(
+                {'_id': ObjectId(temp_proj_id)},
+                {'$set': {'aggregator_version': agg_version}}
+            )
+            logging.info(f"Project {temp_proj_id} aggregation complete (aggregator version: {agg_version})")
 
 
     except Exception as e:

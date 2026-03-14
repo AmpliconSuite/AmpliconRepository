@@ -232,7 +232,11 @@ class ProjectFileAddView(APIView):
         logging.error(f"file_fps are {file_fps}")
         try:
             temp_directory = os.path.join('./tmp/', str(api_id))
-            agg = Aggregator(file_fps, temp_directory, tmp_project_data_path, 'No', "", 'python3', uuid=str(api_id))
+            agg = Aggregator(
+                input_paths=file_fps,
+                project_name=str(api_id),
+                work_dir=temp_directory,
+            )
             if not agg.completed:
                 ## redirect to edit page if aggregator fails
                 alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
