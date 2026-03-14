@@ -3,8 +3,15 @@ import plotly.graph_objects as go
 import logging
 
 
-def pie_chart(sample, fa_cmap):
+def summarybar(sample, fa_cmap):
     df = pd.DataFrame(sample)
+
+    # Normalise legacy classification names to their canonical equivalents so
+    # mixed-vintage projects are counted correctly rather than split into two bars.
+    df['Classification'] = df['Classification'].replace({
+        'Linear amplification': 'Linear',
+        'Complex non-cyclic': 'Complex-non-cyclic',
+    })
 
     # Get unique samples and their classifications
     sample_classifications = df.groupby('Sample_name')['Classification'].apply(lambda x: set(x)).reset_index()
@@ -24,17 +31,17 @@ def pie_chart(sample, fa_cmap):
     class_counts_df = pd.DataFrame(list(classification_counts.items()),
                                    columns=['Classification', 'Sample_count'])
 
-    # NOW filter out None/NaN/empty AFTER we've counted everything
+    # Filter out None/NaN/empty/NA AFTER we've counted everything
     class_counts_df = class_counts_df[
         class_counts_df['Classification'].notna() &
         (class_counts_df['Classification'] != '') &
-        (class_counts_df['Classification'] != 'None')
+        (class_counts_df['Classification'] != 'None') &
+        (class_counts_df['Classification'] != 'NA')
         ]
 
     class_counts_df['Percentage'] = (class_counts_df['Sample_count'] / total_samples * 100).round(1)
     class_counts_df = class_counts_df.sort_values('Sample_count', ascending=True)
 
-    # Debug output
     logging.info(f"Sample classification percentages (n={total_samples}):")
     for _, row in class_counts_df.iterrows():
         logging.info(f"  {row['Classification']}: {row['Percentage']}% ({row['Sample_count']} samples)")
@@ -50,11 +57,9 @@ def pie_chart(sample, fa_cmap):
     class_counts_df['Display_label'] = class_counts_df['Classification'].apply(
         lambda x: str(abbreviate_label(x)) + '  ')
 
-    # Create horizontal bar chart
     fig = go.Figure()
 
     for _, row in class_counts_df.iterrows():
-        # Place text inside if bar is >= 30%, outside otherwise
         text_position = 'inside' if row['Percentage'] >= 30 else 'outside'
 
         fig.add_trace(go.Bar(
@@ -103,4 +108,4 @@ def pie_chart(sample, fa_cmap):
         'toImageButtonOptions': {'format': 'svg'}
     }
 
-    return fig.to_html(full_html=False, config=updated_config_dict, div_id='project_pie_plotly_div')
+    return fig.to_html(full_html=False, config=updated_config_dict, div_id='summarybar_plotly_div')

@@ -7,6 +7,7 @@ from plotly.subplots import make_subplots
 from pylab import cm
 import gridfs
 from bson.objectid import ObjectId
+from bson.errors import InvalidId
 from io import StringIO
 import time
 from pandas.api.types import is_numeric_dtype
@@ -114,6 +115,10 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
         df.rename(columns={0: 'Chromosome Number', 1: "Feature Start Position", 2: "Feature End Position", 3: 'Source',
                            4: 'Copy Number'}, inplace=True)
 
+    except InvalidId:
+        logging.debug(f'CNV_BED_file not available for {sample_name} (value: {cnv_file_id!r})')
+        df = pd.DataFrame(columns=["Chromosome Number", "Feature Start Position", "Feature End Position", "Source",
+                                   "Copy Number"])
     except Exception as e:
         logging.exception(e)
         df = pd.DataFrame(columns=["Chromosome Number", "Feature Start Position", "Feature End Position", "Source",
@@ -122,8 +127,11 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
     # Note, that a 4 column CNV file, instead of a 5 column CNV file may be given. We instruct users to place Copy Number in the last column.
 
     amplicon = pd.DataFrame(sample)
+    amplicon['AA_amplicon_number'] = pd.to_numeric(amplicon['AA_amplicon_number'], errors='coerce')
+    amplicon = amplicon.dropna(subset=['AA_amplicon_number'])
+    amplicon['AA_amplicon_number'] = amplicon['AA_amplicon_number'].astype(int)
 
-    amplicon_numbers = sorted(list(amplicon['AA_amplicon_number'].unique()))
+    amplicon_numbers = sorted(amplicon['AA_amplicon_number'].unique())
     seen = set()
 
     chr_order = lambda x: int(x) if x.isnumeric() else ord(x[0])
@@ -261,7 +269,8 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
                                                         'Feature End Position','Oncogenes','Feature Maximum Copy Number',
                                                         'AA_amplicon_number', 'Feature Position','Y-axis']]
                             #print(amplicon_df2)
-                            oncogenetext = '<i>Oncogenes:</i> %{customdata[4]}<br>' if amplicon_df2['Oncogenes'].iloc[0][0] else ""
+                            _oncogenes = amplicon_df2['Oncogenes'].iloc[0]
+                            oncogenetext = '<i>Oncogenes:</i> %{customdata[4]}<br>' if _oncogenes and _oncogenes[0] else ""
                             ht = '<br><i>Feature Classification:</i> %{customdata[0]}<br>' + \
                                  '<i>%{customdata[1]}:</i> %{customdata[2]} - %{customdata[3]}<br>' + \
                                  oncogenetext + \
@@ -338,9 +347,11 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
         fig.update_traces(textposition="bottom right")
 
         # note: setting hoverdistance (measured in pixels) too high will cause spillover of hover text to bad places
-        fig.update_layout(title_font_size=30, xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified',
-                          title_text=f"{sample_name} Copy Number Plots", height = height[rows], hoverdistance=2,
-                          margin = dict(t = 70, r = 35, b = 15, l = 70))
+        # Right margin sized to give the legend column sufficient paper-space for its scroll container.
+        fig.update_layout(xaxis = dict(gridcolor='white'), template = None, hovermode = 'x unified',
+                          height = height[rows], hoverdistance=2,
+                          legend = dict(tracegroupgap=0),
+                          margin = dict(t = 20, r = 150, b = 15, l = 70))
 
         # add select and deselect all buttons
         fig.update_layout(dict(updatemenus=[

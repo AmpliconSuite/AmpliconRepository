@@ -21,11 +21,11 @@
         $('#projectTable').DataTable({
             columnDefs: [
                 {
-                    targets: 2,
+                    targets: 3,
                     type: 'custom-date'
                 }
             ],
-            order: [[2, 'desc']] // Sort by date column (index 2) in descending order
+            order: [[3, 'desc']] // Sort by date column (index 3) in descending order
         });
        
     } );
@@ -37,7 +37,7 @@
 {% if user.is_authenticated %}
 
 
-    <div class="container main-container" style="max-width:1600px; width:90%; margin:auto;">
+    <div class="container main-container" style="max-width:1800px; width:95%; margin:auto;">
        <div id="message_dialog" class="alert alert-success" role="alert" style="display:none">
         <span id="message_to_user">default text</span>
             <button type="button" class="close" data-dismiss="alert" aria-label="Close">
@@ -71,6 +71,7 @@
                 <thead>
                     <tr>
                         <th>Name</th>
+                        <th>Samples</th>
                         <th>Description</th>
                         <th>Date</th>
                         <th>Visibility</th>
@@ -86,6 +87,7 @@
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                           <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
                         </td>
+                        <td>{{ project.sample_count }}</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
                         <td class="date">{{ project.date }}</td>
                         <td>{{ project.visibility_display }}</td>
