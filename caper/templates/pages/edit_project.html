@@ -695,8 +695,14 @@
      function setCheckboxesDisabled(disabled, message) {
         const sampleCheckboxes = document.querySelectorAll('.sample-checkbox');
         const msgDiv = document.getElementById('sample_removal_disabled_msg');
+        const sampleList = document.querySelector('.sample-list');
         // Set disabled property for all checkboxes
         sampleCheckboxes.forEach(cb => cb.disabled = disabled);
+        // Grey out the list visually
+        if (sampleList) {
+            sampleList.style.opacity = disabled ? '0.4' : '';
+            sampleList.style.pointerEvents = disabled ? 'none' : '';
+        }
         // Show or clear the message
         if (msgDiv) {
             if (disabled && message) {
@@ -743,6 +749,22 @@
     sampleCheckboxes.forEach(cb => cb.addEventListener('change', updateInputs));
     if (fileInput) fileInput.addEventListener('change', updateInputs);
     if (metadataInput) metadataInput.addEventListener('change', updateInputs);
+
+    // Disable sample removal when replace or re-aggregate mode is selected
+    function updateSampleRemovalForMode() {
+        const selectedMode = document.querySelector('input[name="project_mode"]:checked');
+        const modeBlocks = selectedMode && (selectedMode.value === 'replace' || selectedMode.value === 'reaggregate');
+        if (modeBlocks) {
+            document.querySelectorAll('.sample-checkbox').forEach(cb => { cb.checked = false; });
+            setCheckboxesDisabled(true, 'Not available when replacing or re-aggregating the project.');
+        } else {
+            updateInputs();
+        }
+    }
+    document.querySelectorAll('input[name="project_mode"]').forEach(radio => {
+        radio.addEventListener('change', updateSampleRemovalForMode);
+    });
+    updateSampleRemovalForMode(); // apply on page load for the initially selected mode
 
     // Add event listener for metadata file to check for sample_name_alias column
     if (metadataInput) {
