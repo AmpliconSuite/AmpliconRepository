@@ -186,23 +186,23 @@
             <div class="card-header" id="headingOne">
               <h5 class="mb-0">
                 <button class="btn btn-link collapsed" type="button" data-toggle="collapse" data-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne" style="padding: 0.25rem 0.5rem;">
-                    Add more samples to project / Replace project file? 
+                    Samples: Append / Replace / Reaggreate? 
                 </button>
             </h5>
             </div>
             <div id="collapseOne" class="collapse" aria-labelledby="headingOne" data-parent="#accordion">
               <div class="card-body">
 
-                <!-- Explicit Append / Replace selector (replaces old replace_project checkbox) -->
+                <!-- 3-way mode selector: Append / Replace / Re-aggregate -->
                 <div class="mb-3">
-                    <label class="font-weight-bold d-block mb-2">How should uploaded files be added to the project?</label>
+                    <label class="font-weight-bold d-block mb-2">What would you like to do?</label>
                     <div style="display:flex; gap:16px; flex-wrap:wrap;">
 
                         <label for="mode_append" id="label_append" style="flex:1; min-width:200px; cursor:pointer;
                                border:2px solid #ccc; border-radius:8px; padding:16px;
                                background:#f8f9fa; transition:border-color 0.2s, background-color 0.2s;">
                             <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-                                <input type="radio" name="replace_project" id="mode_append" value="off"
+                                <input type="radio" name="project_mode" id="mode_append" value="append"
                                        style="width:18px; height:18px; cursor:pointer;">
                                 <strong style="font-size:1.05em;">➕ Append Samples</strong>
                             </div>
@@ -216,13 +216,27 @@
                                border:2px solid #ccc; border-radius:8px; padding:16px;
                                background:#f8f9fa; transition:border-color 0.2s, background-color 0.2s;">
                             <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-                                <input type="radio" name="replace_project" id="mode_replace" value="on"
+                                <input type="radio" name="project_mode" id="mode_replace" value="replace"
                                        style="width:18px; height:18px; cursor:pointer;">
                                 <strong style="font-size:1.05em; color:#c0392b;">🔄 Replace Entire Project</strong>
                             </div>
                             <div style="color:#555; font-size:0.9em; margin-left:28px;">
                                 <span style="color:#c0392b; font-weight:bold;">⚠ Destructive:</span>
                                 Discard all existing samples and replace with the uploaded files.
+                            </div>
+                        </label>
+
+                        <label for="mode_reaggregate" id="label_reaggregate" style="flex:1; min-width:200px; cursor:pointer;
+                               border:2px solid #ccc; border-radius:8px; padding:16px;
+                               background:#f8f9fa; transition:border-color 0.2s, background-color 0.2s;">
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                                <input type="radio" name="project_mode" id="mode_reaggregate" value="reaggregate"
+                                       style="width:18px; height:18px; cursor:pointer;">
+                                <strong style="font-size:1.05em; color:#1a5276;">🔁 Re-aggregate Project</strong>
+                            </div>
+                            <div style="color:#555; font-size:0.9em; margin-left:28px;">
+                                Re-run the aggregator on the existing project data.
+                                No new files needed — do not upload files when selecting this option.
                             </div>
                         </label>
 
@@ -249,6 +263,8 @@
                     </div>
                 </div>
 
+                <!-- File upload area — hidden when Re-aggregate is selected -->
+                <div id="file-upload-section">
                 <div class="uk-margin">
                   <div id="file-drop-area" class="uk-placeholder uk-text-center js-upload">
                     <span uk-icon="icon: cloud-upload"></span>
@@ -274,6 +290,7 @@
                   </thead>
                   <tbody id="file-list"></tbody>
                 </table>
+                </div><!-- end file-upload-section -->
               </div>
             </div>
           </div>
@@ -416,14 +433,6 @@
 
       <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
 
-        <!-- Reaggregate project checkbox -->
-        <div class="form-check" style="margin-bottom: 15px;">
-            <input class="form-check-input" type="checkbox" name="reaggregate_project" id="reaggregateProjectCheckbox" value="on">
-            <label class="form-check-label" for="reaggregateProjectCheckbox">
-                <strong>Reaggregate project</strong>
-                <small class="text-muted d-block">Re-run the aggregator on the existing project data even if no new files have been provided.</small>
-            </label>
-        </div>
 
         {{ run.accept_license | as_crispy_field }}
         
@@ -583,10 +592,15 @@
         fd.append('metadataFile', metadataFile);
       };
       
-      // Add the replace_project radio button value
-      const replaceRadio = document.getElementById('mode_replace');
-      if (replaceRadio && replaceRadio.checked) {
-        fd.append('replace_project', 'on');
+      // Add the replace_project / reaggregate_project value from the radio buttons
+      const selectedMode = document.querySelector('input[name="project_mode"]:checked');
+      if (selectedMode) {
+        if (selectedMode.value === 'replace') {
+          fd.append('replace_project', 'on');
+        } else if (selectedMode.value === 'reaggregate') {
+          fd.append('reaggregate_project', 'on');
+        }
+        // 'append' needs no extra flag
       }
 
       // Add the remap_sample_names checkbox value if checked
@@ -594,19 +608,13 @@
       if (remapCheckbox && remapCheckbox.checked) {
         fd.append('remap_sample_names', 'true');
       }
-
-      // Add the reaggregate_project checkbox value if checked
-      const reaggregateCheckbox = document.getElementById('reaggregateProjectCheckbox');
-      if (reaggregateCheckbox && reaggregateCheckbox.checked) {
-        fd.append('reaggregate_project', 'on');
-      }
   
       const xhr = new XMLHttpRequest();
       xhr.open('POST', uploadForm.action, true);
       xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
   
       alertBox.innerHTML = `<div class="alert alert-info" role="alert">
-        Uploading ... Will redirectly automatically in a few seconds. 
+        Uploading ... Will redirect automatically in a few seconds. 
           </div>`;
       
       xhr.upload.addEventListener('progress', (event) => {
@@ -687,8 +695,14 @@
      function setCheckboxesDisabled(disabled, message) {
         const sampleCheckboxes = document.querySelectorAll('.sample-checkbox');
         const msgDiv = document.getElementById('sample_removal_disabled_msg');
+        const sampleList = document.querySelector('.sample-list');
         // Set disabled property for all checkboxes
         sampleCheckboxes.forEach(cb => cb.disabled = disabled);
+        // Grey out the list visually
+        if (sampleList) {
+            sampleList.style.opacity = disabled ? '0.4' : '';
+            sampleList.style.pointerEvents = disabled ? 'none' : '';
+        }
         // Show or clear the message
         if (msgDiv) {
             if (disabled && message) {
@@ -736,6 +750,22 @@
     if (fileInput) fileInput.addEventListener('change', updateInputs);
     if (metadataInput) metadataInput.addEventListener('change', updateInputs);
 
+    // Disable sample removal when replace or re-aggregate mode is selected
+    function updateSampleRemovalForMode() {
+        const selectedMode = document.querySelector('input[name="project_mode"]:checked');
+        const modeBlocks = selectedMode && (selectedMode.value === 'replace' || selectedMode.value === 'reaggregate');
+        if (modeBlocks) {
+            document.querySelectorAll('.sample-checkbox').forEach(cb => { cb.checked = false; });
+            setCheckboxesDisabled(true, 'Not available when replacing or re-aggregating the project.');
+        } else {
+            updateInputs();
+        }
+    }
+    document.querySelectorAll('input[name="project_mode"]').forEach(radio => {
+        radio.addEventListener('change', updateSampleRemovalForMode);
+    });
+    updateSampleRemovalForMode(); // apply on page load for the initially selected mode
+
     // Add event listener for metadata file to check for sample_name_alias column
     if (metadataInput) {
         metadataInput.addEventListener('change', function(e) {
@@ -754,9 +784,11 @@
             const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
             const filesSelected = fileInput && fileInput.files.length > 0;
             const metadataSelected = metadataInput && metadataInput.files.length > 0;
+            const reaggregateRadio = document.getElementById('mode_reaggregate');
+            const isReaggregate = reaggregateRadio && reaggregateRadio.checked;
 
-            // If files are being uploaded, a mode must be explicitly selected
-            if (filesSelected) {
+            // If files are being uploaded, a mode must be explicitly append or replace (not re-aggregate)
+            if (filesSelected && !isReaggregate) {
                 const appendRadio  = document.getElementById('mode_append');
                 const replaceRadio = document.getElementById('mode_replace');
                 const modeError    = document.getElementById('replace-mode-error');
@@ -972,15 +1004,18 @@
 
 
     $(document).ready(function() {
-        const $appendRadio   = $('#mode_append');
-        const $replaceRadio  = $('#mode_replace');
-        const $labelAppend   = $('#label_append');
-        const $labelReplace  = $('#label_replace');
-        const $replaceWarn   = $('#replace-warning');
-        const $confirmCb     = $('#replace_confirm_checkbox');
-        const $fileInput     = $('#fileuploadfield');
-        const $submitButton  = $('#createProjectBtn');
-        const $modeError     = $('#replace-mode-error');
+        const $appendRadio      = $('#mode_append');
+        const $replaceRadio     = $('#mode_replace');
+        const $reaggregateRadio = $('#mode_reaggregate');
+        const $labelAppend      = $('#label_append');
+        const $labelReplace     = $('#label_replace');
+        const $labelReaggregate = $('#label_reaggregate');
+        const $replaceWarn      = $('#replace-warning');
+        const $confirmCb        = $('#replace_confirm_checkbox');
+        const $fileInput        = $('#fileuploadfield');
+        const $submitButton     = $('#createProjectBtn');
+        const $modeError        = $('#replace-mode-error');
+        const $fileUploadSection = $('#file-upload-section');
         const projectIsEmpty = {% if is_empty_project %}true{% else %}false{% endif %};
 
         // If project is empty, force "Replace" and lock the choice
@@ -988,6 +1023,7 @@
             $replaceRadio.prop('checked', true);
             $appendRadio.prop('disabled', true);
             $replaceRadio.prop('disabled', true);
+            $reaggregateRadio.prop('disabled', true);
             // Auto-check and lock the confirmation so the user doesn't have to click it
             $confirmCb.prop('checked', true);
             $confirmCb.prop('disabled', true);
@@ -996,7 +1032,7 @@
         }
 
         function noneSelected() {
-            return !$appendRadio.is(':checked') && !$replaceRadio.is(':checked');
+            return !$appendRadio.is(':checked') && !$replaceRadio.is(':checked') && !$reaggregateRadio.is(':checked');
         }
 
         function updateReplaceUI() {
@@ -1004,26 +1040,53 @@
             if ($replaceRadio.is(':checked')) {
                 $labelReplace.css({'border-color': '#c0392b', 'background': '#fff0ee'});
                 $labelAppend.css({'border-color':  '#ccc',    'background': '#f8f9fa'});
+                $labelReaggregate.css({'border-color': '#ccc','background': '#f8f9fa'});
                 $replaceWarn.show();
+                $fileUploadSection.show();
             } else if ($appendRadio.is(':checked')) {
                 $labelAppend.css({'border-color':  '#28a745', 'background': '#f0fff4'});
                 $labelReplace.css({'border-color': '#ccc',    'background': '#f8f9fa'});
+                $labelReaggregate.css({'border-color': '#ccc','background': '#f8f9fa'});
                 $replaceWarn.hide();
                 if (!projectIsEmpty) { $confirmCb.prop('checked', false); }
-            } else {
-                // Neither selected — neutral state
+                $fileUploadSection.show();
+            } else if ($reaggregateRadio.is(':checked')) {
+                $labelReaggregate.css({'border-color': '#1a5276', 'background': '#eaf4fb'});
                 $labelAppend.css({'border-color':  '#ccc', 'background': '#f8f9fa'});
                 $labelReplace.css({'border-color': '#ccc', 'background': '#f8f9fa'});
                 $replaceWarn.hide();
+                if (!projectIsEmpty) { $confirmCb.prop('checked', false); }
+                // Clear and hide the file upload section
+                if ($fileInput[0]) {
+                    filesArray = [];
+                    document.getElementById('file-list').innerHTML = '';
+                    $fileInput[0].value = '';
+                    $('#js-progressbar').prop('hidden', true);
+                }
+                $fileUploadSection.hide();
+            } else {
+                // None selected — neutral state
+                $labelAppend.css({'border-color':  '#ccc', 'background': '#f8f9fa'});
+                $labelReplace.css({'border-color': '#ccc', 'background': '#f8f9fa'});
+                $labelReaggregate.css({'border-color': '#ccc', 'background': '#f8f9fa'});
+                $replaceWarn.hide();
+                $fileUploadSection.show();
             }
             enforceSubmitButton();
         }
 
         function enforceSubmitButton() {
             const isReplace     = $replaceRadio.is(':checked');
+            const isReaggregate = $reaggregateRadio.is(':checked');
             const confirmed     = $confirmCb.is(':checked');
             const filesUploaded = $fileInput[0] && $fileInput[0].files.length > 0;
 
+            // Re-aggregate needs no files — always allow submit
+            if (isReaggregate) {
+                $submitButton.prop('disabled', false);
+                $submitButton.attr('title', '');
+                return;
+            }
             // Files selected but no mode chosen → block submit
             if (filesUploaded && noneSelected()) {
                 $submitButton.prop('disabled', true);
@@ -1048,6 +1111,7 @@
 
         $appendRadio.on('change', updateReplaceUI);
         $replaceRadio.on('change', updateReplaceUI);
+        $reaggregateRadio.on('change', updateReplaceUI);
         $confirmCb.on('change', enforceSubmitButton);
         $fileInput.on('change', function() {
             updateReplaceUI();
