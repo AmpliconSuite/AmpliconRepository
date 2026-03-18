@@ -9,14 +9,106 @@
         });
 
         $('#projectFilesTable').DataTable({
-            language: {
-                searchPlaceholder: "Search projects"
-            },
+            language: { searchPlaceholder: "Search projects" },
             "processing": true,
             "pageLength": 25,
             "order": [[0, "asc"]]
         });
+
+        /* ── Audit log: master projects table ── */
+        $('#auditProjectsTable').DataTable({
+            order: [[4, 'desc']],
+            pageLength: 15,
+            lengthMenu: [10, 15, 25, 50],
+            language: { searchPlaceholder: "Filter projects…" },
+            columnDefs: [
+                { orderable: false, targets: [-1] },
+                { type: 'num', targets: [4] }
+            ]
+        });
+
+        {% if entries %}
+        $('#auditTable').DataTable({
+            order: [[0, 'desc']],
+            pageLength: 25,
+            language: { searchPlaceholder: "Filter log entries…" },
+            columnDefs: [{ orderable: false, targets: [-1] }]
+        });
+        {% endif %}
+
+        {% if selected_project_id %}
+        $('#auditProjectsTable tbody tr[data-project-id="{{ selected_project_id }}"]').addClass('table-active');
+        var $detail = $('#audit-detail-panel');
+        if ($detail.length) {
+            $('html, body').animate({ scrollTop: $detail.offset().top - 80 }, 400);
+        }
+        {% endif %}
     });
+
+    function fmtBytes(bytes) {
+        if (bytes == null || bytes === '') return 'N/A';
+        bytes = parseInt(bytes.replace(/,/g, ''), 10);
+        if (isNaN(bytes)) return 'N/A';
+        if (bytes < 1024)        return bytes + ' B';
+        if (bytes < 1048576)     return (bytes / 1024).toFixed(1) + ' KB';
+        if (bytes < 1073741824)  return (bytes / 1048576).toFixed(1) + ' MB';
+        return (bytes / 1073741824).toFixed(2) + ' GB';
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('[data-bytes]').forEach(function (el) {
+            el.textContent = fmtBytes(el.getAttribute('data-bytes'));
+        });
+    });
+
+    function validateAuditLog(projectId) {
+        var $btn    = $('#audit-validate-btn');
+        var $panel  = $('#audit-validate-result');
+        var $body   = $('#audit-validate-table-body');
+        var $banner = $('#audit-validate-banner');
+
+        $btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Validating…');
+        $panel.hide();
+
+        $.getJSON('/admin-audit-log/validate/', { project_id: projectId })
+            .done(function (data) {
+                $body.empty();
+                $.each(data.checks, function (_, c) {
+                    var rowClass = c.missing ? 'check-row-missing' : (c.match ? 'check-row-match' : 'check-row-miss');
+                    var icon     = c.missing ? '⚠️' : (c.match ? '✅' : '❌');
+                    $body.append(
+                        '<tr class="' + rowClass + '">' +
+                        '<td><strong>' + c.field + '</strong></td>' +
+                        '<td>' + c.log_value  + '</td>' +
+                        '<td>' + c.live_value + '</td>' +
+                        '<td class="text-center check-icon">' + icon + '</td>' +
+                        '</tr>'
+                    );
+                });
+                var eventLabel = {
+                    'create': 'Create',
+                    'edit_new_version': 'Edit (new ver.)',
+                    'edit_no_version':  'Edit (no ver.)'
+                }[data.log_event_type] || data.log_event_type;
+                if (data.any_mismatch) {
+                    $banner.attr('class', 'alert alert-danger').html('<strong>❌ Mismatch detected</strong> — one or more values differ between the most recent log entry (' + eventLabel + ' @ ' + data.log_timestamp + ') and the live project.');
+                } else if (!data.all_match) {
+                    $banner.attr('class', 'alert alert-warning').html('<strong>⚠️ Some values missing</strong> — log entry (' + eventLabel + ' @ ' + data.log_timestamp + ') has missing fields; remaining fields match.');
+                } else {
+                    $banner.attr('class', 'alert alert-success').html('<strong>✅ All checks passed</strong> — log entry (' + eventLabel + ' @ ' + data.log_timestamp + ') matches the live project.');
+                }
+                $panel.show();
+            })
+            .fail(function (xhr) {
+                var msg = 'Validation request failed.';
+                try { msg = JSON.parse(xhr.responseText).error || msg; } catch(e) {}
+                $banner.attr('class', 'alert alert-danger').text('Error: ' + msg);
+                $body.empty();
+                $panel.show();
+            })
+            .always(function () {
+                $btn.prop('disabled', false).html('<i class="fa fa-check-circle"></i> Validate vs. Live Project');
+            });
+    }
 </script>
 {% endblock %}
 
@@ -62,20 +154,41 @@
         font-size: 0.9em;
         padding: 2px 0;
     }
+
+    /* ── Audit log styles ── */
+    #auditProjectsTable tbody tr { cursor: pointer; }
+    #auditProjectsTable tbody tr.table-active { background-color: #cce5ff !important; }
+    #auditProjectsTable tbody tr:hover { background-color: #e8f4fd; }
+    #audit-detail-panel { border-top: 3px solid #007bff; padding-top: 18px; margin-top: 24px; }
+    .audit-table th { white-space: nowrap; }
+    .badge-event-create       { background-color: #28a745; color: #fff; }
+    .badge-event-edit-new     { background-color: #17a2b8; color: #fff; }
+    .badge-event-edit-no      { background-color: #6c757d; color: #fff; }
+    .uuid-cell  { font-family: monospace; font-size: 0.82em; word-break: break-all; }
+    .s3-uri-cell{ font-family: monospace; font-size: 0.78em; word-break: break-all; max-width: 260px; }
+    .version-chain-box { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;
+        padding: 8px 14px; font-family: monospace; font-size: 0.82em; margin-bottom: 16px; }
+    .version-chain-box ul { margin-bottom: 0; padding-left: 18px; }
+    #audit-validate-result { display: none; margin-top: 12px; }
+    .check-row-match   { background-color: #d4edda; }
+    .check-row-miss    { background-color: #f8d7da; }
+    .check-row-missing { background-color: #fff3cd; }
+    .validate-table td, .validate-table th { vertical-align: middle !important; }
+    .check-icon { font-size: 1.1em; }
 </style>
 {% endblock %}
 
-{% block meta_title %}Project Files Report{% endblock %}
+{% block meta_title %}Project Auditing{% endblock %}
 
 {% block main %}
 <head>
-    <title>{{ SITE_TITLE }} - Project Files Report</title>
+    <title>{{ SITE_TITLE }} - Project Auditing</title>
 </head>
 
 <div class="row">
     <div class="col-md-12">
         <div>
-            <h1 style="padding-top: 50px">Project Files Report</h1>
+            <h1 style="padding-top: 50px">Project Auditing</h1>
             <hr>
             <div style="margin-top: 20px; margin-bottom: 30px">
                 <p>This report shows the status of project files on the local server and in S3 storage.</p>
@@ -281,6 +394,179 @@
             </div>
         </div>
         {% endif %}
+
+<!-- ══════════════════════════════════════════════════════
+     AUDIT LOG SECTION
+══════════════════════════════════════════════════════ -->
+<div class="row" style="margin-top: 50px;">
+    <div class="col-md-12">
+        <h3>Project Audit Log</h3>
+        <p class="text-muted">Click a project row to view its full audit history.</p>
+        <div class="table-responsive">
+            <table id="auditProjectsTable" class="table table-sm table-hover">
+                <thead class="thead-dark">
+                    <tr>
+                        <th>Project Name</th>
+                        <th>Visibility</th>
+                        <th>UUID / Link ID</th>
+                        <th>Audit Status</th>
+                        <th>Latest Change (UTC)</th>
+                        <th>View</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for proj in audit_all_projects %}
+                    <tr data-project-id="{{ proj.id_str }}"
+                        onclick="window.location='?project_id={{ proj.id_str }}'">
+                        <td>{{ proj.project_name|default:"—" }}</td>
+                        <td>
+                            {% if proj.private == False or proj.private == 'public' %}
+                                <span class="badge badge-success">Public</span>
+                            {% else %}
+                                <span class="badge badge-secondary">Private</span>
+                            {% endif %}
+                        </td>
+                        <td class="uuid-cell">{{ proj.project_name_unique|default:proj.id_str }}</td>
+                        <td>
+                            {% if proj.validation_status == 'pass' %}
+                                <span class="badge badge-success">✅ Pass</span>
+                            {% elif proj.validation_status == 'mismatch' %}
+                                <span class="badge badge-danger">❌ Mismatch</span>
+                            {% elif proj.validation_status == 'missing_data' %}
+                                <span class="badge badge-warning text-dark">⚠️ Partial</span>
+                            {% elif proj.validation_status == 'no_log' %}
+                                <span class="badge badge-light text-muted">N/A</span>
+                            {% else %}
+                                <span class="badge badge-secondary">—</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ proj.latest_audit_timestamp_display|default:"—" }}</td>
+                        <td>
+                            <a href="?project_id={{ proj.id_str }}"
+                               class="btn btn-xs btn-outline-primary btn-sm"
+                               onclick="event.stopPropagation();">
+                                <i class="fa fa-history"></i> Log
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center text-muted">No projects found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div id="audit-detail-panel">
+            {% if not selected_project_id %}
+                <p class="text-muted"><i class="fa fa-arrow-up"></i> Select a project above to view its audit log.</p>
+            {% elif audit_error_message %}
+                <div class="alert alert-warning">{{ audit_error_message }}</div>
+            {% else %}
+                <h5>
+                    Audit Log &mdash;
+                    <span class="text-primary">{{ display_name|default:selected_project.project_name }}</span>
+                    {% if entries %}
+                        {% with latest=entries|first %}
+                            {% if latest.event_type == 'create' %}
+                                <span class="badge badge-event-create ml-2">Create</span>
+                            {% elif latest.event_type == 'edit_new_version' %}
+                                <span class="badge badge-event-edit-new ml-2">Edit (new ver.)</span>
+                            {% elif latest.event_type == 'edit_no_version' %}
+                                <span class="badge badge-event-edit-no ml-2">Edit (no ver.)</span>
+                            {% elif latest.new_version %}
+                                <span class="badge badge-event-edit-new ml-2">New Version</span>
+                            {% else %}
+                                <span class="badge badge-event-edit-no ml-2">Edit</span>
+                            {% endif %}
+                            <small class="text-muted ml-1">latest event</small>
+                        {% endwith %}
+                    {% endif %}
+                </h5>
+                <p class="text-muted mb-2">
+                    <strong>{{ total_entries }}</strong>
+                    audit log {% if total_entries == 1 %}entry{% else %}entries{% endif %}
+                    &nbsp;|&nbsp;
+                    <a href="/project/{{ selected_project.project_name_unique|default:selected_project.id_str }}"
+                       target="_blank">Open project &rarr;</a>
+                    {% if entries %}
+                    &nbsp;|&nbsp;
+                    <button id="audit-validate-btn"
+                            class="btn btn-sm btn-outline-secondary"
+                            onclick="validateAuditLog('{{ selected_project_id }}')">
+                        <i class="fa fa-check-circle"></i> Validate vs. Live Project
+                    </button>
+                    {% endif %}
+                </p>
+
+                <div id="audit-validate-result">
+                    <div id="audit-validate-banner" class="alert"></div>
+                    <table class="table table-sm table-bordered validate-table">
+                        <thead class="thead-light">
+                            <tr>
+                                <th>Field</th><th>Log Value</th><th>Live Value</th>
+                                <th style="width:3em;">Match</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-validate-table-body"></tbody>
+                    </table>
+                </div>
+
+                {% if matched_uuids %}
+                <div class="version-chain-box">
+                    <strong>Project version chain ({{ matched_uuids|length }} UUID{% if matched_uuids|length != 1 %}s{% endif %} searched):</strong>
+                    <ul>{% for uid in matched_uuids %}<li>{{ uid }}</li>{% endfor %}</ul>
+                </div>
+                {% endif %}
+
+                {% if entries %}
+                <div class="table-responsive">
+                    <table id="auditTable" class="table table-sm table-hover audit-table">
+                        <thead class="thead-light">
+                            <tr>
+                                <th>Timestamp (UTC)</th><th>Event Type</th><th>User</th>
+                                <th>Project Name</th><th>Samples</th><th>tar.gz Size</th>
+                                <th>UUID</th><th>AA Version</th><th>AC Version</th>
+                                <th>ASP Version</th><th>S3 URI</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in entries %}
+                            <tr>
+                                <td style="white-space:nowrap;">{{ entry.timestamp_display }}</td>
+                                <td>
+                                    {% if entry.event_type == 'create' %}
+                                        <span class="badge badge-event-create">Create</span>
+                                    {% elif entry.event_type == 'edit_new_version' %}
+                                        <span class="badge badge-event-edit-new">Edit (new ver.)</span>
+                                    {% elif entry.event_type == 'edit_no_version' %}
+                                        <span class="badge badge-event-edit-no">Edit (no ver.)</span>
+                                    {% elif entry.new_version %}
+                                        <span class="badge badge-event-edit-new">New Version</span>
+                                    {% else %}
+                                        <span class="badge badge-event-edit-no">Edit</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ entry.user_email|default:"N/A" }}</td>
+                                <td>{{ entry.project_name|default:"N/A" }}</td>
+                                <td>{% if entry.sample_count is not None %}{{ entry.sample_count }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                                <td>{% if entry.s3_file_size_bytes is not None %}<span data-bytes="{{ entry.s3_file_size_bytes }}">{{ entry.s3_file_size_bytes }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                                <td class="uuid-cell"><a href="/project/{{ entry.project_uuid }}" target="_blank">{{ entry.project_uuid }}</a></td>
+                                <td>{{ entry.AA_version|default:"NA" }}</td>
+                                <td>{{ entry.AC_version|default:"NA" }}</td>
+                                <td>{{ entry.ASP_version|default:"NA" }}</td>
+                                <td class="s3-uri-cell">{% if entry.s3_uri %}<span title="{{ entry.s3_uri }}">{{ entry.s3_uri }}</span>{% else %}<span class="text-muted">N/A</span>{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                    <div class="alert alert-info">No audit log entries found for this project.</div>
+                {% endif %}
+            {% endif %}
+        </div><!-- /#audit-detail-panel -->
+    </div>
+</div>
 
 {% endblock %}
 
