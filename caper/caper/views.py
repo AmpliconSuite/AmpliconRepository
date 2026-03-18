@@ -91,6 +91,9 @@ from django.utils.safestring import mark_safe
 from .view_download_stats import *
 
 ## aggregator
+_aggregator_dev_path = getattr(settings, 'AGGREGATOR_DEV_PATH', '')
+if _aggregator_dev_path and _aggregator_dev_path not in sys.path:
+    sys.path.insert(0, _aggregator_dev_path)
 from AmpliconSuiteAggregator import *
 import AmpliconSuiteAggregator
 
@@ -2555,7 +2558,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
                              form_data, user, extra_metadata_file_fp,
                              previous_versions, previous_views, old_subscribers, old_project_data,
                              download_url, samples_to_remove, replace_project, remap_sample_names,
-                             reaggregate_project=False):
+                             reaggregate_project=False, oldFeatured=False):
     """
     Wrapper function for edit operations that handles notification and then calls _process_and_aggregate_files.
     This runs in a background thread for edit operations.
@@ -2577,6 +2580,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
         replace_project: Boolean indicating if we should replace the entire project (skip download)
         remap_sample_names: Boolean indicating if we should create a name map for sample remapping
         reaggregate_project: Boolean indicating if we should reaggregate the project without new files
+        oldFeatured: Boolean indicating if the old project was featured (to be transferred to new version)
     """
     try:
         logging.info(f"_process_edit_and_notify - starting for project {placeholder_project_id} (reaggregate_project={reaggregate_project})")
@@ -2663,6 +2667,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             previous_views=previous_views,
             old_subscribers=old_subscribers,
             audit_event_type=AUDIT_EVENT_EDIT_NEW_VERSION,
+            oldFeatured=oldFeatured
         )
 
         # Clean up temporary files (downloaded old project and name map) after aggregation
@@ -2766,9 +2771,11 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
     download_url = f'http://localhost:8000/project/{project["linkid"]}/download'
     
     # Check if user wants to replace the entire project
+    # Read from new 3-way radio button (project_mode) or legacy field
     replace_project = False
     try:
-        if request.POST.get('replace_project') == 'on':
+        project_mode = request.POST.get('project_mode', '')
+        if project_mode == 'replace' or request.POST.get('replace_project') == 'on':
             replace_project = True
             print('Replacing project with new uploaded file')
     except:
@@ -2809,6 +2816,8 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
         extra_metadata_file_fp = save_metadata_file(request, project_data_path)
         ## get extra metadata from csv first (if exists in old project), add it to the new proj
         old_extra_metadata = get_extra_metadata_from_project(project)
+        
+        oldFeatured = project.get('featured', False)
 
         # Create a placeholder project ID that will be updated by _process_and_aggregate_files
         placeholder_project_id = str(ObjectId())
@@ -2887,7 +2896,8 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 samples_to_remove,
                 replace_project,
                 remap_sample_names,
-                reaggregate_project
+                reaggregate_project,
+                oldFeatured
             )
             logging.info(f"EditProject - finished launch of background thread to _process_edit_and_notify")
 
@@ -2997,7 +3007,18 @@ def edit_project_page(request, project_name):
         # 4. reaggregate_project is requested (force re-aggregation on existing data)
         
         files_uploaded = request.FILES.getlist('document')
-        reaggregate_project = request.POST.get('reaggregate_project') == 'on'
+
+        # Determine mode from the new 3-way radio button (project_mode) or fall back
+        # to the legacy individual boolean fields sent by the XHR path.
+        project_mode = request.POST.get('project_mode', '')  # 'append' | 'replace' | 'reaggregate'
+        if project_mode == 'reaggregate':
+            reaggregate_project = True
+        elif project_mode in ('append', 'replace'):
+            reaggregate_project = False
+        else:
+            # Legacy / XHR fallback
+            reaggregate_project = request.POST.get('reaggregate_project') == 'on'
+
         needs_new_version = (len(files_uploaded) > 0 or
                             remap_sample_names or
                             reaggregate_project)
@@ -3146,7 +3167,7 @@ def update_notification_preferences(request):
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
 
-def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove):
+def extract_project_files(tarfile, file_location, project_data_path, project_id, extra_metadata_filepath, old_extra_metadata, samples_to_remove, remap_names_to_alias=False):
     logging.info("Extracting files from tar...")
     try:
         # Check tar file structure before extraction
@@ -3233,13 +3254,13 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         project = get_one_project(project_id)
         query = {'_id': ObjectId(project_id)}
         if extra_metadata_filepath:
-            runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath, old_extra_metadata = old_extra_metadata)
+            runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath, old_extra_metadata = old_extra_metadata, remap_name_to_alias=remap_names_to_alias)
             parent_dir = os.path.dirname(extra_metadata_filepath)
 
             if os.path.exists(parent_dir):
                 shutil.rmtree(parent_dir)
         else:
-            runs = process_metadata_no_request(replace_underscore_keys(runs), old_extra_metadata = old_extra_metadata)
+            runs = process_metadata_no_request(replace_underscore_keys(runs), old_extra_metadata = old_extra_metadata, remap_name_to_alias=remap_names_to_alias )
 
         new_val = {"$set": {'runs': runs,
                             'Oncogenes': get_project_oncogenes(runs)}}
@@ -3472,7 +3493,7 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None):
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
@@ -3492,6 +3513,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         audit_event_type: If not None, a project audit log entry is written at every outcome
                           (success or failure) using this event type string.  Pass None when
                           the caller (e.g. _process_edit_and_notify) will write the log itself.
+        oldFeatured: Boolean indicating if the old project was featured (optional, for edit operations)
     """
     try:
         logging.info(f"_process_and_aggregate_files - start ")
@@ -3633,11 +3655,14 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                                        previous_versions=previous_versions or [],
                                        previous_views=previous_views or [0, 0],
                                        old_subscribers=old_subscribers,
-                                       audit_params=cp_audit_params)
+                                       audit_params=cp_audit_params,
+                                       oldFeatured=oldFeatured, remap_name_to_alias=(name_map_file_path is not None))
+
         else:
-            success = _create_project(form, mock_request, extra_metadata_file_fp,
-                                       placeholder_project_id=temp_proj_id,
-                                       audit_params=cp_audit_params)
+            success = _create_project(form, mock_request, extra_metadata_file_fp, 
+                                       placeholder_project_id=temp_proj_id, 
+                                       audit_params=cp_audit_params,
+                                       remap_name_to_alias=(name_map_file_path is not None))
 
         # Don't clean up temp directory yet - the background extraction thread needs access to the tar file
         # The cleanup will happen in extract_project_files after extraction completes
@@ -3837,7 +3862,7 @@ def create_project(request):
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
-def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, audit_params=None):
+def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, audit_params=None, oldFeatured=False, remap_name_to_alias=False):
     """
     Creates or updates a project.
     
@@ -3897,6 +3922,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         # Update the placeholder project with real data
         project['_id'] = project_id
         project['linkid'] = str(project_id)
+        
 
         # Remove placeholder-specific fields and ensure project_name doesn't have "(Processing...)"
         update_fields = {k: v for k, v in project.items() if k not in ['_id']}
@@ -3911,6 +3937,10 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
                  'owner': ''
              }}
         )
+        if oldFeatured:
+            project['featured'] = True
+            collection_handle.update_one({'_id': project_id}, {"$set": {'featured': True}})
+        
         add_project_to_site_statistics(project, project['private'])
 
     file_location = f'{project_data_path}/{request_file.name}'
@@ -3920,7 +3950,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     _thread_executor.submit(
         extract_project_files,
         tarfile, file_location, project_data_path, project_id,
-        extra_metadata_file_fp, old_extra_metadata, samples_to_remove
+        extra_metadata_file_fp, old_extra_metadata, samples_to_remove, remap_names_to_alias=remap_name_to_alias
     )
 
     if settings.USE_S3_DOWNLOADS:

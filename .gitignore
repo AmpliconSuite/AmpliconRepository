@@ -26,3 +26,4 @@ data/
 logs/
 .env
 caper/caper.sqlite3
+CLAUDE.md
