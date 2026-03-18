@@ -34,6 +34,17 @@ class CaperConfig(AppConfig):
         except Exception as e:
             logger.warning(f"Cache backend verification failed: {str(e)}")
         
+        # Log AmpliconSuiteAggregator version
+        try:
+            import AmpliconSuiteAggregator
+            version = getattr(AmpliconSuiteAggregator, '__version__', None)
+            if version:
+                logger.info(f"AmpliconSuiteAggregator version: {version}")
+            else:
+                logger.info(f"AmpliconSuiteAggregator loaded (no __version__ attribute): {AmpliconSuiteAggregator.__file__}")
+        except Exception as e:
+            logger.warning(f"Could not determine AmpliconSuiteAggregator version: {e}")
+
         # Start the S3 sync in a background thread
         sync_thread = threading.Thread(target=self.sync_static_to_s3, daemon=True)
         sync_thread.start()
