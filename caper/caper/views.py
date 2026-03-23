@@ -94,10 +94,8 @@ from django.utils.safestring import mark_safe
 
 from .view_download_stats import *
 
-## aggregator
-_aggregator_dev_path = getattr(settings, 'AGGREGATOR_DEV_PATH', '')
-if _aggregator_dev_path and _aggregator_dev_path not in sys.path:
-    sys.path.insert(0, _aggregator_dev_path)
+## aggregator — sys.path is primed for AGGREGATOR_DEV_PATH in settings.py,
+## so this import will always resolve to the dev tree when the env var is set.
 import AmpliconSuiteAggregator
 from AmpliconSuiteAggregator import Aggregator
 
