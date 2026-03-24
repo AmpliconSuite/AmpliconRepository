@@ -5,7 +5,6 @@ This module contains all API endpoints for file uploads and project management.
 
 import logging
 import os
-import sys
 import uuid
 import tarfile
 
@@ -198,9 +197,7 @@ class ProjectFileAddView(APIView):
 
     def process_file_in_background(self, request, project, username, uploaded_file, api_id):
         from django.core.files.uploadedfile import TemporaryUploadedFile
-        _aggregator_dev_path = getattr(settings, 'AGGREGATOR_DEV_PATH', '')
-        if _aggregator_dev_path and _aggregator_dev_path not in sys.path:
-            sys.path.insert(0, _aggregator_dev_path)
+        # sys.path is already primed for AGGREGATOR_DEV_PATH in settings.py
         from AmpliconSuiteAggregator import Aggregator
         from .views import (
             project_update, project_delete, download_file, 
@@ -232,7 +229,11 @@ class ProjectFileAddView(APIView):
         logging.error(f"file_fps are {file_fps}")
         try:
             temp_directory = os.path.join('./tmp/', str(api_id))
-            agg = Aggregator(file_fps, temp_directory, tmp_project_data_path, 'No', "", 'python3', uuid=str(api_id))
+            agg = Aggregator(
+                input_paths=file_fps,
+                project_name=str(api_id),
+                work_dir=temp_directory,
+            )
             if not agg.completed:
                 ## redirect to edit page if aggregator fails
                 alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."

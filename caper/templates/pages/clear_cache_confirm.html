@@ -21,7 +21,7 @@
             <h4><i class="fas fa-chart-bar"></i> Django Chart Caches</h4>
             {% if total_chart_caches > 0 %}
             <div class="alert alert-info" role="alert">
-                <i class="fas fa-chart-bar"></i> <strong>{% if chart_count_is_estimate %}~{% endif %}{{ total_chart_caches }}</strong> Django chart cache{% if total_chart_caches != 1 %}s{% endif %} {% if chart_count_is_estimate %}may exist{% else %}found{% endif %} (stackedbar and piechart for each project).
+                <i class="fas fa-chart-bar"></i> <strong>{% if chart_count_is_estimate %}~{% endif %}{{ total_chart_caches }}</strong> Django chart cache{% if total_chart_caches != 1 %}s{% endif %} {% if chart_count_is_estimate %}may exist{% else %}found{% endif %} (stackedbar and summarybar for each project).
                 Clearing chart caches will force regeneration of project visualization charts on next view.
             </div>
             <form method="get" action="{% url 'clear_cache' %}" onsubmit="return confirm('⚠️ Are you sure you want to clear all chart caches?\n\nThis will:\n- Clear {% if chart_count_is_estimate %}~{% endif %}{{ total_chart_caches }} chart cache(s)\n- Require regeneration on next project view (slower first load)\n\nThis action cannot be undone.');" style="margin-bottom:10px;">

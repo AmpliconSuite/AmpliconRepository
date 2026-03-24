@@ -1,4 +1,5 @@
 import os
+import sys
 from django.utils.translation import gettext_lazy as _
 import logging
 default_log_level_name = os.getenv("DEFAULT_LOG_LEVEL", "INFO").upper()
@@ -174,6 +175,13 @@ SITE_URL = os.environ.get("SITE_URL", default="http://127.0.0.1:8000/")
 
 SERVER_IDENTIFICATION_BANNER=os.getenv('SERVER_IDENTIFICATION_BANNER', default=None)
 AGGREGATOR_DEV_PATH=os.getenv('AGGREGATOR_DEV_PATH', default='')
+
+# Insert the dev path as early as possible (settings.py is loaded before any
+# AppConfig or views), so AmpliconSuiteAggregator is always resolved from the
+# local source tree rather than the pip-installed copy.
+if AGGREGATOR_DEV_PATH and AGGREGATOR_DEV_PATH not in sys.path:
+    sys.path.insert(0, AGGREGATOR_DEV_PATH)
+    logging.debug(f"AGGREGATOR_DEV_PATH inserted into sys.path: {AGGREGATOR_DEV_PATH}")
 
 logging.debug(f"SERVER_IDENTIFICATION_BANNER: {SERVER_IDENTIFICATION_BANNER}")
 
@@ -353,7 +361,8 @@ if USE_S3_DOWNLOADS:
 
     # assume UUIDs are unique across servers so we can all use the same bucket
     S3_DOWNLOADS_BUCKET='amprepo-private'
-    S3_DOWNLOADS_BUCKET_PATH=os.getenv('S3_DOWNLOADS_BUCKET_PATH', default="")
+    _raw_bucket_path = os.getenv('S3_DOWNLOADS_BUCKET_PATH', default="")
+    S3_DOWNLOADS_BUCKET_PATH = (_raw_bucket_path.rstrip('/') + '/') if _raw_bucket_path else ""
 
 
 

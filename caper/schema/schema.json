@@ -58,7 +58,9 @@
                             "AA_amplicon_number": {
                                 "type": ["integer", "null"]
                             },
+                            "AA_cycles_file": {},
                             "AA_directory": {},
+                            "AA_graph_file": {},
                             "AA_summary_file": {
                                 "type": "string"
                             },
@@ -125,8 +127,9 @@
                             "AA_PDF_file",
                             "AA_PNG_file",
                             "AA_amplicon_number",
+                            "AA_cycles_file",
                             "AA_directory",
-                            "AA_summary_file",
+                            "AA_graph_file",
                             "All_genes",
                             "CNV_BED_file",
                             "Captured_interval_length",
@@ -178,6 +181,9 @@
         },
         "sample_count": {
             "type": "integer"
+        },
+        "aggregator_version": {
+            "type": ["string", "null"]
         },
         "aggregate_df": {
             "type": "string"

@@ -888,7 +888,7 @@
     </script>
     {% endblock %}
     </span>
-    <span style="display:inline-block; vertical-align:bottom;">{{ piechart|safe }}</span>
+    <span style="display:inline-block; vertical-align:bottom;">{{ summarybar|safe }}</span>
 </div>
     {% else %}
         <div class="col-md-3">
@@ -1026,12 +1026,14 @@
                             <th scope="col">AmpliconSuite-pipeline</th>
                             <th scope="col">AmpliconArchitect</th>
                             <th scope="col">AmpliconClassifier</th>
+                            <th scope="col">AmpliconSuiteAggregator</th>
                         </thead>
                         <tbody>
                             <tr>
                                 <td scope="row">{{ project.ASP_version |default:"NA"  }}</td>
                                 <td scope="row">{{ project.AA_version |default:"NA" }}</td>
                                 <td scope="row">{{ project.AC_version |default:"NA"  }}</td>
+                                <td scope="row">{{ project.aggregator_version |default:"NA" }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1059,7 +1061,7 @@
                             <th scope="col">AS-p</th>
                             <th scope="col">AA</th>
                             <th scope="col">AC</th>
-                            
+                            <th scope="col">Aggregator</th>
                             <th scope="col">Download</th>
                         </thead>
                         <tbody>
@@ -1076,6 +1078,7 @@
                                 <td scope="row">{{ version.ASP_version }}</td>
                                 <td scope="row">{{ version.AA_version }}</td>
                                 <td scope="row">{{ version.AC_version }}</td>
+                                <td scope="row">{{ version.aggregator_version|default:"NA" }}</td>
                                 <td scope="row">
                                     <a class="btn btn-primary" href="/project/{{ version.linkid }}/download" style="color: white; margin-bottom: 12px;">Download version</a>
                                 </td>

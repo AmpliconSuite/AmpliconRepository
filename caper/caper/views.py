@@ -4,6 +4,8 @@ import os
 import sys
 import gc
 import traceback
+import json
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
@@ -77,11 +79,12 @@ import subprocess
 import shutil
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
-import caper.project_pie_chart as piechart
+import caper.summarybar as summarybar
 from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import TemporaryUploadedFile
 
 from wsgiref.util import FileWrapper
+import requests
 import boto3, botocore, fnmatch, uuid, datetime, time
 import dateutil.parser
 
@@ -91,12 +94,10 @@ from django.utils.safestring import mark_safe
 
 from .view_download_stats import *
 
-## aggregator
-_aggregator_dev_path = getattr(settings, 'AGGREGATOR_DEV_PATH', '')
-if _aggregator_dev_path and _aggregator_dev_path not in sys.path:
-    sys.path.insert(0, _aggregator_dev_path)
-from AmpliconSuiteAggregator import *
+## aggregator — sys.path is primed for AGGREGATOR_DEV_PATH in settings.py,
+## so this import will always resolve to the dev tree when the env var is set.
 import AmpliconSuiteAggregator
+from AmpliconSuiteAggregator import Aggregator
 
 # search
 from .search import *
@@ -163,7 +164,7 @@ def get_project_classifications(runs):
         feature['Classification'].upper()
         for sample in runs
         for feature in runs[sample]
-        if feature['Classification']
+        if feature['Classification'] and feature['Classification'] != 'NA'
     })
 
 
@@ -383,6 +384,7 @@ def profile(request, message_to_user=None):
         prepare_project_linkid(proj)
         test = get_extra_metadata_from_project(proj)
         proj['sample_metadata_available'] = has_sample_metadata(proj)
+        proj['sample_count'] = len(proj.get('runs', {}))
         # Format visibility for display
         proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
 
@@ -554,7 +556,7 @@ def count_chart_caches():
     try:
         # Get all project IDs and check if their chart caches exist
         projects = list(collection_handle.find({}, {'_id': 1}))
-        chart_types = ['stackedbar', 'piechart']
+        chart_types = ['stackedbar', 'summarybar']
         
         logging.info(f"[CACHE] Counting chart caches for {len(projects)} projects...")
         
@@ -593,7 +595,7 @@ def invalidate_project_charts(project_id):
     project_id = str(project_id)
     
     # Delete specific chart caches
-    chart_types = ['stackedbar', 'piechart']
+    chart_types = ['stackedbar', 'summarybar']
     
     for chart_type in chart_types:
         cache_key = f"chart_{project_id}_{chart_type}"
@@ -649,6 +651,28 @@ def project_page(request, project_name, message=''):
     if not project_name == str(project['linkid']):
         return redirect('project_page', project_name=project['linkid'])
 
+    # Short-circuit: if aggregation failed, show a dedicated error page so the
+    # owner can see what went wrong and delete the project — without triggering
+    # any of the heavy metadata / charting logic below.
+    if project.get('aggregation_failed', False):
+        rollback_id = project.get('rollback_project_id')
+        if rollback_id:
+            # This was a failed edit: the old project has been restored.
+            # Redirect the user to that project's edit page with an explanatory message.
+            messages.warning(
+                request,
+                "Project aggregation failed during editing. "
+                "Your previous version has been automatically restored — "
+                "you can retry the edit from here."
+            )
+            return redirect('edit_project_page', project_name=rollback_id)
+        set_project_edit_OK_flag(project, request)
+        return render(request, "pages/project_failed.html", {
+            'project': project,
+            'error_message': project.get('error_message', 'An error occurred during aggregation.'),
+            'proj_id': project_name,
+        })
+
     prev_versions, prev_ver_msg = previous_versions(project)
     viewing_old_project = False
     if prev_ver_msg:
@@ -675,7 +699,7 @@ def project_page(request, project_name, message=''):
         reference_genome = 'N/A'
         sample_data = []
         aggregate = None
-        stackedbar_plot = None
+        stacked_bar_plot = None
         pc_fig = None
     # For regular projects missing one or more keys
     elif needs_metadata:
@@ -700,14 +724,14 @@ def project_page(request, project_name, message=''):
         logging.debug('Insert complete')
 
         # Use cached chart generation
-        stackedbar_plot = get_cached_chart(
+        stacked_bar_plot = get_cached_chart(
             project, 'stackedbar',
             stacked_bar.StackedBarChart,
             aggregate, fa_cmap
         )
         pc_fig = get_cached_chart(
-            project, 'piechart',
-            piechart.pie_chart,
+            project, 'summarybar',
+            summarybar.summarybar,
             aggregate, fa_cmap
         )
     else:
@@ -722,14 +746,14 @@ def project_page(request, project_name, message=''):
             aggregate = pd.read_csv(aggregate_df_fp)
             
         # Use cached chart generation
-        stackedbar_plot = get_cached_chart(
+        stacked_bar_plot = get_cached_chart(
             project, 'stackedbar',
             stacked_bar.StackedBarChart,
             aggregate, fa_cmap
         )
         pc_fig = get_cached_chart(
-            project, 'piechart',
-            piechart.pie_chart,
+            project, 'summarybar',
+            summarybar.summarybar,
             aggregate, fa_cmap
         )
 
@@ -745,6 +769,18 @@ def project_page(request, project_name, message=''):
     debug_delete_flag = project.get('delete', 'NOT SET')
     debug_current_flag = project.get('current', 'NOT SET')
 
+    # Strip invalid classifications from sample_data regardless of cache path
+    _invalid_classes = {None, 'NA', 'None', 'Not Provided', ''}
+    for item in sample_data:
+        valid = [c for c in item.get('Classifications', []) if c not in _invalid_classes]
+        class_counts = Counter(valid)
+        item['Classifications'] = list(set(valid))
+        item['Classifications_counted'] = [
+            f"{c} ({count})" if count > 1 else c
+            for c, count in sorted(class_counts.items())
+        ]
+        item['Features'] = len(valid) if valid else 0
+
     # Log total page generation time
     total_time = time.time() - t_total_start
     logging.info(f"[PERF] Total project_page processing for {project_name}: {total_time:.3f}s")
@@ -753,8 +789,8 @@ def project_page(request, project_name, message=''):
         'project': project,
         'sample_data': sample_data,
         'reference_genome': reference_genome,
-        'stackedbar_graph': stackedbar_plot,
-        'piechart': pc_fig,
+        'stackedbar_graph': stacked_bar_plot,
+        'summarybar': pc_fig,
         'prev_versions': prev_versions,
         'prev_versions_length': len(prev_versions),
         'views': views,
@@ -1350,7 +1386,7 @@ def sample_page(request, project_name, sample_name):
     next_sample_name = None
     if next_sample and len(next_sample) > 0:
         next_sample_name = next_sample[0].get('Sample_name')
-    
+
     sample_metadata = get_sample_metadata(sample_data)
     reference_genome = reference_genome_from_sample(sample_data)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
@@ -1363,15 +1399,16 @@ def sample_page(request, project_name, sample_name):
     # Check if ec3D visualization is available
     ec3d_available = check_ec3d_available(project['project_name'], sample_name)
 
+    # Filter out features with no valid amplicon number for the table; pass full data to plot
+    # (sample_plot handles null AA_amplicon_number internally via dropna)
+    sample_data_for_table = [f for f in sample_data_processed if f.get('AA_amplicon_number') is not None]
+
     t_plot_start = time.time()
-    if sample_data_processed[0]['AA_amplicon_number'] == None:
-        plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
-    else:
-        plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
+    plot = sample_plot.plot(db_handle, sample_data_processed, sample_name, project_name, filter_plots=filter_plots)
     logging.info(f"[PERF] Plot generation in view took {time.time() - t_plot_start:.3f}s")
-    
-    if sample_data_processed[0]['AA_amplicon_number'] != None:
-        for feature in sample_data_processed:
+
+    if sample_data_for_table:
+        for feature in sample_data_for_table:
             reference_version.append(feature['Reference_version'])
             download_png.append({
                 'aa_amplicon_number': feature['AA_amplicon_number'],
@@ -1402,12 +1439,12 @@ def sample_page(request, project_name, sample_name):
     # Log total page generation time
     total_time = time.time() - t_total_start
     logging.info(f"[PERF] Total sample_page processing for {sample_name}: {total_time:.3f}s")
-    
+
     return render(request, "pages/sample.html",
                   {'project': project,
                    'project_name': project_name,
                    'project_linkid': project_linkid,
-                   'sample_data': sample_data_processed,
+                   'sample_data': sample_data_for_table,
                    'sample_metadata': dict(sample_metadata),
                    'reference_genome': reference_genome,
                    'sample_name': sample_name,
@@ -1589,17 +1626,16 @@ def process_sample_data(project, sample_name, sample_data, output_dir=None):
 
         if feature.get('AA_directory', 'Not Provided') != 'Not Provided':
             aa_directory_id = feature['AA_directory']
-            # Update the path in the feature copy
-            updated_feature['AA_directory'] = f"aa_directory.tar.gz"
+            # Retrieve the original archive name from GridFS metadata (new-format projects).
+            # Old-format projects were stored without a filename, so fall back to the legacy name.
+            try:
+                aa_archive_name = fs_handle.get(ObjectId(aa_directory_id)).filename or 'aa_directory.tar.gz'
+            except Exception:
+                aa_archive_name = 'aa_directory.tar.gz'
+            updated_feature['AA_directory'] = aa_archive_name
         else:
             aa_directory_id = False
-
-        if feature.get('cnvkit_directory', 'Not Provided') != 'Not Provided':
-            cnvkit_directory_id = feature['cnvkit_directory']
-            # Update the path in the feature copy
-            updated_feature['cnvkit_directory'] = f"cnvkit_directory.tar.gz"
-        else:
-            cnvkit_directory_id = False
+            aa_archive_name = 'aa_directory.tar.gz'
 
         # Add the updated feature to our list
         updated_data.append(updated_feature)
@@ -1635,20 +1671,10 @@ def process_sample_data(project, sample_name, sample_data, output_dir=None):
                 png_file_tmp.write(png_file)
 
         if aa_directory_id:
-            if not os.path.exists(f'{sample_data_path}/aa_directory.tar.gz'):
+            if not os.path.exists(f'{sample_data_path}/{aa_archive_name}'):
                 aa_directory_file = fs_handle.get(ObjectId(aa_directory_id)).read()
-                with open(f'{sample_data_path}/aa_directory.tar.gz', "wb+") as aa_directory_tmp:
+                with open(f'{sample_data_path}/{aa_archive_name}', "wb+") as aa_directory_tmp:
                     aa_directory_tmp.write(aa_directory_file)
-
-        if cnvkit_directory_id:
-            if not os.path.exists(f'{sample_data_path}/cnvkit_directory.tar.gz'):
-                cnvkit_directory_file = fs_handle.get(ObjectId(cnvkit_directory_id)).read()
-                with open(f'{sample_data_path}/cnvkit_directory.tar.gz', "wb+") as cnvkit_directory_tmp:
-                    cnvkit_directory_tmp.write(cnvkit_directory_file)
-
-    # Generate JSON file using the updated data
-    with open(f'{sample_data_path}/{sample_name}_result_data.json', 'w') as json_file:
-        json.dump(updated_data, json_file, indent=2, cls=JSONEncoder)
 
     # Generate TSV file using the updated data
     with open(f'{sample_data_path}/{sample_name}_result_data.tsv', 'w') as tsv_file:
@@ -2555,11 +2581,11 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
         return HttpResponse("Project does not exist")
 
 
-def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path, temp_directory, 
+def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path, temp_directory,
                              form_data, user, extra_metadata_file_fp,
                              previous_versions, previous_views, old_subscribers, old_project_data,
                              download_url, samples_to_remove, replace_project, remap_sample_names,
-                             reaggregate_project=False, oldFeatured=False):
+                             reaggregate_project=False, oldFeatured=False, rollback_project_id=None):
     """
     Wrapper function for edit operations that handles notification and then calls _process_and_aggregate_files.
     This runs in a background thread for edit operations.
@@ -2622,14 +2648,14 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             # Download and strip samples from the old project
             stripped_tar = remove_samples_from_tar(old_project_data, samples_to_remove, download_path, download_url)
             if stripped_tar:
-                file_fps.append(os.path.basename(stripped_tar))
+                file_fps.append(stripped_tar)
                 logging.info(f"Successfully created stripped tar file: {stripped_tar}")
         elif not replace_project:
             # Download the old project file to include in aggregation (unless replacing entire project)
             try:
                 logging.info(f"Downloading old project from {download_url}")
                 download_file(download_url, download_path)
-                file_fps.append('download.tar.gz')
+                file_fps.append(download_path)
                 logging.info(f"Successfully downloaded old project to {download_path}")
             except Exception as e:
                 logging.error(f'Failed to download the old project file: {e}')
@@ -2668,7 +2694,8 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             previous_views=previous_views,
             old_subscribers=old_subscribers,
             audit_event_type=AUDIT_EVENT_EDIT_NEW_VERSION,
-            oldFeatured=oldFeatured
+            oldFeatured=oldFeatured,
+            rollback_project_id=rollback_project_id,
         )
 
         # Clean up temporary files (downloaded old project and name map) after aggregation
@@ -2752,9 +2779,8 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                     else:
                         destination.write(file.read())
                 logging.info(f"Successfully saved file to {file_path}")
-                print(f'file: {file.name} is saved')
-                file_fps.append(file.name)
-                
+                file_fps.append(file_path)
+
                 # Reset file pointer if possible, in case file is reused later
                 if hasattr(file, 'seek'):
                     try:
@@ -2817,108 +2843,84 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
         extra_metadata_file_fp = save_metadata_file(request, project_data_path)
         ## get extra metadata from csv first (if exists in old project), add it to the new proj
         old_extra_metadata = get_extra_metadata_from_project(project)
-        
+
         oldFeatured = project.get('featured', False)
 
-        # Create a placeholder project ID that will be updated by _process_and_aggregate_files
-        placeholder_project_id = str(ObjectId())
-        
-        # Prepare form data for _process_and_aggregate_files
         temp_directory = os.path.join('./tmp/', str(temp_proj_id))
-        
-        # Save form data to pass to _process_and_aggregate_files
-        # Note: Django forms expect string 'True'/'False' for BooleanField in POST data
-        saved_form_data = {
-            'project_name': form_dict['project_name'],
-            'description': form_dict['description'],
-            'private': str(form_dict['private']),  # Convert boolean to string 'True' or 'False'
-            'project_members': ', '.join(form_dict['project_members']),
-            'publication_link': form_dict.get('publication_link', ''),
-            'AA_version': form_dict.get('AA_version', 'NA'),
-            'AC_version': form_dict.get('AC_version', 'NA'),
-            'ASP_version': form_dict.get('ASP_version', 'NA'),
-            'accept_license': 'True',  # Always set to True for edit operations (user already accepted on create)
-        }
-        
-        # Add alias if present
-        if 'alias' in form_dict:
-            saved_form_data['alias'] = form_dict['alias']
-        
-        # Call _process_and_aggregate_files in a background thread (same approach as create_project)
-        # This will run the aggregator and create the project asynchronously
+
         try:
             # Create a placeholder project in the database that _process_and_aggregate_files can update
+            _now = get_date()
             placeholder_project = {
-                '_id': ObjectId(placeholder_project_id),
+                '_id': ObjectId(temp_proj_id),
                 'project_name': f"{form_dict['project_name']} (Processing...)",
                 'original_project_name': form_dict['project_name'],
-                'linkid': placeholder_project_id,
+                'linkid': temp_proj_id,
                 'FINISHED?': False,
                 'aggregation_in_progress': True,
                 'created_at': datetime.datetime.now(),
-                'owner': get_current_user(request),
+                'date_created': _now,
+                'date': _now,
+                'update_date': _now,
+                'owner': request.user.username if request.user.is_authenticated else 'anonymous',
                 'private': form_dict.get('private', False),
                 'sample_count': 0,
-                'runs': {},
-                'delete': False,
-                'current': True,
-                'project_members': form_dict.get('project_members', [])
+                'runs': {},  # Empty dictionary, not list
+                'delete': False,  # Project is not deleted
+                'current': True,  # Ensure project is marked as current version
+                # Seed project_members with the owner so the profile page query finds this
+                # placeholder immediately and access-control lets the owner view/delete it
+                # even if aggregation fails before _process_and_aggregate_files can update it.
+                'project_members': list(filter(None, {
+                    request.user.username if request.user.is_authenticated else None,
+                    getattr(request.user, 'email', None) if request.user.is_authenticated else None,
+                })),
             }
             collection_handle.insert_one(placeholder_project)
-            # Audit log is written in the background thread (_process_edit_and_notify)
-            # after aggregation completes, so it captures the real S3 URI and file size.
+            logging.info(f"EditProject - placeholder insert complete for new version {temp_proj_id}")
+            # Audit log is written inside _process_and_aggregate_files after aggregation
+            # completes (or fails), so it captures the real S3 URI, file size, and sample count.
+            # Save form data for the background thread
+            form_data = dict(request.POST)
+            # Convert lists to single values for QueryDict compatibility
+            for key, value in form_data.items():
+                if isinstance(value, list) and len(value) == 1:
+                    form_data[key] = value[0]
 
-            # Start background thread to process and aggregate files
             logging.info(f"EditProject - start background thread to _process_edit_and_notify")
-            
-            # Prepare minimal old project data for subscriber notification
-            # (only keep what's needed to avoid memory issues)
-            old_project_data_for_notification = {
-                '_id': project['_id'],
-                'linkid': project.get('linkid', str(project['_id'])),
-                'project_name': project['project_name'],
-                'subscribers': project.get('subscribers', [])
-            }
-            
             _thread_executor.submit(
                 _process_edit_and_notify,
-                file_fps, 
-                placeholder_project_id, 
-                project_data_path, 
-                temp_directory, 
-                saved_form_data, 
-                request.user, 
-                extra_metadata_file_fp,
-                new_prev_versions,
-                [views, downloads],
-                old_subscribers,
-                old_project_data_for_notification,
-                download_url,
-                samples_to_remove,
-                replace_project,
-                remap_sample_names,
-                reaggregate_project,
-                oldFeatured
+                file_fps, temp_proj_id, project_data_path, temp_directory,
+                form_data, request.user, extra_metadata_file_fp,
+                new_prev_versions, [views, downloads], old_subscribers, project,
+                download_url, samples_to_remove, replace_project, remap_sample_names,
+                reaggregate_project=reaggregate_project,
+                oldFeatured=oldFeatured,
+                rollback_project_id=project_name,
             )
-            logging.info(f"EditProject - finished launch of background thread to _process_edit_and_notify")
+            logging.info(f"EditProject - finished launch of background thread")
 
-            # Explicitly clear large objects before redirect
-            del project
-            del old_extra_metadata
-            del new_prev_versions
-
-            # Immediately redirect to the processing project page
-            return redirect('project_page', project_name=placeholder_project_id)
-            
+            return redirect('project_page', project_name=temp_proj_id)
+        
         except Exception as e:
             logging.error(f"Error during project edit setup: {str(e)}")
             logging.error(traceback.format_exc())
             
-            # Clean up the failed project if it exists
+            # Clean up the failed placeholder if it was inserted
             try:
-                collection_handle.delete_one({'_id': ObjectId(placeholder_project_id)})
+                collection_handle.delete_one({'_id': ObjectId(temp_proj_id)})
             except:
                 pass
+
+            # Restore the old project since project_update/project_delete already ran
+            try:
+                collection_handle.update_one(
+                    {'_id': ObjectId(project_name)},
+                    {'$set': {'current': True, 'delete': False},
+                     '$unset': {'delete_user': '', 'delete_date': ''}}
+                )
+            except Exception as rb_err:
+                logging.error(f"Failed to rollback old project {project_name}: {rb_err}")
             
             alert_message = f"An error occurred during project update: {str(e)}"
             return render(request, 'pages/edit_project.html',
@@ -3027,8 +3029,8 @@ def edit_project_page(request, project_name):
         if needs_new_version:
             # Create a new version with aggregation
             file_fps = []
-            temp_proj_id = uuid.uuid4().hex
-            project_data_path = f"tmp/{temp_proj_id}"
+            temp_proj_id = str(ObjectId())  # Must be a valid MongoDB ObjectId (24-char hex)
+            project_data_path = f"tmp/{temp_proj_id}" ## to change
             
             result = edit_project_into_new_version(
                 request, project_name, project, form_dict, form, metadata_file,
@@ -3234,8 +3236,13 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
 
                 if len(feature) > 0:
                     # get paths
+                    # 'AA graph file' and 'AA cycles file' are new keys (new-format archives only)
+                    # stored individually in GridFS for direct access.
+                    # 'AA directory' is handled separately below: old-format archives supply a
+                    # .tar.gz file; new-format archives supply a plain directory that we tar
+                    # in-memory before storing in GridFS.
                     key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON',
-                                 'AA directory', 'cnvkit directory']
+                                 'AA graph file', 'AA cycles file']
                     for k in key_names:
                         try:
                             path_var = feature[k]
@@ -3246,6 +3253,28 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         except:
                             id_var = "Not Provided"
                         feature[k] = id_var
+
+                    # Handle AA directory: new-format archives supply a plain directory;
+                    # old-format archives supply a .tar.gz file.  Either way we end up with
+                    # a named tar.gz blob in GridFS.
+                    try:
+                        import io
+                        path_var = feature['AA directory']
+                        full_path = f'{project_data_path}/results/{path_var}'
+                        if os.path.isdir(full_path):
+                            dir_name = os.path.basename(path_var.rstrip('/'))
+                            archive_name = f'{dir_name}.tar.gz'
+                            buf = io.BytesIO()
+                            with tarfile.open(fileobj=buf, mode='w:gz') as tar:
+                                tar.add(full_path, arcname=dir_name)
+                            buf.seek(0)
+                            id_var = fs_handle.put(buf, filename=archive_name)
+                        else:
+                            with open(full_path, 'rb') as file_var:
+                                id_var = fs_handle.put(file_var)
+                    except:
+                        id_var = 'Not Provided'
+                    feature['AA directory'] = id_var
 
         gfs_end_time = time.time()
         logging.info(f"Putting files in GridFS took {gfs_end_time - gfs_start_time:.4f}s")
@@ -3451,7 +3480,7 @@ def create_empty_project(request):
             'private': True,  # Empty projects can only be private
             'delete': False,
             'project_members': project_members,
-            'runs': {},  # Empty runs dictionary
+            'runs': {},  # Empty run dictionary
             'Oncogenes': [],
             'Classification': [],
             'linkid': ObjectId(),  # Generate a new linkid
@@ -3494,14 +3523,14 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False):
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
-    
+
     Args:
         file_fps: List of file paths to aggregate
-        temp_proj_id: Temporary project ID
+        temp_proj_id: Temporary project ID (MongoDB ObjectId string — used as both DB _id and FS path segment)
         project_data_path: Path to project data directory
         temp_directory: Temporary directory for aggregation
         form_data: Form data dictionary
@@ -3515,40 +3544,75 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                           (success or failure) using this event type string.  Pass None when
                           the caller (e.g. _process_edit_and_notify) will write the log itself.
         oldFeatured: Boolean indicating if the old project was featured (optional, for edit operations)
+        rollback_project_id: When set (edit operations only), the old project's ID.  On any
+                             failure the old project is restored to current/non-deleted state and
+                             the failed placeholder is updated with rollback_project_id so that
+                             project_page can redirect the user to the old project's edit page.
     """
-    try:
-        logging.info(f"_process_and_aggregate_files - start ")
 
-        print(AmpliconSuiteAggregator.__file__)
-        if hasattr(AmpliconSuiteAggregator, '__version__'):
-            print(f"AmpliconSuiteAggregator version: {AmpliconSuiteAggregator.__version__}")
-        elif hasattr(Aggregator, '__version__'):
-            print(f"Aggregator version: {Aggregator.__version__}")
-        else:
-            print("No version attribute found for Aggregator or AmpliconSuiteAggregator.")
-        logging.info(f"_process_and_aggregate_files - Aggregator start ")
-
-        # Pass name_map_file_path to Aggregator if provided
-        if name_map_file_path:
-            logging.info(f"Using name map file for sample remapping: {name_map_file_path}")
-            agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', 
-                           name_remap_file=name_map_file_path, uuid=str(temp_proj_id))
-        else:
-            agg = Aggregator(file_fps, temp_directory, project_data_path, 'No', "", 'python3', 
-                           uuid=str(temp_proj_id))
-
-        logging.info(f"_process_and_aggregate_files - Aggregator END ")
-
-        if not agg.completed:
-            # Mark project as failed
+    def _do_rollback(failed_placeholder_id, old_project_id, error_msg):
+        """Restore *old_project_id* and mark the failed placeholder so project_page redirects."""
+        # 1. Restore old project to current, non-deleted state
+        try:
             collection_handle.update_one(
-                {'_id': ObjectId(temp_proj_id)},
+                {'_id': ObjectId(old_project_id)},
+                {
+                    '$set': {'current': True, 'delete': False},
+                    '$unset': {'delete_user': '', 'delete_date': ''}
+                }
+            )
+            logging.info(f"Rolled back project {old_project_id} to current/active state")
+        except Exception as rb_err:
+            logging.error(f"Failed to rollback old project {old_project_id}: {rb_err}")
+
+        # 2. Mark the failed placeholder (current: False so it doesn't appear on profile)
+        try:
+            collection_handle.update_one(
+                {'_id': ObjectId(failed_placeholder_id)},
                 {"$set": {
                     'FINISHED?': True,
                     'aggregation_failed': True,
-                    'error_message': 'Aggregation failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results.'
+                    'current': False,
+                    'error_message': error_msg,
+                    'rollback_project_id': str(old_project_id),
                 }}
             )
+        except Exception as upd_err:
+            logging.error(f"Failed to update failed placeholder {failed_placeholder_id}: {upd_err}")
+
+    try:
+        logging.info(f"_process_and_aggregate_files - start")
+
+        print(AmpliconSuiteAggregator.__file__)
+        print(f"AmpliconSuiteAggregator version: {AmpliconSuiteAggregator.__version__}")
+        logging.info(f"_process_and_aggregate_files - Aggregator start")
+
+        # Resolve to absolute paths so the Aggregator works correctly regardless of cwd
+        abs_temp_directory = os.path.abspath(temp_directory)
+        abs_name_map_file_path = os.path.abspath(name_map_file_path) if name_map_file_path else None
+        agg = Aggregator(
+            input_paths=file_fps,
+            project_name=str(temp_proj_id),
+            name_map_file=abs_name_map_file_path,
+            work_dir=abs_temp_directory,
+        )
+
+        logging.info(f"_process_and_aggregate_files - Aggregator END")
+
+        if not agg.completed:
+            _err_msg = 'Aggregation failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results.'
+            if rollback_project_id:
+                _do_rollback(temp_proj_id, rollback_project_id, _err_msg)
+            else:
+                # Brand-new project — just mark as failed (no rollback needed)
+                collection_handle.update_one(
+                    {'_id': ObjectId(temp_proj_id)},
+                    {"$set": {
+                        'FINISHED?': True,
+                        'aggregation_failed': True,
+                        'error_message': _err_msg,
+                    }}
+                )
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
             logging.error(f"Aggregation failed for project {temp_proj_id}")
@@ -3601,15 +3665,18 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         # Validate the form before passing to _create_project
         if not form.is_valid():
             logging.error(f"Form validation failed in _process_and_aggregate_files: {form.errors}")
-            # Mark project as failed
-            collection_handle.update_one(
-                {'_id': ObjectId(temp_proj_id)},
-                {"$set": {
-                    'FINISHED?': True,
-                    'aggregation_failed': True,
-                    'error_message': 'Form validation failed. Please check your project information.'
-                }}
-            )
+            _err_msg = 'Form validation failed. Please check your project information.'
+            if rollback_project_id:
+                _do_rollback(temp_proj_id, rollback_project_id, _err_msg)
+            else:
+                collection_handle.update_one(
+                    {'_id': ObjectId(temp_proj_id)},
+                    {"$set": {
+                        'FINISHED?': True,
+                        'aggregation_failed': True,
+                        'error_message': _err_msg,
+                    }}
+                )
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
             logging.error(f"Form validation failed for project {temp_proj_id}")
@@ -3669,15 +3736,18 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         # The cleanup will happen in extract_project_files after extraction completes
 
         if not success:
-            # Mark project as failed
-            collection_handle.update_one(
-                {'_id': ObjectId(temp_proj_id)},
-                {"$set": {
-                    'FINISHED?': True,
-                    'aggregation_failed': True,
-                    'error_message': 'The input file was not a valid aggregation. Please see site documentation.'
-                }}
-            )
+            _err_msg = 'The input file was not a valid aggregation. Please see site documentation.'
+            if rollback_project_id:
+                _do_rollback(temp_proj_id, rollback_project_id, _err_msg)
+            else:
+                collection_handle.update_one(
+                    {'_id': ObjectId(temp_proj_id)},
+                    {"$set": {
+                        'FINISHED?': True,
+                        'aggregation_failed': True,
+                        'error_message': _err_msg,
+                    }}
+                )
             logging.error(f"Project creation failed for {temp_proj_id}")
             # _create_project did not reach the upload step so log here directly
             if audit_event_type is not None:
@@ -3697,25 +3767,40 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                 except Exception as audit_exc:
                     logging.error(f"Failed to write audit log for project {temp_proj_id}: {audit_exc}")
         else:
-            logging.info(f"Project {temp_proj_id} aggregation complete")
+            agg_version = getattr(AmpliconSuiteAggregator, '__version__', None) or 'NA'
+            collection_handle.update_one(
+                {'_id': ObjectId(temp_proj_id)},
+                {'$set': {'aggregator_version': agg_version}}
+            )
+            logging.info(f"Project {temp_proj_id} aggregation complete (aggregator version: {agg_version})")
             # Audit log is handled inside _create_project / upload_file_to_s3 callback
 
 
-    except Exception as e:
+    except BaseException as e:
+
         logging.error(f"Error in background aggregation for project {temp_proj_id}: {str(e)}")
         logging.error(traceback.format_exc())
-        # Mark project as failed
-        try:
-            collection_handle.update_one(
-                {'_id': ObjectId(temp_proj_id)},
-                {"$set": {
-                    'FINISHED?': True,
-                    'aggregation_failed': True,
-                    'error_message': f'An error occurred during aggregation: {str(e)}'
-                }}
-            )
-        except:
-            pass
+
+        _err_msg = f'An error occurred during aggregation: {str(e)}'
+        if rollback_project_id:
+            try:
+                _do_rollback(temp_proj_id, rollback_project_id, _err_msg)
+            except Exception as rb_outer:
+                logging.error(f"_do_rollback itself raised: {rb_outer}")
+        else:
+            # Brand-new project — just mark as failed
+            try:
+                collection_handle.update_one(
+                    {'_id': ObjectId(temp_proj_id)},
+                    {"$set": {
+                        'FINISHED?': True,
+                        'aggregation_failed': True,
+                        'error_message': _err_msg,
+                    }}
+                )
+            except:
+                pass
+
         if audit_event_type is not None:
             try:
                 log_project_audit_event(
@@ -3795,7 +3880,7 @@ def create_project(request):
                     else:
                         destination.write(file.read())
                 logging.info(f"Successfully saved file to {file_path}")
-                file_fps.append(file.name)
+                file_fps.append(file_path)
             except Exception as e:
                 logging.error(f"Error saving file {file.name}: {e}", exc_info=True)
                 raise
@@ -3811,6 +3896,7 @@ def create_project(request):
         form_dict = form_to_dict(form)
         project_name = form_dict.get('project_name', 'Unnamed Project')
         
+        _now = get_date()
         placeholder_project = {
             '_id': ObjectId(temp_proj_id),  # temp_proj_id is already a valid ObjectId string
             'project_name': f"{project_name} (Processing...)",
@@ -3819,13 +3905,22 @@ def create_project(request):
             'FINISHED?': False,
             'aggregation_in_progress': True,
             'created_at': datetime.datetime.now(),
+            'date_created': _now,
+            'date': _now,
+            'update_date': _now,
             'owner': request.user.username if request.user.is_authenticated else 'anonymous',
             'private': form_dict.get('private', False),
             'sample_count': 0,
             'runs': {},  # Empty dictionary, not list
             'delete': False,  # Project is not deleted
             'current': True,  # Ensure project is marked as current version
-            'project_members': []  # Add project_members to avoid errors
+            # Seed project_members with the owner so the profile page query finds this
+            # placeholder immediately and access-control lets the owner view/delete it
+            # even if aggregation fails before _process_and_aggregate_files can update it.
+            'project_members': list(filter(None, {
+                request.user.username if request.user.is_authenticated else None,
+                getattr(request.user, 'email', None) if request.user.is_authenticated else None,
+            })),
         }
         
         collection_handle.insert_one(placeholder_project)
@@ -4693,7 +4788,7 @@ def download_coamp_edges(request):
         if projects_df.empty:
             messages.error(request, "No valid data found in selected projects.")
             return redirect('coamplification_graph')
-        
+
         # Construct the graph (this is fast compared to Neo4j import)
         logging.info(f"Constructing graph with {len(projects_df)} rows")
         graph = Graph(projects_df)
@@ -4783,49 +4878,62 @@ def search_results(request):
         # Get the combined cancer/tissue field
         cancer_tissue = request.POST.get("metadata_cancer_tissue", "").upper()
 
-        # We'll set both parameters to the same value for the backend search
-        cancer_type = cancer_tissue
-        tissue_origin = ""  # Leave empty to avoid duplicate filtering
+        # Gene Search
+        if request.user.is_authenticated:
+            username = request.user.username
+            useremail = request.user.email
+            query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}],
+                         'Oncogenes': gen_query, 'delete': False, 'current': True}
 
-        extra_metadata = request.POST.get('metadata_extra', "").upper()
+            private_projects = list(collection_handle.find(query_obj))
+            # private_projects = get_projects_close_cursor(query_obj)
+        else:
+            private_projects = []
 
-        # Store user query for persistence in the form
-        user_query = {
-            "genequery": gene_search,
-            "project_name": project_name,
-            "classquery": classifications,
-            "metadata_sample_name": sample_name,
-            "metadata_sample_type": sample_type,
-            "metadata_cancer_tissue": cancer_tissue,  # New field
-            'extra_metadata': extra_metadata
-        }
+        public_projects = list(collection_handle.find({'private': False, 'Oncogenes': gen_query, 'delete': False, 'current': True}))
+        # public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
 
-        # Debugging logs
-        logging.info(f'Search terms: Gene={gene_search}, Project={project_name}, Class={classifications}, '
-                     f'Sample Name={sample_name}, Sample Type={sample_type}, Cancer/Tissue={cancer_tissue},'
-                     f' Extra Metadata={extra_metadata}')
+        for proj in private_projects:
+            prepare_project_linkid(proj)
+        for proj in public_projects:
+            prepare_project_linkid(proj)
 
-        # Run the search function
-        search_results = perform_search(
-            genequery=gene_search,
-            project_name=project_name,
-            classquery=classifications,
-            metadata_sample_name=sample_name,
-            metadata_sample_type=sample_type,
-            metadata_cancer_type=cancer_tissue,  # Use the combined term
-            metadata_tissue_origin=tissue_origin,  # Leave this empty
-            extra_metadata=extra_metadata,
-            user=request.user
-        )
+        def collect_class_data(projects):
+            sample_data = []
+            for project in projects:
+                project_name = project['project_name']
+                project_linkid = project['_id']
+                features = project['runs']
+                features_list = replace_space_to_underscore(features)
+                data = sample_data_from_feature_list(features_list)
 
-        # Count the number of matches for each category
-        public_projects_count = len(search_results["public_projects"])
-        private_projects_count = len(search_results["private_projects"])
-        # Count unique combinations of Sample_name and project_name
-        public_samples_count = len(set((sample.get('Sample_name'), sample.get('project_name')) 
-                                      for sample in search_results["public_sample_data"]))
-        private_samples_count = len(set((sample.get('Sample_name'), sample.get('project_name')) 
-                                       for sample in search_results["private_sample_data"]))
+                for sample in data:
+                    sample['project_name'] = project_name
+                    sample['project_linkid'] = project_linkid
+
+                    # Gene and classification checks
+                    gene_match = (genequery in sample['Oncogenes'] or len(genequery) == 0)
+                    upperclass = list(map(str.upper, sample['Classifications']))
+                    class_match = (classquery in upperclass or len(classquery) == 0)
+
+                    # Cancer type or tissue of origin check
+                    cancer_tissue_match = True  # Default to True if no filter
+                    if metadata_cancer_tissue:
+                        cancer_type = sample.get('Cancer_type', '').lower()
+                        tissue_origin = sample.get('Tissue_of_origin', '').lower()
+                        cancer_tissue_match = (
+                                metadata_cancer_tissue.lower() in cancer_type or
+                                metadata_cancer_tissue.lower() in tissue_origin
+                        )
+
+                    # Only add the sample if all filters match
+                    if gene_match and class_match and cancer_tissue_match:
+                        sample_data.append(sample)
+
+            return sample_data
+
+        public_sample_data = collect_class_data(public_projects)
+        private_sample_data = collect_class_data(private_projects)
 
         # Calculate project filter data with counts
         def get_project_filters(sample_data):
@@ -4856,8 +4964,8 @@ def search_results(request):
             # Sort by project name
             return sorted(project_counts.values(), key=lambda x: x['name'])
 
-        public_project_filters = get_project_filters(search_results["public_sample_data"])
-        private_project_filters = get_project_filters(search_results["private_sample_data"])
+        public_project_filters = get_project_filters(public_sample_data)
+        private_project_filters = get_project_filters(private_sample_data)
 
         query_info = {
             "Gene Name": gene_search,
