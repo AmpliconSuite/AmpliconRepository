@@ -1053,13 +1053,6 @@
 
         <div id="collapsePrevVersions" class="collapse" aria-labelledby="headingPrevVersions" data-parent="#accordion">
             <div class="card-body">
-                {% if project.current_user_may_edit and prev_versions_length > 1 %}
-                <div style="margin-bottom: 10px;">
-                    <button id="edit-history-btn" class="btn btn-outline-secondary btn-sm" onclick="toggleEditHistory()">
-                        <i class="fas fa-edit"></i> Edit Project History
-                    </button>
-                </div>
-                {% endif %}
                 <div class="table-responsive">
                     <table class="table">
                         <thead>
@@ -1100,6 +1093,13 @@
                         </tbody>
                     </table>
                 </div>
+                {% if project.current_user_may_edit and prev_versions_length > 1 %}
+                <div style="text-align: right; margin-top: 10px;">
+                    <button id="edit-history-btn" class="btn btn-outline-secondary btn-sm" onclick="toggleEditHistory()">
+                        <i class="fas fa-edit"></i> Edit Project History
+                    </button>
+                </div>
+                {% endif %}
             </div>
         </div>
 
