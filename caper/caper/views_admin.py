@@ -473,22 +473,26 @@ def admin_permanent_delete_project(project_id, project, project_name):
     error_message = ""
     query = {'_id': ObjectId(project_id)}
     try:
-        # delete Samples & Features and feature files from mongo,
-        # Is this needed or will deleting the parent project delete the whole thing
-        current_runs = project['runs']
-        runs = project['runs']
-        for sample in runs:
-            for feature in sample:
-                key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'AA directory',
-                             'cnvkit directory']
+        # delete Samples & Features and feature files from GridFS
+        runs = project.get('runs', {})
+        key_names = [
+            'Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file',
+            'AA directory', 'Sample metadata JSON', 'AA graph file', 'AA cycles file',
+        ]
+        for sample_name, features in runs.items():
+            if not isinstance(features, list):
+                continue
+            for feature in features:
+                if not isinstance(feature, dict):
+                    continue
                 for k in key_names:
-                    try:
-                        fs_handle.delete(ObjectId(sample[k]))
-
-                    except:
-                        # DO NOTHING, its not there
-                        id_var = "Not Provided"
-    except:
+                    file_id = feature.get(k)
+                    if file_id and file_id != 'Not Provided':
+                        try:
+                            fs_handle.delete(ObjectId(file_id))
+                        except Exception:
+                            logging.debug(f"Could not delete GridFS file {file_id} ({k}) for sample {sample_name}")
+    except Exception:
         logging.exception('Problem deleting sample files from Mongo.')
         error_message = "Problem deleting sample files from Mongo."
 
