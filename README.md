@@ -12,6 +12,7 @@ This is the main repository for the AmpliconRepository website. The documentatio
 - [Pushing changes to GitHub and merging PRs](#pr)
 - [Using the development server](#dev-server)
 - [Logging in as admin](#admin-logging)
+- [Running the automated tests](#tests)
 - [How to deploy and update the production server for AmpliconRepository](#deploy)
 
 
@@ -336,6 +337,62 @@ docker inspect -f \
 
 # Logging in as admin <a name="admin-logging"></a> 
  - Please see the [wiki page on admin login](https://github.com/mesirovlab/AmpliconRepository/wiki/Becoming-Admin-on-a-development-server).
+
+# Running the automated tests <a name="tests"></a>
+
+The test suite exercises project creation and editing end-to-end against a live MongoDB instance.
+
+## Prerequisites
+
+The same environment you use to run the development server is required:
+
+1. **Virtual environment active** — activate whichever environment you used during setup:
+   ```bash
+   source ampliconenv/bin/activate   # python venv
+   # or
+   conda activate ampliconenv        # conda
+   ```
+
+2. **Install the test runner** (one-time, if not already present):
+   ```bash
+   pip install pytest pytest-django
+   ```
+
+3. **MongoDB running locally** — the tests write to the `caper-dev` database on `localhost:27017`:
+   ```bash
+   mongod --dbpath ~/data/db
+   ```
+
+4. **Environment variables loaded** — source `config.sh` from the `caper/` directory:
+   ```bash
+   source caper/config.sh
+   ```
+   The tests read `caper/config.env` automatically, but `config.sh` must have been sourced at least once in the current shell session so that any shell-level exports your environment depends on are present.
+
+5. **AmpliconSuiteAggregator available** — confirm `AGGREGATOR_DEV_PATH` in `config.sh` points to a valid aggregator installation. Tests that use sample-name remapping require v6 or later.
+
+## Running the tests
+
+From the top-level `caper/` directory (where `pytest.ini` lives):
+
+```bash
+pytest -m "slow and integration" -v
+```
+
+Expected output with a correctly configured environment:
+
+```
+tests/test_create_edit_project.py::test_create_tar_only                   PASSED
+tests/test_create_edit_project.py::test_create_tar_and_metadata_no_remap  PASSED
+tests/test_create_edit_project.py::test_create_tar_and_metadata_with_remap PASSED
+tests/test_create_edit_project.py::test_create_then_edit_with_remap       PASSED
+```
+
+## Cleanup
+
+Each test removes all artifacts it created — MongoDB documents, `tmp/` directories, and S3 objects — in a `finally` block, so cleanup happens even when a test fails.
+
+---
 
 # How to deploy and update the production server for AmpliconRepository <a name="deploy"></a> 
 The server is currently running on an EC2 instance through Docker. The ports active on HTTP and HTTPS through AWS Load Balancer. There are two main scripts to start and stop the server.

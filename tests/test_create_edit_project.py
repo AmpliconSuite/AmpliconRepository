@@ -3,20 +3,17 @@ Integration tests for project creation and editing.
 
 Uses test_data/one_amprepo_sample.tar.gz and test_data/one_amprepo_sample.xlsx.
 
-Expected results with the current AGGREGATOR_DEV_PATH config:
-  - test_create_tar_only                     PASS
-  - test_create_tar_and_metadata_no_remap    PASS
-  - test_create_tar_and_metadata_with_remap  FAIL (aggregation_failed) until
-                                              AGGREGATOR_DEV_PATH is updated
-  - test_create_then_edit_with_remap         FAIL (aggregation_failed) until
-                                              AGGREGATOR_DEV_PATH is updated
-
-All projects created during a test are deleted from MongoDB in the fixture
-teardown regardless of whether the test passed or failed.
+All projects created during a test are fully cleaned up in a finally block
+regardless of whether the test passed or failed:
+  - MongoDB document is hard-deleted
+  - tmp/{project_id}/ directory is removed from disk
+  - S3 object is deleted when USE_S3_DOWNLOADS is True
 """
 
 import os
+import shutil
 import time
+import logging
 
 import pytest
 from bson.objectid import ObjectId
@@ -26,6 +23,9 @@ from bson.objectid import ObjectId
 # ---------------------------------------------------------------------------
 POLL_TIMEOUT = 300   # seconds to wait for background aggregation
 POLL_INTERVAL = 5    # polling frequency in seconds
+
+# tmp/ lives next to pytest.ini, one level above this tests/ directory
+TMP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tmp')
 
 
 # ---------------------------------------------------------------------------
@@ -122,9 +122,43 @@ def _poll_until_finished(collection, project_id,
     return None
 
 
-def _hard_delete(collection, project_id):
-    """Permanently remove a project from MongoDB."""
-    collection.delete_one({'_id': ObjectId(project_id)})
+def _cleanup_project(collection, project_id):
+    """
+    Fully remove all artifacts created for a test project:
+      1. MongoDB document
+      2. tmp/{project_id}/ directory on disk
+      3. S3 object (when USE_S3_DOWNLOADS is True)
+    Errors in any step are logged but do not raise so that all steps always run.
+    """
+    # 1. MongoDB
+    try:
+        collection.delete_one({'_id': ObjectId(project_id)})
+        logging.info(f"[cleanup] Deleted MongoDB document {project_id}")
+    except Exception as e:
+        logging.warning(f"[cleanup] Could not delete MongoDB document {project_id}: {e}")
+
+    # 2. tmp directory
+    tmp_path = os.path.join(TMP_DIR, project_id)
+    try:
+        if os.path.exists(tmp_path):
+            shutil.rmtree(tmp_path)
+            logging.info(f"[cleanup] Removed tmp dir {tmp_path}")
+    except Exception as e:
+        logging.warning(f"[cleanup] Could not remove tmp dir {tmp_path}: {e}")
+
+    # 3. S3
+    try:
+        from django.conf import settings
+        if getattr(settings, 'USE_S3_DOWNLOADS', False):
+            import boto3
+            bucket_path = getattr(settings, 'S3_DOWNLOADS_BUCKET_PATH', '')
+            s3_key = f'{bucket_path}{project_id}/{project_id}.tar.gz'
+            session = boto3.Session(profile_name=getattr(settings, 'AWS_PROFILE_NAME', None))
+            s3_client = session.client('s3')
+            s3_client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_key)
+            logging.info(f"[cleanup] Deleted S3 object s3://{settings.S3_DOWNLOADS_BUCKET}/{s3_key}")
+    except Exception as e:
+        logging.warning(f"[cleanup] Could not delete S3 object for {project_id}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +196,7 @@ def test_create_tar_only(request_factory, test_user, mongo_collection, tar_file)
         assert doc.get('sample_count', 0) > 0, "Project has no samples"
     finally:
         for pid in created_ids:
-            _hard_delete(mongo_collection, pid)
+            _cleanup_project(mongo_collection, pid)
 
 
 @pytest.mark.slow
@@ -198,7 +232,7 @@ def test_create_tar_and_metadata_no_remap(
         assert doc.get('sample_count', 0) > 0, "Project has no samples"
     finally:
         for pid in created_ids:
-            _hard_delete(mongo_collection, pid)
+            _cleanup_project(mongo_collection, pid)
 
 
 @pytest.mark.slow
@@ -249,7 +283,7 @@ def test_create_tar_and_metadata_with_remap(
         assert doc.get('sample_count', 0) > 0, "Project has no samples"
     finally:
         for pid in created_ids:
-            _hard_delete(mongo_collection, pid)
+            _cleanup_project(mongo_collection, pid)
 
 
 @pytest.mark.slow
@@ -322,4 +356,4 @@ def test_create_then_edit_with_remap(
         assert edited_doc.get('sample_count', 0) > 0, "[Edit] Project has no samples"
     finally:
         for pid in created_ids:
-            _hard_delete(mongo_collection, pid)
+            _cleanup_project(mongo_collection, pid)
