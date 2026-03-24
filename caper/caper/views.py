@@ -2581,11 +2581,11 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
         return HttpResponse("Project does not exist")
 
 
-def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path, temp_directory, 
+def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path, temp_directory,
                              form_data, user, extra_metadata_file_fp,
                              previous_versions, previous_views, old_subscribers, old_project_data,
                              download_url, samples_to_remove, replace_project, remap_sample_names,
-                             reaggregate_project=False, oldFeatured=False):
+                             reaggregate_project=False, oldFeatured=False, rollback_project_id=None):
     """
     Wrapper function for edit operations that handles notification and then calls _process_and_aggregate_files.
     This runs in a background thread for edit operations.
@@ -2648,14 +2648,14 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             # Download and strip samples from the old project
             stripped_tar = remove_samples_from_tar(old_project_data, samples_to_remove, download_path, download_url)
             if stripped_tar:
-                file_fps.append(os.path.basename(stripped_tar))
+                file_fps.append(stripped_tar)
                 logging.info(f"Successfully created stripped tar file: {stripped_tar}")
         elif not replace_project:
             # Download the old project file to include in aggregation (unless replacing entire project)
             try:
                 logging.info(f"Downloading old project from {download_url}")
                 download_file(download_url, download_path)
-                file_fps.append('download.tar.gz')
+                file_fps.append(download_path)
                 logging.info(f"Successfully downloaded old project to {download_path}")
             except Exception as e:
                 logging.error(f'Failed to download the old project file: {e}')
@@ -2694,7 +2694,8 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             previous_views=previous_views,
             old_subscribers=old_subscribers,
             audit_event_type=AUDIT_EVENT_EDIT_NEW_VERSION,
-            oldFeatured=oldFeatured
+            oldFeatured=oldFeatured,
+            rollback_project_id=rollback_project_id,
         )
 
         # Clean up temporary files (downloaded old project and name map) after aggregation
@@ -2778,8 +2779,8 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                     else:
                         destination.write(file.read())
                 logging.info(f"Successfully saved file to {file_path}")
-                file_fps.append(file.name)
-                
+                file_fps.append(file_path)
+
                 # Reset file pointer if possible, in case file is reused later
                 if hasattr(file, 'seek'):
                     try:
@@ -2843,30 +2844,10 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
         ## get extra metadata from csv first (if exists in old project), add it to the new proj
         old_extra_metadata = get_extra_metadata_from_project(project)
 
-        # Create name map for sample remapping if requested
-        name_map_file_path = None
-        if remap_sample_names and extra_metadata_file_fp:
-            try:
-                name_map_file_path = create_name_map_from_metadata(
-                    open(extra_metadata_file_fp, 'rb'),
-                    project_data_path
-                )
-                if name_map_file_path:
-                    logging.info(f"EditProject - name map created: {name_map_file_path}")
-            except Exception as nme:
-                logging.error(f"EditProject - failed to create name map: {nme}")
-
         oldFeatured = project.get('featured', False)
 
-        # temp_proj_id (already a valid MongoDB ObjectId string from edit_project_page) serves as
-        # both the filesystem directory name and the new project's MongoDB _id.
-        # No separate placeholder_project_id is needed.
-
-        # Prepare form data for _process_and_aggregate_files
         temp_directory = os.path.join('./tmp/', str(temp_proj_id))
-        
-        # Call _process_and_aggregate_files in a background thread (same approach as create_project)
-        # This will run the aggregator and create the project asynchronously
+
         try:
             # Create a placeholder project in the database that _process_and_aggregate_files can update
             _now = get_date()
@@ -2906,17 +2887,15 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 if isinstance(value, list) and len(value) == 1:
                     form_data[key] = value[0]
 
-            logging.info(f"EditProject - start background thread to _process_and_aggregate_files")
+            logging.info(f"EditProject - start background thread to _process_edit_and_notify")
             _thread_executor.submit(
-                _process_and_aggregate_files,
+                _process_edit_and_notify,
                 file_fps, temp_proj_id, project_data_path, temp_directory,
-                form_data, request.user, extra_metadata_file_fp, name_map_file_path,
-                previous_versions=new_prev_versions,
-                previous_views=[views, downloads],
-                old_subscribers=old_subscribers,
-                audit_event_type=AUDIT_EVENT_EDIT_NEW_VERSION,
+                form_data, request.user, extra_metadata_file_fp,
+                new_prev_versions, [views, downloads], old_subscribers, project,
+                download_url, samples_to_remove, replace_project, remap_sample_names,
+                reaggregate_project=reaggregate_project,
                 oldFeatured=oldFeatured,
-                # Pass the OLD project id so the failure handler can roll it back
                 rollback_project_id=project_name,
             )
             logging.info(f"EditProject - finished launch of background thread")
@@ -3608,18 +3587,15 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         print(f"AmpliconSuiteAggregator version: {AmpliconSuiteAggregator.__version__}")
         logging.info(f"_process_and_aggregate_files - Aggregator start")
 
-        # Aggregator writes results/ relative to cwd — run it inside temp_directory
-        orig_dir = os.getcwd()
-        os.chdir(temp_directory)
-        try:
-            agg = Aggregator(
-                input_paths=file_fps,
-                project_name=str(temp_proj_id),
-                name_map_file=name_map_file_path,
-                work_dir=temp_directory,
-            )
-        finally:
-            os.chdir(orig_dir)
+        # Resolve to absolute paths so the Aggregator works correctly regardless of cwd
+        abs_temp_directory = os.path.abspath(temp_directory)
+        abs_name_map_file_path = os.path.abspath(name_map_file_path) if name_map_file_path else None
+        agg = Aggregator(
+            input_paths=file_fps,
+            project_name=str(temp_proj_id),
+            name_map_file=abs_name_map_file_path,
+            work_dir=abs_temp_directory,
+        )
 
         logging.info(f"_process_and_aggregate_files - Aggregator END")
 
@@ -3904,7 +3880,7 @@ def create_project(request):
                     else:
                         destination.write(file.read())
                 logging.info(f"Successfully saved file to {file_path}")
-                file_fps.append(file.name)
+                file_fps.append(file_path)
             except Exception as e:
                 logging.error(f"Error saving file {file.name}: {e}", exc_info=True)
                 raise
