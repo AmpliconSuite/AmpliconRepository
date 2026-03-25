@@ -4868,72 +4868,39 @@ def search_results(request):
 
     if request.method == "POST":
         # Extract search parameters from POST request
-        gene_search = request.POST.get("genequery", "").upper()
-        project_name = request.POST.get("project_name", "").upper()
+        gene_search = request.POST.get("genequery", "").strip()
+        project_name = request.POST.get("project_name", "").strip()
         classifications_list = request.POST.getlist("classquery")  # Get multiple selections
-        classifications = "|".join(classifications_list).upper()  # Join with pipe for OR logic
-        sample_name = request.POST.get("metadata_sample_name", "").upper()
-        sample_type = request.POST.get("metadata_sample_type", "").upper()
+        classifications = "|".join(classifications_list)  # Join with pipe for OR logic
+        sample_name = request.POST.get("metadata_sample_name", "").strip()
+        sample_type = request.POST.get("metadata_sample_type", "").strip()
+        cancer_tissue = request.POST.get("metadata_cancer_tissue", "").strip()
 
-        # Get the combined cancer/tissue field
-        cancer_tissue = request.POST.get("metadata_cancer_tissue", "").upper()
+        # Build user_query dict so the template can re-populate the search form
+        user_query = {
+            "genequery": gene_search,
+            "project_name": project_name,
+            "classquery": classifications,
+            "metadata_sample_name": sample_name,
+            "metadata_sample_type": sample_type,
+            "metadata_cancer_tissue": cancer_tissue,
+        }
 
-        # Gene Search
-        if request.user.is_authenticated:
-            username = request.user.username
-            useremail = request.user.email
-            query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}],
-                         'Oncogenes': gen_query, 'delete': False, 'current': True}
+        # Delegate to the shared search helper
+        results = perform_search(
+            genequery=gene_search.upper() if gene_search else None,
+            project_name=project_name.upper() if project_name else None,
+            classquery=classifications.upper() if classifications else None,
+            metadata_sample_name=sample_name.upper() if sample_name else None,
+            metadata_sample_type=sample_type.upper() if sample_type else None,
+            metadata_cancer_type=cancer_tissue.upper() if cancer_tissue else None,
+            user=request.user,
+        )
 
-            private_projects = list(collection_handle.find(query_obj))
-            # private_projects = get_projects_close_cursor(query_obj)
-        else:
-            private_projects = []
-
-        public_projects = list(collection_handle.find({'private': False, 'Oncogenes': gen_query, 'delete': False, 'current': True}))
-        # public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
-
-        for proj in private_projects:
-            prepare_project_linkid(proj)
-        for proj in public_projects:
-            prepare_project_linkid(proj)
-
-        def collect_class_data(projects):
-            sample_data = []
-            for project in projects:
-                project_name = project['project_name']
-                project_linkid = project['_id']
-                features = project['runs']
-                features_list = replace_space_to_underscore(features)
-                data = sample_data_from_feature_list(features_list)
-
-                for sample in data:
-                    sample['project_name'] = project_name
-                    sample['project_linkid'] = project_linkid
-
-                    # Gene and classification checks
-                    gene_match = (genequery in sample['Oncogenes'] or len(genequery) == 0)
-                    upperclass = list(map(str.upper, sample['Classifications']))
-                    class_match = (classquery in upperclass or len(classquery) == 0)
-
-                    # Cancer type or tissue of origin check
-                    cancer_tissue_match = True  # Default to True if no filter
-                    if metadata_cancer_tissue:
-                        cancer_type = sample.get('Cancer_type', '').lower()
-                        tissue_origin = sample.get('Tissue_of_origin', '').lower()
-                        cancer_tissue_match = (
-                                metadata_cancer_tissue.lower() in cancer_type or
-                                metadata_cancer_tissue.lower() in tissue_origin
-                        )
-
-                    # Only add the sample if all filters match
-                    if gene_match and class_match and cancer_tissue_match:
-                        sample_data.append(sample)
-
-            return sample_data
-
-        public_sample_data = collect_class_data(public_projects)
-        private_sample_data = collect_class_data(private_projects)
+        public_projects = results["public_projects"]
+        private_projects = results["private_projects"]
+        public_sample_data = results["public_sample_data"]
+        private_sample_data = results["private_sample_data"]
 
         # Calculate project filter data with counts
         def get_project_filters(sample_data):
@@ -4941,31 +4908,33 @@ def search_results(request):
             project_counts = {}
             for sample in sample_data:
                 project_id = sample['project_linkid']
-                project_name = sample['project_name']
-                sample_name = sample.get('Sample_name')
-                
+                pname = sample['project_name']
+                sname = sample.get('Sample_name')
+
                 if project_id not in project_counts:
                     project_counts[project_id] = {
                         'id': project_id,
-                        'name': project_name,
+                        'name': pname,
                         'count': 0,
-                        'unique_samples': set()  # Track unique sample names
+                        'unique_samples': set()
                     }
-                
-                # Add sample to the set (automatically handles duplicates)
-                if sample_name:
-                    project_counts[project_id]['unique_samples'].add(sample_name)
-        
-            # Convert sets to counts and remove the sets before returning
+
+                if sname:
+                    project_counts[project_id]['unique_samples'].add(sname)
+
             for project_id in project_counts:
                 project_counts[project_id]['count'] = len(project_counts[project_id]['unique_samples'])
                 del project_counts[project_id]['unique_samples']
-        
-            # Sort by project name
+
             return sorted(project_counts.values(), key=lambda x: x['name'])
 
         public_project_filters = get_project_filters(public_sample_data)
         private_project_filters = get_project_filters(private_sample_data)
+
+        public_projects_count = len(public_projects)
+        private_projects_count = len(private_projects)
+        public_samples_count = len({s.get('Sample_name') for s in public_sample_data})
+        private_samples_count = len({s.get('Sample_name') for s in private_sample_data})
 
         query_info = {
             "Gene Name": gene_search,
@@ -4973,16 +4942,16 @@ def search_results(request):
             "Classification": classifications,
             "Sample Name": sample_name,
             "Sample Type": sample_type,
-            "Cancer Type or Tissue": cancer_tissue,  # Combined field in display
+            "Cancer Type or Tissue": cancer_tissue,
         }
 
         return render(request, "pages/gene_search.html", {
-            "query_info": {k: v for k, v in query_info.items() if v},  # Filters out empty values
-            "user_query": user_query,  # Pass user query to the template
-            "public_projects": search_results["public_projects"],
-            "private_projects": search_results["private_projects"],
-            "public_sample_data": search_results["public_sample_data"],
-            "private_sample_data": search_results["private_sample_data"],
+            "query_info": {k: v for k, v in query_info.items() if v},
+            "user_query": user_query,
+            "public_projects": public_projects,
+            "private_projects": private_projects,
+            "public_sample_data": public_sample_data,
+            "private_sample_data": private_sample_data,
             "public_project_filters": public_project_filters,
             "private_project_filters": private_project_filters,
             "public_projects_count": public_projects_count,
