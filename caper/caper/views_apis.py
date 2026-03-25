@@ -268,7 +268,11 @@ class ProjectFileAddView(APIView):
 
                 new_prev_versions.append({
                     'date': str(project['date']),
-                    'linkid': str(project['linkid'])
+                    'linkid': str(project['linkid']),
+                    'ASP_version': project.get('ASP_version', 'NA'),
+                    'AA_version': project.get('AA_version', 'NA'),
+                    'AC_version': project.get('AC_version', 'NA'),
+                    'aggregator_version': project.get('aggregator_version', 'NA'),
                 })
                 # transfer the view and downloads counts to the new project version
                 views = project['views']

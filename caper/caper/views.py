@@ -2829,7 +2829,11 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
         new_prev_versions.append(
             {
                 'date': str(project['date']),
-                'linkid': str(project['linkid'])
+                'linkid': str(project['linkid']),
+                'ASP_version': project.get('ASP_version', 'NA'),
+                'AA_version': project.get('AA_version', 'NA'),
+                'AC_version': project.get('AC_version', 'NA'),
+                'aggregator_version': project.get('aggregator_version', 'NA'),
             }
         )
 
