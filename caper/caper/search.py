@@ -227,6 +227,7 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
                 df = df[df['Classification'].str.contains(combined_pattern, case=False, na=False, regex=True)]
 
         if metadata_sample_name and 'Sample_name' in df.columns:
+            df['Sample_name'] = df['Sample_name'].astype(str)
             wc_regex = wildcard_to_regex(metadata_sample_name)
             if wc_regex:
                 df = df[df['Sample_name'].str.contains(wc_regex, case=False, na=False, regex=True)]
