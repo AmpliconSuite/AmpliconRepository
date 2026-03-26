@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 MAINTAINER Forrest Kim <f1kim@health.ucsd.edu>
 
@@ -44,7 +44,7 @@ RUN mkdir /config
 #############################################
 
 RUN apt-get update && apt-get install -y \
-    python3.8 \
+    python3 \
     python3-pip \
     python3-venv
 
