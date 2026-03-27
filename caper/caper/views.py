@@ -4405,11 +4405,16 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     # model fields — must be read directly from form.cleaned_data.
     # get_tool_versions() will then merge these with any versions detected inside the
     # uploaded feature data, producing the correct union.
+    #
+    # Important: treat blank and the default placeholder 'NA' (any case) as "not
+    # provided".  When the user leaves a version field at 'NA', we want the versions
+    # that the aggregation detected from the actual sample data to win, not the
+    # placeholder.  Only pre-seed when the user has typed a real version string.
     if hasattr(form, 'cleaned_data'):
         for ver_key in ('AA_version', 'AC_version', 'ASP_version'):
-            form_val = form.cleaned_data.get(ver_key, '')
-            if form_val and str(form_val).strip():
-                project[ver_key] = str(form_val).strip()
+            form_val = str(form.cleaned_data.get(ver_key, '') or '').strip()
+            if form_val and form_val.upper() != 'NA':
+                project[ver_key] = form_val
 
     # iterate over project['runs'] and get the unique values across all runs
     # of AA_version, AC_version and 'AS-P_version'. Then add them to the project dict
