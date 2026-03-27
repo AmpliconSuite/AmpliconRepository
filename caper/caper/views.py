@@ -3803,9 +3803,12 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         })()
         mock_request.POST.update(form_data)
 
-        # Recreate form from saved data
-        form = RunForm(mock_request.POST)
-        
+        # Recreate form from saved data.
+        # Use UpdateForm so that the version fields (AA_version, AC_version,
+        # ASP_version) — which are only defined on UpdateForm, not RunForm —
+        # are parsed into cleaned_data and available to create_project_helper.
+        form = UpdateForm(mock_request.POST)
+
         # Validate the form before passing to _create_project
         if not form.is_valid():
             logging.error(f"Form validation failed in _process_and_aggregate_files: {form.errors}")
@@ -4395,6 +4398,18 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
         project['subscribers'] = old_subscribers
     else:
         project['subscribers'] = []
+
+    # Pre-seed version fields from form data (user-provided values on the edit form).
+    # form_to_dict() only captures model fields via model_to_dict(), so AA_version /
+    # AC_version / ASP_version — which are extra CharField fields on UpdateForm, not
+    # model fields — must be read directly from form.cleaned_data.
+    # get_tool_versions() will then merge these with any versions detected inside the
+    # uploaded feature data, producing the correct union.
+    if hasattr(form, 'cleaned_data'):
+        for ver_key in ('AA_version', 'AC_version', 'ASP_version'):
+            form_val = form.cleaned_data.get(ver_key, '')
+            if form_val and str(form_val).strip():
+                project[ver_key] = str(form_val).strip()
 
     # iterate over project['runs'] and get the unique values across all runs
     # of AA_version, AC_version and 'AS-P_version'. Then add them to the project dict
