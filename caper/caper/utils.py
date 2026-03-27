@@ -627,63 +627,102 @@ def get_date_short():
     return date
 
 
+def _backfill_version_info_from_db(entries):
+    """
+    For previous_versions entries that are missing version fields (or have 'NA'),
+    look up the actual old project documents by linkid and populate the real values.
+    Uses a single batch MongoDB query for efficiency.
+    """
+    version_fields = ['ASP_version', 'AA_version', 'AC_version', 'aggregator_version']
+
+    # Identify entries that need a DB lookup
+    entries_needing_lookup = [
+        entry for entry in entries
+        if any(not entry.get(f) or entry.get(f) == 'NA' for f in version_fields)
+    ]
+
+    if entries_needing_lookup:
+        # Build a map from linkid string -> entry for fast update
+        linkid_to_entry = {}
+        for entry in entries_needing_lookup:
+            linkid = entry.get('linkid')
+            if linkid:
+                linkid_to_entry[str(linkid)] = entry
+
+        if linkid_to_entry:
+            try:
+                object_ids = [ObjectId(lid) for lid in linkid_to_entry]
+                proj_docs = collection_handle.find(
+                    {'_id': {'$in': object_ids}},
+                    {field: 1 for field in version_fields}
+                )
+                for doc in proj_docs:
+                    doc_id = str(doc['_id'])
+                    if doc_id in linkid_to_entry:
+                        entry = linkid_to_entry[doc_id]
+                        for field in version_fields:
+                            if not entry.get(field) or entry.get(field) == 'NA':
+                                entry[field] = doc.get(field, 'NA')
+            except Exception as e:
+                logging.error(f"Error backfilling version info from DB: {e}")
+
+    # Ensure every entry has all four version fields (default 'NA' for anything still absent)
+    for entry in entries:
+        for field in version_fields:
+            entry.setdefault(field, 'NA')
+
+
 def previous_versions(project):
     """
-    Gets a list of previous versions via UUID
+    Gets a list of previous versions via UUID.
+    Version fields (ASP_version, AA_version, AC_version, aggregator_version) are
+    populated from the actual old project documents when not already present in the
+    stored previous_versions entries.
     """
     res = []
     msg = None
-    # print(project['_id'])
-    logging.error(f"Getting previous versions for project {project['_id']}")
-    ### Accessing a previous version of a project.
-    ## looking for the old link in the previous project. Will output something if
-    ## we are trying to access an older project
-    # cursor = collection_handle.find(
-    #    {'current': True, 'previous_versions.linkid' : str(project['_id'])}, {'date': 1, 'previous_versions':1}).sort('date', -1)
-    # data = list(cursor)
-    fields = ['date', 'previous_versions', 'AC_version', 'AA_version', 'AP_version', 'aggregator_version']
+    logging.info(f"Getting previous versions for project {project['_id']}")
+
+    fields = ['date', 'previous_versions', 'AC_version', 'AA_version', 'ASP_version', 'aggregator_version']
     cursor = collection_handle.find(
         {'current': True, 'previous_versions.linkid': str(project['_id'])},
         {field: 1 for field in fields}
     ).sort('date', -1)
-    data = []
-    for doc in cursor:
-        logging.error(f" RES FOR  {project['_id']}")
-        for field in ['AC_version', 'AA_version', 'AP_version']:
-            if field not in doc:
-                doc[field] = 'NA'
-                logging.error(f"Field {field} not found in document, setting to 'NA'")
-            else:
-                logging.error(f"Field {field} found in document, setting to 'NA'")
-
-        data.append(doc)
-
+    data = list(cursor)
     cursor.close()
-    if len(data) == 1:
-        res = data[0]['previous_versions']
-        res.append({'date': data[0].get('date', '1999-01-01T00:00:00.000000'),
-                    'linkid': str(data[0]['_id']),
-                    'AC_version': data[0].get('AC_version', 'NA'),
-                    'AA_version': data[0].get('AA_version', 'NA'),
-                    'ASP_version': data[0].get('ASP_version', 'NA'),
-                    'aggregator_version': data[0].get('aggregator_version', 'NA')})
-        res.reverse()
-        msg = f"Viewing an older version of the project. View latest version <a href = '/project/{str(data[0]['_id'])}'>here</a>"
 
+    if len(data) == 1:
+        # Viewing an older version — data[0] is the current/latest project document
+        res = data[0]['previous_versions']
+        # Populate version fields from the actual old project documents
+        _backfill_version_info_from_db(res)
+        res.append({
+            'date': data[0].get('date', '1999-01-01T00:00:00.000000'),
+            'linkid': str(data[0]['_id']),
+            'AC_version': data[0].get('AC_version', 'NA'),
+            'AA_version': data[0].get('AA_version', 'NA'),
+            'ASP_version': data[0].get('ASP_version', 'NA'),
+            'aggregator_version': data[0].get('aggregator_version', 'NA'),
+        })
+        res.reverse()
+        msg = (f"Viewing an older version of the project. "
+               f"View latest version <a href='/project/{str(data[0]['_id'])}'>here</a>")
 
     else:
-        ## accessing current version, getting list of previous versions
+        # Viewing the current version — build history from this project's previous_versions list
         if "previous_versions" in project:
             res = project['previous_versions']
-        # add current main version to the list
-
-        res.append({'date': project.get('date', '1999-01-01T00:00:00.000000'),
-                    'linkid': str(project['linkid']),
-                    'AC_version': project.get('AC_version', 'NA'),
-                    'AA_version': project.get('AA_version', 'NA'),
-                    'ASP_version': project.get('ASP_version', 'NA'),
-                    'aggregator_version': project.get('aggregator_version', 'NA')
-                    })
+            # Populate version fields from the actual old project documents
+            _backfill_version_info_from_db(res)
+        # Append the current version itself
+        res.append({
+            'date': project.get('date', '1999-01-01T00:00:00.000000'),
+            'linkid': str(project['linkid']),
+            'AC_version': project.get('AC_version', 'NA'),
+            'AA_version': project.get('AA_version', 'NA'),
+            'ASP_version': project.get('ASP_version', 'NA'),
+            'aggregator_version': project.get('aggregator_version', 'NA'),
+        })
         res.reverse()
 
     return res, msg

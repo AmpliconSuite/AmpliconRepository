@@ -1,7 +1,39 @@
+import re
 from pymongo import MongoClient
 from .utils import *
 
-def perform_search(genequery=None, 
+
+def wildcard_to_regex(pattern):
+    """
+    Converts a glob-style wildcard pattern (using * as wildcard) to a regex pattern.
+    If the pattern contains no *, returns None (caller should use substring matching).
+
+    Examples:
+        FLO*  ->  ^FLO.*$       (starts with FLO)
+        *LO*  ->  ^.*LO.*$      (contains LO)
+        F*H   ->  ^F.*H$        (starts with F, ends with H)
+        EGFR  ->  None          (no wildcard, unchanged)
+    """
+    if '*' not in pattern:
+        return None
+    parts = pattern.split('*')
+    escaped_parts = [re.escape(p) for p in parts]
+    return '^' + '.*'.join(escaped_parts) + '$'
+
+
+def _gene_matches(query_gene, gene_list):
+    """
+    Check whether query_gene (which may contain a * wildcard) matches
+    any entry in gene_list (already normalised to upper-case strings).
+    """
+    regex_pat = wildcard_to_regex(query_gene.upper())
+    if regex_pat:
+        compiled = re.compile(regex_pat, re.IGNORECASE)
+        return any(compiled.match(g) for g in gene_list)
+    else:
+        return query_gene.upper() in gene_list
+
+def perform_search(genequery=None,
                    project_name=None, 
                    classquery=None, 
                    metadata_sample_name=None,
@@ -12,6 +44,16 @@ def perform_search(genequery=None,
                    user=None):
 
     gen_query = {'$regex': genequery } if genequery else None
+
+    # Build the project-name MongoDB filter, respecting * wildcards
+    if project_name:
+        wc_regex = wildcard_to_regex(project_name)
+        if wc_regex:
+            name_filter = {'$regex': wc_regex, '$options': 'i'}
+        else:
+            name_filter = {'$regex': project_name, '$options': 'i'}
+    else:
+        name_filter = None
 
     # Gene Search
     # Use $in to handle both legacy boolean values (True/False) and current string values
@@ -26,17 +68,17 @@ def perform_search(genequery=None,
             'current': True
         }
 
-        if project_name:
-            query_obj['project_name'] = {'$regex': project_name, '$options': 'i'}
+        if name_filter:
+            query_obj['project_name'] = name_filter
 
         private_projects = list(collection_handle.find(query_obj))
     else:
         private_projects = []
 
     public_query = {'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}
-    
-    if project_name:
-        public_query['project_name'] = {'$regex': project_name, '$options': 'i'}
+
+    if name_filter:
+        public_query['project_name'] = name_filter
 
     public_projects = list(collection_handle.find(public_query))
 
@@ -137,22 +179,30 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         if genequery and 'All_genes' in df.columns:
             # Parse gene query for multi-gene search with | (OR) and & (AND) operators
             if '&' in genequery:
-                # AND logic: sample must have ALL genes
+                # AND logic: sample must have ALL genes (each may contain a wildcard)
                 genes_to_find = [g.strip().upper() for g in genequery.split('&') if g.strip()]
                 df = df[df['All_genes'].apply(lambda x: all(
-                    gene in [g.replace("'", "").strip().upper() for g in x] 
+                    _gene_matches(gene, [g.replace("'", "").strip().upper() for g in x])
                     for gene in genes_to_find
                 ))]
             elif '|' in genequery:
-                # OR logic: sample must have ANY of the genes
+                # OR logic: sample must have ANY of the genes (each may contain a wildcard)
                 genes_to_find = [g.strip().upper() for g in genequery.split('|') if g.strip()]
                 df = df[df['All_genes'].apply(lambda x: any(
-                    gene in [g.replace("'", "").strip().upper() for g in x] 
+                    _gene_matches(gene, [g.replace("'", "").strip().upper() for g in x])
                     for gene in genes_to_find
                 ))]
             else:
-                # Single gene exact match (existing logic)
-                df = df[df['All_genes'].apply(lambda x: genequery.upper() in [gene.replace("'", "").strip().upper() for gene in x])]
+                # Single gene — support wildcard or fall back to exact match
+                gq_upper = genequery.upper()
+                wc_regex = wildcard_to_regex(gq_upper)
+                if wc_regex:
+                    compiled_gene = re.compile(wc_regex, re.IGNORECASE)
+                    df = df[df['All_genes'].apply(lambda x: any(
+                        compiled_gene.match(gene.replace("'", "").strip().upper()) for gene in x
+                    ))]
+                else:
+                    df = df[df['All_genes'].apply(lambda x: gq_upper in [gene.replace("'", "").strip().upper() for gene in x])]
 
         if classquery:
             # Split multiple classifications (joined by |) and build OR pattern
@@ -169,7 +219,6 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
                     regex_patterns.append(r'COMPLEX.?NON.?CYCLIC')
                 else:
                     # Escape special regex characters for literal matching
-                    import re
                     regex_patterns.append(re.escape(cq))
             
             # Combine all patterns with OR logic
@@ -178,7 +227,12 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
                 df = df[df['Classification'].str.contains(combined_pattern, case=False, na=False, regex=True)]
 
         if metadata_sample_name and 'Sample_name' in df.columns:
-            df = df[df['Sample_name'].str.contains(metadata_sample_name, case=False, na=False)]
+            df['Sample_name'] = df['Sample_name'].astype(str)
+            wc_regex = wildcard_to_regex(metadata_sample_name)
+            if wc_regex:
+                df = df[df['Sample_name'].str.contains(wc_regex, case=False, na=False, regex=True)]
+            else:
+                df = df[df['Sample_name'].str.contains(metadata_sample_name, case=False, na=False)]
 
         if metadata_sample_type and 'Sample_type' in df.columns:
             df = df[df['Sample_type'].str.contains(metadata_sample_type, case=False, na=False)]

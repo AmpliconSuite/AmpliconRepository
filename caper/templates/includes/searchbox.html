@@ -7,12 +7,18 @@
         <label for="project_name" class="form-label">Project Name</label>
         <input type="text" class="form-control" name="project_name" id="project_name"
                placeholder="Enter project name..." value="{{ user_query.project_name|default:'' }}">
+        <small class="form-text text-muted">
+            Use <strong>*</strong> as a wildcard, e.g. <em>CCLE*</em>, <em>*lung*</em>, <em>C*E</em>
+        </small>
     </div>
 
     <div class="mb-3">
         <label for="metadata_sample_name" class="form-label">Sample Name</label>
         <input type="text" class="form-control" name="metadata_sample_name" id="metadata_sample_name"
             placeholder="Enter sample name" value="{{ user_query.metadata_sample_name|default:'' }}">
+        <small class="form-text text-muted">
+            Use <strong>*</strong> as a wildcard, e.g. <em>NCIH*</em>, <em>*_tumor</em>
+        </small>
     </div>
 
     <div class="mb-3">
@@ -20,7 +26,8 @@
         <input type="text" class="form-control" name="genequery" id="genequery"
                placeholder="e.g. MYC or MYC|EGFR or MYC&EGFR" value="{{ user_query.genequery|default:'' }}">
         <small class="form-text text-muted">
-            Use <strong>|</strong> for OR (finds samples with any gene) or <strong>&</strong> for AND (finds samples with all genes)
+            Use <strong>|</strong> for OR, <strong>&</strong> for AND, or <strong>*</strong> as a wildcard
+            &nbsp;(e.g. <em>MYC*</em>, <em>*CDK*</em>, <em>FLO*|EGFR</em>)
         </small>
     </div>
 
