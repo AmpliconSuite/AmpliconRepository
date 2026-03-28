@@ -2318,6 +2318,146 @@ def project_delete(request, project_name):
         return HttpResponse("Project does not exist")
 
 
+@login_required
+def delete_project_version(request, project_name, version_id):
+    """
+    Delete a specific version from the project history.
+    
+    Cases:
+    1. Deleting an old (non-current) version: remove it from the current project's
+       previous_versions array and soft-delete the old version document.
+    2. Deleting the current version when previous versions exist: promote the most recent
+       previous version to become the new current version.
+    3. Deleting the current version with no previous versions: soft-delete the entire
+       project and redirect to the profile page.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    # Get the project being viewed
+    project = get_one_project(project_name)
+    if not project:
+        return JsonResponse({"error": "Project not found"}, status=404)
+
+    # Determine the current (latest) version of this project
+    latest_project = get_latest_project_version(project)
+    current_linkid = str(latest_project['_id'])
+
+    # Check permissions using the latest project version (has up-to-date members)
+    is_admin = getattr(request.user, 'is_staff', False)
+    visibility = normalize_visibility_field(latest_project.get('private', 'private'))
+    allowed = is_user_a_project_member(latest_project, request) or (is_admin and is_project_public(visibility))
+    if not allowed:
+        return JsonResponse({"error": "Permission denied"}, status=403)
+
+    deleting_current = (version_id == current_linkid)
+    deleter = get_current_user(request)
+
+    if deleting_current:
+        prev_versions_list = latest_project.get('previous_versions', [])
+
+        if prev_versions_list:
+            # Case 2: Promote the most recent previous version to current
+            most_recent_prev = prev_versions_list[-1]
+            prev_linkid = most_recent_prev['linkid']
+
+            # Build the new previous_versions for the promoted version (exclude itself)
+            new_prev_versions = [pv for pv in prev_versions_list if pv['linkid'] != prev_linkid]
+
+            # Copy forward important metadata from the current version
+            metadata_to_copy = {}
+            for field in ['project_members', 'subscribers', 'views', 'downloads',
+                          'alias_name', 'publication_link', 'private', 'privateKey', 'featured']:
+                if field in latest_project:
+                    metadata_to_copy[field] = latest_project[field]
+
+            # Un-delete and make the previous version current
+            update_fields = {
+                'current': True,
+                'delete': False,
+                'previous_versions': new_prev_versions,
+            }
+            update_fields.update(metadata_to_copy)
+
+            collection_handle.update_one(
+                {'_id': ObjectId(prev_linkid)},
+                {'$set': update_fields}
+            )
+
+            # Soft-delete the current version
+            collection_handle.update_one(
+                {'_id': ObjectId(current_linkid)},
+                {'$set': {
+                    'delete': True,
+                    'current': False,
+                    'delete_user': deleter,
+                    'delete_date': get_date(),
+                    'version_deleted_from_history': True,
+                }}
+            )
+
+            # Update site statistics
+            vis = normalize_visibility_field(latest_project.get('private', 'private'))
+            delete_project_from_site_statistics(latest_project, is_project_private(vis))
+
+            logging.info(f"Deleted current version {current_linkid}, promoted {prev_linkid} to current")
+
+            return JsonResponse({
+                "success": True,
+                "redirect": f"/project/{prev_linkid}"
+            })
+        else:
+            # Case 3: No previous versions - delete the entire project
+            collection_handle.update_one(
+                {'_id': ObjectId(current_linkid)},
+                {'$set': {
+                    'delete': True,
+                    'current': False,
+                    'delete_user': deleter,
+                    'delete_date': get_date(),
+                    'version_deleted_from_history': True,
+                }}
+            )
+
+            vis = normalize_visibility_field(latest_project.get('private', 'private'))
+            delete_project_from_site_statistics(latest_project, is_project_private(vis))
+
+            logging.info(f"Deleted sole version {current_linkid}, project fully removed")
+
+            return JsonResponse({
+                "success": True,
+                "redirect": "/accounts/profile/"
+            })
+    else:
+        # Case 1: Deleting an old (non-current) version
+        # Remove from the current project's previous_versions array
+        new_prev_versions = [
+            pv for pv in latest_project.get('previous_versions', [])
+            if pv['linkid'] != version_id
+        ]
+
+        collection_handle.update_one(
+            {'_id': latest_project['_id']},
+            {'$set': {'previous_versions': new_prev_versions}}
+        )
+
+        # Mark the old version document so it won't reappear
+        try:
+            collection_handle.update_one(
+                {'_id': ObjectId(version_id)},
+                {'$set': {'version_deleted_from_history': True}}
+            )
+        except Exception:
+            pass
+
+        logging.info(f"Deleted old version {version_id} from history of project {current_linkid}")
+
+        return JsonResponse({
+            "success": True,
+            "redirect": f"/project/{current_linkid}"
+        })
+
+
 def project_update(request, project_name):
     """
     Updates the 'current' field for a project that has been updated
@@ -3663,9 +3803,12 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         })()
         mock_request.POST.update(form_data)
 
-        # Recreate form from saved data
-        form = RunForm(mock_request.POST)
-        
+        # Recreate form from saved data.
+        # Use UpdateForm so that the version fields (AA_version, AC_version,
+        # ASP_version) — which are only defined on UpdateForm, not RunForm —
+        # are parsed into cleaned_data and available to create_project_helper.
+        form = UpdateForm(mock_request.POST)
+
         # Validate the form before passing to _create_project
         if not form.is_valid():
             logging.error(f"Form validation failed in _process_and_aggregate_files: {form.errors}")
@@ -4255,6 +4398,23 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
         project['subscribers'] = old_subscribers
     else:
         project['subscribers'] = []
+
+    # Pre-seed version fields from form data (user-provided values on the edit form).
+    # form_to_dict() only captures model fields via model_to_dict(), so AA_version /
+    # AC_version / ASP_version — which are extra CharField fields on UpdateForm, not
+    # model fields — must be read directly from form.cleaned_data.
+    # get_tool_versions() will then merge these with any versions detected inside the
+    # uploaded feature data, producing the correct union.
+    #
+    # Important: treat blank and the default placeholder 'NA' (any case) as "not
+    # provided".  When the user leaves a version field at 'NA', we want the versions
+    # that the aggregation detected from the actual sample data to win, not the
+    # placeholder.  Only pre-seed when the user has typed a real version string.
+    if hasattr(form, 'cleaned_data'):
+        for ver_key in ('AA_version', 'AC_version', 'ASP_version'):
+            form_val = str(form.cleaned_data.get(ver_key, '') or '').strip()
+            if form_val and form_val.upper() != 'NA':
+                project[ver_key] = form_val
 
     # iterate over project['runs'] and get the unique values across all runs
     # of AA_version, AC_version and 'AS-P_version'. Then add them to the project dict
