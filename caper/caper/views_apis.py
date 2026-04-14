@@ -213,15 +213,16 @@ class ProjectFileAddView(APIView):
 
         alert_message = None
         project_data_path = tmp_project_data_path
-        file_fps = [uploaded_file.name]
+        uploaded_file_path = os.path.join(tmp_project_data_path, uploaded_file.name)
+        file_fps = [uploaded_file_path]
         url = f'http://127.0.0.1:8000/project/{project["linkid"]}/download'
-        download_path = project_data_path + '/download.tar.gz'
+        download_path = os.path.join(project_data_path, 'download.tar.gz')
         try:
             ## try to download old project file
             print(f"PREVIOUS FILE FPS LIST: {file_fps}")
 
             download = download_file(url, download_path)
-            file_fps.append(os.path.join('download.tar.gz'))
+            file_fps.append(download_path)
 
         except:
             logging.error("Could not download existing project data for aggregation")
