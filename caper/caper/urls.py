@@ -95,6 +95,7 @@ urlpatterns += [
     path('data-qc/make-project-current/<str:project_id>/', views.make_project_current, name='make_project_current'),
     path('upload_api/', views.FileUploadView.as_view(), name = 'Document'),
     path('add_samples_to_project_api/', views.ProjectFileAddView.as_view(), name='addSamplesToProject'),
+    path('api/background-task-status/', views.BackgroundTaskStatusView.as_view(), name='background_task_status'),
 
     path('robots.txt', views.robots, name = "robots.txt"),
     path('loading/', views.loading),

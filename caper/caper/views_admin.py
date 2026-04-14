@@ -37,6 +37,7 @@ from .utils import (
     form_to_dict, get_date, db_handle_primary, format_visibility_for_display,
     get_project_version_chain,
 )
+from .background_tasks import get_background_task_status
 
 from .extra_metadata import *
 
@@ -874,11 +875,15 @@ def admin_prepare_shutdown(request):
     # Get current status for both flags
     shutdown_status = get_shutdown_pending()
     registration_disabled_status = get_registration_disabled()
-    
+
+    # Get background task status for display at the top of the page
+    task_status = get_background_task_status()
+
     return render(request, 'pages/admin_settings.html', {
         'shutdown_pending': shutdown_status,
         'registration_disabled': registration_disabled_status,
-        'user': request.user
+        'user': request.user,
+        'task_status': task_status,
     })
 
 

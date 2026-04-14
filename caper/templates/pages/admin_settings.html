@@ -11,6 +11,87 @@
         </div>
     </div>
 
+    <!-- Background Task Status Section -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card border-{% if task_status.is_busy %}warning{% else %}success{% endif %}">
+                <div class="card-header bg-{% if task_status.is_busy %}warning{% else %}success{% endif %} text-{% if task_status.is_busy %}dark{% else %}white{% endif %} d-flex justify-content-between align-items-center">
+                    <span>
+                        <strong>Background Processing Status</strong>
+                        &nbsp;
+                        {% if task_status.is_busy %}
+                            <span class="badge badge-dark">
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                {{ task_status.active_count }} task{{ task_status.active_count|pluralize }} running
+                            </span>
+                        {% else %}
+                            <span class="badge badge-light">Idle</span>
+                        {% endif %}
+                    </span>
+                    <small>
+                        Thread pool: {{ task_status.active_count }} / {{ task_status.max_workers }} workers in use
+                        &nbsp;|&nbsp;
+                        <a href="/api/background-task-status/" target="_blank" class="text-{% if task_status.is_busy %}dark{% else %}white{% endif %}">
+                            <code style="font-size:0.8em;">/api/background-task-status/</code> ↗
+                        </a>
+                    </small>
+                </div>
+                <div class="card-body py-2">
+                    {% if task_status.is_busy %}
+                        <p class="mb-2 text-warning"><strong>⚠ A project create or edit operation is currently in progress.</strong></p>
+                        <table class="table table-sm table-bordered mb-0">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>Task</th>
+                                    <th>State</th>
+                                    <th>Started At</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for task in task_status.tasks %}
+                                <tr>
+                                    <td><code>{{ task.label }}</code></td>
+                                    <td>
+                                        {% if task.state == 'running' %}
+                                            <span class="badge badge-warning">
+                                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                                running
+                                            </span>
+                                        {% elif task.state == 'pending' %}
+                                            <span class="badge badge-secondary">queued</span>
+                                        {% else %}
+                                            <span class="badge badge-info">{{ task.state }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ task.started_at }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="mb-0 text-success">
+                            <strong>✓ No background tasks running.</strong>
+                            It is safe to enable shutdown mode or perform maintenance.
+                        </p>
+                    {% endif %}
+                </div>
+                <div class="card-footer text-muted py-1" style="font-size:0.8em;">
+                    <form method="get" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">⟳ Refresh</button>
+                    </form>
+                    &nbsp; Page auto-refreshes every 15 seconds when tasks are running.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if task_status.is_busy %}
+    <script>
+        // Auto-refresh while background tasks are running
+        setTimeout(function() { location.reload(); }, 15000);
+    </script>
+    {% endif %}
+
     <!-- Shutdown Mode Section -->
     <div class="row mb-4">
         <div class="col-md-12">
