@@ -28,7 +28,7 @@ from .serializers import FileSerializer
 from .forms import RunForm
 from .utils import (
     collection_handle, get_one_project, form_to_dict,
-    get_latest_project_version
+    get_latest_project_version, normalize_visibility_field
 )
 from .extra_metadata import *
 
@@ -283,7 +283,7 @@ class ProjectFileAddView(APIView):
                     'project_name': project.get('project_name', ''),
                     'publication_link': project.get('publication_link', ''),
                     'description': project.get('description', ''),
-                    'private': project.get('private', True),
+                    'private': normalize_visibility_field(project.get('private', 'private')),
                     'project_members': ','.join(project.get('project_members', [])),
                     'alias': project.get('alias_name', ''),
                     'accept_license': True
