@@ -548,6 +548,34 @@
             });
     }
 
+    function downloadMetadata() {
+        document.body.classList.add('wait-cursor');
+        fetch("/project/{{ project.linkid }}/download_metadata/")
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = '{{ project.project_name|default:"project" }}_metadata.tsv';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                document.body.classList.remove('wait-cursor');
+            })
+            .catch(error => {
+                console.error('Download failed:', error);
+                alert('Failed to download metadata. Please try again.');
+                document.body.classList.remove('wait-cursor');
+            });
+    }
+
     function downloadAndReload() {
         // Add wait cursor class to body
         document.body.classList.add('wait-cursor');
@@ -635,8 +663,8 @@
     </nav>
 </div>
 
-<div class="container row" style="margin:auto; padding:0px; padding-top: 20px;">
-    <div class="col-md-9">
+<div class="container row" style="margin:auto; padding:0px; padding-top: 20px; align-items: flex-end;">
+    <div class="col-md-7">
         <h2>Project: <span style="font-weight: 200">{{ project.project_name }}</span>
 
         {% if not viewing_old_project %}
@@ -735,17 +763,9 @@
     </div>
 
     {% if not is_empty_project %}
+    <!-- Info column: visibility, project members, subscription, views/downloads -->
     <div class="col-md-3" style="text-align:left;">
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; width: 205px; display: block;"
-           onclick="downloadAndReload();">
-            <i class="fas fa-download"></i> Download Project
-        </a>
-
-        <a class="btn btn-primary" style="color: white; margin-bottom: 12px; cursor: pointer; width: 205px; display: block;"
-           onclick="downloadSummaryTable();">
-            <i class="fas fa-download"></i> Download Summary
-        </a>
-        {% if visibility_display != 'Public' %}<div style="">Visibility: <b>{{ visibility_display }}</b></div>{% endif %}
+        {% if visibility_display != 'Public' %}<div style="margin-bottom: 8px;">Visibility: <b>{{ visibility_display }}</b></div>{% endif %}
         <div id="project-members-accordion" style="margin-bottom: 15px; ">
             <style>
                 .members-toggle:not(.expanded)::before,
@@ -775,7 +795,7 @@
             <div style="display: inline-block; text-align: left;">
                 <span class="members-toggle" onclick="toggleMembers()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
             </div>
-            <div id="members-list" style="display: none; margin-top: 8px; text-align: left; width: 205px;">
+            <div id="members-list" style="display: none; margin-top: 8px; text-align: left;">
                 {{ project.project_members|join:", " }}
             </div>
         </div>
@@ -872,6 +892,24 @@
         {% endif %}
           <div id="project_statistics" style="text-align:left;"><div style="display: inline-block; text-align: left;">Views: {{ views }} | Downloads: <span id='downloads'>{{downloads}}</span></div></div>
        
+    </div>
+
+    <!-- Downloads column: Download Project, Download Summary, Download Metadata -->
+    <div class="col-md-2" style="text-align:right; padding-bottom: 6px;">
+        <div style="display: inline-flex; flex-direction: column; gap: 10px; align-items: stretch;">
+            <a class="btn btn-primary btn-sm" style="color: white; white-space: nowrap; padding: 2px 8px;"
+               onclick="downloadAndReload();">
+                <i class="fas fa-download"></i> Download Project
+            </a>
+            <a class="btn btn-primary btn-sm" style="color: white; cursor: pointer; white-space: nowrap; padding: 2px 8px;"
+               onclick="downloadSummaryTable();">
+                <i class="fas fa-download"></i> Download Summary
+            </a>
+            <a class="btn btn-primary btn-sm" style="color: white; cursor: pointer; white-space: nowrap; padding: 2px 8px;"
+               onclick="downloadMetadata();">
+                <i class="fas fa-download"></i> Download Metadata
+            </a>
+        </div>
     </div>
     
 <div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; display:none;">
