@@ -2668,6 +2668,7 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
                             'description': form_dict['description'], 'date': get_date(),
                             'private': normalize_visibility_field(form_dict['private']),
                             'sample_data': sample_data,
+                            'sample_count': len(current_runs),
                             'project_members': form_dict['project_members'],
                             'subscribers': updated_subscribers,
                             'publication_link': form_dict['publication_link'],
@@ -2686,14 +2687,45 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
 
         if form.is_valid():
             collection_handle.update_one(query, new_val)
-            edit_proj_privacy(project, old_privacy, new_privacy)
+
+            # Update site statistics -------------------------------------------
+            # Determine whether any samples were actually removed.
+            samples_were_removed = (
+                samples_to_remove
+                and len(samples_to_remove) > 0
+                and len(current_runs) != len(project.get('runs', {}))
+            )
+            if samples_were_removed:
+                # Samples were removed (possibly alongside a privacy change).
+                # We must:
+                #   1. Subtract the OLD project's full contribution from stats.
+                #   2. Add back the NEW project (fewer samples, potentially new privacy).
+                old_is_private = is_project_private(normalize_visibility_field(old_privacy))
+                new_is_private = is_project_private(normalize_visibility_field(new_privacy))
+
+                # Build an in-memory snapshot of the updated project for adding stats.
+                updated_project_snapshot = dict(project)
+                updated_project_snapshot['runs'] = current_runs
+                updated_project_snapshot['private'] = normalize_visibility_field(form_dict['private'])
+
+                delete_project_from_site_statistics(project, is_private=old_is_private)
+                add_project_to_site_statistics(updated_project_snapshot, is_private=new_is_private)
+                logging.debug(
+                    f"Site stats updated after sample removal: "
+                    f"{len(project.get('runs', {}))} → {len(current_runs)} samples"
+                )
+            else:
+                # No samples removed – only a potential privacy change.
+                edit_proj_privacy(project, old_privacy, new_privacy)
+            # ------------------------------------------------------------------
+
             logging.debug("Updated collection_handle with new data")
             # Audit log: record the edit_project (no new version) event.
             # Use the stored linkid (not the URL param) to build the correct S3 URI.
             _aa = form.cleaned_data.get('AA_version', '') or project.get('AA_version', 'NA')
             _ac = form.cleaned_data.get('AC_version', '') or project.get('AC_version', 'NA')
             _asp = form.cleaned_data.get('ASP_version', '') or project.get('ASP_version', 'NA')
-            _sample_count = project.get('sample_count') or len(project.get('runs', {}))
+            _sample_count = len(current_runs)   # use updated count, not stale project field
             _linkid = str(project.get('linkid', project_name))
             log_project_audit_event(
                 user=request.user,
@@ -4145,7 +4177,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
 
         # Create new project
         new_id = collection_handle.insert_one(project)
-        add_project_to_site_statistics(project, project['private'])
+        add_project_to_site_statistics(project, is_project_private(normalize_visibility_field(project['private'])))
         project_id = new_id.inserted_id
 
         # move the project location to a new name using the UUID to prevent name collisions
@@ -4184,7 +4216,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
             project['featured'] = True
             collection_handle.update_one({'_id': project_id}, {"$set": {'featured': True}})
         
-        add_project_to_site_statistics(project, project['private'])
+        add_project_to_site_statistics(project, is_project_private(normalize_visibility_field(project['private'])))
 
     file_location = f'{project_data_path}/{request_file.name}'
     logging.debug("file stats: " + str(os.stat(file_location).st_size))
