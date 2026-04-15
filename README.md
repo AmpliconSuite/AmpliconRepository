@@ -135,8 +135,8 @@ For shutdown at the end of your session, you can do `sudo neo4j stop`
 
 ## 5. Set up secret keys for OAuth2 and other environment variables
 - Make sure you have the `config.sh` file from another developer (this contains secret key information)
-- Run the command to initialize variables:
-`source config.sh`
+- Run the command to initialize variables (from the top-level repo directory):
+`source caper/config.sh`
 
 For local deployments, you will need to ensure that the following two variables are set to FALSE, as shown below
 ```
