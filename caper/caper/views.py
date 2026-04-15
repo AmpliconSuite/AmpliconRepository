@@ -15,7 +15,7 @@ logging.getLogger("pymongo").setLevel(logging.WARNING)
 
 from bson.objectid import ObjectId
 
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, Http404, JsonResponse
+from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, HttpResponseNotFound, Http404, JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 
@@ -917,7 +917,11 @@ def project_download(request, project_name):
                 # The object does not exist.
                 # so we need to get a local file from mongo and push that to S3
                 logging.debug("===== XXX PROJECT FILE NOT IN S3 --  GET IT IN THERE")
-                tar_id = project['tarfile']
+                tar_id = project.get('tarfile')
+                if not tar_id:
+                    # Project has no samples yet (empty project) – nothing to download
+                    logging.info(f"==== XXX project {project_name} has no tarfile yet (empty project), returning 404")
+                    return HttpResponseNotFound('Project has no samples yet.')
                 tar_file_wrapper = FileWrapper(fs_handle.get(ObjectId(tar_id)), blksize=32728)
 
                 isExist = os.path.exists(f'{project_data_path}')
@@ -953,6 +957,10 @@ def project_download(request, project_name):
     logging.info('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
     try:
         file_location = find_one('*.tar.gz', project_data_path)
+        if not file_location:
+            # Project has no samples yet (empty project) – nothing to download
+            logging.info(f"==== XXX project {project_name} has no local tar.gz yet (empty project), returning 404")
+            return HttpResponseNotFound('Project has no samples yet.')
         response = StreamingHttpResponse(
         FileWrapper(
             open(file_location, "rb"),
@@ -967,7 +975,9 @@ def project_download(request, project_name):
     except:
         message = f"Project {project_name} is unavailable or deleted."
         messages.error(request, message)
-        return redirect(request.META['HTTP_REFERER'])
+        if 'HTTP_REFERER' in request.META:
+            return redirect(request.META['HTTP_REFERER'])
+        return HttpResponseNotFound(message)
 
     #except:
        # raise Http404()
