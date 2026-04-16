@@ -4619,12 +4619,25 @@ def coamplification_graph(request):
 
     # Filter out mm10, Unknown, and Multiple reference genome projects
     # AND add reference_class
+    # AND exclude projects with no ecDNA samples
     filtered_projects = []
     for proj in all_projects:
         prepare_project_linkid(proj)
         if 'runs' in proj and proj['runs']:
             ref_genome = reference_genome_from_project(proj['runs'])
             if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
+                # Check if the project has at least one ecDNA amplicon
+                has_ecdna = False
+                for sample_data in proj['runs'].values():
+                    if isinstance(sample_data, list):
+                        for entry in sample_data:
+                            if isinstance(entry, dict) and entry.get('Classification') == 'ecDNA':
+                                has_ecdna = True
+                                break
+                    if has_ecdna:
+                        break
+                if not has_ecdna:
+                    continue
                 # Add reference genome and class to project object
                 proj['reference_genome'] = ref_genome
                 proj['reference_class'] = get_reference_class(ref_genome)
