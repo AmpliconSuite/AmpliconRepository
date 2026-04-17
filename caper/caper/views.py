@@ -7,6 +7,7 @@ import traceback
 import json
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from .background_tasks import _thread_executor, get_background_task_status
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -45,7 +46,7 @@ from .views_admin import (
 )
 
 # Import API views from separate module
-from .views_apis import FileUploadView, ProjectFileAddView
+from .views_apis import FileUploadView, ProjectFileAddView, BackgroundTaskStatusView
 
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient
@@ -102,7 +103,7 @@ from AmpliconSuiteAggregator import Aggregator
 # search
 from .search import *
 
-_thread_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='caper_worker')
+# _thread_executor is imported from .background_tasks (BackgroundTaskTracker)
 
 # SET UP HANDLE
 def loading(request):
@@ -3083,6 +3084,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 reaggregate_project=reaggregate_project,
                 oldFeatured=oldFeatured,
                 rollback_project_id=project_name,
+                task_label=f'Project Edit: {temp_proj_id}',
             )
             logging.info(f"EditProject - finished launch of background thread")
 
@@ -4135,7 +4137,8 @@ def create_project(request):
             _process_and_aggregate_files,
             file_fps, temp_proj_id, project_data_path, temp_directory,
             form_data, request.user, extra_metadata_file_fp, name_map_file_path,
-            None, None, None, AUDIT_EVENT_CREATE
+            None, None, None, AUDIT_EVENT_CREATE,
+            task_label=f'Project Create: {temp_proj_id}',
         )
         # Immediately redirect to the processing project page
         logging.info(f"CreateProject - finished launch of background thread to _process_and_aggregate_files")
@@ -4235,7 +4238,9 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
     _thread_executor.submit(
         extract_project_files,
         tarfile, file_location, project_data_path, project_id,
-        extra_metadata_file_fp, old_extra_metadata, samples_to_remove, remap_names_to_alias=remap_name_to_alias
+        extra_metadata_file_fp, old_extra_metadata, samples_to_remove,
+        remap_names_to_alias=remap_name_to_alias,
+        task_label=f'File Extraction: {project_id}',
     )
 
     if settings.USE_S3_DOWNLOADS:
@@ -4274,7 +4279,8 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
             upload_file_to_s3,
             f'{project_data_path}/{request_file.name}',
             s3_key_suffix,
-            on_complete
+            on_complete,
+            task_label=f'S3 Upload: {s3_key_suffix}',
         )
     elif audit_params:
         # S3 not configured – write the log immediately (no file size available).
@@ -4619,12 +4625,25 @@ def coamplification_graph(request):
 
     # Filter out mm10, Unknown, and Multiple reference genome projects
     # AND add reference_class
+    # AND exclude projects with no ecDNA samples
     filtered_projects = []
     for proj in all_projects:
         prepare_project_linkid(proj)
         if 'runs' in proj and proj['runs']:
             ref_genome = reference_genome_from_project(proj['runs'])
             if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
+                # Check if the project has at least one ecDNA amplicon
+                has_ecdna = False
+                for sample_data in proj['runs'].values():
+                    if isinstance(sample_data, list):
+                        for entry in sample_data:
+                            if isinstance(entry, dict) and entry.get('Classification') == 'ecDNA':
+                                has_ecdna = True
+                                break
+                    if has_ecdna:
+                        break
+                if not has_ecdna:
+                    continue
                 # Add reference genome and class to project object
                 proj['reference_genome'] = ref_genome
                 proj['reference_class'] = get_reference_class(ref_genome)

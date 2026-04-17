@@ -31,6 +31,7 @@ from .utils import (
     get_latest_project_version, normalize_visibility_field, is_project_private
 )
 from .extra_metadata import *
+from .background_tasks import get_background_task_status
 
 class FileUploadView(APIView):
     parser_class = (MultiPartParser,)
@@ -359,4 +360,34 @@ class ProjectFileAddView(APIView):
         email.content_subtype = "html"
         email.send(fail_silently=False)
         logging.error("Finished email sent")
+
+
+class BackgroundTaskStatusView(APIView):
+    """
+    Public read-only API endpoint that reports whether any project
+    create/edit background tasks are currently running in the thread pool.
+
+    GET /api/background-task-status/
+
+    Returns JSON:
+    {
+        "is_busy": true,
+        "active_count": 2,
+        "max_workers": 4,
+        "tasks": [
+            {"id": "...", "label": "Project Edit: <id>", "state": "running", "started_at": "..."},
+            ...
+        ]
+    }
+
+    Example curl usage:
+        curl https://example.com/api/background-task-status/
+    """
+
+    permission_classes = []  # publicly accessible – read-only and contains no sensitive data
+
+    def get(self, request):
+        task_status = get_background_task_status()
+        return Response(task_status, status=status.HTTP_200_OK)
+
 
