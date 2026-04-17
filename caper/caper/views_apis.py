@@ -28,7 +28,7 @@ from .serializers import FileSerializer
 from .forms import RunForm
 from .utils import (
     collection_handle, get_one_project, form_to_dict,
-    get_latest_project_version
+    get_latest_project_version, normalize_visibility_field
 )
 from .extra_metadata import *
 from .background_tasks import get_background_task_status
@@ -214,15 +214,16 @@ class ProjectFileAddView(APIView):
 
         alert_message = None
         project_data_path = tmp_project_data_path
-        file_fps = [uploaded_file.name]
+        uploaded_file_path = os.path.join(tmp_project_data_path, uploaded_file.name)
+        file_fps = [uploaded_file_path]
         url = f'http://127.0.0.1:8000/project/{project["linkid"]}/download'
-        download_path = project_data_path + '/download.tar.gz'
+        download_path = os.path.join(project_data_path, 'download.tar.gz')
         try:
             ## try to download old project file
             print(f"PREVIOUS FILE FPS LIST: {file_fps}")
 
             download = download_file(url, download_path)
-            file_fps.append(os.path.join('download.tar.gz'))
+            file_fps.append(download_path)
 
         except:
             logging.error("Could not download existing project data for aggregation")
@@ -283,20 +284,45 @@ class ProjectFileAddView(APIView):
                     'project_name': project.get('project_name', ''),
                     'publication_link': project.get('publication_link', ''),
                     'description': project.get('description', ''),
-                    'private': project.get('private', True),
+                    'private': normalize_visibility_field(project.get('private', 'private')),
                     'project_members': ','.join(project.get('project_members', [])),
                     'alias': project.get('alias_name', ''),
                     'accept_license': True
                 }
                 form = RunForm(form_data)
                 if not form.is_valid():
-                    logging.error(form.errors)
+                    logging.error(f"Form validation failed in process_file_in_background: {form.errors}")
+                    alert_message = "Edit project failed. Form validation error - please check project information."
+                    # project_delete already removed old project stats; restore them so the
+                    # site statistics are not left in a permanently decremented state.
+                    from .site_stats import add_project_to_site_statistics
+                    from .utils import normalize_visibility_field, is_project_private
+                    try:
+                        vis = normalize_visibility_field(project.get('private', 'private'))
+                        add_project_to_site_statistics(project, is_project_private(vis))
+                        logging.error("Restored old project stats after form validation failure")
+                    except Exception as stats_err:
+                        logging.error(f"Failed to restore stats after form validation failure: {stats_err}")
+                    raise ValueError(alert_message)
+
                 extra_metadata_file_fp = None
                 ## get extra metadata from csv first (if exists in old project), add it to the new proj
                 old_extra_metadata = get_extra_metadata_from_project(project)
                 new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions=new_prev_versions,
                                          previous_views=[views, downloads], old_extra_metadata = old_extra_metadata, old_subscribers = old_subscribers)
-                if new_id is not None:
+                if new_id is None:
+                    # _create_project failed after project_delete already removed the old project's
+                    # stats — restore them so the site statistics are not permanently wrong.
+                    from .site_stats import add_project_to_site_statistics
+                    from .utils import normalize_visibility_field, is_project_private
+                    try:
+                        vis = normalize_visibility_field(project.get('private', 'private'))
+                        add_project_to_site_statistics(project, is_project_private(vis))
+                        logging.error("Restored old project stats after _create_project failure")
+                    except Exception as stats_err:
+                        logging.error(f"Failed to restore stats after _create_project failure: {stats_err}")
+                    alert_message = "Edit project failed. Could not create new project version."
+                elif new_id is not None:
                     new_project_uuid = str(new_id.inserted_id)
                     alert_message = f"Aggregation successful. New samples added to project version: {new_project_uuid}"
 
