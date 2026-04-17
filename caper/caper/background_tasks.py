@@ -1,22 +1,43 @@
 """
 Background task tracking for the Caper application.
 
-Provides a tracked ThreadPoolExecutor so the admin UI and API can report
-whether any project-create or project-edit operations are currently running.
+Provides a tracked ThreadPoolExecutor that stores task status in MongoDB
+so that all gunicorn workers share a consistent view of running tasks.
 """
 
+import logging
 import threading
 import uuid
 import datetime
+import os
 from concurrent.futures import ThreadPoolExecutor
+
+
+def _get_tasks_collection():
+    """Lazily obtain the MongoDB background_tasks collection.
+
+    We import here (not at module level) to avoid circular imports –
+    utils.py imports from this module.
+    """
+    from .utils import get_db_handle, get_collection_handle
+    from pymongo import ReadPreference
+    db, _ = get_db_handle(
+        os.getenv('DB_NAME', default='caper'),
+        os.environ['DB_URI_SECRET'],
+        read_preference=ReadPreference.PRIMARY,
+    )
+    return get_collection_handle(db, 'background_tasks')
+
+
+# How long before a 'running' task is considered stale/dead (seconds).
+_STALE_THRESHOLD_SECONDS = 20 * 60  # 20 minutes
 
 
 class BackgroundTaskTracker:
     """
     Thin wrapper around :class:`~concurrent.futures.ThreadPoolExecutor` that
-    records every submitted task together with a human-readable label and start
-    time.  Finished tasks are lazily removed on the next call to
-    :meth:`submit` or :meth:`get_status`.
+    records every submitted task in MongoDB so all gunicorn workers can see
+    the same status.
     """
 
     def __init__(self, max_workers: int = 4, thread_name_prefix: str = 'caper_worker'):
@@ -24,72 +45,95 @@ class BackgroundTaskTracker:
             max_workers=max_workers,
             thread_name_prefix=thread_name_prefix,
         )
-        self._lock = threading.Lock()
-        self._tasks: dict = {}   # task_id -> {label, future, started_at}
+        self._max_workers = max_workers
+        self._col = None  # lazy
+
+    def _collection(self):
+        if self._col is None:
+            try:
+                self._col = _get_tasks_collection()
+                # Ensure TTL index so completed/failed docs are cleaned up automatically
+                self._col.create_index('updated_at', expireAfterSeconds=3600)
+            except Exception:
+                logging.exception("Could not connect to MongoDB for background task tracking")
+        return self._col
 
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
 
     def submit(self, fn, *args, task_label: str = None, **kwargs):
-        """Submit *fn* to the thread pool.
-
-        ``task_label`` is intercepted by this wrapper and **not** forwarded to
-        *fn*.  All other positional and keyword arguments are passed through
-        unchanged.
-        """
+        """Submit *fn* to the thread pool and record it in MongoDB."""
         if task_label is None:
             task_label = getattr(fn, '__name__', str(fn))
 
         task_id = uuid.uuid4().hex
-        started_at = datetime.datetime.now().isoformat(timespec='seconds')
+        now = datetime.datetime.utcnow()
 
-        future = self._executor.submit(fn, *args, **kwargs)
+        # Write to MongoDB first so it's visible immediately
+        col = self._collection()
+        if col is not None:
+            try:
+                col.insert_one({
+                    '_id': task_id,
+                    'label': task_label,
+                    'state': 'running',
+                    'started_at': now.isoformat(timespec='seconds'),
+                    'updated_at': now,
+                    'worker_pid': os.getpid(),
+                })
+            except Exception:
+                logging.exception("Failed to insert background task record")
 
-        with self._lock:
-            self._purge_done()
-            self._tasks[task_id] = {
-                'label': task_label,
-                'future': future,
-                'started_at': started_at,
-            }
+        def _wrapped():
+            try:
+                fn(*args, **kwargs)
+                self._mark_task(task_id, 'completed')
+            except Exception as exc:
+                self._mark_task(task_id, 'failed')
+                raise
 
+        future = self._executor.submit(_wrapped)
         return future
 
     def get_status(self) -> dict:
-        """Return a serialisable status snapshot.
+        """Return a serialisable status snapshot from MongoDB."""
+        col = self._collection()
+        if col is None:
+            return {
+                'is_busy': False,
+                'active_count': 0,
+                'max_workers': self._max_workers,
+                'tasks': [],
+            }
 
-        Returns a dict with:
+        # Purge stale tasks (tasks stuck as 'running' beyond the threshold)
+        cutoff = datetime.datetime.utcnow() - datetime.timedelta(seconds=_STALE_THRESHOLD_SECONDS)
+        try:
+            col.update_many(
+                {'state': 'running', 'updated_at': {'$lt': cutoff}},
+                {'$set': {'state': 'stale', 'updated_at': datetime.datetime.utcnow()}},
+            )
+        except Exception:
+            logging.exception("Failed to purge stale background tasks")
 
-        * ``is_busy``       – ``True`` when at least one task is not yet done
-        * ``active_count``  – number of running/pending tasks
-        * ``max_workers``   – size of the underlying thread pool
-        * ``tasks``         – list of task dicts (id, label, state, started_at)
-        """
-        with self._lock:
-            self._purge_done()
-
-            active = []
-            for tid, info in self._tasks.items():
-                f = info['future']
-                if not f.done():
-                    if f.running():
-                        state = 'running'
-                    elif f.cancelled():
-                        state = 'cancelled'
-                    else:
-                        state = 'pending'
-                    active.append({
-                        'id': tid,
-                        'label': info['label'],
-                        'state': state,
-                        'started_at': info['started_at'],
-                    })
+        active = []
+        try:
+            for doc in col.find({'state': 'running'}):
+                active.append({
+                    'id': doc['_id'],
+                    'label': doc.get('label', ''),
+                    'state': doc.get('state', 'running'),
+                    'started_at': doc.get('started_at', ''),
+                    'worker_pid': doc.get('worker_pid'),
+                })
+        except Exception:
+            logging.exception("Failed to query background tasks")
 
         return {
             'is_busy': len(active) > 0,
             'active_count': len(active),
-            'max_workers': self._executor._max_workers,
+            'max_workers': self._max_workers,
             'tasks': active,
         }
 
@@ -101,19 +145,23 @@ class BackgroundTaskTracker:
         return self._executor.shutdown(wait=wait)
 
     def __getattr__(self, name):
-        # Delegate any attribute not defined here to the real executor so that
-        # code that accesses e.g. _max_workers still works.
         return getattr(self._executor, name)
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _purge_done(self):
-        """Remove finished tasks (must be called with _lock held)."""
-        done_keys = [k for k, v in self._tasks.items() if v['future'].done()]
-        for k in done_keys:
-            del self._tasks[k]
+    def _mark_task(self, task_id: str, state: str):
+        """Update task state in MongoDB."""
+        col = self._collection()
+        if col is not None:
+            try:
+                col.update_one(
+                    {'_id': task_id},
+                    {'$set': {'state': state, 'updated_at': datetime.datetime.utcnow()}},
+                )
+            except Exception:
+                logging.exception(f"Failed to mark background task {task_id} as {state}")
 
 
 # ---------------------------------------------------------------------------
@@ -126,8 +174,6 @@ _thread_executor = BackgroundTaskTracker(max_workers=4, thread_name_prefix='cape
 def get_background_task_status() -> dict:
     """Return a status dict for the global background task executor.
 
-    Safe to call from any thread.  Can be imported without risk of circular
-    imports since this module has no Django-app-level dependencies.
+    Reads from MongoDB so the result is consistent across all gunicorn workers.
     """
     return _thread_executor.get_status()
-
