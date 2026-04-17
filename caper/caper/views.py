@@ -3721,7 +3721,7 @@ def toggle_project_subscription(request, project_name):
     # Update the project with new subscribers list
     query = {'_id': project['_id']}
     new_val = {"$set": {'subscribers': subscribers}}
-    collection_handle.update_one(query, new_val)
+    collection_handle_primary.update_one(query, new_val)
 
     # Return the subscription status
     return JsonResponse({
