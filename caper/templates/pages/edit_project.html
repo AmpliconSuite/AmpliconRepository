@@ -343,12 +343,34 @@
         <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
 
 
+        {% if has_existing_metadata %}
+        <div id="retainMetadataDiv" style="margin-bottom: 15px; padding: 10px; background-color: #f0fff4; border: 1px solid #28a745; border-radius: 4px;">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="retain_old_metadata" id="retainOldMetadataCheckbox" value="true" checked>
+                <label class="form-check-label" for="retainOldMetadataCheckbox">
+                    <strong>Retain previously uploaded metadata</strong>
+                </label>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if old_metadata_has_alias %}
+        <div id="remapFromOldMetadataDiv" style="margin-bottom: 15px; padding: 10px; background-color: #f0f8ff; border: 1px solid #ccc; border-radius: 4px;">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="remap_sample_names" id="remapFromOldMetadataCheckbox" value="true">
+                <label class="form-check-label" for="remapFromOldMetadataCheckbox">
+                    <strong>Remap sample_names with sample_name_alias from existing metadata</strong>
+                </label>
+            </div>
+        </div>
+        {% endif %}
+
         <div id="accordion">
           <div class="card">
               <div class="card-header" id="addMetadataHeader">
                   <h5 class="mb-0">
                       <button class="btn btn-link collapsed" type="button" data-toggle="collapse" data-target="#addMetadataContent" aria-expanded="true" aria-controls="addMetadataContent" style="padding: 0.25rem 0.5rem;">
-                          Add Metadata
+                          {% if has_existing_metadata %}Replace Metadata{% else %}Add Metadata{% endif %}
                       </button>
                   </h5>
               </div>
@@ -409,6 +431,7 @@
       
                       <h4>Note: Supported file types are <b>.csv</b>, <b>.tsv</b>, and <b>.xlsx</b>. Ensure your file is properly formatted!</h4>
                       <hr>
+
                       <div style="margin-bottom: 5px;">
                           <label for="metadataFileInput">Upload Metadata File:</label>
                           <input id="metadataFileInput" type="file" name="metadataFile" accept=".csv, .xlsx, .tsv">
@@ -603,12 +626,19 @@
         // 'append' needs no extra flag
       }
 
-      // Add the remap_sample_names checkbox value if checked
+      // Add the remap_sample_names checkbox value if checked (from new metadata or old metadata)
       const remapCheckbox = document.getElementById('remapSampleNamesCheckbox');
-      if (remapCheckbox && remapCheckbox.checked) {
+      const remapOldCheckbox = document.getElementById('remapFromOldMetadataCheckbox');
+      if ((remapCheckbox && remapCheckbox.checked) || (remapOldCheckbox && remapOldCheckbox.checked)) {
         fd.append('remap_sample_names', 'true');
       }
-  
+
+      // Add the retain_old_metadata checkbox value if checked
+      const retainMetaCb = document.getElementById('retainOldMetadataCheckbox');
+      if (retainMetaCb && retainMetaCb.checked) {
+        fd.append('retain_old_metadata', 'true');
+      }
+
       const xhr = new XMLHttpRequest();
       xhr.open('POST', uploadForm.action, true);
       xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
@@ -750,6 +780,21 @@
     if (fileInput) fileInput.addEventListener('change', updateInputs);
     if (metadataInput) metadataInput.addEventListener('change', updateInputs);
 
+    // Toggle remap-from-old-metadata visibility when retain checkbox changes
+    const retainCb = document.getElementById('retainOldMetadataCheckbox');
+    const remapOldDiv = document.getElementById('remapFromOldMetadataDiv');
+    const remapOldCb = document.getElementById('remapFromOldMetadataCheckbox');
+    if (retainCb && remapOldDiv) {
+        retainCb.addEventListener('change', function() {
+            if (!retainCb.checked) {
+                remapOldDiv.style.display = 'none';
+                if (remapOldCb) remapOldCb.checked = false;
+            } else {
+                remapOldDiv.style.display = '';
+            }
+        });
+    }
+
     // Disable sample removal when replace or re-aggregate mode is selected
     function updateSampleRemovalForMode() {
         const selectedMode = document.querySelector('input[name="project_mode"]:checked');
@@ -770,11 +815,29 @@
     if (metadataInput) {
         metadataInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
+            const retainCb = document.getElementById('retainOldMetadataCheckbox');
+            const remapOldDiv = document.getElementById('remapFromOldMetadataDiv');
+            const remapOldCb = document.getElementById('remapFromOldMetadataCheckbox');
             if (file) {
                 checkForSampleNameAlias(file);
+                // Auto-uncheck and disable the retain checkbox when a new file is selected
+                if (retainCb) {
+                    retainCb.checked = false;
+                    retainCb.disabled = true;
+                }
+                // Hide remap-from-old-metadata since old metadata won't be retained
+                if (remapOldDiv) remapOldDiv.style.display = 'none';
+                if (remapOldCb) remapOldCb.checked = false;
             } else {
                 // Hide the checkbox if no file is selected
                 document.getElementById('remapSampleNamesDiv').style.display = 'none';
+                // Re-enable the retain checkbox when no new file is selected
+                if (retainCb) {
+                    retainCb.disabled = false;
+                    retainCb.checked = true;
+                }
+                // Show remap-from-old-metadata again if it exists
+                if (remapOldDiv) remapOldDiv.style.display = '';
             }
         });
     }

@@ -2871,7 +2871,8 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
                              form_data, user, extra_metadata_file_fp,
                              previous_versions, previous_views, old_subscribers, old_project_data,
                              download_url, samples_to_remove, replace_project, remap_sample_names,
-                             reaggregate_project=False, oldFeatured=False, rollback_project_id=None):
+                             reaggregate_project=False, oldFeatured=False, rollback_project_id=None,
+                             old_extra_metadata=None):
     """
     Wrapper function for edit operations that handles notification and then calls _process_and_aggregate_files.
     This runs in a background thread for edit operations.
@@ -2982,6 +2983,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             audit_event_type=AUDIT_EVENT_EDIT_NEW_VERSION,
             oldFeatured=oldFeatured,
             rollback_project_id=rollback_project_id,
+            old_extra_metadata=old_extra_metadata,
         )
 
         # Clean up temporary files (downloaded old project and name map) after aggregation
@@ -3134,6 +3136,11 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
         ## get extra metadata from csv first (if exists in old project), add it to the new proj
         old_extra_metadata = get_extra_metadata_from_project(project)
 
+        # Check if user wants to retain old metadata (and no new file was uploaded)
+        retain_old_metadata = request.POST.get('retain_old_metadata', 'false').lower() == 'true'
+        if not retain_old_metadata or extra_metadata_file_fp:
+            old_extra_metadata = None
+
         oldFeatured = project.get('featured', False)
 
         temp_directory = os.path.join('./tmp/', str(temp_proj_id))
@@ -3188,6 +3195,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 oldFeatured=oldFeatured,
                 rollback_project_id=project_name,
                 task_label=f'Project Edit: {temp_proj_id}',
+                old_extra_metadata=old_extra_metadata,
             )
             logging.info(f"EditProject - finished launch of background thread")
 
@@ -3214,11 +3222,18 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 logging.error(f"Failed to rollback old project {project_name}: {rb_err}")
             
             alert_message = f"An error occurred during project update: {str(e)}"
+            _has_meta = has_sample_metadata(project)
+            _alias_in_meta = False
+            if _has_meta:
+                _om = get_extra_metadata_from_project(project)
+                _alias_in_meta = any('sample_name_alias' in (m or {}) for m in _om.values())
             return render(request, 'pages/edit_project.html',
                           {'project': project,
                            'run': form,
                            'alert_message': alert_message,
-                           'all_alias': json.dumps(get_all_alias())})
+                           'all_alias': json.dumps(get_all_alias()),
+                           'has_existing_metadata': _has_meta,
+                           'old_metadata_has_alias': _alias_in_meta})
     
     return None  # Indicate no new version was created
 
@@ -3379,12 +3394,23 @@ def edit_project_page(request, project_name):
                                    "ASP_version": ASPVersion,
                                    "AC_version": ACVersion })
 
+    _has_metadata = has_sample_metadata(project)
+    _old_metadata_has_alias = False
+    if _has_metadata:
+        _old_meta = get_extra_metadata_from_project(project)
+        _old_metadata_has_alias = any(
+            'sample_name_alias' in (meta or {})
+            for meta in _old_meta.values()
+        )
+
     return render(request, "pages/edit_project.html",
                   {'project': project,
                    'run': form,
                      'sample_names': sample_names,
                    'all_alias' :json.dumps(get_all_alias()),
                    "is_empty_project": is_empty_project,
+                   "has_existing_metadata": _has_metadata,
+                   "old_metadata_has_alias": _old_metadata_has_alias,
                    })
 
 
@@ -3814,7 +3840,7 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None):
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
@@ -4013,6 +4039,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
 
         if previous_versions is not None or previous_views is not None or old_subscribers is not None:
             success = _create_project(form, mock_request, extra_metadata_file_fp,
+                                       old_extra_metadata=old_extra_metadata,
                                        placeholder_project_id=temp_proj_id,
                                        previous_versions=previous_versions or [],
                                        previous_views=previous_views or [0, 0],
@@ -4022,6 +4049,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
 
         else:
             success = _create_project(form, mock_request, extra_metadata_file_fp, 
+                                       old_extra_metadata=old_extra_metadata,
                                        placeholder_project_id=temp_proj_id, 
                                        audit_params=cp_audit_params,
                                        remap_name_to_alias=(name_map_file_path is not None))
