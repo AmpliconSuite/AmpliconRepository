@@ -54,6 +54,8 @@ urlpatterns += [
 
     path("project/<project_name>/download", views.project_download, name="project_download"),
     path("project/<project_name>/download_summary", views.project_summary_download, name="project_summary_download"),
+    path("project/<project_name>/download_metadata", views.project_metadata_download, name="project_metadata_download"),
+    path("project/<project_name>/download_metadata/", views.project_metadata_download, name="project_metadata_download_slash"),
     path("project/<project_name>/delete", views.project_delete, name="project_delete"),
     path("project/<project_name>/delete_version/<version_id>", views.delete_project_version, name="delete_project_version"),
     path("project/<project_name>/regenerate_project_key", views.regenerate_project_key, name="regenerate_project_key"),

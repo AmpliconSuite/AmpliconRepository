@@ -1200,6 +1200,109 @@ def project_summary_download(request, project_name):
         return redirect(request.META.get('HTTP_REFERER', '/'))
 
 
+def project_metadata_download(request, project_name):
+    """
+    Download all sample metadata for a project as a TSV spreadsheet.
+    One row per unique sample.  Column priority (highest wins):
+      1. extra_metadata_from_csv  (user-supplied CSV overrides everything)
+      2. MongoDB top-level fields  (Sample_type, Tissue_of_origin, Cancer_type)
+      3. Sample_metadata_JSON      (GridFS blob: sample_description, sample_source, etc.)
+    Fixed columns appear first; any additional keys are appended sorted.
+    """
+    import csv
+    import io
+
+    project = get_one_project(project_name)
+    if not project:
+        messages.error(request, f"Project {project_name} not found.")
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+
+    # Access control
+    visibility = normalize_visibility_field(project.get('private', 'private'))
+    if is_project_private(visibility) and not is_project_hidden_public(visibility) \
+            and not is_user_a_project_member(project, request):
+        messages.error(request, "You do not have permission to access this project.")
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+
+    runs = project.get('runs', {})
+
+    # Fields to promote to the front of the TSV (in order)
+    FIXED_COLS = [
+        'sample_name', 'sample_type', 'tissue_of_origin', 'cancer_type',
+        'sample_description', 'sample_source', 'reference_genome',
+        'number_of_AA_amplicons', 'number_of_AA_features',
+    ]
+
+    sample_meta = {}
+    for _sample_key, feature_list in runs.items():
+        for feature in feature_list:
+            sample_name = str(feature.get('Sample_name', '')).strip()
+            if not sample_name:
+                continue
+            if sample_name in sample_meta:
+                # Already have core fields; still merge any new extra_metadata keys
+                for k, v in feature.get('extra_metadata_from_csv', {}).items():
+                    sample_meta[sample_name].setdefault(k, v)
+                continue
+
+            # ── Layer 1: GridFS Sample_metadata_JSON (base layer) ──────────────
+            meta = {}
+            metadata_id = feature.get('Sample_metadata_JSON')
+            if metadata_id and metadata_id not in ('Not Provided', '', None):
+                try:
+                    raw = fs_handle.get(ObjectId(str(metadata_id))).read()
+                    json_meta = json.loads(raw.decode('utf-8'))
+                    for k, v in json_meta.items():
+                        meta[k] = '' if v is None else v
+                except Exception as e:
+                    logging.warning(f"Could not read Sample_metadata_JSON for {sample_name}: {e}")
+
+            # ── Layer 2: MongoDB top-level fields (override if non-empty) ──────
+            meta['sample_name'] = sample_name
+            for mongo_key, tsv_key in (
+                ('Sample_type',      'sample_type'),
+                ('Tissue_of_origin', 'tissue_of_origin'),
+                ('Cancer_type',      'cancer_type'),
+            ):
+                val = feature.get(mongo_key) or ''
+                if val:
+                    meta[tsv_key] = val
+                else:
+                    meta.setdefault(tsv_key, '')
+
+            # ── Layer 3: extra_metadata_from_csv (highest priority) ────────────
+            for k, v in feature.get('extra_metadata_from_csv', {}).items():
+                meta[k] = v
+
+            sample_meta[sample_name] = meta
+
+    if not sample_meta:
+        messages.error(request, "No sample metadata found for this project.")
+        return redirect(request.META.get('HTTP_REFERER', '/'))
+
+    # Build column order: fixed columns first, then any remaining keys sorted
+    extra_cols = sorted(
+        k for k in {k for m in sample_meta.values() for k in m}
+        if k not in FIXED_COLS
+    )
+    all_cols = FIXED_COLS + extra_cols
+
+    # Write TSV to an in-memory buffer
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=all_cols, delimiter='\t',
+                            extrasaction='ignore', lineterminator='\n')
+    writer.writeheader()
+    for meta in sample_meta.values():
+        # Fill any fixed columns that didn't appear in this sample's data
+        row = {col: meta.get(col, '') for col in all_cols}
+        writer.writerow(row)
+
+    safe_name = project.get('project_name', project_name).replace(' ', '_').replace('/', '_')
+    response = HttpResponse(output.getvalue(), content_type='text/tab-separated-values')
+    response['Content-Disposition'] = f'attachment; filename="{safe_name}_metadata.tsv"'
+    return response
+
+
 def update_project_download_count(project, project_name):
     if check_if_db_field_exists(project, 'project_downloads'):
         project_download_data = project['project_downloads']
