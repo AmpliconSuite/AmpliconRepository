@@ -2644,6 +2644,39 @@ def remove_samples_from_runs(runs, samples_to_remove):
     return updated_runs
 
 
+def create_name_map_from_old_metadata(old_extra_metadata, output_dir):
+    """
+    Creates a name map TSV from old_extra_metadata dict (already stored in DB).
+
+    old_extra_metadata has the shape:
+        {sample_name: {"sample_name_alias": "...", ...other cols...}, ...}
+
+    Returns the path to the written TSV, or None if no alias data found.
+    """
+    import pandas as pd
+
+    if not old_extra_metadata:
+        return None
+
+    rows = [
+        (sample_name, meta['sample_name_alias'])
+        for sample_name, meta in old_extra_metadata.items()
+        if isinstance(meta, dict) and meta.get('sample_name_alias')
+    ]
+
+    if not rows:
+        logging.warning("old_extra_metadata has no sample_name_alias values - no name map created")
+        return None
+
+    os.makedirs(output_dir, exist_ok=True)
+    name_map_path = os.path.join(output_dir, 'sample_name_map.tsv')
+    pd.DataFrame(rows, columns=['sample_name', 'sample_name_alias']).to_csv(
+        name_map_path, sep='\t', index=False, header=False
+    )
+    logging.info(f"Created name map from retained metadata with {len(rows)} entries at: {name_map_path}")
+    return name_map_path
+
+
 def create_name_map_from_metadata(metadata_file, output_dir):
     """
     Creates a 2-column name map file from metadata file containing sample_name and sample_name_alias columns.
@@ -2899,19 +2932,22 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
     try:
         logging.info(f"_process_edit_and_notify - starting for project {placeholder_project_id} (reaggregate_project={reaggregate_project})")
         
-        # Create name map file if remapping is requested and metadata file was saved
+        # Create name map file if remapping is requested
         name_map_file_path = None
-        if remap_sample_names and extra_metadata_file_fp:
+        if remap_sample_names:
+            temp_name_map_dir = f"tmp/name_map_{placeholder_project_id}"
             try:
-                logging.info(f"Creating name map from metadata file: {extra_metadata_file_fp}")
-                # Create temporary directory for name map
-                temp_name_map_dir = f"tmp/name_map_{placeholder_project_id}"
-                os.makedirs(temp_name_map_dir, exist_ok=True)
-                
-                # Open the saved metadata file and create name map
-                with open(extra_metadata_file_fp, 'rb') as metadata_file:
-                    name_map_file_path = create_name_map_from_metadata(metadata_file, temp_name_map_dir)
-                
+                if extra_metadata_file_fp:
+                    # New metadata file uploaded - derive name map from it
+                    logging.info(f"Creating name map from metadata file: {extra_metadata_file_fp}")
+                    os.makedirs(temp_name_map_dir, exist_ok=True)
+                    with open(extra_metadata_file_fp, 'rb') as metadata_file:
+                        name_map_file_path = create_name_map_from_metadata(metadata_file, temp_name_map_dir)
+                elif old_extra_metadata:
+                    # Retaining old metadata - derive name map from stored sample metadata
+                    logging.info("Creating name map from retained (old) metadata")
+                    name_map_file_path = create_name_map_from_old_metadata(old_extra_metadata, temp_name_map_dir)
+
                 if name_map_file_path:
                     logging.info(f"Name map file created at: {name_map_file_path}")
                 else:
