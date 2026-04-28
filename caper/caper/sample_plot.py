@@ -213,6 +213,7 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
                     y_array = [round(item, 2) for item in y_array]
 
             amplicon_df = pd.DataFrame()
+            rows_buffer = []
             for ind, row in amplicon.iterrows():
                 locs = row["Location"]
                 for element in locs:
@@ -237,7 +238,7 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
                                 row['Feature Position'] = int(float(locsplit[0])) - offset//2
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(locsplit[0]) + "-"
-                                amplicon_df = amplicon_df.append(row)
+                                rows_buffer.append(row.copy())
 
                             else:
                                 if relative_width > max_width:
@@ -248,14 +249,17 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
                                         row['Feature Position'] = spos + k * abs_step
                                         row['Y-axis'] = 95
                                         curr_updated_loc += str(int(row['Feature Position']))
-                                        amplicon_df = amplicon_df.append(row)
+                                        rows_buffer.append(row.copy())
 
                                 row['Feature Position'] = int(float(locsplit[1])) + offset//2
                                 row['Y-axis'] = 95
                                 curr_updated_loc += str(int(row['Feature Position']))
-                                amplicon_df = amplicon_df.append(row)
+                                rows_buffer.append(row.copy())
 
-                            
+                        if rows_buffer:
+                            amplicon_df = pd.concat([amplicon_df, pd.DataFrame(rows_buffer)], ignore_index=True)
+                            rows_buffer = []
+
                         amplicon_df['Feature Maximum Copy Number'] = amplicon_df['Feature_maximum_copy_number']
                         amplicon_df['Feature Median Copy Number'] = amplicon_df['Feature_median_copy_number']
                         for i in range(len(amplicon_df['AA_amplicon_number'].unique())):
