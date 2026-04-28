@@ -20,10 +20,43 @@
             table = $('#availableProjectsTable').DataTable();
         }
 
+        // Track selections and ref-class across all pages independently of DOM state.
+        // DataTables removes off-page rows from the tbody on pagination, so we cannot
+        // rely on checkbox DOM state for rows not on the current page.
+        let selectedProjects = new Set();   // project name -> selected
+        let projectRefClass = {};           // project name -> ref class
+        let projectDisplayName = {};        // project name -> display name for warnings
+
+        // Build lookup maps from initial render (all rows are in DOM at this point)
+        table.rows().nodes().to$().each(function() {
+            let $row = $(this);
+            let $cb = $row.find('.project-checkbox');
+            let name = $cb.val();
+            projectRefClass[name] = $row.data('ref-class');
+            projectDisplayName[name] = $row.find('td:eq(1)').text().trim();
+        });
+
+        // Restore checkbox visual state for the current page from selectedProjects Set
+        function restorePageCheckboxStates() {
+            table.rows({page: 'current'}).nodes().to$().find('.project-checkbox').each(function() {
+                $(this).prop('checked', selectedProjects.has($(this).val()));
+            });
+            // Keep selectAll in sync
+            let allOnPage = table.rows({page: 'current'}).nodes().to$().find('.project-checkbox');
+            $('#selectAll').prop('checked', allOnPage.length > 0 && allOnPage.length === allOnPage.filter(':checked').length);
+        }
+
         // Select all checkbox functionality
         $('#selectAll').change(function() {
-            // Need to check ALL rows across all pages, not just visible ones
-            table.rows().nodes().to$().find('.project-checkbox').prop('checked', this.checked);
+            let checked = this.checked;
+            table.rows().nodes().to$().find('.project-checkbox').each(function() {
+                $(this).prop('checked', checked);
+                if (checked) {
+                    selectedProjects.add($(this).val());
+                } else {
+                    selectedProjects.delete($(this).val());
+                }
+            });
             updateReferenceClassValidation();
         });
 
@@ -31,27 +64,19 @@
             let selectedClasses = new Set();
             let classProjects = {};
 
-            // Check ALL rows across all pages, not just visible ones
-            table.rows().nodes().to$().find('.project-checkbox:checked').each(function() {
-                let row = $(this).closest('tr');
-                let refClass = row.data('ref-class');
+            selectedProjects.forEach(function(name) {
+                let refClass = projectRefClass[name];
                 selectedClasses.add(refClass);
-
                 if (!classProjects[refClass]) {
                     classProjects[refClass] = [];
                 }
-                classProjects[refClass].push(row.find('td:eq(1)').text());
+                classProjects[refClass].push(projectDisplayName[name] || name);
             });
 
-            // Clear previous warnings from ALL rows - be more aggressive
             $('#message_dialog').hide();
-
-            // Remove warning class from all table rows
-            $('#availableProjectsTable tbody tr').removeClass('table-warning');
             table.rows().nodes().to$().removeClass('table-warning');
 
             if (selectedClasses.size > 1) {
-                // Show warning
                 let hg19Projects = classProjects['hg19'] || [];
                 let hg38Projects = classProjects['hg38'] || [];
 
@@ -64,46 +89,59 @@
                 );
                 $('#message_dialog').show();
 
-                // Visually highlight conflicting rows (across all pages)
+                // Highlight conflicting rows that happen to be visible
                 table.rows().nodes().to$().find('.project-checkbox:checked').closest('tr').addClass('table-warning');
 
+                $('#submitButton').prop('disabled', true);
                 return false;
             }
 
+            $('#submitButton').prop('disabled', false);
             return true;
         }
 
-        // Use delegated event binding so it works for all pages
+        // Delegated event binding works for all pages
         $('#availableProjectsTable').on('change', '.project-checkbox', function() {
+            let name = $(this).val();
+            if ($(this).is(':checked')) {
+                selectedProjects.add(name);
+            } else {
+                selectedProjects.delete(name);
+            }
             updateReferenceClassValidation();
         });
 
-        // Trigger validation when page changes (user might see highlighted rows)
-        table.on('page.dt', function() {
-            // Small delay to ensure DOM is updated
-            setTimeout(updateReferenceClassValidation, 10);
+        // Restore checkbox states when DataTables re-renders a page
+        table.on('page.dt draw.dt', function() {
+            setTimeout(restorePageCheckboxStates, 10);
         });
 
-        // UPDATED: Form submission with reference validation
+        // Form submission — inject hidden inputs for all selected projects so that
+        // off-page selections (whose checkboxes are not in the DOM) reach the server.
         $('#coamplificationForm').on('submit', function(e) {
-            // Check if at least one project is selected
-            if (table.rows().nodes().to$().find('.project-checkbox:checked').length === 0) {
+            if (selectedProjects.size === 0) {
                 $('#message_dialog').removeClass('alert-success').addClass('alert-danger');
                 $('#message_to_user').text('Please select at least one project');
                 $('#message_dialog').show();
                 return false;
             }
 
-            // Validate reference compatibility
             if (!updateReferenceClassValidation()) {
                 e.preventDefault();
                 return false;
             }
 
-            // Show loading spinner and disable submit button
-            $('#submitButton').html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...').prop('disabled', true);
+            // Disable all checkboxes so they don't submit (some may be unchecked
+            // off-page duplicates of values we're about to inject as hidden inputs).
+            $('input[name="selected_projects"]').prop('disabled', true);
 
-            // Show processing message
+            // Inject one hidden input per selected project, covering all pages.
+            selectedProjects.forEach(function(name) {
+                $('<input>').attr({type: 'hidden', name: 'selected_projects', value: name})
+                            .appendTo('#coamplificationForm');
+            });
+
+            $('#submitButton').html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...').prop('disabled', true);
             $('#message_dialog').removeClass('alert-danger alert-warning').addClass('alert-success');
             $('#message_to_user').text('Building coamplification graph. This can take a few minutes. Please wait...');
             $('#message_dialog').show();
