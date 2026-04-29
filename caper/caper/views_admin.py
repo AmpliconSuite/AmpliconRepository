@@ -180,10 +180,7 @@ def admin_featured_projects(request):
 
     # Handle both legacy boolean False and new string 'public'
     public_projects = list(collection_handle_primary.find({
-        '$or': [
-            {'private': False},
-            {'private': 'public'}
-        ],
+        'private': {'$in': [False, 'public']},
         'delete': False,
         'current': True
     }))
@@ -435,7 +432,7 @@ def site_stats_regenerate(request):
 
 def project_stats_download(request):
     # Get public and private project data
-    public_projects = list(collection_handle.find({'private': False, 'delete': False, 'current': True}))
+    public_projects = list(collection_handle.find({'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}))
     for project in public_projects:
         if not 'project_downloads' in project:
             project['project_downloads_sum'] = 0
