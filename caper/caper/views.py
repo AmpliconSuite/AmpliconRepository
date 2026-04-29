@@ -289,10 +289,7 @@ def index(request):
     # Handle both legacy boolean False and new string 'public'
     public_query = {
         **base_query,
-        '$or': [
-            {'private': False},
-            {'private': 'public'}
-        ]
+        'private': {'$in': [False, 'public']}
     }
     public_projects = list(collection_handle.find(public_query, projection))
 
@@ -320,28 +317,10 @@ def index(request):
         # Include both legacy boolean True and new string 'private' and 'hidden_public'
         private_query = {
             **base_query,
+            'private': {'$in': [True, 'private', 'hidden_public']},
             '$or': [
-                {
-                    'private': True,
-                    '$or': [
-                        {'project_members': request.user.username},
-                        {'project_members': request.user.email}
-                    ]
-                },
-                {
-                    'private': 'private',
-                    '$or': [
-                        {'project_members': request.user.username},
-                        {'project_members': request.user.email}
-                    ]
-                },
-                {
-                    'private': 'hidden_public',
-                    '$or': [
-                        {'project_members': request.user.username},
-                        {'project_members': request.user.email}
-                    ]
-                }
+                {'project_members': request.user.username},
+                {'project_members': request.user.email}
             ]
         }
         private_projects = list(collection_handle.find(private_query, projection))
@@ -2195,7 +2174,7 @@ def gene_search_page(request):
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
-        query_obj = {'private': True, "$or": [{"project_members": username}, {"project_members": useremail}],
+        query_obj = {'private': {'$in': [True, 'private', 'hidden_public']}, "$or": [{"project_members": username}, {"project_members": useremail}],
                      'Oncogenes': gen_query, 'delete': False, 'current': True}
 
         private_projects = list(collection_handle.find(query_obj))
@@ -2203,7 +2182,7 @@ def gene_search_page(request):
     else:
         private_projects = []
 
-    public_projects = list(collection_handle.find({'private': False, 'Oncogenes': gen_query, 'delete': False, 'current': True}))
+    public_projects = list(collection_handle.find({'private': {'$in': [False, 'public']}, 'Oncogenes': gen_query, 'delete': False, 'current': True}))
     # public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
 
     for proj in private_projects:
@@ -3830,7 +3809,7 @@ def create_empty_project(request):
             'description': description,
             'date_created': current_date,
             'date': current_date,
-            'private': True,  # Empty projects can only be private
+            'private': 'private',  # Empty projects can only be private
             'delete': False,
             'project_members': project_members,
             'runs': {},  # Empty run dictionary
@@ -4787,7 +4766,7 @@ def coamplification_graph(request):
     all_projects = get_projects_close_cursor({"$or": [
         {"project_members": username},
         {"project_members": useremail},
-        {"private": False}
+        {"private": {"$in": [False, "public", "hidden_public"]}}
     ], 'delete': False})
 
     # Filter out mm10, Unknown, and Multiple reference genome projects

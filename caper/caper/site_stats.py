@@ -60,13 +60,8 @@ def regenerate_site_statistics():
     # Get all private projects (including hidden_public which are treated as private)
     all_private_proj_count = 0
     all_private_sample_count = 0
-    # Query for both legacy boolean True and new string values 'private' or 'hidden_public'
     all_private_projects = list(collection_handle.find({
-        '$or': [
-            {'private': True},
-            {'private': 'private'},
-            {'private': 'hidden_public'}
-        ],
+        'private': {'$in': [True, 'private', 'hidden_public']},
         'delete': False,
         'current': True
     }))
@@ -79,14 +74,11 @@ def regenerate_site_statistics():
         all_private_sample_count = all_private_sample_count + len(proj['runs'])
     # end private stats
 
-    # Get all public projects (legacy boolean False or new string value 'public')
+    # Get all public projects
     public_proj_count = 0
     public_sample_count = 0
     public_projects = list(collection_handle.find({
-        '$or': [
-            {'private': False},
-            {'private': 'public'}
-        ],
+        'private': {'$in': [False, 'public']},
         'delete': False,
         'current': True
     }))
