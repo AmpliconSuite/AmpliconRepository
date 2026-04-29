@@ -63,7 +63,7 @@ class CaperConfig(AppConfig):
             from .utils import collection_handle
             
             # Index 1: For public projects query on index page
-            # Query pattern: {'delete': False, 'current': True, 'private': False}
+            # Query pattern: {'delete': False, 'current': True, 'private': 'public'}
             # This speeds up the main index page query for public projects
             try:
                 collection_handle.create_index(
@@ -81,7 +81,7 @@ class CaperConfig(AppConfig):
                 logger.warning(f"Could not create index 'idx_index_public_projects': {str(e)}")
             
             # Index 2: For private projects query on index page
-            # Query pattern: {'delete': False, 'current': True, 'private': True, 'project_members': <user>}
+            # Query pattern: {'delete': False, 'current': True, 'private': {'$in': ['private', 'hidden_public']}, 'project_members': <user>}
             # This speeds up queries for authenticated users' private projects
             try:
                 collection_handle.create_index(
