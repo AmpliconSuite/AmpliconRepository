@@ -10,15 +10,18 @@ logger = logging.getLogger(__name__)
 class CaperConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'caper'
+    _ready_has_run = False
 
     def ready(self):
         """
         This method is called when Django starts up.
         It syncs static files to S3 in a background thread and ensures database indexes exist.
         """
-        # Only run this once (Django loads apps multiple times in certain scenarios)
-        if os.environ.get('RUN_MAIN') != 'true':
+        # Only run this once — works correctly under both Gunicorn and manage.py runserver.
+        # (The old RUN_MAIN guard only worked with the dev auto-reloader, not Gunicorn.)
+        if CaperConfig._ready_has_run:
             return
+        CaperConfig._ready_has_run = True
         
         # Ensure MongoDB indexes exist for optimal query performance
         try:
@@ -45,10 +48,13 @@ class CaperConfig(AppConfig):
         except Exception as e:
             logger.warning(f"Could not determine AmpliconSuiteAggregator version: {e}")
 
-        # Start the S3 sync in a background thread
-        sync_thread = threading.Thread(target=self.sync_static_to_s3, daemon=True)
-        sync_thread.start()
-        logger.info("Started background thread for syncing static files to S3")
+        # Start the S3 sync in a background thread (only when S3 static files are enabled)
+        if os.environ.get('S3_STATIC_FILES') == 'TRUE':
+            sync_thread = threading.Thread(target=self.sync_static_to_s3, daemon=True)
+            sync_thread.start()
+            logger.info("Started background thread for syncing static files to S3")
+        else:
+            logger.info("S3_STATIC_FILES not enabled; skipping static file sync to S3")
 
     def ensure_indexes(self):
         """
