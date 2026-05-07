@@ -75,8 +75,10 @@ def _extract_csv_metadata(project):
         for sample in sample_list:
             name = sample.get('Sample_name')
             meta = sample.get('extra_metadata_from_csv')
-            if name and isinstance(meta, dict) and meta:
-                result[name] = meta
+            # Coerce to str: MongoDB values should always be str after replace_underscore_keys,
+            # but older documents or edge cases may have numeric Sample_name values.
+            if name is not None and isinstance(meta, dict) and meta:
+                result[str(name)] = meta
     return result
 
 
@@ -134,7 +136,10 @@ def _apply_recovered_metadata(runs, recovered_meta):
     for sample_list in runs.values():
         for sample in sample_list:
             name = sample.get('Sample_name')
-            if not name or name not in recovered_meta:
+            if not name:
+                continue
+            name = str(name)  # normalise to str; see _extract_csv_metadata
+            if name not in recovered_meta:
                 continue
             existing = sample.get('extra_metadata_from_csv')
             if isinstance(existing, dict) and existing:
