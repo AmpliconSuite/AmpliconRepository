@@ -127,11 +127,13 @@ def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=No
                 if key != 'sample_name':
                     sample["extra_metadata_from_csv"][key] = value
                 if key.lower() == 'sample_name':
-                    sample["Sample_name"] = value
-                # make sure to do alias after sample_name so the alias is used 
+                    # Always coerce to str — value comes from a pandas row and
+                    # could be int/float if dtype inference was not fully suppressed
+                    sample["Sample_name"] = str(value)
+                # make sure to do alias after sample_name so the alias is used
                 if key.lower() == 'sample_name_alias':
                     if remap_name_to_alias:
-                        sample["Sample_name"] = value
+                        sample["Sample_name"] = str(value)
                 if key.lower() == 'cancer_type':
                     sample["Cancer_type"] = value
                 if key.lower() == 'sample_type':
@@ -219,7 +221,10 @@ def process_metadata_no_request(project_runs, metadata_file=None, old_extra_meta
         for sample_key, sample_list in project_runs.items():
             for sample in sample_list:
                 sample_name = sample.get('Sample_name')
-                if sample_name and sample_name in old_extra_metadata:
+                if not sample_name:
+                    continue
+                sample_name = str(sample_name)  # normalise: MongoDB values should already be str, but be defensive
+                if sample_name in old_extra_metadata:
                     if "extra_metadata_from_csv" not in sample:
                         sample["extra_metadata_from_csv"] = {}
                     sample["extra_metadata_from_csv"].update(old_extra_metadata[sample_name])
