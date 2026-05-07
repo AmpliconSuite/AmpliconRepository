@@ -20,13 +20,22 @@ def _build_metadata_lookup_from_dataframe(df):
     records = df.to_dict(orient='records')
     metadata_lookup = {}
     for row in records:
-        # look for sample name, case insensitive
-        sample_name = {k.lower(): v for k, v in row.items()}.get('sample_name')
-        if sample_name:
-            metadata_lookup[sample_name] = row
-        sample_name_alias = {k.lower(): v for k, v in row.items()}.get('sample_name_alias')
-        if sample_name_alias:
-            metadata_lookup[sample_name_alias] = row
+        lower_row = {k.lower(): v for k, v in row.items()}
+
+        # look for sample name, case insensitive.
+        # Always coerce to str so that numeric values read by pandas (int64 /
+        # float64) match the string Sample_name values stored in MongoDB.
+        # Guard against NaN: empty cells remain float('nan') even when
+        # dtype=str is passed to read_csv/read_excel, and float('nan') is
+        # truthy, so an explicit pd.isna() check is required.
+        sample_name = lower_row.get('sample_name')
+        if sample_name is not None and not (isinstance(sample_name, float) and pd.isna(sample_name)) and str(sample_name).strip():
+            metadata_lookup[str(sample_name)] = row
+
+        sample_name_alias = lower_row.get('sample_name_alias')
+        if sample_name_alias is not None and not (isinstance(sample_name_alias, float) and pd.isna(sample_name_alias)) and str(sample_name_alias).strip():
+            metadata_lookup[str(sample_name_alias)] = row
+
     return metadata_lookup
 
 
@@ -44,21 +53,29 @@ def _read_metadata_file(metadata_file=None, file_path=None):
     Raises:
         ValueError: If file type is unsupported or neither argument is provided
     """
+    # Always read every column as str to prevent pandas from inferring numeric
+    # dtypes (e.g. int64/float64) for all-numeric sample_name values.
+    # Without this, lookup keys become integers (123) while MongoDB Sample_name
+    # values are always strings ("123"), so no metadata gets applied.
+    # Reading as str also preserves leading-zero names like "053"; a naive
+    # post-hoc str(int(v)) fix would silently corrupt those to "53".
+    dtype_str = str
+
     if metadata_file:
         file_name = metadata_file.name
         if file_name.endswith('.xlsx'):
-            return pd.read_excel(metadata_file.open())
+            return pd.read_excel(metadata_file.open(), dtype=dtype_str)
         elif file_name.endswith('.csv') or file_name.endswith('.tsv'):
             delimiter = '\t' if file_name.endswith('.tsv') else ','
-            return pd.read_csv(metadata_file, delimiter=delimiter)
+            return pd.read_csv(metadata_file, delimiter=delimiter, dtype=dtype_str)
         else:
             raise ValueError("Unsupported file type. Please upload a .csv, .tsv, or .xlsx file.")
     elif file_path:
         if file_path.endswith('.xlsx'):
-            return pd.read_excel(file_path)
+            return pd.read_excel(file_path, dtype=dtype_str)
         elif file_path.endswith('.csv') or file_path.endswith('.tsv'):
             delimiter = '\t' if file_path.endswith('.tsv') else ','
-            return pd.read_csv(file_path, delimiter=delimiter)
+            return pd.read_csv(file_path, delimiter=delimiter, dtype=dtype_str)
         else:
             raise ValueError("Unsupported file type. Please provide a .csv, .tsv, or .xlsx file.")
     else:
@@ -84,6 +101,10 @@ def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=No
             sample_name = sample.get('Sample_name')
             if not sample_name:
                 continue
+            # Normalise to str: lookup keys are always strings (see
+            # _build_metadata_lookup_from_dataframe) and MongoDB values are
+            # strings too, but be defensive in case either side is numeric.
+            sample_name = str(sample_name)
 
             # O(1) lookup instead of O(n) nested iteration
             row = metadata_lookup.get(sample_name)
