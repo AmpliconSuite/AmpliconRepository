@@ -88,6 +88,7 @@ def test_visibility_cycle(request_factory, test_user, mongo_collection):
         # --- private: anonymous should be redirected to login ---
         req_priv = request_factory.get(f'/project/{project_id}')
         req_priv.user = anon
+        req_priv.session = {}
         resp_priv = project_page(req_priv, project_name=project_id)
         assert resp_priv.status_code in (301, 302), \
             "Private project must redirect unauthenticated user"
@@ -100,6 +101,7 @@ def test_visibility_cycle(request_factory, test_user, mongo_collection):
             {'$set': {'private': 'public'}})
         req_pub = request_factory.get(f'/project/{project_id}')
         req_pub.user = anon
+        req_pub.session = {}
         resp_pub = project_page(req_pub, project_name=project_id)
         assert resp_pub.status_code == 200, \
             "Public project must be accessible to unauthenticated users"
@@ -110,6 +112,7 @@ def test_visibility_cycle(request_factory, test_user, mongo_collection):
             {'$set': {'featured': True}})
         req_idx = request_factory.get('/')
         req_idx.user = anon
+        req_idx.session = {}
         resp_idx = index(req_idx)
         assert resp_idx.status_code == 200
         assert b'LifecycleTest_VisCycle' in resp_idx.content, \
@@ -121,6 +124,7 @@ def test_visibility_cycle(request_factory, test_user, mongo_collection):
             {'$set': {'private': 'private', 'featured': False}})
         req_repriv = request_factory.get(f'/project/{project_id}')
         req_repriv.user = anon
+        req_repriv.session = {}
         resp_repriv = project_page(req_repriv, project_name=project_id)
         assert resp_repriv.status_code in (301, 302), \
             "Re-privated project must redirect unauthenticated user"
@@ -159,6 +163,7 @@ def test_add_and_remove_project_member(
         # non_member_user is not yet a member — should be redirected
         req_denied = request_factory.get(f'/project/{project_id}')
         req_denied.user = non_member_user
+        req_denied.session = {}
         resp_denied = project_page(req_denied, project_name=project_id)
         assert resp_denied.status_code in (301, 302), \
             "Non-member should be redirected from private project"
@@ -170,6 +175,7 @@ def test_add_and_remove_project_member(
 
         req_member = request_factory.get(f'/project/{project_id}')
         req_member.user = non_member_user
+        req_member.session = {}
         resp_member = project_page(req_member, project_name=project_id)
         assert resp_member.status_code == 200, \
             "Added member must be able to view private project"
@@ -181,6 +187,7 @@ def test_add_and_remove_project_member(
 
         req_removed = request_factory.get(f'/project/{project_id}')
         req_removed.user = non_member_user
+        req_removed.session = {}
         resp_removed = project_page(req_removed, project_name=project_id)
         assert resp_removed.status_code in (301, 302), \
             "Removed member must be denied access to private project"

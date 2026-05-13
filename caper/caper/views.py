@@ -1482,6 +1482,9 @@ def sample_page(request, project_name, sample_name):
     if next_sample and len(next_sample) > 0:
         next_sample_name = next_sample[0].get('Sample_name')
 
+    if sample_data is None:
+        raise Http404(f"Sample {sample_name!r} not found in project {project_name!r}")
+
     sample_metadata = get_sample_metadata(sample_data)
     reference_genome = reference_genome_from_sample(sample_data)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))

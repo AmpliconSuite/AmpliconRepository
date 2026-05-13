@@ -126,11 +126,11 @@ def test_sample_png_exists_in_gridfs(loaded_datasets, mongo_collection):
             continue
         for feature in feature_list:
             if isinstance(feature, dict):
-                # Common field names for stored PNG GridFS IDs
-                for field in ('png_id', 'png', 'amplicon_image_id', 'image_id'):
-                    val = feature.get(field)
-                    if val:
-                        png_ids_found.append(val)
+                # Keys are stored with underscores (replace_underscore_keys transforms
+                # all space-separated keys before saving to MongoDB).
+                val = feature.get('AA_PNG_file')
+                if val and val != 'Not Provided':
+                    png_ids_found.append(val)
 
     assert len(png_ids_found) > 0, \
         "project_small should have at least one GridFS PNG reference in its features"
@@ -159,7 +159,7 @@ def test_pdf_download(loaded_datasets, request_factory, test_user, mongo_collect
         for feature in feature_list:
             if not isinstance(feature, dict):
                 continue
-            for field in ('pdf_id', 'pdf', 'amplicon_pdf_id'):
+            for field in ('AA_PDF_file',):
                 fid = feature.get(field)
                 if fid:
                     pdf_entry = str(fid)

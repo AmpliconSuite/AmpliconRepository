@@ -41,6 +41,11 @@ def pytest_configure(config):
     import django
     django.setup()
 
+    # Ensure Django ORM tables exist (idempotent; required by FileUploadView
+    # which saves to the UploadTarFile model in SQLite).
+    from django.core.management import call_command
+    call_command('migrate', '--run-syncdb', verbosity=0)
+
     # filebrowser_safe (a Mezzanine dependency) accesses settings.DEFAULT_FILE_STORAGE
     # at module import time.  This setting was removed in Django 5.x.  Patching it here
     # keeps the test environment working without modifying the application's settings.py.

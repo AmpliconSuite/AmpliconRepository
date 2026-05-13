@@ -145,14 +145,17 @@ def test_fulltext_search_returns_200(loaded_datasets, request_factory, test_user
 @pytest.mark.integration
 @pytest.mark.functional
 def test_fulltext_search_no_match(loaded_datasets, request_factory, test_user):
-    """Searching for a nonsense project name must return 200 with empty results."""
+    """Searching for a nonsense project name must return 200 with no result rows."""
     from caper.views import search_results
     req = request_factory.post('/search_results/', {'project_name': 'ZZZNOMATCH_PROJ'})
     req.user = test_user
     resp = search_results(req)
     assert resp.status_code == 200
-    # Both sample lists should be absent from template output
-    assert b'ZZZNOMATCH_PROJ' not in resp.content
+    # Neither of the loaded projects should appear in results.
+    # (The query string itself is echoed back in the form, so we check known project
+    # names from loaded_datasets rather than the query string.)
+    assert b'FuncTest_Small' not in resp.content
+    assert b'FuncTest_Medium' not in resp.content
 
 
 @pytest.mark.integration
@@ -195,9 +198,10 @@ def test_search_private_hidden_to_nonmember(
     req.user = non_member_user
     resp = search_results(req)
     assert resp.status_code == 200
-    # The private project name must not appear in the response content
-    assert b'FuncTest_Small' not in resp.content, \
-        "Private project must not appear in search results for non-members"
+    # The project name is echoed as the form's search-field value, so we check
+    # for the actual sample name (GBM39) which only appears in rendered result rows.
+    assert b'GBM39' not in resp.content, \
+        "Private project samples must not appear in search results for non-members"
 
 
 @pytest.mark.slow
