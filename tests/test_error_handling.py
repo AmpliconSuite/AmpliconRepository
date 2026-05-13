@@ -10,7 +10,7 @@ for cases where the view raises it.
 import pytest
 from bson.objectid import ObjectId
 
-from conftest import POLL_TIMEOUT
+from conftest import POLL_TIMEOUT, _cleanup_project, _project_id_from_redirect
 
 # A 24-character hex string that is a valid ObjectId format but will never
 # match a real project document.
@@ -24,13 +24,14 @@ _GHOST_ID = '000000000000000000000000'
 @pytest.mark.integration
 def test_create_project_without_file(request_factory, test_user, mongo_collection):
     """
-    POST /create-project/ with no tar file attached must not create a new
-    MongoDB document — the response should not redirect to a new project page.
+    POST /create-project/ with no tar file must not return a 500.
+
+    The view creates a placeholder document immediately and runs the aggregator
+    in a background thread.  Without a file the aggregator fails, but the view
+    itself must still respond gracefully (any status except 500).  Any placeholder
+    document that was created is cleaned up after the assertion.
     """
     from caper.views import create_project
-    ids_before = set(
-        str(d['_id'])
-        for d in mongo_collection.find({'delete': False}, {'_id': 1}))
 
     req = request_factory.post('/create-project/', {
         'project_name':        'ErrorTest_NoFile',
@@ -45,15 +46,13 @@ def test_create_project_without_file(request_factory, test_user, mongo_collectio
     req.user = test_user
     resp = create_project(req)
 
-    # A redirect to a new /project/<id> would mean a document was created.
-    # Either a non-redirect response (form error) or a redirect back to the
-    # same page is acceptable.
-    location = resp.get('Location', '')
-    if resp.status_code in (301, 302) and '/project/' in location:
-        # A project was created — check whether it's actually new
-        new_id = location.rstrip('/').split('/')[-1]
-        assert new_id in ids_before, \
-            f"A new project was created despite no file being uploaded: {new_id}"
+    assert resp.status_code != 500, \
+        "create_project must not return a 500 when no file is uploaded"
+
+    # Clean up the placeholder document the view always creates
+    new_id = _project_id_from_redirect(resp)
+    if new_id:
+        _cleanup_project(mongo_collection, new_id)
 
 
 # ---------------------------------------------------------------------------

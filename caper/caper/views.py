@@ -856,6 +856,8 @@ def find_one(pattern, path):
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
+    if project is None:
+        raise Http404(f"Project {project_name!r} not found")
     update_project_download_count(project, project_name)
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     try:
