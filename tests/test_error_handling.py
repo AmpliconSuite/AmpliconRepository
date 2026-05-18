@@ -18,6 +18,113 @@ _GHOST_ID = '000000000000000000000000'
 
 
 # ---------------------------------------------------------------------------
+# Issue #531 — uploading to an empty project must not crash with KeyError
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_download_empty_project_returns_404_not_keyerror(request_factory, test_user, mongo_collection):
+    """
+    Issue #531: project_download on a project with no 'tarfile' key must return
+    404, not crash with KeyError('tarfile').
+
+    The old code did project['tarfile'] directly; the fix uses project.get('tarfile').
+    """
+    from bson.objectid import ObjectId
+    from django.http import Http404
+    from caper.views import project_download
+
+    doc = {
+        'project_name': 'Issue531_EmptyDownloadTest',
+        'creator': test_user.username,
+        'private': 'private',
+        'delete': False,
+        'current': True,
+        'FINISHED?': True,
+        'EMPTY?': True,
+        'runs': {},
+        'sample_count': 0,
+        # Intentionally omitting 'tarfile' to reproduce issue #531
+    }
+    result = mongo_collection.insert_one(doc)
+    project_id = str(result.inserted_id)
+    mongo_collection.update_one(
+        {'_id': result.inserted_id},
+        {'$set': {'linkid': project_id}},
+    )
+
+    try:
+        req = request_factory.get(f'/project/{project_id}/download')
+        req.user = test_user
+        try:
+            resp = project_download(req, project_name=project_id)
+            assert resp.status_code in (302, 404), \
+                f"Expected 404 for empty-project download, got {resp.status_code}"
+        except Http404:
+            pass  # Acceptable: view raises Http404 directly
+        except KeyError as exc:
+            pytest.fail(
+                f"project_download raised KeyError({exc!r}) — "
+                "Issue #531 regression: missing 'tarfile' guard"
+            )
+    finally:
+        mongo_collection.delete_one({'_id': ObjectId(project_id)})
+
+
+# ---------------------------------------------------------------------------
+# Issue #515 — feature download views must handle 'Not Provided' feature IDs
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_pdf_download_not_provided_feature_id_returns_404(request_factory, test_user):
+    """
+    Issue #515: pdf_download called with feature_id='Not Provided' must return
+    a 404 response, not crash with bson.errors.InvalidId.
+    """
+    from django.http import Http404
+    from caper.views import pdf_download
+
+    req = request_factory.get('/project/x/sample/y/feature/z/pdf')
+    req.user = test_user
+
+    try:
+        resp = pdf_download(req, 'x', 'y', 'z', 'Not Provided')
+        assert resp.status_code in (400, 404), \
+            f"Expected 404 for 'Not Provided' feature_id, got {resp.status_code}"
+    except Http404:
+        pass  # Correct: view raises Http404 for missing-file sentinel
+    except Exception as exc:
+        pytest.fail(
+            f"pdf_download raised {type(exc).__name__}: {exc!r} for 'Not Provided' "
+            "feature_id — expected Http404 or a 404 response (Issue #515)"
+        )
+
+
+@pytest.mark.integration
+def test_png_download_not_provided_feature_id_returns_404(request_factory, test_user):
+    """
+    Issue #515: png_download called with feature_id='Not Provided' must return
+    a 404 response, not crash with bson.errors.InvalidId.
+    """
+    from django.http import Http404
+    from caper.views import png_download
+
+    req = request_factory.get('/project/x/sample/y/feature/z/png')
+    req.user = test_user
+
+    try:
+        resp = png_download(req, 'x', 'y', 'z', 'Not Provided')
+        assert resp.status_code in (400, 404), \
+            f"Expected 404 for 'Not Provided' feature_id, got {resp.status_code}"
+    except Http404:
+        pass  # Correct: view raises Http404 for missing-file sentinel
+    except Exception as exc:
+        pytest.fail(
+            f"png_download raised {type(exc).__name__}: {exc!r} for 'Not Provided' "
+            "feature_id — expected Http404 or a 404 response (Issue #515)"
+        )
+
+
+# ---------------------------------------------------------------------------
 # create_project error cases
 # ---------------------------------------------------------------------------
 
