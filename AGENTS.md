@@ -161,6 +161,11 @@ source caper/config.sh && cd caper && python -m pytest ../tests/ -m slow -v
 source caper/config.sh && cd caper && python -m pytest ../tests/ -v
 ```
 
+### Test datasets
+
+Additional test data files (tarballs, sample inputs, etc.) are available on Google Drive:
+https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=drive_link
+
 New tests go in the **slow suite** by default (mark with `@pytest.mark.slow`). Only move a test to the fast suite if it genuinely requires no database access and can be fully covered by mocks.
 
 ```python
