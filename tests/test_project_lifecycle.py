@@ -1,5 +1,6 @@
 """
-Integration tests for project lifecycle: privacy, featured flag, membership.
+Integration tests for project lifecycle: privacy, featured flag, membership,
+version history, and site statistics.
 
 Isolation rule: every test that mutates project state creates its own
 short-lived project and restores / cleans up in a try/finally block.
@@ -11,6 +12,7 @@ from bson.objectid import ObjectId
 
 from conftest import (
     _build_create_request,
+    _build_edit_request,
     _cleanup_project,
     _poll_until_finished,
     _project_id_from_redirect,
@@ -266,6 +268,247 @@ def test_replace_project_file_version_history(
         prev = edited_doc.get('previous_versions', [])
         assert len(prev) > 0, \
             "Reaggregated project should have a previous_versions entry"
+
+    finally:
+        for pid in created_ids:
+            _cleanup_project(mongo_collection, pid)
+
+
+# ---------------------------------------------------------------------------
+# Issue #511 — featured flag must survive reaggregation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_featured_flag_preserved_after_reaggregation(
+        request_factory, test_user, mongo_collection):
+    """
+    Issue #511: when a featured project is reaggregated, the new document must
+    carry forward featured=True from the previous version.
+    """
+    from caper.views import create_project, edit_project_page
+
+    req, handles = _build_create_request(
+        request_factory, test_user, 'LifecycleTest_Featured',
+        tar_path=DATASET_SMALL_TAR)
+    try:
+        resp = create_project(req)
+    finally:
+        for h in handles:
+            h.close()
+
+    project_id = _project_id_from_redirect(resp)
+    assert project_id, "Could not parse project_id from create redirect"
+    created_ids = [project_id]
+
+    try:
+        doc = _poll_until_finished(mongo_collection, project_id)
+        assert doc and not doc.get('aggregation_failed'), \
+            f"Initial aggregation failed: {doc.get('error_message') if doc else 'timeout'}"
+
+        # Mark the project as featured and public before reaggregation
+        mongo_collection.update_one(
+            {'_id': ObjectId(project_id)},
+            {'$set': {'featured': True, 'private': 'public'}})
+
+        # Reaggregate
+        edit_req, edit_handles = _build_edit_request(
+            request_factory, test_user, project_id,
+            project_name='LifecycleTest_Featured')
+        try:
+            edit_resp = edit_project_page(edit_req, project_name=project_id)
+        finally:
+            for h in edit_handles:
+                h.close()
+
+        assert edit_resp.status_code in (301, 302), \
+            f"[Edit] Expected redirect, got {edit_resp.status_code}"
+
+        new_id = _project_id_from_redirect(edit_resp)
+        poll_id = new_id if (new_id and new_id != project_id) else project_id
+        if new_id and new_id != project_id:
+            created_ids.append(new_id)
+
+        new_doc = _poll_until_finished(mongo_collection, poll_id)
+        assert new_doc is not None, \
+            f"Timed out waiting for reaggregation ({POLL_TIMEOUT}s)"
+
+        if new_doc.get('aggregation_failed'):
+            pytest.xfail(
+                f"Reaggregation failed: {new_doc.get('error_message', 'none')}")
+
+        assert new_doc.get('featured'), \
+            "featured=True must be preserved on the new project version after reaggregation (Issue #511)"
+
+    finally:
+        for pid in created_ids:
+            _cleanup_project(mongo_collection, pid)
+
+
+# ---------------------------------------------------------------------------
+# Issue #538 — reaggregation must not double-count site statistics
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_reaggregation_does_not_double_count_stats(
+        request_factory, test_user, mongo_collection):
+    """
+    Issue #538: when a project is reaggregated, site-statistics counters must
+    not be incremented a second time.  After create + reaggregate the count
+    must be baseline + 1, not baseline + 2.
+    """
+    from caper.views import create_project, edit_project_page
+    from caper.site_stats import get_latest_site_statistics
+
+    # Snapshot private-project count before this test adds anything
+    stats_before = get_latest_site_statistics() or {}
+    private_before = stats_before.get('all_private_proj_count', 0)
+
+    req, handles = _build_create_request(
+        request_factory, test_user, 'StatsTest_NoDouble',
+        tar_path=DATASET_SMALL_TAR)
+    try:
+        resp = create_project(req)
+    finally:
+        for h in handles:
+            h.close()
+
+    project_id = _project_id_from_redirect(resp)
+    assert project_id, "Could not parse project_id from create redirect"
+    created_ids = [project_id]
+
+    try:
+        doc = _poll_until_finished(mongo_collection, project_id)
+        assert doc and not doc.get('aggregation_failed'), \
+            f"Initial aggregation failed: {doc.get('error_message') if doc else 'timeout'}"
+
+        # Stats must have increased by exactly 1 after the create
+        stats_after_create = get_latest_site_statistics() or {}
+        private_after_create = stats_after_create.get('all_private_proj_count', 0)
+        assert private_after_create == private_before + 1, \
+            f"Expected private count = baseline+1 after create, " \
+            f"got baseline={private_before}, after={private_after_create}"
+
+        # Reaggregate
+        edit_req, edit_handles = _build_edit_request(
+            request_factory, test_user, project_id,
+            project_name='StatsTest_NoDouble')
+        try:
+            edit_resp = edit_project_page(edit_req, project_name=project_id)
+        finally:
+            for h in edit_handles:
+                h.close()
+
+        assert edit_resp.status_code in (301, 302), \
+            f"[Edit] Expected redirect, got {edit_resp.status_code}"
+
+        new_id = _project_id_from_redirect(edit_resp)
+        poll_id = new_id if (new_id and new_id != project_id) else project_id
+        if new_id and new_id != project_id:
+            created_ids.append(new_id)
+
+        new_doc = _poll_until_finished(mongo_collection, poll_id)
+        assert new_doc is not None, \
+            f"Timed out waiting for reaggregation ({POLL_TIMEOUT}s)"
+
+        if new_doc.get('aggregation_failed'):
+            pytest.xfail(
+                f"Reaggregation failed: {new_doc.get('error_message', 'none')}")
+
+        # After reaggregation: still exactly baseline + 1, NOT baseline + 2
+        stats_after_reag = get_latest_site_statistics() or {}
+        private_after_reag = stats_after_reag.get('all_private_proj_count', 0)
+        assert private_after_reag == private_before + 1, \
+            f"After reaggregation, private project count must be baseline+1, " \
+            f"got baseline={private_before}, after={private_after_reag} (Issue #538)"
+
+    finally:
+        for pid in created_ids:
+            _cleanup_project(mongo_collection, pid)
+
+
+# ---------------------------------------------------------------------------
+# Issue #529 — tool versions must appear in previous_versions history entries
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tool_versions_preserved_in_version_history(
+        request_factory, test_user, mongo_collection):
+    """
+    Issue #529: when a project is reaggregated the previous_versions entry for
+    the superseded document must include AA_version, AC_version, ASP_version,
+    and aggregator_version as they were stored on the original document.
+    """
+    from caper.views import create_project, edit_project_page
+
+    req, handles = _build_create_request(
+        request_factory, test_user, 'VersionHistory_Issue529',
+        tar_path=DATASET_SMALL_TAR)
+    try:
+        resp = create_project(req)
+    finally:
+        for h in handles:
+            h.close()
+
+    project_id = _project_id_from_redirect(resp)
+    assert project_id, "Could not parse project_id from create redirect"
+    created_ids = [project_id]
+
+    try:
+        doc = _poll_until_finished(mongo_collection, project_id)
+        assert doc and not doc.get('aggregation_failed'), \
+            f"Initial aggregation failed: {doc.get('error_message') if doc else 'timeout'}"
+
+        # Stamp a known AA_version so we can verify it survives in history
+        mongo_collection.update_one(
+            {'_id': ObjectId(project_id)},
+            {'$set': {'AA_version': 'test_v1.2.3_issue529'}})
+
+        # Reaggregate
+        edit_req, edit_handles = _build_edit_request(
+            request_factory, test_user, project_id,
+            project_name='VersionHistory_Issue529')
+        try:
+            edit_resp = edit_project_page(edit_req, project_name=project_id)
+        finally:
+            for h in edit_handles:
+                h.close()
+
+        assert edit_resp.status_code in (301, 302), \
+            f"[Edit] Expected redirect, got {edit_resp.status_code}"
+
+        new_id = _project_id_from_redirect(edit_resp)
+        poll_id = new_id if (new_id and new_id != project_id) else project_id
+        if new_id and new_id != project_id:
+            created_ids.append(new_id)
+
+        new_doc = _poll_until_finished(mongo_collection, poll_id)
+        assert new_doc is not None, \
+            f"Timed out waiting for reaggregation ({POLL_TIMEOUT}s)"
+
+        if new_doc.get('aggregation_failed'):
+            pytest.xfail(
+                f"Reaggregation failed: {new_doc.get('error_message', 'none')}")
+
+        prev = new_doc.get('previous_versions', [])
+        assert len(prev) > 0, \
+            "No previous_versions entry after reaggregation"
+
+        # The last entry corresponds to the version we just superseded
+        prev_entry = prev[-1]
+        assert 'AA_version' in prev_entry, \
+            "previous_versions entry must include AA_version field (Issue #529)"
+        assert 'AC_version' in prev_entry, \
+            "previous_versions entry must include AC_version field (Issue #529)"
+        assert 'ASP_version' in prev_entry, \
+            "previous_versions entry must include ASP_version field (Issue #529)"
+        assert 'aggregator_version' in prev_entry, \
+            "previous_versions entry must include aggregator_version field (Issue #529)"
+        assert prev_entry.get('AA_version') == 'test_v1.2.3_issue529', \
+            f"AA_version in history must match value set before reaggregation, " \
+            f"got {prev_entry.get('AA_version')!r} (Issue #529)"
 
     finally:
         for pid in created_ids:

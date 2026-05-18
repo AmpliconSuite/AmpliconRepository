@@ -245,3 +245,60 @@ def test_fulltext_search_finds_public_project(
     finally:
         _set_private(mongo_collection, project_id)
         _cleanup_project(mongo_collection, project_id)
+
+
+# ---------------------------------------------------------------------------
+# Issue #532 — both legacy boolean and string visibility formats must appear
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_both_visibility_formats_appear_in_search_results(
+        request_factory, test_user, mongo_collection):
+    """
+    Issue #532: search_results must return public projects regardless of whether
+    the 'private' field is stored as legacy boolean False or string 'public'.
+    The public query uses {'$in': [False, 'public']} so both formats should match.
+    """
+    from caper.views import search_results
+
+    # Insert two minimal public project docs — no aggregation needed.
+    # Each needs at least one sample in runs so that perform_search includes
+    # the project in results (it filters out projects with no sample data).
+    _sample = {'Sample_name': 'TestSample', 'Features': []}
+    doc_legacy = {
+        'project_name':  'SearchVis_LegacyFalse',
+        'creator':       test_user.username,
+        'private':       False,    # legacy boolean format
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs':          {'run1': [_sample.copy()]},
+        'sample_count':  1,
+    }
+    doc_string = {
+        'project_name':  'SearchVis_StringPublic',
+        'creator':       test_user.username,
+        'private':       'public', # current string format
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs':          {'run1': [_sample.copy()]},
+        'sample_count':  1,
+    }
+    r1 = mongo_collection.insert_one(doc_legacy)
+    r2 = mongo_collection.insert_one(doc_string)
+
+    try:
+        # Search with a prefix that matches both project names
+        req = request_factory.post('/search_results/', {'project_name': 'SearchVis_'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200, \
+            f"search_results returned {resp.status_code}"
+        assert b'SearchVis_LegacyFalse' in resp.content, \
+            "Legacy boolean False project must appear in search_results (Issue #532)"
+        assert b'SearchVis_StringPublic' in resp.content, \
+            "String 'public' project must appear in search_results (Issue #532)"
+    finally:
+        mongo_collection.delete_one({'_id': r1.inserted_id})
+        mongo_collection.delete_one({'_id': r2.inserted_id})
