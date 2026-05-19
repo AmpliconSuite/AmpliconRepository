@@ -443,5 +443,30 @@ The server is currently running on an EC2 instance through Docker. The ports act
 - Restart the server - use the same script as the nightly cron to stop and restart the docker container. During server startup it automatically syncs static files to S3
 > `/home/ubuntu/stop-and-start-repo.sh`
 
+## 4. Manual disk space cleanup
+
+The server writes temporary working directories under `./tmp/` (relative to the project root) during project creation and editing. These are cleaned up automatically by the server, but if disk space runs low you can reclaim it manually. **Always check that no project creation or editing is in progress before deleting anything.** First, SSH into the EC2 instance and check for active background tasks:
+
+```bash
+cd /home/ubuntu/AmpliconRepository-prod/caper
+python manage.py shell -c \
+  "from caper.background_tasks import get_background_task_status; import json; print(json.dumps(get_background_task_status(), indent=2))"
+```
+
+If `active_count` is 0, it is safe to remove all temp directories. To see how much space they are using and then remove them:
+
+```bash
+du -sh ./tmp/*/          # check sizes
+rm -rf ./tmp/*/          # remove all temp dirs
+```
+
+If you want to be cautious and leave any directories that may belong to a recently-started task (for example, if you are unsure whether `active_count` reflects all workers), limit deletion to directories that have not been written to in at least two hours:
+
+```bash
+find ./tmp -mindepth 1 -maxdepth 1 -type d -mmin +120 -exec rm -rf {} +
+```
+
+Note that restarting the server (`/home/ubuntu/stop-and-start-repo.sh`) also triggers an automatic cleanup of any orphaned temp directories left by previous runs.
+
 
 
