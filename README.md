@@ -399,7 +399,105 @@ The server is currently running on an EC2 instance through Docker. The ports act
 
 **Note:** While we provide a Dockerfile, local deployment of the site using the docker will only properly work on AWS. Local deployment should be done with a local install using the steps above.
 
+## 0. Setting up a new server on AWS EC2
 
+This section covers provisioning a fresh EC2 instance. The app container is built on the host and is not published to any registry — it must be built locally. Source code is mounted into the running container at runtime, so routine code updates do not require a container rebuild; only changes to `requirements.txt` or the `Dockerfile` do.
+
+### i. Provision the EC2 instance
+
+- **AMI**: Ubuntu Server 22.04 LTS
+- **Instance type**: choose based on expected load (t3.medium or larger recommended)
+- **Security group**: open inbound ports for SSH (22), HTTP (80), HTTPS (443), and the app port defined by `AMPLICON_ENV_PORT` in `config.sh`; Neo4j ports 7474 and 7687 should be restricted to internal access only
+- After the instance is running, register it with the appropriate AWS Application Load Balancer target group:
+  - Production: `ampliconrepo-https`
+  - Dev: `dev-ampliconrepository-org`
+
+### ii. Install Docker
+
+SSH into the new instance and install Docker Engine:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+sudo usermod -aG docker ubuntu
+# Log out and back in for the group membership to take effect
+```
+
+### iii. Create the two working checkouts
+
+Two separate git checkouts are maintained to allow container rebuilds without interrupting a running server:
+
+- **Running server**: `/home/ubuntu/AmpliconRepository-<ENV>` — the live checkout whose source is mounted directly into the running container (`dev` or `prod`)
+- **Build directory**: `/home/ubuntu/ampRepo_for_docker_build/AmpliconRepository` — used only for `docker build`; changes here do not affect the running server
+
+```bash
+# Running server checkout (use AmpliconRepository-dev for the dev environment)
+git clone https://github.com/AmpliconSuite/AmpliconRepository.git /home/ubuntu/AmpliconRepository-prod
+
+# Build-only checkout
+mkdir -p /home/ubuntu/ampRepo_for_docker_build
+git clone https://github.com/AmpliconSuite/AmpliconRepository.git /home/ubuntu/ampRepo_for_docker_build/AmpliconRepository
+```
+
+### iv. Create required directories and place config.sh
+
+```bash
+cd /home/ubuntu/AmpliconRepository-prod   # or AmpliconRepository-dev
+mkdir -p logs tmp neo4j/conf neo4j/data
+```
+
+Place `config.sh` at `caper/config.sh` inside the running-server checkout. The checkout root is mounted as `/srv/` inside the container, so the file will be read from `/srv/caper/config.sh` at runtime. `config.sh` contains all environment-specific secrets and settings — database connection strings, OAuth keys, S3 bucket names, and so on. Obtain it from another team member. **Do not commit it to git.**
+
+MongoDB connectivity uses the existing DocumentDB cluster; the connection string is provided via the `DB_URI_SECRET` variable in `config.sh`.
+
+### v. Configure AWS credentials
+
+The container mounts `/home/ubuntu/.aws` so that the application can reach S3. Use one of:
+
+- **IAM instance role** (preferred for EC2): attach a role with the required S3 permissions to the instance — no credential file is needed
+- **Access keys**: place credentials in `/home/ubuntu/.aws/credentials` in the standard AWS shared credentials format
+
+### vi. Build the Docker image
+
+Build from the build-only checkout so the running server is not affected. The image packages the Python virtual environment and system dependencies; source code is supplied at runtime via volume mount and does not need to be re-baked on every code change.
+
+```bash
+cd /home/ubuntu/ampRepo_for_docker_build/AmpliconRepository/caper
+source caper/config.sh          # sets AMPLICON_ENV and other variables
+docker build -t genepattern/amplicon-repo:${AMPLICON_ENV} .
+```
+
+### vii. Start Neo4j
+
+Neo4j runs as a Docker container. Run the start script from the running-server checkout root (where `caper/config.sh` is visible at the relative path the script expects):
+
+```bash
+cd /home/ubuntu/AmpliconRepository-prod   # or AmpliconRepository-dev
+./start-neo4j-container.sh
+```
+
+Neo4j data and configuration are persisted in `neo4j/data/` and `neo4j/conf/` under the checkout root. To stop Neo4j:
+
+```bash
+./stop-neo4j-container.sh
+```
+
+### viii. Start the application server
+
+```bash
+cd /home/ubuntu/AmpliconRepository-prod   # or AmpliconRepository-dev
+./start-server.sh
+```
+
+This launches a gunicorn container named `amplicon-${AMPLICON_ENV}` with the source checkout mounted at `/srv/`. Confirm it is running with `docker ps`. Logs are written to the `logs/` directory in the checkout root.
 
 ## 1. How to start the server
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)
