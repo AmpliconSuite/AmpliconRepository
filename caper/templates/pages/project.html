@@ -909,37 +909,49 @@
 
     <!-- Downloads column: Download Project, Download Summary, Download Metadata -->
     <div class="col-md-2" style="text-align:right;">
+        <style>
+            .dl-btn-label { font-size: 0.8rem; }
+            @media (max-width: 900px) {
+                .dl-btn-label { font-size: 0.7rem; }
+                .dl-btn-download { display: none; }
+            }
+            @media (max-width: 700px) {
+                .dl-btn-label { display: none; }
+            }
+        </style>
         <div style="display: inline-flex; flex-direction: column; gap: 10px; align-items: stretch;">
-            <a class="btn btn-primary btn-sm" style="color: white; white-space: nowrap;"
+            <a class="btn btn-primary btn-sm" style="color: white; white-space: nowrap; font-size: 0.8rem;"
                onclick="downloadAndReload();">
-                <i class="fas fa-download"></i> Download Project
+                <i class="fas fa-download"></i><span class="dl-btn-label"><span class="dl-btn-download"> Download</span> Project</span>
             </a>
-            <a class="btn btn-primary btn-sm" style="color: white; cursor: pointer; white-space: nowrap;"
+            <a class="btn btn-primary btn-sm" style="color: white; cursor: pointer; white-space: nowrap; font-size: 0.8rem;"
                onclick="downloadSummaryTable();">
-                <i class="fas fa-download"></i> Download Summary
+                <i class="fas fa-download"></i><span class="dl-btn-label"><span class="dl-btn-download"> Download</span> Summary</span>
             </a>
-            <a class="btn btn-primary btn-sm" style="color: white; cursor: pointer; white-space: nowrap;"
+            <a class="btn btn-primary btn-sm" style="color: white; cursor: pointer; white-space: nowrap; font-size: 0.8rem;"
                onclick="downloadMetadata();">
-                <i class="fas fa-download"></i> Download Metadata
+                <i class="fas fa-download"></i><span class="dl-btn-label"><span class="dl-btn-download"> Download</span> Metadata</span>
             </a>
         </div>
     </div>
     
-<div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; display:none;">
-    <span style="display:inline-block; vertical-align:bottom;">{{ stackedbar_graph|safe }}
-    {% block plotly_js %}
-    <script type="text/javascript">
-    var plot_element = document.getElementById("project_bar_plotly_div");
-    plot_element.on('plotly_click', function(data){{
-        var sname = data['points'][0]['customdata'][0];
-        var url_no_message = window.location.href.split('/message')[0];
-        var link = url_no_message + '/sample/' + sname;
-        window.open(link, "_blank");
-        }})
-    </script>
-    {% endblock %}
-    </span>
-    <span style="display:inline-block; vertical-align:bottom;">{{ summarybar|safe }}</span>
+<div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; display:none; overflow-x: auto;">
+    <div style="display: flex; flex-wrap: nowrap; align-items: flex-end; width: max-content;">
+        <div style="flex: 0 0 auto;">{{ stackedbar_graph|safe }}
+        {% block plotly_js %}
+        <script type="text/javascript">
+        var plot_element = document.getElementById("project_bar_plotly_div");
+        plot_element.on('plotly_click', function(data){{
+            var sname = data['points'][0]['customdata'][0];
+            var url_no_message = window.location.href.split('/message')[0];
+            var link = url_no_message + '/sample/' + sname;
+            window.open(link, "_blank");
+            }})
+        </script>
+        {% endblock %}
+        </div>
+        <div style="flex: 0 0 auto;">{{ summarybar|safe }}</div>
+    </div>
 </div>
     {% else %}
         <div class="col-md-3">
