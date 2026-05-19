@@ -440,9 +440,8 @@ The server is currently running on an EC2 instance through Docker. The ports act
 > `git fetch`
 > `git pull`
 > `git checkout tags/<release tag in github>`
-- if any static (css, js, images) have changed, run sync_static_to_s3.sh to copy the files into the S3 bucket
-- Restart the server
-> `./stop-server.sh`
-> `./start-server.sh`
+- Restart the server - use the same script as the nightly cron to stop and restart the docker container. During server startup it automatically syncs static files to S3
+> `/home/ubuntu/stop-and-start-repo.sh`
+
 
 
