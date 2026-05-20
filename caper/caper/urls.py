@@ -99,6 +99,14 @@ urlpatterns += [
     path('add_samples_to_project_api/', views.ProjectFileAddView.as_view(), name='addSamplesToProject'),
     path('api/background-task-status/', views.BackgroundTaskStatusView.as_view(), name='background_task_status'),
 
+    # REST API v1
+    path('api/v1/projects/', views.ProjectListView.as_view(), name='api_project_list'),
+    path('api/v1/projects/download/', views.ProjectBatchDownloadView.as_view(), name='api_project_batch_download'),
+    path('api/v1/projects/<str:project_id>/', views.ProjectDetailView.as_view(), name='api_project_detail'),
+    path('api/v1/projects/<str:project_id>/download/', views.ProjectDownloadView.as_view(), name='api_project_download'),
+    path('api/v1/projects/<str:project_id>/samples/', views.ProjectSamplesView.as_view(), name='api_project_samples'),
+    path('api/v1/token/', views.ApiTokenView.as_view(), name='api_token'),
+
     path('robots.txt', views.robots, name = "robots.txt"),
     path('loading/', views.loading),
     path('search_results/', views.search_results, name='search_results'),
