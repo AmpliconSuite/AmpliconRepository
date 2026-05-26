@@ -86,3 +86,5 @@ genepattern-python==24.1
 AmpliconSuiteAggregator==6.1.0
 openpyxl
 gunicorn==21.2.0
+pytest==8.4.2
+pytest-playwright==0.8.0
