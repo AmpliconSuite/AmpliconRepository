@@ -73,7 +73,24 @@ This exports all required secrets (OAuth keys, database URI, etc.) into your she
 but shell exports from `config.sh` take precedence. You need `config.sh` sourced once per
 shell session before running tests.
 
-### 5. Test datasets
+### 5. Start the local dev server for functional tests
+
+Some integration/functional tests exercise edit and reaggregation paths that
+download an existing project tar through the application URL
+(`http://localhost:8000/project/<id>/download`).  Start the local server in a
+separate terminal before running any command that includes `functional` tests or
+the broader `integration and not browser` suite:
+
+```bash
+source caper/config.sh
+cd caper
+python manage.py runserver
+```
+
+The fast integration tier shown below excludes `functional` tests and does not
+require the server.
+
+### 6. Test datasets
 
 The small dataset is tracked in git (`test_data/one_amprepo_sample.tar.gz` and
 `test_data/one_amprepo_sample.xlsx`).  The larger datasets used by `slow` and `functional`
@@ -88,7 +105,7 @@ and should be placed in `test_data/`:
 | `Contino_unagg_040423.tar.gz` | 9 | hg38 | `slow`, `functional` |
 | `two_hg38_samples_no_ecdna.tar.gz` | 2 | hg38 | `slow` add-samples tests |
 
-### 6. Run the tests
+### 7. Run the tests
 
 **Fast integration tests only** — no aggregation, safe to run any time (< 1 min total):
 ```bash
@@ -97,6 +114,7 @@ pytest -m "integration and not slow and not functional and not browser" -v
 
 **All integration + functional tests** — requires AmpliconSuiteAggregator (~10 min):
 ```bash
+# Requires the local dev server from step 5.
 pytest -m "integration and not browser" -v
 ```
 
