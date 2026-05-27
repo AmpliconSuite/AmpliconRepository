@@ -1,5 +1,7 @@
 config.sh*
+caper/config.env
 *.swp
+__pycache__/
 .env
 /caper/caper.sqlite3
 .DS_Store

@@ -1,0 +1,71 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # MongoDB — points to the service container above
+      DB_URI_SECRET: mongodb://localhost:27017
+      DB_NAME: caper-ci-test
+
+      # Django
+      DJANGO_SECRET_KEY: ci-test-secret-key-not-for-production
+      DJANGO_SETTINGS_MODULE: caper.settings
+      ACCOUNT_DEFAULT_HTTP_PROTOCOL: http
+      SECURE_SSL_REDIRECT: "FALSE"
+      AMPLICON_ENV: ci
+
+      # OAuth providers — placeholder values; OAuth is not exercised in CI tests.
+      # To run browser tests that actually log in via OAuth, store real keys as
+      # GitHub repository secrets and reference them here with ${{ secrets.NAME }}.
+      GOOGLE_SECRET_KEY: ${{ secrets.GOOGLE_SECRET_KEY || 'ci-placeholder' }}
+      GLOBUS_SECRET_KEY: ${{ secrets.GLOBUS_SECRET_KEY || 'ci-placeholder' }}
+      RECAPTCHA_PRIVATE_KEY: ${{ secrets.RECAPTCHA_PRIVATE_KEY || 'ci-placeholder' }}
+      RECAPTCHA_PUBLIC_KEY: ${{ secrets.RECAPTCHA_PUBLIC_KEY || 'ci-placeholder' }}
+
+      # S3 — disabled in CI; downloads stay local
+      S3_FILE_DOWNLOADS: "FALSE"
+      S3_STATIC_FILES: "FALSE"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run fast integration tests
+        # Runs only tests marked `integration` that are NOT slow, functional, or browser.
+        # This excludes:
+        #   slow       — full aggregation pipeline (requires AmpliconSuiteAggregator + minutes)
+        #   functional — require `loaded_datasets` fixture (depend on slow tests completing)
+        #   browser    — require a running dev server and playwright
+        run: |
+          pytest -m "integration and not slow and not functional and not browser" \
+                 -v --tb=short
