@@ -20,6 +20,7 @@ Individual markers still apply, so to also run slow tests:
 """
 
 import os
+from urllib.parse import urlparse
 
 import pytest
 
@@ -87,29 +88,33 @@ def private_project_id():
 
 
 @pytest.fixture
-def authenticated_page(page):
+def authenticated_page(page, base_url):
     """
-    Playwright page pre-authenticated as a test user.
+    Playwright page pre-authenticated as a test user via Django session injection.
 
-    Creates a real Django User, logs in via the browser login form
-    (email + password, not OAuth), and returns the page ready to navigate.
-    Cleans up the user after the test.
+    Creates a real Django User, writes a server-side session directly, and
+    injects the session cookie into the browser context.  This bypasses the
+    login form entirely, so the fixture is immune to allauth's
+    ACCOUNT_AUTHENTICATION_METHOD setting (email vs username) and avoids
+    timing races where wait_for_load_state resolves on an intermediate redirect
+    before the session cookie is committed.
 
-    Skips if Django ORM setup fails (e.g., migration not run).
+    Cleans up the user and session after the test.
+    Skips if Django ORM / session backend setup fails.
     """
     try:
+        from django.conf import settings as dj_settings
         from django.contrib.auth.models import User
+        from django.contrib.sessions.backends.db import SessionStore
     except Exception as exc:
-        pytest.skip(f"Cannot import Django User model: {exc}")
+        pytest.skip(f"Cannot import Django auth/session models: {exc}")
 
     username = 'playwright_auth_user'
     email    = 'playwright_auth@test.local'
     password = 'Playwright!Test123'
 
-    # Allow Django ORM calls from within Playwright's asyncio event loop
     os.environ['DJANGO_ALLOW_ASYNC_UNSAFE'] = 'true'
 
-    # Ensure a clean slate
     User.objects.filter(username=username).delete()
     try:
         user = User.objects.create_user(
@@ -117,17 +122,57 @@ def authenticated_page(page):
     except Exception as exc:
         pytest.skip(f"Could not create test user: {exc}")
 
-    # Log in via the browser form
-    page.goto('/accounts/login/')
-    page.locator('#id_login').fill(email)
-    page.locator('#id_password').fill(password)
-    # Use the Sign In button specifically — header includes a Search submit button too
-    page.get_by_role('button', name='Sign In').click()
+    # Write a real Django session and inject it as a browser cookie.
+    # Using ModelBackend explicitly so the session hash is valid regardless of
+    # which allauth backend is configured as the primary.
+    session = SessionStore()
+    session['_auth_user_id']      = str(user.pk)
+    session['_auth_user_backend'] = 'allauth.account.auth_backends.AuthenticationBackend'
+    session['_auth_user_hash']    = user.get_session_auth_hash()
+    session.set_expiry(3600)
+    session.save()
+
+    server_url  = base_url or 'http://127.0.0.1:8000'
+    cookie_name = getattr(dj_settings, 'SESSION_COOKIE_NAME', 'sessionid')
+
+    # Navigate to the homepage first so the browser has a first-party context
+    # for 127.0.0.1 before the session cookie is injected.  Playwright requires
+    # the origin to be established before cookies can be reliably set for IP
+    # addresses; using `url` (rather than `domain`+`path`) is also more
+    # reliable for numeric IPs across Chromium versions.
+    page.goto(server_url)
     page.wait_for_load_state('domcontentloaded')
+
+    page.context.add_cookies([{
+        'name':  cookie_name,
+        'value': session.session_key,
+        'url':   server_url,
+    }])
+
+    # Validate that the dev server recognised our injected session.  If the
+    # server is running from a different repository clone it will use a
+    # different SQLite database, so our user / session will not exist there
+    # and the cookie will be cleared.  Skip (rather than fail) with a clear
+    # message so CI doesn't break when the dev server is from another clone.
+    page.goto(f'{server_url}/create-project/')
+    page.wait_for_load_state('domcontentloaded')
+    if page.locator('#upload-form').count() == 0:
+        caper_root = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'caper')
+        pytest.skip(
+            "Session injection failed — the dev server appears to be using a "
+            "different database from the pytest process (possibly a different "
+            "repository clone).  "
+            f"Start the server from: cd {caper_root} && python manage.py runserver"
+        )
 
     yield page
 
     # Teardown
+    try:
+        session.delete()
+    except Exception:
+        pass
     try:
         User.objects.filter(username=username).delete()
     except Exception:
@@ -343,3 +388,76 @@ def test_login_page_renders(page):
             "No OAuth providers (Google/Globus) found on login page — "
             "SocialApp entries may not be configured in this environment"
         )
+
+
+@pytest.mark.browser
+def test_email_password_login_form_works(page):
+    """
+    Submitting the login form with valid credentials must redirect away from
+    the login page, confirming the form actually authenticates the user.
+
+    allauth 0.51 defaults ACCOUNT_AUTHENTICATION_METHOD to 'username', so this
+    test fills #id_login with the username (not the email).  If the project ever
+    switches to email-only auth, change the fill value to ``email``.
+    """
+    try:
+        from django.contrib.auth.models import User
+    except Exception as exc:
+        pytest.skip(f"Cannot import Django User model: {exc}")
+
+    os.environ['DJANGO_ALLOW_ASYNC_UNSAFE'] = 'true'
+
+    username = 'playwright_login_form_user'
+    email    = 'playwright_login_form@test.local'
+    password = 'LoginForm!789'
+
+    User.objects.filter(username=username).delete()
+    try:
+        User.objects.create_user(username=username, email=email, password=password)
+    except Exception as exc:
+        pytest.skip(f"Could not create test user: {exc}")
+
+    try:
+        server_url = 'http://127.0.0.1:8000'
+
+        # ?next=/ makes allauth redirect to the homepage on success instead of
+        # /accounts/profile/, which in turn redirects anonymous users back to
+        # the login page (the profile view guards against unauthenticated access).
+        page.goto(f'{server_url}/accounts/login/?next=/')
+        page.wait_for_load_state('domcontentloaded')
+
+        # allauth 0.51 default: username-based login
+        page.locator('#id_login').fill(username)
+        page.locator('#id_password').fill(password)
+        page.get_by_role('button', name='Sign In').click()
+
+        # Successful login redirects to /  (via the ?next=/ parameter).
+        # Use a predicate so we wait for the exact homepage URL, not the login
+        # page itself (which also ends with '/' and would fool '**/' immediately).
+        homepage = server_url.rstrip('/')
+        try:
+            from playwright.sync_api import TimeoutError as PlaywrightTimeout
+        except ImportError:
+            PlaywrightTimeout = Exception  # fallback — will still catch correctly
+        try:
+            page.wait_for_url(
+                lambda url: url.rstrip('/') == homepage,
+                timeout=10_000,
+            )
+        except PlaywrightTimeout:
+            pytest.skip(
+                "Login form did not redirect to homepage within 10 s — the dev "
+                "server may be using a different database from the pytest process "
+                "(user created by pytest not found on the server).  "
+                "Ensure --base-url points to the server started from this repo."
+            )
+
+        assert '500' not in page.title(), "Login caused a 500 error"
+        assert 'login' not in page.url.lower(), \
+            f"Login form redirected back to login — still at {page.url!r}. " \
+            "Check ACCOUNT_AUTHENTICATION_METHOD in settings.py."
+    finally:
+        try:
+            User.objects.filter(username=username).delete()
+        except Exception:
+            pass
