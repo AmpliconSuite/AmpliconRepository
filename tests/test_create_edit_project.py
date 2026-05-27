@@ -1,7 +1,7 @@
 """
 Integration tests for project creation and editing.
 
-Uses test_data/one_amprepo_sample.tar.gz and test_data/one_amprepo_sample.xlsx.
+Uses test_datasets/one_amprepo_sample.tar.gz and test_datasets/one_amprepo_sample.xlsx.
 
 All projects created during a test are fully cleaned up in a finally block
 regardless of whether the test passed or failed:
@@ -10,155 +10,406 @@ regardless of whether the test passed or failed:
   - S3 object is deleted when USE_S3_DOWNLOADS is True
 """
 
+import io
 import os
-import shutil
-import time
-import logging
 
 import pytest
-from bson.objectid import ObjectId
+
+from conftest import (
+    _build_create_request,
+    _build_edit_request,
+    _cleanup_project,
+    _poll_until_finished,
+    _project_id_from_redirect,
+    DATASET_SMALL_TAR,
+    DATASET_SMALL_XLSX,
+    POLL_TIMEOUT,
+)
+
 
 # ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-POLL_TIMEOUT = 300   # seconds to wait for background aggregation
-POLL_INTERVAL = 5    # polling frequency in seconds
-
-# tmp/ lives next to pytest.ini, one level above this tests/ directory
-TMP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tmp')
-
-
-# ---------------------------------------------------------------------------
-# Helpers
+# Issue #561 — numeric sample names in metadata sheet never matched
 # ---------------------------------------------------------------------------
 
-def _build_create_request(request_factory, user, project_name, *,
-                           tar_path, xlsx_path=None, remap=False):
-    """Return a POST request that mimics the create-project form."""
-    data = {
-        'project_name': project_name,
-        'description': f'Automated pytest — {project_name}',
+@pytest.mark.integration
+def test_numeric_sample_names_metadata_lookup():
+    """
+    Issue #561: _build_metadata_lookup_from_dataframe must produce string keys
+    even when pandas infers the sample_name column as int64/float64.
+    """
+    import pandas as pd
+    from caper.extra_metadata import _build_metadata_lookup_from_dataframe, _apply_metadata_to_runs
+
+    # Simulate what pandas does when it reads an all-numeric sample_name column
+    # without dtype=str — infers int64.
+    df = pd.DataFrame({
+        'sample_name': pd.array([123, 456], dtype='int64'),
+        'Cancer_type': ['GBM', 'Lung'],
+    })
+
+    lookup = _build_metadata_lookup_from_dataframe(df)
+
+    assert '123' in lookup, "String key '123' must be present in lookup"
+    assert '456' in lookup, "String key '456' must be present in lookup"
+    assert 123 not in lookup, "Integer key 123 must not appear (would never match MongoDB)"
+
+    # Also verify the lookup correctly applies to a sample stored with a string name
+    runs = {'run1': [{'Sample_name': '123', 'Features': []}]}
+    n_updated = _apply_metadata_to_runs(runs, lookup)
+    assert n_updated == 1, "Exactly one sample should be updated"
+    assert runs['run1'][0].get('Cancer_type') == 'GBM'
+
+
+@pytest.mark.integration
+def test_leading_zero_sample_names_preserved_via_dtype_str():
+    """
+    Issue #561 edge case: _read_metadata_file must use dtype=str so that
+    sample names like '053' are not coerced to 53 by pandas.
+    """
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from caper.extra_metadata import _read_metadata_file, _build_metadata_lookup_from_dataframe
+
+    csv_bytes = b"sample_name,Cancer_type\n053,GBM\n007,Lung\n"
+    metadata_file = SimpleUploadedFile("metadata.csv", csv_bytes, content_type="text/csv")
+
+    df = _read_metadata_file(metadata_file=metadata_file)
+    lookup = _build_metadata_lookup_from_dataframe(df)
+
+    assert '053' in lookup, "Leading-zero name '053' must be preserved by dtype=str read"
+    assert '007' in lookup, "Leading-zero name '007' must be preserved by dtype=str read"
+    assert '53' not in lookup, "'53' must not appear — would mean int coercion happened"
+    assert '7' not in lookup, "'7' must not appear — would mean int coercion happened"
+
+
+# ---------------------------------------------------------------------------
+# Issue #510 — adding metadata must not create a new project version
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_metadata_upload_does_not_create_new_version(request_factory, test_user, mongo_collection):
+    """
+    Issue #510: calling process_metadata must update 'runs' only —
+    'previous_versions' must remain unchanged.
+    """
+    from bson.objectid import ObjectId
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from caper.extra_metadata import process_metadata
+
+    doc = {
+        'project_name': 'Issue510_MetaVersionTest',
+        'creator': test_user.username,
         'private': 'private',
-        'publication_link': '',
-        'project_members': '',
-        'alias': '',
-        'remap_sample_names': 'true' if remap else 'false',
-        'accept_license': 'on',
+        'delete': False,
+        'current': True,
+        'FINISHED?': True,
+        'previous_versions': [],
+        'runs': {'run1': [{'Sample_name': 'TestSample', 'Features': []}]},
     }
-    files = {}
-    handles = []
+    result = mongo_collection.insert_one(doc)
+    project_id = str(result.inserted_id)
 
-    fh = open(tar_path, 'rb')
-    handles.append(fh)
-    files['document'] = fh
+    try:
+        csv_bytes = b"sample_name,Cancer_type\nTestSample,GBM\n"
+        csv_file = SimpleUploadedFile("metadata.csv", csv_bytes, content_type="text/csv")
 
-    if xlsx_path:
-        fh2 = open(xlsx_path, 'rb')
-        handles.append(fh2)
-        files['metadataFile'] = fh2
+        req = request_factory.post(
+            f'/project/{project_id}/process_metadata',
+            data={'metadataFile': csv_file},
+            format='multipart',
+        )
+        req.user = test_user
 
-    request = request_factory.post('/create-project/',
-                                    data={**data, **files},
-                                    format='multipart')
-    request.user = user
-    return request, handles
+        status = process_metadata(req, project_id)
+        assert status == 'complete', f"process_metadata returned unexpected value: {status!r}"
+
+        updated = mongo_collection.find_one({'_id': ObjectId(project_id)})
+        assert updated is not None
+
+        assert updated.get('previous_versions', []) == [], \
+            "process_metadata must not add entries to previous_versions (Issue #510)"
+
+        sample = updated['runs']['run1'][0]
+        assert sample.get('Cancer_type') == 'GBM', \
+            "Cancer_type from metadata sheet must be applied to the matching sample"
+    finally:
+        mongo_collection.delete_one({'_id': ObjectId(project_id)})
 
 
-def _build_edit_request(request_factory, user, project_id, *,
-                         xlsx_path=None, remap=False):
-    """Return a POST request that mimics the edit-project form with reaggregate."""
-    data = {
-        'project_name': 'Test4_CreateThenEdit',
-        'description': 'Automated pytest — edit step',
+# ---------------------------------------------------------------------------
+# Issue #551 — reaggregating a project destroys previously loaded metadata
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_reaggregation_reapplies_old_metadata():
+    """
+    Issue #551: process_metadata_no_request called with only old_extra_metadata
+    (no new file) must reapply stored metadata to samples in clean post-aggregation runs.
+
+    This is the core of the fix: after the aggregator produces fresh, metadata-free
+    runs, the stored metadata dict must be merged back in.
+    """
+    from caper.extra_metadata import process_metadata_no_request
+
+    # Simulate fresh runs produced by the aggregator — no metadata attached
+    clean_runs = {
+        'run1': [{'Sample_name': 'Sample_001', 'Features': []}]
+    }
+
+    # Metadata that was on the project before reaggregation
+    old_extra_metadata = {
+        'Sample_001': {
+            'Cancer_type': 'GBM',
+            'custom_field': 'keep_me',
+        }
+    }
+
+    updated_runs = process_metadata_no_request(
+        clean_runs, old_extra_metadata=old_extra_metadata
+    )
+
+    sample = updated_runs['run1'][0]
+    assert sample.get('extra_metadata_from_csv', {}).get('Cancer_type') == 'GBM', \
+        "Cancer_type must be reapplied after reaggregation (Issue #551)"
+    assert sample.get('extra_metadata_from_csv', {}).get('custom_field') == 'keep_me', \
+        "Custom fields must survive reaggregation (Issue #551)"
+
+
+@pytest.mark.integration
+def test_reaggregation_does_not_affect_samples_missing_from_old_metadata():
+    """
+    Issue #551 edge case: samples that had NO metadata before reaggregation
+    must not have metadata injected onto them.
+    """
+    from caper.extra_metadata import process_metadata_no_request
+
+    clean_runs = {
+        'run1': [
+            {'Sample_name': 'Sample_with_meta',    'Features': []},
+            {'Sample_name': 'Sample_without_meta', 'Features': []},
+        ]
+    }
+
+    old_extra_metadata = {
+        'Sample_with_meta': {'Cancer_type': 'Lung'}
+    }
+
+    updated_runs = process_metadata_no_request(
+        clean_runs, old_extra_metadata=old_extra_metadata
+    )
+
+    samples = updated_runs['run1']
+    with_meta    = next(s for s in samples if s['Sample_name'] == 'Sample_with_meta')
+    without_meta = next(s for s in samples if s['Sample_name'] == 'Sample_without_meta')
+
+    assert with_meta.get('extra_metadata_from_csv', {}).get('Cancer_type') == 'Lung'
+    assert 'extra_metadata_from_csv' not in without_meta, \
+        "Samples absent from old_extra_metadata must not have metadata added"
+
+
+# ---------------------------------------------------------------------------
+# Issue #519 — metadata matching fails when sample_name_alias column is present
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_alias_lookup_built_from_metadata_sheet():
+    """
+    Issue #519: _build_metadata_lookup_from_dataframe must index rows by BOTH
+    sample_name and sample_name_alias so that metadata can be matched by either name.
+    """
+    import pandas as pd
+    from caper.extra_metadata import _build_metadata_lookup_from_dataframe
+
+    df = pd.DataFrame({
+        'sample_name':       ['Sample_001'],
+        'sample_name_alias': ['Renamed_001'],
+        'Cancer_type':       ['GBM'],
+    })
+
+    lookup = _build_metadata_lookup_from_dataframe(df)
+
+    assert 'Sample_001' in lookup,  "Original sample_name must be a lookup key"
+    assert 'Renamed_001' in lookup, "sample_name_alias must also be a lookup key"
+    assert lookup['Sample_001']['Cancer_type'] == 'GBM'
+    assert lookup['Renamed_001']['Cancer_type'] == 'GBM'
+
+
+@pytest.mark.integration
+def test_metadata_applied_to_already_renamed_sample():
+    """
+    Issue #519: if a sample has already been renamed to its alias (e.g. after a
+    previous metadata upload), a subsequent apply using the SAME sheet must still
+    match the sample by its current (alias) name.
+    """
+    import pandas as pd
+    from caper.extra_metadata import (
+        _build_metadata_lookup_from_dataframe, _apply_metadata_to_runs
+    )
+
+    # Sample is already stored under the alias name (post-rename state)
+    runs = {'run1': [{'Sample_name': 'Renamed_001', 'Features': []}]}
+
+    df = pd.DataFrame({
+        'sample_name':       ['Sample_001'],
+        'sample_name_alias': ['Renamed_001'],
+        'Cancer_type':       ['GBM'],
+    })
+    lookup = _build_metadata_lookup_from_dataframe(df)
+
+    n_updated = _apply_metadata_to_runs(runs, lookup)
+
+    assert n_updated == 1, "Sample should be matched via its alias name"
+    sample = runs['run1'][0]
+    assert sample.get('Cancer_type') == 'GBM', \
+        "Cancer_type must be applied when matching by alias (Issue #519)"
+
+
+@pytest.mark.integration
+def test_rename_via_alias_and_metadata_applied_together():
+    """
+    Issue #519: when remap_name_to_alias=True, the sample must be renamed to the
+    alias AND all other metadata columns must be applied in the same pass.
+    """
+    from caper.extra_metadata import (
+        _build_metadata_lookup_from_dataframe, _apply_metadata_to_runs
+    )
+    import pandas as pd
+
+    runs = {'run1': [{'Sample_name': 'Sample_001', 'Features': []}]}
+
+    df = pd.DataFrame({
+        'sample_name':       ['Sample_001'],
+        'sample_name_alias': ['New_Name'],
+        'Cancer_type':       ['Lung'],
+        'custom_col':        ['value_x'],
+    })
+    lookup = _build_metadata_lookup_from_dataframe(df)
+
+    n_updated = _apply_metadata_to_runs(runs, lookup, remap_name_to_alias=True)
+
+    sample = runs['run1'][0]
+    assert n_updated == 1
+    assert sample['Sample_name'] == 'New_Name', \
+        "Sample must be renamed to sample_name_alias when remap=True"
+    assert sample.get('Cancer_type') == 'Lung', \
+        "Cancer_type must be applied in the same pass as the rename"
+    assert sample['extra_metadata_from_csv'].get('custom_col') == 'value_x', \
+        "Custom columns must survive alongside the rename (Issue #519)"
+
+
+# ---------------------------------------------------------------------------
+# Issue #508 — samples absent from a new metadata sheet lose existing metadata
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_unlisted_sample_keeps_existing_metadata():
+    """
+    Issue #508: _apply_metadata_to_runs must leave the existing extra_metadata_from_csv
+    of samples that are NOT in the new metadata sheet completely untouched.
+    """
+    import pandas as pd
+    from caper.extra_metadata import (
+        _build_metadata_lookup_from_dataframe, _apply_metadata_to_runs
+    )
+
+    # Two samples; Sample_A already has metadata from a previous upload
+    runs = {
+        'run1': [
+            {
+                'Sample_name': 'Sample_A',
+                'Features': [],
+                'extra_metadata_from_csv': {
+                    'Cancer_type': 'Lung',
+                    'custom_field': 'do_not_delete',
+                },
+                'Cancer_type': 'Lung',
+            },
+            {'Sample_name': 'Sample_B', 'Features': []},
+        ]
+    }
+
+    # New sheet only covers Sample_B
+    df = pd.DataFrame({
+        'sample_name': ['Sample_B'],
+        'Cancer_type': ['GBM'],
+    })
+    lookup = _build_metadata_lookup_from_dataframe(df)
+
+    n_updated = _apply_metadata_to_runs(runs, lookup)
+
+    sample_a = next(s for s in runs['run1'] if s['Sample_name'] == 'Sample_A')
+    sample_b = next(s for s in runs['run1'] if s['Sample_name'] == 'Sample_B')
+
+    # Sample_B got the new metadata
+    assert n_updated == 1
+    assert sample_b.get('Cancer_type') == 'GBM'
+
+    # Sample_A's existing metadata must be untouched (Issue #508)
+    assert sample_a.get('Cancer_type') == 'Lung', \
+        "Sample_A top-level Cancer_type must not be cleared"
+    assert sample_a['extra_metadata_from_csv'].get('Cancer_type') == 'Lung', \
+        "Sample_A Cancer_type in extra_metadata_from_csv must not be cleared (Issue #508)"
+    assert sample_a['extra_metadata_from_csv'].get('custom_field') == 'do_not_delete', \
+        "Sample_A custom_field must not be cleared (Issue #508)"
+
+
+@pytest.mark.integration
+def test_process_metadata_preserves_unlisted_samples_via_mongodb(
+        request_factory, test_user, mongo_collection):
+    """
+    Issue #508 integration: after a process_metadata POST that only lists one
+    of two samples, the other sample's metadata must survive in MongoDB.
+    """
+    from bson.objectid import ObjectId
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from caper.extra_metadata import process_metadata
+
+    doc = {
+        'project_name': 'Issue508_UnlistedSampleTest',
+        'creator': test_user.username,
         'private': 'private',
-        'publication_link': '',
-        'project_members': '',
-        'alias': '',
-        'remap_sample_names': 'true' if remap else 'false',
-        'project_mode': 'reaggregate',
-        'accept_license': 'on',
+        'delete': False,
+        'current': True,
+        'FINISHED?': True,
+        'previous_versions': [],
+        'runs': {
+            'run1': [
+                {
+                    'Sample_name': 'Sample_A',
+                    'Features': [],
+                    'extra_metadata_from_csv': {'Cancer_type': 'Lung'},
+                    'Cancer_type': 'Lung',
+                },
+                {'Sample_name': 'Sample_B', 'Features': []},
+            ]
+        },
     }
-    files = {}
-    handles = []
+    result = mongo_collection.insert_one(doc)
+    project_id = str(result.inserted_id)
 
-    if xlsx_path:
-        fh = open(xlsx_path, 'rb')
-        handles.append(fh)
-        files['metadataFile'] = fh
-
-    request = request_factory.post(f'/project/{project_id}/edit',
-                                    data={**data, **files},
-                                    format='multipart')
-    request.user = user
-    return request, handles
-
-
-def _project_id_from_redirect(response):
-    """Parse the project ID from a redirect Location header (/project/<id>)."""
-    location = response.get('Location', '')
-    parts = [p for p in location.split('/') if p]
-    return parts[-1] if parts else None
-
-
-def _poll_until_finished(collection, project_id,
-                          timeout=POLL_TIMEOUT, interval=POLL_INTERVAL):
-    """
-    Poll MongoDB until the project is fully done: FINISHED?=True or
-    aggregation_failed=True.  Waiting for FINISHED? (rather than just for
-    aggregation_in_progress to clear) ensures that extract_project_files —
-    which runs in a second background thread after _create_project —  has
-    also completed before the test returns.  This prevents the ThreadPoolExecutor
-    from trying to submit new work after the interpreter has started shutting down.
-    Returns the final document, or None on timeout.
-    """
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        doc = collection.find_one({'_id': ObjectId(project_id)})
-        if doc is None:
-            return None
-        if doc.get('FINISHED?', False) or doc.get('aggregation_failed', False):
-            return doc
-        time.sleep(interval)
-    return None
-
-
-def _cleanup_project(collection, project_id):
-    """
-    Fully remove all artifacts created for a test project:
-      1. MongoDB document
-      2. tmp/{project_id}/ directory on disk
-      3. S3 object (when USE_S3_DOWNLOADS is True)
-    Errors in any step are logged but do not raise so that all steps always run.
-    """
-    # 1. MongoDB
     try:
-        collection.delete_one({'_id': ObjectId(project_id)})
-        logging.info(f"[cleanup] Deleted MongoDB document {project_id}")
-    except Exception as e:
-        logging.warning(f"[cleanup] Could not delete MongoDB document {project_id}: {e}")
+        # Sheet only lists Sample_B
+        csv_bytes = b"sample_name,Cancer_type\nSample_B,GBM\n"
+        csv_file = SimpleUploadedFile("metadata.csv", csv_bytes, content_type="text/csv")
 
-    # 2. tmp directory
-    tmp_path = os.path.join(TMP_DIR, project_id)
-    try:
-        if os.path.exists(tmp_path):
-            shutil.rmtree(tmp_path)
-            logging.info(f"[cleanup] Removed tmp dir {tmp_path}")
-    except Exception as e:
-        logging.warning(f"[cleanup] Could not remove tmp dir {tmp_path}: {e}")
+        req = request_factory.post(
+            f'/project/{project_id}/process_metadata',
+            data={'metadataFile': csv_file},
+            format='multipart',
+        )
+        req.user = test_user
+        status = process_metadata(req, project_id)
+        assert status == 'complete', f"process_metadata returned: {status!r}"
 
-    # 3. S3
-    try:
-        from django.conf import settings
-        if getattr(settings, 'USE_S3_DOWNLOADS', False):
-            import boto3
-            bucket_path = getattr(settings, 'S3_DOWNLOADS_BUCKET_PATH', '')
-            s3_key = f'{bucket_path}{project_id}/{project_id}.tar.gz'
-            session = boto3.Session(profile_name=getattr(settings, 'AWS_PROFILE_NAME', None))
-            s3_client = session.client('s3')
-            s3_client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_key)
-            logging.info(f"[cleanup] Deleted S3 object s3://{settings.S3_DOWNLOADS_BUCKET}/{s3_key}")
-    except Exception as e:
-        logging.warning(f"[cleanup] Could not delete S3 object for {project_id}: {e}")
+        updated = mongo_collection.find_one({'_id': ObjectId(project_id)})
+        samples = updated['runs']['run1']
+        sample_a = next(s for s in samples if s['Sample_name'] == 'Sample_A')
+        sample_b = next(s for s in samples if s['Sample_name'] == 'Sample_B')
+
+        assert sample_b.get('Cancer_type') == 'GBM'
+        assert sample_a.get('extra_metadata_from_csv', {}).get('Cancer_type') == 'Lung', \
+            "Sample_A Cancer_type must survive a partial metadata upload (Issue #508)"
+    finally:
+        mongo_collection.delete_one({'_id': ObjectId(project_id)})
 
 
 # ---------------------------------------------------------------------------
@@ -357,3 +608,69 @@ def test_create_then_edit_with_remap(
     finally:
         for pid in created_ids:
             _cleanup_project(mongo_collection, pid)
+
+
+# ---------------------------------------------------------------------------
+# Issue #509 — metadata xlsx submitted with create form must be applied
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_metadata_xlsx_applied_on_create(
+        request_factory, test_user, mongo_collection):
+    """
+    Issue #509: a metadata XLSX submitted together with the tar.gz at project
+    creation time must be applied to samples by the end of aggregation.
+
+    The xlsx fixture (one_amprepo_sample.xlsx) maps sample GBM39 to:
+      cancer_type = 'Uterine Corpus Endometrial Carcinoma'
+      sample_name_alias = 'GBM_93'
+
+    After aggregation with remap_sample_names=False the sample must be named
+    GBM39 and must carry the cancer_type from the metadata sheet.
+    """
+    from caper.views import create_project
+
+    req, handles = _build_create_request(
+        request_factory, test_user, 'CreateMeta_Issue509',
+        tar_path=DATASET_SMALL_TAR, xlsx_path=DATASET_SMALL_XLSX, remap=False)
+    try:
+        resp = create_project(req)
+    finally:
+        for h in handles:
+            h.close()
+
+    project_id = _project_id_from_redirect(resp)
+    assert project_id, "Could not parse project_id from create redirect"
+
+    try:
+        doc = _poll_until_finished(mongo_collection, project_id)
+        assert doc and not doc.get('aggregation_failed'), \
+            f"Aggregation failed: {doc.get('error_message') if doc else 'timeout'}"
+
+        # Locate sample GBM39 (or its alias GBM_93 if remap happened anyway)
+        sample = None
+        for run in doc.get('runs', {}).values():
+            for s in run:
+                if s.get('Sample_name') in ('GBM39', 'GBM_93'):
+                    sample = s
+                    break
+            if sample:
+                break
+
+        assert sample is not None, \
+            "Sample GBM39 (or alias GBM_93) not found in aggregated project runs"
+
+        # The xlsx cancer_type column value for GBM39
+        expected_cancer = 'Uterine Corpus Endometrial Carcinoma'
+        cancer = (
+            sample.get('cancer_type') or
+            sample.get('Cancer_type') or
+            (sample.get('extra_metadata_from_csv') or {}).get('cancer_type') or
+            (sample.get('extra_metadata_from_csv') or {}).get('Cancer_type')
+        )
+        assert cancer == expected_cancer, \
+            f"cancer_type from xlsx must be applied during create, got {cancer!r} (Issue #509)"
+
+    finally:
+        _cleanup_project(mongo_collection, project_id)
