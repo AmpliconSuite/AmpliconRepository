@@ -49,9 +49,9 @@ conda activate ampliconenv        # conda
 ### 2. Install the test runner (one-time)
 
 ```bash
-pip install pytest
-# For browser tests only:
-pip install pytest-playwright && playwright install chromium
+# If your requirements.txt is not current you may first need refresh that so it installs pytest and pytest-playwright
+# Browser tests will require:
+playwright install chromium
 ```
 
 ### 3. Start MongoDB
