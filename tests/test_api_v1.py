@@ -485,6 +485,7 @@ class TestProjectDownloadView:
 
     def test_s3_path_returns_redirect(self):
         from django.http import HttpResponseRedirect
+        from django.test import override_settings
         proj = _make_project(private='public', has_tarfile=True)
         presigned = 'https://s3.example.com/bucket/key?sig=abc'
 
@@ -493,18 +494,19 @@ class TestProjectDownloadView:
         mock_session = MagicMock()
         mock_session.client.return_value = mock_s3client
 
-        with patch('caper.views_apis.get_one_project', return_value=proj), \
-             patch('django.conf.settings.USE_S3_DOWNLOADS', True, create=True), \
-             patch('caper.views_apis.boto3', create=True) as mock_boto3:
-            mock_boto3.Session.return_value = mock_session
+        with override_settings(
+            USE_S3_DOWNLOADS=True,
+            S3_DOWNLOADS_BUCKET='test-bucket',
+            S3_DOWNLOADS_BUCKET_PATH='',
+        ), patch('caper.views_apis.get_one_project', return_value=proj), \
+             patch('boto3.Session', return_value=mock_session):
             req = self.rf.get('/api/v1/projects/x/download/')
-            # Inject USE_S3_DOWNLOADS into the view's settings lookup
-            with patch('caper.views_apis.ProjectDownloadView.get') as mock_get:
-                mock_get.return_value = HttpResponseRedirect(presigned)
-                resp = self.view(req, project_id='x')
+            resp = self.view(req, project_id='x')
 
         assert isinstance(resp, HttpResponseRedirect)
         assert resp.status_code == 302
+        assert resp['Location'] == presigned
+        mock_s3client.generate_presigned_url.assert_called_once()
 
     def test_s3_boto3_exception_returns_503(self):
         proj = _make_project(private='public', has_tarfile=True)
