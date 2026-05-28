@@ -3,8 +3,10 @@ API views for the Caper application.
 This module contains all API endpoints for file uploads and project management.
 """
 
+import glob
 import logging
 import os
+import shutil
 import uuid
 import tarfile
 
@@ -61,24 +63,33 @@ class FileUploadView(APIView):
             else:
                 api_id = uuid.uuid4().hex
 
-            if not os.path.exists(os.path.join('tmp', api_id)):
-                os.system(f'mkdir -p tmp/{api_id}')
-            os.system(f'mv tmp/{request_file.name} tmp/{api_id}/{request_file.name}')
+            api_dir = os.path.join(settings.MEDIA_ROOT, api_id)
+            os.makedirs(api_dir, exist_ok=True)
+            shutil.move(
+                os.path.join(settings.MEDIA_ROOT, request_file.name),
+                os.path.join(api_dir, request_file.name),
+            )
 
             if 'MULTIPART' in proj_name:
                 if str(final_file) in str(request_file.name):
                     ## we've reached the last file in the multifile upload, time to zip them up together
                     print('reached the final file, creating reconstructed zip now. ')
-                    os.system(f'cat ./tmp/{api_id}/POST* > ./tmp/{api_id}/reconstructed.tar.gz')
-                    file = open(f'./tmp/{api_id}/reconstructed.tar.gz', 'rb')
+                    reconstructed = os.path.join(api_dir, 'reconstructed.tar.gz')
+                    post_files = sorted(glob.glob(os.path.join(api_dir, 'POST*')))
+                    with open(reconstructed, 'wb') as _out:
+                        for _pf in post_files:
+                            with open(_pf, 'rb') as _inp:
+                                shutil.copyfileobj(_inp, _out)
+                    file = open(reconstructed, 'rb')
                     print('removing POST files now')
-                    os.system(f'rm -f ./tmp/{api_id}/POST*')
+                    for _pf in post_files:
+                        os.remove(_pf)
 
                     helper_thread = Thread(target=self.api_helper, args=(form, current_user, file , api_id, actual_proj_name, True))
                     helper_thread.start()
             else:
                 ## no multipart, just run the api helper:
-                file = open(f'./tmp/{api_id}/{request_file.name}')
+                file = open(os.path.join(api_dir, request_file.name), 'rb')
                 actual_proj_name = request_file.name.split('.')[0]
                 helper_thread = Thread(target=self.api_helper, args=(form, current_user,file, api_id, actual_proj_name))
                 helper_thread.start()
@@ -108,7 +119,7 @@ class FileUploadView(APIView):
         logging.info('the project is here: ')
         new_id = collection_handle.insert_one(project)
         logging.info(str(new_id))
-        project_data_path = f"tmp/{api_id}"
+        project_data_path = os.path.join(settings.MEDIA_ROOT, api_id)
         # move the project location to a new name using the UUID to prevent name collisions
         # new_project_data_path = f"tmp/{new_id.inserted_id}"
         # os.rename(project_data_path, new_project_data_path)
@@ -175,7 +186,7 @@ class ProjectFileAddView(APIView):
 
         #  file handling , save the new file to a temp dir
         api_id = uuid.uuid4().hex
-        tmp_project_data_path = f"tmp/{api_id}"
+        tmp_project_data_path = os.path.join(settings.MEDIA_ROOT, api_id)
 
         uploaded_file = request.FILES['file']
         os.makedirs(tmp_project_data_path, exist_ok=True)
@@ -206,7 +217,7 @@ class ProjectFileAddView(APIView):
         )
         
         project_uuid = project['linkid']
-        tmp_project_data_path = f"tmp/{api_id}"
+        tmp_project_data_path = os.path.join(settings.MEDIA_ROOT, api_id)
         user_identifier = request.data.get('username')
         user = User.objects.get(Q(username=user_identifier) | Q(email=user_identifier))
 
@@ -230,7 +241,7 @@ class ProjectFileAddView(APIView):
 
         logging.error(f"file_fps are {file_fps}")
         try:
-            temp_directory = os.path.join('./tmp/', str(api_id))
+            temp_directory = os.path.join(settings.MEDIA_ROOT, str(api_id))
             agg = Aggregator(
                 input_paths=file_fps,
                 project_name=str(api_id),

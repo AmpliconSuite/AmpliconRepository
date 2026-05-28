@@ -856,6 +856,8 @@ def find_one(pattern, path):
 
 def project_download(request, project_name):
     project = get_one_project(project_name)
+    if project is None:
+        raise Http404(f"Project {project_name!r} not found")
     update_project_download_count(project, project_name)
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     try:
@@ -1480,6 +1482,9 @@ def sample_page(request, project_name, sample_name):
     if next_sample and len(next_sample) > 0:
         next_sample_name = next_sample[0].get('Sample_name')
 
+    if sample_data is None:
+        raise Http404(f"Sample {sample_name!r} not found in project {project_name!r}")
+
     sample_metadata = get_sample_metadata(sample_data)
     reference_genome = reference_genome_from_sample(sample_data)
     sample_data_processed = preprocess_sample_data(replace_space_to_underscore(sample_data))
@@ -2086,7 +2091,12 @@ def feature_page(request, project_name, sample_name, feature_name):
     })
 
 
+_MISSING_FILE_SENTINELS = {'Not Provided', 'not provided', '', None}
+
+
 def feature_download(request, project_name, sample_name, feature_name, feature_id):
+    if feature_id in _MISSING_FILE_SENTINELS:
+        raise Http404(f"No file available for feature {feature_name!r}")
     bed_file = fs_handle.get(ObjectId(feature_id)).read()
     response = HttpResponse(bed_file, content_type='application/caper.bed+csv')
     response['Content-Disposition'] = f'attachment; filename="{feature_name}.bed"'
@@ -2094,14 +2104,17 @@ def feature_download(request, project_name, sample_name, feature_name, feature_i
 
 
 def pdf_download(request, project_name, sample_name, feature_name, feature_id):
+    if feature_id in _MISSING_FILE_SENTINELS:
+        raise Http404(f"No PDF available for feature {feature_name!r}")
     img_file = fs_handle.get(ObjectId(feature_id)).read()
     response = HttpResponse(img_file, content_type='application/pdf')
     response['Content-Disposition'] = f'inline; filename="{feature_name}.pdf"'
-    # response = FileResponse(img_file)
     return response
 
 
 def png_download(request, project_name, sample_name, feature_name, feature_id):
+    if feature_id in _MISSING_FILE_SENTINELS:
+        raise Http404(f"No PNG available for feature {feature_name!r}")
     img_file = fs_handle.get(ObjectId(feature_id)).read()
     response = HttpResponse(img_file, content_type='image/png')
     response['Content-Disposition'] = f'inline; filename="{feature_name}.png"'

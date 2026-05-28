@@ -340,7 +340,14 @@ docker inspect -f \
 
 # Running the automated tests <a name="tests"></a>
 
-The test suite exercises project creation and editing end-to-end against a live MongoDB instance.
+The test suite is organized into several tiers by speed and prerequisites, all driven by `pytest` from the repository root.
+
+| Marker | Description | Prerequisites |
+|--------|-------------|---------------|
+| `integration` | Unit-style tests against live MongoDB; fast (< 5 s each) | MongoDB running |
+| `slow` | Full aggregation pipeline per test (several minutes each) | MongoDB + AmpliconSuiteAggregator |
+| `functional` | End-to-end view tests that depend on pre-loaded datasets | Everything above |
+| `browser` | Playwright browser tests; require a running dev server | Everything above + dev server |
 
 ## Prerequisites
 
@@ -355,7 +362,9 @@ The same environment you use to run the development server is required:
 
 2. **Install the test runner** (one-time, if not already present):
    ```bash
-   pip install pytest pytest-django
+   pip install pytest
+   # For browser tests only:
+   pip install pytest-playwright && playwright install chromium
    ```
 
 3. **MongoDB running locally** — the tests write to the `caper-dev` database on `localhost:27017`:
@@ -367,30 +376,70 @@ The same environment you use to run the development server is required:
    ```bash
    source caper/config.sh
    ```
-   The tests read `caper/config.env` automatically, but `config.sh` must have been sourced at least once in the current shell session so that any shell-level exports your environment depends on are present.
+   The tests read `caper/config.env` automatically, but `config.sh` must have been sourced
+   at least once in the current shell so that shell-level exports are present.
 
-5. **AmpliconSuiteAggregator available** — confirm `AGGREGATOR_DEV_PATH` in `config.sh` points to a valid aggregator installation. Tests that use sample-name remapping require v6 or later.
+5. **AmpliconSuiteAggregator available** (for `slow` and `functional` tests only) — confirm
+   `AGGREGATOR_DEV_PATH` in `config.sh` points to a valid aggregator installation.
+   Tests that use sample-name remapping require v6 or later.
+
+6. **Test datasets present** — place the following files in `test_data/`:
+   - `one_amprepo_sample.tar.gz` + `one_amprepo_sample.xlsx` — 1 sample, hg19 (tracked in git)
+   - `Contino_unagg_040423.tar.gz` — 9 samples, hg38 (download from the shared Google Drive)
+   - `two_hg38_samples_no_ecdna.tar.gz` — 2 hg38 samples, no ecDNA (Google Drive)
+
+   The [testing datasets](https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=share_link)
+   are available on Google Drive.
 
 ## Running the tests
 
-From the top-level `caper/` directory (where `pytest.ini` lives):
+All commands are run from the **repository root** (where `pytest.ini` lives).
 
+**Fast integration tests only** (no aggregation; safe to run any time):
+```bash
+pytest -m "integration and not slow and not functional and not browser" -v
+```
+
+**Full integration + functional tests** (requires AmpliconSuiteAggregator; ~10 min):
+```bash
+pytest -m "integration and not browser" -v
+```
+
+**End-to-end project lifecycle** (slow, creates and aggregates real projects):
 ```bash
 pytest -m "slow and integration" -v
 ```
 
-Expected output with a correctly configured environment:
+**Browser tests** (requires a running dev server on port 8000):
+```bash
+# Terminal 1: start the dev server
+cd caper && python manage.py runserver
 
+# Terminal 2: run browser tests
+pytest -m browser --base-url http://localhost:8000 -v
 ```
-tests/test_create_edit_project.py::test_create_tar_only                   PASSED
-tests/test_create_edit_project.py::test_create_tar_and_metadata_no_remap  PASSED
-tests/test_create_edit_project.py::test_create_tar_and_metadata_with_remap PASSED
-tests/test_create_edit_project.py::test_create_then_edit_with_remap       PASSED
+
+Expected output for fast integration tests with a correctly configured environment:
 ```
+tests/test_api.py::test_background_task_status_returns_200         PASSED
+tests/test_error_handling.py::test_create_project_without_file     PASSED
+tests/test_error_handling.py::test_project_page_nonexistent_id     PASSED
+tests/test_error_handling.py::test_download_nonexistent_project    PASSED
+```
+
+## Continuous Integration
+
+Pushes and pull requests to `main` automatically run the fast integration tests via
+GitHub Actions (`.github/workflows/tests.yml`).  The workflow spins up a MongoDB 6
+service container and runs `pytest -m "integration and not slow and not functional and not browser"`.
+
+Slow, functional, and browser tests are excluded from CI because they require
+AmpliconSuiteAggregator, large test datasets, and a running dev server.
 
 ## Cleanup
 
-Each test removes all artifacts it created — MongoDB documents, `tmp/` directories, and S3 objects — in a `finally` block, so cleanup happens even when a test fails.
+Each test removes all artifacts it created — MongoDB documents, `tmp/` directories, and S3
+objects — in a `finally` block, so cleanup happens even when a test fails.
 
 ---
 
