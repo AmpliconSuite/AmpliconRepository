@@ -13,6 +13,7 @@ This is the main repository for the AmpliconRepository website. The documentatio
 - [Using the development server](#dev-server)
 - [Logging in as admin](#admin-logging)
 - [Running the automated tests](#tests)
+- [REST API v1](#api)
 - [How to deploy and update the production server for AmpliconRepository](#deploy)
 
 
@@ -412,12 +413,19 @@ pytest -m "slow and integration" -v
 
 **Browser tests** (requires a running dev server on port 8000):
 ```bash
-# Terminal 1: start the dev server
+# Terminal 1: start the dev server — must be from THIS repository's caper/ directory
 cd caper && python manage.py runserver
 
 # Terminal 2: run browser tests
 pytest -m browser --base-url http://localhost:8000 -v
 ```
+
+> **Important:** The dev server and the pytest process share a SQLite database
+> (`caper/caper.sqlite3`).  Two tests — `test_authenticated_user_sees_create_form`
+> and `test_email_password_login_form_works` — inject test users and sessions
+> directly into that database.  If the server is started from a *different*
+> repository clone those tests will skip automatically with a diagnostic message
+> rather than fail.
 
 Expected output for fast integration tests with a correctly configured environment:
 ```
@@ -440,6 +448,229 @@ AmpliconSuiteAggregator, large test datasets, and a running dev server.
 
 Each test removes all artifacts it created — MongoDB documents, `tmp/` directories, and S3
 objects — in a `finally` block, so cleanup happens even when a test fails.
+
+---
+
+# REST API v1 <a name="api"></a>
+
+AmpliconRepository exposes a read-oriented REST API that lets you list projects, fetch sample metadata, and download project archives — all without a browser.
+
+## Authentication
+
+Public projects are accessible without any credentials.  Private projects require an **API token**.
+
+### Getting a token
+
+1. Log in to [ampliconrepository.org](https://ampliconrepository.org) (Google, Globus, or username/password).
+2. Go to your **Profile** page.
+3. Under **Developer API Token**, click **Generate / Regenerate Token**.
+4. Copy the token immediately — it is shown only once.
+
+Pass the token on every request:
+
+```bash
+-H "Authorization: Token <your-token>"
+```
+
+Tokens can be revoked at any time from the Profile page.
+
+## Endpoints
+
+All endpoints are under `https://ampliconrepository.org/api/v1/`.
+
+---
+
+### List projects
+
+```
+GET /api/v1/projects/
+```
+
+Returns all projects visible to the caller.  Without a token, only public projects are returned.  With a token, private projects where you are a project member are also included.
+
+**Optional query parameter**
+
+| Parameter | Description |
+|-----------|-------------|
+| `name`    | Case-insensitive substring filter on project name |
+
+**Example**
+
+```bash
+# All public projects
+curl https://ampliconrepository.org/api/v1/projects/
+
+# Your public and private projects
+curl https://ampliconrepository.org/api/v1/projects/ \
+     -H "Authorization: Token <your-token>"
+
+# Filter by name
+curl "https://ampliconrepository.org/api/v1/projects/?name=CCLE" \
+     -H "Authorization: Token <your-token>"
+```
+
+**Response** — JSON array of project objects:
+
+```json
+[
+  {
+    "id": "64a1b2c3d4e5f6a7b8c9d0e1",
+    "project_name": "CCLE_2023",
+    "description": "Cancer Cell Line Encyclopedia amplicon calls",
+    "sample_count": 542,
+    "visibility": "public",
+    "date": "2023-09-15",
+    "publication_link": "https://doi.org/...",
+    "creator": "jsmith",
+    "reference_genome": "hg38",
+    "AA_version": "1.3",
+    "AC_version": "1.2",
+    "oncogenes": ["MYC", "EGFR"],
+    "classifications": ["BFB", "ecDNA"]
+  }
+]
+```
+
+---
+
+### Project detail
+
+```
+GET /api/v1/projects/<id>/
+```
+
+Returns metadata for a single project.  Returns `404` if the project does not exist; returns `401` if the project is private and no valid token is supplied.
+
+**Example**
+
+```bash
+curl https://ampliconrepository.org/api/v1/projects/64a1b2c3d4e5f6a7b8c9d0e1/ \
+     -H "Authorization: Token <your-token>"
+```
+
+Response fields are the same as the list endpoint.
+
+---
+
+### Sample listing
+
+```
+GET /api/v1/projects/<id>/samples/
+```
+
+Returns per-sample metadata for every sample in the project.  GridFS file-ID fields (`Features`, `Sample_metadata_JSON`, `Sample_files_JSON`) are stripped from the response.
+
+**Example**
+
+```bash
+curl https://ampliconrepository.org/api/v1/projects/64a1b2c3d4e5f6a7b8c9d0e1/samples/ \
+     -H "Authorization: Token <your-token>"
+```
+
+**Response** — JSON array of sample objects:
+
+```json
+[
+  {
+    "run": "run1",
+    "Sample_name": "GBM39",
+    "Cancer_type": "GBM",
+    "AA_amplicon_number": 1,
+    "Classification": "ecDNA"
+  }
+]
+```
+
+---
+
+### Download project archive
+
+```
+GET /api/v1/projects/<id>/download/
+```
+
+Downloads the project `.tar.gz` archive.
+
+- **S3-backed deployments** — returns HTTP 302 to a time-limited presigned URL (valid 10 minutes).
+- **Local-storage deployments** — streams the file directly.
+
+Use `curl -L` to follow the redirect automatically.
+
+**Example**
+
+```bash
+curl -L -O https://ampliconrepository.org/api/v1/projects/64a1b2c3d4e5f6a7b8c9d0e1/download/ \
+     -H "Authorization: Token <your-token>"
+```
+
+---
+
+### Batch download URL resolution
+
+```
+POST /api/v1/projects/download/
+Content-Type: application/json
+```
+
+Resolve a list of project IDs to their individual download URLs in one call. Useful when downloading many projects programmatically — fetch the URL list, then download each archive in a loop.
+
+Projects that do not exist, have no archive, or are inaccessible to the caller appear in `skipped` rather than raising an error.
+
+**Request body**
+
+```json
+{"ids": ["64a1b2c3d4e5f6a7b8c9d0e1", "64a1b2c3d4e5f6a7b8c9d0e2"]}
+```
+
+**Example**
+
+```bash
+curl -X POST https://ampliconrepository.org/api/v1/projects/download/ \
+     -H "Authorization: Token <your-token>" \
+     -H "Content-Type: application/json" \
+     -d '{"ids": ["64a1b2c3d4e5f6a7b8c9d0e1", "64a1b2c3d4e5f6a7b8c9d0e2"]}'
+```
+
+**Response**
+
+```json
+{
+  "downloads": [
+    {
+      "id": "64a1b2c3d4e5f6a7b8c9d0e1",
+      "project_name": "CCLE_2023",
+      "download_url": "https://ampliconrepository.org/api/v1/projects/64a1b2c3d4e5f6a7b8c9d0e1/download/"
+    }
+  ],
+  "skipped": ["64a1b2c3d4e5f6a7b8c9d0e2"]
+}
+```
+
+Then download each archive:
+
+```bash
+# Download all resolved archives
+curl -X POST https://ampliconrepository.org/api/v1/projects/download/ \
+     -H "Authorization: Token $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"ids": ["id1", "id2", "id3"]}' \
+  | python3 -c "
+import json, sys, subprocess
+for entry in json.load(sys.stdin)['downloads']:
+    subprocess.run(['curl', '-L', '-O', entry['download_url'],
+                    '-H', f'Authorization: Token $TOKEN'])
+"
+```
+
+## HTTP status codes
+
+| Code | Meaning |
+|------|---------|
+| 200  | Success |
+| 400  | Bad request (e.g. `ids` is not a JSON array) |
+| 401  | Missing or invalid token, or project is private |
+| 404  | Project or archive not found |
+| 503  | Download temporarily unavailable (storage error) |
 
 ---
 

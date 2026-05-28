@@ -125,12 +125,18 @@ pytest -m "slow and integration" -v
 
 **Browser tests** — requires a running dev server:
 ```bash
-# Terminal 1
+# Terminal 1 — must be from THIS repository's caper/ directory
 cd caper && python manage.py runserver
 
 # Terminal 2
 pytest -m browser --base-url http://localhost:8000 -v
 ```
+
+> **Database sharing requirement:** Two browser tests (`test_authenticated_user_sees_create_form`
+> and `test_email_password_login_form_works`) inject test users and sessions directly into
+> `caper/caper.sqlite3`.  The dev server must be started from the same repository clone so
+> it reads the same SQLite file.  If the databases differ, those tests skip automatically
+> with a diagnostic message pointing to the correct `cd` path.
 
 **Run everything** (takes 20+ minutes):
 ```bash

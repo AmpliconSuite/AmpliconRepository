@@ -46,7 +46,11 @@ from .views_admin import (
 )
 
 # Import API views from separate module
-from .views_apis import FileUploadView, ProjectFileAddView, BackgroundTaskStatusView
+from .views_apis import (
+    FileUploadView, ProjectFileAddView, BackgroundTaskStatusView,
+    ProjectListView, ProjectDetailView, ProjectSamplesView,
+    ProjectDownloadView, ProjectBatchDownloadView, ApiTokenView,
+)
 
 # from django.views.generic import TemplateView
 # from pymongo import MongoClient

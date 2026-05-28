@@ -55,6 +55,21 @@ def test_background_task_status_returns_200():
 # File upload API
 # ---------------------------------------------------------------------------
 
+@pytest.mark.integration
+def test_file_upload_get_returns_200():
+    """GET /upload_api/ must return 200 with a success response body."""
+    from rest_framework.test import APIRequestFactory
+    from caper.views_apis import FileUploadView
+
+    rf = APIRequestFactory()
+    req = rf.get('/upload_api/')
+    resp = FileUploadView.as_view()(req)
+
+    assert resp.status_code == 200, \
+        f"Expected 200 from FileUploadView GET, got {resp.status_code}"
+    assert resp.data.get('response') == 'success', \
+        f"Expected {{'response': 'success'}}, got {resp.data}"
+
 @pytest.mark.slow
 @pytest.mark.integration
 def test_upload_api_accepts_tar_file(mongo_collection):
@@ -92,8 +107,8 @@ def test_upload_api_accepts_tar_file(mongo_collection):
 
     response = FileUploadView.as_view()(resp)
 
-    assert response.status_code in (200, 201, 400), \
-        f"Unexpected status {response.status_code} from FileUploadView"
+    assert response.status_code == 201, \
+        f"Expected 201 from FileUploadView, got {response.status_code}: {getattr(response, 'data', '')}"
 
     # If a project document was created, clean it up
     if response.status_code in (200, 201):
