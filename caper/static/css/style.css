@@ -107,6 +107,12 @@ table.dataTable.no-border tbody td {
   border: 0;
 }
 
+/* Let DataTable content overflow to page level instead of creating in-div scrollbars */
+.dataTables_scroll,
+.dataTables_scrollBody {
+    overflow: visible !important;
+}
+
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
