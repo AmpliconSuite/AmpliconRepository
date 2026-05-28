@@ -48,6 +48,17 @@ class CaperConfig(AppConfig):
         except Exception as e:
             logger.warning(f"Could not determine AmpliconSuiteAggregator version: {e}")
 
+        # Remove orphaned temp dirs left by any previous run that crashed or
+        # was killed before it could clean up after itself.
+        try:
+            from .background_tasks import cleanup_stale_temp_dirs
+            # Use a short min-age (5 min) at startup: no tasks are running yet,
+            # so anything older than a few minutes is safely orphaned.
+            removed = cleanup_stale_temp_dirs(min_age_seconds=300)
+            logger.info(f"Startup temp dir cleanup: removed {removed} orphaned dir(s)")
+        except Exception as e:
+            logger.warning(f"Startup temp dir cleanup failed: {e}")
+       
         # Start the S3 sync in a background thread (only when S3 static files are enabled)
         if os.environ.get('S3_STATIC_FILES') == 'TRUE':
             sync_thread = threading.Thread(target=self.sync_static_to_s3, daemon=True)

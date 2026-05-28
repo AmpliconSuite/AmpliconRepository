@@ -10,6 +10,8 @@ import threading
 import uuid
 import datetime
 import os
+import shutil
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -32,6 +34,112 @@ def _get_tasks_collection():
 # How long before a 'running' task is considered stale/dead (seconds).
 _STALE_THRESHOLD_SECONDS = 20 * 60  # 20 minutes
 
+# Root directory where project temp dirs are created.
+_DEFAULT_TMP_ROOT = os.getenv('CAPER_TMP_ROOT', './tmp')
+
+# Periodic cleanup interval: every 6 hours.
+_CLEANUP_INTERVAL_SECONDS = 6 * 60 * 60
+
+# Minimum dir age before the cleanup daemon will touch it.
+# 3× the stale threshold (60 min) gives active tasks a generous safety buffer.
+_CLEANUP_MIN_AGE_SECONDS = _STALE_THRESHOLD_SECONDS * 3
+
+
+def _is_safe_temp_dir(path: str, tmp_root: str = _DEFAULT_TMP_ROOT) -> bool:
+    """Return True only for real directories contained under tmp_root."""
+    if not path or not tmp_root:
+        return False
+
+    try:
+        abs_path = os.path.abspath(path)
+        abs_root = os.path.abspath(tmp_root)
+        real_path = os.path.realpath(abs_path)
+        real_root = os.path.realpath(abs_root)
+        if real_path in ('/', real_root):
+            return False
+        if not os.path.isdir(abs_path) or os.path.islink(abs_path):
+            return False
+        return os.path.commonpath([real_root, real_path]) == real_root
+    except (OSError, ValueError):
+        return False
+
+
+def _remove_temp_dir(path: str, tmp_root: str = _DEFAULT_TMP_ROOT) -> bool:
+    """Safely remove a temp directory under tmp_root, logging the outcome."""
+    if not path:
+        return False
+    if not _is_safe_temp_dir(path, tmp_root):
+        logging.warning(
+            f"Refusing to remove unsafe temp directory: path={path}, tmp_root={tmp_root}"
+        )
+        return False
+    try:
+        shutil.rmtree(os.path.abspath(path), ignore_errors=True)
+        logging.info(f"Removed temp directory: {path}")
+        return True
+    except Exception:
+        logging.exception(f"Failed to remove temp directory: {path}")
+        return False
+
+
+def cleanup_stale_temp_dirs(
+    tmp_root: str = _DEFAULT_TMP_ROOT,
+    min_age_seconds: int = _CLEANUP_MIN_AGE_SECONDS,
+) -> int:
+    """
+    Remove directories in tmp_root that have no corresponding running task in
+    MongoDB and whose mtime is older than min_age_seconds.
+
+    The mtime-based age check provides a secondary safety net: a directory
+    that an active aggregation is still writing to will have a recent mtime
+    and will not be removed even if its MongoDB record is temporarily invisible.
+
+    Returns the number of directories removed.
+    """
+    tmp_root = os.path.abspath(tmp_root)
+    if not os.path.isdir(tmp_root):
+        return 0
+
+    # Collect the absolute temp_dir paths of all currently-running tasks.
+    active_temp_dirs: set[str] = set()
+    try:
+        col = _get_tasks_collection()
+        for doc in col.find({'state': 'running', 'temp_dir': {'$exists': True, '$ne': None}}):
+            td = doc.get('temp_dir')
+            if td:
+                active_temp_dirs.add(os.path.realpath(os.path.abspath(td)))
+    except Exception:
+        logging.exception("cleanup_stale_temp_dirs: failed to query MongoDB — skipping cleanup")
+        return 0
+
+    cutoff = time.time() - min_age_seconds
+    removed = 0
+
+    try:
+        with os.scandir(tmp_root) as entries:
+            for entry in entries:
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                try:
+                    if entry.stat(follow_symlinks=False).st_mtime > cutoff:
+                        continue  # Too recent — still potentially active
+                    real_path = os.path.realpath(os.path.abspath(entry.path))
+                    if real_path in active_temp_dirs:
+                        continue  # Claimed by a running task
+                    if _remove_temp_dir(entry.path, tmp_root):
+                        logging.info(f"cleanup_stale_temp_dirs: removed orphaned temp dir {real_path}")
+                        removed += 1
+                except Exception:
+                    logging.exception(f"cleanup_stale_temp_dirs: error processing {entry.path}")
+    except OSError:
+        logging.exception(f"cleanup_stale_temp_dirs: cannot scan {tmp_root}")
+
+    if removed:
+        logging.info(f"cleanup_stale_temp_dirs: removed {removed} orphaned dir(s) from {tmp_root}")
+    else:
+        logging.debug(f"cleanup_stale_temp_dirs: no orphaned dirs found in {tmp_root}")
+    return removed
+
 
 class BackgroundTaskTracker:
     """
@@ -40,13 +148,22 @@ class BackgroundTaskTracker:
     the same status.
     """
 
-    def __init__(self, max_workers: int = 4, thread_name_prefix: str = 'caper_worker'):
+    def __init__(
+        self,
+        max_workers: int = 4,
+        thread_name_prefix: str = 'caper_worker',
+        cleanup_interval_seconds: int = _CLEANUP_INTERVAL_SECONDS,
+        tmp_root: str = _DEFAULT_TMP_ROOT,
+    ):
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix=thread_name_prefix,
         )
         self._max_workers = max_workers
         self._col = None  # lazy
+        self._cleanup_interval = cleanup_interval_seconds
+        self._tmp_root = tmp_root
+        self._start_cleanup_daemon()
 
     def _collection(self):
         if self._col is None:
@@ -62,36 +179,56 @@ class BackgroundTaskTracker:
     # Public interface
     # ------------------------------------------------------------------
 
-    def submit(self, fn, *args, task_label: str = None, **kwargs):
-        """Submit *fn* to the thread pool and record it in MongoDB."""
+    def submit(self, fn, *args, task_label: str = None, temp_dir: str = None, **kwargs):
+        """Submit *fn* to the thread pool and record it in MongoDB.
+
+        temp_dir: if provided, its absolute path is stored in the task record
+        so the periodic cleanup daemon can skip directories that belong to
+        running tasks.  The directory is also removed in a finally block after
+        fn returns, catching the success path which the existing code does not
+        clean up.
+        """
         if task_label is None:
             task_label = getattr(fn, '__name__', str(fn))
 
         task_id = uuid.uuid4().hex
         now = datetime.datetime.utcnow()
 
+        doc = {
+            '_id': task_id,
+            'label': task_label,
+            'state': 'running',
+            'started_at': now.isoformat(timespec='seconds'),
+            'updated_at': now,
+            'worker_pid': os.getpid(),
+        }
+        if temp_dir is not None:
+            doc['temp_dir'] = os.path.abspath(temp_dir)
+
         # Write to MongoDB first so it's visible immediately
         col = self._collection()
         if col is not None:
             try:
-                col.insert_one({
-                    '_id': task_id,
-                    'label': task_label,
-                    'state': 'running',
-                    'started_at': now.isoformat(timespec='seconds'),
-                    'updated_at': now,
-                    'worker_pid': os.getpid(),
-                })
+                col.insert_one(doc)
             except Exception:
                 logging.exception("Failed to insert background task record")
+
+        abs_temp_dir = os.path.abspath(temp_dir) if temp_dir is not None else None
 
         def _wrapped():
             try:
                 fn(*args, **kwargs)
                 self._mark_task(task_id, 'completed')
-            except Exception as exc:
+            except Exception:
                 self._mark_task(task_id, 'failed')
                 raise
+            finally:
+                # Belt-and-suspenders: the success path in
+                # _process_and_aggregate_files does not call rmtree, so this
+                # finally block is the primary cleanup for the happy path.
+                # Error paths that already called rmtree are harmless repeats.
+                if abs_temp_dir is not None:
+                    _remove_temp_dir(abs_temp_dir, self._tmp_root)
 
         future = self._executor.submit(_wrapped)
         return future
@@ -162,6 +299,26 @@ class BackgroundTaskTracker:
                 )
             except Exception:
                 logging.exception(f"Failed to mark background task {task_id} as {state}")
+
+    def _start_cleanup_daemon(self):
+        """Start a daemon thread that sweeps tmp_root every cleanup_interval seconds."""
+        interval = self._cleanup_interval
+        tmp_root = self._tmp_root
+
+        def _loop():
+            while True:
+                time.sleep(interval)
+                try:
+                    cleanup_stale_temp_dirs(tmp_root)
+                except Exception:
+                    logging.exception("Periodic temp dir cleanup failed")
+
+        t = threading.Thread(target=_loop, daemon=True, name='caper_tmp_cleanup')
+        t.start()
+        logging.info(
+            f"Started temp dir cleanup daemon "
+            f"(interval={interval}s, root={os.path.abspath(tmp_root)})"
+        )
 
 
 # ---------------------------------------------------------------------------
