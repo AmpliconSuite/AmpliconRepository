@@ -4,7 +4,7 @@
 {% block extra_js %}
 <script>
     $(document).ready( function () {
-        $('#myTable2').DataTable();
+        $('#myTable2').DataTable({ autoWidth: false });
     } );
 </script>
 
@@ -304,7 +304,7 @@
 {% endif %}
 
 
-<div style="margin-top:25px; padding: 25px; border: 0.5px solid grey;">
+<div style="margin-top:25px; padding: 25px; border: 0.5px solid grey; min-width: min-content;">
     <table id='myTable2' class="table table-hover table-sm stripe no-border">
         <thead>
             <tr>
