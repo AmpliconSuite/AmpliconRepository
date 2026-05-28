@@ -434,6 +434,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.globus',
     'allauth.socialaccount.providers.google',
     'rest_framework',
+    'rest_framework.authtoken',
     ]
 
 CRISPY_TEMPLATE_PACK = 'bootstrap4'

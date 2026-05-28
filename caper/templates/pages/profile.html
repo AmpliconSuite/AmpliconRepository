@@ -12,7 +12,7 @@
      // get the format and sort functions from the included file
     {% include 'includes/datatable_date_utils.html' %}
 
-    
+
     $(document).ready( function () {
         if ($.fn.DataTable.isDataTable('#projectTable')) {
             $('#projectTable').DataTable().destroy();
@@ -27,10 +27,70 @@
             ],
             order: [[3, 'desc']] // Sort by date column (index 3) in descending order
         });
-       
+
     } );
- 
-    
+
+    // ── API Token management ──────────────────────────────────────────────────
+
+    function getCsrfToken() {
+        const match = document.cookie.match(/csrftoken=([^;]+)/);
+        return match ? match[1] : '';
+    }
+
+    function apiFetch(url, method) {
+        return fetch(url, {
+            method: method,
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+                'Content-Type': 'application/json',
+            },
+            credentials: 'same-origin',
+        });
+    }
+
+    function setTokenUI(hasToken, suffix) {
+        document.getElementById('token-status').textContent =
+            hasToken ? 'Active (ends in …' + suffix + ')' : 'No active token.';
+        document.getElementById('btn-revoke-token').style.display = hasToken ? 'inline-block' : 'none';
+    }
+
+    // Load current token status on page load
+    apiFetch('/api/v1/token/', 'GET')
+        .then(r => r.json())
+        .then(data => setTokenUI(data.has_token, data.token_suffix))
+        .catch(() => {});
+
+    document.getElementById('btn-generate-token').addEventListener('click', function () {
+        if (!confirm('This will invalidate any existing token. Continue?')) return;
+        apiFetch('/api/v1/token/', 'POST')
+            .then(r => r.json())
+            .then(data => {
+                if (data.token) {
+                    document.getElementById('token-value').value = data.token;
+                    document.getElementById('token-reveal').style.display = 'block';
+                    setTokenUI(true, data.token.slice(-8));
+                }
+            });
+    });
+
+    document.getElementById('btn-revoke-token').addEventListener('click', function () {
+        if (!confirm('Revoke your API token? Any scripts using it will stop working.')) return;
+        apiFetch('/api/v1/token/', 'DELETE')
+            .then(() => {
+                document.getElementById('token-reveal').style.display = 'none';
+                document.getElementById('token-value').value = '';
+                setTokenUI(false, null);
+            });
+    });
+
+    document.getElementById('btn-copy-token').addEventListener('click', function () {
+        const val = document.getElementById('token-value').value;
+        navigator.clipboard.writeText(val).then(() => {
+            this.textContent = 'Copied!';
+            setTimeout(() => this.textContent = 'Copy', 2000);
+        });
+    });
+
 </script>
 {% endblock %}
 {% block main %}
@@ -145,6 +205,55 @@
         </div>
         </form>
 
+
+        <!-- ── Developer API Token ─────────────────────────────────────── -->
+        <div class="row" style="margin-top:30px">
+            <div class="col-md-9">
+                <h3>Developer API Token</h3>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-9">
+                <p>Use an API token to access your projects programmatically with
+                   <code>curl</code> or the AmpliconRepository Python client.</p>
+                <p><strong>Status:</strong> <span id="token-status">Loading…</span></p>
+                <button id="btn-generate-token" class="btn btn-primary btn-sm">Generate / Regenerate Token</button>
+                <button id="btn-revoke-token" class="btn btn-danger btn-sm" style="display:none; margin-left:8px">Revoke Token</button>
+            </div>
+        </div>
+
+        <div id="token-reveal" style="display:none; margin-top:16px">
+            <div class="row">
+                <div class="col-md-9">
+                    <div class="alert alert-warning" role="alert">
+                        <strong>Copy your token now.</strong> It will not be shown again.
+                    </div>
+                    <div class="input-group">
+                        <input id="token-value" type="text" class="form-control" readonly
+                               style="font-family:monospace">
+                        <div class="input-group-append">
+                            <button id="btn-copy-token" class="btn btn-outline-secondary" type="button">Copy</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row" style="margin-top:16px">
+                <div class="col-md-9">
+                    <p><strong>Usage examples:</strong></p>
+                    <pre style="background:#f5f5f5; padding:12px; border-radius:4px; font-size:0.85em"># List your projects
+curl https://ampliconrepository.org/api/v1/projects/ \
+     -H "Authorization: Token &lt;your-token&gt;"
+
+# Download a project archive
+curl -L -O https://ampliconrepository.org/api/v1/projects/&lt;id&gt;/download/ \
+     -H "Authorization: Token &lt;your-token&gt;"
+
+# Get sample metadata
+curl https://ampliconrepository.org/api/v1/projects/&lt;id&gt;/samples/ \
+     -H "Authorization: Token &lt;your-token&gt;"</pre>
+                </div>
+            </div>
+        </div>
 
     </div>
     {% endif %}

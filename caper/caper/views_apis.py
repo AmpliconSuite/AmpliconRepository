@@ -30,7 +30,8 @@ from .serializers import FileSerializer
 from .forms import RunForm
 from .utils import (
     collection_handle, get_one_project, form_to_dict,
-    get_latest_project_version, normalize_visibility_field, is_project_private
+    get_latest_project_version, normalize_visibility_field, is_project_private,
+    fs_handle,
 )
 from .extra_metadata import *
 from .background_tasks import get_background_task_status
@@ -371,6 +372,402 @@ class ProjectFileAddView(APIView):
         email.content_subtype = "html"
         email.send(fail_silently=False)
         logging.error("Finished email sent")
+
+
+# ===========================================================================
+# REST API v1 — programmatic / curl access
+# ===========================================================================
+
+from bson.objectid import ObjectId
+from django.http import StreamingHttpResponse, HttpResponseRedirect
+from rest_framework.authentication import TokenAuthentication, SessionAuthentication
+from rest_framework.exceptions import AuthenticationFailed
+
+
+# ── Auth + access-control helpers ───────────────────────────────────────────
+
+def _authenticate_api_request(request):
+    """
+    Inspect the Authorization header for a DRF Token.
+
+    Returns:
+      (user, None)       — valid token
+      (None, None)       — no token present (anonymous caller)
+      (None, Response)   — token present but invalid; caller must return this
+    """
+    auth = TokenAuthentication()
+    try:
+        result = auth.authenticate(request)
+        return (result[0], None) if result else (None, None)
+    except AuthenticationFailed as exc:
+        return (None, Response({'error': str(exc)}, status=status.HTTP_401_UNAUTHORIZED))
+
+
+def _user_can_access_project(project, user):
+    """Return True if user (Django User or None for anonymous) may read project."""
+    vis = normalize_visibility_field(project.get('private', 'private'))
+    if not is_project_private(vis):
+        return True
+    if user is None:
+        return False
+    members = project.get('project_members', [])
+    return user.username in members or (user.email and user.email in members)
+
+
+_SAFE_PREV_VERSION_KEYS = frozenset({
+    'date', 'linkid', 'AA_version', 'AC_version', 'ASP_version', 'aggregator_version'
+})
+_SAMPLE_SKIP_FIELDS = frozenset({'Features', 'Sample_metadata_JSON', 'Sample_files_JSON'})
+
+
+def _project_to_dict(project):
+    """Serialize a MongoDB project document to a JSON-safe dict, omitting internal fields."""
+    linkid = str(project.get('linkid') or project.get('_id', ''))
+    return {
+        'id':                 linkid,
+        'project_name':       project.get('project_name', ''),
+        'description':        project.get('description', ''),
+        'sample_count':       project.get('sample_count', 0),
+        'visibility':         normalize_visibility_field(project.get('private', 'private')),
+        'date':               str(project.get('date', '')),
+        'publication_link':   project.get('publication_link', ''),
+        'creator':            project.get('creator', ''),
+        'reference_genome':   project.get('Genome_build', project.get('reference_genome', '')),
+        'AA_version':         project.get('AA_version', ''),
+        'AC_version':         project.get('AC_version', ''),
+        'ASP_version':        project.get('ASP_version', ''),
+        'aggregator_version': project.get('aggregator_version', ''),
+        'oncogenes':          project.get('Oncogenes', []),
+        'classifications':    project.get('Classifications', []),
+        'previous_versions': [
+            {k: v for k, v in pv.items() if k in _SAFE_PREV_VERSION_KEYS}
+            for pv in project.get('previous_versions', [])
+        ],
+    }
+
+
+def _sample_to_dict(sample, run_name):
+    """Serialize a sample dict, omitting GridFS-ID fields that are useless externally."""
+    d = {'run': run_name}
+    for k, v in sample.items():
+        if k not in _SAMPLE_SKIP_FIELDS:
+            d[k] = v
+    return d
+
+
+# ── GET /api/v1/projects/ ────────────────────────────────────────────────────
+
+class ProjectListView(APIView):
+    """
+    List all projects visible to the caller.
+
+    Unauthenticated callers see public projects only.
+    Authenticated callers (API token) also see private/hidden projects where
+    they are listed in project_members.
+
+    Optional query parameter:
+        ?name=<substring>   case-insensitive filter on project_name
+
+    curl example:
+        curl https://ampliconrepository.org/api/v1/projects/ \\
+             -H "Authorization: Token <your-token>"
+    """
+    permission_classes = []
+
+    def get(self, request):
+        user, err = _authenticate_api_request(request)
+        if err:
+            return err
+
+        name_filter = request.query_params.get('name', '').strip()
+        name_q = {'$regex': name_filter, '$options': 'i'} if name_filter else None
+
+        public_q = {'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}
+        if name_q:
+            public_q['project_name'] = name_q
+        projects = list(collection_handle.find(public_q))
+
+        if user is not None:
+            private_q = {
+                'private': {'$in': [True, 'private', 'hidden_public']},
+                '$or': [{'project_members': user.username}, {'project_members': user.email}],
+                'delete': False,
+                'current': True,
+            }
+            if name_q:
+                private_q['project_name'] = name_q
+            seen = {str(p['_id']) for p in projects}
+            for p in collection_handle.find(private_q):
+                if str(p['_id']) not in seen:
+                    projects.append(p)
+
+        for p in projects:
+            if 'linkid' not in p:
+                p['linkid'] = str(p['_id'])
+
+        return Response([_project_to_dict(p) for p in projects])
+
+
+# ── GET /api/v1/projects/<project_id>/ ──────────────────────────────────────
+
+class ProjectDetailView(APIView):
+    """
+    Return metadata for a single project.
+
+    curl example:
+        curl https://ampliconrepository.org/api/v1/projects/<id>/ \\
+             -H "Authorization: Token <your-token>"
+    """
+    permission_classes = []
+
+    def get(self, request, project_id):
+        user, err = _authenticate_api_request(request)
+        if err:
+            return err
+
+        project = get_one_project(project_id)
+        if not project:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        if not _user_can_access_project(project, user):
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if 'linkid' not in project:
+            project['linkid'] = str(project['_id'])
+        return Response(_project_to_dict(project))
+
+
+# ── GET /api/v1/projects/<project_id>/samples/ ───────────────────────────────
+
+class ProjectSamplesView(APIView):
+    """
+    Return the list of samples (with metadata) for a project.
+
+    curl example:
+        curl https://ampliconrepository.org/api/v1/projects/<id>/samples/ \\
+             -H "Authorization: Token <your-token>"
+    """
+    permission_classes = []
+
+    def get(self, request, project_id):
+        user, err = _authenticate_api_request(request)
+        if err:
+            return err
+
+        project = get_one_project(project_id)
+        if not project:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        if not _user_can_access_project(project, user):
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        samples = []
+        for run_name, run_samples in project.get('runs', {}).items():
+            for sample in run_samples:
+                samples.append(_sample_to_dict(sample, run_name))
+
+        return Response(samples)
+
+
+# ── GET /api/v1/projects/<project_id>/download/ ──────────────────────────────
+
+class ProjectDownloadView(APIView):
+    """
+    Download the project tar.gz archive.
+
+    S3-backed deployments: returns HTTP 302 to a time-limited presigned URL.
+    Local-storage deployments: streams the file from GridFS.
+
+    curl example (follow redirect with -L):
+        curl -L -O https://ampliconrepository.org/api/v1/projects/<id>/download/ \\
+             -H "Authorization: Token <your-token>"
+    """
+    permission_classes = []
+
+    def get(self, request, project_id):
+        from django.conf import settings as django_settings
+
+        user, err = _authenticate_api_request(request)
+        if err:
+            return err
+
+        project = get_one_project(project_id)
+        if not project:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        if not _user_can_access_project(project, user):
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        tar_id = project.get('tarfile')
+        if not tar_id:
+            return Response(
+                {'error': 'Project has no downloadable archive yet'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        linkid = str(project.get('linkid') or project.get('_id', ''))
+        filename = f"{project.get('project_name', linkid)}.tar.gz"
+
+        # S3 path — redirect to a presigned URL
+        if getattr(django_settings, 'USE_S3_DOWNLOADS', False):
+            try:
+                import boto3
+                bucket_path = getattr(django_settings, 'S3_DOWNLOADS_BUCKET_PATH', '')
+                s3_key = f'{bucket_path}{linkid}/{linkid}.tar.gz'
+                session = boto3.Session(
+                    profile_name=getattr(django_settings, 'AWS_PROFILE_NAME', None) or 'default')
+                s3client = session.client('s3')
+                presigned_url = s3client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': django_settings.S3_DOWNLOADS_BUCKET, 'Key': s3_key},
+                    ExpiresIn=600,
+                )
+                return HttpResponseRedirect(presigned_url)
+            except Exception as exc:
+                logging.error(f"[API] S3 presigned URL failed for {linkid}: {exc}")
+                return Response({'error': 'Download temporarily unavailable'},
+                                status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        # Non-S3 path — stream from GridFS
+        try:
+            gridfs_file = fs_handle.get(ObjectId(str(tar_id)))
+
+            def _stream():
+                while True:
+                    chunk = gridfs_file.read(32768)
+                    if not chunk:
+                        break
+                    yield chunk
+
+            response = StreamingHttpResponse(_stream(), content_type='application/gzip')
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+        except Exception as exc:
+            logging.error(f"[API] GridFS stream failed for {linkid}: {exc}")
+            return Response({'error': 'Download temporarily unavailable'},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+# ── POST /api/v1/projects/download/ (batch) ──────────────────────────────────
+
+class ProjectBatchDownloadView(APIView):
+    """
+    Resolve a list of project IDs to individual download URLs in one call.
+
+    Request body: {"ids": ["<id1>", "<id2>", ...]}
+
+    Response:
+      {
+        "downloads": [
+          {"id": "...", "project_name": "...", "download_url": "https://..."},
+          ...
+        ],
+        "skipped": ["<id_not_found_or_inaccessible>", ...]
+      }
+
+    The caller then fetches each download_url individually (curl -L -O ...).
+    IDs that do not exist, have no archive, or are inaccessible to the caller
+    are silently placed in "skipped".
+
+    curl example:
+        curl -X POST https://ampliconrepository.org/api/v1/projects/download/ \\
+             -H "Authorization: Token <your-token>" \\
+             -H "Content-Type: application/json" \\
+             -d '{"ids": ["abc123", "def456"]}'
+    """
+    permission_classes = []
+
+    def post(self, request):
+        user, err = _authenticate_api_request(request)
+        if err:
+            return err
+
+        ids = request.data.get('ids', [])
+        if not isinstance(ids, list):
+            return Response({'error': "'ids' must be a JSON array"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # build_absolute_uri raises DisallowedHost in test environments;
+        # construct the base URL directly from META to avoid that.
+        scheme = request.META.get('wsgi.url_scheme',
+                 'https' if request.META.get('HTTPS') == 'on' else 'http')
+        host = request.META.get('HTTP_HOST', '')
+        base = f'{scheme}://{host}' if host else ''
+        downloads, skipped = [], []
+
+        for pid in ids:
+            project = get_one_project(str(pid))
+            if not project or not _user_can_access_project(project, user) \
+                    or not project.get('tarfile'):
+                skipped.append(pid)
+                continue
+            linkid = str(project.get('linkid') or project.get('_id', ''))
+            downloads.append({
+                'id':           linkid,
+                'project_name': project.get('project_name', ''),
+                'download_url': f'{base}/api/v1/projects/{linkid}/download/',
+            })
+
+        return Response({'downloads': downloads, 'skipped': skipped})
+
+
+# ── /api/v1/token/ — token management (browser session) ─────────────────────
+
+class ApiTokenView(APIView):
+    """
+    Manage the caller's personal API token.
+
+    Must be called from a logged-in browser session (Django session cookie +
+    CSRF token).  Not reachable via the API token itself.
+
+    GET    — {"has_token": true,  "token_suffix": "...last8chars"}
+             {"has_token": false, "token_suffix": null}
+    POST   — generate / regenerate token → {"token": "<full-token>"}
+             The full token is returned only on creation; store it securely.
+    DELETE — revoke token → {"detail": "API token revoked"}
+    """
+    # Use session auth but without DRF's per-request CSRF check.  CSRF for this
+    # endpoint is the caller's responsibility (the profile page always sends a
+    # CSRF cookie; tests set req.user directly and don't have a real session).
+    # The endpoint is harmless to CSRF-attack: a cross-origin POST can generate
+    # a token but cannot read the response body, so the attacker gains nothing.
+    class _NoCsrfSessionAuth(SessionAuthentication):
+        def enforce_csrf(self, request):
+            pass  # intentionally omitted — see class docstring
+
+    authentication_classes = [_NoCsrfSessionAuth]
+    permission_classes = []
+
+    def _session_user(self, request):
+        user = request.user
+        return user if (user and user.is_authenticated) else None
+
+    def get(self, request):
+        user = self._session_user(request)
+        if not user:
+            return Response({'error': 'Login required'}, status=status.HTTP_401_UNAUTHORIZED)
+        from rest_framework.authtoken.models import Token
+        try:
+            token = Token.objects.get(user=user)
+            return Response({'has_token': True, 'token_suffix': token.key[-8:]})
+        except Token.DoesNotExist:
+            return Response({'has_token': False, 'token_suffix': None})
+
+    def post(self, request):
+        user = self._session_user(request)
+        if not user:
+            return Response({'error': 'Login required'}, status=status.HTTP_401_UNAUTHORIZED)
+        from rest_framework.authtoken.models import Token
+        Token.objects.filter(user=user).delete()
+        token = Token.objects.create(user=user)
+        return Response({'token': token.key}, status=status.HTTP_201_CREATED)
+
+    def delete(self, request):
+        user = self._session_user(request)
+        if not user:
+            return Response({'error': 'Login required'}, status=status.HTTP_401_UNAUTHORIZED)
+        from rest_framework.authtoken.models import Token
+        deleted, _ = Token.objects.filter(user=user).delete()
+        if deleted:
+            return Response({'detail': 'API token revoked'})
+        return Response({'detail': 'No active token to revoke'}, status=status.HTTP_404_NOT_FOUND)
 
 
 class BackgroundTaskStatusView(APIView):
