@@ -5,11 +5,8 @@
 <script>
     $(document).ready( function () {
         $('#myTable2').DataTable({
-            "drawCallback": function( settings ) {
-                $("#usersTable").wrap( "<div class='table-responsive'></div>" );
-            }
-        }
-        );
+            scrollX: true
+        });
     } );
 </script>
 
@@ -309,8 +306,8 @@
 {% endif %}
 
 
-<div style="margin-top:25px; padding: 25px; border: 0.5px solid grey; overflow-x: auto;">
-    <table id='myTable2' class="table table-hover table-sm stripe no-border" style="min-width: 600px;">
+<div style="margin-top:25px; padding: 25px; border: 0.5px solid grey;">
+    <table id='myTable2' class="table table-hover table-sm stripe no-border">
         <thead>
             <tr>
                 <th>Amplicon</th>
