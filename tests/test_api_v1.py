@@ -775,19 +775,38 @@ def test_project_detail_member_sees_private(loaded_datasets):
     if not project:
         pytest.skip("project_small not found in MongoDB")
 
-    member_name = (project.get('project_members') or ['pytest_test_user'])[0]
-    try:
-        user = User.objects.get(username=member_name)
-        token, _ = Token.objects.get_or_create(user=user)
-        auth_header = f'Token {token.key}'
-    except User.DoesNotExist:
-        pytest.skip(f"No Django User for '{member_name}' — skipping token auth integration test")
+    members = project.get('project_members') or ['pytest_test_user']
+    if isinstance(members, str):
+        members = [m.strip() for m in members.split(',') if m.strip()]
+    member_name = members[0] if members else 'pytest_test_user'
+    member_email = member_name if '@' in member_name else f'{member_name}@test.local'
 
-    rf = APIRequestFactory()
-    req = rf.get(f'/api/v1/projects/{pid}/', HTTP_AUTHORIZATION=auth_header)
-    resp = ProjectDetailView.as_view()(req, project_id=pid)
-    assert resp.status_code == 200
-    assert resp.data['id'] == pid
+    user, user_created = User.objects.get_or_create(
+        username=member_name,
+        defaults={'email': member_email, 'is_active': True},
+    )
+    original_is_active = user.is_active
+    if not user.is_active:
+        user.is_active = True
+        user.save(update_fields=['is_active'])
+    token, token_created = Token.objects.get_or_create(user=user)
+
+    try:
+        auth_header = f'Token {token.key}'
+        rf = APIRequestFactory()
+        req = rf.get(f'/api/v1/projects/{pid}/', HTTP_AUTHORIZATION=auth_header)
+        resp = ProjectDetailView.as_view()(req, project_id=pid)
+        assert resp.status_code == 200
+        assert resp.data['id'] == pid
+    finally:
+        if user_created:
+            user.delete()
+        else:
+            if token_created:
+                token.delete()
+            if user.is_active != original_is_active:
+                user.is_active = original_is_active
+                user.save(update_fields=['is_active'])
 
 
 @pytest.mark.slow
