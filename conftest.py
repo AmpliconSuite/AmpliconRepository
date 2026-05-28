@@ -37,6 +37,10 @@ def pytest_configure(config):
     _load_config_env()
 
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'caper.settings')
+    # The test suite calls synchronous Django views/ORM code directly, while
+    # some local pytest/plugin combinations leave an event loop active in the
+    # main thread.  This keeps those sync tests deterministic across machines.
+    os.environ.setdefault('DJANGO_ALLOW_ASYNC_UNSAFE', 'true')
 
     import django
     django.setup()
