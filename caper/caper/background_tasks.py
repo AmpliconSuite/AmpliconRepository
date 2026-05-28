@@ -45,16 +45,41 @@ _CLEANUP_INTERVAL_SECONDS = 6 * 60 * 60
 _CLEANUP_MIN_AGE_SECONDS = _STALE_THRESHOLD_SECONDS * 3
 
 
-def _remove_temp_dir(path: str) -> None:
-    """Remove a temp directory if it exists, logging the outcome."""
-    if not path:
-        return
+def _is_safe_temp_dir(path: str, tmp_root: str = _DEFAULT_TMP_ROOT) -> bool:
+    """Return True only for real directories contained under tmp_root."""
+    if not path or not tmp_root:
+        return False
+
     try:
-        if os.path.exists(path):
-            shutil.rmtree(path, ignore_errors=True)
-            logging.info(f"Removed temp directory: {path}")
+        abs_path = os.path.abspath(path)
+        abs_root = os.path.abspath(tmp_root)
+        real_path = os.path.realpath(abs_path)
+        real_root = os.path.realpath(abs_root)
+        if real_path in ('/', real_root):
+            return False
+        if not os.path.isdir(abs_path) or os.path.islink(abs_path):
+            return False
+        return os.path.commonpath([real_root, real_path]) == real_root
+    except (OSError, ValueError):
+        return False
+
+
+def _remove_temp_dir(path: str, tmp_root: str = _DEFAULT_TMP_ROOT) -> bool:
+    """Safely remove a temp directory under tmp_root, logging the outcome."""
+    if not path:
+        return False
+    if not _is_safe_temp_dir(path, tmp_root):
+        logging.warning(
+            f"Refusing to remove unsafe temp directory: path={path}, tmp_root={tmp_root}"
+        )
+        return False
+    try:
+        shutil.rmtree(os.path.abspath(path), ignore_errors=True)
+        logging.info(f"Removed temp directory: {path}")
+        return True
     except Exception:
         logging.exception(f"Failed to remove temp directory: {path}")
+        return False
 
 
 def cleanup_stale_temp_dirs(
@@ -82,7 +107,7 @@ def cleanup_stale_temp_dirs(
         for doc in col.find({'state': 'running', 'temp_dir': {'$exists': True, '$ne': None}}):
             td = doc.get('temp_dir')
             if td:
-                active_temp_dirs.add(os.path.abspath(td))
+                active_temp_dirs.add(os.path.realpath(os.path.abspath(td)))
     except Exception:
         logging.exception("cleanup_stale_temp_dirs: failed to query MongoDB — skipping cleanup")
         return 0
@@ -98,12 +123,12 @@ def cleanup_stale_temp_dirs(
                 try:
                     if entry.stat(follow_symlinks=False).st_mtime > cutoff:
                         continue  # Too recent — still potentially active
-                    abs_path = os.path.abspath(entry.path)
-                    if abs_path in active_temp_dirs:
+                    real_path = os.path.realpath(os.path.abspath(entry.path))
+                    if real_path in active_temp_dirs:
                         continue  # Claimed by a running task
-                    shutil.rmtree(abs_path, ignore_errors=True)
-                    logging.info(f"cleanup_stale_temp_dirs: removed orphaned temp dir {abs_path}")
-                    removed += 1
+                    if _remove_temp_dir(entry.path, tmp_root):
+                        logging.info(f"cleanup_stale_temp_dirs: removed orphaned temp dir {real_path}")
+                        removed += 1
                 except Exception:
                     logging.exception(f"cleanup_stale_temp_dirs: error processing {entry.path}")
     except OSError:
@@ -203,7 +228,7 @@ class BackgroundTaskTracker:
                 # finally block is the primary cleanup for the happy path.
                 # Error paths that already called rmtree are harmless repeats.
                 if abs_temp_dir is not None:
-                    _remove_temp_dir(abs_temp_dir)
+                    _remove_temp_dir(abs_temp_dir, self._tmp_root)
 
         future = self._executor.submit(_wrapped)
         return future
