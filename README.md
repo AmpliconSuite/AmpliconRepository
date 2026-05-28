@@ -413,12 +413,19 @@ pytest -m "slow and integration" -v
 
 **Browser tests** (requires a running dev server on port 8000):
 ```bash
-# Terminal 1: start the dev server
+# Terminal 1: start the dev server — must be from THIS repository's caper/ directory
 cd caper && python manage.py runserver
 
 # Terminal 2: run browser tests
 pytest -m browser --base-url http://localhost:8000 -v
 ```
+
+> **Important:** The dev server and the pytest process share a SQLite database
+> (`caper/caper.sqlite3`).  Two tests — `test_authenticated_user_sees_create_form`
+> and `test_email_password_login_form_works` — inject test users and sessions
+> directly into that database.  If the server is started from a *different*
+> repository clone those tests will skip automatically with a diagnostic message
+> rather than fail.
 
 Expected output for fast integration tests with a correctly configured environment:
 ```
