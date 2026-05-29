@@ -302,3 +302,302 @@ def test_both_visibility_formats_appear_in_search_results(
     finally:
         mongo_collection.delete_one({'_id': r1.inserted_id})
         mongo_collection.delete_one({'_id': r2.inserted_id})
+
+
+# ---------------------------------------------------------------------------
+# Zero-feature sample tests — samples with empty feature lists in runs
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_zero_feature_samples_appear_in_public_search_results(
+        request_factory, test_user, mongo_collection):
+    """
+    Samples with zero features (empty list in runs) must appear in
+    search_results when searching by project name with no classification filter.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_Public',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'SampleWithFeatures': [
+                {
+                    'Sample_name': 'SampleWithFeatures',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['MYC'],
+                    'Oncogenes': ['MYC'],
+                    'Sample_type': 'cell line',
+                    'Cancer_type': 'GBM',
+                    'Tissue_of_origin': 'Brain',
+                }
+            ],
+            'SampleNoFeatures': [],  # zero-feature sample
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # Search by project name with NO classification filter (all unchecked)
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_Public'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'SampleWithFeatures' in resp.content, \
+            "Regular sample must appear in search results"
+        assert b'SampleNoFeatures' in resp.content, \
+            "Zero-feature sample must appear in public search results"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_appear_in_private_search_results(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples in private projects must appear for project members.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':    'SearchZeroFeat_Private',
+        'creator':         test_user.username,
+        'project_members': [test_user.username, test_user.email],
+        'private':         'private',
+        'delete':          False,
+        'current':         True,
+        'FINISHED?':       True,
+        'runs': {
+            'PrivSampleWithFeats': [
+                {
+                    'Sample_name': 'PrivSampleWithFeats',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'BFB',
+                    'All_genes': ['EGFR'],
+                    'Oncogenes': ['EGFR'],
+                    'Sample_type': 'primary tumor',
+                    'Cancer_type': 'Lung',
+                    'Tissue_of_origin': 'Lung',
+                }
+            ],
+            'PrivSampleNoFeats': [],  # zero-feature sample
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_Private'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'PrivSampleWithFeats' in resp.content, \
+            "Regular sample must appear in private search results"
+        assert b'PrivSampleNoFeats' in resp.content, \
+            "Zero-feature sample must appear in private search results for members"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_excluded_by_gene_filter(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples must NOT appear when a gene filter is active
+    (they have no genes to match).
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_GeneFilter',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'HasMYC': [
+                {
+                    'Sample_name': 'HasMYC',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['MYC'],
+                    'Oncogenes': ['MYC'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+            'NoFeatures': [],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_GeneFilter',
+            'genequery': 'MYC'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'HasMYC' in resp.content, \
+            "Sample with MYC gene must appear when filtering by MYC"
+        assert b'NoFeatures' not in resp.content, \
+            "Zero-feature sample must NOT appear when a gene filter is active"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_excluded_by_classification_filter(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples (Classification='No FSCNA') must NOT appear when
+    a specific classification filter (e.g. ecDNA) is active.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_ClassFilter',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'HasEcDNA': [
+                {
+                    'Sample_name': 'HasEcDNA',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['EGFR'],
+                    'Oncogenes': ['EGFR'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+            'EmptySample': [],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_ClassFilter',
+            'classquery': ['ecDNA']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'HasEcDNA' in resp.content, \
+            "ecDNA sample must appear when filtering by ecDNA classification"
+        assert b'EmptySample' not in resp.content, \
+            "Zero-feature sample must NOT appear when classification filter is active"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_match_sample_name_search(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples must appear when searching by sample name that matches
+    their run key.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_SampleName',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'TargetSampleXYZ': [],  # zero-feature — should match name search
+            'OtherSample': [
+                {
+                    'Sample_name': 'OtherSample',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['MYC'],
+                    'Oncogenes': ['MYC'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'metadata_sample_name': 'TargetSampleXYZ'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'TargetSampleXYZ' in resp.content, \
+            "Zero-feature sample must appear when searching by its sample name"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_in_gene_search_page_get(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples must appear in the legacy GET gene_search_page view
+    when no gene/classification filter is applied.
+    """
+    from caper.views import gene_search_page
+
+    doc = {
+        'project_name':  'SearchZeroFeat_GET',
+        'creator':       test_user.username,
+        'private':       False,  # legacy boolean for gene_search_page
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'Oncogenes':     ['MYC'],
+        'runs': {
+            'GETSampleWithFeat': [
+                {
+                    'Sample_name': 'GETSampleWithFeat',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['MYC'],
+                    'Oncogenes': ['MYC'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+            'GETSampleNoFeat': [],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # No gene or class filter — should return all samples including zero-feature
+        req = request_factory.get('/gene-search/')
+        req.user = test_user
+        resp = gene_search_page(req)
+        assert resp.status_code == 200
+        assert b'GETSampleNoFeat' in resp.content, \
+            "Zero-feature sample must appear in gene_search_page GET results"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
