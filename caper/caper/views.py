@@ -2214,6 +2214,33 @@ def gene_search_page(request):
             project_linkid = project['_id']
             features = project['runs']
             features_list = replace_space_to_underscore(features)
+
+            # Include zero-feature samples (runs entries with empty lists)
+            if isinstance(features, dict):
+                cached_sample_meta = {}
+                for sd in project.get('sample_data', []) or []:
+                    sn = sd.get('Sample_name')
+                    if sn:
+                        cached_sample_meta[sn] = sd
+
+                for run_key, feature_list_entry in features.items():
+                    if not feature_list_entry:  # empty list — zero features
+                        cached = cached_sample_meta.get(run_key, {})
+                        placeholder = {
+                            'Sample_name': run_key,
+                            'Feature_ID': 'NA',
+                            'Classification': 'No FSCNA',
+                            'All_genes': [],
+                            'Oncogenes': [],
+                            'Sample_type': cached.get('Sample_type', ''),
+                            'Cancer_type': cached.get('Cancer_type', ''),
+                            'Tissue_of_origin': cached.get('Tissue_of_origin', ''),
+                        }
+                        features_list.append(placeholder)
+
+            if not features_list:
+                continue
+
             data = sample_data_from_feature_list(features_list)
 
             for sample in data:
