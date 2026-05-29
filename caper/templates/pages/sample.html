@@ -4,12 +4,7 @@
 {% block extra_js %}
 <script>
     $(document).ready( function () {
-        $('#myTable2').DataTable({
-            "drawCallback": function( settings ) {
-                $("#usersTable").wrap( "<div class='table-responsive'></div>" );
-            }
-        }
-        );
+        $('#myTable2').DataTable({ autoWidth: false });
     } );
 </script>
 
@@ -309,22 +304,22 @@
 {% endif %}
 
 
-<div style="margin-top:25px; padding: 25px; border: 0.5px solid grey; overflow-x: auto;">
-    <table id='myTable2' class="table table-hover table-sm stripe no-border" style="min-width: 600px;">
+<div style="margin-top:25px; padding: 25px; border: 0.5px solid grey; min-width: min-content;">
+    <table id='myTable2' class="table table-hover table-sm stripe no-border">
         <thead>
             <tr>
                 <th>Amplicon</th>
                 <th>Feature ID</th>
                 <th>Classification</th>
                 <th>Oncogenes</th>
-                <th>
+                <th style="white-space: nowrap">
                     Context
                     <span class="info-tooltip" data-toggle="tooltip" data-placement="top"
                           title="Annotation for ecDNA type based on patterns in SV and CN profiles.">
                         <i class="fas fa-question-circle" style="font-size: 0.9em; color: #6c757d; cursor: help;"></i>
                     </span>
                 </th>
-                <th>
+                <th style="white-space: nowrap">
                     Location
                     <span class="info-tooltip" data-toggle="tooltip" data-placement="top"
                           title="Genomic coordinates this feature captures. Not representative of amplification structure.">
