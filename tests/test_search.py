@@ -289,8 +289,8 @@ def test_both_visibility_formats_appear_in_search_results(
     r2 = mongo_collection.insert_one(doc_string)
 
     try:
-        # Search with a prefix that matches both project names
-        req = request_factory.post('/search_results/', {'project_name': 'SearchVis_'})
+        # Search with a wildcard prefix that matches both project names
+        req = request_factory.post('/search_results/', {'project_name': 'SearchVis_*'})
         req.user = test_user
         resp = search_results(req)
         assert resp.status_code == 200, \
