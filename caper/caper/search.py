@@ -173,6 +173,44 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         features = project['runs']
         features_list = replace_space_to_underscore(features)
 
+        # Collect zero-feature samples from the runs dict.
+        # These are samples where runs[key] is an empty list.
+        # We create placeholder entries so they can still match on
+        # project name, sample name, or sample metadata searches.
+        zero_feature_placeholders = []
+        if isinstance(features, dict):
+            # Build a lookup of sample-level metadata from the project's cached
+            # sample_data (if available) so zero-feature samples can inherit
+            # Sample_type, Cancer_type, Tissue_of_origin when present.
+            cached_sample_meta = {}
+            for sd in project.get('sample_data', []) or []:
+                sn = sd.get('Sample_name')
+                if sn:
+                    cached_sample_meta[sn] = sd
+
+            for run_key, feature_list in features.items():
+                if not feature_list:  # empty list — zero features
+                    # Use the run key as the sample name
+                    # Try to recover metadata from cached sample_data
+                    cached = cached_sample_meta.get(run_key, {})
+                    placeholder = {
+                        'Sample_name': run_key,
+                        'Feature_ID': 'NA',
+                        'Classification': 'No FSCNA',
+                        'All_genes': [],
+                        'Oncogenes': [],
+                        'Sample_type': cached.get('Sample_type', ''),
+                        'Cancer_type': cached.get('Cancer_type', ''),
+                        'Tissue_of_origin': cached.get('Tissue_of_origin', ''),
+                    }
+                    zero_feature_placeholders.append(placeholder)
+
+        # Append placeholders to features_list so they appear in the DataFrame
+        features_list = features_list + zero_feature_placeholders
+
+        if not features_list:
+            continue
+
         df = pd.DataFrame(features_list)
         df, extra_metadata_from_csv = add_extra_metadata(df)
 
@@ -181,14 +219,14 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
             if '&' in genequery:
                 # AND logic: sample must have ALL genes (each may contain a wildcard)
                 genes_to_find = [g.strip().upper() for g in genequery.split('&') if g.strip()]
-                df = df[df['All_genes'].apply(lambda x: all(
+                df = df[df['All_genes'].apply(lambda x: bool(x) and all(
                     _gene_matches(gene, [g.replace("'", "").strip().upper() for g in x])
                     for gene in genes_to_find
                 ))]
             elif '|' in genequery:
                 # OR logic: sample must have ANY of the genes (each may contain a wildcard)
                 genes_to_find = [g.strip().upper() for g in genequery.split('|') if g.strip()]
-                df = df[df['All_genes'].apply(lambda x: any(
+                df = df[df['All_genes'].apply(lambda x: bool(x) and any(
                     _gene_matches(gene, [g.replace("'", "").strip().upper() for g in x])
                     for gene in genes_to_find
                 ))]
@@ -198,11 +236,11 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
                 wc_regex = wildcard_to_regex(gq_upper)
                 if wc_regex:
                     compiled_gene = re.compile(wc_regex, re.IGNORECASE)
-                    df = df[df['All_genes'].apply(lambda x: any(
+                    df = df[df['All_genes'].apply(lambda x: bool(x) and any(
                         compiled_gene.match(gene.replace("'", "").strip().upper()) for gene in x
                     ))]
                 else:
-                    df = df[df['All_genes'].apply(lambda x: gq_upper in [gene.replace("'", "").strip().upper() for gene in x])]
+                    df = df[df['All_genes'].apply(lambda x: bool(x) and gq_upper in [gene.replace("'", "").strip().upper() for gene in x])]
 
         if classquery:
             # Split multiple classifications (joined by |) and build OR pattern

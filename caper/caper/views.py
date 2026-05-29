@@ -5272,6 +5272,7 @@ def search_results(request):
             "metadata_sample_name": sample_name,
             "metadata_sample_type": sample_type,
             "metadata_cancer_tissue": cancer_tissue,
+            "search_submitted": True,
         }
 
         # Delegate to the shared search helper
