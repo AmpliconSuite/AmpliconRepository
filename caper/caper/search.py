@@ -6,19 +6,60 @@ from .utils import *
 def wildcard_to_regex(pattern):
     """
     Converts a glob-style wildcard pattern (using * as wildcard) to a regex pattern.
-    If the pattern contains no *, returns None (caller should use substring matching).
+    If the pattern contains no *, returns None (caller should use exact matching).
 
     Examples:
         FLO*  ->  ^FLO.*$       (starts with FLO)
         *LO*  ->  ^.*LO.*$      (contains LO)
         F*H   ->  ^F.*H$        (starts with F, ends with H)
-        EGFR  ->  None          (no wildcard, unchanged)
+        EGFR  ->  None          (no wildcard, exact match)
     """
     if '*' not in pattern:
         return None
     parts = pattern.split('*')
     escaped_parts = [re.escape(p) for p in parts]
     return '^' + '.*'.join(escaped_parts) + '$'
+
+
+def _single_term_mask(series, term):
+    """
+    Returns a boolean mask for a pandas Series matching a single search term.
+    - If term contains '*', use anchored wildcard regex matching.
+    - Otherwise, perform exact case-insensitive match.
+    """
+    term = term.strip()
+    wc_regex = wildcard_to_regex(term)
+    if wc_regex:
+        return series.str.contains(wc_regex, case=False, na=False, regex=True)
+    else:
+        # Exact case-insensitive match
+        return series.str.lower() == term.lower()
+
+
+def _text_field_filter(series, pattern):
+    """
+    Filter a pandas Series using a search pattern that supports:
+    - '*' wildcard (glob-style)
+    - '|' for OR between terms
+    - '&' for AND between terms
+    - Plain text for exact case-insensitive match
+
+    Returns a boolean mask.
+    """
+    if '&' in pattern:
+        terms = [t.strip() for t in pattern.split('&') if t.strip()]
+        mask = pd.Series(True, index=series.index)
+        for term in terms:
+            mask = mask & _single_term_mask(series, term)
+        return mask
+    elif '|' in pattern:
+        terms = [t.strip() for t in pattern.split('|') if t.strip()]
+        mask = pd.Series(False, index=series.index)
+        for term in terms:
+            mask = mask | _single_term_mask(series, term)
+        return mask
+    else:
+        return _single_term_mask(series, pattern)
 
 
 def _gene_matches(query_gene, gene_list):
@@ -45,13 +86,39 @@ def perform_search(genequery=None,
 
     gen_query = {'$regex': genequery } if genequery else None
 
-    # Build the project-name MongoDB filter, respecting * wildcards
+    # Build the project-name MongoDB filter, respecting * wildcards and | / & operators
     if project_name:
-        wc_regex = wildcard_to_regex(project_name)
-        if wc_regex:
-            name_filter = {'$regex': wc_regex, '$options': 'i'}
+        if '&' in project_name:
+            # AND logic: project name must match ALL terms (each may have wildcards)
+            terms = [t.strip() for t in project_name.split('&') if t.strip()]
+            regex_parts = []
+            for term in terms:
+                wc = wildcard_to_regex(term)
+                if wc:
+                    regex_parts.append(wc)
+                else:
+                    regex_parts.append('^' + re.escape(term) + '$')
+            # Use $and with multiple regex conditions on project_name
+            name_filter = {'$and_regex_list': regex_parts}  # handled specially below
+        elif '|' in project_name:
+            # OR logic: project name matches ANY term
+            terms = [t.strip() for t in project_name.split('|') if t.strip()]
+            regex_parts = []
+            for term in terms:
+                wc = wildcard_to_regex(term)
+                if wc:
+                    regex_parts.append(wc)
+                else:
+                    regex_parts.append('^' + re.escape(term) + '$')
+            combined = '(' + '|'.join(regex_parts) + ')'
+            name_filter = {'$regex': combined, '$options': 'i'}
         else:
-            name_filter = {'$regex': project_name, '$options': 'i'}
+            wc_regex = wildcard_to_regex(project_name)
+            if wc_regex:
+                name_filter = {'$regex': wc_regex, '$options': 'i'}
+            else:
+                # Exact case-insensitive match (anchored regex)
+                name_filter = {'$regex': '^' + re.escape(project_name) + '$', '$options': 'i'}
     else:
         name_filter = None
 
@@ -69,7 +136,12 @@ def perform_search(genequery=None,
         }
 
         if name_filter:
-            query_obj['project_name'] = name_filter
+            if '$and_regex_list' in name_filter:
+                # AND logic: all regexes must match project_name
+                and_conditions = [{'project_name': {'$regex': r, '$options': 'i'}} for r in name_filter['$and_regex_list']]
+                query_obj['$and'] = query_obj.get('$and', []) + and_conditions
+            else:
+                query_obj['project_name'] = name_filter
 
         private_projects = list(collection_handle.find(query_obj))
     else:
@@ -78,7 +150,11 @@ def perform_search(genequery=None,
     public_query = {'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}
 
     if name_filter:
-        public_query['project_name'] = name_filter
+        if '$and_regex_list' in name_filter:
+            and_conditions = [{'project_name': {'$regex': r, '$options': 'i'}} for r in name_filter['$and_regex_list']]
+            public_query['$and'] = public_query.get('$and', []) + and_conditions
+        else:
+            public_query['project_name'] = name_filter
 
     public_projects = list(collection_handle.find(public_query))
 
@@ -228,26 +304,22 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
 
         if metadata_sample_name and 'Sample_name' in df.columns:
             df['Sample_name'] = df['Sample_name'].astype(str)
-            wc_regex = wildcard_to_regex(metadata_sample_name)
-            if wc_regex:
-                df = df[df['Sample_name'].str.contains(wc_regex, case=False, na=False, regex=True)]
-            else:
-                df = df[df['Sample_name'].str.contains(metadata_sample_name, case=False, na=False)]
+            df = df[_text_field_filter(df['Sample_name'], metadata_sample_name)]
 
         if metadata_sample_type and 'Sample_type' in df.columns:
-            df = df[df['Sample_type'].str.contains(metadata_sample_type, case=False, na=False)]
+            df = df[_text_field_filter(df['Sample_type'], metadata_sample_type)]
 
         # Combined search for Cancer Type or Tissue
         if metadata_cancer_type:
             # Create a mask for Cancer_type matches (if column exists)
             cancer_mask = pd.Series(False, index=df.index)
             if 'Cancer_type' in df.columns:
-                cancer_mask = df['Cancer_type'].str.contains(metadata_cancer_type, case=False, na=False)
+                cancer_mask = _text_field_filter(df['Cancer_type'], metadata_cancer_type)
 
             # Create a mask for Tissue_of_origin matches
             tissue_mask = pd.Series(False, index=df.index)
             if 'Tissue_of_origin' in df.columns:
-                tissue_mask = df['Tissue_of_origin'].str.contains(metadata_cancer_type, case=False, na=False)
+                tissue_mask = _text_field_filter(df['Tissue_of_origin'], metadata_cancer_type)
 
             # Combine both masks with OR logic
             combined_mask = cancer_mask | tissue_mask
@@ -256,7 +328,7 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         # The original tissue_origin filter is not needed since we combined it above
         # Only keep this if you need backward compatibility with existing code
         if metadata_tissue_origin and 'Tissue_of_origin' in df.columns:
-            df = df[df['Tissue_of_origin'].str.contains(metadata_tissue_origin, case=False, na=False)]
+            df = df[_text_field_filter(df['Tissue_of_origin'], metadata_tissue_origin)]
 
         if extra_metadata and ('extra_metadata_from_csv' in df.columns):
             for key in extra_metadata_from_csv.keys():
