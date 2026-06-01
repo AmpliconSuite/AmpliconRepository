@@ -441,18 +441,131 @@ def test_sample_name_or_operator(request_factory, test_user, mongo_collection):
 
 
 # ---------------------------------------------------------------------------
-# Integration tests: metadata (sample type, cancer type) exact match & operators
+# Unit tests for _substring_term_mask (metadata fields: substring matching)
+# ---------------------------------------------------------------------------
+
+class TestSubstringTermMask:
+    """Unit tests for the _substring_term_mask helper (used for metadata fields)."""
+
+    def test_substring_match(self):
+        """Plain term matches as a substring, case-insensitively."""
+        from caper.search import _substring_term_mask
+        s = pd.Series(['Bone/soft tissue', 'Bone marrow', 'Lung', 'bone'])
+        mask = _substring_term_mask(s, 'bone')
+        assert list(mask) == [True, True, False, True]
+
+    def test_no_match(self):
+        from caper.search import _substring_term_mask
+        s = pd.Series(['Lung', 'Kidney', 'Brain'])
+        mask = _substring_term_mask(s, 'bone')
+        assert list(mask) == [False, False, False]
+
+    def test_substring_in_longer_value(self):
+        """'sarcoma' finds 'Liposarcoma, soft tissue'."""
+        from caper.search import _substring_term_mask
+        s = pd.Series(['Liposarcoma, soft tissue', 'Osteosarcoma', 'Breast cancer'])
+        mask = _substring_term_mask(s, 'sarcoma')
+        assert list(mask) == [True, True, False]
+
+    def test_case_insensitive(self):
+        from caper.search import _substring_term_mask
+        s = pd.Series(['Breast Cancer', 'BREAST', 'breast adenocarcinoma', 'Lung'])
+        mask = _substring_term_mask(s, 'BREAST')
+        assert list(mask) == [True, True, True, False]
+
+    def test_whitespace_stripped(self):
+        from caper.search import _substring_term_mask
+        s = pd.Series(['cell line', 'Cell Line Derived', 'primary tumor'])
+        mask = _substring_term_mask(s, '  cell line  ')
+        assert list(mask) == [True, True, False]
+
+    def test_nan_handled(self):
+        """NaN values don't cause errors and don't match."""
+        import numpy as np
+        from caper.search import _substring_term_mask
+        s = pd.Series(['bone', np.nan, 'lung', None])
+        mask = _substring_term_mask(s, 'bone')
+        assert mask.iloc[0] == True
+        assert mask.iloc[1] == False
+        assert mask.iloc[2] == False
+        assert mask.iloc[3] == False
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _substring_field_filter (OR, AND, substring)
+# ---------------------------------------------------------------------------
+
+class TestSubstringFieldFilter:
+    """Unit tests for the _substring_field_filter helper (metadata fields)."""
+
+    def test_plain_substring(self):
+        """Plain text matches as a substring."""
+        from caper.search import _substring_field_filter
+        s = pd.Series(['Bone/soft tissue', 'Bone marrow', 'Lung'])
+        mask = _substring_field_filter(s, 'bone')
+        assert list(mask) == [True, True, False]
+
+    def test_or_operator(self):
+        """Pipe | performs OR between substring terms."""
+        from caper.search import _substring_field_filter
+        s = pd.Series(['breast cancer', 'lung adenocarcinoma', 'colon', 'brain'])
+        mask = _substring_field_filter(s, 'breast|lung')
+        assert list(mask) == [True, True, False, False]
+
+    def test_or_operator_partial_values(self):
+        """OR with partial values matching longer strings."""
+        from caper.search import _substring_field_filter
+        s = pd.Series(['Bone/soft tissue', 'Liposarcoma, soft tissue', 'Lung', 'Kidney'])
+        mask = _substring_field_filter(s, 'bone|sarcoma')
+        assert list(mask) == [True, True, False, False]
+
+    def test_and_operator(self):
+        """Ampersand & performs AND — both substrings must appear in the cell."""
+        from caper.search import _substring_field_filter
+        s = pd.Series(['bone/soft tissue', 'bone cancer', 'soft tissue sarcoma', 'lung'])
+        mask = _substring_field_filter(s, 'bone&soft')
+        # Only 'bone/soft tissue' contains both 'bone' and 'soft'
+        assert list(mask) == [True, False, False, False]
+
+    def test_and_no_match(self):
+        from caper.search import _substring_field_filter
+        s = pd.Series(['breast', 'lung', 'colon'])
+        mask = _substring_field_filter(s, 'breast&lung')
+        assert list(mask) == [False, False, False]
+
+    def test_case_insensitive(self):
+        from caper.search import _substring_field_filter
+        s = pd.Series(['Breast Cancer', 'BREAST', 'Lung'])
+        mask = _substring_field_filter(s, 'BREAST')
+        assert list(mask) == [True, True, False]
+
+    def test_multiple_or_terms(self):
+        from caper.search import _substring_field_filter
+        s = pd.Series(['breast', 'lung', 'colon cancer', 'brain', 'liver'])
+        mask = _substring_field_filter(s, 'breast|lung|colon')
+        assert list(mask) == [True, True, True, False, False]
+
+    def test_empty_series(self):
+        from caper.search import _substring_field_filter
+        s = pd.Series([], dtype=str)
+        mask = _substring_field_filter(s, 'test')
+        assert len(mask) == 0
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: metadata (sample type, cancer type) substring matching & operators
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
-def test_sample_type_exact_match(request_factory, test_user, mongo_collection):
+def test_sample_type_substring_match(request_factory, test_user, mongo_collection):
     """
-    Searching sample type 'cell line' must only match exact, not 'cell line derived'.
+    Searching sample type 'cell line' must match BOTH 'cell line' AND 'cell line derived'
+    because metadata fields use substring matching.
     """
     from caper.views import search_results
 
     docs = [
-        {'project_name': 'TypeExactTest', 'creator': test_user.username,
+        {'project_name': 'TypeSubstringTest', 'creator': test_user.username,
          'private': 'public', 'delete': False, 'current': True,
          'FINISHED?': True,
          'runs': {'r': [
@@ -470,10 +583,11 @@ def test_sample_type_exact_match(request_factory, test_user, mongo_collection):
         resp = search_results(req)
         assert resp.status_code == 200
         content = resp.content.decode()
-        # S1 should appear (exact match), S2 should NOT (substring only)
-        assert 'TypeExactTest' in content  # project shows up
-        # Check that S2 doesn't appear - it would only appear if substring matching
-        # The sample S1 with exact 'cell line' should be in results
+        # Both S1 ('cell line') and S2 ('cell line derived') contain 'cell line' as substring
+        assert 'S1' in content, "S1 ('cell line') must match substring 'cell line'"
+        assert 'S2' in content, "S2 ('cell line derived') must match substring 'cell line'"
+        # S3 ('primary tumor') must NOT match
+        assert content.count('S3') == 0 or 'primary tumor' not in content
     finally:
         for r in inserted:
             mongo_collection.delete_one({'_id': r.inserted_id})
@@ -513,66 +627,45 @@ def test_sample_type_or_operator(request_factory, test_user, mongo_collection):
 
 
 @pytest.mark.integration
-def test_cancer_type_exact_match(request_factory, test_user, mongo_collection):
+def test_cancer_type_substring_match(request_factory, test_user, mongo_collection):
     """
-    Searching cancer type 'breast' must NOT match 'breast cancer' (exact match only).
+    Searching cancer type 'breast' must match BOTH 'breast' AND 'breast cancer'
+    because cancer type uses substring matching (unlike project/sample name).
+    Also: 'bone' must match 'Bone/soft tissue'.
     """
     from caper.views import search_results
 
     docs = [
-        {'project_name': 'CancerExactTest', 'creator': test_user.username,
+        {'project_name': 'CancerSubstringTest', 'creator': test_user.username,
          'private': 'public', 'delete': False, 'current': True,
          'FINISHED?': True,
          'runs': {'r': [
              {'Sample_name': 'S1', 'Cancer_type': 'breast', 'Features': []},
              {'Sample_name': 'S2', 'Cancer_type': 'breast cancer', 'Features': []},
-             {'Sample_name': 'S3', 'Cancer_type': 'lung', 'Features': []},
+             {'Sample_name': 'S3', 'Cancer_type': 'Bone/soft tissue', 'Features': []},
+             {'Sample_name': 'S4', 'Cancer_type': 'lung', 'Features': []},
          ]},
-         'sample_count': 3},
+         'sample_count': 4},
     ]
     inserted = [mongo_collection.insert_one(d) for d in docs]
 
     try:
+        # 'breast' should match both S1 and S2 via substring
         req = request_factory.post('/search_results/', {'metadata_cancer_tissue': 'breast'})
         req.user = test_user
         resp = search_results(req)
         assert resp.status_code == 200
         content = resp.content.decode()
-        assert 'CancerExactTest' in content  # project appears (S1 matched)
-        # S1 matched exactly, S2 should not match (it's 'breast cancer', not 'breast')
-    finally:
-        for r in inserted:
-            mongo_collection.delete_one({'_id': r.inserted_id})
+        assert 'S1' in content, "S1 ('breast') must match 'breast'"
+        assert 'S2' in content, "S2 ('breast cancer') must match substring 'breast'"
 
-
-@pytest.mark.integration
-def test_cancer_type_wildcard(request_factory, test_user, mongo_collection):
-    """
-    Searching cancer type 'breast*' must match 'breast' and 'breast cancer'.
-    """
-    from caper.views import search_results
-
-    docs = [
-        {'project_name': 'CancerWildTest', 'creator': test_user.username,
-         'private': 'public', 'delete': False, 'current': True,
-         'FINISHED?': True,
-         'runs': {'r': [
-             {'Sample_name': 'S1', 'Cancer_type': 'breast', 'Features': []},
-             {'Sample_name': 'S2', 'Cancer_type': 'breast cancer', 'Features': []},
-             {'Sample_name': 'S3', 'Cancer_type': 'lung', 'Features': []},
-         ]},
-         'sample_count': 3},
-    ]
-    inserted = [mongo_collection.insert_one(d) for d in docs]
-
-    try:
-        req = request_factory.post('/search_results/', {'metadata_cancer_tissue': 'breast*'})
-        req.user = test_user
-        resp = search_results(req)
-        assert resp.status_code == 200
-        content = resp.content.decode()
-        assert 'S1' in content
-        assert 'S2' in content
+        # 'bone' should match S3 ('Bone/soft tissue') via substring
+        req2 = request_factory.post('/search_results/', {'metadata_cancer_tissue': 'bone'})
+        req2.user = test_user
+        resp2 = search_results(req2)
+        assert resp2.status_code == 200
+        content2 = resp2.content.decode()
+        assert 'S3' in content2, "S3 ('Bone/soft tissue') must match substring 'bone'"
     finally:
         for r in inserted:
             mongo_collection.delete_one({'_id': r.inserted_id})
@@ -581,7 +674,7 @@ def test_cancer_type_wildcard(request_factory, test_user, mongo_collection):
 @pytest.mark.integration
 def test_cancer_type_or_operator(request_factory, test_user, mongo_collection):
     """
-    Searching cancer type 'breast|lung' must match both exact terms.
+    Searching cancer type 'breast|lung' must match samples with either substring.
     """
     from caper.views import search_results
 
@@ -590,8 +683,8 @@ def test_cancer_type_or_operator(request_factory, test_user, mongo_collection):
          'private': 'public', 'delete': False, 'current': True,
          'FINISHED?': True,
          'runs': {'r': [
-             {'Sample_name': 'S1', 'Cancer_type': 'breast', 'Features': []},
-             {'Sample_name': 'S2', 'Cancer_type': 'lung', 'Features': []},
+             {'Sample_name': 'S1', 'Cancer_type': 'breast cancer', 'Features': []},
+             {'Sample_name': 'S2', 'Cancer_type': 'lung adenocarcinoma', 'Features': []},
              {'Sample_name': 'S3', 'Cancer_type': 'colon', 'Features': []},
          ]},
          'sample_count': 3},
@@ -606,6 +699,41 @@ def test_cancer_type_or_operator(request_factory, test_user, mongo_collection):
         content = resp.content.decode()
         assert 'S1' in content
         assert 'S2' in content
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+@pytest.mark.integration
+def test_cancer_type_and_operator(request_factory, test_user, mongo_collection):
+    """
+    Searching cancer type 'bone&soft' must only match samples containing BOTH
+    substrings in their cancer type (e.g. 'Bone/soft tissue').
+    """
+    from caper.views import search_results
+
+    docs = [
+        {'project_name': 'CancerAndTest', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True,
+         'runs': {'r': [
+             {'Sample_name': 'S1', 'Cancer_type': 'Bone/soft tissue', 'Features': []},
+             {'Sample_name': 'S2', 'Cancer_type': 'bone cancer', 'Features': []},
+             {'Sample_name': 'S3', 'Cancer_type': 'soft tissue sarcoma', 'Features': []},
+             {'Sample_name': 'S4', 'Cancer_type': 'lung', 'Features': []},
+         ]},
+         'sample_count': 4},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        req = request_factory.post('/search_results/', {'metadata_cancer_tissue': 'bone&soft'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        # Only S1 ('Bone/soft tissue') contains both 'bone' and 'soft'
+        assert 'S1' in content
     finally:
         for r in inserted:
             mongo_collection.delete_one({'_id': r.inserted_id})

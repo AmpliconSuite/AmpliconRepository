@@ -28,12 +28,13 @@ def _single_term_mask(series, term):
     - Otherwise, perform exact case-insensitive match.
     """
     term = term.strip()
+    s = series.astype(str)
     wc_regex = wildcard_to_regex(term)
     if wc_regex:
-        return series.str.contains(wc_regex, case=False, na=False, regex=True)
+        return s.str.contains(wc_regex, case=False, na=False, regex=True)
     else:
         # Exact case-insensitive match
-        return series.str.lower() == term.lower()
+        return s.str.lower() == term.lower()
 
 
 def _text_field_filter(series, pattern):
@@ -43,6 +44,8 @@ def _text_field_filter(series, pattern):
     - '|' for OR between terms
     - '&' for AND between terms
     - Plain text for exact case-insensitive match
+
+    Used for sample name and project name fields (exact match by default).
 
     Returns a boolean mask.
     """
@@ -60,6 +63,46 @@ def _text_field_filter(series, pattern):
         return mask
     else:
         return _single_term_mask(series, pattern)
+
+
+def _substring_term_mask(series, term):
+    """
+    Returns a boolean mask for a pandas Series matching a single search term
+    using case-insensitive substring (contains) matching.
+
+    Used for metadata fields like Sample Type and Cancer Type/Tissue where
+    partial matches are desirable (e.g. 'bone' finds 'Bone/soft tissue').
+    """
+    term = term.strip()
+    s = series.astype(str)
+    return s.str.contains(re.escape(term), case=False, na=False, regex=True)
+
+
+def _substring_field_filter(series, pattern):
+    """
+    Filter a pandas Series using case-insensitive substring matching that supports:
+    - '|' for OR between terms  (e.g. 'bone|lung' finds either)
+    - '&' for AND between terms (e.g. 'bone&soft' requires both substrings)
+    - Plain text for substring match (e.g. 'bone' finds 'Bone/soft tissue')
+
+    Used for metadata fields (Sample Type, Cancer Type/Tissue of Origin).
+
+    Returns a boolean mask.
+    """
+    if '&' in pattern:
+        terms = [t.strip() for t in pattern.split('&') if t.strip()]
+        mask = pd.Series(True, index=series.index)
+        for term in terms:
+            mask = mask & _substring_term_mask(series, term)
+        return mask
+    elif '|' in pattern:
+        terms = [t.strip() for t in pattern.split('|') if t.strip()]
+        mask = pd.Series(False, index=series.index)
+        for term in terms:
+            mask = mask | _substring_term_mask(series, term)
+        return mask
+    else:
+        return _substring_term_mask(series, pattern)
 
 
 def _gene_matches(query_gene, gene_list):
@@ -389,19 +432,20 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
             df = df[_text_field_filter(df['Sample_name'], metadata_sample_name)]
 
         if metadata_sample_type and 'Sample_type' in df.columns:
-            df = df[_text_field_filter(df['Sample_type'], metadata_sample_type)]
+            # Metadata fields use substring matching: 'cell line' matches 'cell line derived'
+            df = df[_substring_field_filter(df['Sample_type'], metadata_sample_type)]
 
-        # Combined search for Cancer Type or Tissue
+        # Combined search for Cancer Type or Tissue — uses substring matching
         if metadata_cancer_type:
             # Create a mask for Cancer_type matches (if column exists)
             cancer_mask = pd.Series(False, index=df.index)
             if 'Cancer_type' in df.columns:
-                cancer_mask = _text_field_filter(df['Cancer_type'], metadata_cancer_type)
+                cancer_mask = _substring_field_filter(df['Cancer_type'], metadata_cancer_type)
 
             # Create a mask for Tissue_of_origin matches
             tissue_mask = pd.Series(False, index=df.index)
             if 'Tissue_of_origin' in df.columns:
-                tissue_mask = _text_field_filter(df['Tissue_of_origin'], metadata_cancer_type)
+                tissue_mask = _substring_field_filter(df['Tissue_of_origin'], metadata_cancer_type)
 
             # Combine both masks with OR logic
             combined_mask = cancer_mask | tissue_mask
@@ -410,7 +454,7 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         # The original tissue_origin filter is not needed since we combined it above
         # Only keep this if you need backward compatibility with existing code
         if metadata_tissue_origin and 'Tissue_of_origin' in df.columns:
-            df = df[_text_field_filter(df['Tissue_of_origin'], metadata_tissue_origin)]
+            df = df[_substring_field_filter(df['Tissue_of_origin'], metadata_tissue_origin)]
 
         if extra_metadata and ('extra_metadata_from_csv' in df.columns):
             for key in extra_metadata_from_csv.keys():
