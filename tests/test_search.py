@@ -344,16 +344,17 @@ def test_zero_feature_samples_appear_in_public_search_results(
     result = mongo_collection.insert_one(doc)
 
     try:
-        # Search by project name with NO classification filter (all unchecked)
+        # Search by project name with "no-amp" checkbox checked (include_no_amp=True)
         req = request_factory.post('/search_results/', {
-            'project_name': 'SearchZeroFeat_Public'})
+            'project_name': 'SearchZeroFeat_Public',
+            'classquery': ['no-amp']})
         req.user = test_user
         resp = search_results(req)
         assert resp.status_code == 200
         assert b'SampleWithFeatures' in resp.content, \
             "Regular sample must appear in search results"
         assert b'SampleNoFeatures' in resp.content, \
-            "Zero-feature sample must appear in public search results"
+            "Zero-feature sample must appear in public search results when no-amp is checked"
     finally:
         mongo_collection.delete_one({'_id': result.inserted_id})
 
@@ -395,14 +396,15 @@ def test_zero_feature_samples_appear_in_private_search_results(
 
     try:
         req = request_factory.post('/search_results/', {
-            'project_name': 'SearchZeroFeat_Private'})
+            'project_name': 'SearchZeroFeat_Private',
+            'classquery': ['no-amp']})
         req.user = test_user
         resp = search_results(req)
         assert resp.status_code == 200
         assert b'PrivSampleWithFeats' in resp.content, \
             "Regular sample must appear in private search results"
         assert b'PrivSampleNoFeats' in resp.content, \
-            "Zero-feature sample must appear in private search results for members"
+            "Zero-feature sample must appear in private search results for members when no-amp is checked"
     finally:
         mongo_collection.delete_one({'_id': result.inserted_id})
 
@@ -544,12 +546,170 @@ def test_zero_feature_samples_match_sample_name_search(
 
     try:
         req = request_factory.post('/search_results/', {
-            'metadata_sample_name': 'TargetSampleXYZ'})
+            'metadata_sample_name': 'TargetSampleXYZ',
+            'classquery': ['no-amp']})
         req.user = test_user
         resp = search_results(req)
         assert resp.status_code == 200
         assert b'TargetSampleXYZ' in resp.content, \
-            "Zero-feature sample must appear when searching by its sample name"
+            "Zero-feature sample must appear when searching by its sample name and no-amp is checked"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_hidden_when_noamp_unchecked(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples must NOT appear when the "No-Amp (sample)" checkbox
+    is unchecked (i.e. "no-amp" is absent from classquery).
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_NoAmpOff',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'RegularSampleXX': [
+                {
+                    'Sample_name': 'RegularSampleXX',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['MYC'],
+                    'Oncogenes': ['MYC'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+            'ZeroFeatSampleXX': [],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # Post with ecDNA checked but no-amp NOT checked
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_NoAmpOff',
+            'classquery': ['ecDNA']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'RegularSampleXX' in resp.content, \
+            "Regular ecDNA sample must still appear"
+        assert b'ZeroFeatSampleXX' not in resp.content, \
+            "Zero-feature sample must NOT appear when no-amp checkbox is unchecked"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_appear_when_noamp_checked_with_other_classes(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples must appear alongside regular samples when the
+    "No-Amp (sample)" checkbox is checked together with other classification types.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_NoAmpMixed',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'MixedEcDNA': [
+                {
+                    'Sample_name': 'MixedEcDNA',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['EGFR'],
+                    'Oncogenes': ['EGFR'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+            'MixedZeroFeat': [],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # Post with both ecDNA and no-amp checked
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_NoAmpMixed',
+            'classquery': ['ecDNA', 'no-amp']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'MixedEcDNA' in resp.content, \
+            "ecDNA sample must appear when ecDNA + no-amp both checked"
+        assert b'MixedZeroFeat' in resp.content, \
+            "Zero-feature sample must appear when no-amp is checked alongside ecDNA"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_all_five_checkboxes_checked_equals_no_filter(
+        request_factory, test_user, mongo_collection):
+    """
+    Checking all 5 checkboxes (all 4 amp types + no-amp) must behave identically
+    to having no classification filter — all sample types must appear.
+    This covers the case where samples have a classification not covered by the 4
+    standard types (e.g. 'No FSCNA', 'other', or any future classification).
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchAllFive_NoFilter',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'SampleEcDNA': [{'Sample_name': 'SampleEcDNA', 'Feature_ID': 'f1',
+                              'Classification': 'ecDNA', 'All_genes': ['MYC'],
+                              'Oncogenes': ['MYC'], 'Sample_type': '',
+                              'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'SampleBFB':   [{'Sample_name': 'SampleBFB', 'Feature_ID': 'f2',
+                              'Classification': 'BFB', 'All_genes': [],
+                              'Oncogenes': [], 'Sample_type': '',
+                              'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'SampleOther': [{'Sample_name': 'SampleOther', 'Feature_ID': 'f3',
+                              'Classification': 'Heavily-Rearranged', 'All_genes': [],
+                              'Oncogenes': [], 'Sample_type': '',
+                              'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'SampleZero':  [],
+        },
+        'sample_count': 4,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        all_five = ['ecDNA', 'linear amplification', 'BFB', 'complex non-cyclic', 'no-amp']
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchAllFive_NoFilter',
+            'classquery': all_five})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'SampleEcDNA' in resp.content, "ecDNA sample must appear when all 5 checked"
+        assert b'SampleBFB' in resp.content, "BFB sample must appear when all 5 checked"
+        assert b'SampleOther' in resp.content, \
+            "Sample with non-standard classification must appear when all 5 checked (no filter)"
+        assert b'SampleZero' in resp.content, \
+            "Zero-feature sample must appear when all 5 checked"
     finally:
         mongo_collection.delete_one({'_id': result.inserted_id})
 

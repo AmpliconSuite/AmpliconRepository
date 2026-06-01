@@ -58,6 +58,12 @@
                     Complex Non-Cyclic
                 </label>
             </div>
+            <div class="form-check">
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="no-amp" id="class-noamp" {% if user_query.search_submitted %}{% if user_query.include_no_amp %}checked{% endif %}{% else %}checked{% endif %}>
+                <label class="form-check-label" for="class-noamp">
+                    No-Amp (sample)
+                </label>
+            </div>
         </div>
     </div>
 

@@ -5286,7 +5286,18 @@ def search_results(request):
         gene_search = request.POST.get("genequery", "").strip()
         project_name = request.POST.get("project_name", "").strip()
         classifications_list = request.POST.getlist("classquery")  # Get multiple selections
-        classifications = "|".join(classifications_list)  # Join with pipe for OR logic
+        # Separate the "no-amp" pseudo-classification from the real amplicon classes
+        include_no_amp = "no-amp" in classifications_list
+        amp_classifications_list = [c for c in classifications_list if c.lower() != "no-amp"]
+
+        # If all 4 amp-type checkboxes are checked, that is equivalent to "no
+        # classification filter" — just as having none checked was before.
+        ALL_AMP_TYPES = {'ecdna', 'linear amplification', 'bfb', 'complex non-cyclic'}
+        checked_amp_set = {c.lower() for c in amp_classifications_list}
+        if checked_amp_set >= ALL_AMP_TYPES:
+            classifications = ""   # treated as no-filter downstream
+        else:
+            classifications = "|".join(amp_classifications_list)  # Join with pipe for OR logic
         sample_name = request.POST.get("metadata_sample_name", "").strip()
         sample_type = request.POST.get("metadata_sample_type", "").strip()
         cancer_tissue = request.POST.get("metadata_cancer_tissue", "").strip()
@@ -5296,6 +5307,7 @@ def search_results(request):
             "genequery": gene_search,
             "project_name": project_name,
             "classquery": classifications,
+            "include_no_amp": include_no_amp,
             "metadata_sample_name": sample_name,
             "metadata_sample_type": sample_type,
             "metadata_cancer_tissue": cancer_tissue,
@@ -5310,6 +5322,7 @@ def search_results(request):
             metadata_sample_name=sample_name.upper() if sample_name else None,
             metadata_sample_type=sample_type.upper() if sample_type else None,
             metadata_cancer_type=cancer_tissue.upper() if cancer_tissue else None,
+            include_no_amp=include_no_amp,
             user=request.user,
         )
 

@@ -41,6 +41,7 @@ def perform_search(genequery=None,
                    metadata_cancer_type=None,
                    metadata_tissue_origin=None, 
                    extra_metadata=None,
+                   include_no_amp=True,
                    user=None):
 
     gen_query = {'$regex': genequery } if genequery else None
@@ -91,13 +92,15 @@ def perform_search(genequery=None,
     public_sample_data = get_samples_from_features(
         public_projects, genequery=genequery, classquery=classquery,
         metadata_sample_name=metadata_sample_name, metadata_sample_type=metadata_sample_type, metadata_cancer_type=metadata_cancer_type,
-        metadata_tissue_origin=metadata_tissue_origin, extra_metadata = extra_metadata
+        metadata_tissue_origin=metadata_tissue_origin, extra_metadata=extra_metadata,
+        include_no_amp=include_no_amp
     )
 
     private_sample_data = get_samples_from_features(
         private_projects, genequery=genequery, classquery=classquery,
         metadata_sample_name=metadata_sample_name, metadata_sample_type=metadata_sample_type, metadata_cancer_type=metadata_cancer_type,
-        metadata_tissue_origin=metadata_tissue_origin, extra_metadata = extra_metadata
+        metadata_tissue_origin=metadata_tissue_origin, extra_metadata=extra_metadata,
+        include_no_amp=include_no_amp
     )
 
     # Extract project names from sample data
@@ -155,7 +158,8 @@ def add_extra_metadata(df):
 
 
 def get_samples_from_features(projects, genequery, classquery, metadata_sample_name, metadata_sample_type,
-                              metadata_cancer_type, metadata_tissue_origin, extra_metadata):
+                              metadata_cancer_type, metadata_tissue_origin, extra_metadata,
+                              include_no_amp=True):
     """
     Takes in a features_list dict, and finds matches for samples for some: 
 
@@ -175,10 +179,9 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
 
         # Collect zero-feature samples from the runs dict.
         # These are samples where runs[key] is an empty list.
-        # We create placeholder entries so they can still match on
-        # project name, sample name, or sample metadata searches.
+        # Only included when include_no_amp=True (the "No-Amp (sample)" checkbox is checked).
         zero_feature_placeholders = []
-        if isinstance(features, dict):
+        if include_no_amp and isinstance(features, dict):
             # Build a lookup of sample-level metadata from the project's cached
             # sample_data (if available) so zero-feature samples can inherit
             # Sample_type, Cancer_type, Tissue_of_origin when present.
@@ -262,7 +265,13 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
             # Combine all patterns with OR logic
             if regex_patterns and 'Classification' in df.columns:
                 combined_pattern = '|'.join(regex_patterns)
-                df = df[df['Classification'].str.contains(combined_pattern, case=False, na=False, regex=True)]
+                class_match = df['Classification'].str.contains(combined_pattern, case=False, na=False, regex=True)
+                if include_no_amp:
+                    # Always keep zero-feature placeholder rows alongside amp results
+                    no_amp_mask = df['Classification'] == 'No FSCNA'
+                    df = df[class_match | no_amp_mask]
+                else:
+                    df = df[class_match]
 
         if metadata_sample_name and 'Sample_name' in df.columns:
             df['Sample_name'] = df['Sample_name'].astype(str)
