@@ -4,10 +4,12 @@
     {% csrf_token %}
 
     <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 12px;">
-        All text fields use <strong>exact match</strong> by default.
-        Use <strong>*</strong> as a wildcard (e.g. <em>MYC*</em>, <em>*lung*</em>),
-        <strong>|</strong> for OR (e.g. <em>EGFR|MYC</em>),
-        and <strong>&amp;</strong> for AND (e.g. <em>MYC&amp;EGFR</em>).
+        <strong>Project &amp; Sample Name</strong> use <strong>exact match</strong> by default — use
+        <strong>*</strong> as a wildcard for partial matches (e.g. <em>NCIH*</em>, <em>*CDK*</em>).<br>
+        <strong>Gene, Sample Type, Cancer Type/Tissue</strong> match on <strong>substrings</strong>
+        automatically (e.g. <em>bone</em> finds <em>Bone/soft tissue</em>).<br>
+        Use <strong>|</strong> for OR (e.g. <em>breast|lung</em>) and
+        <strong>&amp;</strong> for AND (e.g. <em>bone&amp;soft</em>) in any field.
     </p>
 
     <div class="mb-3">
@@ -70,13 +72,13 @@
             <div class="mb-3">
                 <label for="metadata_sample_type" class="form-label">Sample Type</label>
                 <input type="text" class="form-control" name="metadata_sample_type" id="metadata_sample_type"
-                    placeholder="e.g. cell line or cell line|primary tumor" value="{{ user_query.metadata_sample_type|default:'' }}">
+                    placeholder="e.g. cell line (substring match, or use | for OR)" value="{{ user_query.metadata_sample_type|default:'' }}">
             </div>
 
             <div class="mb-3">
                 <label for="metadata_cancer_tissue" class="form-label">Cancer Type or Tissue</label>
                 <input type="text" class="form-control" name="metadata_cancer_tissue" id="metadata_cancer_tissue"
-                    placeholder="e.g. breast or breast|lung" value="{{ user_query.metadata_cancer_tissue|default:'' }}">
+                    placeholder="e.g. bone (finds Bone/soft tissue), or breast|lung" value="{{ user_query.metadata_cancer_tissue|default:'' }}">
             </div>
         </div>
     </div>
