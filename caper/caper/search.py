@@ -34,14 +34,15 @@ def _gene_matches(query_gene, gene_list):
         return query_gene.upper() in gene_list
 
 def perform_search(genequery=None,
-                   project_name=None, 
-                   classquery=None, 
+                   project_name=None,
+                   classquery=None,
                    metadata_sample_name=None,
                    metadata_sample_type=None,
                    metadata_cancer_type=None,
-                   metadata_tissue_origin=None, 
+                   metadata_tissue_origin=None,
                    extra_metadata=None,
                    include_no_amp=True,
+                   no_filter=False,
                    user=None):
 
     gen_query = {'$regex': genequery } if genequery else None
@@ -93,14 +94,14 @@ def perform_search(genequery=None,
         public_projects, genequery=genequery, classquery=classquery,
         metadata_sample_name=metadata_sample_name, metadata_sample_type=metadata_sample_type, metadata_cancer_type=metadata_cancer_type,
         metadata_tissue_origin=metadata_tissue_origin, extra_metadata=extra_metadata,
-        include_no_amp=include_no_amp
+        include_no_amp=include_no_amp, no_filter=no_filter
     )
 
     private_sample_data = get_samples_from_features(
         private_projects, genequery=genequery, classquery=classquery,
         metadata_sample_name=metadata_sample_name, metadata_sample_type=metadata_sample_type, metadata_cancer_type=metadata_cancer_type,
         metadata_tissue_origin=metadata_tissue_origin, extra_metadata=extra_metadata,
-        include_no_amp=include_no_amp
+        include_no_amp=include_no_amp, no_filter=no_filter
     )
 
     # Extract project names from sample data
@@ -157,9 +158,32 @@ def add_extra_metadata(df):
     return df, None
 
 
+def _zero_feature_mask(df):
+    """Return a boolean Series that is True for 'no-amp' rows.
+
+    Four independent signals are combined with OR:
+      1. The explicit is_zero_feature sentinel flag (set on zero-feature placeholder dicts).
+      2. A blank Feature_ID (placeholders always have Feature_ID='').
+      3. Classification == 'No FSCNA' — real database rows from AmpliconClassifier for
+         samples analyzed and found to have no focal somatic copy-number amplification.
+      4. Classification == 'NA' — AmpliconSuiteAggregator convention for samples where
+         the classifier produced no amplification result (stored with Feature_ID ending
+         in '_NA' and Classification='NA').  This is the primary real-data case.
+    """
+    mask = pd.Series(False, index=df.index)
+    if 'is_zero_feature' in df.columns:
+        mask = mask | df['is_zero_feature'].fillna(False).astype(bool)
+    if 'Feature_ID' in df.columns:
+        mask = mask | (df['Feature_ID'].fillna('').astype(str) == '')
+    if 'Classification' in df.columns:
+        upper_cls = df['Classification'].fillna('').str.upper()
+        mask = mask | (upper_cls == 'NO FSCNA') | (upper_cls == 'NA')
+    return mask
+
+
 def get_samples_from_features(projects, genequery, classquery, metadata_sample_name, metadata_sample_type,
                               metadata_cancer_type, metadata_tissue_origin, extra_metadata,
-                              include_no_amp=True):
+                              include_no_amp=True, no_filter=False):
     """
     Takes in a features_list dict, and finds matches for samples for some: 
 
@@ -198,8 +222,9 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
                     cached = cached_sample_meta.get(run_key, {})
                     placeholder = {
                         'Sample_name': run_key,
-                        'Feature_ID': 'NA',
-                        'Classification': 'No FSCNA',
+                        'Feature_ID': '',
+                        'Classification': 'NA',
+                        'is_zero_feature': True,
                         'All_genes': [],
                         'Oncogenes': [],
                         'Sample_type': cached.get('Sample_type', ''),
@@ -249,7 +274,7 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
             # Split multiple classifications (joined by |) and build OR pattern
             class_queries = [cq.strip() for cq in classquery.split('|') if cq.strip()]
             regex_patterns = []
-            
+
             for cq in class_queries:
                 cq_upper = cq.upper()
                 # Special case: if searching for "LINEAR AMPLIFICATION", also match just "Linear"
@@ -261,17 +286,27 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
                 else:
                     # Escape special regex characters for literal matching
                     regex_patterns.append(re.escape(cq))
-            
+
             # Combine all patterns with OR logic
             if regex_patterns and 'Classification' in df.columns:
                 combined_pattern = '|'.join(regex_patterns)
                 class_match = df['Classification'].str.contains(combined_pattern, case=False, na=False, regex=True)
                 if include_no_amp:
-                    # Always keep zero-feature placeholder rows alongside amp results
-                    no_amp_mask = df['Classification'] == 'No FSCNA'
+                    # Keep zero-feature placeholder rows alongside amp-type matches.
+                    no_amp_mask = _zero_feature_mask(df)
                     df = df[class_match | no_amp_mask]
                 else:
                     df = df[class_match]
+        elif not no_filter and include_no_amp:
+            # Only the 'no-amp' checkbox was checked (no amp types selected).
+            # Keep only zero-feature rows; exclude all rows that have actual features.
+            df = df[_zero_feature_mask(df)]
+        elif not no_filter and not include_no_amp:
+            # All 4 amp-type checkboxes are checked but 'No-Amp (sample)' is NOT.
+            # classquery is None (no amp filter needed), but we must still exclude
+            # NA/'No FSCNA' rows — those are no-amp features and should only appear
+            # when the no-amp checkbox is explicitly checked.
+            df = df[~_zero_feature_mask(df)]
 
         if metadata_sample_name and 'Sample_name' in df.columns:
             df['Sample_name'] = df['Sample_name'].astype(str)

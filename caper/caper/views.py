@@ -5290,24 +5290,43 @@ def search_results(request):
         include_no_amp = "no-amp" in classifications_list
         amp_classifications_list = [c for c in classifications_list if c.lower() != "no-amp"]
 
-        # If all 4 amp-type checkboxes are checked, that is equivalent to "no
-        # classification filter" — just as having none checked was before.
+        # Preserve the original user selections before any internal processing so the
+        # template can faithfully repopulate the checkboxes on the result page.
+        original_amp_classifications = "|".join(amp_classifications_list)
+        original_include_no_amp = include_no_amp
+
         ALL_AMP_TYPES = {'ecdna', 'linear amplification', 'bfb', 'complex non-cyclic'}
         checked_amp_set = {c.lower() for c in amp_classifications_list}
-        if checked_amp_set >= ALL_AMP_TYPES:
-            classifications = ""   # treated as no-filter downstream
+        none_checked = len(classifications_list) == 0
+        all_5_checked = include_no_amp and checked_amp_set >= ALL_AMP_TYPES
+
+        # "No filter" mode: none of the 5 checked, or all 5 checked.
+        # Both cases return every sample (all feature types + zero-feature samples).
+        no_filter = none_checked or all_5_checked
+
+        if no_filter:
+            include_no_amp = True   # always include zero-feature in no-filter mode
+            classifications = ""
+        elif checked_amp_set >= ALL_AMP_TYPES:
+            # All 4 amp types checked but no-amp is NOT checked:
+            # no amp-type filter, but zero-feature samples are excluded.
+            classifications = ""
         else:
-            classifications = "|".join(amp_classifications_list)  # Join with pipe for OR logic
+            # Partial amp selection (or only no-amp): join selected amp types.
+            # Empty string when only no-amp is checked; search.py handles that case.
+            classifications = "|".join(amp_classifications_list)
         sample_name = request.POST.get("metadata_sample_name", "").strip()
         sample_type = request.POST.get("metadata_sample_type", "").strip()
         cancer_tissue = request.POST.get("metadata_cancer_tissue", "").strip()
 
-        # Build user_query dict so the template can re-populate the search form
+        # Build user_query dict so the template can re-populate the search form.
+        # Use the ORIGINAL user selections (not the internally-processed values) so
+        # the checkboxes are restored exactly as submitted.
         user_query = {
             "genequery": gene_search,
             "project_name": project_name,
-            "classquery": classifications,
-            "include_no_amp": include_no_amp,
+            "classquery": original_amp_classifications,
+            "include_no_amp": original_include_no_amp,
             "metadata_sample_name": sample_name,
             "metadata_sample_type": sample_type,
             "metadata_cancer_tissue": cancer_tissue,
@@ -5323,6 +5342,7 @@ def search_results(request):
             metadata_sample_type=sample_type.upper() if sample_type else None,
             metadata_cancer_type=cancer_tissue.upper() if cancer_tissue else None,
             include_no_amp=include_no_amp,
+            no_filter=no_filter,
             user=request.user,
         )
 
