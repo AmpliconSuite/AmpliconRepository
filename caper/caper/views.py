@@ -2214,6 +2214,33 @@ def gene_search_page(request):
             project_linkid = project['_id']
             features = project['runs']
             features_list = replace_space_to_underscore(features)
+
+            # Include zero-feature samples (runs entries with empty lists)
+            if isinstance(features, dict):
+                cached_sample_meta = {}
+                for sd in project.get('sample_data', []) or []:
+                    sn = sd.get('Sample_name')
+                    if sn:
+                        cached_sample_meta[sn] = sd
+
+                for run_key, feature_list_entry in features.items():
+                    if not feature_list_entry:  # empty list — zero features
+                        cached = cached_sample_meta.get(run_key, {})
+                        placeholder = {
+                            'Sample_name': run_key,
+                            'Feature_ID': 'NA',
+                            'Classification': 'No FSCNA',
+                            'All_genes': [],
+                            'Oncogenes': [],
+                            'Sample_type': cached.get('Sample_type', ''),
+                            'Cancer_type': cached.get('Cancer_type', ''),
+                            'Tissue_of_origin': cached.get('Tissue_of_origin', ''),
+                        }
+                        features_list.append(placeholder)
+
+            if not features_list:
+                continue
+
             data = sample_data_from_feature_list(features_list)
 
             for sample in data:
@@ -5259,19 +5286,51 @@ def search_results(request):
         gene_search = request.POST.get("genequery", "").strip()
         project_name = request.POST.get("project_name", "").strip()
         classifications_list = request.POST.getlist("classquery")  # Get multiple selections
-        classifications = "|".join(classifications_list)  # Join with pipe for OR logic
+        # Separate the "no-amp" pseudo-classification from the real amplicon classes
+        include_no_amp = "no-amp" in classifications_list
+        amp_classifications_list = [c for c in classifications_list if c.lower() != "no-amp"]
+
+        # Preserve the original user selections before any internal processing so the
+        # template can faithfully repopulate the checkboxes on the result page.
+        original_amp_classifications = "|".join(amp_classifications_list)
+        original_include_no_amp = include_no_amp
+
+        ALL_AMP_TYPES = {'ecdna', 'linear amplification', 'bfb', 'complex non-cyclic'}
+        checked_amp_set = {c.lower() for c in amp_classifications_list}
+        none_checked = len(classifications_list) == 0
+        all_5_checked = include_no_amp and checked_amp_set >= ALL_AMP_TYPES
+
+        # "No filter" mode: none of the 5 checked, or all 5 checked.
+        # Both cases return every sample (all feature types + zero-feature samples).
+        no_filter = none_checked or all_5_checked
+
+        if no_filter:
+            include_no_amp = True   # always include zero-feature in no-filter mode
+            classifications = ""
+        elif checked_amp_set >= ALL_AMP_TYPES:
+            # All 4 amp types checked but no-amp is NOT checked:
+            # no amp-type filter, but zero-feature samples are excluded.
+            classifications = ""
+        else:
+            # Partial amp selection (or only no-amp): join selected amp types.
+            # Empty string when only no-amp is checked; search.py handles that case.
+            classifications = "|".join(amp_classifications_list)
         sample_name = request.POST.get("metadata_sample_name", "").strip()
         sample_type = request.POST.get("metadata_sample_type", "").strip()
         cancer_tissue = request.POST.get("metadata_cancer_tissue", "").strip()
 
-        # Build user_query dict so the template can re-populate the search form
+        # Build user_query dict so the template can re-populate the search form.
+        # Use the ORIGINAL user selections (not the internally-processed values) so
+        # the checkboxes are restored exactly as submitted.
         user_query = {
             "genequery": gene_search,
             "project_name": project_name,
-            "classquery": classifications,
+            "classquery": original_amp_classifications,
+            "include_no_amp": original_include_no_amp,
             "metadata_sample_name": sample_name,
             "metadata_sample_type": sample_type,
             "metadata_cancer_tissue": cancer_tissue,
+            "search_submitted": True,
         }
 
         # Delegate to the shared search helper
@@ -5282,6 +5341,8 @@ def search_results(request):
             metadata_sample_name=sample_name.upper() if sample_name else None,
             metadata_sample_type=sample_type.upper() if sample_type else None,
             metadata_cancer_type=cancer_tissue.upper() if cancer_tissue else None,
+            include_no_amp=include_no_amp,
+            no_filter=no_filter,
             user=request.user,
         )
 
