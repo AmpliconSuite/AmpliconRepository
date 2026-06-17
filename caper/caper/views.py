@@ -3242,6 +3242,11 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             for key, value in form_data.items():
                 if isinstance(value, list) and len(value) == 1:
                     form_data[key] = value[0]
+            # edit_project_page may have transferred the old alias into form.data
+            # (when the user left the alias field blank) but request.POST is never
+            # mutated, so form_data would otherwise carry the original empty string.
+            # Sync the alias explicitly so the background thread gets the right value.
+            form_data['alias'] = form_dict.get('alias', '')
 
             logging.info(f"EditProject - start background thread to _process_edit_and_notify")
             _thread_executor.submit(

@@ -614,6 +614,102 @@ def test_create_then_edit_with_remap(
 # Issue #509 — metadata xlsx submitted with create form must be applied
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Alias propagation when a project is versioned / reaggregated
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_alias_propagates_to_new_version_on_reaggregate(
+        request_factory, test_user, mongo_collection):
+    """
+    Bug: when a project with an alias_name is versioned (reaggregated) and the
+    user leaves the alias field blank in the edit form, the alias must be carried
+    over to the new version.
+
+    Root cause: edit_project_into_new_version() built form_data from request.POST,
+    which was never updated with the alias that edit_project_page() transferred
+    into form.data.  The fix syncs form_data['alias'] from form_dict explicitly
+    after form_data is constructed.
+    """
+    import shutil
+    from unittest.mock import MagicMock, patch
+    from bson.objectid import ObjectId
+    from caper.views import edit_project_page
+
+    ALIAS = 'pytest-alias-propagation-test'
+
+    doc = {
+        'project_name': 'AliasPropagationTest',
+        'alias_name': ALIAS,
+        'creator': test_user.username,
+        'private': 'private',
+        'delete': False,
+        'current': True,
+        'FINISHED?': True,
+        'previous_versions': [],
+        'runs': {'run1': [{'Sample_name': 'Sample_001', 'Classification': 'No amp/Del', 'Features': []}]},
+        'project_members': [test_user.username, test_user.email],
+        'views': 0,
+        'downloads': 0,
+        'date': '2024-01-01',
+        'sample_count': 1,
+    }
+    result = mongo_collection.insert_one(doc)
+    project_id = str(result.inserted_id)
+    mongo_collection.update_one(
+        {'_id': result.inserted_id},
+        {'$set': {'linkid': project_id}}
+    )
+
+    captured = {}
+    placeholder_ids = []
+
+    def _fake_submit(fn, *args, **kwargs):
+        # submit(fn, file_fps, temp_proj_id, project_data_path, temp_directory, form_data, ...)
+        captured['form_data'] = args[4]
+        placeholder_ids.append(args[1])   # temp_proj_id
+        return MagicMock()                # mimic a concurrent.futures.Future
+
+    try:
+        data = {
+            'project_name': 'AliasPropagationTest',
+            'description': 'Versioning alias propagation test',
+            'private': 'private',
+            'publication_link': '',
+            'project_members': '',
+            'alias': '',              # intentionally blank — alias must carry over
+            'remap_sample_names': 'false',
+            'project_mode': 'reaggregate',
+            'accept_license': 'on',
+        }
+        request = request_factory.post(f'/project/{project_id}/edit', data=data)
+        request.user = test_user
+
+        with patch('caper.views._thread_executor') as mock_executor:
+            mock_executor.submit.side_effect = _fake_submit
+            edit_project_page(request, project_name=project_id)
+
+        assert 'form_data' in captured, (
+            "Background thread (submit) was never called — edit did not trigger versioning"
+        )
+        assert captured['form_data'].get('alias') == ALIAS, (
+            f"Alias must be propagated to form_data for the new version. "
+            f"Got {captured['form_data'].get('alias')!r}, expected {ALIAS!r}"
+        )
+
+    finally:
+        mongo_collection.delete_one({'_id': ObjectId(project_id)})
+        for pid in placeholder_ids:
+            try:
+                mongo_collection.delete_one({'_id': ObjectId(pid)})
+            except Exception:
+                pass
+            try:
+                shutil.rmtree(os.path.join('tmp', pid), ignore_errors=True)
+            except Exception:
+                pass
+
+
 @pytest.mark.slow
 @pytest.mark.integration
 def test_metadata_xlsx_applied_on_create(
