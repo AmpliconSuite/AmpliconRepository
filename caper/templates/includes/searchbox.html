@@ -3,59 +3,64 @@
 <form id="searchForm" action="{% url 'search_results' %}" method="POST" class="p-4 border rounded bg-light">
     {% csrf_token %}
 
+    <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 12px;">
+        <strong>Project, Sample Name &amp; Gene</strong> use <strong>exact match</strong> by default — use
+        <strong>*</strong> as a wildcard for partial matches (e.g. <em>NCIH*</em>, <em>*CDK*</em>, <em>MYC*</em>).<br>
+        <strong>Sample Type, Cancer Type/Tissue</strong> match on <strong>substrings</strong>
+        automatically (e.g. <em>bone</em> finds <em>Bone/soft tissue</em>).<br>
+        Use <strong>|</strong> for OR (e.g. <em>breast|lung</em>) and
+        <strong>&amp;</strong> for AND (e.g. <em>bone&amp;soft</em>) in any field.
+    </p>
+
     <div class="mb-3">
         <label for="project_name" class="form-label">Project Name</label>
         <input type="text" class="form-control" name="project_name" id="project_name"
                placeholder="Enter project name..." value="{{ user_query.project_name|default:'' }}">
-        <small class="form-text text-muted">
-            Use <strong>*</strong> as a wildcard, e.g. <em>CCLE*</em>, <em>*lung*</em>, <em>C*E</em>
-        </small>
     </div>
 
     <div class="mb-3">
         <label for="metadata_sample_name" class="form-label">Sample Name</label>
         <input type="text" class="form-control" name="metadata_sample_name" id="metadata_sample_name"
             placeholder="Enter sample name" value="{{ user_query.metadata_sample_name|default:'' }}">
-        <small class="form-text text-muted">
-            Use <strong>*</strong> as a wildcard, e.g. <em>NCIH*</em>, <em>*_tumor</em>
-        </small>
     </div>
 
     <div class="mb-3">
         <label for="genequery" class="form-label">Gene Name</label>
         <input type="text" class="form-control" name="genequery" id="genequery"
                placeholder="e.g. MYC or MYC|EGFR or MYC&EGFR" value="{{ user_query.genequery|default:'' }}">
-        <small class="form-text text-muted">
-            Use <strong>|</strong> for OR, <strong>&</strong> for AND, or <strong>*</strong> as a wildcard
-            &nbsp;(e.g. <em>MYC*</em>, <em>*CDK*</em>, <em>FLO*|EGFR</em>)
-        </small>
     </div>
 
     <div class="mb-3">
         <label for="classquery" class="form-label">Classification Type</label>
         <div>
             <div class="form-check">
-                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="ecDNA" id="class-ecDNA" {% if user_query.classquery %}{% if "ECDNA" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="ecDNA" id="class-ecDNA" {% if user_query.search_submitted %}{% if "ECDNA" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
                 <label class="form-check-label" for="class-ecDNA">
                     ecDNA
                 </label>
             </div>
             <div class="form-check">
-                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="linear amplification" id="class-linear" {% if user_query.classquery %}{% if "LINEAR AMPLIFICATION" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="linear amplification" id="class-linear" {% if user_query.search_submitted %}{% if "LINEAR AMPLIFICATION" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
                 <label class="form-check-label" for="class-linear">
                     Linear Amplification
                 </label>
             </div>
             <div class="form-check">
-                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="BFB" id="class-bfb" {% if user_query.classquery %}{% if "BFB" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="BFB" id="class-bfb" {% if user_query.search_submitted %}{% if "BFB" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
                 <label class="form-check-label" for="class-bfb">
                     Breakage-Fusion-Bridge (BFB)
                 </label>
             </div>
             <div class="form-check">
-                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="complex non-cyclic" id="class-complex" {% if user_query.classquery %}{% if "COMPLEX NON-CYCLIC" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="complex non-cyclic" id="class-complex" {% if user_query.search_submitted %}{% if "COMPLEX NON-CYCLIC" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
                 <label class="form-check-label" for="class-complex">
                     Complex Non-Cyclic
+                </label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="no-amp" id="class-noamp" {% if user_query.search_submitted %}{% if user_query.include_no_amp %}checked{% endif %}{% else %}checked{% endif %}>
+                <label class="form-check-label" for="class-noamp">
+                    No-Amp (sample)
                 </label>
             </div>
         </div>
@@ -73,13 +78,13 @@
             <div class="mb-3">
                 <label for="metadata_sample_type" class="form-label">Sample Type</label>
                 <input type="text" class="form-control" name="metadata_sample_type" id="metadata_sample_type"
-                    placeholder="e.g. cell line or primary tumor" value="{{ user_query.metadata_sample_type|default:'' }}">
+                    placeholder="e.g. cell line (substring match, or use | for OR)" value="{{ user_query.metadata_sample_type|default:'' }}">
             </div>
 
             <div class="mb-3">
                 <label for="metadata_cancer_tissue" class="form-label">Cancer Type or Tissue</label>
                 <input type="text" class="form-control" name="metadata_cancer_tissue" id="metadata_cancer_tissue"
-                    placeholder="Enter cancer type or tissue of origin" value="{{ user_query.metadata_cancer_tissue|default:'' }}">
+                    placeholder="e.g. bone (finds Bone/soft tissue), or breast|lung" value="{{ user_query.metadata_cancer_tissue|default:'' }}">
             </div>
         </div>
     </div>

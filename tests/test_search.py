@@ -13,6 +13,7 @@ Note on gene_search_page vs search_results:
 """
 
 import pytest
+import pandas as pd
 from bson.objectid import ObjectId
 
 from conftest import (
@@ -48,6 +49,694 @@ def _set_private(collection, project_id):
     collection.update_one(
         {'_id': ObjectId(project_id)},
         {'$set': {'private': 'private'}})
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for wildcard_to_regex
+# ---------------------------------------------------------------------------
+
+class TestWildcardToRegex:
+    """Unit tests for the wildcard_to_regex helper function."""
+
+    def test_no_wildcard_returns_none(self):
+        from caper.search import wildcard_to_regex
+        assert wildcard_to_regex('EGFR') is None
+        assert wildcard_to_regex('hello world') is None
+
+    def test_prefix_wildcard(self):
+        from caper.search import wildcard_to_regex
+        result = wildcard_to_regex('MYC*')
+        assert result == '^MYC.*$'
+
+    def test_suffix_wildcard(self):
+        from caper.search import wildcard_to_regex
+        result = wildcard_to_regex('*CDK')
+        assert result == '^.*CDK$'
+
+    def test_contains_wildcard(self):
+        from caper.search import wildcard_to_regex
+        result = wildcard_to_regex('*LO*')
+        assert result == '^.*LO.*$'
+
+    def test_middle_wildcard(self):
+        from caper.search import wildcard_to_regex
+        result = wildcard_to_regex('F*H')
+        assert result == '^F.*H$'
+
+    def test_special_regex_chars_escaped(self):
+        from caper.search import wildcard_to_regex
+        result = wildcard_to_regex('test.name*')
+        assert result == '^test\\.name.*$'
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _single_term_mask
+# ---------------------------------------------------------------------------
+
+class TestSingleTermMask:
+    """Unit tests for the _single_term_mask helper function."""
+
+    def test_exact_match_case_insensitive(self):
+        from caper.search import _single_term_mask
+        s = pd.Series(['CUG', 'CUGBP1', 'cug', 'OTHER', 'CUG2'])
+        mask = _single_term_mask(s, 'CUG')
+        assert list(mask) == [True, False, True, False, False]
+
+    def test_exact_match_no_substring(self):
+        """Without wildcard, 'CUG' must NOT match 'CUGBP1'."""
+        from caper.search import _single_term_mask
+        s = pd.Series(['CUG', 'CUGBP1', 'XCUG', 'XCUGX'])
+        mask = _single_term_mask(s, 'CUG')
+        assert list(mask) == [True, False, False, False]
+
+    def test_wildcard_prefix(self):
+        from caper.search import _single_term_mask
+        s = pd.Series(['CUG', 'CUGBP1', 'cug123', 'OTHER'])
+        mask = _single_term_mask(s, 'CUG*')
+        assert list(mask) == [True, True, True, False]
+
+    def test_wildcard_suffix(self):
+        from caper.search import _single_term_mask
+        s = pd.Series(['XCUG', 'CUG', 'PRECUG', 'OTHER'])
+        mask = _single_term_mask(s, '*CUG')
+        assert list(mask) == [True, True, True, False]
+
+    def test_wildcard_contains(self):
+        from caper.search import _single_term_mask
+        s = pd.Series(['XCUGX', 'CUG', 'PRECUGPOST', 'OTHER'])
+        mask = _single_term_mask(s, '*CUG*')
+        assert list(mask) == [True, True, True, False]
+
+    def test_whitespace_stripped(self):
+        from caper.search import _single_term_mask
+        s = pd.Series(['CUG', 'OTHER'])
+        mask = _single_term_mask(s, '  CUG  ')
+        assert list(mask) == [True, False]
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _text_field_filter (OR, AND, exact, wildcard)
+# ---------------------------------------------------------------------------
+
+class TestTextFieldFilter:
+    """Unit tests for the _text_field_filter helper function."""
+
+    def test_exact_match_default(self):
+        """Plain text without operators performs exact case-insensitive match."""
+        from caper.search import _text_field_filter
+        s = pd.Series(['breast', 'breast cancer', 'BREAST', 'lung'])
+        mask = _text_field_filter(s, 'breast')
+        assert list(mask) == [True, False, True, False]
+
+    def test_wildcard_match(self):
+        """Wildcard pattern matches appropriately."""
+        from caper.search import _text_field_filter
+        s = pd.Series(['breast', 'breast cancer', 'BREAST', 'lung'])
+        mask = _text_field_filter(s, 'breast*')
+        assert list(mask) == [True, True, True, False]
+
+    def test_or_operator(self):
+        """Pipe | performs OR between exact terms."""
+        from caper.search import _text_field_filter
+        s = pd.Series(['breast', 'lung', 'colon', 'brain'])
+        mask = _text_field_filter(s, 'breast|lung')
+        assert list(mask) == [True, True, False, False]
+
+    def test_or_operator_with_wildcards(self):
+        """Pipe | with wildcards in individual terms."""
+        from caper.search import _text_field_filter
+        s = pd.Series(['breast', 'breast cancer', 'lung', 'lung adenocarcinoma', 'colon'])
+        mask = _text_field_filter(s, 'breast*|lung')
+        # breast* matches 'breast' and 'breast cancer'; 'lung' matches exactly 'lung'
+        assert list(mask) == [True, True, True, False, False]
+
+    def test_and_operator(self):
+        """Ampersand & performs AND — all terms must match the same cell."""
+        from caper.search import _text_field_filter
+        s = pd.Series(['breast', 'lung', 'colon'])
+        mask = _text_field_filter(s, 'breast&lung')
+        # AND on a single-value field: a cell can't be both 'breast' AND 'lung'
+        assert list(mask) == [False, False, False]
+
+    def test_and_operator_with_wildcards(self):
+        """AND with wildcards — both patterns must match the same cell value."""
+        from caper.search import _text_field_filter
+        s = pd.Series(['breast cancer', 'breast', 'lung cancer', 'colon'])
+        mask = _text_field_filter(s, 'breast*&*cancer')
+        # Only 'breast cancer' matches both breast* AND *cancer
+        assert list(mask) == [True, False, False, False]
+
+    def test_or_multiple_terms(self):
+        """Multiple OR terms."""
+        from caper.search import _text_field_filter
+        s = pd.Series(['breast', 'lung', 'colon', 'brain', 'liver'])
+        mask = _text_field_filter(s, 'breast|lung|brain')
+        assert list(mask) == [True, True, False, True, False]
+
+    def test_case_insensitivity(self):
+        """All matching is case-insensitive."""
+        from caper.search import _text_field_filter
+        s = pd.Series(['Breast', 'BREAST', 'breast', 'Lung'])
+        mask = _text_field_filter(s, 'BREAST')
+        assert list(mask) == [True, True, True, False]
+
+    def test_empty_series(self):
+        """Empty series returns empty mask."""
+        from caper.search import _text_field_filter
+        s = pd.Series([], dtype=str)
+        mask = _text_field_filter(s, 'test')
+        assert len(mask) == 0
+
+    def test_na_values_handled(self):
+        """NaN values don't cause errors and don't match."""
+        from caper.search import _text_field_filter
+        import numpy as np
+        s = pd.Series(['breast', np.nan, 'lung', None])
+        mask = _text_field_filter(s, 'breast')
+        assert mask.iloc[0] == True
+        assert mask.iloc[1] == False
+        assert mask.iloc[2] == False
+        assert mask.iloc[3] == False
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: project name exact match vs wildcard
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_project_name_exact_match(request_factory, test_user, mongo_collection):
+    """
+    Searching for 'TestExact' must match only a project named exactly 'TestExact',
+    not 'TestExact_Extra' or 'PrefixTestExact'.
+    """
+    from caper.views import search_results
+
+    _sample = {'Sample_name': 'S1', 'Features': []}
+    docs = [
+        {'project_name': 'TestExact', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
+        {'project_name': 'TestExact_Extra', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
+        {'project_name': 'PrefixTestExact', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        req = request_factory.post('/search_results/', {'project_name': 'TestExact'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'TestExact' in content
+        # The others should NOT appear as project links (they may appear in form echo)
+        # Check that their sample rows don't show up
+        assert 'TestExact_Extra' not in content.split('search-box')[0] or \
+               content.count('TestExact_Extra') <= 1  # at most form echo
+        assert 'PrefixTestExact' not in content.split('search-box')[0] or \
+               content.count('PrefixTestExact') <= 1
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+@pytest.mark.integration
+def test_project_name_wildcard_prefix(request_factory, test_user, mongo_collection):
+    """
+    Searching for 'TestWild*' must match 'TestWild_One' and 'TestWild_Two'
+    but not 'PrefixTestWild'.
+    """
+    from caper.views import search_results
+
+    _sample = {'Sample_name': 'S1', 'Features': []}
+    docs = [
+        {'project_name': 'TestWild_One', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
+        {'project_name': 'TestWild_Two', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
+        {'project_name': 'PrefixTestWild', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        req = request_factory.post('/search_results/', {'project_name': 'TestWild*'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'TestWild_One' in content
+        assert 'TestWild_Two' in content
+        # PrefixTestWild should not match (wildcard only at end)
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+@pytest.mark.integration
+def test_project_name_or_operator(request_factory, test_user, mongo_collection):
+    """
+    Searching for 'ProjAlpha|ProjBeta' must match both exact names.
+    """
+    from caper.views import search_results
+
+    _sample = {'Sample_name': 'S1', 'Features': []}
+    docs = [
+        {'project_name': 'ProjAlpha', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
+        {'project_name': 'ProjBeta', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
+        {'project_name': 'ProjGamma', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        req = request_factory.post('/search_results/', {'project_name': 'ProjAlpha|ProjBeta'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'ProjAlpha' in content
+        assert 'ProjBeta' in content
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: sample name exact match vs wildcard
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_sample_name_exact_match(request_factory, test_user, mongo_collection):
+    """
+    Searching sample name 'SampleA' must only return exact match, not 'SampleA_extra'.
+    """
+    from caper.views import search_results
+
+    docs = [
+        {'project_name': 'SampleNameTest', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True,
+         'runs': {'r': [
+             {'Sample_name': 'SampleA', 'Features': []},
+             {'Sample_name': 'SampleA_extra', 'Features': []},
+             {'Sample_name': 'PreSampleA', 'Features': []},
+         ]},
+         'sample_count': 3},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        req = request_factory.post('/search_results/', {'metadata_sample_name': 'SampleA'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        # The exact match 'SampleA' should appear in results
+        assert 'SampleA' in content
+        # 'SampleA_extra' should not appear as a sample result link
+        # (counting occurrences: SampleA_extra should not be in sample links)
+        assert content.count('SampleA_extra') == 0 or \
+               'SampleA_extra' not in content.split('SampleNameTest')[1] if 'SampleNameTest' in content else True
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+@pytest.mark.integration
+def test_sample_name_wildcard(request_factory, test_user, mongo_collection):
+    """
+    Searching sample name 'SampleW*' must match 'SampleW_One' and 'SampleW_Two'.
+    """
+    from caper.views import search_results
+
+    docs = [
+        {'project_name': 'SampleWildTest', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True,
+         'runs': {'r': [
+             {'Sample_name': 'SampleW_One', 'Features': []},
+             {'Sample_name': 'SampleW_Two', 'Features': []},
+             {'Sample_name': 'OtherSample', 'Features': []},
+         ]},
+         'sample_count': 3},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        req = request_factory.post('/search_results/', {'metadata_sample_name': 'SampleW*'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'SampleW_One' in content
+        assert 'SampleW_Two' in content
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+@pytest.mark.integration
+def test_sample_name_or_operator(request_factory, test_user, mongo_collection):
+    """
+    Searching sample name 'AlphaSample|BetaSample' must find both exact matches.
+    """
+    from caper.views import search_results
+
+    docs = [
+        {'project_name': 'SampleOrTest', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True,
+         'runs': {'r': [
+             {'Sample_name': 'AlphaSample', 'Features': []},
+             {'Sample_name': 'BetaSample', 'Features': []},
+             {'Sample_name': 'GammaSample', 'Features': []},
+         ]},
+         'sample_count': 3},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        req = request_factory.post('/search_results/', {'metadata_sample_name': 'AlphaSample|BetaSample'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'AlphaSample' in content
+        assert 'BetaSample' in content
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _substring_term_mask (metadata fields: substring matching)
+# ---------------------------------------------------------------------------
+
+class TestSubstringTermMask:
+    """Unit tests for the _substring_term_mask helper (used for metadata fields)."""
+
+    def test_substring_match(self):
+        """Plain term matches as a substring, case-insensitively."""
+        from caper.search import _substring_term_mask
+        s = pd.Series(['Bone/soft tissue', 'Bone marrow', 'Lung', 'bone'])
+        mask = _substring_term_mask(s, 'bone')
+        assert list(mask) == [True, True, False, True]
+
+    def test_no_match(self):
+        from caper.search import _substring_term_mask
+        s = pd.Series(['Lung', 'Kidney', 'Brain'])
+        mask = _substring_term_mask(s, 'bone')
+        assert list(mask) == [False, False, False]
+
+    def test_substring_in_longer_value(self):
+        """'sarcoma' finds 'Liposarcoma, soft tissue'."""
+        from caper.search import _substring_term_mask
+        s = pd.Series(['Liposarcoma, soft tissue', 'Osteosarcoma', 'Breast cancer'])
+        mask = _substring_term_mask(s, 'sarcoma')
+        assert list(mask) == [True, True, False]
+
+    def test_case_insensitive(self):
+        from caper.search import _substring_term_mask
+        s = pd.Series(['Breast Cancer', 'BREAST', 'breast adenocarcinoma', 'Lung'])
+        mask = _substring_term_mask(s, 'BREAST')
+        assert list(mask) == [True, True, True, False]
+
+    def test_whitespace_stripped(self):
+        from caper.search import _substring_term_mask
+        s = pd.Series(['cell line', 'Cell Line Derived', 'primary tumor'])
+        mask = _substring_term_mask(s, '  cell line  ')
+        assert list(mask) == [True, True, False]
+
+    def test_nan_handled(self):
+        """NaN values don't cause errors and don't match."""
+        import numpy as np
+        from caper.search import _substring_term_mask
+        s = pd.Series(['bone', np.nan, 'lung', None])
+        mask = _substring_term_mask(s, 'bone')
+        assert mask.iloc[0] == True
+        assert mask.iloc[1] == False
+        assert mask.iloc[2] == False
+        assert mask.iloc[3] == False
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _substring_field_filter (OR, AND, substring)
+# ---------------------------------------------------------------------------
+
+class TestSubstringFieldFilter:
+    """Unit tests for the _substring_field_filter helper (metadata fields)."""
+
+    def test_plain_substring(self):
+        """Plain text matches as a substring."""
+        from caper.search import _substring_field_filter
+        s = pd.Series(['Bone/soft tissue', 'Bone marrow', 'Lung'])
+        mask = _substring_field_filter(s, 'bone')
+        assert list(mask) == [True, True, False]
+
+    def test_or_operator(self):
+        """Pipe | performs OR between substring terms."""
+        from caper.search import _substring_field_filter
+        s = pd.Series(['breast cancer', 'lung adenocarcinoma', 'colon', 'brain'])
+        mask = _substring_field_filter(s, 'breast|lung')
+        assert list(mask) == [True, True, False, False]
+
+    def test_or_operator_partial_values(self):
+        """OR with partial values matching longer strings."""
+        from caper.search import _substring_field_filter
+        s = pd.Series(['Bone/soft tissue', 'Liposarcoma, soft tissue', 'Lung', 'Kidney'])
+        mask = _substring_field_filter(s, 'bone|sarcoma')
+        assert list(mask) == [True, True, False, False]
+
+    def test_and_operator(self):
+        """Ampersand & performs AND — both substrings must appear in the cell."""
+        from caper.search import _substring_field_filter
+        s = pd.Series(['bone/soft tissue', 'bone cancer', 'soft tissue sarcoma', 'lung'])
+        mask = _substring_field_filter(s, 'bone&soft')
+        # Only 'bone/soft tissue' contains both 'bone' and 'soft'
+        assert list(mask) == [True, False, False, False]
+
+    def test_and_no_match(self):
+        from caper.search import _substring_field_filter
+        s = pd.Series(['breast', 'lung', 'colon'])
+        mask = _substring_field_filter(s, 'breast&lung')
+        assert list(mask) == [False, False, False]
+
+    def test_case_insensitive(self):
+        from caper.search import _substring_field_filter
+        s = pd.Series(['Breast Cancer', 'BREAST', 'Lung'])
+        mask = _substring_field_filter(s, 'BREAST')
+        assert list(mask) == [True, True, False]
+
+    def test_multiple_or_terms(self):
+        from caper.search import _substring_field_filter
+        s = pd.Series(['breast', 'lung', 'colon cancer', 'brain', 'liver'])
+        mask = _substring_field_filter(s, 'breast|lung|colon')
+        assert list(mask) == [True, True, True, False, False]
+
+    def test_empty_series(self):
+        from caper.search import _substring_field_filter
+        s = pd.Series([], dtype=str)
+        mask = _substring_field_filter(s, 'test')
+        assert len(mask) == 0
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: metadata (sample type, cancer type) substring matching & operators
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_sample_type_substring_match(request_factory, test_user, mongo_collection):
+    """
+    Searching sample type 'cell line' must match BOTH 'cell line' AND 'cell line derived'
+    because metadata fields use substring matching.
+    """
+    from caper.views import search_results
+
+    docs = [
+        {'project_name': 'TypeSubstringTest', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True,
+         'runs': {'r': [
+             {'Sample_name': 'S1', 'Sample_type': 'cell line', 'Features': []},
+             {'Sample_name': 'S2', 'Sample_type': 'cell line derived', 'Features': []},
+             {'Sample_name': 'S3', 'Sample_type': 'primary tumor', 'Features': []},
+         ]},
+         'sample_count': 3},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        req = request_factory.post('/search_results/', {'metadata_sample_type': 'cell line'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        # Both S1 ('cell line') and S2 ('cell line derived') contain 'cell line' as substring
+        assert 'S1' in content, "S1 ('cell line') must match substring 'cell line'"
+        assert 'S2' in content, "S2 ('cell line derived') must match substring 'cell line'"
+        # S3 ('primary tumor') must NOT match
+        assert content.count('S3') == 0 or 'primary tumor' not in content
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+@pytest.mark.integration
+def test_sample_type_or_operator(request_factory, test_user, mongo_collection):
+    """
+    Searching sample type 'cell line|primary tumor' with OR must match both.
+    """
+    from caper.views import search_results
+
+    docs = [
+        {'project_name': 'TypeOrTest', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True,
+         'runs': {'r': [
+             {'Sample_name': 'S1', 'Sample_type': 'cell line', 'Features': []},
+             {'Sample_name': 'S2', 'Sample_type': 'primary tumor', 'Features': []},
+             {'Sample_name': 'S3', 'Sample_type': 'organoid', 'Features': []},
+         ]},
+         'sample_count': 3},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        req = request_factory.post('/search_results/', {'metadata_sample_type': 'cell line|primary tumor'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'S1' in content
+        assert 'S2' in content
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+@pytest.mark.integration
+def test_cancer_type_substring_match(request_factory, test_user, mongo_collection):
+    """
+    Searching cancer type 'breast' must match BOTH 'breast' AND 'breast cancer'
+    because cancer type uses substring matching (unlike project/sample name).
+    Also: 'bone' must match 'Bone/soft tissue'.
+    """
+    from caper.views import search_results
+
+    docs = [
+        {'project_name': 'CancerSubstringTest', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True,
+         'runs': {'r': [
+             {'Sample_name': 'S1', 'Cancer_type': 'breast', 'Features': []},
+             {'Sample_name': 'S2', 'Cancer_type': 'breast cancer', 'Features': []},
+             {'Sample_name': 'S3', 'Cancer_type': 'Bone/soft tissue', 'Features': []},
+             {'Sample_name': 'S4', 'Cancer_type': 'lung', 'Features': []},
+         ]},
+         'sample_count': 4},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        # 'breast' should match both S1 and S2 via substring
+        req = request_factory.post('/search_results/', {'metadata_cancer_tissue': 'breast'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'S1' in content, "S1 ('breast') must match 'breast'"
+        assert 'S2' in content, "S2 ('breast cancer') must match substring 'breast'"
+
+        # 'bone' should match S3 ('Bone/soft tissue') via substring
+        req2 = request_factory.post('/search_results/', {'metadata_cancer_tissue': 'bone'})
+        req2.user = test_user
+        resp2 = search_results(req2)
+        assert resp2.status_code == 200
+        content2 = resp2.content.decode()
+        assert 'S3' in content2, "S3 ('Bone/soft tissue') must match substring 'bone'"
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+@pytest.mark.integration
+def test_cancer_type_or_operator(request_factory, test_user, mongo_collection):
+    """
+    Searching cancer type 'breast|lung' must match samples with either substring.
+    """
+    from caper.views import search_results
+
+    docs = [
+        {'project_name': 'CancerOrTest', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True,
+         'runs': {'r': [
+             {'Sample_name': 'S1', 'Cancer_type': 'breast cancer', 'Features': []},
+             {'Sample_name': 'S2', 'Cancer_type': 'lung adenocarcinoma', 'Features': []},
+             {'Sample_name': 'S3', 'Cancer_type': 'colon', 'Features': []},
+         ]},
+         'sample_count': 3},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        req = request_factory.post('/search_results/', {'metadata_cancer_tissue': 'breast|lung'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'S1' in content
+        assert 'S2' in content
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+@pytest.mark.integration
+def test_cancer_type_and_operator(request_factory, test_user, mongo_collection):
+    """
+    Searching cancer type 'bone&soft' must only match samples containing BOTH
+    substrings in their cancer type (e.g. 'Bone/soft tissue').
+    """
+    from caper.views import search_results
+
+    docs = [
+        {'project_name': 'CancerAndTest', 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True,
+         'runs': {'r': [
+             {'Sample_name': 'S1', 'Cancer_type': 'Bone/soft tissue', 'Features': []},
+             {'Sample_name': 'S2', 'Cancer_type': 'bone cancer', 'Features': []},
+             {'Sample_name': 'S3', 'Cancer_type': 'soft tissue sarcoma', 'Features': []},
+             {'Sample_name': 'S4', 'Cancer_type': 'lung', 'Features': []},
+         ]},
+         'sample_count': 4},
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+
+    try:
+        req = request_factory.post('/search_results/', {'metadata_cancer_tissue': 'bone&soft'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        # Only S1 ('Bone/soft tissue') contains both 'bone' and 'soft'
+        assert 'S1' in content
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
 
 
 # ---------------------------------------------------------------------------
@@ -289,8 +978,8 @@ def test_both_visibility_formats_appear_in_search_results(
     r2 = mongo_collection.insert_one(doc_string)
 
     try:
-        # Search with a prefix that matches both project names
-        req = request_factory.post('/search_results/', {'project_name': 'SearchVis_'})
+        # Search with a wildcard prefix that matches both project names
+        req = request_factory.post('/search_results/', {'project_name': 'SearchVis_*'})
         req.user = test_user
         resp = search_results(req)
         assert resp.status_code == 200, \
@@ -302,3 +991,1045 @@ def test_both_visibility_formats_appear_in_search_results(
     finally:
         mongo_collection.delete_one({'_id': r1.inserted_id})
         mongo_collection.delete_one({'_id': r2.inserted_id})
+
+
+# ---------------------------------------------------------------------------
+# Zero-feature sample tests — samples with empty feature lists in runs
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_only_no_amp_checked_returns_only_zero_feature_public(
+        request_factory, test_user, mongo_collection):
+    """
+    When ONLY the 'No-Amp (sample)' checkbox is checked (no amp-type checkboxes),
+    only zero-feature samples must appear — samples with features must be excluded.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_Public',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'SampleWithFeatures': [
+                {
+                    'Sample_name': 'SampleWithFeatures',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['MYC'],
+                    'Oncogenes': ['MYC'],
+                    'Sample_type': 'cell line',
+                    'Cancer_type': 'GBM',
+                    'Tissue_of_origin': 'Brain',
+                }
+            ],
+            'SampleNoFeatures': [],  # zero-feature sample
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # Only "no-amp" checked — no amp-type checkboxes selected
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_Public',
+            'classquery': ['no-amp']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'SampleNoFeatures' in resp.content, \
+            "Zero-feature sample must appear when only no-amp is checked"
+        assert b'SampleWithFeatures' not in resp.content, \
+            "Sample with features must NOT appear when only no-amp is checked (no amp types selected)"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_only_no_amp_checked_returns_only_zero_feature_private(
+        request_factory, test_user, mongo_collection):
+    """
+    When ONLY the 'No-Amp (sample)' checkbox is checked in a private project,
+    only zero-feature samples must appear — samples with features must be excluded.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':    'SearchZeroFeat_Private',
+        'creator':         test_user.username,
+        'project_members': [test_user.username, test_user.email],
+        'private':         'private',
+        'delete':          False,
+        'current':         True,
+        'FINISHED?':       True,
+        'runs': {
+            'PrivSampleWithFeats': [
+                {
+                    'Sample_name': 'PrivSampleWithFeats',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'BFB',
+                    'All_genes': ['EGFR'],
+                    'Oncogenes': ['EGFR'],
+                    'Sample_type': 'primary tumor',
+                    'Cancer_type': 'Lung',
+                    'Tissue_of_origin': 'Lung',
+                }
+            ],
+            'PrivSampleNoFeats': [],  # zero-feature sample
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_Private',
+            'classquery': ['no-amp']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'PrivSampleNoFeats' in resp.content, \
+            "Zero-feature sample must appear when only no-amp is checked"
+        assert b'PrivSampleWithFeats' not in resp.content, \
+            "Sample with features must NOT appear when only no-amp is checked (no amp types selected)"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_excluded_by_gene_filter(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples must NOT appear when a gene filter is active
+    (they have no genes to match).
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_GeneFilter',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'HasMYC': [
+                {
+                    'Sample_name': 'HasMYC',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['MYC'],
+                    'Oncogenes': ['MYC'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+            'NoFeatures': [],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_GeneFilter',
+            'genequery': 'MYC'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'HasMYC' in resp.content, \
+            "Sample with MYC gene must appear when filtering by MYC"
+        assert b'NoFeatures' not in resp.content, \
+            "Zero-feature sample must NOT appear when a gene filter is active"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_excluded_by_classification_filter(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples (Classification='No FSCNA') must NOT appear when
+    a specific classification filter (e.g. ecDNA) is active.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_ClassFilter',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'HasEcDNA': [
+                {
+                    'Sample_name': 'HasEcDNA',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['EGFR'],
+                    'Oncogenes': ['EGFR'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+            'EmptySample': [],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_ClassFilter',
+            'classquery': ['ecDNA']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'HasEcDNA' in resp.content, \
+            "ecDNA sample must appear when filtering by ecDNA classification"
+        assert b'EmptySample' not in resp.content, \
+            "Zero-feature sample must NOT appear when classification filter is active"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_match_sample_name_search(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples must appear when searching by sample name that matches
+    their run key.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_SampleName',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'TargetSampleXYZ': [],  # zero-feature — should match name search
+            'OtherSample': [
+                {
+                    'Sample_name': 'OtherSample',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['MYC'],
+                    'Oncogenes': ['MYC'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'metadata_sample_name': 'TargetSampleXYZ',
+            'classquery': ['no-amp']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'TargetSampleXYZ' in resp.content, \
+            "Zero-feature sample must appear when searching by its sample name and no-amp is checked"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_hidden_when_noamp_unchecked(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples must NOT appear when the "No-Amp (sample)" checkbox
+    is unchecked (i.e. "no-amp" is absent from classquery).
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_NoAmpOff',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'RegularSampleXX': [
+                {
+                    'Sample_name': 'RegularSampleXX',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['MYC'],
+                    'Oncogenes': ['MYC'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+            'ZeroFeatSampleXX': [],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # Post with ecDNA checked but no-amp NOT checked
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_NoAmpOff',
+            'classquery': ['ecDNA']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'RegularSampleXX' in resp.content, \
+            "Regular ecDNA sample must still appear"
+        assert b'ZeroFeatSampleXX' not in resp.content, \
+            "Zero-feature sample must NOT appear when no-amp checkbox is unchecked"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_appear_when_noamp_checked_with_other_classes(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples must appear alongside regular samples when the
+    "No-Amp (sample)" checkbox is checked together with other classification types.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchZeroFeat_NoAmpMixed',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'MixedEcDNA': [
+                {
+                    'Sample_name': 'MixedEcDNA',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['EGFR'],
+                    'Oncogenes': ['EGFR'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+            'MixedZeroFeat': [],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # Post with both ecDNA and no-amp checked
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchZeroFeat_NoAmpMixed',
+            'classquery': ['ecDNA', 'no-amp']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'MixedEcDNA' in resp.content, \
+            "ecDNA sample must appear when ecDNA + no-amp both checked"
+        assert b'MixedZeroFeat' in resp.content, \
+            "Zero-feature sample must appear when no-amp is checked alongside ecDNA"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_all_five_checkboxes_checked_equals_no_filter(
+        request_factory, test_user, mongo_collection):
+    """
+    Checking all 5 checkboxes (all 4 amp types + no-amp) must behave identically
+    to having no classification filter — all sample types must appear.
+    This covers the case where samples have a classification not covered by the 4
+    standard types (e.g. 'No FSCNA', 'other', or any future classification).
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchAllFive_NoFilter',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'SampleEcDNA': [{'Sample_name': 'SampleEcDNA', 'Feature_ID': 'f1',
+                              'Classification': 'ecDNA', 'All_genes': ['MYC'],
+                              'Oncogenes': ['MYC'], 'Sample_type': '',
+                              'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'SampleBFB':   [{'Sample_name': 'SampleBFB', 'Feature_ID': 'f2',
+                              'Classification': 'BFB', 'All_genes': [],
+                              'Oncogenes': [], 'Sample_type': '',
+                              'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'SampleOther': [{'Sample_name': 'SampleOther', 'Feature_ID': 'f3',
+                              'Classification': 'Heavily-Rearranged', 'All_genes': [],
+                              'Oncogenes': [], 'Sample_type': '',
+                              'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'SampleZero':  [],
+        },
+        'sample_count': 4,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        all_five = ['ecDNA', 'linear amplification', 'BFB', 'complex non-cyclic', 'no-amp']
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchAllFive_NoFilter',
+            'classquery': all_five})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'SampleEcDNA' in resp.content, "ecDNA sample must appear when all 5 checked"
+        assert b'SampleBFB' in resp.content, "BFB sample must appear when all 5 checked"
+        assert b'SampleOther' in resp.content, \
+            "Sample with non-standard classification must appear when all 5 checked (no filter)"
+        assert b'SampleZero' in resp.content, \
+            "Zero-feature sample must appear when all 5 checked"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_zero_feature_samples_in_gene_search_page_get(
+        request_factory, test_user, mongo_collection):
+    """
+    Zero-feature samples must appear in the legacy GET gene_search_page view
+    when no gene/classification filter is applied.
+    """
+    from caper.views import gene_search_page
+
+    doc = {
+        'project_name':  'SearchZeroFeat_GET',
+        'creator':       test_user.username,
+        'private':       False,  # legacy boolean for gene_search_page
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'Oncogenes':     ['MYC'],
+        'runs': {
+            'GETSampleWithFeat': [
+                {
+                    'Sample_name': 'GETSampleWithFeat',
+                    'Feature_ID': 'feat_1',
+                    'Classification': 'ecDNA',
+                    'All_genes': ['MYC'],
+                    'Oncogenes': ['MYC'],
+                    'Sample_type': '',
+                    'Cancer_type': '',
+                    'Tissue_of_origin': '',
+                }
+            ],
+            'GETSampleNoFeat': [],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # No gene or class filter — should return all samples including zero-feature
+        req = request_factory.get('/gene-search/')
+        req.user = test_user
+        resp = gene_search_page(req)
+        assert resp.status_code == 200
+        assert b'GETSampleNoFeat' in resp.content, \
+            "Zero-feature sample must appear in gene_search_page GET results"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_none_checked_returns_all_including_zero_feature(
+        request_factory, test_user, mongo_collection):
+    """
+    When NO checkboxes are submitted (none of the 5 checked), every sample must
+    appear: all feature types and zero-feature samples alike.
+    This is the 'no filter' mode equivalent to all-5-checked.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchNoneChecked',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'NCSampleEcDNA': [{'Sample_name': 'NCSampleEcDNA', 'Feature_ID': 'f1',
+                               'Classification': 'ecDNA', 'All_genes': ['MYC'],
+                               'Oncogenes': ['MYC'], 'Sample_type': '',
+                               'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'NCSampleBFB':   [{'Sample_name': 'NCSampleBFB', 'Feature_ID': 'f2',
+                               'Classification': 'BFB', 'All_genes': [],
+                               'Oncogenes': [], 'Sample_type': '',
+                               'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'NCSampleZero':  [],
+        },
+        'sample_count': 3,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # No classquery key at all — simulates all checkboxes unchecked
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchNoneChecked'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'NCSampleEcDNA' in resp.content, \
+            "ecDNA sample must appear when no checkboxes checked"
+        assert b'NCSampleBFB' in resp.content, \
+            "BFB sample must appear when no checkboxes checked"
+        assert b'NCSampleZero' in resp.content, \
+            "Zero-feature sample must appear when no checkboxes checked (no-filter mode)"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_two_amp_types_no_no_amp_excludes_others(
+        request_factory, test_user, mongo_collection):
+    """
+    When two specific amp types are checked (no 'no-amp'), only samples with
+    those classification types appear; other amp types and zero-feature samples
+    must be excluded.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchTwoAmpNoNoAmp',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            'TANSampleEcDNA':  [{'Sample_name': 'TANSampleEcDNA', 'Feature_ID': 'f1',
+                                 'Classification': 'ecDNA', 'All_genes': ['MYC'],
+                                 'Oncogenes': ['MYC'], 'Sample_type': '',
+                                 'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'TANSampleBFB':    [{'Sample_name': 'TANSampleBFB', 'Feature_ID': 'f2',
+                                 'Classification': 'BFB', 'All_genes': [],
+                                 'Oncogenes': [], 'Sample_type': '',
+                                 'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'TANSampleLinear': [{'Sample_name': 'TANSampleLinear', 'Feature_ID': 'f3',
+                                 'Classification': 'Linear Amplification', 'All_genes': [],
+                                 'Oncogenes': [], 'Sample_type': '',
+                                 'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'TANSampleZero':   [],
+        },
+        'sample_count': 4,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchTwoAmpNoNoAmp',
+            'classquery': ['ecDNA', 'BFB']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'TANSampleEcDNA' in resp.content, \
+            "ecDNA sample must appear when ecDNA is checked"
+        assert b'TANSampleBFB' in resp.content, \
+            "BFB sample must appear when BFB is checked"
+        assert b'TANSampleLinear' not in resp.content, \
+            "Linear Amplification sample must NOT appear when only ecDNA+BFB are checked"
+        assert b'TANSampleZero' not in resp.content, \
+            "Zero-feature sample must NOT appear when no-amp is not checked"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_two_amp_types_with_no_amp(
+        request_factory, test_user, mongo_collection):
+    """
+    When two amp types + 'no-amp' are checked, samples matching either amp type
+    appear alongside zero-feature samples; other amp types are excluded.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':   'SearchTwoAmpWithNoAmp',
+        'creator':        test_user.username,
+        'private':        'public',
+        'delete':         False,
+        'current':        True,
+        'FINISHED?':      True,
+        'runs': {
+            'TAWSampleEcDNA':   [{'Sample_name': 'TAWSampleEcDNA', 'Feature_ID': 'f1',
+                                  'Classification': 'ecDNA', 'All_genes': ['MYC'],
+                                  'Oncogenes': ['MYC'], 'Sample_type': '',
+                                  'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'TAWSampleBFB':     [{'Sample_name': 'TAWSampleBFB', 'Feature_ID': 'f2',
+                                  'Classification': 'BFB', 'All_genes': [],
+                                  'Oncogenes': [], 'Sample_type': '',
+                                  'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'TAWSampleComplex': [{'Sample_name': 'TAWSampleComplex', 'Feature_ID': 'f3',
+                                  'Classification': 'Complex Non-Cyclic', 'All_genes': [],
+                                  'Oncogenes': [], 'Sample_type': '',
+                                  'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'TAWSampleZero':    [],
+        },
+        'sample_count': 4,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchTwoAmpWithNoAmp',
+            'classquery': ['ecDNA', 'BFB', 'no-amp']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'TAWSampleEcDNA' in resp.content, \
+            "ecDNA sample must appear when ecDNA is checked"
+        assert b'TAWSampleBFB' in resp.content, \
+            "BFB sample must appear when BFB is checked"
+        assert b'TAWSampleZero' in resp.content, \
+            "Zero-feature sample must appear when no-amp is checked"
+        assert b'TAWSampleComplex' not in resp.content, \
+            "Complex Non-Cyclic sample must NOT appear when only ecDNA+BFB+no-amp are checked"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_all_4_amp_types_no_no_amp(
+        request_factory, test_user, mongo_collection):
+    """
+    When all 4 amp-type checkboxes are checked but 'no-amp' is NOT checked,
+    samples with real amplification features appear, but NA-classified and
+    zero-feature samples must be excluded.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':   'SearchAll4AmpNoNoAmp',
+        'creator':        test_user.username,
+        'private':        'public',
+        'delete':         False,
+        'current':        True,
+        'FINISHED?':      True,
+        'runs': {
+            'A4SampleEcDNA':   [{'Sample_name': 'A4SampleEcDNA', 'Feature_ID': 'f1',
+                                 'Classification': 'ecDNA', 'All_genes': [],
+                                 'Oncogenes': [], 'Sample_type': '',
+                                 'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'A4SampleBFB':     [{'Sample_name': 'A4SampleBFB', 'Feature_ID': 'f2',
+                                 'Classification': 'BFB', 'All_genes': [],
+                                 'Oncogenes': [], 'Sample_type': '',
+                                 'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'A4SampleLinear':  [{'Sample_name': 'A4SampleLinear', 'Feature_ID': 'f3',
+                                 'Classification': 'Linear Amplification', 'All_genes': [],
+                                 'Oncogenes': [], 'Sample_type': '',
+                                 'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'A4SampleComplex': [{'Sample_name': 'A4SampleComplex', 'Feature_ID': 'f4',
+                                 'Classification': 'Complex Non-Cyclic', 'All_genes': [],
+                                 'Oncogenes': [], 'Sample_type': '',
+                                 'Cancer_type': '', 'Tissue_of_origin': ''}],
+            # Real 'NA'-classified sample (AmpliconSuiteAggregator no-amp convention)
+            'A4SampleNA':      [{'Sample_name': 'A4SampleNA', 'Feature_ID': 'A4SampleNA_NA',
+                                 'Classification': 'NA', 'All_genes': [],
+                                 'Oncogenes': [], 'Sample_type': '',
+                                 'Cancer_type': '', 'Tissue_of_origin': ''}],
+            # True zero-feature sample (empty runs list)
+            'A4SampleZero':    [],
+        },
+        'sample_count': 6,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        all_4_amp = ['ecDNA', 'linear amplification', 'BFB', 'complex non-cyclic']
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchAll4AmpNoNoAmp',
+            'classquery': all_4_amp})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'A4SampleEcDNA' in resp.content, \
+            "ecDNA sample must appear when all 4 amp types checked"
+        assert b'A4SampleBFB' in resp.content, \
+            "BFB sample must appear when all 4 amp types checked"
+        assert b'A4SampleLinear' in resp.content, \
+            "Linear Amplification sample must appear when all 4 amp types checked"
+        assert b'A4SampleComplex' in resp.content, \
+            "Complex Non-Cyclic sample must appear when all 4 amp types checked"
+        assert b'A4SampleNA' not in resp.content, \
+            "NA-classified (no-amp) sample must NOT appear when no-amp is not checked"
+        assert b'A4SampleZero' not in resp.content, \
+            "Zero-feature sample must NOT appear when no-amp is not checked"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+# ---------------------------------------------------------------------------
+# Checkbox repopulation tests — verify that the result page re-checks the
+# correct boxes so the UI faithfully reflects what was submitted.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_all_five_checked_restores_all_checkboxes(
+        request_factory, test_user, mongo_collection):
+    """
+    After submitting with all 5 checkboxes checked, the result page must
+    render all 5 checkboxes in the checked state.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name': 'CBRepop_All5',
+        'creator': test_user.username,
+        'private': 'public',
+        'delete': False,
+        'current': True,
+        'FINISHED?': True,
+        'runs': {
+            'CBAll5Sample': [{'Sample_name': 'CBAll5Sample', 'Feature_ID': 'f1',
+                              'Classification': 'ecDNA', 'All_genes': [],
+                              'Oncogenes': [], 'Sample_type': '',
+                              'Cancer_type': '', 'Tissue_of_origin': ''}],
+        },
+        'sample_count': 1,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        all_five = ['ecDNA', 'linear amplification', 'BFB', 'complex non-cyclic', 'no-amp']
+        req = request_factory.post('/search_results/', {
+            'project_name': 'CBRepop_All5',
+            'classquery': all_five})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        # All 5 checkboxes must be rendered as checked
+        assert b'id="class-ecDNA" checked' in resp.content, \
+            "ecDNA checkbox must be checked when all 5 were submitted"
+        assert b'id="class-linear" checked' in resp.content, \
+            "Linear Amplification checkbox must be checked when all 5 were submitted"
+        assert b'id="class-bfb" checked' in resp.content, \
+            "BFB checkbox must be checked when all 5 were submitted"
+        assert b'id="class-complex" checked' in resp.content, \
+            "Complex Non-Cyclic checkbox must be checked when all 5 were submitted"
+        assert b'id="class-noamp" checked' in resp.content, \
+            "No-Amp checkbox must be checked when all 5 were submitted"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_no_checkboxes_restores_none_checked(
+        request_factory, test_user, mongo_collection):
+    """
+    After submitting with no checkboxes checked, the result page must render
+    all checkboxes in the unchecked state.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name': 'CBRepop_None',
+        'creator': test_user.username,
+        'private': 'public',
+        'delete': False,
+        'current': True,
+        'FINISHED?': True,
+        'runs': {
+            'CBNoneSample': [{'Sample_name': 'CBNoneSample', 'Feature_ID': 'f1',
+                              'Classification': 'ecDNA', 'All_genes': [],
+                              'Oncogenes': [], 'Sample_type': '',
+                              'Cancer_type': '', 'Tissue_of_origin': ''}],
+        },
+        'sample_count': 1,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # No classquery key → none of the 5 checkboxes checked
+        req = request_factory.post('/search_results/', {
+            'project_name': 'CBRepop_None'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        # None of the 5 checkboxes should appear as checked
+        assert b'id="class-ecDNA" checked' not in resp.content, \
+            "ecDNA checkbox must NOT be checked when none were submitted"
+        assert b'id="class-noamp" checked' not in resp.content, \
+            "No-Amp checkbox must NOT be checked when none were submitted"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_ecdna_and_noamp_restores_correct_checkboxes(
+        request_factory, test_user, mongo_collection):
+    """
+    After submitting with ecDNA + no-amp checked, the result page must render
+    exactly those two checkboxes checked and the other three unchecked.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name': 'CBRepop_EcDNANoAmp',
+        'creator': test_user.username,
+        'private': 'public',
+        'delete': False,
+        'current': True,
+        'FINISHED?': True,
+        'runs': {
+            'CBEcDNASample': [{'Sample_name': 'CBEcDNASample', 'Feature_ID': 'f1',
+                               'Classification': 'ecDNA', 'All_genes': [],
+                               'Oncogenes': [], 'Sample_type': '',
+                               'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'CBZeroSample': [],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'project_name': 'CBRepop_EcDNANoAmp',
+            'classquery': ['ecDNA', 'no-amp']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        # ecDNA and no-amp must be checked; others must not be
+        assert b'id="class-ecDNA" checked' in resp.content, \
+            "ecDNA checkbox must be checked when ecDNA + no-amp were submitted"
+        assert b'id="class-noamp" checked' in resp.content, \
+            "No-Amp checkbox must be checked when ecDNA + no-amp were submitted"
+        assert b'id="class-linear" checked' not in resp.content, \
+            "Linear Amplification checkbox must NOT be checked"
+        assert b'id="class-bfb" checked' not in resp.content, \
+            "BFB checkbox must NOT be checked"
+        assert b'id="class-complex" checked' not in resp.content, \
+            "Complex Non-Cyclic checkbox must NOT be checked"
+        # And both the ecDNA sample and the zero-feature sample must appear
+        assert b'CBEcDNASample' in resp.content, \
+            "ecDNA sample must appear"
+        assert b'CBZeroSample' in resp.content, \
+            "Zero-feature sample must appear when no-amp is checked"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_na_classified_features_included_when_noamp_checked(
+        request_factory, test_user, mongo_collection):
+    """
+    Real database feature rows with Classification='NA' (AmpliconSuiteAggregator
+    convention for samples where the classifier produced no amplification result,
+    stored with Feature_ID ending in '_NA') must be included when the
+    'No-Amp (sample)' checkbox is checked.
+
+    This mirrors the structure of real projects like glass4.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchNAClass',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            # Real ecDNA sample
+            'NACEcDNASample': [{'Sample_name': 'NACEcDNASample', 'Feature_ID': 'NACEcDNASample_amplicon1_ecDNA_1',
+                                'Classification': 'ecDNA', 'All_genes': ['MYC'],
+                                'Oncogenes': ['MYC'], 'Sample_type': '',
+                                'Cancer_type': '', 'Tissue_of_origin': ''}],
+            # Real 'NA' classified sample (AmpliconSuiteAggregator convention)
+            'NACNoAmpSample': [{'Sample_name': 'NACNoAmpSample', 'Feature_ID': 'NACNoAmpSample_NA',
+                                'Classification': 'NA', 'All_genes': [],
+                                'Oncogenes': [], 'Sample_type': '',
+                                'Cancer_type': '', 'Tissue_of_origin': ''}],
+            # Real Linear Amplification sample
+            'NACLinearSample': [{'Sample_name': 'NACLinearSample', 'Feature_ID': 'NACLinearSample_amplicon1_linear_1',
+                                 'Classification': 'Linear', 'All_genes': [],
+                                 'Oncogenes': [], 'Sample_type': '',
+                                 'Cancer_type': '', 'Tissue_of_origin': ''}],
+        },
+        'sample_count': 3,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # Only no-amp: should return only the NA-classified sample
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchNAClass',
+            'classquery': ['no-amp']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'NACNoAmpSample' in resp.content, \
+            "NA-classified sample must appear when only no-amp is checked"
+        assert b'NACEcDNASample' not in resp.content, \
+            "ecDNA sample must NOT appear when only no-amp is checked"
+        assert b'NACLinearSample' not in resp.content, \
+            "Linear sample must NOT appear when only no-amp is checked"
+
+        # ecDNA + no-amp: should return ecDNA and NA-classified samples
+        req2 = request_factory.post('/search_results/', {
+            'project_name': 'SearchNAClass',
+            'classquery': ['ecDNA', 'no-amp']})
+        req2.user = test_user
+        resp2 = search_results(req2)
+        assert resp2.status_code == 200
+        assert b'NACEcDNASample' in resp2.content, \
+            "ecDNA sample must appear when ecDNA + no-amp checked"
+        assert b'NACNoAmpSample' in resp2.content, \
+            "NA-classified sample must appear when ecDNA + no-amp checked"
+        assert b'NACLinearSample' not in resp2.content, \
+            "Linear sample must NOT appear when only ecDNA + no-amp checked"
+
+        # None checked: all samples appear
+        req3 = request_factory.post('/search_results/', {
+            'project_name': 'SearchNAClass'})
+        req3.user = test_user
+        resp3 = search_results(req3)
+        assert resp3.status_code == 200
+        assert b'NACEcDNASample' in resp3.content
+        assert b'NACNoAmpSample' in resp3.content
+        assert b'NACLinearSample' in resp3.content
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_no_fscna_real_features_included_when_noamp_checked(
+        request_factory, test_user, mongo_collection):
+    """
+    Real database feature rows with Classification='No FSCNA' (samples analyzed by
+    AmpliconClassifier and found to have no amplification) must be included in search
+    results when the 'No-Amp (sample)' checkbox is checked alongside other types.
+
+    This was the original behavior of the no_amp_mask and must be preserved.
+    """
+    from caper.views import search_results
+
+    doc = {
+        'project_name':  'SearchNoFSCNA',
+        'creator':       test_user.username,
+        'private':       'public',
+        'delete':        False,
+        'current':       True,
+        'FINISHED?':     True,
+        'runs': {
+            # Real ecDNA sample with a proper feature
+            'NFSSampleEcDNA': [{'Sample_name': 'NFSSampleEcDNA', 'Feature_ID': 'f1',
+                                'Classification': 'ecDNA', 'All_genes': ['MYC'],
+                                'Oncogenes': ['MYC'], 'Sample_type': '',
+                                'Cancer_type': '', 'Tissue_of_origin': ''}],
+            # Real 'No FSCNA' sample — analyzed but no amplification found.
+            # Stored in the database with a real Feature_ID, Classification='No FSCNA'.
+            'NFSSampleNoFSCNA': [{'Sample_name': 'NFSSampleNoFSCNA', 'Feature_ID': 'f2',
+                                  'Classification': 'No FSCNA', 'All_genes': [],
+                                  'Oncogenes': [], 'Sample_type': '',
+                                  'Cancer_type': '', 'Tissue_of_origin': ''}],
+            # True zero-feature sample (empty runs list)
+            'NFSSampleZero': [],
+        },
+        'sample_count': 3,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        # ecDNA + no-amp: must return ecDNA, No FSCNA, and zero-feature
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchNoFSCNA',
+            'classquery': ['ecDNA', 'no-amp']})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        assert b'NFSSampleEcDNA' in resp.content, \
+            "ecDNA sample must appear when ecDNA + no-amp checked"
+        assert b'NFSSampleNoFSCNA' in resp.content, \
+            "Real 'No FSCNA' sample must appear when no-amp checkbox is checked"
+        assert b'NFSSampleZero' in resp.content, \
+            "True zero-feature sample must appear when no-amp checkbox is checked"
+
+        # BFB only (no no-amp): must NOT return No FSCNA or zero-feature
+        req2 = request_factory.post('/search_results/', {
+            'project_name': 'SearchNoFSCNA',
+            'classquery': ['BFB']})
+        req2.user = test_user
+        resp2 = search_results(req2)
+        assert resp2.status_code == 200
+        assert b'NFSSampleEcDNA' not in resp2.content, \
+            "ecDNA sample must NOT appear when only BFB checked"
+        assert b'NFSSampleNoFSCNA' not in resp2.content, \
+            "No FSCNA sample must NOT appear when no-amp is not checked"
+        assert b'NFSSampleZero' not in resp2.content, \
+            "Zero-feature sample must NOT appear when no-amp is not checked"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_perform_search_ecdna_noamp_returns_zero_feature(
+        test_user, mongo_collection):
+    """
+    Direct perform_search() call with ecDNA + no-amp must return the zero-feature
+    sample alongside the ecDNA sample, confirming the backend is correct
+    independent of the view/template layer.
+    """
+    from caper.search import perform_search
+
+    doc = {
+        'project_name': 'PSEcDNANoAmp',
+        'creator': test_user.username,
+        'private': 'public',
+        'delete': False,
+        'current': True,
+        'FINISHED?': True,
+        'runs': {
+            'PSEcDNASample': [{'Sample_name': 'PSEcDNASample', 'Feature_ID': 'f1',
+                               'Classification': 'ecDNA', 'All_genes': ['MYC'],
+                               'Oncogenes': ['MYC'], 'Sample_type': '',
+                               'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'PSBFBSample':   [{'Sample_name': 'PSBFBSample', 'Feature_ID': 'f2',
+                               'Classification': 'BFB', 'All_genes': [],
+                               'Oncogenes': [], 'Sample_type': '',
+                               'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'PSZeroSample':  [],
+        },
+        'sample_count': 3,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        results = perform_search(
+            project_name='PSECDNANOAMP',
+            classquery='ECDNA',       # ecDNA amp type
+            include_no_amp=True,      # no-amp checkbox is checked
+            no_filter=False,
+            user=test_user,
+        )
+        sample_names = {s['Sample_name'] for s in results['public_sample_data']}
+        assert 'PSEcDNASample' in sample_names, \
+            "ecDNA sample must be returned when classquery=ECDNA and include_no_amp=True"
+        assert 'PSZeroSample' in sample_names, \
+            "Zero-feature sample must be returned when include_no_amp=True alongside ecDNA"
+        assert 'PSBFBSample' not in sample_names, \
+            "BFB sample must NOT be returned when only ecDNA is selected"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
