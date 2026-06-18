@@ -1,8 +1,8 @@
 import datetime
 
-from .utils import get_collection_handle, collection_handle, db_handle, replace_space_to_underscore, preprocess_sample_data, get_one_sample, sample_data_from_feature_list, is_project_private, is_project_public, normalize_visibility_field
+from .utils import get_collection_handle, collection_handle, db_handle_primary, replace_space_to_underscore, preprocess_sample_data, get_one_sample, sample_data_from_feature_list, is_project_private, is_project_public, normalize_visibility_field
 
-site_statistics_handle = get_collection_handle(db_handle,'site_statistics')
+site_statistics_handle = get_collection_handle(db_handle_primary, 'site_statistics')
 
 
 def get_date():
@@ -47,7 +47,10 @@ def subtract_amplicon_counts_by_classification(class_keys, class_values, sum_hol
         if (val < 0):
             print(" NEGATIVE AMPOLICON COUNTS IN SITE STATS AFTER PROJECT DELETION -- SHOULD REGENRATE ALL SITE STATS")
             val = 0
-        sum_holder[class_name] = val
+        if val == 0:
+            sum_holder.pop(class_name, None)
+        else:
+            sum_holder[class_name] = val
     return sum_holder
 
 
@@ -370,6 +373,9 @@ def subtract_tissue_of_origin_counts(tissue_counts, sum_holder):
         if val < 0:
             print(f" NEGATIVE TISSUE_OF_ORIGIN COUNTS IN SITE STATS AFTER PROJECT DELETION -- SHOULD REGENERATE ALL SITE STATS (tissue: {tissue_name})")
             val = 0
-        sum_holder[tissue_name] = val
+        if val == 0:
+            sum_holder.pop(tissue_name, None)
+        else:
+            sum_holder[tissue_name] = val
     
     return sum_holder
