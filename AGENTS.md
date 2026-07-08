@@ -110,10 +110,29 @@ source caper/config.sh && cd caper && \
 ```
 Accepts local paths, HTTP URLs, or `s3://` URIs.
 
-### Purge local MongoDB data
+### Clean up local MongoDB / GridFS data
+
+Prefer the safe two-stage cleanup before any full local purge:
+
 ```bash
-python purge-local-db.py
+# 1. Remove unreachable project docs and their attached GridFS/S3/tmp files.
+source caper/config.sh && cd caper && python ../cleanup_orphaned_projects.py --dry-run
+source caper/config.sh && cd caper && python ../cleanup_orphaned_projects.py
+
+# 2. Remove remaining GridFS blobs not referenced by reachable projects.
+source caper/config.sh && python purge-local-db.py --smart-gridfs
+source caper/config.sh && python purge-local-db.py --smart-gridfs --execute
 ```
+
+Useful read-only reports:
+
+```bash
+source caper/config.sh && python purge-local-db.py --gridfs-usage-by-type --limit 25
+source caper/config.sh && python purge-local-db.py --gridfs-usage-by-project --limit 25
+source caper/config.sh && python purge-local-db.py --tarfile-report --limit 25
+```
+
+`purge-local-db.py` is dry-run by default. Destructive operations require `--execute`. The legacy full wipe is now explicit: `python purge-local-db.py --all-project-data --execute`.
 
 ### Do NOT commit
 - `caper/caper.sqlite3`
@@ -184,4 +203,3 @@ def test_my_feature(client, live_mongo):
 - Never include `caper.sqlite3` in commits or PRs.
 - Minimum manual smoke-test: home page, CCLE project page, any CCLE sample page.
 - Versioned releases use tag pattern `v<major>.<minor>.<patch>_<MMDDYY>` (e.g., `v1.0.1_072523`).
-

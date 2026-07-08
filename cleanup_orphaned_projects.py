@@ -85,6 +85,15 @@ def is_uuid_like(name):
     return bool(OBJECTID_RE.match(name) or UUID_HEX_RE.match(name))
 
 
+def previous_version_linkid(previous_version):
+    """Return the referenced project id from a previous_versions entry."""
+    if isinstance(previous_version, dict):
+        return previous_version.get('linkid')
+    if previous_version:
+        return previous_version
+    return None
+
+
 def get_s3_client(aws_profile):
     """Create an S3 client or return None if unavailable."""
     if not HAS_BOTO3:
@@ -125,7 +134,7 @@ def collect_protected_ids(collection):
         protected.add(str(doc['_id']))
         # also protect its previous versions  (c)
         for pv in doc.get('previous_versions', []):
-            lid = pv.get('linkid')
+            lid = previous_version_linkid(pv)
             if lid:
                 protected.add(str(lid))
 
@@ -135,7 +144,7 @@ def collect_protected_ids(collection):
         protected.add(str(doc['_id']))
         # also protect their previous versions  (c)
         for pv in doc.get('previous_versions', []):
-            lid = pv.get('linkid')
+            lid = previous_version_linkid(pv)
             if lid:
                 protected.add(str(lid))
 
@@ -213,6 +222,9 @@ def delete_gridfs_files_for_project(fs_handle, project, dry_run=False):
         'AA PNG file', 'AA PDF file', 'Feature BED file', 'CNV BED file',
         'AA directory', 'cnvkit directory',
         'Sample metadata JSON', 'AA graph file', 'AA cycles file',
+        'AA_PNG_file', 'AA_PDF_file', 'Feature_BED_file', 'CNV_BED_file',
+        'AA_directory', 'cnvkit_directory',
+        'Sample_metadata_JSON', 'AA_graph_file', 'AA_cycles_file',
     ]
 
     runs = project.get('runs', {})
@@ -495,4 +507,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

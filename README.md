@@ -79,9 +79,40 @@ This is the main repository for the AmpliconRepository website. The documentatio
   - So that this is active every time, you can add the command above to your `~/.bashrc` file
 - Note that the latest version of Compass (1.34.2) won't work with our older DB version.  You can get an old compass for mac at https://downloads.mongodb.com/compass/mongodb-compass-1.28.4-darwin-x64.dmg
 
-## 3b. Clearing your local DB
-Periodically, you will want to purge old or excessively large accumulated data from you DB. You can do this using the provided script
-> `python purge-local-db.py`
+## 3b. Cleaning your local DB
+Periodically, local development uploads and test projects can make MongoDB's
+GridFS storage very large. Start with read-only reports:
+
+> `source caper/config.sh && python purge-local-db.py --gridfs-usage-by-type --limit 25`
+
+> `source caper/config.sh && python purge-local-db.py --gridfs-usage-by-project --limit 25`
+
+> `source caper/config.sh && python purge-local-db.py --tarfile-report --limit 25`
+
+The recommended cleanup is two-stage. First remove unreachable project
+documents and the GridFS/S3/tmp files attached to those documents:
+
+> `source caper/config.sh && cd caper && python ../cleanup_orphaned_projects.py --dry-run`
+
+> `source caper/config.sh && cd caper && python ../cleanup_orphaned_projects.py`
+
+Then remove remaining GridFS blobs that are not referenced by reachable project
+documents:
+
+> `source caper/config.sh && python purge-local-db.py --smart-gridfs`
+
+> `source caper/config.sh && python purge-local-db.py --smart-gridfs --execute`
+
+`purge-local-db.py` is dry-run by default; destructive actions require
+`--execute`. A full local project/GridFS wipe is still available, but must be
+requested explicitly:
+
+> `source caper/config.sh && python purge-local-db.py --all-project-data --execute`
+
+MongoDB/WiredTiger may reuse freed space internally instead of immediately
+shrinking `~/data/db`. To return space to the OS after a large cleanup, use a
+compact/repair operation or dump and restore the local database into a fresh
+`dbpath`.
 
 ## 4. Neo4j Download Instructions
 
@@ -845,6 +876,5 @@ find ./tmp -mindepth 1 -maxdepth 1 -type d -mmin +120 -exec rm -rf {} +
 ```
 
 Note that restarting the server (`/home/ubuntu/stop-and-start-repo.sh`) also triggers an automatic cleanup of any orphaned temp directories left by previous runs.
-
 
 
