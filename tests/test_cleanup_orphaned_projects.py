@@ -9,12 +9,18 @@ class FakeCollection:
 
     def find(self, query, projection):
         for doc in self.docs:
-            if all(doc.get(key) == value for key, value in query.items()):
+            if all(self._matches(doc, key, value) for key, value in query.items()):
                 yield {
                     key: doc[key]
                     for key in projection
                     if key in doc
                 }
+
+    @staticmethod
+    def _matches(doc, key, value):
+        if isinstance(value, dict) and '$exists' in value:
+            return (key in doc) == value['$exists']
+        return doc.get(key) == value
 
 
 class FakeGridFS:
@@ -73,3 +79,19 @@ def test_delete_gridfs_files_for_project_handles_current_underscore_keys():
 
     assert delete_gridfs_files_for_project(fs, project) == 3
     assert fs.deleted == [str(tar_id), str(png_id), str(graph_id)]
+
+
+def test_collect_protected_ids_preserves_deleted_version_tombstones():
+    tombstone_id = ObjectId()
+    collection = FakeCollection([
+        {
+            '_id': tombstone_id,
+            'delete': True,
+            'current': False,
+            'version_deleted_from_history': True,
+            'payload_purged': True,
+            'redirect_to_project': str(ObjectId()),
+        },
+    ])
+
+    assert collect_protected_ids(collection) == {str(tombstone_id)}

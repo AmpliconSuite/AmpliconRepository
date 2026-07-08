@@ -511,6 +511,23 @@ def get_all_alias():
     return collection_handle.distinct('alias_name')
     
 
+def resolve_redirect_tombstone(project, projection=None):
+    redirect_to = project.get('redirect_to_project') if project else None
+    if not redirect_to:
+        return None
+    try:
+        redirected = collection_handle.find_one({
+            '_id': ObjectId(str(redirect_to)),
+            'delete': False,
+        }, projection)
+        if redirected is not None:
+            prepare_project_linkid(redirected)
+            return redirected
+    except Exception:
+        logging.error(f"Could not resolve redirect tombstone {project.get('_id')} to {redirect_to}")
+    return None
+
+
 def get_one_project(project_name_or_uuid):
     """
     Gets one project from name or UUID. 
@@ -553,6 +570,9 @@ def get_one_project(project_name_or_uuid):
         try:
             project = collection_handle.find_one({'_id': ObjectId(project_name_or_uuid), 'current': False, 'delete': True})
             if project is not None:
+                redirected = resolve_redirect_tombstone(project)
+                if redirected is not None:
+                    return redirected
                 prepare_project_linkid(project)
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
 
@@ -564,6 +584,9 @@ def get_one_project(project_name_or_uuid):
         try:
             project = collection_handle.find_one({'project_name': project_name_or_uuid, 'current': False, 'delete': True})
             if project is not None:
+                redirected = resolve_redirect_tombstone(project)
+                if redirected is not None:
+                    return redirected
                 prepare_project_linkid(project)
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
 
@@ -800,6 +823,9 @@ def get_one_project_sans_runs(project_name_or_uuid):
         try:
             project = collection_handle.find_one({'_id': ObjectId(project_name_or_uuid), 'current': False, 'delete': True}, projection)
             if project is not None:
+                redirected = resolve_redirect_tombstone(project, projection)
+                if redirected is not None:
+                    return redirected
                 prepare_project_linkid(project)
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
 
@@ -811,6 +837,9 @@ def get_one_project_sans_runs(project_name_or_uuid):
         try:
             project = collection_handle.find_one({'project_name': project_name_or_uuid, 'current': False, 'delete': True}, projection)
             if project is not None:
+                redirected = resolve_redirect_tombstone(project, projection)
+                if redirected is not None:
+                    return redirected
                 prepare_project_linkid(project)
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
 
@@ -1054,5 +1083,3 @@ def format_visibility_for_display(private_value):
         return 'Hidden Public'
     else:
         return 'Private'  # Default fallback
-
-

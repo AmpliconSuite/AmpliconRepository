@@ -148,6 +148,16 @@ def collect_protected_ids(collection):
             if lid:
                 protected.add(str(lid))
 
+    # ── (d) Deleted-version redirect tombstones ──────────────────────
+    # These keep old UUIDs resolvable after their heavy GridFS payload has
+    # been purged and should not be removed as orphan project documents.
+    for doc in collection.find(
+        {'version_deleted_from_history': True, 'payload_purged': True,
+         'redirect_to_project': {'$exists': True}},
+        {'_id': 1},
+    ):
+        protected.add(str(doc['_id']))
+
     return protected
 
 
