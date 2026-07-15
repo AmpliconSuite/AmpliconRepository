@@ -33,6 +33,7 @@ from .utils import (
     get_latest_project_version, normalize_visibility_field, is_project_private,
     fs_handle,
 )
+from .project_version_cleanup import retarget_deleted_version_tombstones
 from .extra_metadata import *
 from .background_tasks import get_background_task_status
 
@@ -334,6 +335,16 @@ class ProjectFileAddView(APIView):
                     alert_message = "Edit project failed. Could not create new project version."
                 elif new_id is not None:
                     new_project_uuid = str(new_id.inserted_id)
+                    retarget_count = retarget_deleted_version_tombstones(
+                        collection_handle,
+                        str(project['linkid']),
+                        new_project_uuid,
+                    )
+                    if retarget_count:
+                        logging.info(
+                            f"Retargeted {retarget_count} deleted-version tombstones "
+                            f"from {project['linkid']} to {new_project_uuid}"
+                        )
                     alert_message = f"Aggregation successful. New samples added to project version: {new_project_uuid}"
 
                     # Notify subscribers about the project update
@@ -797,5 +808,4 @@ class BackgroundTaskStatusView(APIView):
     def get(self, request):
         task_status = get_background_task_status()
         return Response(task_status, status=status.HTTP_200_OK)
-
 
