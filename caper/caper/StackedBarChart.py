@@ -12,8 +12,8 @@ def StackedBarChart(sample, fa_cmap):
     df['Sample_name'] = df['Sample_name'].astype(str)
     _na_values = ['NA', 'None', 'Not Provided', '']
     df = df[df['Classification'].notna() & ~df['Classification'].isin(_na_values)]
-    corder = {'ecDNA':0, 'BFB': 1, 'Complex-non-cyclic':2, 'Complex non-cyclic':3, 'Linear amplification':4, 'Linear':5, 'Virus':6, 'None':100}
-    classes = ['ecDNA', 'BFB', 'Complex non-cyclic', 'Complex-non-cyclic', 'Linear amplification', 'Linear', 'Virus', 'None']
+    corder = {'ecDNA':0, 'FAN': 1, 'BFB': 2, 'Complex-non-cyclic':3, 'Complex non-cyclic':4, 'Linear amplification':5, 'Linear':6, 'Virus':7, 'None':100}
+    classes = ['ecDNA', 'FAN', 'BFB', 'Complex non-cyclic', 'Complex-non-cyclic', 'Linear amplification', 'Linear', 'Virus', 'None']
 
     seen_classes = set(df['Classification'])
     if None in seen_classes:
@@ -34,7 +34,7 @@ def StackedBarChart(sample, fa_cmap):
 
     # df2['Sample_name_trunc'] = df2['Sample_name'].apply(lambda x: x[0:10] + "..." if len(x) > 10 else x)
     cc_tuples = {x: [-y[c] for c in classes] for x, y in class_count_per_sample.items()} 
-    sort_col = [(corder[row['Classification']], cc_tuples[row['Sample_name']], row['Sample_name']) for _, row in df2.iterrows()] # 1 loop
+    sort_col = [(corder.get(row['Classification'], 99), cc_tuples[row['Sample_name']], row['Sample_name']) for _, row in df2.iterrows()] # 1 loop
     df2['sort_order_col'] = sort_col
     df2.sort_values(inplace=True, by=['sort_order_col']) # 1 loop
     ordered_name_set = df2['Sample_name'].unique()

@@ -5,6 +5,14 @@ from .utils import get_collection_handle, collection_handle, db_handle_primary, 
 site_statistics_handle = get_collection_handle(db_handle_primary, 'site_statistics')
 
 
+def is_coral_project(project):
+    """Return whether a project contains results reconstructed with CoRAL."""
+    tools = project.get('Reconstruction_tools', '')
+    if isinstance(tools, (list, tuple, set)):
+        return 'CoRAL' in tools
+    return 'CoRAL' in str(tools)
+
+
 def get_date():
     today = datetime.datetime.now()
     date = today.strftime('%Y-%m-%dT%H:%M:%S.%f')
@@ -63,6 +71,8 @@ def regenerate_site_statistics():
     # Get all private projects (including hidden_public which are treated as private)
     all_private_proj_count = 0
     all_private_sample_count = 0
+    all_private_coral_project_count = 0
+    all_private_coral_sample_count = 0
     all_private_projects = list(collection_handle.find({
         'private': {'$in': [True, 'private', 'hidden_public']},
         'delete': False,
@@ -75,11 +85,16 @@ def regenerate_site_statistics():
         sum_tissue_of_origin_counts(tissue_counts, priv_tissue_counts)
         all_private_proj_count = all_private_proj_count + 1
         all_private_sample_count = all_private_sample_count + len(proj['runs'])
+        if is_coral_project(proj):
+            all_private_coral_project_count += 1
+            all_private_coral_sample_count += len(proj['runs'])
     # end private stats
 
     # Get all public projects
     public_proj_count = 0
     public_sample_count = 0
+    public_coral_project_count = 0
+    public_coral_sample_count = 0
     public_projects = list(collection_handle.find({
         'private': {'$in': [False, 'public']},
         'delete': False,
@@ -92,6 +107,9 @@ def regenerate_site_statistics():
         sum_tissue_of_origin_counts(tissue_counts, pub_tissue_counts)
         public_proj_count = public_proj_count + 1
         public_sample_count = public_sample_count + len(proj['runs'])
+        if is_coral_project(proj):
+            public_coral_project_count += 1
+            public_coral_sample_count += len(proj['runs'])
 
     print(f"  pub amp counts is  == {pub_amplicon_counts} ")
     print(f"  pub tissue counts is  == {pub_tissue_counts} ")
@@ -101,6 +119,10 @@ def regenerate_site_statistics():
     repo_stats["public_sample_count"] = public_sample_count
     repo_stats["all_private_proj_count"] = all_private_proj_count
     repo_stats["all_private_sample_count"] = all_private_sample_count
+    repo_stats["public_coral_project_count"] = public_coral_project_count
+    repo_stats["public_coral_sample_count"] = public_coral_sample_count
+    repo_stats["all_private_coral_project_count"] = all_private_coral_project_count
+    repo_stats["all_private_coral_sample_count"] = all_private_coral_sample_count
     repo_stats["all_private_amplicon_classifications_count"] = priv_amplicon_counts
     repo_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
     repo_stats["all_private_tissue_of_origin_count"] = priv_tissue_counts
@@ -124,11 +146,15 @@ def add_project_to_site_statistics(project, is_private=False):
     """
     current_stats = get_latest_site_statistics()
     updated_stats = {}
+    coral_project_delta = 1 if is_coral_project(project) else 0
+    coral_sample_delta = len(project.get('runs', {})) if coral_project_delta else 0
 
     if is_private:
         # Adding to private stats
         updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"] + 1
         updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"] + len(project['runs'])
+        updated_stats["all_private_coral_project_count"] = current_stats.get("all_private_coral_project_count", 0) + coral_project_delta
+        updated_stats["all_private_coral_sample_count"] = current_stats.get("all_private_coral_sample_count", 0) + coral_sample_delta
 
         # Get amplicon counts for private stats
         priv_amplicon_counts = current_stats["all_private_amplicon_classifications_count"]
@@ -147,10 +173,14 @@ def add_project_to_site_statistics(project, is_private=False):
         updated_stats["public_sample_count"] = current_stats["public_sample_count"]
         updated_stats["public_amplicon_classifications_count"] = current_stats["public_amplicon_classifications_count"]
         updated_stats["public_tissue_of_origin_count"] = current_stats.get("public_tissue_of_origin_count", {})
+        updated_stats["public_coral_project_count"] = current_stats.get("public_coral_project_count", 0)
+        updated_stats["public_coral_sample_count"] = current_stats.get("public_coral_sample_count", 0)
     else:
         # Adding to public stats
         updated_stats["public_proj_count"] = current_stats["public_proj_count"] + 1
         updated_stats["public_sample_count"] = current_stats["public_sample_count"] + len(project['runs'])
+        updated_stats["public_coral_project_count"] = current_stats.get("public_coral_project_count", 0) + coral_project_delta
+        updated_stats["public_coral_sample_count"] = current_stats.get("public_coral_sample_count", 0) + coral_sample_delta
 
         # Get amplicon counts for public stats
         pub_amplicon_counts = current_stats["public_amplicon_classifications_count"]
@@ -170,6 +200,8 @@ def add_project_to_site_statistics(project, is_private=False):
         updated_stats["all_private_amplicon_classifications_count"] = current_stats[
             "all_private_amplicon_classifications_count"]
         updated_stats["all_private_tissue_of_origin_count"] = current_stats.get("all_private_tissue_of_origin_count", {})
+        updated_stats["all_private_coral_project_count"] = current_stats.get("all_private_coral_project_count", 0)
+        updated_stats["all_private_coral_sample_count"] = current_stats.get("all_private_coral_sample_count", 0)
 
     updated_stats["date"] = get_date()
     new_id = site_statistics_handle.insert_one(updated_stats)
@@ -185,11 +217,15 @@ def delete_project_from_site_statistics(project, is_private):
     """
     current_stats = get_latest_site_statistics()
     updated_stats = {}
+    coral_project_delta = 1 if is_coral_project(project) else 0
+    coral_sample_delta = len(project.get('runs', {})) if coral_project_delta else 0
 
     if is_private:
         # Removing from private stats
         updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"] - 1
         updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"] - len(project['runs'])
+        updated_stats["all_private_coral_project_count"] = max(0, current_stats.get("all_private_coral_project_count", 0) - coral_project_delta)
+        updated_stats["all_private_coral_sample_count"] = max(0, current_stats.get("all_private_coral_sample_count", 0) - coral_sample_delta)
 
         # Get amplicon counts to subtract from private stats
         priv_amplicon_counts = current_stats["all_private_amplicon_classifications_count"]
@@ -208,10 +244,14 @@ def delete_project_from_site_statistics(project, is_private):
         updated_stats["public_sample_count"] = current_stats["public_sample_count"]
         updated_stats["public_amplicon_classifications_count"] = current_stats["public_amplicon_classifications_count"]
         updated_stats["public_tissue_of_origin_count"] = current_stats.get("public_tissue_of_origin_count", {})
+        updated_stats["public_coral_project_count"] = current_stats.get("public_coral_project_count", 0)
+        updated_stats["public_coral_sample_count"] = current_stats.get("public_coral_sample_count", 0)
     else:
         # Removing from public stats
         updated_stats["public_proj_count"] = current_stats["public_proj_count"] - 1
         updated_stats["public_sample_count"] = current_stats["public_sample_count"] - len(project['runs'])
+        updated_stats["public_coral_project_count"] = max(0, current_stats.get("public_coral_project_count", 0) - coral_project_delta)
+        updated_stats["public_coral_sample_count"] = max(0, current_stats.get("public_coral_sample_count", 0) - coral_sample_delta)
 
         # Get amplicon counts to subtract from public stats
         pub_amplicon_counts = current_stats["public_amplicon_classifications_count"]
@@ -231,6 +271,8 @@ def delete_project_from_site_statistics(project, is_private):
         updated_stats["all_private_amplicon_classifications_count"] = current_stats[
             "all_private_amplicon_classifications_count"]
         updated_stats["all_private_tissue_of_origin_count"] = current_stats.get("all_private_tissue_of_origin_count", {})
+        updated_stats["all_private_coral_project_count"] = current_stats.get("all_private_coral_project_count", 0)
+        updated_stats["all_private_coral_sample_count"] = current_stats.get("all_private_coral_sample_count", 0)
 
     updated_stats["date"] = get_date()
     new_id = site_statistics_handle.insert_one(updated_stats)

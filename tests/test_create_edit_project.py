@@ -12,6 +12,7 @@ regardless of whether the test passed or failed:
 
 import io
 import os
+import zipfile
 
 import pytest
 
@@ -25,6 +26,270 @@ from conftest import (
     DATASET_SMALL_XLSX,
     POLL_TIMEOUT,
 )
+
+
+# ---------------------------------------------------------------------------
+# AmpliconClassifier 2.0 / AmpliconSuiteAggregator 7 compatibility
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_create_ac2_project(
+        request_factory, test_user, mongo_collection, monkeypatch):
+    """An AC 2.0 unaggregated archive must complete normal project creation."""
+    archive_path = os.environ.get('CAPER_AC2_TEST_ARCHIVE')
+    if not archive_path:
+        pytest.skip('Set CAPER_AC2_TEST_ARCHIVE to run the AC 2.0 ingestion test')
+    if not os.path.exists(archive_path):
+        pytest.skip(f'AC 2.0 test archive not found: {archive_path}')
+
+    from django.conf import settings
+    from caper.views import create_project, fs_handle
+
+    monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', False)
+    project_name = 'pytest_AC2_compatibility'
+    request, handles = _build_create_request(
+        request_factory,
+        test_user,
+        project_name,
+        tar_path=archive_path,
+    )
+    project_id = None
+
+    try:
+        response = create_project(request)
+        project_id = _project_id_from_redirect(response)
+        assert project_id, f'No project ID in redirect: {response!r}'
+
+        doc = _poll_until_finished(mongo_collection, project_id)
+        assert doc is not None, 'AC 2.0 project did not finish before timeout'
+        assert not doc.get('aggregation_failed'), doc.get('error_message')
+        assert doc.get('sample_count') == 9
+        assert len(doc.get('runs', {})) == 9
+        assert doc.get('aggregator_version') == '7.0.0'
+
+        features = [
+            feature
+            for sample_features in doc['runs'].values()
+            for feature in sample_features
+        ]
+        assert len(features) == 12
+        assert {feature['Classification'] for feature in features} == {'ecDNA'}
+        assert all('Sample_name' in feature for feature in features)
+        assert all('Feature_ID' in feature for feature in features)
+
+        reconstruction_features = [
+            feature for feature in features
+            if feature.get('Reconstruction_directory') != 'Not Provided'
+        ]
+        assert reconstruction_features
+        assert all(
+            feature['AA_directory'] == feature['Reconstruction_directory']
+            for feature in reconstruction_features
+        )
+        assert all(
+            fs_handle.exists(feature['Reconstruction_directory'])
+            for feature in reconstruction_features
+        )
+
+        graph_image_features = [
+            feature for feature in features
+            if feature.get('Graph_PNG_file') != 'Not Provided'
+        ]
+        assert graph_image_features
+        assert all(
+            feature['AA_PNG_file'] == feature['Graph_PNG_file']
+            for feature in graph_image_features
+        )
+    finally:
+        for handle in handles:
+            handle.close()
+        if project_id:
+            _cleanup_project(mongo_collection, project_id)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_create_ac2_fan_project(
+        request_factory, test_user, mongo_collection, monkeypatch):
+    """FAN feature rows from AC 2.0 must survive normal project creation."""
+    archive_path = os.environ.get('CAPER_AC2_FAN_TEST_ARCHIVE')
+    if not archive_path:
+        pytest.skip('Set CAPER_AC2_FAN_TEST_ARCHIVE to run the FAN ingestion test')
+    if not os.path.exists(archive_path):
+        pytest.skip(f'AC 2.0 FAN test archive not found: {archive_path}')
+
+    from django.conf import settings
+    from caper.views import create_project
+
+    monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', False)
+    request, handles = _build_create_request(
+        request_factory,
+        test_user,
+        'pytest_AC2_FAN_compatibility',
+        tar_path=archive_path,
+    )
+    project_id = None
+
+    try:
+        response = create_project(request)
+        project_id = _project_id_from_redirect(response)
+        assert project_id, f'No project ID in redirect: {response!r}'
+
+        doc = _poll_until_finished(mongo_collection, project_id)
+        assert doc is not None, 'AC 2.0 FAN project did not finish before timeout'
+        assert not doc.get('aggregation_failed'), doc.get('error_message')
+        assert doc.get('sample_count') == 140
+        assert len(doc.get('runs', {})) == 140
+        assert doc.get('aggregator_version') == '7.0.0'
+
+        features = [
+            feature
+            for sample_features in doc['runs'].values()
+            for feature in sample_features
+        ]
+        assert len(features) == 374
+        fan_features = [
+            feature for feature in features
+            if feature.get('Classification') == 'FAN'
+        ]
+        assert len(fan_features) == 5
+        assert len({feature['Sample_name'] for feature in fan_features}) == 5
+        assert 'FAN' in doc.get('Classification', [])
+    finally:
+        for handle in handles:
+            handle.close()
+        if project_id:
+            _cleanup_project(mongo_collection, project_id)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_create_ac2_hg38_project(
+        request_factory, test_user, mongo_collection, monkeypatch):
+    """A mixed-classification AC 2.0 hg38 archive must remain ingestible."""
+    archive_path = os.environ.get('CAPER_AC2_HG38_TEST_ARCHIVE')
+    if not archive_path:
+        pytest.skip('Set CAPER_AC2_HG38_TEST_ARCHIVE to run the hg38 ingestion test')
+    if not os.path.exists(archive_path):
+        pytest.skip(f'AC 2.0 hg38 test archive not found: {archive_path}')
+
+    from django.conf import settings
+    from caper.views import create_project
+
+    monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', False)
+    request, handles = _build_create_request(
+        request_factory,
+        test_user,
+        'pytest_AC2_hg38_compatibility',
+        tar_path=archive_path,
+    )
+    project_id = None
+
+    try:
+        response = create_project(request)
+        project_id = _project_id_from_redirect(response)
+        assert project_id, f'No project ID in redirect: {response!r}'
+
+        doc = _poll_until_finished(mongo_collection, project_id)
+        assert doc is not None, 'AC 2.0 hg38 project did not finish before timeout'
+        assert not doc.get('aggregation_failed'), doc.get('error_message')
+        assert doc.get('sample_count') == 63
+        assert len(doc.get('runs', {})) == 63
+        assert doc.get('aggregator_version') == '7.0.0'
+
+        features = [
+            feature
+            for sample_features in doc['runs'].values()
+            for feature in sample_features
+        ]
+        assert len(features) == 333
+        classification_counts = {
+            classification: sum(
+                feature.get('Classification') == classification
+                for feature in features
+            )
+            for classification in {'ecDNA', 'FAN', 'BFB', 'Linear', 'Complex-non-cyclic'}
+        }
+        assert classification_counts == {
+            'ecDNA': 58,
+            'FAN': 8,
+            'BFB': 16,
+            'Linear': 223,
+            'Complex-non-cyclic': 28,
+        }
+        assert {feature['Reference_version'] for feature in features} == {'GRCh38'}
+    finally:
+        for handle in handles:
+            handle.close()
+        if project_id:
+            _cleanup_project(mongo_collection, project_id)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_create_coral_ac2_project(
+        request_factory, test_user, mongo_collection, monkeypatch):
+    """CoRAL reconstructions must be identified and versioned distinctly from AA."""
+    archive_path = os.environ.get('CAPER_CORAL_TEST_ARCHIVE')
+    if not archive_path:
+        pytest.skip('Set CAPER_CORAL_TEST_ARCHIVE to run the CoRAL ingestion test')
+    if not os.path.exists(archive_path):
+        pytest.skip(f'CoRAL test archive not found: {archive_path}')
+
+    from django.conf import settings
+    from caper.views import create_project, sample_download
+
+    monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', False)
+    request, handles = _build_create_request(
+        request_factory,
+        test_user,
+        'pytest_CoRAL_compatibility',
+        tar_path=archive_path,
+    )
+    project_id = None
+
+    try:
+        response = create_project(request)
+        project_id = _project_id_from_redirect(response)
+        doc = _poll_until_finished(mongo_collection, project_id)
+
+        assert doc and not doc.get('aggregation_failed'), doc.get('error_message') if doc else None
+        assert doc.get('sample_count') == 24
+        assert doc.get('Reconstruction_tools') == 'CoRAL'
+        assert doc.get('CoRAL_version') == '2.2.0'
+
+        features = [
+            feature
+            for sample_features in doc['runs'].values()
+            for feature in sample_features
+        ]
+        assert len(features) == 95
+        assert {feature.get('Reconstruction_tool') for feature in features} == {'CoRAL'}
+        assert {feature.get('Reconstruction_version') for feature in features} == {'2.2.0'}
+        assert all(feature.get('Graph_PNG_file') != 'Not Provided' for feature in features)
+        assert all(feature.get('Cycles_PNG_file') != 'Not Provided' for feature in features)
+
+        first_run = next(iter(doc['runs'].values()))
+        sample_name = first_run[0]['Sample_name']
+        download_request = request_factory.get(
+            f'/project/{project_id}/sample/{sample_name}/download')
+        download_request.user = test_user
+        download_response = sample_download(download_request, project_id, sample_name)
+        assert download_response.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(download_response.content)) as archive:
+            names = archive.namelist()
+            assert any(name.endswith('_cycles.png') for name in names)
+            assert any(
+                name.endswith('.png') and not name.endswith('_cycles.png')
+                for name in names
+            )
+            assert any(name.endswith('_reconstruction_results.tar.gz') for name in names)
+    finally:
+        for handle in handles:
+            handle.close()
+        if project_id:
+            _cleanup_project(mongo_collection, project_id)
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import sys
 import gc
 import traceback
@@ -116,13 +117,14 @@ def loading(request):
 
 # Site-wide focal amp color scheme
 fa_cmap = {
-                'ecDNA': "rgb(255, 0, 0)",
-                'BFB': 'rgb(0, 70, 46)',
-                'Complex non-cyclic': 'rgb(255, 190, 0)',
-                'Linear amplification': 'rgb(27, 111, 185)',
-                'Complex-non-cyclic': 'rgb(255, 190, 0)',
-                'Linear': 'rgb(27, 111, 185)',
-                'Virus': 'rgb(163,163,163)',
+                'ecDNA': '#B33A3A',
+                'FAN': '#D87524',
+                'BFB': '#A85A8A',
+                'Complex non-cyclic': '#C49A32',
+                'Linear amplification': '#A7ADB4',
+                'Complex-non-cyclic': '#C49A32',
+                'Linear': '#A7ADB4',
+                'Virus': '#287C8E',
                 }
 
 
@@ -1739,6 +1741,33 @@ def process_sample_data(project, sample_name, sample_data, output_dir=None):
             aa_directory_id = False
             aa_archive_name = 'aa_directory.tar.gz'
 
+        # Aggregator 7 keeps graph and cycles artifacts in distinct fields.
+        # Rewrite each provided GridFS ID to the path that will appear in the
+        # sample ZIP. Graph PNG/PDF share the legacy AA alias files above.
+        new_artifact_paths = {
+            'Graph_PNG_file': png_file_path,
+            'Graph_PDF_file': pdf_file_path,
+            'Cycles_PNG_file': (
+                f"{sample_name}_sashimi_plots/"
+                f"{sample_name}_amplicon{amplicon_number}_cycles.png"
+            ),
+            'Cycles_PDF_file': (
+                f"{sample_name}_sashimi_plots/"
+                f"{sample_name}_amplicon{amplicon_number}_cycles.pdf"
+            ),
+            'Graph_file': f"{sample_name}_amplicon{amplicon_number}_graph.txt",
+            'Cycles_file': f"{sample_name}_amplicon{amplicon_number}_cycles.txt",
+        }
+        new_artifact_ids = {}
+        for field, export_path in new_artifact_paths.items():
+            file_id = feature.get(field, 'Not Provided')
+            if file_id != 'Not Provided':
+                new_artifact_ids[field] = file_id
+                updated_feature[field] = export_path
+
+        if feature.get('Reconstruction_directory', 'Not Provided') != 'Not Provided':
+            updated_feature['Reconstruction_directory'] = aa_archive_name
+
         # Add the updated feature to our list
         updated_data.append(updated_feature)
 
@@ -1777,6 +1806,19 @@ def process_sample_data(project, sample_name, sample_data, output_dir=None):
                 aa_directory_file = fs_handle.get(ObjectId(aa_directory_id)).read()
                 with open(f'{sample_data_path}/{aa_archive_name}', "wb+") as aa_directory_tmp:
                     aa_directory_tmp.write(aa_directory_file)
+
+        # Graph PNG/PDF were already written through their AA compatibility
+        # aliases. Export the remaining Aggregator 7 artifacts directly.
+        for field in ('Cycles_PNG_file', 'Cycles_PDF_file', 'Graph_file', 'Cycles_file'):
+            file_id = new_artifact_ids.get(field)
+            if not file_id:
+                continue
+            export_path = new_artifact_paths[field]
+            full_export_path = os.path.join(sample_data_path, export_path)
+            os.makedirs(os.path.dirname(full_export_path), exist_ok=True)
+            file_data = fs_handle.get(ObjectId(file_id)).read()
+            with open(full_export_path, 'wb+') as exported_file:
+                exported_file.write(file_data)
 
     # Generate TSV file using the updated data
     with open(f'{sample_data_path}/{sample_name}_result_data.tsv', 'w') as tsv_file:
@@ -2849,7 +2891,7 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
             new_val["$unset"] = {'metadata_stored': ""}
 
         # After form_dict is created and before new_val is defined
-        for version_field in ['ASP_version', 'AA_version', 'AC_version']:
+        for version_field in ['ASP_version', 'AA_version', 'AC_version', 'CoRAL_version']:
             value = form.cleaned_data.get(version_field, 'NA').strip()
             if value and value != 'NA':
                 # Add to new_val to be saved in mongo
@@ -3181,6 +3223,8 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 'AA_version': project.get('AA_version', 'NA'),
                 'AC_version': project.get('AC_version', 'NA'),
                 'aggregator_version': project.get('aggregator_version', 'NA'),
+                'Reconstruction_tools': project.get('Reconstruction_tools', 'NA'),
+                'CoRAL_version': project.get('CoRAL_version', 'NA'),
             }
         )
 
@@ -3219,7 +3263,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 'date': _now,
                 'update_date': _now,
                 'owner': request.user.username if request.user.is_authenticated else 'anonymous',
-                'private': form_dict.get('private', False),
+                'private': normalize_visibility_field(form_dict.get('private', 'private')),
                 'sample_count': 0,
                 'runs': {},  # Empty dictionary, not list
                 'delete': False,  # Project is not deleted
@@ -3448,6 +3492,7 @@ def edit_project_page(request, project_name):
         AAVersion=project.get('AA_version', 'NA')
         ACVersion=project.get('AC_version', 'NA')
         ASPVersion=project.get('ASP_version', 'NA')
+        CoRALVersion=project.get('CoRAL_version', 'NA')
 
         form = UpdateForm(initial={"project_name": project['project_name'],
                                    "description": project['description'],
@@ -3456,7 +3501,8 @@ def edit_project_page(request, project_name):
                                    "publication_link": publication_link,
                                    "AA_version": AAVersion,
                                    "ASP_version": ASPVersion,
-                                   "AC_version": ACVersion })
+                                   "AC_version": ACVersion,
+                                   "CoRAL_version": CoRALVersion })
 
     _has_metadata = has_sample_metadata(project)
     _old_metadata_has_alias = False
@@ -3622,9 +3668,21 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                     # 'AA directory' is handled separately below: old-format archives supply a
                     # .tar.gz file; new-format archives supply a plain directory that we tar
                     # in-memory before storing in GridFS.
-                    key_names = ['Feature BED file', 'CNV BED file', 'AA PDF file', 'AA PNG file', 'Sample metadata JSON',
-                                 'AA graph file', 'AA cycles file']
+                    # Aggregator <=6 used the AA-prefixed image/text keys. 7.0
+                    # emits distinct graph/cycles artifacts. Upload whichever
+                    # schema is present and retain its original field names.
+                    key_names = [
+                        'Feature BED file', 'CNV BED file',
+                        'AA PDF file', 'AA PNG file',
+                        'Graph PNG file', 'Graph PDF file',
+                        'Cycles PNG file', 'Cycles PDF file',
+                        'AA graph file', 'AA cycles file',
+                        'Graph file', 'Cycles file',
+                        'Run metadata JSON', 'Sample metadata JSON',
+                    ]
                     for k in key_names:
+                        if k not in feature:
+                            continue
                         try:
                             path_var = feature[k]
                             with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
@@ -3635,13 +3693,46 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             id_var = "Not Provided"
                         feature[k] = id_var
 
+                    # Existing pages and API clients use AA_PNG/PDF. For 7.0
+                    # archives, expose the graph render through those legacy
+                    # aliases while preserving every new-format field above.
+                    if 'AA PNG file' not in feature and 'Graph PNG file' in feature:
+                        feature['AA PNG file'] = feature['Graph PNG file']
+                    if 'AA PDF file' not in feature and 'Graph PDF file' in feature:
+                        feature['AA PDF file'] = feature['Graph PDF file']
+
                     # Handle AA directory: new-format archives supply a plain directory;
                     # old-format archives supply a .tar.gz file.  Either way we end up with
                     # a named tar.gz blob in GridFS.
                     try:
                         import io
-                        path_var = feature['AA directory']
+                        directory_key = (
+                            'Reconstruction directory'
+                            if 'Reconstruction directory' in feature
+                            else 'AA directory'
+                        )
+                        path_var = feature[directory_key]
                         full_path = f'{project_data_path}/results/{path_var}'
+                        # Aggregator 7 identifies CoRAL as the reconstruction
+                        # tool but does not yet emit its version. Recover the
+                        # stable `CoRAL vX.Y.Z` summary banner as a fallback.
+                        if (
+                            feature.get('Reconstruction tool') == 'CoRAL'
+                            and not feature.get('Reconstruction version')
+                            and os.path.isdir(full_path)
+                        ):
+                            for filename in os.listdir(full_path):
+                                if not filename.endswith(('_summary.txt', '_amplicon_summary.txt')):
+                                    continue
+                                try:
+                                    with open(os.path.join(full_path, filename)) as summary_file:
+                                        banner = summary_file.readline().strip()
+                                    match = re.match(r'^CoRAL\s+v?([^\s]+)', banner, re.IGNORECASE)
+                                    if match:
+                                        feature['Reconstruction version'] = match.group(1)
+                                        break
+                                except OSError:
+                                    continue
                         if os.path.isdir(full_path):
                             dir_name = os.path.basename(path_var.rstrip('/'))
                             archive_name = f'{dir_name}.tar.gz'
@@ -3655,7 +3746,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                                 id_var = fs_handle.put(file_var)
                     except:
                         id_var = 'Not Provided'
-                    feature['AA directory'] = id_var
+                    feature[directory_key] = id_var
+                    if directory_key == 'Reconstruction directory':
+                        feature['AA directory'] = id_var
 
         gfs_end_time = time.time()
         logging.info(f"Putting files in GridFS took {gfs_end_time - gfs_start_time:.4f}s")
@@ -3677,7 +3770,10 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             'Oncogenes': get_project_oncogenes(runs)}}
 
         get_tool_versions(project, runs)
-        version_keys = ['AA_version', 'AC_version', 'ASP_version']
+        version_keys = [
+            'AA_version', 'AC_version', 'ASP_version',
+            'Reconstruction_tools', 'CoRAL_version',
+        ]
         tool_versions = {k: project[k] for k in version_keys if k in project}
 
         new_val["$set"].update(tool_versions)
@@ -4295,7 +4391,7 @@ def create_project(request):
             'date': _now,
             'update_date': _now,
             'owner': request.user.username if request.user.is_authenticated else 'anonymous',
-            'private': form_dict.get('private', False),
+            'private': normalize_visibility_field(form_dict.get('private', 'private')),
             'sample_count': 0,
             'runs': {},  # Empty dictionary, not list
             'delete': False,  # Project is not deleted
@@ -4677,18 +4773,42 @@ def get_tool_versions(project, runs):
     aa_versions = get_existing_versions('AA_version')
     ac_versions = get_existing_versions('AC_version')
     asp_versions = get_existing_versions('ASP_version')
+    reconstruction_tools = get_existing_versions('Reconstruction_tools')
+    coral_versions = get_existing_versions('CoRAL_version')
+
+    def add_feature_version(version_set, feature, *keys):
+        for key in keys:
+            version = feature.get(key)
+            if version and version != 'Not Provided':
+                version_set.add(version)
+                return
     
     for sample, features in runs.items():
         for feature in features:
-            if 'AA version' in feature:
-                aa_versions.add(feature['AA version'])
-            if 'AC version' in feature:
-                ac_versions.add(feature['AC version'])
-            if 'AS-p version' in feature:
-                asp_versions.add(feature['AS-p version'])
+            # Aggregator <=6 used abbreviated version keys. Aggregator 7
+            # writes the tools' full names; accept both archive schemas.
+            add_feature_version(
+                aa_versions, feature,
+                'AmpliconArchitect version', 'AA version')
+            add_feature_version(
+                ac_versions, feature,
+                'AmpliconClassifier version', 'AC version')
+            add_feature_version(
+                asp_versions, feature,
+                'AmpliconSuite-pipeline version', 'AS-p version')
+            reconstruction_tool = feature.get(
+                'Reconstruction tool', feature.get('Reconstruction_tool'))
+            reconstruction_version = feature.get(
+                'Reconstruction version', feature.get('Reconstruction_version'))
+            if reconstruction_tool and reconstruction_tool != 'Not Provided':
+                reconstruction_tools.add(reconstruction_tool)
+            if reconstruction_tool == 'CoRAL' and reconstruction_version:
+                coral_versions.add(reconstruction_version)
     project['AA_version'] = process_version_set(aa_versions)
     project['AC_version'] = process_version_set(ac_versions)
     project['ASP_version'] = process_version_set(asp_versions)
+    project['Reconstruction_tools'] = process_version_set(reconstruction_tools)
+    project['CoRAL_version'] = process_version_set(coral_versions)
 
 
 def process_version_set(version_set):
@@ -5300,20 +5420,20 @@ def search_results(request):
         original_amp_classifications = "|".join(amp_classifications_list)
         original_include_no_amp = include_no_amp
 
-        ALL_AMP_TYPES = {'ecdna', 'linear amplification', 'bfb', 'complex non-cyclic'}
+        ALL_AMP_TYPES = {'ecdna', 'fan', 'linear amplification', 'bfb', 'complex non-cyclic'}
         checked_amp_set = {c.lower() for c in amp_classifications_list}
         none_checked = len(classifications_list) == 0
-        all_5_checked = include_no_amp and checked_amp_set >= ALL_AMP_TYPES
+        all_types_checked = include_no_amp and checked_amp_set >= ALL_AMP_TYPES
 
-        # "No filter" mode: none of the 5 checked, or all 5 checked.
+        # "No filter" mode: no boxes checked, or every classification plus No-Amp.
         # Both cases return every sample (all feature types + zero-feature samples).
-        no_filter = none_checked or all_5_checked
+        no_filter = none_checked or all_types_checked
 
         if no_filter:
             include_no_amp = True   # always include zero-feature in no-filter mode
             classifications = ""
         elif checked_amp_set >= ALL_AMP_TYPES:
-            # All 4 amp types checked but no-amp is NOT checked:
+            # All amp types checked but no-amp is NOT checked:
             # no amp-type filter, but zero-feature samples are excluded.
             classifications = ""
         else:
@@ -5478,4 +5598,3 @@ def username_autocomplete(request):
         .order_by('username')[:10]
     )
     return JsonResponse(list(users), safe=False)
-

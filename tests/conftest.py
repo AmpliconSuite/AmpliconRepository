@@ -136,11 +136,37 @@ def _poll_until_finished(collection, project_id,
 def _cleanup_project(collection, project_id):
     """
     Fully remove all artifacts created for a test project:
-      1. MongoDB document
-      2. tmp/{project_id}/ directory on disk
-      3. S3 object (when USE_S3_DOWNLOADS is True)
+      1. Project tarball and extracted feature files in GridFS
+      2. MongoDB document
+      3. tmp/{project_id}/ directory on disk
+      4. S3 object (when USE_S3_DOWNLOADS is True)
     Errors in any step are logged but do not raise so all steps always run.
     """
+    try:
+        from caper.views import fs_handle
+
+        project = collection.find_one({'_id': ObjectId(project_id)}) or {}
+        gridfs_ids = {project.get('tarfile')}
+        file_keys = {
+            'Feature_BED_file', 'CNV_BED_file', 'AA_PDF_file', 'AA_PNG_file',
+            'AA_directory', 'Sample_metadata_JSON', 'AA_graph_file',
+            'AA_cycles_file', 'Graph_PNG_file', 'Graph_PDF_file',
+            'Cycles_PNG_file', 'Cycles_PDF_file', 'Graph_file', 'Cycles_file',
+            'Run_metadata_JSON', 'Reconstruction_directory',
+        }
+        for features in project.get('runs', {}).values():
+            for feature in features if isinstance(features, list) else []:
+                if isinstance(feature, dict):
+                    gridfs_ids.update(feature.get(key) for key in file_keys)
+
+        for file_id in gridfs_ids - {None, 'Not Provided'}:
+            try:
+                fs_handle.delete(ObjectId(str(file_id)))
+            except Exception as e:
+                logging.warning(f"[cleanup] Could not delete GridFS file {file_id}: {e}")
+    except Exception as e:
+        logging.warning(f"[cleanup] Could not inspect GridFS artifacts for {project_id}: {e}")
+
     try:
         collection.delete_one({'_id': ObjectId(project_id)})
         logging.info(f"[cleanup] Deleted MongoDB document {project_id}")

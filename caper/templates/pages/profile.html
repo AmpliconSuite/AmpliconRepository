@@ -145,7 +145,7 @@
                     {% for project in projects %}
                     <tr>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                          <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                          <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                         </td>
                         <td>{{ project.sample_count }}</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>

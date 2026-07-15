@@ -633,7 +633,10 @@ def _backfill_version_info_from_db(entries):
     look up the actual old project documents by linkid and populate the real values.
     Uses a single batch MongoDB query for efficiency.
     """
-    version_fields = ['ASP_version', 'AA_version', 'AC_version', 'aggregator_version']
+    version_fields = [
+        'ASP_version', 'AA_version', 'AC_version', 'aggregator_version',
+        'Reconstruction_tools', 'CoRAL_version',
+    ]
 
     # Identify entries that need a DB lookup
     entries_needing_lookup = [
@@ -683,7 +686,10 @@ def previous_versions(project):
     msg = None
     logging.info(f"Getting previous versions for project {project['_id']}")
 
-    fields = ['date', 'previous_versions', 'AC_version', 'AA_version', 'ASP_version', 'aggregator_version']
+    fields = [
+        'date', 'previous_versions', 'AC_version', 'AA_version', 'ASP_version',
+        'aggregator_version', 'Reconstruction_tools', 'CoRAL_version',
+    ]
     cursor = collection_handle.find(
         {'current': True, 'previous_versions.linkid': str(project['_id'])},
         {field: 1 for field in fields}
@@ -703,6 +709,8 @@ def previous_versions(project):
             'AA_version': data[0].get('AA_version', 'NA'),
             'ASP_version': data[0].get('ASP_version', 'NA'),
             'aggregator_version': data[0].get('aggregator_version', 'NA'),
+            'Reconstruction_tools': data[0].get('Reconstruction_tools', 'NA'),
+            'CoRAL_version': data[0].get('CoRAL_version', 'NA'),
         })
         res.reverse()
         msg = (f"Viewing an older version of the project. "
@@ -722,6 +730,8 @@ def previous_versions(project):
             'AA_version': project.get('AA_version', 'NA'),
             'ASP_version': project.get('ASP_version', 'NA'),
             'aggregator_version': project.get('aggregator_version', 'NA'),
+            'Reconstruction_tools': project.get('Reconstruction_tools', 'NA'),
+            'CoRAL_version': project.get('CoRAL_version', 'NA'),
         })
         res.reverse()
 
@@ -1054,5 +1064,4 @@ def format_visibility_for_display(private_value):
         return 'Hidden Public'
     else:
         return 'Private'  # Default fallback
-
 

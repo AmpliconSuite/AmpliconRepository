@@ -127,7 +127,8 @@ class TestProjectToDict:
         for key in ('id', 'project_name', 'description', 'sample_count',
                     'visibility', 'date', 'publication_link', 'creator',
                     'reference_genome', 'AA_version', 'AC_version', 'ASP_version',
-                    'aggregator_version', 'oncogenes', 'classifications',
+                    'aggregator_version', 'reconstruction_tools', 'CoRAL_version',
+                    'oncogenes', 'classifications',
                     'previous_versions'):
             assert key in d, f"Missing key: {key}"
 

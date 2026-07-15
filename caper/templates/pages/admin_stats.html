@@ -140,12 +140,27 @@
                         <td>{{ site_stats.all_private_sample_count|default:0 }}</td>
                     </tr>
                     <tr>
+                        <td>CoRAL projects</td>
+                        <td>{{ site_stats.public_coral_project_count|default:0 }}</td>
+                        <td>{{ site_stats.all_private_coral_project_count|default:0 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Samples in CoRAL projects</td>
+                        <td>{{ site_stats.public_coral_sample_count|default:0 }}</td>
+                        <td>{{ site_stats.all_private_coral_sample_count|default:0 }}</td>
+                    </tr>
+                    <tr>
                         <td>ecDNA</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</td>
                         <td>{{ site_stats.all_private_amplicon_classifications_count.ecDNA|default:0 }}</td>
                     </tr>
                     <tr>
-                        <td>BFB</td>
+                        <td>FAN <i class="far fa-question-circle" title="Focal amplification in neochromosome" aria-label="Focal amplification in neochromosome"></i></td>
+                        <td>{{ site_stats.public_amplicon_classifications_count.FAN|default:0 }}</td>
+                        <td>{{ site_stats.all_private_amplicon_classifications_count.FAN|default:0 }}</td>
+                    </tr>
+                    <tr>
+                        <td>BFB <i class="far fa-question-circle" title="Breakage-fusion-bridge" aria-label="Breakage-fusion-bridge"></i></td>
                         <td>{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</td>
                         <td>{{ site_stats.all_private_amplicon_classifications_count.BFB|default:0 }}</td>
                     </tr>
@@ -236,7 +251,7 @@
         <div>
             <ul class="nav nav-tabs" role="tablist" >
                 <li class="nav-item">
-                    <a class="nav-link active" href="#tab-table0" data-toggle="tab">Public Projects</a>
+                    <a class="nav-link active" href="#tab-table0" data-toggle="tab">All Projects</a>
                 </li>
 
             </ul>
@@ -248,6 +263,7 @@
                         <thead>
                             <tr>
                                 <th>Name</th>
+                                <th>Visibility</th>
                                 <th>Description</th>
                                 <th>Last Updated</th>
                                 <th>Sample Metadata</th>
@@ -259,7 +275,8 @@
                         <tbody>
                             {% for project in public_projects %}
                             <tr>
-                                <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                                <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}</td>
+                                <td>Public</td>
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
                                 <td>{% if project.sample_metadata_available %}
@@ -278,9 +295,22 @@
                                 </td>
                             </tr>
                             {% endfor %}
+                            {% for project in private_projects %}
+                            <tr>
+                                <td>{{ project.project_name }}{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}</td>
+                                <td>Private</td>
+                                <td>{{ project.description }}</td>
+                                <td>{{ project.date }}</td>
+                                <td>{% if project.sample_metadata_available %}<i class="fas fa-check-square" style="color: green;"></i>{% else %}<i class="far fa-square"></i>{% endif %}</td>
+                                <td>{% for person in project.project_members %}{{ person }}<br>{% endfor %}</td>
+                                <td>&mdash;</td>
+                                <td>&mdash;</td>
+                            </tr>
+                            {% endfor %}
                         </tbody>
                         <tfoot>
                             <tr>
+                                <th></th>
                                 <th></th>
                                 <th></th>
                                 <th></th>
