@@ -72,6 +72,12 @@ from .utils import (
     preprocess_sample_data, validate_project, replace_underscore_keys,
     get_latest_project_version, flatten
 )
+from .project_version_cleanup import (
+    build_deleted_version_tombstone,
+    delete_gridfs_payload_for_project,
+    iter_gridfs_file_ids,
+    retarget_deleted_version_tombstones,
+)
 
 from .extra_metadata import *
 
@@ -595,6 +601,31 @@ def invalidate_project_charts(project_id):
             logging.debug(f"Could not invalidate chart cache: {e}")
 
 
+def _is_deleted_version_tombstone_id(project_name_or_uuid):
+    try:
+        if not ObjectId.is_valid(str(project_name_or_uuid)):
+            return False
+        return collection_handle.find_one(
+            {
+                '_id': ObjectId(str(project_name_or_uuid)),
+                'delete': True,
+                'version_deleted_from_history': True,
+                'payload_purged': True,
+            },
+            {'_id': 1},
+        ) is not None
+    except Exception:
+        return False
+
+
+def _warn_deleted_version_redirect(request):
+    messages.warning(
+        request,
+        "The project version you selected was deleted, so you were redirected "
+        "to the latest version of the project.",
+    )
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -612,7 +643,14 @@ def project_page(request, project_name, message=''):
     ### is is only run IF we need to reset a project and reload the data
 
     t_query = time.time()
-    project = validate_project(get_one_project(project_name), project_name)
+    project = get_one_project(project_name)
+    if project is not None and project.get('redirect_to_project'):
+        redirect_target = str(project['redirect_to_project'])
+        if redirect_target != str(project.get('_id')):
+            _warn_deleted_version_redirect(request)
+            return redirect('project_page', project_name=redirect_target)
+
+    project = validate_project(project, project_name)
     logging.info(f"[PERF] Project query took {time.time() - t_query:.3f}s")
     
     # Handle case where project doesn't exist or is invalid
@@ -635,6 +673,8 @@ def project_page(request, project_name, message=''):
 
     # if we got here by an OLD project id (prior to edits) then we want to redirect to the new one
     if not project_name == str(project['linkid']):
+        if _is_deleted_version_tombstone_id(project_name):
+            _warn_deleted_version_redirect(request)
         return redirect('project_page', project_name=project['linkid'])
 
     # Short-circuit: if aggregation failed, show a dedicated error page so the
@@ -664,6 +704,14 @@ def project_page(request, project_name, message=''):
     if prev_ver_msg:
         messages.error(request, mark_safe(prev_ver_msg))
         viewing_old_project = True
+    active_prev_versions = [
+        version for version in prev_versions
+        if not version.get('version_deleted_from_history')
+    ]
+    has_promotable_project_version = any(
+        str(version.get('linkid')) != str(project['linkid'])
+        for version in active_prev_versions
+    )
 
     set_project_edit_OK_flag(project, request)
     
@@ -779,6 +827,8 @@ def project_page(request, project_name, message=''):
         'summarybar': pc_fig,
         'prev_versions': prev_versions,
         'prev_versions_length': len(prev_versions),
+        'active_prev_versions_length': len(active_prev_versions),
+        'has_promotable_project_version': has_promotable_project_version,
         'views': views,
         'downloads': downloads,
         'is_project_member': is_project_member,  # Pass actual membership status for subscription UI
@@ -2497,6 +2547,12 @@ def project_delete(request, project_name):
         return HttpResponse("Project does not exist")
 
 
+def _previous_version_linkid(previous_version):
+    if isinstance(previous_version, dict):
+        return previous_version.get('linkid')
+    return previous_version
+
+
 @login_required
 def delete_project_version(request, project_name, version_id):
     """
@@ -2563,23 +2619,42 @@ def delete_project_version(request, project_name, version_id):
                 {'$set': update_fields}
             )
 
-            # Soft-delete the current version
-            collection_handle.update_one(
+            promoted_project = collection_handle.find_one({'_id': ObjectId(prev_linkid)}) or {
+                '_id': ObjectId(prev_linkid),
+                **update_fields,
+            }
+            promoted_file_ids = set(iter_gridfs_file_ids(promoted_project))
+            deleted_gridfs_count = delete_gridfs_payload_for_project(
+                fs_handle,
+                latest_project,
+                protected_file_ids=promoted_file_ids,
+            )
+            tombstone = build_deleted_version_tombstone(
+                latest_project,
+                promoted_project,
+                deleter,
+                get_date(),
+            )
+            collection_handle.replace_one(
                 {'_id': ObjectId(current_linkid)},
-                {'$set': {
-                    'delete': True,
-                    'current': False,
-                    'delete_user': deleter,
-                    'delete_date': get_date(),
-                    'version_deleted_from_history': True,
-                }}
+                tombstone,
+                upsert=True,
+            )
+            retarget_count = retarget_deleted_version_tombstones(
+                collection_handle,
+                current_linkid,
+                prev_linkid,
             )
 
             # Update site statistics
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
             delete_project_from_site_statistics(latest_project, is_project_private(vis))
 
-            logging.info(f"Deleted current version {current_linkid}, promoted {prev_linkid} to current")
+            logging.info(
+                f"Deleted current version {current_linkid}, promoted {prev_linkid} "
+                f"to current; purged {deleted_gridfs_count} GridFS files; "
+                f"retargeted {retarget_count} tombstones"
+            )
 
             return JsonResponse({
                 "success": True,
@@ -2609,10 +2684,14 @@ def delete_project_version(request, project_name, version_id):
             })
     else:
         # Case 1: Deleting an old (non-current) version
+        old_version = collection_handle.find_one({'_id': ObjectId(version_id)})
+        if old_version is None:
+            return JsonResponse({"error": "Version not found"}, status=404)
+
         # Remove from the current project's previous_versions array
         new_prev_versions = [
             pv for pv in latest_project.get('previous_versions', [])
-            if pv['linkid'] != version_id
+            if str(_previous_version_linkid(pv)) != version_id
         ]
 
         collection_handle.update_one(
@@ -2620,16 +2699,28 @@ def delete_project_version(request, project_name, version_id):
             {'$set': {'previous_versions': new_prev_versions}}
         )
 
-        # Mark the old version document so it won't reappear
-        try:
-            collection_handle.update_one(
-                {'_id': ObjectId(version_id)},
-                {'$set': {'version_deleted_from_history': True}}
-            )
-        except Exception:
-            pass
+        latest_file_ids = set(iter_gridfs_file_ids(latest_project))
+        deleted_gridfs_count = delete_gridfs_payload_for_project(
+            fs_handle,
+            old_version,
+            protected_file_ids=latest_file_ids,
+        )
+        tombstone = build_deleted_version_tombstone(
+            old_version,
+            latest_project,
+            deleter,
+            get_date(),
+        )
+        collection_handle.replace_one(
+            {'_id': ObjectId(version_id)},
+            tombstone,
+            upsert=True,
+        )
 
-        logging.info(f"Deleted old version {version_id} from history of project {current_linkid}")
+        logging.info(
+            f"Deleted old version {version_id} from history of project "
+            f"{current_linkid}; purged {deleted_gridfs_count} GridFS files"
+        )
 
         return JsonResponse({
             "success": True,
@@ -3301,7 +3392,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 download_url, samples_to_remove, replace_project, remap_sample_names,
                 reaggregate_project=reaggregate_project,
                 oldFeatured=oldFeatured,
-                rollback_project_id=project_name,
+                rollback_project_id=str(project['linkid']),
                 task_label=f'Project Edit: {temp_proj_id}',
                 old_extra_metadata=old_extra_metadata,
             )
@@ -4249,6 +4340,17 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                 except Exception as audit_exc:
                     logging.error(f"Failed to write audit log for project {temp_proj_id}: {audit_exc}")
         else:
+            if rollback_project_id:
+                retarget_count = retarget_deleted_version_tombstones(
+                    collection_handle,
+                    rollback_project_id,
+                    temp_proj_id,
+                )
+                if retarget_count:
+                    logging.info(
+                        f"Retargeted {retarget_count} deleted-version tombstones "
+                        f"from {rollback_project_id} to {temp_proj_id}"
+                    )
             agg_version = getattr(AmpliconSuiteAggregator, '__version__', None) or 'NA'
             collection_handle.update_one(
                 {'_id': ObjectId(temp_proj_id)},

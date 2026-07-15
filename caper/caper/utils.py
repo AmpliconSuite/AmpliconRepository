@@ -511,6 +511,31 @@ def get_all_alias():
     return collection_handle.distinct('alias_name')
     
 
+def resolve_redirect_tombstone(project, projection=None):
+    redirect_to = project.get('redirect_to_project') if project else None
+    if not redirect_to:
+        return None
+    try:
+        redirected = collection_handle.find_one({
+            '_id': ObjectId(str(redirect_to)),
+            'delete': False,
+        }, projection)
+        if redirected is not None:
+            prepare_project_linkid(redirected)
+            return redirected
+        redirected = collection_handle.find_one({
+            'current': True,
+            'delete': False,
+            'previous_versions.linkid': str(redirect_to),
+        }, projection)
+        if redirected is not None:
+            prepare_project_linkid(redirected)
+            return redirected
+    except Exception:
+        logging.error(f"Could not resolve redirect tombstone {project.get('_id')} to {redirect_to}")
+    return None
+
+
 def get_one_project(project_name_or_uuid):
     """
     Gets one project from name or UUID. 
@@ -553,6 +578,9 @@ def get_one_project(project_name_or_uuid):
         try:
             project = collection_handle.find_one({'_id': ObjectId(project_name_or_uuid), 'current': False, 'delete': True})
             if project is not None:
+                redirected = resolve_redirect_tombstone(project)
+                if redirected is not None:
+                    return redirected
                 prepare_project_linkid(project)
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
 
@@ -564,6 +592,9 @@ def get_one_project(project_name_or_uuid):
         try:
             project = collection_handle.find_one({'project_name': project_name_or_uuid, 'current': False, 'delete': True})
             if project is not None:
+                redirected = resolve_redirect_tombstone(project)
+                if redirected is not None:
+                    return redirected
                 prepare_project_linkid(project)
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
 
@@ -627,21 +658,125 @@ def get_date_short():
     return date
 
 
+VERSION_HISTORY_FIELDS = [
+    'ASP_version', 'AA_version', 'AC_version', 'aggregator_version',
+    'Reconstruction_tools', 'CoRAL_version',
+]
+DELETED_VERSION_HISTORY_FIELDS = [
+    'version_deleted_from_history',
+    'payload_purged',
+    'redirect_to_project',
+    'delete_date',
+]
+
+
+def _coerce_previous_version_entry(entry):
+    if isinstance(entry, dict):
+        coerced = entry.copy()
+    else:
+        coerced = {'linkid': str(entry)}
+    if coerced.get('linkid') is not None:
+        coerced['linkid'] = str(coerced['linkid'])
+    return coerced
+
+
+def _current_version_history_entry(project):
+    entry = {
+        'date': project.get('date', '1999-01-01T00:00:00.000000'),
+        'linkid': str(project.get('linkid', project['_id'])),
+    }
+    for field in VERSION_HISTORY_FIELDS:
+        entry[field] = project.get(field, 'NA')
+    return entry
+
+
+def _deleted_version_history_entry(tombstone):
+    entry = {
+        'date': tombstone.get('date', '1999-01-01T00:00:00.000000'),
+        'linkid': str(tombstone['_id']),
+    }
+    for field in VERSION_HISTORY_FIELDS:
+        entry[field] = tombstone.get(field, 'NA')
+    for field in DELETED_VERSION_HISTORY_FIELDS:
+        if field in tombstone:
+            entry[field] = tombstone[field]
+    entry.setdefault('version_deleted_from_history', True)
+    entry.setdefault('payload_purged', True)
+    return entry
+
+
+def _version_history_linkids(project):
+    linkids = []
+    project_id = project.get('_id', project.get('linkid'))
+    if project_id:
+        linkids.append(str(project_id))
+    for entry in project.get('previous_versions', []):
+        if isinstance(entry, dict):
+            linkid = entry.get('linkid')
+        else:
+            linkid = entry
+        if linkid:
+            linkids.append(str(linkid))
+    return list(dict.fromkeys(linkids))
+
+
+def _deleted_version_entries_for_project(project):
+    project_ids = _version_history_linkids(project)
+    if not project_ids:
+        return []
+    projection_fields = ['date'] + VERSION_HISTORY_FIELDS + DELETED_VERSION_HISTORY_FIELDS
+    try:
+        cursor = collection_handle.find(
+            {
+                'version_deleted_from_history': True,
+                'payload_purged': True,
+                'redirect_to_project': {'$in': project_ids},
+            },
+            {field: 1 for field in projection_fields},
+        )
+        entries = [_deleted_version_history_entry(doc) for doc in cursor]
+        try:
+            cursor.close()
+        except Exception:
+            pass
+        return entries
+    except Exception as e:
+        logging.error(f"Error loading deleted version tombstones for project {project_ids[0]}: {e}")
+        return []
+
+
+def _merge_deleted_version_entries(entries, deleted_entries):
+    merged = []
+    by_linkid = {}
+    for entry in entries:
+        linkid = entry.get('linkid')
+        if linkid:
+            by_linkid[str(linkid)] = entry
+        merged.append(entry)
+    for deleted_entry in deleted_entries:
+        linkid = str(deleted_entry['linkid'])
+        if linkid in by_linkid:
+            by_linkid[linkid].update(deleted_entry)
+        else:
+            merged.append(deleted_entry)
+    return merged
+
+
+def _sort_history_entries_newest_first(entries):
+    return sorted(entries, key=lambda entry: entry.get('date') or '', reverse=True)
+
+
 def _backfill_version_info_from_db(entries):
     """
     For previous_versions entries that are missing version fields (or have 'NA'),
     look up the actual old project documents by linkid and populate the real values.
     Uses a single batch MongoDB query for efficiency.
     """
-    version_fields = [
-        'ASP_version', 'AA_version', 'AC_version', 'aggregator_version',
-        'Reconstruction_tools', 'CoRAL_version',
-    ]
-
     # Identify entries that need a DB lookup
     entries_needing_lookup = [
         entry for entry in entries
-        if any(not entry.get(f) or entry.get(f) == 'NA' for f in version_fields)
+        if isinstance(entry, dict)
+        and any(not entry.get(f) or entry.get(f) == 'NA' for f in VERSION_HISTORY_FIELDS)
     ]
 
     if entries_needing_lookup:
@@ -657,13 +792,13 @@ def _backfill_version_info_from_db(entries):
                 object_ids = [ObjectId(lid) for lid in linkid_to_entry]
                 proj_docs = collection_handle.find(
                     {'_id': {'$in': object_ids}},
-                    {field: 1 for field in version_fields}
+                    {field: 1 for field in VERSION_HISTORY_FIELDS}
                 )
                 for doc in proj_docs:
                     doc_id = str(doc['_id'])
                     if doc_id in linkid_to_entry:
                         entry = linkid_to_entry[doc_id]
-                        for field in version_fields:
+                        for field in VERSION_HISTORY_FIELDS:
                             if not entry.get(field) or entry.get(field) == 'NA':
                                 entry[field] = doc.get(field, 'NA')
             except Exception as e:
@@ -671,7 +806,7 @@ def _backfill_version_info_from_db(entries):
 
     # Ensure every entry has all four version fields (default 'NA' for anything still absent)
     for entry in entries:
-        for field in version_fields:
+        for field in VERSION_HISTORY_FIELDS:
             entry.setdefault(field, 'NA')
 
 
@@ -695,45 +830,38 @@ def previous_versions(project):
         {field: 1 for field in fields}
     ).sort('date', -1)
     data = list(cursor)
-    cursor.close()
+    try:
+        cursor.close()
+    except Exception:
+        pass
 
     if len(data) == 1:
         # Viewing an older version — data[0] is the current/latest project document
-        res = data[0]['previous_versions']
+        res = [
+            _coerce_previous_version_entry(entry)
+            for entry in data[0].get('previous_versions', [])
+        ]
         # Populate version fields from the actual old project documents
         _backfill_version_info_from_db(res)
-        res.append({
-            'date': data[0].get('date', '1999-01-01T00:00:00.000000'),
-            'linkid': str(data[0]['_id']),
-            'AC_version': data[0].get('AC_version', 'NA'),
-            'AA_version': data[0].get('AA_version', 'NA'),
-            'ASP_version': data[0].get('ASP_version', 'NA'),
-            'aggregator_version': data[0].get('aggregator_version', 'NA'),
-            'Reconstruction_tools': data[0].get('Reconstruction_tools', 'NA'),
-            'CoRAL_version': data[0].get('CoRAL_version', 'NA'),
-        })
-        res.reverse()
+        res = _merge_deleted_version_entries(res, _deleted_version_entries_for_project(data[0]))
+        res.append(_current_version_history_entry(data[0]))
+        res = _sort_history_entries_newest_first(res)
         msg = (f"Viewing an older version of the project. "
                f"View latest version <a href='/project/{str(data[0]['_id'])}'>here</a>")
 
     else:
         # Viewing the current version — build history from this project's previous_versions list
         if "previous_versions" in project:
-            res = project['previous_versions']
+            res = [
+                _coerce_previous_version_entry(entry)
+                for entry in project.get('previous_versions', [])
+            ]
             # Populate version fields from the actual old project documents
             _backfill_version_info_from_db(res)
+        res = _merge_deleted_version_entries(res, _deleted_version_entries_for_project(project))
         # Append the current version itself
-        res.append({
-            'date': project.get('date', '1999-01-01T00:00:00.000000'),
-            'linkid': str(project['linkid']),
-            'AC_version': project.get('AC_version', 'NA'),
-            'AA_version': project.get('AA_version', 'NA'),
-            'ASP_version': project.get('ASP_version', 'NA'),
-            'aggregator_version': project.get('aggregator_version', 'NA'),
-            'Reconstruction_tools': project.get('Reconstruction_tools', 'NA'),
-            'CoRAL_version': project.get('CoRAL_version', 'NA'),
-        })
-        res.reverse()
+        res.append(_current_version_history_entry(project))
+        res = _sort_history_entries_newest_first(res)
 
     return res, msg
 
@@ -810,6 +938,9 @@ def get_one_project_sans_runs(project_name_or_uuid):
         try:
             project = collection_handle.find_one({'_id': ObjectId(project_name_or_uuid), 'current': False, 'delete': True}, projection)
             if project is not None:
+                redirected = resolve_redirect_tombstone(project, projection)
+                if redirected is not None:
+                    return redirected
                 prepare_project_linkid(project)
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
 
@@ -821,6 +952,9 @@ def get_one_project_sans_runs(project_name_or_uuid):
         try:
             project = collection_handle.find_one({'project_name': project_name_or_uuid, 'current': False, 'delete': True}, projection)
             if project is not None:
+                redirected = resolve_redirect_tombstone(project, projection)
+                if redirected is not None:
+                    return redirected
                 prepare_project_linkid(project)
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use previous project ids!")
 
@@ -1064,4 +1198,3 @@ def format_visibility_for_display(private_value):
         return 'Hidden Public'
     else:
         return 'Private'  # Default fallback
-

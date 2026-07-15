@@ -720,6 +720,23 @@ class TestApiTokenView:
         assert resp.status_code == 404
 
 
+def test_profile_token_javascript_waits_for_dom_before_binding_buttons():
+    """Regression test for the profile token controls running from <head>."""
+    from pathlib import Path
+
+    template_path = Path(__file__).resolve().parents[1] / 'caper' / 'templates' / 'pages' / 'profile.html'
+    source = template_path.read_text()
+    dom_ready_pos = source.index("document.addEventListener('DOMContentLoaded'")
+    generate_lookup_pos = source.index("const generateButton = document.getElementById('btn-generate-token')")
+    generate_binding_pos = source.index("generateButton.addEventListener")
+    initial_fetch_pos = source.index("apiFetch('/api/v1/token/', 'GET')")
+
+    assert dom_ready_pos < generate_lookup_pos
+    assert dom_ready_pos < generate_binding_pos
+    assert dom_ready_pos < initial_fetch_pos
+    assert ".catch(() => {})" not in source
+
+
 def _make_django_user():
     """Return a real (or minimally-functional) Django User for session auth tests."""
     try:

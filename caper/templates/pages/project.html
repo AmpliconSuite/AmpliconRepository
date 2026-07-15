@@ -1159,6 +1159,9 @@
                                     {% if version.linkid == proj_id %}
                                         <strong>(Currently viewing)</strong>
                                     {% endif %}
+                                    {% if version.version_deleted_from_history %}
+                                        <span class="badge badge-secondary">Deleted</span>
+                                    {% endif %}
                                 </td>
                                 <td scope="row">{{ version.Reconstruction_tools|default:"AmpliconArchitect" }}</td>
                                 {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
@@ -1171,19 +1174,25 @@
                                 <td scope="row">{{ version.AC_version }}</td>
                                 <td scope="row">{{ version.aggregator_version|default:"NA" }}</td>
                                 <td scope="row">
-                                    <a class="btn btn-primary" href="/project/{{ version.linkid }}/download" style="color: white; margin-bottom: 12px;">Download version</a>
+                                    {% if version.version_deleted_from_history %}
+                                        <span class="text-muted">Project deleted</span>
+                                    {% else %}
+                                        <a class="btn btn-primary" href="/project/{{ version.linkid }}/download" style="color: white; margin-bottom: 12px;">Download version</a>
+                                    {% endif %}
                                 </td>
                                 <td scope="row" class="version-delete-col" style="display: none;">
-                                    <button class="btn btn-danger btn-sm" onclick="deleteProjectVersion('{{ version.linkid }}')" title="Delete this version">
-                                        <i class="fas fa-times"></i>
-                                    </button>
+                                    {% if not version.version_deleted_from_history %}
+                                        <button class="btn btn-danger btn-sm" onclick="deleteProjectVersion('{{ version.linkid }}')" title="Delete this version">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
-                {% if project.current_user_may_edit and prev_versions_length > 1 %}
+                {% if project.current_user_may_edit and active_prev_versions_length > 1 %}
                 <div style="text-align: right; margin-top: 10px;">
                     <button id="edit-history-btn" class="btn btn-outline-secondary btn-sm" onclick="toggleEditHistory()">
                         <i class="fas fa-edit"></i> Edit Project History
@@ -1221,7 +1230,7 @@
 
             if (isDeletingCurrent) {
                 confirmMsg = 'Are you sure you want to delete the CURRENT version of this project? ';
-                {% if prev_versions_length > 1 %}
+                {% if has_promotable_project_version %}
                     confirmMsg += 'The previous version will become the current version.';
                 {% else %}
                     confirmMsg += 'This is the only version — the entire project will be deleted.';
