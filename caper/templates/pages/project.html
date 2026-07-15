@@ -679,6 +679,9 @@
 <div class="container row" style="margin:auto; padding:0px; padding-top: 20px;">
     <div class="col-md-7">
         <h2>Project: <span style="font-weight: 200">{{ project.project_name }}</span>
+        {% if "CoRAL" in project.Reconstruction_tools %}
+            <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>
+        {% endif %}
 
         {% if not viewing_old_project %}
             {% if project.current_user_may_edit  %}
@@ -1086,15 +1089,27 @@
                 <div class="table-responsive">
                     <table class="table">
                         <thead>
+                            <th scope="col">Reconstruction tool</th>
+                            {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
                             <th scope="col">AmpliconSuite-pipeline</th>
                             <th scope="col">AmpliconArchitect</th>
+                            {% endif %}
+                            {% if "CoRAL" in project.Reconstruction_tools %}
+                            <th scope="col">CoRAL</th>
+                            {% endif %}
                             <th scope="col">AmpliconClassifier</th>
                             <th scope="col">AmpliconSuiteAggregator</th>
                         </thead>
                         <tbody>
                             <tr>
+                                <td scope="row">{{ project.Reconstruction_tools|default:"AmpliconArchitect" }}</td>
+                                {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
                                 <td scope="row">{{ project.ASP_version |default:"NA"  }}</td>
                                 <td scope="row">{{ project.AA_version |default:"NA" }}</td>
+                                {% endif %}
+                                {% if "CoRAL" in project.Reconstruction_tools %}
+                                <td scope="row">{{ project.CoRAL_version|default:"NA" }}</td>
+                                {% endif %}
                                 <td scope="row">{{ project.AC_version |default:"NA"  }}</td>
                                 <td scope="row">{{ project.aggregator_version |default:"NA" }}</td>
                             </tr>
@@ -1121,8 +1136,14 @@
                         <thead>
                             <th scope="col">Date Created</th>
                             <th scope="col">Version</th>
+                            <th scope="col">Reconstruction tool</th>
+                            {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
                             <th scope="col">AS-p</th>
                             <th scope="col">AA</th>
+                            {% endif %}
+                            {% if "CoRAL" in project.Reconstruction_tools %}
+                            <th scope="col">CoRAL</th>
+                            {% endif %}
                             <th scope="col">AC</th>
                             <th scope="col">Aggregator</th>
                             <th scope="col">Download</th>
@@ -1142,8 +1163,14 @@
                                         <span class="badge badge-secondary">Deleted</span>
                                     {% endif %}
                                 </td>
+                                <td scope="row">{{ version.Reconstruction_tools|default:"AmpliconArchitect" }}</td>
+                                {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
                                 <td scope="row">{{ version.ASP_version }}</td>
                                 <td scope="row">{{ version.AA_version }}</td>
+                                {% endif %}
+                                {% if "CoRAL" in project.Reconstruction_tools %}
+                                <td scope="row">{{ version.CoRAL_version|default:"NA" }}</td>
+                                {% endif %}
                                 <td scope="row">{{ version.AC_version }}</td>
                                 <td scope="row">{{ version.aggregator_version|default:"NA" }}</td>
                                 <td scope="row">

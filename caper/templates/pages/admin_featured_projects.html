@@ -126,7 +126,7 @@
                         <tbody>
                             {% for project in public_projects %}
                             <tr>
-                                <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                                <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}</td>
                                 <td>{{ project.description }}</td>
                                 <td>{{ project.date }}</td>
                                 <td>{% for person in project.project_members %}

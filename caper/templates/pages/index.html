@@ -345,7 +345,7 @@
                                 <tr data-project-type="featured">
                                     <td><span class="badge badge-primary">Featured</span></td>
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                                     </td>
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
                                     <td class="date">{{ project.date }}</td>
@@ -357,7 +357,7 @@
                                 <tr data-project-type="public">
                                     <td><span class="badge badge-success">Public</span></td>
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                                     </td>
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
                                     <td class="date">{{ project.date }}</td>
@@ -372,7 +372,7 @@
                                         <span class="badge" style="background-color: #BBBBBB; color: white;">Private</span>{% if project.visibility_display == 'Hidden Public' %}<span class="hidden-public-indicator" style="color: red; font-weight: bold; font-size: 1.2em; margin-left: 2px;" data-tooltip="Hidden Public: Anyone with the link can view this project">*</span>{% endif %}
                                     </td>
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                                     </td>
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
                                     <td class="date">{{ project.date }}</td>
@@ -502,7 +502,11 @@
                             <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</td>
                         </tr>
                         <tr>
-                            <td style="font-size: 1em;">BFB</td>
+                            <td style="font-size: 1em;">FAN <i class="far fa-question-circle" title="Focal amplification in neochromosome" aria-label="Focal amplification in neochromosome"></i></td>
+                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.FAN|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 1em;">BFB <i class="far fa-question-circle" title="Breakage-fusion-bridge" aria-label="Breakage-fusion-bridge"></i></td>
                             <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</td>
                         </tr>
                         <tr>

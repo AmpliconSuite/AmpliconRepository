@@ -185,6 +185,12 @@
         "aggregator_version": {
             "type": ["string", "null"]
         },
+        "Reconstruction_tools": {
+            "type": ["string", "null"]
+        },
+        "CoRAL_version": {
+            "type": ["string", "null"]
+        },
         "aggregate_df": {
             "type": "string"
         },

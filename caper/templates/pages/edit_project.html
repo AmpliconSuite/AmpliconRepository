@@ -121,7 +121,17 @@
 
             {% else %}
                 {% if field.name != 'accept_license' and field.name != 'replace_project' %}
-                  {{field | as_crispy_field }}
+                  {% if field.name == 'AA_version' or field.name == 'ASP_version' %}
+                    {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
+                      {{field | as_crispy_field }}
+                    {% endif %}
+                  {% elif field.name == 'CoRAL_version' %}
+                    {% if "CoRAL" in project.Reconstruction_tools %}
+                      {{field | as_crispy_field }}
+                    {% endif %}
+                  {% else %}
+                    {{field | as_crispy_field }}
+                  {% endif %}
                 {% endif %}
                 
             {% endif %}

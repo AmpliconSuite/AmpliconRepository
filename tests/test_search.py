@@ -1350,10 +1350,52 @@ def test_zero_feature_samples_appear_when_noamp_checked_with_other_classes(
 
 
 @pytest.mark.integration
-def test_all_five_checkboxes_checked_equals_no_filter(
+def test_fan_classification_filter_and_checkbox(
+        request_factory, test_user, mongo_collection):
+    """FAN must be independently searchable and restored in the search UI."""
+    from caper.views import search_results
+
+    doc = {
+        'project_name': 'SearchFAN',
+        'creator': test_user.username,
+        'private': 'public',
+        'delete': False,
+        'current': True,
+        'FINISHED?': True,
+        'runs': {
+            'FanSample': [{'Sample_name': 'FanSample', 'Feature_ID': 'fan1',
+                           'Classification': 'FAN', 'All_genes': [],
+                           'Oncogenes': [], 'Sample_type': '',
+                           'Cancer_type': '', 'Tissue_of_origin': ''}],
+            'EcDnaSample': [{'Sample_name': 'EcDnaSample', 'Feature_ID': 'ec1',
+                             'Classification': 'ecDNA', 'All_genes': [],
+                             'Oncogenes': [], 'Sample_type': '',
+                             'Cancer_type': '', 'Tissue_of_origin': ''}],
+        },
+        'sample_count': 2,
+    }
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchFAN',
+            'classquery': ['FAN']})
+        req.user = test_user
+        resp = search_results(req)
+
+        assert resp.status_code == 200
+        assert b'FanSample' in resp.content
+        assert b'EcDnaSample' not in resp.content
+        assert b'id="class-fan" checked' in resp.content
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_all_classification_checkboxes_checked_equals_no_filter(
         request_factory, test_user, mongo_collection):
     """
-    Checking all 5 checkboxes (all 4 amp types + no-amp) must behave identically
+    Checking all classification checkboxes (all 5 amp types + no-amp) must behave identically
     to having no classification filter — all sample types must appear.
     This covers the case where samples have a classification not covered by the 4
     standard types (e.g. 'No FSCNA', 'other', or any future classification).
@@ -1387,7 +1429,7 @@ def test_all_five_checkboxes_checked_equals_no_filter(
     result = mongo_collection.insert_one(doc)
 
     try:
-        all_five = ['ecDNA', 'linear amplification', 'BFB', 'complex non-cyclic', 'no-amp']
+        all_five = ['ecDNA', 'FAN', 'linear amplification', 'BFB', 'complex non-cyclic', 'no-amp']
         req = request_factory.post('/search_results/', {
             'project_name': 'SearchAllFive_NoFilter',
             'classquery': all_five})
@@ -1686,11 +1728,11 @@ def test_all_4_amp_types_no_no_amp(
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
-def test_all_five_checked_restores_all_checkboxes(
+def test_all_classifications_checked_restores_all_checkboxes(
         request_factory, test_user, mongo_collection):
     """
-    After submitting with all 5 checkboxes checked, the result page must
-    render all 5 checkboxes in the checked state.
+    After submitting with all classification checkboxes checked, the result page must
+    render every checkbox in the checked state.
     """
     from caper.views import search_results
 
@@ -1712,16 +1754,18 @@ def test_all_five_checked_restores_all_checkboxes(
     result = mongo_collection.insert_one(doc)
 
     try:
-        all_five = ['ecDNA', 'linear amplification', 'BFB', 'complex non-cyclic', 'no-amp']
+        all_five = ['ecDNA', 'FAN', 'linear amplification', 'BFB', 'complex non-cyclic', 'no-amp']
         req = request_factory.post('/search_results/', {
             'project_name': 'CBRepop_All5',
             'classquery': all_five})
         req.user = test_user
         resp = search_results(req)
         assert resp.status_code == 200
-        # All 5 checkboxes must be rendered as checked
+        # All classification checkboxes must be rendered as checked
         assert b'id="class-ecDNA" checked' in resp.content, \
             "ecDNA checkbox must be checked when all 5 were submitted"
+        assert b'id="class-fan" checked' in resp.content, \
+            "FAN checkbox must be checked when all classifications were submitted"
         assert b'id="class-linear" checked' in resp.content, \
             "Linear Amplification checkbox must be checked when all 5 were submitted"
         assert b'id="class-bfb" checked' in resp.content, \
@@ -2032,4 +2076,3 @@ def test_perform_search_ecdna_noamp_returns_zero_feature(
             "BFB sample must NOT be returned when only ecDNA is selected"
     finally:
         mongo_collection.delete_one({'_id': result.inserted_id})
-

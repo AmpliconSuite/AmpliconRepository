@@ -78,6 +78,11 @@ class UpdateForm(forms.ModelForm):
         label="AmpliconClassifier version(s)",
         widget=forms.TextInput(),
     )
+    CoRAL_version = forms.CharField(
+        required=False,
+        label="CoRAL version(s)",
+        widget=forms.TextInput(),
+    )
 
     def clean_samples_to_remove(self):
         # This would be called if you add the field, but it's not necessary
@@ -86,7 +91,7 @@ class UpdateForm(forms.ModelForm):
 
     class Meta:
         model = Run
-        fields = ('project_name', 'description', 'publication_link', 'private', 'project_members', 'accept_license', 'alias', 'ASP_version','AC_version', 'AA_version')
+        fields = ('project_name', 'description', 'publication_link', 'private', 'project_members', 'accept_license', 'alias', 'ASP_version','AC_version', 'AA_version', 'CoRAL_version')
         labels = {
             'private': 'Visibility'
         }
@@ -112,6 +117,7 @@ class UpdateForm(forms.ModelForm):
         self.fields['ASP_version'].widget.attrs.update({ 'placeholder': 'Optional: List of AS-p versions used by samples in this project, separated by spaces or commas'})
         self.fields['AA_version'].widget.attrs.update({ 'placeholder': 'Optional: List of AA versions used by samples in this project separated by spaces or commas'})
         self.fields['AC_version'].widget.attrs.update({'placeholder': 'Optional: List of AC versions used in this project separated by spaces or commas'})
+        self.fields['CoRAL_version'].widget.attrs.update({'placeholder': 'Optional: List of CoRAL versions used in this project separated by spaces or commas'})
 
 
 class FeaturedProjectForm(forms.ModelForm):

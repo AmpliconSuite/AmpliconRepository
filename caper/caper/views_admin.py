@@ -35,7 +35,7 @@ from .utils import (
     get_one_project, get_one_deleted_project, prepare_project_linkid,
     check_if_db_field_exists, get_date_short, previous_versions,
     form_to_dict, get_date, db_handle_primary, format_visibility_for_display,
-    get_project_version_chain,
+    get_project_version_chain, normalize_visibility_field, is_project_private,
 )
 from .background_tasks import get_background_task_status
 
@@ -43,6 +43,19 @@ from .extra_metadata import *
 
 from .site_stats import get_latest_site_statistics, regenerate_site_statistics
 from .tar_utils import list_project_tar_contents
+
+
+def _partition_admin_stats_projects(projects):
+    """Split current projects using both legacy and string visibility values."""
+    public_projects = []
+    private_projects = []
+    for project in projects:
+        visibility = normalize_visibility_field(project.get('private', 'private'))
+        if is_project_private(visibility):
+            private_projects.append(project)
+        else:
+            public_projects.append(project)
+    return public_projects, private_projects
 
 
 def _get_s3_file_size_bytes_admin(s3_uri):
@@ -326,7 +339,8 @@ def admin_stats(request):
                               (username in project_members or email in project_members))
 
             if is_only_member:
-                if project.get('private', False):
+                if is_project_private(normalize_visibility_field(
+                        project.get('private', 'private'))):
                     solo_private_projects += 1
                 else:
                     solo_public_projects += 1
@@ -338,7 +352,10 @@ def admin_stats(request):
         }
 
     # Get public project data for display
-    public_projects = [p for p in all_projects if not p.get('private', True)]
+    public_projects, private_projects = _partition_admin_stats_projects(all_projects)
+
+    for project in private_projects:
+        project['sample_metadata_available'] = has_sample_metadata(project)
 
     for proj in public_projects:
         prepare_project_linkid(proj)
@@ -389,6 +406,7 @@ def admin_stats(request):
 
     return render(request, 'pages/admin_stats.html', {
         'public_projects': public_projects,
+        'private_projects': private_projects,
         'users': users,
         'user_stats': user_stats,
         'site_stats': repo_stats
@@ -730,7 +748,7 @@ def data_qc(request):
         useremail = request.user.email
 
         # private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
-        private_projects = list(collection_handle.find({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False, 'current': True}))
+        private_projects = list(collection_handle.find({'private': {'$in': [True, 'private', 'hidden_public']}, "$or": [{"project_members": username}, {"project_members": useremail}], 'delete': False, 'current': True}))
         for proj in private_projects:
             prepare_project_linkid(proj)
             proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
@@ -741,7 +759,7 @@ def data_qc(request):
     public_sample_count = 0
 
     # public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
-    public_projects = list(collection_handle.find({'private' : False, 'delete': False, 'current': True}))
+    public_projects = list(collection_handle.find({'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}))
     for proj in public_projects:
         prepare_project_linkid(proj)
         proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
@@ -1291,5 +1309,3 @@ def admin_audit_log_validate(request):
     except Exception as e:
         logging.error(f"admin_audit_log_validate error for project_id '{project_id}': {e}")
         return JsonResponse({'error': str(e)}, status=500)
-
-

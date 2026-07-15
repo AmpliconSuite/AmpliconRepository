@@ -9,8 +9,20 @@ project_download behaviour depends on USE_S3_DOWNLOADS:
 Tests accept any of these valid outcomes.
 """
 
+import csv
+import io
+import os
+import zipfile
+
 import pytest
 from bson.objectid import ObjectId
+
+from conftest import (
+    _build_create_request,
+    _cleanup_project,
+    _poll_until_finished,
+    _project_id_from_redirect,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +89,82 @@ def test_project_summary_download(loaded_datasets, request_factory, test_user):
 # ---------------------------------------------------------------------------
 # Sample-level download tests
 # ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.functional
+def test_ac2_single_and_batch_sample_download_contents(
+        request_factory, test_user, mongo_collection, monkeypatch):
+    """AC 2.0 file fields must resolve to real members in both ZIP paths."""
+    archive_path = os.environ.get('CAPER_AC2_TEST_ARCHIVE')
+    if not archive_path:
+        pytest.skip('Set CAPER_AC2_TEST_ARCHIVE to run AC 2.0 download tests')
+
+    from django.conf import settings
+    from caper.views import batch_sample_download, create_project, sample_download
+
+    monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', False)
+    request, handles = _build_create_request(
+        request_factory,
+        test_user,
+        'pytest_AC2_downloads',
+        tar_path=archive_path,
+    )
+    project_id = None
+
+    def assert_download_zip(content, sample_name):
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            names = archive.namelist()
+            result_name = next(
+                name for name in names
+                if name.endswith(f'{sample_name}_result_data.tsv')
+            )
+            rows = list(csv.DictReader(
+                io.TextIOWrapper(archive.open(result_name), encoding='utf-8'),
+                delimiter='\t',
+            ))
+            assert rows
+            prefix = result_name[:-len(f'{sample_name}_result_data.tsv')]
+            for row in rows:
+                for field in (
+                    'Graph_PNG_file', 'Graph_PDF_file',
+                    'Cycles_PNG_file', 'Cycles_PDF_file',
+                    'Graph_file', 'Cycles_file',
+                    'Reconstruction_directory',
+                ):
+                    value = row.get(field)
+                    if value and value != 'Not Provided':
+                        assert prefix + value in names, \
+                            f'{field} points to missing ZIP member {prefix + value}'
+
+    try:
+        response = create_project(request)
+        project_id = _project_id_from_redirect(response)
+        doc = _poll_until_finished(mongo_collection, project_id)
+        assert doc and not doc.get('aggregation_failed'), doc.get('error_message') if doc else None
+
+        first_run_key = next(iter(doc['runs']))
+        sample_name = doc['runs'][first_run_key][0]['Sample_name']
+        single_req = request_factory.get(
+            f'/project/{project_id}/sample/{sample_name}/download')
+        single_req.user = test_user
+        single_response = sample_download(single_req, project_id, sample_name)
+        assert single_response.status_code == 200
+        assert_download_zip(single_response.content, sample_name)
+
+        batch_req = request_factory.post('/batch-sample-download/', {
+            'samples': [f'{project_id}:{sample_name}'],
+            'emailResults': 'false',
+        })
+        batch_req.user = test_user
+        batch_response = batch_sample_download(batch_req)
+        assert batch_response.status_code == 200
+        assert_download_zip(batch_response.content, sample_name)
+    finally:
+        for handle in handles:
+            handle.close()
+        if project_id:
+            _cleanup_project(mongo_collection, project_id)
 
 @pytest.mark.integration
 @pytest.mark.functional

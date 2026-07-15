@@ -426,7 +426,8 @@ def _user_can_access_project(project, user):
 
 
 _SAFE_PREV_VERSION_KEYS = frozenset({
-    'date', 'linkid', 'AA_version', 'AC_version', 'ASP_version', 'aggregator_version'
+    'date', 'linkid', 'AA_version', 'AC_version', 'ASP_version',
+    'aggregator_version', 'Reconstruction_tools', 'CoRAL_version',
 })
 _SAMPLE_SKIP_FIELDS = frozenset({'Features', 'Sample_metadata_JSON', 'Sample_files_JSON'})
 
@@ -448,6 +449,8 @@ def _project_to_dict(project):
         'AC_version':         project.get('AC_version', ''),
         'ASP_version':        project.get('ASP_version', ''),
         'aggregator_version': project.get('aggregator_version', ''),
+        'reconstruction_tools': project.get('Reconstruction_tools', ''),
+        'CoRAL_version':      project.get('CoRAL_version', ''),
         'oncogenes':          project.get('Oncogenes', []),
         'classifications':    project.get('Classifications', []),
         'previous_versions': [

@@ -658,7 +658,10 @@ def get_date_short():
     return date
 
 
-VERSION_HISTORY_FIELDS = ['ASP_version', 'AA_version', 'AC_version', 'aggregator_version']
+VERSION_HISTORY_FIELDS = [
+    'ASP_version', 'AA_version', 'AC_version', 'aggregator_version',
+    'Reconstruction_tools', 'CoRAL_version',
+]
 DELETED_VERSION_HISTORY_FIELDS = [
     'version_deleted_from_history',
     'payload_purged',
@@ -678,14 +681,13 @@ def _coerce_previous_version_entry(entry):
 
 
 def _current_version_history_entry(project):
-    return {
+    entry = {
         'date': project.get('date', '1999-01-01T00:00:00.000000'),
         'linkid': str(project.get('linkid', project['_id'])),
-        'AC_version': project.get('AC_version', 'NA'),
-        'AA_version': project.get('AA_version', 'NA'),
-        'ASP_version': project.get('ASP_version', 'NA'),
-        'aggregator_version': project.get('aggregator_version', 'NA'),
     }
+    for field in VERSION_HISTORY_FIELDS:
+        entry[field] = project.get(field, 'NA')
+    return entry
 
 
 def _deleted_version_history_entry(tombstone):
@@ -819,7 +821,10 @@ def previous_versions(project):
     msg = None
     logging.info(f"Getting previous versions for project {project['_id']}")
 
-    fields = ['date', 'previous_versions', 'AC_version', 'AA_version', 'ASP_version', 'aggregator_version']
+    fields = [
+        'date', 'previous_versions', 'AC_version', 'AA_version', 'ASP_version',
+        'aggregator_version', 'Reconstruction_tools', 'CoRAL_version',
+    ]
     cursor = collection_handle.find(
         {'current': True, 'previous_versions.linkid': str(project['_id'])},
         {field: 1 for field in fields}
