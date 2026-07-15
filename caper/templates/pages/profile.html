@@ -45,50 +45,91 @@
                 'Content-Type': 'application/json',
             },
             credentials: 'same-origin',
+        }).then(response => {
+            return response.text().then(text => {
+                let data = {};
+                if (text) {
+                    try {
+                        data = JSON.parse(text);
+                    } catch (e) {
+                        throw new Error('Unexpected response from the token API.');
+                    }
+                }
+                if (!response.ok) {
+                    throw new Error(data.error || data.detail || 'Token API request failed.');
+                }
+                return data;
+            });
         });
     }
 
     function setTokenUI(hasToken, suffix) {
-        document.getElementById('token-status').textContent =
+        const status = document.getElementById('token-status');
+        if (!status) return;
+        status.textContent =
             hasToken ? 'Active (ends in …' + suffix + ')' : 'No active token.';
-        document.getElementById('btn-revoke-token').style.display = hasToken ? 'inline-block' : 'none';
+        const revokeButton = document.getElementById('btn-revoke-token');
+        if (revokeButton) {
+            revokeButton.style.display = hasToken ? 'inline-block' : 'none';
+        }
     }
 
-    // Load current token status on page load
-    apiFetch('/api/v1/token/', 'GET')
-        .then(r => r.json())
-        .then(data => setTokenUI(data.has_token, data.token_suffix))
-        .catch(() => {});
+    function setTokenError(message) {
+        const status = document.getElementById('token-status');
+        if (status) {
+            status.textContent = message || 'Unable to load API token status.';
+        }
+    }
 
-    document.getElementById('btn-generate-token').addEventListener('click', function () {
-        if (!confirm('This will invalidate any existing token. Continue?')) return;
-        apiFetch('/api/v1/token/', 'POST')
-            .then(r => r.json())
-            .then(data => {
-                if (data.token) {
-                    document.getElementById('token-value').value = data.token;
-                    document.getElementById('token-reveal').style.display = 'block';
-                    setTokenUI(true, data.token.slice(-8));
-                }
+    document.addEventListener('DOMContentLoaded', function () {
+        // Load current token status on page load
+        apiFetch('/api/v1/token/', 'GET')
+            .then(data => setTokenUI(data.has_token, data.token_suffix))
+            .catch(error => setTokenError(error.message));
+
+        const generateButton = document.getElementById('btn-generate-token');
+        if (generateButton) {
+            generateButton.addEventListener('click', function () {
+                if (!confirm('This will invalidate any existing token. Continue?')) return;
+                setTokenError('Generating token...');
+                apiFetch('/api/v1/token/', 'POST')
+                    .then(data => {
+                        if (!data.token) {
+                            throw new Error('Token API did not return a token.');
+                        }
+                        document.getElementById('token-value').value = data.token;
+                        document.getElementById('token-reveal').style.display = 'block';
+                        setTokenUI(true, data.token.slice(-8));
+                    })
+                    .catch(error => setTokenError(error.message));
             });
-    });
+        }
 
-    document.getElementById('btn-revoke-token').addEventListener('click', function () {
-        if (!confirm('Revoke your API token? Any scripts using it will stop working.')) return;
-        apiFetch('/api/v1/token/', 'DELETE')
-            .then(() => {
-                document.getElementById('token-reveal').style.display = 'none';
-                document.getElementById('token-value').value = '';
-                setTokenUI(false, null);
+        const revokeButton = document.getElementById('btn-revoke-token');
+        if (revokeButton) {
+            revokeButton.addEventListener('click', function () {
+                if (!confirm('Revoke your API token? Any scripts using it will stop working.')) return;
+                setTokenError('Revoking token...');
+                apiFetch('/api/v1/token/', 'DELETE')
+                    .then(() => {
+                        document.getElementById('token-reveal').style.display = 'none';
+                        document.getElementById('token-value').value = '';
+                        setTokenUI(false, null);
+                    })
+                    .catch(error => setTokenError(error.message));
             });
-    });
+        }
 
-    document.getElementById('btn-copy-token').addEventListener('click', function () {
-        const val = document.getElementById('token-value').value;
-        navigator.clipboard.writeText(val).then(() => {
-            this.textContent = 'Copied!';
-            setTimeout(() => this.textContent = 'Copy', 2000);
-        });
+        const copyButton = document.getElementById('btn-copy-token');
+        if (copyButton) {
+            copyButton.addEventListener('click', function () {
+                const val = document.getElementById('token-value').value;
+                navigator.clipboard.writeText(val).then(() => {
+                    this.textContent = 'Copied!';
+                    setTimeout(() => this.textContent = 'Copy', 2000);
+                });
+            });
+        }
     });
 
 </script>
