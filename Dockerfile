@@ -1,6 +1,6 @@
 FROM ubuntu:22.04
 
-MAINTAINER Forrest Kim <f1kim@health.ucsd.edu>
+MAINTAINER Jens Luebeck <jluebeck@ucsd.edu>
 
 #############################################
 ##      Arguments                          ##

@@ -3,7 +3,7 @@ from django.utils.html import format_html
 
 from .models import Run
 from .models import FeaturedProjectUpdate, AdminDeleteProject, AdminSendEmail, UserPreferencesModel, UploadTarFile
-from allauth.account.forms import SignupForm
+from allauth.account.forms import ResetPasswordForm, SignupForm
 from allauth.socialaccount.forms import SignupForm as SocialSignupForm
 from django_recaptcha.widgets import ReCaptchaV2Checkbox
 from django_recaptcha.fields import ReCaptchaField
@@ -11,6 +11,7 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Layout, Field
 
 from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _
 
 
 class RunForm(forms.ModelForm):
@@ -156,6 +157,19 @@ class MySignUpForm(SignupForm):
         # and then the rest as usual:
         self.helper.form_show_labels = True
         self.helper.add_input(Submit('signup', 'Create My Account'))
+
+
+class LocalAccountResetPasswordForm(ResetPasswordForm):
+    def clean_email(self):
+        email = super().clean_email()
+        self.users = [user for user in self.users if user.has_usable_password()]
+        if not self.users:
+            raise forms.ValidationError(
+                _("This account does not have a password to reset. "
+                  "Use its Google or Globus sign-in instead.")
+            )
+        return email
+
 
 class MySocialSignUpForm(SocialSignupForm):
 

@@ -832,8 +832,8 @@ def make_project_current(request, project_id):
     if request.method == "POST":
         from bson.objectid import ObjectId
         from .site_stats import add_project_to_site_statistics
-        from .utils import normalize_visibility_field, is_project_private
-        
+        from .utils import normalize_visibility_field
+
         try:
             # Get the project first to check its privacy setting
             project = collection_handle.find_one({'_id': ObjectId(project_id)})
@@ -849,10 +849,8 @@ def make_project_current(request, project_id):
             )
             
             if result.modified_count > 0:
-                # Add the project to site statistics — use proper boolean via is_project_private()
-                # so that 'public' is treated as False (not truthy) and placed in the right bucket
-                is_priv = is_project_private(normalize_visibility_field(project.get('private', 'private')))
-                add_project_to_site_statistics(project, is_priv)
+                add_project_to_site_statistics(
+                    project, normalize_visibility_field(project.get('private', 'private')))
                 
                 messages.success(request, f"Project {project_id} has been set to current=True and added to site statistics")
             else:

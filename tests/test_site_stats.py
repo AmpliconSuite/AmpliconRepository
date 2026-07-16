@@ -5,24 +5,17 @@ from bson.objectid import ObjectId
 
 
 def _stat_subset(stats):
-    return {
-        'public_proj_count': stats.get('public_proj_count', 0),
-        'public_sample_count': stats.get('public_sample_count', 0),
-        'all_private_proj_count': stats.get('all_private_proj_count', 0),
-        'all_private_sample_count': stats.get('all_private_sample_count', 0),
-        'public_amplicon_classifications_count': copy.deepcopy(
-            stats.get('public_amplicon_classifications_count', {})
-        ),
-        'all_private_amplicon_classifications_count': copy.deepcopy(
-            stats.get('all_private_amplicon_classifications_count', {})
-        ),
-        'public_tissue_of_origin_count': copy.deepcopy(
-            stats.get('public_tissue_of_origin_count', {})
-        ),
-        'all_private_tissue_of_origin_count': copy.deepcopy(
-            stats.get('all_private_tissue_of_origin_count', {})
-        ),
-    }
+    subset = {}
+    for prefix in ('public', 'all_private', 'hidden_public'):
+        subset[f'{prefix}_proj_count'] = stats.get(f'{prefix}_proj_count', 0)
+        subset[f'{prefix}_sample_count'] = stats.get(f'{prefix}_sample_count', 0)
+        subset[f'{prefix}_amplicon_classifications_count'] = copy.deepcopy(
+            stats.get(f'{prefix}_amplicon_classifications_count', {})
+        )
+        subset[f'{prefix}_tissue_of_origin_count'] = copy.deepcopy(
+            stats.get(f'{prefix}_tissue_of_origin_count', {})
+        )
+    return subset
 
 
 def _cleanup_stats_since(start_id):
@@ -81,7 +74,7 @@ def test_private_project_add_and_delete_updates_site_stats():
     ], visibility='private')
 
     try:
-        add_project_to_site_statistics(project, is_private=True)
+        add_project_to_site_statistics(project, 'private')
         after_add = _latest_subset()
 
         assert after_add['all_private_proj_count'] == before['all_private_proj_count'] + 1
@@ -95,7 +88,7 @@ def test_private_project_add_and_delete_updates_site_stats():
             _count(before, 'all_private_tissue_of_origin', 'brain') + 1
         )
 
-        delete_project_from_site_statistics(project, is_private=True)
+        delete_project_from_site_statistics(project, 'private')
         assert _latest_subset() == before
     finally:
         _cleanup_stats_since(start_id)
@@ -118,7 +111,7 @@ def test_public_project_add_and_delete_updates_site_stats():
     ], visibility='public')
 
     try:
-        add_project_to_site_statistics(project, is_private=False)
+        add_project_to_site_statistics(project, 'public')
         after_add = _latest_subset()
 
         assert after_add['public_proj_count'] == before['public_proj_count'] + 1
@@ -132,7 +125,7 @@ def test_public_project_add_and_delete_updates_site_stats():
             _count(before, 'public_tissue_of_origin', 'breast') + 1
         )
 
-        delete_project_from_site_statistics(project, is_private=False)
+        delete_project_from_site_statistics(project, 'public')
         assert _latest_subset() == before
     finally:
         _cleanup_stats_since(start_id)
@@ -140,7 +133,7 @@ def test_public_project_add_and_delete_updates_site_stats():
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_visibility_transitions_move_stats_between_public_and_private_buckets():
+def test_visibility_transitions_move_stats_between_buckets():
     from caper.site_stats import (
         add_project_to_site_statistics,
         edit_proj_privacy,
@@ -155,7 +148,7 @@ def test_visibility_transitions_move_stats_between_public_and_private_buckets():
     ], visibility='private')
 
     try:
-        add_project_to_site_statistics(project, is_private=True)
+        add_project_to_site_statistics(project, 'private')
         after_private_create = _latest_subset()
 
         edit_proj_privacy(project, 'private', 'public')
@@ -165,15 +158,18 @@ def test_visibility_transitions_move_stats_between_public_and_private_buckets():
         assert after_public['public_proj_count'] == before['public_proj_count'] + 1
         assert after_public['public_sample_count'] == before['public_sample_count'] + 2
 
+        # Unlisted projects are counted on their own, not with the private ones.
         edit_proj_privacy(project, 'public', 'hidden_public')
         after_hidden_public = _latest_subset()
         assert after_hidden_public['public_proj_count'] == before['public_proj_count']
         assert after_hidden_public['public_sample_count'] == before['public_sample_count']
-        assert after_hidden_public['all_private_proj_count'] == before['all_private_proj_count'] + 1
-        assert after_hidden_public['all_private_sample_count'] == before['all_private_sample_count'] + 2
+        assert after_hidden_public['all_private_proj_count'] == before['all_private_proj_count']
+        assert after_hidden_public['all_private_sample_count'] == before['all_private_sample_count']
+        assert after_hidden_public['hidden_public_proj_count'] == before['hidden_public_proj_count'] + 1
+        assert after_hidden_public['hidden_public_sample_count'] == before['hidden_public_sample_count'] + 2
 
         edit_proj_privacy(project, 'hidden_public', 'private')
-        assert _latest_subset() == after_hidden_public
+        assert _latest_subset() == after_private_create
 
         edit_proj_privacy(project, 'private', 'public')
         edit_proj_privacy(project, 'public', 'private')
@@ -200,6 +196,156 @@ def test_visibility_transitions_move_stats_between_public_and_private_buckets():
 
 @pytest.mark.slow
 @pytest.mark.integration
+def test_regenerate_counts_unlisted_projects_in_their_own_bucket():
+    """Unlisted (hidden_public) projects get their own mutually exclusive bucket: they must not
+    land in the public or private counts, which is what the admin stats table columns rely on."""
+    from caper.utils import collection_handle
+    from caper.site_stats import get_latest_site_statistics, regenerate_site_statistics
+
+    start_id = get_latest_site_statistics()['_id']
+    unlisted = _project([('ecDNA', 'brain'), ('BFB', 'lung')], visibility='hidden_public')
+
+    try:
+        before = _stat_subset(regenerate_site_statistics())
+        collection_handle.insert_one(unlisted)
+        after = _stat_subset(regenerate_site_statistics())
+
+        assert after['hidden_public_proj_count'] == before['hidden_public_proj_count'] + 1
+        assert after['hidden_public_sample_count'] == before['hidden_public_sample_count'] + 2
+        assert _count(after, 'hidden_public_amplicon_classifications', 'ecDNA') == (
+            _count(before, 'hidden_public_amplicon_classifications', 'ecDNA') + 1
+        )
+        assert _bucket_count(after, 'hidden_public_tissue_of_origin_count', 'brain') == (
+            _bucket_count(before, 'hidden_public_tissue_of_origin_count', 'brain') + 1
+        )
+
+        # The other two buckets must not see it at all.
+        for key in ('public_proj_count', 'public_sample_count',
+                    'all_private_proj_count', 'all_private_sample_count',
+                    'public_amplicon_classifications_count', 'all_private_amplicon_classifications_count',
+                    'public_tissue_of_origin_count', 'all_private_tissue_of_origin_count'):
+            assert after[key] == before[key]
+    finally:
+        collection_handle.delete_one({'_id': unlisted['_id']})
+        _cleanup_stats_since(start_id)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_regenerate_matches_incremental_stats_for_every_visibility():
+    """The running totals and a from-scratch regenerate must agree, whichever bucket a project
+    is in -- disagreement between them is what issue #592 reported."""
+    from caper.utils import collection_handle
+    from caper.site_stats import (
+        add_project_to_site_statistics,
+        get_latest_site_statistics,
+        regenerate_site_statistics,
+    )
+
+    start_id = get_latest_site_statistics()['_id']
+    projects = [
+        _project([('ecDNA', 'brain')], visibility='public'),
+        _project([('BFB', 'lung')], visibility='private'),
+        _project([('Virus', 'skin')], visibility='hidden_public'),
+    ]
+
+    try:
+        regenerate_site_statistics()
+        for project in projects:
+            collection_handle.insert_one(project)
+            add_project_to_site_statistics(project, project['private'])
+        incremental = _latest_subset()
+
+        # Both sides are read back through get_latest_site_statistics(), which is what the pages
+        # render: it derives the otherfscna display key that regenerate does not store itself.
+        regenerate_site_statistics()
+        assert _latest_subset() == incremental
+    finally:
+        for project in projects:
+            collection_handle.delete_one({'_id': project['_id']})
+        _cleanup_stats_since(start_id)
+
+
+def _upload_placeholder(visibility='public', failed=False):
+    """A project document as views.py leaves it when an upload is still aggregating
+    (aggregation_in_progress) or aggregation failed. Both stay current/undeleted."""
+    placeholder = {
+        '_id': ObjectId(),
+        'project_name': 'StatsGhostProject (Processing...)',
+        'original_project_name': 'StatsGhostProject',
+        'private': visibility,
+        'sample_count': 0,
+        'runs': {},
+        'delete': False,
+        'current': True,
+    }
+    if failed:
+        placeholder.update({'FINISHED?': True, 'aggregation_failed': True})
+    else:
+        placeholder.update({'FINISHED?': False, 'aggregation_in_progress': True})
+    return placeholder
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.parametrize('visibility,proj_key', [
+    ('public', 'public_proj_count'),
+    ('private', 'all_private_proj_count'),
+])
+@pytest.mark.parametrize('failed', [False, True], ids=['in_progress', 'aggregation_failed'])
+def test_regenerate_excludes_failed_and_in_progress_uploads(visibility, proj_key, failed):
+    """Regression test for issue #592.
+
+    Upload placeholders and failed aggregations are never added by the incremental
+    stats functions, so a regenerate must not count them either. Because they carry
+    runs={}, counting one inflated the project count by 1 while leaving the sample
+    count untouched -- the symptom originally reported against unlisted projects.
+    """
+    from caper.utils import collection_handle
+    from caper.site_stats import get_latest_site_statistics, regenerate_site_statistics
+
+    start_id = get_latest_site_statistics()['_id']
+    ghost = _upload_placeholder(visibility=visibility, failed=failed)
+
+    try:
+        before = _stat_subset(regenerate_site_statistics())
+        collection_handle.insert_one(ghost)
+        after = _stat_subset(regenerate_site_statistics())
+
+        assert after[proj_key] == before[proj_key]
+        assert after == before
+    finally:
+        collection_handle.delete_one({'_id': ghost['_id']})
+        _cleanup_stats_since(start_id)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_regenerate_still_counts_projects_extracting_files():
+    """A real project is inserted with FINISHED? False while its files extract, and the
+    incremental path counts it at insert time. Regeneration must agree, so the
+    placeholder filter must not key off FINISHED?."""
+    from caper.utils import collection_handle
+    from caper.site_stats import get_latest_site_statistics, regenerate_site_statistics
+
+    start_id = get_latest_site_statistics()['_id']
+    extracting = _project([('ecDNA', 'brain')], visibility='public')
+    extracting['FINISHED?'] = False
+
+    try:
+        before = _stat_subset(regenerate_site_statistics())
+        collection_handle.insert_one(extracting)
+        after = _stat_subset(regenerate_site_statistics())
+
+        assert after['public_proj_count'] == before['public_proj_count'] + 1
+        assert after['public_sample_count'] == before['public_sample_count'] + 1
+    finally:
+        collection_handle.delete_one({'_id': extracting['_id']})
+        _cleanup_stats_since(start_id)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
 def test_replacement_updates_sample_counts_without_double_counting_project():
     from caper.site_stats import (
         add_project_to_site_statistics,
@@ -220,13 +366,13 @@ def test_replacement_updates_sample_counts_without_double_counting_project():
     ], visibility='private')['runs']
 
     try:
-        add_project_to_site_statistics(old_project, is_private=True)
+        add_project_to_site_statistics(old_project, 'private')
         after_create = _latest_subset()
         assert after_create['all_private_proj_count'] == before['all_private_proj_count'] + 1
         assert after_create['all_private_sample_count'] == before['all_private_sample_count'] + 1
 
-        delete_project_from_site_statistics(old_project, is_private=True)
-        add_project_to_site_statistics(new_project, is_private=True)
+        delete_project_from_site_statistics(old_project, 'private')
+        add_project_to_site_statistics(new_project, 'private')
         after_replace = _latest_subset()
 
         assert after_replace['all_private_proj_count'] == before['all_private_proj_count'] + 1
@@ -258,11 +404,11 @@ def test_failed_replacement_rollback_restores_original_site_stats():
     ], visibility='public')
 
     try:
-        add_project_to_site_statistics(project, is_private=False)
+        add_project_to_site_statistics(project, 'public')
         after_create = _latest_subset()
 
-        delete_project_from_site_statistics(project, is_private=False)
-        add_project_to_site_statistics(project, is_private=False)
+        delete_project_from_site_statistics(project, 'public')
+        add_project_to_site_statistics(project, 'public')
 
         assert _latest_subset() == after_create
     finally:

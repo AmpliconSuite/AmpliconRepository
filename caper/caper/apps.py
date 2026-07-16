@@ -22,6 +22,8 @@ class CaperConfig(AppConfig):
         if CaperConfig._ready_has_run:
             return
         CaperConfig._ready_has_run = True
+
+        from . import account_signals  # noqa: F401
         
         # Ensure MongoDB indexes exist for optimal query performance
         try:
@@ -272,4 +274,3 @@ class CaperConfig(AppConfig):
             logger.error("AWS CLI not found. Please ensure AWS CLI is installed and in PATH")
         except Exception as e:
             logger.error(f"Unexpected error during S3 sync: {str(e)}", exc_info=True)
-
