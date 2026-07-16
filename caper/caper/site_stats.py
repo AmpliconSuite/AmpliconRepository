@@ -58,12 +58,25 @@ def get_date():
     return date
 
 
+def _bucket_stat_keys():
+    """Yield (key, default value) for every statistics key each bucket owns."""
+    for prefix in BUCKET_PREFIXES.values():
+        for suffix, default in BUCKET_STAT_DEFAULTS.items():
+            yield f'{prefix}_{suffix}', default() if callable(default) else default
+
+
 def get_latest_site_statistics():
     # check to auto create the stats if needed
     if site_statistics_handle.count_documents({})==0:
         regenerate_site_statistics()
 
     latest = site_statistics_handle.find().sort('_id', -1).limit(1).next()
+    # Documents written before a bucket existed lack its keys entirely, and a missing key reaches
+    # templates as '' rather than as a number or dict. Fill the defaults in so every reader sees
+    # the full set until the next regeneration writes them for real.
+    for key, default in _bucket_stat_keys():
+        latest.setdefault(key, default)
+
     # for public display we want to collect these 3, this is a backstop for backwards compatibility
     linear = latest['public_amplicon_classifications_count'].get('Linear_amplification',0)
     # unclassified = latest['public_amplicon_classifications_count'].get('Unclassified', 0)
@@ -152,12 +165,7 @@ def _carry_forward_buckets(current_stats):
     Statistics are stored as full snapshots rather than deltas, so the buckets that aren't
     changing still have to be written out or their totals would be lost.
     """
-    carried = {}
-    for prefix in BUCKET_PREFIXES.values():
-        for suffix, default in BUCKET_STAT_DEFAULTS.items():
-            key = f'{prefix}_{suffix}'
-            carried[key] = current_stats.get(key, default() if callable(default) else default)
-    return carried
+    return {key: current_stats.get(key, default) for key, default in _bucket_stat_keys()}
 
 
 def _apply_project_to_site_statistics(project, visibility, sign):

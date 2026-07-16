@@ -1,4 +1,5 @@
 {
+    "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
     "properties": {
         "creator": {
@@ -21,7 +22,13 @@
             "type": "string"
         },
         "private": {
-            "type": "boolean"
+            "type": "string",
+            "enum": [
+                "private",
+                "public",
+                "hidden_public"
+            ],
+            "default": "private"
         },
         "delete": {
             "type": "boolean"
@@ -56,7 +63,14 @@
                             "AA_PDF_file": {},
                             "AA_PNG_file": {},
                             "AA_amplicon_number": {
-                                "type": ["integer", "null"]
+                                "oneOf": [
+                                    {
+                                        "type": ["integer", "null"]
+                                    },
+                                    {
+                                        "const": "NA"
+                                    }
+                                ]
                             },
                             "AA_cycles_file": {},
                             "AA_directory": {},
@@ -72,23 +86,51 @@
                             },
                             "CNV_BED_file": {},
                             "Captured_interval_length": {
-                                "type": ["number", "null"]
+                                "oneOf": [
+                                    {
+                                        "type": ["number", "null"]
+                                    },
+                                    {
+                                        "const": "NA"
+                                    }
+                                ]
                             },
                             "Classification": {
                                 "type": ["string", "null"]
                             },
                             "Complexity_score": {
-                                "type": ["number", "null"]
+                                "oneOf": [
+                                    {
+                                        "type": ["number", "null"]
+                                    },
+                                    {
+                                        "const": "NA"
+                                    }
+                                ]
                             },
                             "Feature_BED_file": {},
                             "Feature_ID": {
                                 "type": "string"
                             },
                             "Feature_maximum_copy_number": {
-                                "type": ["number", "null"]
+                                "oneOf": [
+                                    {
+                                        "type": ["number", "null"]
+                                    },
+                                    {
+                                        "const": "NA"
+                                    }
+                                ]
                             },
                             "Feature_median_copy_number": {
-                                "type": ["number", "null"]
+                                "oneOf": [
+                                    {
+                                        "type": ["number", "null"]
+                                    },
+                                    {
+                                        "const": "NA"
+                                    }
+                                ]
                             },
                             "Filter_flag": {
                                 "type": ["string", "null"]
@@ -108,9 +150,7 @@
                             "Reference_version": {
                                 "type": "string"
                             },
-                            "Run_metadata_JSON": {
-                                "type": "string"
-                            },
+                            "Run_metadata_JSON": {},
                             "Sample_metadata_JSON": {},
                             "Sample_name": {
                                 "type": "string"

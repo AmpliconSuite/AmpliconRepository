@@ -413,3 +413,74 @@ def test_failed_replacement_rollback_restores_original_site_stats():
         assert _latest_subset() == after_create
     finally:
         _cleanup_stats_since(start_id)
+
+
+def _legacy_stats_document():
+    """A statistics snapshot in the shape written before the unlisted bucket existed."""
+    return {
+        'public_proj_count': 2,
+        'public_sample_count': 5,
+        'public_coral_project_count': 0,
+        'public_coral_sample_count': 0,
+        'public_amplicon_classifications_count': {'ecDNA': 3},
+        'public_tissue_of_origin_count': {'lung': 2},
+        'all_private_proj_count': 1,
+        'all_private_sample_count': 4,
+        'all_private_coral_project_count': 0,
+        'all_private_coral_sample_count': 0,
+        'all_private_amplicon_classifications_count': {'BFB': 1},
+        'all_private_tissue_of_origin_count': {'brain': 1},
+        'date': '2026-01-01T00:00:00.000000',
+    }
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_latest_statistics_fills_in_buckets_missing_from_older_documents():
+    from caper.site_stats import get_latest_site_statistics, site_statistics_handle
+
+    start_id = get_latest_site_statistics()['_id']
+    try:
+        site_statistics_handle.insert_one(_legacy_stats_document())
+        latest = get_latest_site_statistics()
+
+        assert latest['hidden_public_proj_count'] == 0
+        assert latest['hidden_public_sample_count'] == 0
+        assert latest['hidden_public_coral_project_count'] == 0
+        assert latest['hidden_public_coral_sample_count'] == 0
+        assert latest['hidden_public_amplicon_classifications_count'] == {}
+        assert latest['hidden_public_tissue_of_origin_count'] == {}
+        # buckets the older document did carry stay exactly as stored
+        assert latest['public_proj_count'] == 2
+        assert latest['all_private_tissue_of_origin_count'] == {'brain': 1}
+    finally:
+        _cleanup_stats_since(start_id)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_admin_stats_table_renders_from_a_document_written_before_the_unlisted_bucket(test_user):
+    """A missing bucket key reaches a template as '', not as a number or dict.
+
+    That took the whole admin stats page down with an AttributeError from the get_item filter
+    on every server whose newest statistics document predated the unlisted bucket.
+    """
+    from django.template.loader import render_to_string
+    from django.test import RequestFactory
+
+    from caper.site_stats import get_latest_site_statistics, site_statistics_handle
+
+    # the page's own context processors need a request; the stats table itself only reads site_stats
+    request = RequestFactory().get('/admin-stats/')
+    request.user = test_user
+
+    start_id = get_latest_site_statistics()['_id']
+    try:
+        site_statistics_handle.insert_one(_legacy_stats_document())
+        html = render_to_string('pages/admin_stats.html',
+                                {'site_stats': get_latest_site_statistics()},
+                                request=request)
+
+        assert 'Unlisted public' in html
+    finally:
+        _cleanup_stats_since(start_id)
