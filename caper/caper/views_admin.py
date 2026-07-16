@@ -716,18 +716,17 @@ def sizeof_fmt(num, suffix="B"):
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def fix_schema(request):
-    # Run the schema validation directly
+    apply_changes = request.POST.get("action") == "apply"
     try:
         from caper.schema_validate import run_fix_schema
 
-        # Get the schema path relative to the project root
-        schema_path = "schema/schema.json"
+        schema_path = os.path.join(settings.BASE_DIR, "schema", "schema.json")
 
-        # Run the validation and get the report
         fix_schema_report = run_fix_schema(
             db_host=None,  # Use the existing connection from utils
             collection_name="projects",
-            schema_path=schema_path
+            schema_path=schema_path,
+            apply_changes=apply_changes,
         )
 
     except Exception as e:
@@ -735,6 +734,8 @@ def fix_schema(request):
 
     return render(request, "pages/admin_fix_schema_report.html", {
         'fix_schema_report': fix_schema_report,
+        'can_apply': not apply_changes,
+        'repair_applied': apply_changes,
     })
 
 
@@ -800,8 +801,7 @@ def data_qc(request):
     try:
         from caper.schema_validate import run_validation
 
-        # Get the schema path relative to the project root
-        schema_path = "schema/schema.json"
+        schema_path = os.path.join(settings.BASE_DIR, "schema", "schema.json")
 
         # Run the validation and get the report
         schema_report = run_validation(

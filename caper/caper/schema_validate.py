@@ -6,17 +6,17 @@ import os
 import sys
 import re
 import copy
-from jsonschema import validate, ValidationError
+from jsonschema import Draft7Validator
 from typing import Any, Dict, List, Optional, Tuple
 
 # Import the database utilities from utils module
 # Adjust the import based on your project structure
 try:
     # When imported as a module within the same package
-    from .utils import get_db_handle, mongo_client
+    from .utils import get_db_handle, mongo_client, mongo_client_primary
 except ImportError:
     # When run as a standalone script
-    from utils import get_db_handle, mongo_client
+    from utils import get_db_handle, mongo_client, mongo_client_primary
 
 
 def generate_schema(data: Any) -> Dict[str, Any]:
@@ -161,11 +161,15 @@ def validate_collection(
         A tuple of (total documents, invalid documents, error count)
     """
     doc_count = 0
+    validated_count = 0
+    skipped_deleted_count = 0
     invalid_count = 0
     error_count = 0
 
     try:
         collection = db_handle[collection_name]
+        Draft7Validator.check_schema(schema)
+        validator = Draft7Validator(schema)
         print(f"Using database: '{db_handle.name}', collection: '{collection_name}'")
 
         # Fetch and Validate Documents
@@ -177,7 +181,11 @@ def validate_collection(
 
             # Skip deleted projects
             deleted = doc.get('delete', False)
-            if deleted: continue
+            if deleted:
+                skipped_deleted_count += 1
+                continue
+
+            validated_count += 1
 
             # --- Identify the document ---
             # Use 'project_name' or 'name' field if available, otherwise use _id
@@ -193,18 +201,29 @@ def validate_collection(
 
             # --- Perform Validation ---
             try:
-                validate(instance=doc_to_validate, schema=schema)
-                print(f"- '{identifier}' ({creator}): VALID")
-            except ValidationError as e:
+                validation_errors = sorted(
+                    validator.iter_errors(doc_to_validate),
+                    key=lambda error: (
+                        tuple(str(part) for part in error.absolute_path),
+                        error.message,
+                    ),
+                )
+                if not validation_errors:
+                    print(f"- '{identifier}' ({creator}): VALID")
+                    continue
+
                 invalid_count += 1
                 print(f"- '{identifier}' ({creator}): NOT VALID")
-                # Provide specific error details
-                print(f"  Reason: {e.message}")  # Primary error message
-                if e.path:
-                    # e.path is a deque, convert to list for cleaner printing
-                    print(f"  Path: /{' / '.join(map(str, e.path))}")
-                if e.validator:
-                    print(f"  Schema Keyword: '{e.validator}'")
+                for error_number, error in enumerate(validation_errors, start=1):
+                    print(f"  Error {error_number}:")
+                    print(f"    Reason: {error.message}")
+                    if error.absolute_path:
+                        path = "/".join(map(str, error.absolute_path))
+                        print(f"    Path: /{path}")
+                    else:
+                        print("    Path: /")
+                    if error.validator:
+                        print(f"    Schema Keyword: '{error.validator}'")
             except Exception as e:  # Catch unexpected errors during validation for *this* doc
                 error_count += 1
                 print(f"- '{identifier}': ERROR during validation")
@@ -217,7 +236,9 @@ def validate_collection(
         # Print Summary
         print("\n--- Validation Summary ---")
         print(f"Total documents processed: {doc_count}")
-        print(f"Valid documents: {doc_count - invalid_count - error_count}")
+        print(f"Documents validated: {validated_count}")
+        print(f"Deleted documents skipped: {skipped_deleted_count}")
+        print(f"Valid documents: {validated_count - invalid_count - error_count}")
         print(f"Invalid documents: {invalid_count}")
         if error_count > 0:
             print(f"Errors during processing: {error_count}")
@@ -302,11 +323,14 @@ def run_validation(
 def get_default_value(prop_schema):
     """
     Determines the default value for a field based on its JSON schema definition.
-    Prefers 'null' if allowed, otherwise uses type-specific defaults like empty string,
-    list, object, 0, or False.
+    Uses an explicit schema ``default`` first. Otherwise it prefers ``null`` if
+    allowed, then falls back to type-specific empty values.
     """
     if not isinstance(prop_schema, dict):
         return None  # Fallback for malformed or non-existent schema part
+
+    if "default" in prop_schema:
+        return copy.deepcopy(prop_schema["default"])
 
     schema_type = prop_schema.get("type")
 
@@ -345,6 +369,33 @@ def get_default_value(prop_schema):
     return None  # Default for unspecified types (e.g., "tarfile": {}) or unhandled types
 
 
+def _format_change_path(path_parts):
+    """Format dictionary/list path parts for the human-readable repair report."""
+    formatted = ""
+    for part in path_parts:
+        if isinstance(part, int):
+            formatted += f"[{part}]"
+        else:
+            if formatted:
+                formatted += "."
+            formatted += str(part)
+    return formatted
+
+
+def _mongo_change_path(path_parts):
+    """Convert dictionary/list path parts to MongoDB dotted update syntax."""
+    return ".".join(str(part) for part in path_parts)
+
+
+def _record_change(changes_log, path_parts, action, value):
+    changes_log.append({
+        "path": _format_change_path(path_parts),
+        "path_parts": tuple(path_parts),
+        "action": action,
+        "value_set": copy.deepcopy(value),
+    })
+
+
 def _add_missing_fields_recursive(document_part, schema_node, changes_log, current_path_parts):
     """
     Recursively adds missing required fields to the document_part based on schema_node.
@@ -353,7 +404,7 @@ def _add_missing_fields_recursive(document_part, schema_node, changes_log, curre
     """
     made_change_at_this_level_or_below = False
 
-    if not isinstance(schema_node, dict):
+    if not isinstance(document_part, dict) or not isinstance(schema_node, dict):
         return False
 
     # 1. Add missing required fields defined in the current schema_node
@@ -370,12 +421,12 @@ def _add_missing_fields_recursive(document_part, schema_node, changes_log, curre
             if req_key == "FINISHED?" and isinstance(default_val, bool):
                 document_part[req_key] = True
 
-            path_str = ".".join(current_path_parts + [req_key])
-            changes_log.append({
-                "path": path_str,
-                "action": "added_missing_required_key",
-                "value_set": copy.deepcopy(default_val)  # Log a copy of the value set
-            })
+            _record_change(
+                changes_log,
+                current_path_parts + [req_key],
+                "added_missing_required_key",
+                document_part[req_key],
+            )
             made_change_at_this_level_or_below = True
 
             # If the added field is an object, recurse to fill its required fields
@@ -415,20 +466,99 @@ def _add_missing_fields_recursive(document_part, schema_node, changes_log, curre
                 for i, item in enumerate(value):
                     if isinstance(item, dict):
                         # Path for an item in an array: e.g., parent.arrayKey[index]
-                        item_path_parts = current_path_parts + [f"{key}[{i}]"]
+                        item_path_parts = current_path_parts + [key, i]
                         if _add_missing_fields_recursive(item, item_schema_definition, changes_log, item_path_parts):
                             made_change_at_this_level_or_below = True
 
     return made_change_at_this_level_or_below
 
 
+def _normalize_legacy_visibility(document, schema, changes_log, issues_log):
+    """
+    Convert the two legacy boolean visibility values to their canonical strings.
+
+    Unknown values are deliberately left untouched: silently coercing them to
+    private would hide corrupt data from the QC report.
+    """
+    visibility_schema = schema.get("properties", {}).get("private", {})
+    allowed_values = visibility_schema.get("enum", [])
+    if "private" not in document:
+        return False
+
+    current_value = document["private"]
+    if type(current_value) is bool:
+        canonical_value = "private" if current_value else "public"
+        if canonical_value in allowed_values:
+            document["private"] = canonical_value
+            _record_change(
+                changes_log,
+                ["private"],
+                "normalized_legacy_visibility",
+                canonical_value,
+            )
+            return True
+
+    if allowed_values and current_value not in allowed_values:
+        issues_log.append({
+            "path": "private",
+            "reason": (
+                f"Unsupported visibility value {current_value!r}; "
+                "left unchanged for manual review"
+            ),
+        })
+
+    return False
+
+
+def _get_path_value(document, path_parts):
+    value = document
+    for part in path_parts:
+        value = value[part]
+    return value
+
+
+def _build_set_updates(document, changes_log):
+    """
+    Build a non-overlapping MongoDB $set document from the recorded changes.
+
+    Selecting the shortest changed paths first avoids conflicting updates such
+    as setting both ``runs`` and ``runs.sample_1.0.Feature_ID``.
+    """
+    unique_paths = sorted(
+        {tuple(change["path_parts"]) for change in changes_log},
+        key=lambda path: (len(path), tuple(str(part) for part in path)),
+    )
+    selected_paths = []
+    for path in unique_paths:
+        if any(path[:len(parent)] == parent for parent in selected_paths):
+            continue
+        selected_paths.append(path)
+
+    return {
+        _mongo_change_path(path): copy.deepcopy(_get_path_value(document, path))
+        for path in selected_paths
+    }
+
+
+def _validation_error_summary(error):
+    path = "/" + "/".join(map(str, error.absolute_path))
+    return {
+        "path": path,
+        "reason": error.message,
+        "validator": error.validator,
+    }
+
+
 def run_fix_schema(
         db_host: Optional[str] = None,
         db_name: Optional[str] = None,
         collection_name: str = "projects",
-        schema_path: str = "schema/schema.json"
+        schema_path: str = "schema/schema.json",
+        apply_changes: bool = False,
 ) -> str:
     schema = load_schema(schema_path)
+    Draft7Validator.check_schema(schema)
+    validator = Draft7Validator(schema)
     if db_name is None:
         db_name = os.environ.get("DB_NAME", "caper")
 
@@ -437,16 +567,20 @@ def run_fix_schema(
         db_handle, client = get_db_handle(db_name, db_host)
         print(f"Connected to MongoDB at '{db_host}', database '{db_name}'")
     else:
-        # Use the existing connection from utils, but with the specified db_name
-        db_handle = mongo_client[db_name]
-        client = mongo_client
-        print(f"Using existing MongoDB connection from utils, database '{db_name}'")
+        # Repairs must read from and write to the primary so a preview/apply
+        # cycle never plans changes from a stale secondary snapshot.
+        db_handle = mongo_client_primary[db_name]
+        client = mongo_client_primary
+        print(f"Using primary MongoDB connection from utils, database '{db_name}'")
     db = client[db_name]
     collection = db[collection_name]
 
     overall_report = {}
     documents_processed = 0
+    documents_skipped = 0
+    documents_with_repairs = 0
     documents_updated = 0
+    documents_with_unresolved_errors = 0
 
     for doc in collection.find():
         documents_processed += 1
@@ -454,28 +588,65 @@ def run_fix_schema(
 
         # Skip deleted projects
         deleted = doc.get('delete', False)
-        if deleted: continue
+        if deleted:
+            documents_skipped += 1
+            continue
 
         current_doc_changes_log = []
-        # Pass the document (doc) itself, which will be modified in-place.
-        made_changes_to_this_doc = _add_missing_fields_recursive(doc, schema, current_doc_changes_log, [])
+        current_doc_issues_log = []
+        made_changes_to_this_doc = _normalize_legacy_visibility(
+            doc,
+            schema,
+            current_doc_changes_log,
+            current_doc_issues_log,
+        )
+        if _add_missing_fields_recursive(doc, schema, current_doc_changes_log, []):
+            made_changes_to_this_doc = True
+
+        remaining_errors = sorted(
+            validator.iter_errors({
+                key: value for key, value in doc.items()
+                if key != "_id"
+            }),
+            key=lambda error: (
+                tuple(str(part) for part in error.absolute_path),
+                error.message,
+            ),
+        )
+        if remaining_errors or current_doc_issues_log:
+            documents_with_unresolved_errors += 1
 
         if made_changes_to_this_doc:
-            documents_updated += 1
-            # Replace the entire document with its modified version.
-            # 'doc' has been modified in-place and still contains its '_id'.
-            collection.replace_one({"_id": doc["_id"]}, doc)
-            overall_report[doc_id_str] = current_doc_changes_log
-            # print(f"  Updated document ID: {doc_id_str}") # Verbose logging
+            documents_with_repairs += 1
+            if apply_changes:
+                set_updates = _build_set_updates(doc, current_doc_changes_log)
+                if set_updates:
+                    collection.update_one(
+                        {"_id": doc["_id"]},
+                        {"$set": set_updates},
+                    )
+                    documents_updated += 1
 
-    fix_schema_report = ''
-    fix_schema_report += "\n--- Report of Changes ---"
+        if made_changes_to_this_doc or current_doc_issues_log or remaining_errors:
+            overall_report[doc_id_str] = {
+                "changes": current_doc_changes_log,
+                "issues": current_doc_issues_log,
+                "remaining_errors": [
+                    _validation_error_summary(error)
+                    for error in remaining_errors
+                ],
+            }
+
+    mode = "APPLY" if apply_changes else "DRY RUN"
+    fix_schema_report = f"\n--- Schema Repair Report ({mode}) ---"
+    if not apply_changes:
+        fix_schema_report += "\nPreview only: no MongoDB documents were modified."
     if not overall_report:
-        fix_schema_report += "No documents were modified."
+        fix_schema_report += "\nNo repairable schema changes or visibility issues were found."
     else:
-        for doc_id, changes in overall_report.items():
+        for doc_id, document_report in overall_report.items():
             fix_schema_report += f"\nDocument ID: {doc_id}"
-            for change in changes:
+            for change in document_report["changes"]:
                 path = change['path']
                 action = change['action']
                 value = change['value_set']
@@ -483,9 +654,31 @@ def run_fix_schema(
                 value_str = json.dumps(value)  # Use json.dumps for faithful representation
                 if len(value_str) > 70:
                     value_str = value_str[:67] + "..."
-                fix_schema_report += f"  - Path: '{path}', Action: {action}, Value Set: {value_str}"
+                fix_schema_report += (
+                    f"\n  - Path: '{path}', Action: {action}, "
+                    f"Value Set: {value_str}"
+                )
+            for issue in document_report["issues"]:
+                fix_schema_report += (
+                    f"\n  - Path: '{issue['path']}', "
+                    f"Manual review required: {issue['reason']}"
+                )
+            if document_report["remaining_errors"]:
+                fix_schema_report += "\n  Remaining validation errors after proposed repairs:"
+                for error in document_report["remaining_errors"]:
+                    fix_schema_report += (
+                        f"\n    - Path: {error['path']}, "
+                        f"Reason: {error['reason']}"
+                    )
 
-    fix_schema_report += f"\nSummary: Processed {documents_processed} documents. Updated {documents_updated} documents."
+    fix_schema_report += (
+        f"\nSummary:"
+        f"\n  Documents processed: {documents_processed}"
+        f"\n  Deleted documents skipped: {documents_skipped}"
+        f"\n  Documents with repairable changes: {documents_with_repairs}"
+        f"\n  Updated documents: {documents_updated}"
+        f"\n  Documents requiring further review: {documents_with_unresolved_errors}"
+    )
     return fix_schema_report
 
 

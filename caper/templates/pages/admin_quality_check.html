@@ -193,7 +193,9 @@ collection_handle.update_one(
             <pre>{{ schema_report }}</pre>
             <hr><form method="POST" action="{% url 'fix_schema' %}">
                 {% csrf_token %}
-                <input type="submit" value="Fix Missing Keys" class="btn btn-warning">
+                <button type="submit" name="action" value="preview" class="btn btn-warning">
+                    Preview Schema Repairs
+                </button>
             </form>
         </div>
     </div>

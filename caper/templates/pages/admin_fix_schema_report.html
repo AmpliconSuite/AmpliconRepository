@@ -15,9 +15,26 @@
 <div class="row">
     <div class="col-md-10">
         <div>
-            <h1 style="padding-top: 50px">Fix Schema Report</h1>
+            <h1 style="padding-top: 50px">
+                {% if repair_applied %}Applied Schema Repairs{% else %}Schema Repair Preview{% endif %}
+            </h1>
             <hr>
             <pre>{{ fix_schema_report }}</pre>
+            {% if can_apply %}
+                <p>
+                    Review the proposed changes above. Applying repairs will normalize legacy
+                    visibility booleans and add missing required fields.
+                </p>
+                <form method="POST" action="{% url 'fix_schema' %}">
+                    {% csrf_token %}
+                    <button type="submit" name="action" value="apply" class="btn btn-danger">
+                        Apply Schema Repairs
+                    </button>
+                </form>
+            {% endif %}
+            <p style="margin-top: 20px">
+                <a href="{% url 'data_qc' %}" class="btn btn-secondary">Back to Data Quality Check</a>
+            </p>
         </div>
     </div>
 
