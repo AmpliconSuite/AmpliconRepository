@@ -158,6 +158,13 @@ AUTHENTICATION_BACKENDS = [
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
 
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 8},
+    },
+]
+
 # turn off email authentication when a user registers an account
 ACCOUNT_EMAIL_VERIFICATION = 'none'
 ACCOUNT_EMAIL_REQUIRED = False
@@ -262,7 +269,10 @@ SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
     'https://www.googleapis.com/auth/userinfo.profile'
 ]
 
-ACCOUNT_FORMS = {'signup': 'caper.forms.MySignUpForm'}
+ACCOUNT_FORMS = {
+    'signup': 'caper.forms.MySignUpForm',
+    'reset_password': 'caper.forms.LocalAccountResetPasswordForm',
+}
 
 #############
 # DATABASES #
@@ -505,7 +515,10 @@ if os.path.exists(f):
 PROJECT_DATA_URL='/project_data/'
 PROJECT_DATA_ROOT=os.path.join(BASE_DIR,'project_data')
 
-ACCOUNT_FORMS = {'signup': 'caper.forms.MySignUpForm'}
+ACCOUNT_FORMS = {
+    'signup': 'caper.forms.MySignUpForm',
+    'reset_password': 'caper.forms.LocalAccountResetPasswordForm',
+}
 SOCIALACCOUNT_FORMS =  {'signup': 'caper.forms.MySocialSignUpForm'}
 SOCIALACCOUNT_LOGIN_ON_GET = True
 
@@ -542,4 +555,3 @@ with open("version.txt", 'r') as version_file:
             if "version" == key.lower():
                 SERVER_VERSION = value
                 break
-

@@ -4,6 +4,45 @@ from .utils import get_collection_handle, collection_handle, db_handle_primary, 
 
 site_statistics_handle = get_collection_handle(db_handle_primary, 'site_statistics')
 
+# Upload placeholders (runs={}, sample_count=0) and projects whose aggregation failed stay
+# current/undeleted so their owner can still reach them, but the incremental add/delete
+# functions never counted them. Regeneration has to skip them too, or it reports projects the
+# running totals never included. Deliberately not filtering on 'FINISHED?': that is False on
+# real projects while their files extract, and those are counted incrementally.
+COMPLETED_PROJECT_FILTER = {
+    'delete': False,
+    'current': True,
+    'aggregation_in_progress': {'$ne': True},
+    'aggregation_failed': {'$ne': True},
+}
+
+# Each visibility owns a set of site_statistics keys, prefixed as below. The three buckets are
+# mutually exclusive and sum to the site total: unlisted ('hidden_public') projects are counted
+# on their own rather than folded in with private ones, even though access control still treats
+# them as private (see is_project_private).
+BUCKET_PREFIXES = {
+    'public': 'public',
+    'private': 'all_private',
+    'hidden_public': 'hidden_public',
+}
+
+# Values the 'private' field can hold for each bucket, including the legacy booleans that
+# predate the string visibilities.
+BUCKET_QUERY_VALUES = {
+    'public': [False, 'public'],
+    'private': [True, 'private'],
+    'hidden_public': ['hidden_public'],
+}
+
+BUCKET_STAT_DEFAULTS = {
+    'proj_count': 0,
+    'sample_count': 0,
+    'coral_project_count': 0,
+    'coral_sample_count': 0,
+    'amplicon_classifications_count': dict,
+    'tissue_of_origin_count': dict,
+}
+
 
 def is_coral_project(project):
     """Return whether a project contains results reconstructed with CoRAL."""
@@ -62,245 +101,135 @@ def subtract_amplicon_counts_by_classification(class_keys, class_values, sum_hol
     return sum_holder
 
 
+def _sum_projects_into_bucket(projects, prefix):
+    """Total up every project in one visibility bucket into that bucket's statistics keys."""
+    amplicon_counts = dict()
+    tissue_counts = dict()
+    proj_count = 0
+    sample_count = 0
+    coral_project_count = 0
+    coral_sample_count = 0
+
+    for proj in projects:
+        class_keys, proj_amplicon_counts = get_project_amplicon_counts(proj)
+        sum_amplicon_counts_by_classification(class_keys, proj_amplicon_counts, amplicon_counts)
+        sum_tissue_of_origin_counts(get_project_tissue_of_origin_counts(proj), tissue_counts)
+        proj_count += 1
+        sample_count += len(proj['runs'])
+        if is_coral_project(proj):
+            coral_project_count += 1
+            coral_sample_count += len(proj['runs'])
+
+    return {
+        f'{prefix}_proj_count': proj_count,
+        f'{prefix}_sample_count': sample_count,
+        f'{prefix}_coral_project_count': coral_project_count,
+        f'{prefix}_coral_sample_count': coral_sample_count,
+        f'{prefix}_amplicon_classifications_count': amplicon_counts,
+        f'{prefix}_tissue_of_origin_count': tissue_counts,
+    }
+
+
 def regenerate_site_statistics():
-    pub_amplicon_counts = dict()
-    priv_amplicon_counts = dict()
-    pub_tissue_counts = dict()
-    priv_tissue_counts = dict()
-
-    # Get all private projects (including hidden_public which are treated as private)
-    all_private_proj_count = 0
-    all_private_sample_count = 0
-    all_private_coral_project_count = 0
-    all_private_coral_sample_count = 0
-    all_private_projects = list(collection_handle.find({
-        'private': {'$in': [True, 'private', 'hidden_public']},
-        'delete': False,
-        'current': True
-    }))
-    for proj in all_private_projects:
-        class_keys, amplicon_counts = get_project_amplicon_counts(proj)
-        sum_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts)
-        tissue_counts = get_project_tissue_of_origin_counts(proj)
-        sum_tissue_of_origin_counts(tissue_counts, priv_tissue_counts)
-        all_private_proj_count = all_private_proj_count + 1
-        all_private_sample_count = all_private_sample_count + len(proj['runs'])
-        if is_coral_project(proj):
-            all_private_coral_project_count += 1
-            all_private_coral_sample_count += len(proj['runs'])
-    # end private stats
-
-    # Get all public projects
-    public_proj_count = 0
-    public_sample_count = 0
-    public_coral_project_count = 0
-    public_coral_sample_count = 0
-    public_projects = list(collection_handle.find({
-        'private': {'$in': [False, 'public']},
-        'delete': False,
-        'current': True
-    }))
-    for proj in public_projects:
-        class_keys, amplicon_counts = get_project_amplicon_counts(proj)
-        sum_amplicon_counts_by_classification(class_keys, amplicon_counts, pub_amplicon_counts)
-        tissue_counts = get_project_tissue_of_origin_counts(proj)
-        sum_tissue_of_origin_counts(tissue_counts, pub_tissue_counts)
-        public_proj_count = public_proj_count + 1
-        public_sample_count = public_sample_count + len(proj['runs'])
-        if is_coral_project(proj):
-            public_coral_project_count += 1
-            public_coral_sample_count += len(proj['runs'])
-
-    print(f"  pub amp counts is  == {pub_amplicon_counts} ")
-    print(f"  pub tissue counts is  == {pub_tissue_counts} ")
-    # make it an array of name/values so we can add to it later
     repo_stats = {}
-    repo_stats["public_proj_count"] = public_proj_count
-    repo_stats["public_sample_count"] = public_sample_count
-    repo_stats["all_private_proj_count"] = all_private_proj_count
-    repo_stats["all_private_sample_count"] = all_private_sample_count
-    repo_stats["public_coral_project_count"] = public_coral_project_count
-    repo_stats["public_coral_sample_count"] = public_coral_sample_count
-    repo_stats["all_private_coral_project_count"] = all_private_coral_project_count
-    repo_stats["all_private_coral_sample_count"] = all_private_coral_sample_count
-    repo_stats["all_private_amplicon_classifications_count"] = priv_amplicon_counts
-    repo_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
-    repo_stats["all_private_tissue_of_origin_count"] = priv_tissue_counts
-    repo_stats["public_tissue_of_origin_count"] = pub_tissue_counts
+    for visibility, prefix in BUCKET_PREFIXES.items():
+        projects = list(collection_handle.find({
+            'private': {'$in': BUCKET_QUERY_VALUES[visibility]},
+            **COMPLETED_PROJECT_FILTER
+        }))
+        repo_stats.update(_sum_projects_into_bucket(projects, prefix))
 
     repo_stats["date"] = get_date()
-    new_id = site_statistics_handle.insert_one(repo_stats)
-    #print(site_statistics_handle.count_documents({}))
-    print(f"SITE STATS REGENERATED FROM SCRATCH    {pub_amplicon_counts} ")
+    site_statistics_handle.insert_one(repo_stats)
+    print(f"SITE STATS REGENERATED FROM SCRATCH    {repo_stats['public_amplicon_classifications_count']} ")
 
     return repo_stats
 
 
-def add_project_to_site_statistics(project, is_private=False):
+def _carry_forward_buckets(current_stats):
+    """Copy every bucket's keys onto a new statistics document.
+
+    Statistics are stored as full snapshots rather than deltas, so the buckets that aren't
+    changing still have to be written out or their totals would be lost.
+    """
+    carried = {}
+    for prefix in BUCKET_PREFIXES.values():
+        for suffix, default in BUCKET_STAT_DEFAULTS.items():
+            key = f'{prefix}_{suffix}'
+            carried[key] = current_stats.get(key, default() if callable(default) else default)
+    return carried
+
+
+def _apply_project_to_site_statistics(project, visibility, sign):
+    """Add (sign=1) or remove (sign=-1) one project's contribution to its visibility bucket."""
+    prefix = BUCKET_PREFIXES[normalize_visibility_field(visibility)]
+    updated_stats = _carry_forward_buckets(get_latest_site_statistics())
+    sample_count = len(project.get('runs', {}))
+
+    updated_stats[f'{prefix}_proj_count'] += sign
+    updated_stats[f'{prefix}_sample_count'] += sign * sample_count
+    if is_coral_project(project):
+        updated_stats[f'{prefix}_coral_project_count'] = max(
+            0, updated_stats[f'{prefix}_coral_project_count'] + sign)
+        updated_stats[f'{prefix}_coral_sample_count'] = max(
+            0, updated_stats[f'{prefix}_coral_sample_count'] + sign * sample_count)
+
+    class_keys, amplicon_counts = get_project_amplicon_counts(project)
+    tissue_counts = get_project_tissue_of_origin_counts(project)
+    amplicon_holder = updated_stats[f'{prefix}_amplicon_classifications_count']
+    tissue_holder = updated_stats[f'{prefix}_tissue_of_origin_count']
+    if sign > 0:
+        sum_amplicon_counts_by_classification(class_keys, amplicon_counts, amplicon_holder)
+        sum_tissue_of_origin_counts(tissue_counts, tissue_holder)
+    else:
+        subtract_amplicon_counts_by_classification(class_keys, amplicon_counts, amplicon_holder)
+        subtract_tissue_of_origin_counts(tissue_counts, tissue_holder)
+
+    updated_stats["date"] = get_date()
+    site_statistics_handle.insert_one(updated_stats)
+
+
+def add_project_to_site_statistics(project, visibility='private'):
     """
     Adds a project's statistics to the site-wide statistics.
 
     Args:
         project (dict): Project dictionary
-        is_private (bool): If True, add to private stats; if False, add to public stats
+        visibility: 'public', 'private' or 'hidden_public'. Legacy booleans are accepted and
+            normalized (True -> private, False -> public), so they can never select the
+            hidden_public bucket.
     """
-    current_stats = get_latest_site_statistics()
-    updated_stats = {}
-    coral_project_delta = 1 if is_coral_project(project) else 0
-    coral_sample_delta = len(project.get('runs', {})) if coral_project_delta else 0
-
-    if is_private:
-        # Adding to private stats
-        updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"] + 1
-        updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"] + len(project['runs'])
-        updated_stats["all_private_coral_project_count"] = current_stats.get("all_private_coral_project_count", 0) + coral_project_delta
-        updated_stats["all_private_coral_sample_count"] = current_stats.get("all_private_coral_sample_count", 0) + coral_sample_delta
-
-        # Get amplicon counts for private stats
-        priv_amplicon_counts = current_stats["all_private_amplicon_classifications_count"]
-        class_keys, amplicon_counts = get_project_amplicon_counts(project)
-        sum_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts)
-        updated_stats["all_private_amplicon_classifications_count"] = priv_amplicon_counts
-
-        # Get tissue of origin counts for private stats
-        priv_tissue_counts = current_stats.get("all_private_tissue_of_origin_count", {})
-        tissue_counts = get_project_tissue_of_origin_counts(project)
-        sum_tissue_of_origin_counts(tissue_counts, priv_tissue_counts)
-        updated_stats["all_private_tissue_of_origin_count"] = priv_tissue_counts
-
-        # Public stats remain unchanged
-        updated_stats["public_proj_count"] = current_stats["public_proj_count"]
-        updated_stats["public_sample_count"] = current_stats["public_sample_count"]
-        updated_stats["public_amplicon_classifications_count"] = current_stats["public_amplicon_classifications_count"]
-        updated_stats["public_tissue_of_origin_count"] = current_stats.get("public_tissue_of_origin_count", {})
-        updated_stats["public_coral_project_count"] = current_stats.get("public_coral_project_count", 0)
-        updated_stats["public_coral_sample_count"] = current_stats.get("public_coral_sample_count", 0)
-    else:
-        # Adding to public stats
-        updated_stats["public_proj_count"] = current_stats["public_proj_count"] + 1
-        updated_stats["public_sample_count"] = current_stats["public_sample_count"] + len(project['runs'])
-        updated_stats["public_coral_project_count"] = current_stats.get("public_coral_project_count", 0) + coral_project_delta
-        updated_stats["public_coral_sample_count"] = current_stats.get("public_coral_sample_count", 0) + coral_sample_delta
-
-        # Get amplicon counts for public stats
-        pub_amplicon_counts = current_stats["public_amplicon_classifications_count"]
-        class_keys, amplicon_counts = get_project_amplicon_counts(project)
-        sum_amplicon_counts_by_classification(class_keys, amplicon_counts, pub_amplicon_counts)
-        updated_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
-
-        # Get tissue of origin counts for public stats
-        pub_tissue_counts = current_stats.get("public_tissue_of_origin_count", {})
-        tissue_counts = get_project_tissue_of_origin_counts(project)
-        sum_tissue_of_origin_counts(tissue_counts, pub_tissue_counts)
-        updated_stats["public_tissue_of_origin_count"] = pub_tissue_counts
-
-        # Private stats remain unchanged
-        updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"]
-        updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"]
-        updated_stats["all_private_amplicon_classifications_count"] = current_stats[
-            "all_private_amplicon_classifications_count"]
-        updated_stats["all_private_tissue_of_origin_count"] = current_stats.get("all_private_tissue_of_origin_count", {})
-        updated_stats["all_private_coral_project_count"] = current_stats.get("all_private_coral_project_count", 0)
-        updated_stats["all_private_coral_sample_count"] = current_stats.get("all_private_coral_sample_count", 0)
-
-    updated_stats["date"] = get_date()
-    new_id = site_statistics_handle.insert_one(updated_stats)
+    _apply_project_to_site_statistics(project, visibility, sign=1)
 
 
-def delete_project_from_site_statistics(project, is_private):
+def delete_project_from_site_statistics(project, visibility='private'):
     """
     Removes a project's statistics from the site-wide statistics.
 
     Args:
         project (dict): Project dictionary
-        is_private (bool): If True, remove from private stats; if False, remove from public stats
+        visibility: 'public', 'private' or 'hidden_public'. Legacy booleans are accepted and
+            normalized (True -> private, False -> public), so they can never select the
+            hidden_public bucket.
     """
-    current_stats = get_latest_site_statistics()
-    updated_stats = {}
-    coral_project_delta = 1 if is_coral_project(project) else 0
-    coral_sample_delta = len(project.get('runs', {})) if coral_project_delta else 0
-
-    if is_private:
-        # Removing from private stats
-        updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"] - 1
-        updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"] - len(project['runs'])
-        updated_stats["all_private_coral_project_count"] = max(0, current_stats.get("all_private_coral_project_count", 0) - coral_project_delta)
-        updated_stats["all_private_coral_sample_count"] = max(0, current_stats.get("all_private_coral_sample_count", 0) - coral_sample_delta)
-
-        # Get amplicon counts to subtract from private stats
-        priv_amplicon_counts = current_stats["all_private_amplicon_classifications_count"]
-        class_keys, amplicon_counts = get_project_amplicon_counts(project)
-        subtract_amplicon_counts_by_classification(class_keys, amplicon_counts, priv_amplicon_counts)
-        updated_stats["all_private_amplicon_classifications_count"] = priv_amplicon_counts
-
-        # Get tissue of origin counts to subtract from private stats
-        priv_tissue_counts = current_stats.get("all_private_tissue_of_origin_count", {})
-        tissue_counts = get_project_tissue_of_origin_counts(project)
-        subtract_tissue_of_origin_counts(tissue_counts, priv_tissue_counts)
-        updated_stats["all_private_tissue_of_origin_count"] = priv_tissue_counts
-
-        # Public stats remain unchanged
-        updated_stats["public_proj_count"] = current_stats["public_proj_count"]
-        updated_stats["public_sample_count"] = current_stats["public_sample_count"]
-        updated_stats["public_amplicon_classifications_count"] = current_stats["public_amplicon_classifications_count"]
-        updated_stats["public_tissue_of_origin_count"] = current_stats.get("public_tissue_of_origin_count", {})
-        updated_stats["public_coral_project_count"] = current_stats.get("public_coral_project_count", 0)
-        updated_stats["public_coral_sample_count"] = current_stats.get("public_coral_sample_count", 0)
-    else:
-        # Removing from public stats
-        updated_stats["public_proj_count"] = current_stats["public_proj_count"] - 1
-        updated_stats["public_sample_count"] = current_stats["public_sample_count"] - len(project['runs'])
-        updated_stats["public_coral_project_count"] = max(0, current_stats.get("public_coral_project_count", 0) - coral_project_delta)
-        updated_stats["public_coral_sample_count"] = max(0, current_stats.get("public_coral_sample_count", 0) - coral_sample_delta)
-
-        # Get amplicon counts to subtract from public stats
-        pub_amplicon_counts = current_stats["public_amplicon_classifications_count"]
-        class_keys, amplicon_counts = get_project_amplicon_counts(project)
-        subtract_amplicon_counts_by_classification(class_keys, amplicon_counts, pub_amplicon_counts)
-        updated_stats["public_amplicon_classifications_count"] = pub_amplicon_counts
-
-        # Get tissue of origin counts to subtract from public stats
-        pub_tissue_counts = current_stats.get("public_tissue_of_origin_count", {})
-        tissue_counts = get_project_tissue_of_origin_counts(project)
-        subtract_tissue_of_origin_counts(tissue_counts, pub_tissue_counts)
-        updated_stats["public_tissue_of_origin_count"] = pub_tissue_counts
-
-        # Private stats remain unchanged
-        updated_stats["all_private_proj_count"] = current_stats["all_private_proj_count"]
-        updated_stats["all_private_sample_count"] = current_stats["all_private_sample_count"]
-        updated_stats["all_private_amplicon_classifications_count"] = current_stats[
-            "all_private_amplicon_classifications_count"]
-        updated_stats["all_private_tissue_of_origin_count"] = current_stats.get("all_private_tissue_of_origin_count", {})
-        updated_stats["all_private_coral_project_count"] = current_stats.get("all_private_coral_project_count", 0)
-        updated_stats["all_private_coral_sample_count"] = current_stats.get("all_private_coral_sample_count", 0)
-
-    updated_stats["date"] = get_date()
-    new_id = site_statistics_handle.insert_one(updated_stats)
+    _apply_project_to_site_statistics(project, visibility, sign=-1)
 
 
 def edit_proj_privacy(project, old_privacy, new_privacy):
     """
     Edits site stats based on old and new project privacy settings.
-    
-    Handles both legacy boolean values and new string visibility values.
-    Treats 'hidden_public' as private for statistics purposes.
+
+    Handles both legacy boolean values and new string visibility values. Each visibility has
+    its own bucket, so a move between any two of them shifts the project's contribution.
     """
-    # Normalize values to handle legacy booleans
-    old_privacy_normalized = normalize_visibility_field(old_privacy)
-    new_privacy_normalized = normalize_visibility_field(new_privacy)
-    
-    old_is_private = is_project_private(old_privacy_normalized)
-    new_is_private = is_project_private(new_privacy_normalized)
-    
-    # Only update stats if privacy status (private/public) actually changed
-    if old_is_private and not new_is_private:
-        # Going from private/hidden_public to public
-        delete_project_from_site_statistics(project, is_private=True)
-        add_project_to_site_statistics(project, is_private=False)
-    elif not old_is_private and new_is_private:
-        # Going from public to private/hidden_public
-        delete_project_from_site_statistics(project, is_private=False)
-        add_project_to_site_statistics(project, is_private=True)
+    old_visibility = normalize_visibility_field(old_privacy)
+    new_visibility = normalize_visibility_field(new_privacy)
+
+    if old_visibility == new_visibility:
+        return
+
+    delete_project_from_site_statistics(project, old_visibility)
+    add_project_to_site_statistics(project, new_visibility)
 
 
 def get_project_amplicon_counts(project):

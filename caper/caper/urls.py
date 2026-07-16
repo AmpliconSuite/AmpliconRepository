@@ -5,7 +5,7 @@ from django.views.generic import TemplateView
 from django.views.i18n import set_language
 import mezzanine
 from mezzanine.conf import settings
-from . import views
+from . import account_views, views
 from django.conf.urls.static import static
 from django.shortcuts import render, redirect
 
@@ -46,6 +46,16 @@ urlpatterns += [
     path('create-project/', views.create_project, name='create_project'),
     path('create-empty-project/', views.create_empty_project, name='create_empty_project'),
 
+    path(
+        'accounts/password/change/',
+        account_views.password_change,
+        name='account_change_password',
+    ),
+    path(
+        'accounts/password/set/',
+        account_views.password_set_unavailable,
+        name='account_set_password',
+    ),
     path('accounts/', include('allauth.urls')),
     path("accounts/profile/", views.profile, name="profile"),
     path("profile-update-notification-preferences/", views.update_notification_preferences , name="profile-update-notification-preferences"),

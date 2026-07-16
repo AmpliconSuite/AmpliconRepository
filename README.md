@@ -840,17 +840,34 @@ This launches a gunicorn container named `amplicon-${AMPLICON_ENV}` with the sou
     -   Create a new release using a tag with the pattern v<major version>.<minor version>.<patch version>_<MMDDYY>  e.g. v1.0.1_072523 for version 1.0.1 created July 15, 2023.
     - This will create a tag on the contents of the repo at this moment
     - a github action will update and commit the version.txt file with the date, tag, commit ID and person doing the release and apply the tag to the updated version.txt
+- After the release is published, wait for the "On Release" GitHub Action to finish before deploying. The action force-moves the release tag to the auto-generated `caper/version.txt` commit.
+- In the site admin UI, go to `/admin-prepare-shutdown/`, confirm no background tasks are running, and enable shutdown mode before restarting the server. Shutdown mode prevents new project creation/editing while deployment is in progress and persists across the restart.
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04` in us-east-1)
   - this requires a PEM key
 - Go to project directory
 > `cd /home/ubuntu/AmpliconRepository-prod/`
 > `source caper/config.sh`
 - Pull your changes from Github
-> `git fetch`
-> `git pull`
+> `git fetch --tags --force origin`
 > `git checkout tags/<release tag in github>`
-- Restart the server - use the same script as the nightly cron to stop and restart the docker container. During server startup it automatically syncs static files to S3
+- If `requirements.txt` or `Dockerfile` changed, rebuild the Docker image from the build-only checkout before restarting:
+> `cd /home/ubuntu/ampRepo_for_docker_build/AmpliconRepository`
+> `git fetch --tags --force origin`
+> `git checkout tags/<release tag in github>`
+> `source /home/ubuntu/AmpliconRepository-prod/caper/config.sh`
+> `docker build -t genepattern/amplicon-repo:${AMPLICON_ENV} .`
+- For source-only changes, restart the server with the same script as the nightly cron. During server startup it automatically syncs static files to S3:
 > `/home/ubuntu/stop-and-start-repo.sh`
+- If the Docker image was rebuilt, remove and recreate the app container so it uses the new image:
+> `cd /home/ubuntu/AmpliconRepository-prod/`
+> `source caper/config.sh`
+> `docker stop amplicon-${AMPLICON_ENV}`
+> `docker rm amplicon-${AMPLICON_ENV}`
+> `./start-server.sh`
+- Verify the running container was recreated from the expected image and, when dependencies changed, verify the installed package version:
+> `docker ps --filter name=amplicon-${AMPLICON_ENV}`
+> `docker exec amplicon-${AMPLICON_ENV} bash -lc 'source /opt/venv/bin/activate && python -c "import AmpliconSuiteAggregator as a; print(a.__version__)"'`
+- Smoke-test the site, then return to `/admin-prepare-shutdown/` and disable shutdown mode.
 
 ## 4. Manual disk space cleanup
 
@@ -876,5 +893,4 @@ find ./tmp -mindepth 1 -maxdepth 1 -type d -mmin +120 -exec rm -rf {} +
 ```
 
 Note that restarting the server (`/home/ubuntu/stop-and-start-repo.sh`) also triggers an automatic cleanup of any orphaned temp directories left by previous runs.
-
 

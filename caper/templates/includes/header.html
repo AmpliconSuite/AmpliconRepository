@@ -150,6 +150,9 @@
 
 
                     <li class="dropdown-item "><a href="/accounts/email">Change Email</a></li>
+                    {% if user.has_usable_password %}
+                    <li class="dropdown-item "><a href="{% url 'account_change_password' %}">Change Password</a></li>
+                    {% endif %}
                     <li class="dropdown-item "><a href="/accounts/logout">Logout</a></li>
 
                     

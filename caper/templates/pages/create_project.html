@@ -128,13 +128,14 @@
       {% endfor %}
   <div class="uk-margin">
           <div class="alert alert-info" role="alert" style="margin-bottom: 15px;">
-        <strong>📦 What to upload:</strong> A <code>.tar.gz</code> of your AmpliconSuite-pipeline output files.
+        <strong>📦 What to upload:</strong> A <code>.tar.gz</code> of your AmpliconSuite-pipeline (AmpliconArchitect) or CoRAL output files.
         <button type="button" class="btn btn-link btn-sm" data-toggle="collapse" data-target="#uploadHelp"
                 aria-expanded="false" style="padding: 0; font-size: 1em; vertical-align: baseline;">
             Expand details →
         </button>
         <div class="collapse" id="uploadHelp" style="margin-top: 10px;">
-            <p style="margin-bottom: 8px;">Include CNVkit directories, AmpliconArchitect output directories, and AmpliconClassifier directories.
+            <p style="margin-bottom: 8px;">For AmpliconSuite-pipeline runs, include the CNVkit, AmpliconArchitect, and AmpliconClassifier output directories.
+               CoRAL long-read reconstruction outputs are also accepted &mdash; package the CoRAL output directory the same way.
                To package your files:</p>
             <pre style="background-color: #f8f9fa; padding: 10px; border-radius: 4px; font-size: 0.85em;"><code>tar --exclude='*.gz' --exclude='*.bam*' -czf project_name.tar.gz your_consolidated_directory/</code></pre>
             <small class="text-muted">⚠️ Do not include .fastq or .bam files. See <a href="https://docs.ampliconrepository.org/en/latest/getting-started/" target="_blank">documentation</a> for details.</small>

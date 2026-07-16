@@ -126,6 +126,7 @@
                         <th> </th>
                         <th>Public</th>
                         <th>Private</th>
+                        <th>Unlisted public <i class="far fa-question-circle" title="Visible to anyone with the link, but not listed publicly. Counted separately from public and private." aria-label="Visible to anyone with the link, but not listed publicly"></i></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -133,71 +134,95 @@
                         <td>Projects</td>
                         <td>{{ site_stats.public_proj_count|default:"SITE STATS REGENERATION NEEDED" }}</td>
                         <td>{{ site_stats.all_private_proj_count|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_proj_count|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>Samples</td>
                         <td>{{ site_stats.public_sample_count|default:0 }}</td>
                         <td>{{ site_stats.all_private_sample_count|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_sample_count|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>CoRAL projects</td>
                         <td>{{ site_stats.public_coral_project_count|default:0 }}</td>
                         <td>{{ site_stats.all_private_coral_project_count|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_coral_project_count|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>Samples in CoRAL projects</td>
                         <td>{{ site_stats.public_coral_sample_count|default:0 }}</td>
                         <td>{{ site_stats.all_private_coral_sample_count|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_coral_sample_count|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>ecDNA</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</td>
                         <td>{{ site_stats.all_private_amplicon_classifications_count.ecDNA|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_amplicon_classifications_count.ecDNA|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>FAN <i class="far fa-question-circle" title="Focal amplification in neochromosome" aria-label="Focal amplification in neochromosome"></i></td>
                         <td>{{ site_stats.public_amplicon_classifications_count.FAN|default:0 }}</td>
                         <td>{{ site_stats.all_private_amplicon_classifications_count.FAN|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_amplicon_classifications_count.FAN|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>BFB <i class="far fa-question-circle" title="Breakage-fusion-bridge" aria-label="Breakage-fusion-bridge"></i></td>
                         <td>{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</td>
                         <td>{{ site_stats.all_private_amplicon_classifications_count.BFB|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_amplicon_classifications_count.BFB|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>Complex non-cyclic</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.Complex_non_cyclic|default:0 }}</td>
                         <td>{{ site_stats.all_private_amplicon_classifications_count.Complex_non_cyclic|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_amplicon_classifications_count.Complex_non_cyclic|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>Linear amplification</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.Linear_amplification|default:0  }}</td>
                         <td>{{ site_stats.all_private_amplicon_classifications_count.Linear_amplification|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_amplicon_classifications_count.Linear_amplification|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>Virus</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.Virus|default:0  }}</td>
                         <td>{{ site_stats.all_private_amplicon_classifications_count.Virus|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_amplicon_classifications_count.Virus|default:0 }}</td>
                     </tr>
                     <tr>
                         <td>Samples with no focal amps</td>
                         <td>{{ site_stats.public_amplicon_classifications_count.Unclassified|default:0 }}</td>
                         <td>{{ site_stats.all_private_amplicon_classifications_count.Unclassified|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_amplicon_classifications_count.Unclassified|default:0 }}</td>
                     </tr>
                     <tr>
-                        <td colspan="3" style="padding-top: 20px;"><strong>Tissue of Origin Statistics</strong></td>
+                        <td colspan="4" style="padding-top: 20px;"><strong>Tissue of Origin Statistics</strong></td>
                     </tr>
                     {% for tissue_name, count in site_stats.public_tissue_of_origin_count.items %}
                     <tr>
                         <td>{{ tissue_name }}</td>
                         <td>{{ count|default:0 }}</td>
                         <td>{{ site_stats.all_private_tissue_of_origin_count|get_item:tissue_name|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_tissue_of_origin_count|get_item:tissue_name|default:0 }}</td>
                     </tr>
                     {% endfor %}
                     {% for tissue_name, count in site_stats.all_private_tissue_of_origin_count.items %}
                         {% if tissue_name not in site_stats.public_tissue_of_origin_count.keys %}
                     <tr>
                         <td>{{ tissue_name }}</td>
+                        <td>0</td>
+                        <td>{{ count|default:0 }}</td>
+                        <td>{{ site_stats.hidden_public_tissue_of_origin_count|get_item:tissue_name|default:0 }}</td>
+                    </tr>
+                        {% endif %}
+                    {% endfor %}
+                    {# Tissues that only occur in unlisted projects appear in neither loop above #}
+                    {% for tissue_name, count in site_stats.hidden_public_tissue_of_origin_count.items %}
+                        {% if tissue_name not in site_stats.public_tissue_of_origin_count.keys and tissue_name not in site_stats.all_private_tissue_of_origin_count.keys %}
+                    <tr>
+                        <td>{{ tissue_name }}</td>
+                        <td>0</td>
                         <td>0</td>
                         <td>{{ count|default:0 }}</td>
                     </tr>

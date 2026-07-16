@@ -66,7 +66,7 @@ def test_create_ac2_project(
         assert not doc.get('aggregation_failed'), doc.get('error_message')
         assert doc.get('sample_count') == 9
         assert len(doc.get('runs', {})) == 9
-        assert doc.get('aggregator_version') == '7.0.0'
+        assert doc.get('aggregator_version') == '7.1.0'
 
         features = [
             feature
@@ -141,7 +141,7 @@ def test_create_ac2_fan_project(
         assert not doc.get('aggregation_failed'), doc.get('error_message')
         assert doc.get('sample_count') == 140
         assert len(doc.get('runs', {})) == 140
-        assert doc.get('aggregator_version') == '7.0.0'
+        assert doc.get('aggregator_version') == '7.1.0'
 
         features = [
             feature
@@ -196,7 +196,7 @@ def test_create_ac2_hg38_project(
         assert not doc.get('aggregation_failed'), doc.get('error_message')
         assert doc.get('sample_count') == 63
         assert len(doc.get('runs', {})) == 63
-        assert doc.get('aggregator_version') == '7.0.0'
+        assert doc.get('aggregator_version') == '7.1.0'
 
         features = [
             feature

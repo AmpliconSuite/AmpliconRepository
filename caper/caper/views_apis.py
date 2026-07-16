@@ -5,6 +5,7 @@ This module contains all API endpoints for file uploads and project management.
 
 import glob
 import logging
+import math
 import os
 import shutil
 import uuid
@@ -311,7 +312,7 @@ class ProjectFileAddView(APIView):
                     from .site_stats import add_project_to_site_statistics
                     try:
                         vis = normalize_visibility_field(project.get('private', 'private'))
-                        add_project_to_site_statistics(project, is_project_private(vis))
+                        add_project_to_site_statistics(project, vis)
                         logging.error("Restored old project stats after form validation failure")
                     except Exception as stats_err:
                         logging.error(f"Failed to restore stats after form validation failure: {stats_err}")
@@ -328,7 +329,7 @@ class ProjectFileAddView(APIView):
                     from .site_stats import add_project_to_site_statistics
                     try:
                         vis = normalize_visibility_field(project.get('private', 'private'))
-                        add_project_to_site_statistics(project, is_project_private(vis))
+                        add_project_to_site_statistics(project, vis)
                         logging.error("Restored old project stats after _create_project failure")
                     except Exception as stats_err:
                         logging.error(f"Failed to restore stats after _create_project failure: {stats_err}")
@@ -460,12 +461,35 @@ def _project_to_dict(project):
     }
 
 
+def _json_safe(value):
+    """Recursively coerce BSON/Mongo values into JSON-serializable Python types.
+
+    DRF's JSON renderer cannot encode bson ObjectId, and float NaN/Inf render as
+    invalid JSON tokens that break strict parsers (pandas.read_json, JS JSON.parse).
+    """
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 def _sample_to_dict(sample, run_name):
-    """Serialize a sample dict, omitting GridFS-ID fields that are useless externally."""
+    """Serialize a sample dict, omitting GridFS-ID fields that are useless externally.
+
+    Fields whose value is a raw ObjectId are GridFS references (file blobs) that
+    mean nothing outside the server, so they are dropped. Remaining values are
+    coerced to JSON-safe types.
+    """
     d = {'run': run_name}
     for k, v in sample.items():
-        if k not in _SAMPLE_SKIP_FIELDS:
-            d[k] = v
+        if k in _SAMPLE_SKIP_FIELDS or isinstance(v, ObjectId):
+            continue
+        d[k] = _json_safe(v)
     return d
 
 
@@ -700,8 +724,12 @@ class ProjectBatchDownloadView(APIView):
 
         # build_absolute_uri raises DisallowedHost in test environments;
         # construct the base URL directly from META to avoid that.
-        scheme = request.META.get('wsgi.url_scheme',
-                 'https' if request.META.get('HTTPS') == 'on' else 'http')
+        # Behind the TLS-terminating load balancer the WSGI scheme is 'http';
+        # trust X-Forwarded-Proto (set by the ELB) so download_url is https.
+        forwarded_proto = request.META.get('HTTP_X_FORWARDED_PROTO', '')
+        scheme = (forwarded_proto.split(',')[0].strip()
+                  or request.META.get('wsgi.url_scheme')
+                  or ('https' if request.META.get('HTTPS') == 'on' else 'http'))
         host = request.META.get('HTTP_HOST', '')
         base = f'{scheme}://{host}' if host else ''
         downloads, skipped = [], []

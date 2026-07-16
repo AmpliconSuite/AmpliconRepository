@@ -189,6 +189,34 @@ class TestSampleToDict:
         assert d['oncogene'] == 'EGFR'
         assert d['tissue'] == 'Lung'
 
+    def test_objectid_gridfs_refs_dropped(self):
+        # GridFS file-ref fields hold raw ObjectIds that DRF cannot serialize;
+        # they are useless externally and must be dropped (regression: 500 error).
+        d = self.fn({'oncogene': 'MYC', 'AA_PNG_file': ObjectId(),
+                     'CNV_BED_file': ObjectId()}, 'r1')
+        assert d['oncogene'] == 'MYC'
+        assert 'AA_PNG_file' not in d
+        assert 'CNV_BED_file' not in d
+
+    def test_nan_and_inf_sanitized(self):
+        d = self.fn({'Complexity_score': float('nan'),
+                     'copy_number': float('inf'),
+                     'Feature_median_copy_number': 12.5}, 'r1')
+        assert d['Complexity_score'] is None
+        assert d['copy_number'] is None
+        assert d['Feature_median_copy_number'] == 12.5
+
+    def test_output_is_json_renderable(self):
+        # The whole point: output must survive DRF's JSON renderer + strict parse.
+        from rest_framework.renderers import JSONRenderer
+        import json
+        d = self.fn({'oncogene': 'MYC', 'AA_PNG_file': ObjectId(),
+                     'Complexity_score': float('nan'),
+                     'nested': {'ref': ObjectId(), 'vals': [1.0, float('inf')]}}, 'r1')
+        raw = JSONRenderer().render(d)
+        json.loads(raw, parse_constant=lambda c: (_ for _ in ()).throw(
+            ValueError('invalid JSON constant: ' + c)))
+
 
 class TestAuthenticateApiRequest:
     def setup_method(self):
@@ -563,6 +591,21 @@ class TestProjectBatchDownloadView:
         assert dl['id'] == pid
         assert dl['project_name'] == 'TestProject'
         assert f'/api/v1/projects/{pid}/download/' in dl['download_url']
+
+    def test_download_url_honors_x_forwarded_proto(self):
+        # Behind the TLS-terminating ELB the WSGI scheme is http; the ELB sets
+        # X-Forwarded-Proto: https. download_url must be https (regression).
+        proj = _make_project(private='public', has_tarfile=True)
+        proj['linkid'] = str(proj['_id'])
+        pid = proj['linkid']
+        with patch('caper.views_apis.get_one_project', return_value=proj):
+            req = self.rf.post('/api/v1/projects/download/',
+                               data={'ids': [pid]}, format='json',
+                               HTTP_X_FORWARDED_PROTO='https',
+                               HTTP_HOST='ampliconrepository.org')
+            resp = self.view(req)
+        assert resp.data['downloads'][0]['download_url'].startswith(
+            'https://ampliconrepository.org/')
 
     def test_unknown_id_in_skipped(self):
         with patch('caper.views_apis.get_one_project', return_value=None):

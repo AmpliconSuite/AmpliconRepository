@@ -2535,7 +2535,7 @@ def project_delete(request, project_name):
         #query = {'project_name': project_name}
         new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
-        delete_project_from_site_statistics(project, is_project_private(visibility))
+        delete_project_from_site_statistics(project, visibility)
         
         # Clean up large objects
         del project
@@ -2648,7 +2648,7 @@ def delete_project_version(request, project_name, version_id):
 
             # Update site statistics
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
-            delete_project_from_site_statistics(latest_project, is_project_private(vis))
+            delete_project_from_site_statistics(latest_project, vis)
 
             logging.info(
                 f"Deleted current version {current_linkid}, promoted {prev_linkid} "
@@ -2674,7 +2674,7 @@ def delete_project_version(request, project_name, version_id):
             )
 
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
-            delete_project_from_site_statistics(latest_project, is_project_private(vis))
+            delete_project_from_site_statistics(latest_project, vis)
 
             logging.info(f"Deleted sole version {current_linkid}, project fully removed")
 
@@ -3003,16 +3003,16 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
                 # We must:
                 #   1. Subtract the OLD project's full contribution from stats.
                 #   2. Add back the NEW project (fewer samples, potentially new privacy).
-                old_is_private = is_project_private(normalize_visibility_field(old_privacy))
-                new_is_private = is_project_private(normalize_visibility_field(new_privacy))
+                old_visibility = normalize_visibility_field(old_privacy)
+                new_visibility = normalize_visibility_field(new_privacy)
 
                 # Build an in-memory snapshot of the updated project for adding stats.
                 updated_project_snapshot = dict(project)
                 updated_project_snapshot['runs'] = current_runs
                 updated_project_snapshot['private'] = normalize_visibility_field(form_dict['private'])
 
-                delete_project_from_site_statistics(project, is_private=old_is_private)
-                add_project_to_site_statistics(updated_project_snapshot, is_private=new_is_private)
+                delete_project_from_site_statistics(project, old_visibility)
+                add_project_to_site_statistics(updated_project_snapshot, new_visibility)
                 logging.debug(
                     f"Site stats updated after sample removal: "
                     f"{len(project.get('runs', {}))} → {len(current_runs)} samples"
@@ -4583,7 +4583,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
 
         # Create new project
         new_id = collection_handle.insert_one(project)
-        add_project_to_site_statistics(project, is_project_private(normalize_visibility_field(project['private'])))
+        add_project_to_site_statistics(project, normalize_visibility_field(project['private']))
         project_id = new_id.inserted_id
 
         # move the project location to a new name using the UUID to prevent name collisions
@@ -4622,7 +4622,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
             project['featured'] = True
             collection_handle.update_one({'_id': project_id}, {"$set": {'featured': True}})
         
-        add_project_to_site_statistics(project, is_project_private(normalize_visibility_field(project['private'])))
+        add_project_to_site_statistics(project, normalize_visibility_field(project['private']))
 
     file_location = f'{project_data_path}/{request_file.name}'
     logging.debug("file stats: " + str(os.stat(file_location).st_size))
