@@ -203,8 +203,12 @@ def test_schema_repair_preview_lists_unrepairable_validation_errors(monkeypatch,
         'type': 'object',
         'properties': {'value': {'type': 'integer'}},
     }))
+    document_id = ObjectId()
     collection = FakeCollection([{
-        '_id': ObjectId(),
+        '_id': document_id,
+        'project_name': 'Legacy aggregate project',
+        'creator': 'legacy-owner',
+        'date_created': '2023-08-09',
         'value': 'not an integer',
         'delete': False,
     }])
@@ -218,6 +222,10 @@ def test_schema_repair_preview_lists_unrepairable_validation_errors(monkeypatch,
         apply_changes=False,
     )
 
+    assert f"Project: 'Legacy aggregate project'" in report
+    assert f'Document ID: {document_id}' in report
+    assert 'Creator: legacy-owner' in report
+    assert 'Created: 2023-08-09' in report
     assert 'Remaining validation errors after proposed repairs:' in report
     assert "Path: /value" in report
     assert 'Documents requiring further review: 1' in report

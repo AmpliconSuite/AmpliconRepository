@@ -367,11 +367,18 @@
         {% if old_metadata_has_alias %}
         <div id="remapFromOldMetadataDiv" style="margin-bottom: 15px; padding: 10px; background-color: #f0f8ff; border: 1px solid #ccc; border-radius: 4px;">
             <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="remap_sample_names" id="remapFromOldMetadataCheckbox" value="true">
+                <input class="form-check-input" type="checkbox" name="remap_sample_names" id="remapFromOldMetadataCheckbox" value="true"{% if sample_name_remap_enabled %} checked{% endif %}>
                 <label class="form-check-label" for="remapFromOldMetadataCheckbox">
                     <strong>Remap sample_names with sample_name_alias from existing metadata</strong>
                 </label>
             </div>
+        </div>
+        {% endif %}
+
+        {% if old_metadata_alias_requires_reupload %}
+        <div class="alert alert-warning" role="alert">
+            This project has alias metadata from before original sample names were retained.
+            Upload the metadata file again to reapply aliases to a replacement project.
         </div>
         {% endif %}
 
@@ -498,11 +505,37 @@
 <script>
     const uploadForm = document.getElementById('upload-form');
     const input = document.getElementById('fileuploadfield');
+    const fileDropArea = document.getElementById('file-drop-area');
     const alertBox = document.getElementById('alert-box');
     const csrf = document.getElementsByName('csrfmiddlewaretoken');
     const fileList = document.getElementById('file-list');
     const fd = new FormData();
     let filesArray = [];
+
+    fileDropArea.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      fileDropArea.classList.add('uk-dragover');
+    });
+
+    fileDropArea.addEventListener('dragleave', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      fileDropArea.classList.remove('uk-dragover');
+    });
+
+    fileDropArea.addEventListener('drop', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      fileDropArea.classList.remove('uk-dragover');
+
+      if (event.dataTransfer.files.length === 0) {
+        return;
+      }
+
+      input.files = event.dataTransfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   
     function addFilename(filename) {
       if (filesArray.some(file => file.name === filename)) {

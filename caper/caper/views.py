@@ -2814,14 +2814,12 @@ def create_name_map_from_old_metadata(old_extra_metadata, output_dir):
     if not old_extra_metadata:
         return None
 
-    rows = [
-        (sample_name, meta['sample_name_alias'])
-        for sample_name, meta in old_extra_metadata.items()
-        if isinstance(meta, dict) and meta.get('sample_name_alias')
-    ]
+    rows = get_retained_name_map_rows(old_extra_metadata)
 
     if not rows:
-        logging.warning("old_extra_metadata has no sample_name_alias values - no name map created")
+        logging.warning(
+            "Retained metadata has no recoverable original-to-alias name map"
+        )
         return None
 
     os.makedirs(output_dir, exist_ok=True)
@@ -2831,6 +2829,23 @@ def create_name_map_from_old_metadata(old_extra_metadata, output_dir):
     )
     logging.info(f"Created name map from retained metadata with {len(rows)} entries at: {name_map_path}")
     return name_map_path
+
+
+def get_metadata_remap_edit_context(project):
+    """Build the edit-page state for retaining and reapplying metadata aliases."""
+    has_metadata = has_sample_metadata(project)
+    old_metadata = get_extra_metadata_from_project(project) if has_metadata else {}
+    has_alias = has_retained_alias_metadata(old_metadata)
+    has_reusable_map = bool(get_retained_name_map_rows(old_metadata))
+    return {
+        'has_existing_metadata': has_metadata,
+        'old_metadata_has_alias': has_reusable_map,
+        'old_metadata_alias_requires_reupload': has_alias and not has_reusable_map,
+        'sample_name_remap_enabled': (
+            has_reusable_map
+            and infer_metadata_remap_enabled(project, old_metadata)
+        ),
+    }
 
 
 def create_name_map_from_metadata(metadata_file, output_dir):
@@ -2865,17 +2880,17 @@ def create_name_map_from_metadata(metadata_file, output_dir):
             # For Excel files, reset again just before reading
             if hasattr(metadata_file, 'seek'):
                 metadata_file.seek(0)
-            df = pd.read_excel(metadata_file)
+            df = pd.read_excel(metadata_file, dtype=str)
         elif file_name.endswith('.csv'):
             # For CSV files, reset again just before reading
             if hasattr(metadata_file, 'seek'):
                 metadata_file.seek(0)
-            df = pd.read_csv(metadata_file)
+            df = pd.read_csv(metadata_file, dtype=str)
         elif file_name.endswith('.tsv'):
             # For TSV files, reset again just before reading
             if hasattr(metadata_file, 'seek'):
                 metadata_file.seek(0)
-            df = pd.read_csv(metadata_file, delimiter='\t')
+            df = pd.read_csv(metadata_file, delimiter='\t', dtype=str)
         else:
             logging.error(f"Unsupported metadata file format: {file_name}")
             return None
@@ -2894,11 +2909,42 @@ def create_name_map_from_metadata(metadata_file, output_dir):
             logging.warning("Metadata file missing 'sample_name_alias' column - no name map created")
             return None
         
-        # Extract the two columns
-        name_map_df = df_lower[['sample_name', 'sample_name_alias']].copy()
+        # A metadata table downloaded after remapping has sample_name set to the
+        # current alias. Prefer AmpRepo's preserved original identity when it is
+        # present so the round trip still produces original -> alias.
+        source_names = df_lower['sample_name']
+        if 'original_sample_name' in df_lower.columns:
+            preserved_names = df_lower['original_sample_name']
+            has_preserved_name = (
+                preserved_names.notna()
+                & preserved_names.astype(str).str.strip().ne('')
+            )
+            source_names = preserved_names.where(has_preserved_name, source_names)
+
+        name_map_df = pd.DataFrame({
+            'sample_name': source_names,
+            'sample_name_alias': df_lower['sample_name_alias'],
+        })
         
         # Remove rows with missing values in either column
         name_map_df = name_map_df.dropna()
+        name_map_df['sample_name'] = name_map_df['sample_name'].astype(str).str.strip()
+        name_map_df['sample_name_alias'] = name_map_df['sample_name_alias'].astype(str).str.strip()
+        name_map_df = name_map_df[
+            name_map_df['sample_name'].ne('')
+            & name_map_df['sample_name_alias'].ne('')
+            & name_map_df['sample_name'].ne(name_map_df['sample_name_alias'])
+        ].drop_duplicates()
+
+        conflicting_originals = (
+            name_map_df.groupby('sample_name')['sample_name_alias'].nunique() > 1
+        ).any()
+        conflicting_aliases = (
+            name_map_df.groupby('sample_name_alias')['sample_name'].nunique() > 1
+        ).any()
+        if conflicting_originals or conflicting_aliases:
+            logging.error("Metadata contains an ambiguous sample-name alias map")
+            return None
         
         if name_map_df.empty:
             logging.warning("No valid sample_name/sample_name_alias pairs found in metadata")
@@ -3421,18 +3467,13 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 logging.error(f"Failed to rollback old project {project_name}: {rb_err}")
             
             alert_message = f"An error occurred during project update: {str(e)}"
-            _has_meta = has_sample_metadata(project)
-            _alias_in_meta = False
-            if _has_meta:
-                _om = get_extra_metadata_from_project(project)
-                _alias_in_meta = any('sample_name_alias' in (m or {}) for m in _om.values())
+            _metadata_context = get_metadata_remap_edit_context(project)
             return render(request, 'pages/edit_project.html',
                           {'project': project,
                            'run': form,
                            'alert_message': alert_message,
                            'all_alias': json.dumps(get_all_alias()),
-                           'has_existing_metadata': _has_meta,
-                           'old_metadata_has_alias': _alias_in_meta})
+                           **_metadata_context})
     
     return None  # Indicate no new version was created
 
@@ -3595,14 +3636,7 @@ def edit_project_page(request, project_name):
                                    "AC_version": ACVersion,
                                    "CoRAL_version": CoRALVersion })
 
-    _has_metadata = has_sample_metadata(project)
-    _old_metadata_has_alias = False
-    if _has_metadata:
-        _old_meta = get_extra_metadata_from_project(project)
-        _old_metadata_has_alias = any(
-            'sample_name_alias' in (meta or {})
-            for meta in _old_meta.values()
-        )
+    _metadata_context = get_metadata_remap_edit_context(project)
 
     return render(request, "pages/edit_project.html",
                   {'project': project,
@@ -3610,8 +3644,7 @@ def edit_project_page(request, project_name):
                      'sample_names': sample_names,
                    'all_alias' :json.dumps(get_all_alias()),
                    "is_empty_project": is_empty_project,
-                   "has_existing_metadata": _has_metadata,
-                   "old_metadata_has_alias": _old_metadata_has_alias,
+                   **_metadata_context,
                    })
 
 
@@ -4579,6 +4612,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         project, tmp_id = create_project_helper(form, user, request_file, previous_versions = previous_versions, previous_views = previous_views, old_subscribers = old_subscribers)
         if project is None or tmp_id is None:
             return None
+        project['sample_name_remap_enabled'] = bool(remap_name_to_alias)
         project_data_path = f"tmp/{tmp_id}"
 
         # Create new project
@@ -4600,6 +4634,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         if project is None:
             return False
 
+        project['sample_name_remap_enabled'] = bool(remap_name_to_alias)
         # Update the placeholder project with real data
         project['_id'] = project_id
         project['linkid'] = str(project_id)

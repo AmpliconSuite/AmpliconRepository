@@ -219,6 +219,9 @@
         "alias_name": {
             "type": ["string", "null"]
         },
+        "sample_name_remap_enabled": {
+            "type": "boolean"
+        },
         "sample_count": {
             "type": "integer"
         },
