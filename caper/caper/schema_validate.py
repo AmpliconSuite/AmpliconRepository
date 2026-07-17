@@ -549,6 +549,15 @@ def _validation_error_summary(error):
     }
 
 
+def _format_report_field(value, fallback="Unknown"):
+    """Return a concise, readable value for document metadata in reports."""
+    if value is None or value == "":
+        return fallback
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
 def run_fix_schema(
         db_host: Optional[str] = None,
         db_name: Optional[str] = None,
@@ -629,6 +638,12 @@ def run_fix_schema(
 
         if made_changes_to_this_doc or current_doc_issues_log or remaining_errors:
             overall_report[doc_id_str] = {
+                "project_name": _format_report_field(
+                    doc.get("project_name", doc.get("name")),
+                    fallback="Unknown project",
+                ),
+                "creator": _format_report_field(doc.get("creator")),
+                "date_created": _format_report_field(doc.get("date_created")),
                 "changes": current_doc_changes_log,
                 "issues": current_doc_issues_log,
                 "remaining_errors": [
@@ -645,7 +660,12 @@ def run_fix_schema(
         fix_schema_report += "\nNo repairable schema changes or visibility issues were found."
     else:
         for doc_id, document_report in overall_report.items():
-            fix_schema_report += f"\nDocument ID: {doc_id}"
+            fix_schema_report += (
+                f"\nProject: '{document_report['project_name']}'"
+                f"\n  Document ID: {doc_id}"
+                f"\n  Creator: {document_report['creator']}"
+                f"\n  Created: {document_report['date_created']}"
+            )
             for change in document_report["changes"]:
                 path = change['path']
                 action = change['action']

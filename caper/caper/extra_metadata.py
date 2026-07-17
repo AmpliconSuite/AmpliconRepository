@@ -7,6 +7,26 @@ import pandas as pd
 from .utils import *
 
 
+def _has_metadata_value(value):
+    """Return True for usable metadata identifiers, excluding blanks and NaN."""
+    if value is None:
+        return False
+    try:
+        if bool(pd.isna(value)):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return bool(str(value).strip())
+
+
+def _metadata_value(row, key):
+    """Get a metadata value from a row using a case-insensitive column name."""
+    for row_key, value in row.items():
+        if str(row_key).lower() == key.lower():
+            return value
+    return None
+
+
 def _build_metadata_lookup_from_dataframe(df):
     """
     Helper function to build a metadata lookup dictionary from a DataFrame.
@@ -20,23 +40,111 @@ def _build_metadata_lookup_from_dataframe(df):
     records = df.to_dict(orient='records')
     metadata_lookup = {}
     for row in records:
-        lower_row = {k.lower(): v for k, v in row.items()}
-
-        # look for sample name, case insensitive.
-        # Always coerce to str so that numeric values read by pandas (int64 /
-        # float64) match the string Sample_name values stored in MongoDB.
-        # Guard against NaN: empty cells remain float('nan') even when
-        # dtype=str is passed to read_csv/read_excel, and float('nan') is
-        # truthy, so an explicit pd.isna() check is required.
-        sample_name = lower_row.get('sample_name')
-        if sample_name is not None and not (isinstance(sample_name, float) and pd.isna(sample_name)) and str(sample_name).strip():
-            metadata_lookup[str(sample_name)] = row
-
-        sample_name_alias = lower_row.get('sample_name_alias')
-        if sample_name_alias is not None and not (isinstance(sample_name_alias, float) and pd.isna(sample_name_alias)) and str(sample_name_alias).strip():
-            metadata_lookup[str(sample_name_alias)] = row
+        # Index every stable sample identity. ``original_sample_name`` is added
+        # by AmpRepo when metadata is first applied so that a future replacement
+        # can still match fresh canonical sample names after an earlier remap.
+        for identity_column in (
+                'sample_name', 'original_sample_name', 'sample_name_alias'):
+            identity = _metadata_value(row, identity_column)
+            if _has_metadata_value(identity):
+                metadata_lookup[str(identity)] = row
 
     return metadata_lookup
+
+
+def _build_retained_metadata_lookup(old_extra_metadata):
+    """Index retained MongoDB metadata by current, original, and alias names."""
+    metadata_lookup = {}
+    for current_name, metadata in (old_extra_metadata or {}).items():
+        if not isinstance(metadata, dict):
+            continue
+
+        row = dict(metadata)
+        alias = _metadata_value(row, 'sample_name_alias')
+        original_name = _metadata_value(row, 'original_sample_name')
+
+        # Backward-compatible recovery for projects that were never remapped:
+        # their current name is still the original. If current == alias, the
+        # original identity was already lost and must not be guessed.
+        if (
+                not _has_metadata_value(original_name)
+                and _has_metadata_value(current_name)
+                and str(current_name) != str(alias)):
+            original_name = current_name
+            row['original_sample_name'] = str(current_name)
+
+        for identity in (current_name, original_name, alias):
+            if _has_metadata_value(identity):
+                metadata_lookup[str(identity)] = row
+
+    return metadata_lookup
+
+
+def get_retained_name_map_rows(old_extra_metadata):
+    """Return validated ``(original_name, alias)`` rows from stored metadata.
+
+    Older, non-remapped projects can use their current sample name as the
+    original identity. Older projects that already replaced it with the alias
+    cannot be recovered safely and intentionally produce no row.
+    """
+    mappings = {}
+    aliases = {}
+    for current_name, metadata in (old_extra_metadata or {}).items():
+        if not isinstance(metadata, dict):
+            continue
+
+        alias = _metadata_value(metadata, 'sample_name_alias')
+        original_name = _metadata_value(metadata, 'original_sample_name')
+        if (
+                not _has_metadata_value(original_name)
+                and _has_metadata_value(current_name)
+                and str(current_name) != str(alias)):
+            original_name = current_name
+
+        if not (_has_metadata_value(original_name) and _has_metadata_value(alias)):
+            continue
+
+        original_name = str(original_name)
+        alias = str(alias)
+        if original_name == alias:
+            continue
+
+        # Ambiguous maps are unsafe for Aggregator. Return no mapping so the UI
+        # can require a fresh metadata upload instead of silently misnaming data.
+        if original_name in mappings and mappings[original_name] != alias:
+            logging.warning("Conflicting aliases found for original sample %s", original_name)
+            return []
+        if alias in aliases and aliases[alias] != original_name:
+            logging.warning("Alias %s refers to multiple original samples", alias)
+            return []
+        mappings[original_name] = alias
+        aliases[alias] = original_name
+
+    return list(mappings.items())
+
+
+def has_retained_alias_metadata(old_extra_metadata):
+    """Return whether retained metadata contains at least one usable alias."""
+    return any(
+        isinstance(metadata, dict)
+        and _has_metadata_value(_metadata_value(metadata, 'sample_name_alias'))
+        for metadata in (old_extra_metadata or {}).values()
+    )
+
+
+def infer_metadata_remap_enabled(project, old_extra_metadata=None):
+    """Read the persisted remap preference, with a legacy-project fallback."""
+    if 'sample_name_remap_enabled' in project:
+        return bool(project['sample_name_remap_enabled'])
+
+    old_extra_metadata = old_extra_metadata or get_extra_metadata_from_project(project)
+    for current_name, metadata in old_extra_metadata.items():
+        if not isinstance(metadata, dict):
+            continue
+        alias = _metadata_value(metadata, 'sample_name_alias')
+        if _has_metadata_value(alias) and str(current_name) == str(alias):
+            return True
+    return False
 
 
 def _read_metadata_file(metadata_file=None, file_path=None):
@@ -96,6 +204,8 @@ def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=No
     """
     samples_updated = 0
 
+    old_metadata_lookup = _build_retained_metadata_lookup(old_extra_metadata)
+
     for sample_key, sample_list in project_runs.items():
         for sample in sample_list:
             sample_name = sample.get('Sample_name')
@@ -119,27 +229,38 @@ def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=No
                 sample["extra_metadata_from_csv"] = {}
 
             # If there is old metadata for this sample, preserve it
-            if old_extra_metadata and sample_name in old_extra_metadata:
-                sample["extra_metadata_from_csv"].update(old_extra_metadata[sample_name])
+            old_metadata = old_metadata_lookup.get(sample_name)
+            if old_metadata:
+                sample["extra_metadata_from_csv"].update(old_metadata)
+
+            original_name = _metadata_value(row, 'original_sample_name')
+            if not _has_metadata_value(original_name):
+                original_name = _metadata_value(row, 'sample_name')
+            if _has_metadata_value(original_name):
+                sample["extra_metadata_from_csv"]["original_sample_name"] = str(original_name)
+
+            sample_name_alias = _metadata_value(row, 'sample_name_alias')
+            if _has_metadata_value(sample_name_alias):
+                sample["extra_metadata_from_csv"]["sample_name_alias"] = str(sample_name_alias)
 
             # Update with new metadata
             for key, value in row.items():
-                if key != 'sample_name':
+                normalized_key = str(key).lower()
+                if normalized_key not in {
+                        'sample_name', 'original_sample_name', 'sample_name_alias'}:
                     sample["extra_metadata_from_csv"][key] = value
-                if key.lower() == 'sample_name':
-                    # Always coerce to str — value comes from a pandas row and
-                    # could be int/float if dtype inference was not fully suppressed
-                    sample["Sample_name"] = str(value)
-                # make sure to do alias after sample_name so the alias is used
-                if key.lower() == 'sample_name_alias':
-                    if remap_name_to_alias:
-                        sample["Sample_name"] = str(value)
-                if key.lower() == 'cancer_type':
+                if normalized_key == 'cancer_type':
                     sample["Cancer_type"] = value
-                if key.lower() == 'sample_type':
+                if normalized_key == 'sample_type':
                     sample["Sample_type"] = value
-                if key.lower() == 'tissue_of_origin':
+                if normalized_key == 'tissue_of_origin':
                     sample["Tissue_of_origin"] = value
+
+            # Metadata attachment and sample renaming are separate operations.
+            # When remapping is declined, retain the name supplied by the new
+            # project archive instead of silently restoring metadata['sample_name'].
+            if remap_name_to_alias and _has_metadata_value(sample_name_alias):
+                sample["Sample_name"] = str(sample_name_alias)
 
     return samples_updated
 
@@ -217,17 +338,12 @@ def process_metadata_no_request(project_runs, metadata_file=None, old_extra_meta
         return project_runs
 
     if not metadata_file and not file_path and old_extra_metadata:
-        # add the old extra metadata
-        for sample_key, sample_list in project_runs.items():
-            for sample in sample_list:
-                sample_name = sample.get('Sample_name')
-                if not sample_name:
-                    continue
-                sample_name = str(sample_name)  # normalise: MongoDB values should already be str, but be defensive
-                if sample_name in old_extra_metadata:
-                    if "extra_metadata_from_csv" not in sample:
-                        sample["extra_metadata_from_csv"] = {}
-                    sample["extra_metadata_from_csv"].update(old_extra_metadata[sample_name])
+        metadata_lookup = _build_retained_metadata_lookup(old_extra_metadata)
+        _apply_metadata_to_runs(
+            project_runs,
+            metadata_lookup,
+            remap_name_to_alias=remap_name_to_alias,
+        )
         logging.info(f"process_metadata_no_request: Applied old metadata - took {time.time() - start_time:.4f}s")
         return project_runs
 

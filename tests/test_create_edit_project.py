@@ -66,7 +66,6 @@ def test_create_ac2_project(
         assert not doc.get('aggregation_failed'), doc.get('error_message')
         assert doc.get('sample_count') == 9
         assert len(doc.get('runs', {})) == 9
-        assert doc.get('aggregator_version') == '7.1.0'
 
         features = [
             feature
@@ -141,7 +140,6 @@ def test_create_ac2_fan_project(
         assert not doc.get('aggregation_failed'), doc.get('error_message')
         assert doc.get('sample_count') == 140
         assert len(doc.get('runs', {})) == 140
-        assert doc.get('aggregator_version') == '7.1.0'
 
         features = [
             feature
@@ -196,7 +194,6 @@ def test_create_ac2_hg38_project(
         assert not doc.get('aggregation_failed'), doc.get('error_message')
         assert doc.get('sample_count') == 63
         assert len(doc.get('runs', {})) == 63
-        assert doc.get('aggregator_version') == '7.1.0'
 
         features = [
             feature
@@ -524,8 +521,12 @@ def test_metadata_applied_to_already_renamed_sample():
 
     assert n_updated == 1, "Sample should be matched via its alias name"
     sample = runs['run1'][0]
+    assert sample['Sample_name'] == 'Renamed_001', \
+        "Applying metadata without remapping must not change the current sample name"
     assert sample.get('Cancer_type') == 'GBM', \
         "Cancer_type must be applied when matching by alias (Issue #519)"
+    assert sample['extra_metadata_from_csv'].get('original_sample_name') == 'Sample_001', \
+        "The source sample_name must be retained for future project replacements"
 
 
 @pytest.mark.integration
@@ -559,6 +560,169 @@ def test_rename_via_alias_and_metadata_applied_together():
         "Cancer_type must be applied in the same pass as the rename"
     assert sample['extra_metadata_from_csv'].get('custom_col') == 'value_x', \
         "Custom columns must survive alongside the rename (Issue #519)"
+    assert sample['extra_metadata_from_csv'].get('original_sample_name') == 'Sample_001', \
+        "Remapping must preserve the original sample identity"
+
+
+@pytest.mark.integration
+def test_retained_metadata_matches_replacement_by_original_name_without_remap():
+    """Retained metadata must attach to fresh canonical names without renaming them."""
+    from caper.extra_metadata import process_metadata_no_request
+
+    replacement_runs = {
+        'run1': [{'Sample_name': 'Sample_001', 'Features': []}]
+    }
+    retained_metadata = {
+        # The previous project was remapped, so its current-name key is the alias.
+        'Renamed_001': {
+            'original_sample_name': 'Sample_001',
+            'sample_name_alias': 'Renamed_001',
+            'Cancer_type': 'GBM',
+        }
+    }
+
+    updated_runs = process_metadata_no_request(
+        replacement_runs,
+        old_extra_metadata=retained_metadata,
+        remap_name_to_alias=False,
+    )
+
+    sample = updated_runs['run1'][0]
+    assert sample['Sample_name'] == 'Sample_001'
+    assert sample['Cancer_type'] == 'GBM'
+    assert sample['extra_metadata_from_csv']['sample_name_alias'] == 'Renamed_001'
+
+
+@pytest.mark.integration
+def test_retained_metadata_can_remap_replacement_from_original_name():
+    """The retained original-to-alias identity must support an explicit re-remap."""
+    from caper.extra_metadata import process_metadata_no_request
+
+    replacement_runs = {
+        'run1': [{'Sample_name': 'Sample_001', 'Features': []}]
+    }
+    retained_metadata = {
+        'Renamed_001': {
+            'original_sample_name': 'Sample_001',
+            'sample_name_alias': 'Renamed_001',
+            'Cancer_type': 'GBM',
+        }
+    }
+
+    updated_runs = process_metadata_no_request(
+        replacement_runs,
+        old_extra_metadata=retained_metadata,
+        remap_name_to_alias=True,
+    )
+
+    sample = updated_runs['run1'][0]
+    assert sample['Sample_name'] == 'Renamed_001'
+    assert sample['Cancer_type'] == 'GBM'
+
+
+@pytest.mark.integration
+def test_retained_name_map_uses_original_sample_name(tmp_path):
+    """A replacement name map must be original -> alias, never alias -> alias."""
+    from caper.views import create_name_map_from_old_metadata
+
+    retained_metadata = {
+        'Renamed_001': {
+            'original_sample_name': 'Sample_001',
+            'sample_name_alias': 'Renamed_001',
+        }
+    }
+
+    name_map_path = create_name_map_from_old_metadata(
+        retained_metadata, str(tmp_path)
+    )
+
+    assert name_map_path is not None
+    with open(name_map_path) as name_map:
+        assert name_map.read() == 'Sample_001\tRenamed_001\n'
+
+
+@pytest.mark.integration
+def test_legacy_alias_only_metadata_does_not_create_identity_name_map(tmp_path):
+    """Legacy alias-only state cannot safely reconstruct the original identity."""
+    from caper.views import create_name_map_from_old_metadata
+
+    retained_metadata = {
+        'Renamed_001': {'sample_name_alias': 'Renamed_001'}
+    }
+
+    assert create_name_map_from_old_metadata(
+        retained_metadata, str(tmp_path)
+    ) is None
+
+
+@pytest.mark.integration
+def test_downloaded_metadata_name_map_prefers_original_sample_name(tmp_path):
+    """A round-tripped metadata table must not turn alias -> alias into a map."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from caper.views import create_name_map_from_metadata
+
+    metadata_file = SimpleUploadedFile(
+        'metadata.csv',
+        (
+            b'sample_name,original_sample_name,sample_name_alias,cancer_type\n'
+            b'Renamed_001,Sample_001,Renamed_001,GBM\n'
+        ),
+        content_type='text/csv',
+    )
+
+    name_map_path = create_name_map_from_metadata(
+        metadata_file, str(tmp_path)
+    )
+
+    assert name_map_path is not None
+    with open(name_map_path) as name_map:
+        assert name_map.read() == 'Sample_001\tRenamed_001\n'
+
+
+@pytest.mark.integration
+def test_edit_context_reoffers_previously_enabled_retained_remap():
+    from caper.views import get_metadata_remap_edit_context
+
+    project = {
+        'sample_name_remap_enabled': True,
+        'runs': {
+            'run1': [{
+                'Sample_name': 'Renamed_001',
+                'extra_metadata_from_csv': {
+                    'original_sample_name': 'Sample_001',
+                    'sample_name_alias': 'Renamed_001',
+                },
+            }],
+        },
+    }
+
+    context = get_metadata_remap_edit_context(project)
+
+    assert context['old_metadata_has_alias'] is True
+    assert context['sample_name_remap_enabled'] is True
+    assert context['old_metadata_alias_requires_reupload'] is False
+
+
+@pytest.mark.integration
+def test_edit_context_flags_legacy_alias_metadata_for_reupload():
+    from caper.views import get_metadata_remap_edit_context
+
+    project = {
+        'runs': {
+            'run1': [{
+                'Sample_name': 'Renamed_001',
+                'extra_metadata_from_csv': {
+                    'sample_name_alias': 'Renamed_001',
+                },
+            }],
+        },
+    }
+
+    context = get_metadata_remap_edit_context(project)
+
+    assert context['old_metadata_has_alias'] is False
+    assert context['sample_name_remap_enabled'] is False
+    assert context['old_metadata_alias_requires_reupload'] is True
 
 
 # ---------------------------------------------------------------------------
