@@ -6,7 +6,7 @@ import sys
 import gc
 import traceback
 import json
-from collections import Counter, defaultdict
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from .background_tasks import _thread_executor, get_background_task_status
 
@@ -803,17 +803,21 @@ def project_page(request, project_name, message=''):
     debug_delete_flag = project.get('delete', 'NOT SET')
     debug_current_flag = project.get('current', 'NOT SET')
 
-    # Strip invalid classifications from sample_data regardless of cache path
+    # Strip invalid classifications from sample_data regardless of cache path.
+    # Features and Classifications_counted already contain the totals calculated
+    # from every feature row. Do not recalculate either from Classifications,
+    # which is intentionally a unique list used by search.
     _invalid_classes = {None, 'NA', 'None', 'Not Provided', ''}
     for item in sample_data:
         valid = [c for c in item.get('Classifications', []) if c not in _invalid_classes]
-        class_counts = Counter(valid)
         item['Classifications'] = list(set(valid))
         item['Classifications_counted'] = [
-            f"{c} ({count})" if count > 1 else c
-            for c, count in sorted(class_counts.items())
+            counted
+            for counted in item.get('Classifications_counted', [])
+            if re.sub(r' \(\d+\)$', '', str(counted)) not in _invalid_classes
         ]
-        item['Features'] = len(valid) if valid else 0
+        if not valid:
+            item['Features'] = 0
 
     # Log total page generation time
     total_time = time.time() - t_total_start
