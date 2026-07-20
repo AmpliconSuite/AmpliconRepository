@@ -99,6 +99,49 @@
         min-width: 70px;
         white-space: nowrap;
     }
+
+    .project-description-toggle {
+        appearance: none;
+        background: none;
+        border: 0;
+        border-radius: 2px;
+        color: #007bff;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 0.86em;
+        font-weight: 600;
+        line-height: inherit;
+        margin-left: 0.15rem;
+        padding: 0 0.15rem;
+        white-space: nowrap;
+    }
+
+    .project-description-toggle:hover {
+        color: #0056b3;
+        text-decoration: underline;
+    }
+
+    .project-description-toggle:focus-visible {
+        outline: 2px solid rgba(0, 123, 255, 0.45);
+        outline-offset: 2px;
+    }
+
+    .project-description-toggle-icon {
+        display: inline-block;
+        font-size: 0.72em;
+        margin-left: 0.12rem;
+        transition: transform 0.15s ease;
+    }
+
+    .project-description.is-expanded .project-description-toggle-icon {
+        transform: rotate(180deg);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .project-description-toggle-icon {
+            transition: none;
+        }
+    }
     
     /* Custom tooltip for hidden public indicator */
     .hidden-public-indicator {
@@ -201,6 +244,32 @@
         $('#unified-project-search').on('keyup', function() {
             unifiedTable.search(this.value).draw();
         });
+
+        // Keep descriptions compact while allowing the full text to expand in place.
+        // Event delegation keeps the controls working across DataTables redraws.
+        $('#unifiedProjectTable').on(
+            'click',
+            '.project-description-toggle',
+            function() {
+                var button = $(this);
+                var description = button.closest('.project-description');
+                var willExpand = button.attr('aria-expanded') !== 'true';
+                var projectName = button.attr('data-project-name');
+
+                button.attr('aria-expanded', willExpand ? 'true' : 'false');
+                button.attr(
+                    'aria-label',
+                    (willExpand ? 'Collapse' : 'Show full') +
+                        ' description for ' + projectName
+                );
+                description.toggleClass('is-expanded', willExpand);
+                description.find('.project-description-preview').prop('hidden', willExpand);
+                description.find('.project-description-full').prop('hidden', !willExpand);
+                button.find('.project-description-toggle-label').text(
+                    willExpand ? 'Less' : 'More'
+                );
+            }
+        );
     });
     // Call the formatDates function when the page is loaded
     document.addEventListener('DOMContentLoaded', formatDates);
@@ -343,11 +412,11 @@
                             <tbody>
                                 {% for project in featured_projects %}
                                 <tr data-project-type="featured">
-                                    <td><span class="badge badge-primary">Featured</span></td>
+                                    <td><span class="badge badge-success">Featured</span></td>
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                                       <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                                     </td>
-                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
+                                    {% include 'includes/project_description_cell.html' %}
                                     <td class="date">{{ project.date }}</td>
                                     <td>{{ project.sample_count }}</td>
                                 </tr>
@@ -355,11 +424,11 @@
                                 
                                 {% for project in public_projects %}
                                 <tr data-project-type="public">
-                                    <td><span class="badge badge-success">Public</span></td>
+                                    <td><span class="badge badge-primary">Public</span></td>
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                                       <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                                     </td>
-                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
+                                    {% include 'includes/project_description_cell.html' %}
                                     <td class="date">{{ project.date }}</td>
                                     <td>{{ project.sample_count }}</td>
                                 </tr>
@@ -374,7 +443,7 @@
                                     <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                                       <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                                     </td>
-                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
+                                    {% include 'includes/project_description_cell.html' %}
                                     <td class="date">{{ project.date }}</td>
                                     <td>{{ project.sample_count }}</td>
                                 </tr>
