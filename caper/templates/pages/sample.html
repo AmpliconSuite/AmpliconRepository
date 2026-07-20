@@ -3,9 +3,46 @@
 
 {% block extra_js %}
 <script>
-    $(document).ready( function () {
-        $('#myTable2').DataTable({ autoWidth: false });
-    } );
+    $(document).ready(function () {
+        const table = $('#myTable2').DataTable({ autoWidth: false });
+        const continuation = $('#amplicon-continuation');
+        const continuationSummary = $('#amplicon-continuation-summary');
+        const nextPageButton = $('#amplicon-next-page');
+
+        // Keep the continuation cue visually attached to the table, above the
+        // standard DataTables result count and page-number controls.
+        continuation.insertAfter($('#myTable2'));
+
+        function updateAmpliconContinuation() {
+            const info = table.page.info();
+            const remaining = Math.max(info.recordsDisplay - info.end, 0);
+
+            if (remaining > 0) {
+                const nextCount = Math.min(info.length, remaining);
+                const isFiltered = info.recordsDisplay !== info.recordsTotal;
+                const label = isFiltered ? 'matching amplicon' : 'amplicon';
+                const plural = remaining === 1 ? '' : 's';
+
+                continuationSummary.text(`${remaining} more ${label}${plural}`);
+                $('#amplicon-next-page-count').text(nextCount);
+                const nextLabel = nextCount === 1 ? 'amplicon' : 'amplicons';
+                nextPageButton.attr(
+                    'aria-label',
+                    `Show next ${nextCount} ${nextLabel}; ${remaining} remain`
+                );
+                continuation.prop('hidden', false);
+            } else {
+                continuation.prop('hidden', true);
+            }
+        }
+
+        nextPageButton.on('click', function () {
+            table.page('next').draw('page');
+        });
+
+        table.on('draw.dt', updateAmpliconContinuation);
+        updateAmpliconContinuation();
+    });
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/igv@2.13.7/dist/igv.min.js"></script>
@@ -375,6 +412,20 @@
         </tbody>
     </table>
 
+    <div id="amplicon-continuation" class="amplicon-continuation" hidden>
+        <button id="amplicon-next-page"
+                class="amplicon-continuation-action"
+                type="button"
+                aria-controls="myTable2">
+            Show next <span id="amplicon-next-page-count">10</span>
+            <span class="amplicon-continuation-arrow" aria-hidden="true">&rarr;</span>
+        </button>
+        <span id="amplicon-continuation-summary"
+              class="amplicon-continuation-summary"
+              aria-live="polite"
+              aria-atomic="true"></span>
+    </div>
+
 <script>
     function handleTableRowClick(amplicon_num, featureLoc) {
         var link = '';
@@ -431,6 +482,80 @@
 </div>
 
 <style>
+    .amplicon-continuation {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.8rem 1rem;
+        border-top: 1px solid #d8dee4;
+        background: linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.55) 0%,
+            rgba(240, 244, 247, 0.95) 100%
+        );
+        box-shadow: inset 0 8px 14px -16px rgba(0, 0, 0, 0.8);
+        color: #59636e;
+    }
+
+    .amplicon-continuation[hidden] {
+        display: none;
+    }
+
+    .amplicon-continuation-summary {
+        font-size: 0.95rem;
+        font-weight: 500;
+    }
+
+    .amplicon-continuation-action {
+        padding: 0.38rem 0.75rem;
+        border: 1px solid #b9c8d6;
+        border-radius: 0.25rem;
+        background: rgba(255, 255, 255, 0.82);
+        color: #2d6ca2;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 120ms ease, border-color 120ms ease;
+    }
+
+    .amplicon-continuation-action:hover,
+    .amplicon-continuation-action:focus {
+        border-color: #7f9db7;
+        background: #fff;
+        color: #245882;
+    }
+
+    .amplicon-continuation-action:focus-visible {
+        outline: 2px solid #2d6ca2;
+        outline-offset: 2px;
+    }
+
+    .amplicon-continuation-arrow {
+        display: inline-block;
+        margin-left: 0.25rem;
+        transition: transform 120ms ease;
+    }
+
+    .amplicon-continuation-action:hover .amplicon-continuation-arrow {
+        transform: translateX(2px);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .amplicon-continuation-action,
+        .amplicon-continuation-arrow {
+            transition: none;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .amplicon-continuation {
+            align-items: stretch;
+            flex-direction: column;
+            text-align: center;
+        }
+    }
+
     .thumbnail img{
         border: 1px solid white;
         margin: 0 5px 5px 0;

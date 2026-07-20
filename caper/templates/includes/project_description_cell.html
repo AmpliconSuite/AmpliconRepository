@@ -1,0 +1,20 @@
+<td class="project-description-cell"
+    data-search="{{ project.description }}"
+    style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
+    <span class="project-description">
+        <span class="project-description-preview">{{ project.description|truncatechars:100 }}</span>
+        <span class="project-description-full" hidden>{{ project.description }}</span>
+        {% if project.description|length > 100 %}
+        <button class="project-description-toggle"
+                type="button"
+                aria-expanded="false"
+                data-project-name="{{ project.project_name }}"
+                aria-label="Show full description for {{ project.project_name }}">
+            <span class="project-description-toggle-label">More</span>
+            <span class="project-description-toggle-icon" aria-hidden="true">
+                <i class="fas fa-chevron-down"></i>
+            </span>
+        </button>
+        {% endif %}
+    </span>
+</td>
