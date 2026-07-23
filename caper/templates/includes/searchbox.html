@@ -42,8 +42,9 @@
             <div class="form-check">
                 <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="FAN" id="class-fan" {% if user_query.search_submitted %}{% if "FAN" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
                 <label class="form-check-label" for="class-fan" title="Focal amplification in neochromosome">
-                    FAN <i class="far fa-question-circle" title="Focal amplification in neochromosome" aria-label="Focal amplification in neochromosome"></i>
+                    FAN
                 </label>
+                <a href="https://github.com/AmpliconSuite/AmpliconClassifier/blob/main/docs/fan_primer.md" target="_blank" rel="noopener noreferrer" title="Focal amplification in neochromosome - click to read more" aria-label="Focal amplification in neochromosome - click to read more"><i class="far fa-question-circle"></i></a>
             </div>
             <div class="form-check">
                 <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="linear amplification" id="class-linear" {% if user_query.search_submitted %}{% if "LINEAR AMPLIFICATION" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>

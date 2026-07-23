@@ -60,8 +60,8 @@ def test_site_statistics_templates_show_fan_counts():
     assert "public_amplicon_classifications_count.FAN" in home_template
     assert "public_amplicon_classifications_count.FAN" in admin_template
     assert "all_private_amplicon_classifications_count.FAN" in admin_template
-    assert 'title="Focal amplification in neochromosome"' in home_template
-    assert 'title="Focal amplification in neochromosome"' in admin_template
+    assert "Focal amplification in neochromosome" in home_template
+    assert "Focal amplification in neochromosome" in admin_template
 
 
 def test_project_template_labels_coral_projects_and_versions():
@@ -95,6 +95,8 @@ def test_feature_type_labels_have_compact_explanations():
         assert "Focal amplification in neochromosome" in template
         assert "Breakage-fusion-bridge" in template
         assert "fa-question-circle" in template
+        # the FAN help icon links out to the AmpliconClassifier FAN primer
+        assert "AmpliconClassifier/blob/main/docs/fan_primer.md" in template
 
 
 def test_admin_statistics_template_shows_coral_counts():

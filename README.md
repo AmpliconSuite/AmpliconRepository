@@ -25,7 +25,7 @@ This is the main repository for the AmpliconRepository website. The documentatio
 ## Option A - install the development environment for AmpliconRepository: <a name="aa-env-install"></a> 
 
 ## Requirements
-- Python Virtual Environment (3.8 or higher)
+- Python Virtual Environment (3.9 or higher)
 
 ## 1. Clone the repository from GitHub
 - Clone repo using https, ssh, or GitHub Desktop to your local machine
@@ -34,6 +34,8 @@ This is the main repository for the AmpliconRepository website. The documentatio
 - In a terminal window, move to the cloned GitHub repo
 - Go to the AmpliconRepository top level directory (should see `requirements.txt`)
 #### Option A: Using python's environment manager
+- Check that the interpreter you are about to use is 3.9 or newer (`venv` inherits whatever `python` resolves to):
+> `python --version`
 - Create a new Python virtual environment:
 > `python -m venv ampliconenv`
 - Activate the new environment (you need to do this everytime before running the server):
@@ -42,7 +44,7 @@ This is the main repository for the AmpliconRepository website. The documentatio
 > `pip install -r requirements.txt`
 #### Option B: Using conda's environment manager
 - Create a new Conda environment
-> `conda create -n ampliconenv "python>=3.8,<3.13"`
+> `conda create -n ampliconenv "python>=3.9,<3.13"`
 - To activate
 > `conda activate ampliconenv`
 - Install pip to that environment 

@@ -82,8 +82,7 @@ uuid==1.30
 webencodings==0.5.1
 Werkzeug==2.2.2
 zipp==3.10.0
-genepattern-python==24.1
-AmpliconSuiteAggregator==7.4.0
+AmpliconSuiteAggregator==8.0.0
 openpyxl
 gunicorn==21.2.0
 pytest==8.4.2
