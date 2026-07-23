@@ -676,6 +676,27 @@
     </nav>
 </div>
 
+{% if has_outdated_ac %}
+<div class="container">
+    <div class="alert alert-warning" role="alert" style="margin-bottom: 0;">
+        <i class="fas fa-exclamation-triangle"></i>
+        This project contains results from AmpliconClassifier older than v2.0
+        (see Tool versions below). Classifications may be out of date &mdash; we
+        recommend re-running the latest
+        <a href="https://github.com/AmpliconSuite/AmpliconClassifier" target="_blank" rel="noopener">AmpliconClassifier</a>.
+    </div>
+</div>
+{% elif ac_version_unidentified %}
+<div class="container">
+    <div class="alert alert-secondary" role="alert" style="margin-bottom: 0;">
+        <i class="fas fa-info-circle"></i>
+        The AmpliconClassifier version for this project could not be identified
+        (see Tool versions below). If it was produced by AmpliconClassifier older
+        than v2.0, the classifications may be out of date.
+    </div>
+</div>
+{% endif %}
+
 <div class="container row" style="margin:auto; padding:0px; padding-top: 20px;">
     <div class="col-md-7">
         <h2>Project: <span style="font-weight: 200">{{ project.project_name }}</span>

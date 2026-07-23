@@ -70,7 +70,8 @@ from .utils import (
     replace_space_to_underscore, sample_data_from_feature_list,
     get_all_alias, get_projects_close_cursor, create_user_list,
     preprocess_sample_data, validate_project, replace_underscore_keys,
-    get_latest_project_version, flatten
+    get_latest_project_version, flatten, classify_ac_version,
+    AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
 from .project_version_cleanup import (
     build_deleted_version_tombstone,
@@ -704,6 +705,16 @@ def project_page(request, project_name, message=''):
     if prev_ver_msg:
         messages.error(request, mark_safe(prev_ver_msg))
         viewing_old_project = True
+
+    # Warn when the latest project version contains any pre-v2 AmpliconClassifier
+    # results (strong warning), or when no AC version could be identified (soft
+    # warning). Old project versions already show a banner about being outdated,
+    # so only warn on the current version (see issue #602).
+    ac_version_status = None
+    if not viewing_old_project:
+        ac_version_status = classify_ac_version(project.get('AC_version'))
+    has_outdated_ac = ac_version_status == AC_VERSION_OUTDATED
+    ac_version_unidentified = ac_version_status == AC_VERSION_UNIDENTIFIED
     active_prev_versions = [
         version for version in prev_versions
         if not version.get('version_deleted_from_history')
@@ -838,6 +849,8 @@ def project_page(request, project_name, message=''):
         'is_project_member': is_project_member,  # Pass actual membership status for subscription UI
         'proj_id': project_name,
         'viewing_old_project': viewing_old_project,
+        'has_outdated_ac': has_outdated_ac,  # Strong warning: pre-v2 AmpliconClassifier results
+        'ac_version_unidentified': ac_version_unidentified,  # Soft warning: AC version unknown
         'is_empty_project': is_empty_project,  # Pass this flag to the template
         'debug_delete_flag': debug_delete_flag,  # DEBUG: display delete flag
         'debug_current_flag': debug_current_flag,  # DEBUG: display current flag

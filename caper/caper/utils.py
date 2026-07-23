@@ -658,6 +658,45 @@ def get_date_short():
     return date
 
 
+# Minimum AmpliconClassifier version considered current. Projects containing
+# results from any AC release older than this are flagged so users know the
+# classifications may be out of date.
+MIN_CURRENT_AC_VERSION = (2, 0)
+
+# Return values of classify_ac_version().
+AC_VERSION_CURRENT = 'current'            # all identifiable AC versions are >= v2
+AC_VERSION_OUTDATED = 'outdated'          # at least one identifiable AC version < v2
+AC_VERSION_UNIDENTIFIED = 'unidentified'  # no AC version could be identified
+
+
+def classify_ac_version(ac_version_str):
+    """Classify a project's AmpliconClassifier version string.
+
+    AC_version is a comma-separated string of the AC versions detected across a
+    project's samples. It may also be a placeholder ('NA', 'None', ...), an empty
+    string, or None when no version could be determined. When multiple versions
+    are present, each is checked and the most concerning state wins.
+
+    Returns one of:
+      AC_VERSION_OUTDATED     - at least one identifiable AC version predates v2.0
+      AC_VERSION_UNIDENTIFIED - no AC version could be identified for the project
+      AC_VERSION_CURRENT      - all identifiable AC versions are >= v2.0
+    """
+    identified = False
+    for token in str(ac_version_str or '').split(','):
+        match = re.search(r'\d+(?:\.\d+)*', token)
+        if not match:
+            continue
+        identified = True
+        parts = tuple(int(p) for p in match.group(0).split('.'))
+        # Pad/truncate to the threshold length so "2" compares equal to "2.0".
+        n = len(MIN_CURRENT_AC_VERSION)
+        normalized = (parts + (0,) * n)[:n]
+        if normalized < MIN_CURRENT_AC_VERSION:
+            return AC_VERSION_OUTDATED
+    return AC_VERSION_CURRENT if identified else AC_VERSION_UNIDENTIFIED
+
+
 VERSION_HISTORY_FIELDS = [
     'ASP_version', 'AA_version', 'AC_version', 'aggregator_version',
     'Reconstruction_tools', 'CoRAL_version',
