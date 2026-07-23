@@ -44,10 +44,16 @@ services:
       - AWS_PROFILE_NAME=${AWS_PROFILE_NAME}
       - S3_DOWNLOADS_BUCKET_PATH=${S3_DOWNLOADS_BUCKET_PATH}
       - CONTAINER_NAME=${CONTAINER_NAME}
+      # boto3 locates ~/.aws (config, credentials, and the SSO token cache) via HOME.
+      # Must match the mounted path below and the container user's home (AA_USER).
+      - HOME=/home/${AA_USER}
     ports:
       - '${AMPLICON_ENV_PORT}:8000'
     volumes:
-      - ${PWD}/.aws:/tmp/.aws:ro
+      # Mount the host's AWS dir (config + credentials + sso/cache) into the
+      # container user's home so it reuses the SSO token from `aws sso login`
+      # run on the host. Read-only: login/refresh happens on the host, not here.
+      - ${HOME}/.aws:/home/${AA_USER}/.aws:ro
       - ${PWD}/logs:/logs
       # might want to mount the temp files on the local machine
       - ${PWD}/tmp:/tmp

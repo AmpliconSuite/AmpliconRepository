@@ -115,9 +115,22 @@ source caper/config.sh && cd caper && python manage.py runserver
 # visit http://localhost:8000
 ```
 
+### AWS credentials for S3 (config.sh has `S3_*=TRUE`)
+The app authenticates to S3 via the boto3 profile `amprepo` (`AWS_PROFILE_NAME`), read from
+`~/.aws`. If that profile is SSO-based, refresh the ~8-hour token before running anything
+that touches S3 (uploads, downloads, static sync):
+```bash
+aws sso login --profile amprepo
+```
+A static `[amprepo]` block in `~/.aws/credentials` overrides the SSO profile — remove/rename
+it to use SSO. On the dev/prod EC2 servers the target is an IAM instance role (no keys, auto
+refresh); permanent access keys are being retired.
+
 ### Docker dev (simplest for new setup)
 ```bash
-mkdir -p logs tmp .aws .git
+mkdir -p logs tmp .git
+# host ~/.aws is mounted into the container; if using SSO, `aws sso login --profile amprepo`
+# on the host first so a valid token is present.
 docker compose -f docker-compose-dev.yml build --no-cache
 docker compose -f docker-compose-dev.yml up -d
 # visit http://localhost:8000

@@ -279,9 +279,23 @@ This command will:
 - will start a mongodb instance listening on port `27017`
 - will mount a volume with your source code `-v ${PWD}:/srv/:rw`
 
+The container reaches S3 by mounting your host `~/.aws` directory (config, credentials,
+and the SSO token cache). If your AWS access uses SSO (temporary credentials), log in on
+the **host** first so a valid token is present in `~/.aws/sso/cache`:
+
+```bash
+# one-time SSO profile setup is done with `aws configure sso` (see your org's IAM
+# Identity Center guide); thereafter just refresh the ~8-hour token when it expires:
+aws sso login --profile amprepo
+```
+
+The token is read-only inside the container; when it expires, re-run the command on the
+host — no container restart is needed. (If you instead use a permanent access key, place it
+in `~/.aws/credentials` under the `amprepo` profile and this step is not required.)
+
 ```bash
 # create all folders exposed to container
-mkdir -p logs tmp .aws .git
+mkdir -p logs tmp .git
 # start container using the host UID and GID (change in .env)
 docker compose -f docker-compose-dev.yml up -d
 #[+] Running 2/2
@@ -775,8 +789,11 @@ MongoDB connectivity uses the existing DocumentDB cluster; the connection string
 
 The container mounts `/home/ubuntu/.aws` so that the application can reach S3. Use one of:
 
-- **IAM instance role** (preferred for EC2): attach a role with the required S3 permissions to the instance — no credential file is needed
-- **Access keys**: place credentials in `/home/ubuntu/.aws/credentials` in the standard AWS shared credentials format
+- **IAM instance role** (preferred for EC2 servers): attach a role with the required S3 permissions to the instance — no credential file is needed, and credentials refresh automatically. This is the target configuration for the dev and prod servers.
+- **SSO temporary credentials** (interactive/local use): configure an SSO profile named `amprepo` and run `aws sso login --profile amprepo`; the boto3 client picks up the cached token automatically. Tokens are short-lived (re-run the login when they expire).
+- **Permanent access keys** (deprecated): place static credentials in `/home/ubuntu/.aws/credentials` under the `amprepo` profile. Long-term keys are being phased out — prefer an instance role or SSO.
+
+> Note: a static `[amprepo]` block in `~/.aws/credentials` takes precedence over both the SSO profile and an instance role. To use SSO or an instance role, that static block must be absent (or renamed).
 
 ### vi. Build the Docker image
 
