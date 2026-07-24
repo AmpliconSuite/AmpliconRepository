@@ -92,6 +92,9 @@
                 <li class="nav-item">
                     <a class='nav-link' href="#tab-table2" data-toggle="tab">Environment</a>
                 </li>
+                <li class="nav-item">
+                    <a class='nav-link' href="#tab-table4" data-toggle="tab">AWS / S3 status</a>
+                </li>
             </ul>
 
             <div class="tab-content" style="padding-top: 30px;">
@@ -142,6 +145,46 @@
                                 <td>{{ detail.name }}</td>
                                 <td>{{ detail.value }}</td>
 
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="tab-pane " id="tab-table4">
+                    <i><p style="padding-top: 10px;">Live check of the AWS credentials this running server uses for S3.
+                    Each row resolves a boto3 profile the app actually uses and tries to reach its bucket, so an
+                    expired SSO token or a broken instance role shows up here. <b>source</b> = how the credentials were
+                    resolved (<code>iam-role</code> = EC2 instance role, <code>sso</code> = SSO login,
+                    <code>shared-credentials-file</code> = a static key).</p></i>
+                    <table class="table" style="padding-top: 20px; width:100%">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Used for</th>
+                                <th>Profile</th>
+                                <th>Source</th>
+                                <th>Identity (ARN)</th>
+                                <th>Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in s3_status %}
+                            <tr>
+                                <td>
+                                    {% if row.status == 'ok' %}
+                                        <span style="color:#ffffff; background:#28a745; padding:2px 8px; border-radius:4px;">OK</span>
+                                    {% elif row.status == 'disabled' %}
+                                        <span style="color:#ffffff; background:#6c757d; padding:2px 8px; border-radius:4px;">OFF</span>
+                                    {% else %}
+                                        <span style="color:#ffffff; background:#dc3545; padding:2px 8px; border-radius:4px;">ERROR</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ row.used_for }}</td>
+                                <td>{{ row.profile }}</td>
+                                <td>{{ row.source }}</td>
+                                <td style="word-break:break-all;">{{ row.identity }}</td>
+                                <td style="word-break:break-word;">{{ row.detail }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>

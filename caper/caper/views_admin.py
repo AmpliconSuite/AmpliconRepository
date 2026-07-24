@@ -80,6 +80,92 @@ def _get_s3_file_size_bytes_admin(s3_uri):
         return None
 
 
+def _short_err(exc):
+    """Compact, human-readable one-liner for a botocore/boto3 exception."""
+    msg = str(exc).strip().replace('\n', ' ')
+    return (msg[:300] + '…') if len(msg) > 300 else msg
+
+
+def _s3_health_check():
+    """
+    Live check of the AWS credentials the app uses for S3, surfaced on the admin
+    version-details page. For each boto3 profile the app uses, resolve the
+    credentials and confirm they can actually reach S3 — so an expired SSO token
+    or a broken instance role is visible at a glance here, instead of only
+    showing up when a download/upload/static-sync fails.
+
+    Returns a list of dicts (one per distinct profile/bucket the app uses):
+        {'used_for', 'profile', 'source', 'identity', 'bucket', 'status', 'detail'}
+    where status is 'ok' | 'error' | 'disabled'.
+    """
+    from botocore.config import Config as BotoConfig
+
+    if not getattr(settings, 'USE_S3_DOWNLOADS', False) and not getattr(settings, 'USE_S3', False):
+        return [{
+            'used_for': '—', 'profile': '—', 'source': '—', 'identity': '—', 'bucket': '—',
+            'status': 'disabled',
+            'detail': 'S3 is not enabled (S3_FILE_DOWNLOADS and S3_STATIC_FILES are both off).',
+        }]
+
+    # The app uses two profiles: downloads use settings.AWS_PROFILE_NAME
+    # (default 'default'); the startup static-sync in apps.py uses the
+    # AWS_PROFILE_NAME env var, defaulting to 'amprepo'.
+    download_profile = getattr(settings, 'AWS_PROFILE_NAME', None) or 'default'
+    static_profile = os.environ.get('AWS_PROFILE_NAME', 'amprepo')
+    download_bucket = getattr(settings, 'S3_DOWNLOADS_BUCKET', 'amprepo-private')
+
+    # (used_for, profile, bucket) — dedup on (profile, bucket) below.
+    checks = [
+        ('downloads (amprepo-private)', download_profile, download_bucket),
+        ('static sync (amprepobucket)', static_profile, 'amprepobucket'),
+    ]
+
+    # Keep the page snappy even if IMDS/network is unreachable.
+    boto_cfg = BotoConfig(connect_timeout=3, read_timeout=5, retries={'max_attempts': 1})
+
+    results = []
+    seen = set()
+    for used_for, profile, bucket in checks:
+        key = (profile, bucket)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        entry = {'used_for': used_for, 'profile': profile, 'bucket': bucket,
+                 'source': 'unknown', 'identity': '—'}
+        try:
+            session = boto3.Session(profile_name=profile)
+
+            creds = session.get_credentials()
+            if creds is None:
+                entry['status'] = 'error'
+                entry['source'] = 'none'
+                entry['detail'] = 'No credentials could be resolved for this profile.'
+                results.append(entry)
+                continue
+            # e.g. 'iam-role' (instance role), 'sso', 'shared-credentials-file' (static key)
+            entry['source'] = getattr(creds, 'method', 'unknown')
+
+            # Who are we, really? (also forces SSO/role token load, surfacing expiry.)
+            try:
+                sts = session.client('sts', config=boto_cfg)
+                entry['identity'] = sts.get_caller_identity().get('Arn', 'unknown')
+            except Exception as e:
+                entry['identity'] = f'(sts failed: {_short_err(e)})'
+
+            # Can we actually reach the bucket with these creds?
+            s3 = session.client('s3', config=boto_cfg)
+            s3.head_bucket(Bucket=bucket)
+            entry['status'] = 'ok'
+            entry['detail'] = f'Reached s3://{bucket} successfully.'
+        except Exception as e:
+            entry['status'] = 'error'
+            entry['detail'] = _short_err(e)
+        results.append(entry)
+
+    return results
+
+
 def _run_audit_checks(project, latest_entry):
     """
     Compare *latest_entry* (an audit-log document) against the live *project* document.
@@ -263,8 +349,16 @@ def admin_version_details(request):
     except:
         settings_result = "An error occurred getting the contents of settings.py."
 
+    try:
+        s3_status = _s3_health_check()
+    except Exception as e:
+        s3_status = [{'used_for': '—', 'profile': '—', 'source': '—', 'identity': '—',
+                      'bucket': '—', 'status': 'error',
+                      'detail': f'S3 health check failed to run: {_short_err(e)}'}]
+
     return render(request, 'pages/admin_version_details.html',
-                  {'details': details, 'env': env, 'git': git_result, 'django_settings': settings_result})
+                  {'details': details, 'env': env, 'git': git_result,
+                   'django_settings': settings_result, 's3_status': s3_status})
 
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
