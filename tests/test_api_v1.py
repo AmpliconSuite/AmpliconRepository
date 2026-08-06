@@ -308,7 +308,9 @@ class TestProjectListView:
         priv = self._private_doc(member='testuser')
         mock_user = _MockUser()
 
-        def fake_find(q):
+        # projection is passed by ProjectListView to avoid pulling 'runs' for
+        # every project; see tests/test_api_read_amplification.py.
+        def fake_find(q, projection=None):
             if q.get('private', {}).get('$in', [None])[0] in (False, 'public'):
                 return [pub]
             return [priv]
@@ -345,14 +347,14 @@ class TestProjectDetailView:
         self.rf = APIRequestFactory()
 
     def test_not_found_returns_404(self):
-        with patch('caper.views_apis.get_one_project', return_value=None):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=None):
             req = self.rf.get('/api/v1/projects/nonexistent/')
             resp = self.view(req, project_id='nonexistent')
         assert resp.status_code == 404
 
     def test_private_anonymous_returns_401(self):
         proj = _make_project(private='private', members=['owner'])
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj):
             req = self.rf.get('/api/v1/projects/abc/')
             resp = self.view(req, project_id='abc')
         assert resp.status_code == 401
@@ -362,7 +364,7 @@ class TestProjectDetailView:
         mock_user = _MockUser()
         mock_user.username = 'intruder'
         mock_user.email = 'intruder@x.com'
-        with patch('caper.views_apis.get_one_project', return_value=proj), \
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj), \
              patch('caper.views_apis.TokenAuthentication') as MockTA:
             MockTA.return_value.authenticate.return_value = (mock_user, None)
             req = self.rf.get('/api/v1/projects/abc/', HTTP_AUTHORIZATION='Token t')
@@ -372,7 +374,7 @@ class TestProjectDetailView:
     def test_private_member_returns_200(self):
         proj = _make_project(private='private', members=['testuser'])
         mock_user = _MockUser()
-        with patch('caper.views_apis.get_one_project', return_value=proj), \
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj), \
              patch('caper.views_apis.TokenAuthentication') as MockTA:
             MockTA.return_value.authenticate.return_value = (mock_user, None)
             req = self.rf.get('/api/v1/projects/abc/', HTTP_AUTHORIZATION='Token t')
@@ -382,7 +384,7 @@ class TestProjectDetailView:
 
     def test_public_anonymous_returns_200(self):
         proj = _make_project(private='public')
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj):
             req = self.rf.get('/api/v1/projects/abc/')
             resp = self.view(req, project_id='abc')
         assert resp.status_code == 200
@@ -407,21 +409,25 @@ class TestProjectSamplesView:
         self.rf = APIRequestFactory()
 
     def test_not_found_returns_404(self):
-        with patch('caper.views_apis.get_one_project', return_value=None):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=None):
             req = self.rf.get('/api/v1/projects/x/samples/')
             resp = self.view(req, project_id='x')
         assert resp.status_code == 404
 
     def test_private_non_member_returns_401(self):
         proj = _make_project(private='private', members=['owner'])
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj):
             req = self.rf.get('/api/v1/projects/x/samples/')
             resp = self.view(req, project_id='x')
         assert resp.status_code == 401
 
     def test_public_returns_sample_list(self):
         proj = _make_project(private='public')
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        # The view authorizes on the metadata document, then fetches runs
+        # separately, so the runs read must be stubbed too.
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj), \
+             patch('caper.views_apis.collection_handle') as mock_col:
+            mock_col.find_one.return_value = proj
             req = self.rf.get('/api/v1/projects/x/samples/')
             resp = self.view(req, project_id='x')
         assert resp.status_code == 200
@@ -429,7 +435,11 @@ class TestProjectSamplesView:
 
     def test_skip_fields_absent(self):
         proj = _make_project(private='public')
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        # The view authorizes on the metadata document, then fetches runs
+        # separately, so the runs read must be stubbed too.
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj), \
+             patch('caper.views_apis.collection_handle') as mock_col:
+            mock_col.find_one.return_value = proj
             req = self.rf.get('/api/v1/projects/x/samples/')
             resp = self.view(req, project_id='x')
         sample = resp.data[0]
@@ -439,7 +449,11 @@ class TestProjectSamplesView:
 
     def test_run_key_present(self):
         proj = _make_project(private='public')
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        # The view authorizes on the metadata document, then fetches runs
+        # separately, so the runs read must be stubbed too.
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj), \
+             patch('caper.views_apis.collection_handle') as mock_col:
+            mock_col.find_one.return_value = proj
             req = self.rf.get('/api/v1/projects/x/samples/')
             resp = self.view(req, project_id='x')
         assert resp.data[0]['run'] == 'run1'
@@ -464,21 +478,21 @@ class TestProjectDownloadView:
         self.rf = APIRequestFactory()
 
     def test_not_found_returns_404(self):
-        with patch('caper.views_apis.get_one_project', return_value=None):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=None):
             req = self.rf.get('/api/v1/projects/x/download/')
             resp = self.view(req, project_id='x')
         assert resp.status_code == 404
 
     def test_private_non_member_returns_401(self):
         proj = _make_project(private='private', members=['owner'])
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj):
             req = self.rf.get('/api/v1/projects/x/download/')
             resp = self.view(req, project_id='x')
         assert resp.status_code == 401
 
     def test_no_tarfile_returns_404(self):
         proj = _make_project(private='public', has_tarfile=False)
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj):
             req = self.rf.get('/api/v1/projects/x/download/')
             resp = self.view(req, project_id='x')
         assert resp.status_code == 404
@@ -490,7 +504,7 @@ class TestProjectDownloadView:
         proj = _make_project(private='public', has_tarfile=True)
         fake_file = io.BytesIO(b'fake-tar-data')
 
-        with patch('caper.views_apis.get_one_project', return_value=proj), \
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj), \
              patch('caper.views_apis.fs_handle') as mock_fs, \
              patch.object(django_settings, 'USE_S3_DOWNLOADS', False):
             mock_fs.get.return_value = fake_file
@@ -504,7 +518,7 @@ class TestProjectDownloadView:
     def test_gridfs_exception_returns_503(self):
         from django.conf import settings as django_settings
         proj = _make_project(private='public', has_tarfile=True)
-        with patch('caper.views_apis.get_one_project', return_value=proj), \
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj), \
              patch('caper.views_apis.fs_handle') as mock_fs, \
              patch.object(django_settings, 'USE_S3_DOWNLOADS', False):
             mock_fs.get.side_effect = Exception('gridfs error')
@@ -527,7 +541,7 @@ class TestProjectDownloadView:
             USE_S3_DOWNLOADS=True,
             S3_DOWNLOADS_BUCKET='test-bucket',
             S3_DOWNLOADS_BUCKET_PATH='',
-        ), patch('caper.views_apis.get_one_project', return_value=proj), \
+        ), patch('caper.views_apis.get_one_project_sans_runs', return_value=proj), \
              patch('boto3.Session', return_value=mock_session):
             req = self.rf.get('/api/v1/projects/x/download/')
             resp = self.view(req, project_id='x')
@@ -539,7 +553,7 @@ class TestProjectDownloadView:
 
     def test_s3_boto3_exception_returns_503(self):
         proj = _make_project(private='public', has_tarfile=True)
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj):
             # Patch the whole get method to simulate S3 failure path
             with patch('caper.views_apis.ProjectDownloadView.get') as mock_get:
                 mock_get.return_value = Response(
@@ -568,7 +582,7 @@ class TestProjectBatchDownloadView:
         self.rf = APIRequestFactory()
 
     def test_ids_not_list_returns_400(self):
-        with patch('caper.views_apis.get_one_project', return_value=None):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=None):
             req = self.rf.post('/api/v1/projects/download/',
                                data={'ids': 'not-a-list'}, format='json')
             resp = self.view(req)
@@ -579,7 +593,7 @@ class TestProjectBatchDownloadView:
         proj['linkid'] = str(proj['_id'])
         pid = proj['linkid']
 
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj):
             req = self.rf.post('/api/v1/projects/download/',
                                data={'ids': [pid]}, format='json')
             resp = self.view(req)
@@ -598,7 +612,7 @@ class TestProjectBatchDownloadView:
         proj = _make_project(private='public', has_tarfile=True)
         proj['linkid'] = str(proj['_id'])
         pid = proj['linkid']
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj):
             req = self.rf.post('/api/v1/projects/download/',
                                data={'ids': [pid]}, format='json',
                                HTTP_X_FORWARDED_PROTO='https',
@@ -608,7 +622,7 @@ class TestProjectBatchDownloadView:
             'https://ampliconrepository.org/')
 
     def test_unknown_id_in_skipped(self):
-        with patch('caper.views_apis.get_one_project', return_value=None):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=None):
             req = self.rf.post('/api/v1/projects/download/',
                                data={'ids': ['unknownid']}, format='json')
             resp = self.view(req)
@@ -620,7 +634,7 @@ class TestProjectBatchDownloadView:
         proj = _make_project(private='public', has_tarfile=False)
         proj['linkid'] = str(proj['_id'])
         pid = proj['linkid']
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj):
             req = self.rf.post('/api/v1/projects/download/',
                                data={'ids': [pid]}, format='json')
             resp = self.view(req)
@@ -630,7 +644,7 @@ class TestProjectBatchDownloadView:
         proj = _make_project(private='private', members=['owner'], has_tarfile=True)
         proj['linkid'] = str(proj['_id'])
         pid = proj['linkid']
-        with patch('caper.views_apis.get_one_project', return_value=proj):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj):
             req = self.rf.post('/api/v1/projects/download/',
                                data={'ids': [pid]}, format='json')
             resp = self.view(req)
@@ -641,12 +655,12 @@ class TestProjectBatchDownloadView:
         good['linkid'] = str(good['_id'])
         good_id = good['linkid']
 
-        def _get_project(pid):
+        def _get_project(pid, projection=None):
             if pid == good_id:
                 return good
             return None
 
-        with patch('caper.views_apis.get_one_project', side_effect=_get_project):
+        with patch('caper.views_apis.get_one_project_sans_runs', side_effect=_get_project):
             req = self.rf.post('/api/v1/projects/download/',
                                data={'ids': [good_id, 'missing']}, format='json')
             resp = self.view(req)

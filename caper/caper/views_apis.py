@@ -30,7 +30,7 @@ from threading import Thread
 from .serializers import FileSerializer
 from .forms import RunForm
 from .utils import (
-    collection_handle, get_one_project, form_to_dict,
+    collection_handle, get_one_project, get_one_project_sans_runs, form_to_dict,
     get_latest_project_version, normalize_visibility_field, is_project_private,
     fs_handle,
 )
@@ -395,6 +395,8 @@ from django.http import StreamingHttpResponse, HttpResponseRedirect
 from rest_framework.authentication import TokenAuthentication, SessionAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
+from .throttles import ApiScopedRateThrottle
+
 
 # ── Auth + access-control helpers ───────────────────────────────────────────
 
@@ -431,6 +433,15 @@ _SAFE_PREV_VERSION_KEYS = frozenset({
     'aggregator_version', 'Reconstruction_tools', 'CoRAL_version',
 })
 _SAMPLE_SKIP_FIELDS = frozenset({'Features', 'Sample_metadata_JSON', 'Sample_files_JSON'})
+
+# Projection for the endpoints that return project metadata or a download
+# redirect.  All four excluded fields grow with the project's sample count and
+# none is read by _project_to_dict(), _user_can_access_project(), or the
+# download views; on a 2471-sample project they were 8.5 MB of the read.
+# Keep in sync with _project_to_dict() if it ever needs a new field.
+_PROJECT_METADATA_PROJECTION = {
+    'runs': 0, 'sample_data': 0, 'ecDNA_context': 0, 'aggregate_df': 0,
+}
 
 
 def _project_to_dict(project):
@@ -511,6 +522,8 @@ class ProjectListView(APIView):
              -H "Authorization: Token <your-token>"
     """
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
 
     def get(self, request):
         user, err = _authenticate_api_request(request)
@@ -523,7 +536,12 @@ class ProjectListView(APIView):
         public_q = {'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}
         if name_q:
             public_q['project_name'] = name_q
-        projects = list(collection_handle.find(public_q))
+        # Same projection as the detail/download views: _project_to_dict() reads
+        # only top-level metadata, but this query spans EVERY public project, so
+        # without it one listing pulls every feature row on the site.  This is
+        # the API's entry point -- the first call any client, crawler or agent
+        # makes -- which makes it the worst place to leave the amplification in.
+        projects = list(collection_handle.find(public_q, _PROJECT_METADATA_PROJECTION))
 
         if user is not None:
             private_q = {
@@ -535,7 +553,7 @@ class ProjectListView(APIView):
             if name_q:
                 private_q['project_name'] = name_q
             seen = {str(p['_id']) for p in projects}
-            for p in collection_handle.find(private_q):
+            for p in collection_handle.find(private_q, _PROJECT_METADATA_PROJECTION):
                 if str(p['_id']) not in seen:
                     projects.append(p)
 
@@ -557,13 +575,18 @@ class ProjectDetailView(APIView):
              -H "Authorization: Token <your-token>"
     """
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
 
     def get(self, request, project_id):
         user, err = _authenticate_api_request(request)
         if err:
             return err
 
-        project = get_one_project(project_id)
+        # sans_runs: the response is project metadata only.  Fetching the runs
+        # dict here read megabytes to return a few KB (~570x on a 329-sample
+        # project) — the read amplification that took production down.
+        project = get_one_project_sans_runs(project_id, _PROJECT_METADATA_PROJECTION)
         if not project:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
         if not _user_can_access_project(project, user):
@@ -585,20 +608,29 @@ class ProjectSamplesView(APIView):
              -H "Authorization: Token <your-token>"
     """
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
 
     def get(self, request, project_id):
         user, err = _authenticate_api_request(request)
         if err:
             return err
 
-        project = get_one_project(project_id)
+        # This endpoint legitimately returns every run, so the runs payload IS
+        # the response.  But authorize before reading it: resolving the project
+        # and the access check need metadata only, and doing the full read first
+        # let an anonymous caller trigger a multi-megabyte read and get a 401.
+        project = get_one_project_sans_runs(project_id, _PROJECT_METADATA_PROJECTION)
         if not project:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
         if not _user_can_access_project(project, user):
             return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
 
+        # Authorized: now fetch the runs, by the id the lookup above resolved to.
+        doc = collection_handle.find_one({'_id': project['_id']}, {'runs': 1})
+
         samples = []
-        for run_name, run_samples in project.get('runs', {}).items():
+        for run_name, run_samples in (doc or {}).get('runs', {}).items():
             for sample in run_samples:
                 samples.append(_sample_to_dict(sample, run_name))
 
@@ -619,6 +651,8 @@ class ProjectDownloadView(APIView):
              -H "Authorization: Token <your-token>"
     """
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_download'
 
     def get(self, request, project_id):
         from django.conf import settings as django_settings
@@ -627,7 +661,10 @@ class ProjectDownloadView(APIView):
         if err:
             return err
 
-        project = get_one_project(project_id)
+        # sans_runs: this resolves a single tarfile id and redirects/streams.
+        # It is also the endpoint crawlers hammer hardest, so the whole-document
+        # read here was the most expensive amplification of the set.
+        project = get_one_project_sans_runs(project_id, _PROJECT_METADATA_PROJECTION)
         if not project:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
         if not _user_can_access_project(project, user):
@@ -711,6 +748,8 @@ class ProjectBatchDownloadView(APIView):
              -d '{"ids": ["abc123", "def456"]}'
     """
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_batch'
 
     def post(self, request):
         user, err = _authenticate_api_request(request)
@@ -735,7 +774,9 @@ class ProjectBatchDownloadView(APIView):
         downloads, skipped = [], []
 
         for pid in ids:
-            project = get_one_project(str(pid))
+            # sans_runs: only tarfile/linkid/name are used below, and this loop
+            # multiplies any per-project read cost by the number of ids posted.
+            project = get_one_project_sans_runs(str(pid), _PROJECT_METADATA_PROJECTION)
             if not project or not _user_can_access_project(project, user) \
                     or not project.get('tarfile'):
                 skipped.append(pid)
@@ -776,6 +817,8 @@ class ApiTokenView(APIView):
 
     authentication_classes = [_NoCsrfSessionAuth]
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_token'
 
     def _session_user(self, request):
         user = request.user

@@ -1019,18 +1019,27 @@ def get_latest_project_version(project):
         prepare_project_linkid(doc)
         return doc
 
-def get_one_project_sans_runs(project_name_or_uuid):
+def get_one_project_sans_runs(project_name_or_uuid, projection=None):
     """
     Gets one project from name or UUID, excluding the 'runs' field to reduce memory usage.
-    
-    if name, then checks the DB for an "alias" field, then gets that project if it has one 
-    
+
+    if name, then checks the DB for an "alias" field, then gets that project if it has one
+
     This is useful when you only need project metadata without the full sample/feature data.
+
+    Callers that need even less than "everything but runs" may pass their own
+    ``projection``.  Doing that here, rather than in a separate loader, keeps the
+    lookup chain below (ObjectId, alias, project name, non-current versions and
+    deleted-version redirect tombstones) in one place — it is easy to get wrong.
+    Any custom projection must still be an exclusion of unwanted fields, or an
+    inclusion that keeps everything the caller and ``prepare_project_linkid()``
+    touch (``_id``, ``linkid``, ``delete``, ``current``, ``redirect_to_project``).
     """
-    
+
     # Projection to exclude the runs field
-    projection = {'runs': 0}
-    
+    if projection is None:
+        projection = {'runs': 0}
+
     try:
         project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': False}, projection)[0]
         prepare_project_linkid(project)

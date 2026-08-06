@@ -199,6 +199,46 @@ def _cleanup_project(collection, project_id):
 # Fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _no_api_throttling(request):
+    """
+    Disable /api/v1/ rate limiting for every test, and clear its counters.
+
+    Tests fire dozens of requests from the same 127.0.0.1 in a few seconds,
+    which would trip the production limits (api_batch is 10/min) and make
+    unrelated tests fail intermittently with 429s.
+
+    tests/test_api_throttling.py re-enables throttling explicitly via
+    override_settings; it is marked with `throttled` so this fixture stands
+    aside for it.  Counters are still cleared either way, so no test inherits
+    a partially-consumed window from the one before it.
+
+    Note: do not reach into rest_framework.settings.api_settings.__dict__ to
+    drop cached values here.  APISettings.reload() iterates its own
+    _cached_attrs and calls delattr, so clearing entries behind its back makes
+    the next override_settings raise AttributeError for every test in the
+    suite.  override_settings already fires the signal that reloads it.
+    """
+    from django.core.cache import caches
+    from django.test import override_settings
+
+    def _clear():
+        caches['throttle'].clear()
+
+    _clear()
+    if request.node.get_closest_marker('throttled'):
+        yield
+        _clear()
+        return
+
+    with override_settings(REST_FRAMEWORK={'NUM_PROXIES': 1,
+                                           'DEFAULT_THROTTLE_CLASSES': [],
+                                           'DEFAULT_THROTTLE_RATES': {}}):
+        _clear()
+        yield
+    _clear()
+
+
 @pytest.fixture(scope='session')
 def test_user():
     """
