@@ -4978,10 +4978,37 @@ def process_version_set(version_set):
 
 def robots(request):
     """
-    View for robots.txt, will read the file from static root (depending on server), and show robots file.
+    View for robots.txt.
+
+    Read from this project's own static directory, which is what git deploys and
+    what the container bind-mounts.  Two traps this avoids:
+
+    * settings.STATIC_ROOT resolves to a collectstatic output directory that the
+      runtime bind-mount shadows and that a source-only deploy never refreshes.
+      On prod that copy was dated Apr 2024, so edits to the tracked
+      robots.txt silently had no effect.
+    * staticfiles finders cannot be used here: other installed apps (Mezzanine)
+      ship their own permissive robots.txt, and whichever sorts first in
+      INSTALLED_APPS wins -- which would serve "Disallow:" and open the whole
+      site to crawlers.
     """
-    robots_txt = open(f'{settings.STATIC_ROOT}/robots.txt', 'r').read()
-    return HttpResponse(robots_txt, content_type="text/plain")
+    project_static = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'static')
+    robots_path = os.path.join(project_static, 'robots.txt')
+
+    if not os.path.exists(robots_path):
+        # Fall back to the collected static root for any deployment that serves
+        # only from STATIC_ROOT.
+        candidate = os.path.join(settings.STATIC_ROOT or '', 'robots.txt')
+        robots_path = candidate if os.path.exists(candidate) else None
+
+    if not robots_path:
+        logging.warning(
+            "robots.txt not found in %s or STATIC_ROOT", project_static)
+        raise Http404("robots.txt not found")
+
+    with open(robots_path, 'r') as fh:
+        return HttpResponse(fh.read(), content_type="text/plain")
 
 
 @login_required(login_url='/accounts/login/')

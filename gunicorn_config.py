@@ -6,7 +6,13 @@ import os
 
 # Server socket
 bind = "0.0.0.0:8000"
-backlog = 2048
+# Accept-queue depth: connections that have connected but no worker has picked
+# up yet.  This is a burst buffer, not capacity -- capacity is `workers`.
+# At ~1s per page and 9 workers (~9 req/s), a full 2048-deep queue meant the
+# last client waited ~4 minutes, long after it had given up; the queue simply
+# converted overload into latency collapse and hid the problem from the load
+# balancer.  512 still buffers a large burst while failing fast beyond it.
+backlog = int(os.getenv("GUNICORN_BACKLOG", "512"))
 
 # Worker processes
 # For t4g.2xlarge (8 vCPUs): Using 9 workers as default (CPU * 1 + 1)

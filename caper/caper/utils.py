@@ -3,8 +3,9 @@ from collections import Counter
 
 import pandas as pd
 from bson import ObjectId
+import pymongo
 from pymongo import MongoClient,ReadPreference
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+from pymongo.errors import ConnectionFailure, PyMongoError, ServerSelectionTimeoutError
 from allauth.account.adapter import DefaultAccountAdapter
 from django import forms
 from django.contrib.auth import get_user_model
@@ -34,7 +35,13 @@ def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFER
             minPoolSize=10,
             maxIdleTimeMS=300000,  # 5 minutes - keep connections alive during long operations
             connectTimeoutMS=30000,  # 30 seconds - initial connection timeout
-            socketTimeoutMS=None,  # No timeout - allows long-running GridFS operations
+            # Per-socket-operation stall limit, NOT a cap on total operation
+            # time: a GridFS stream does many small reads, each of which gets a
+            # fresh budget, so long downloads are unaffected as long as bytes
+            # keep flowing.  This must never be None -- a stalled read with no
+            # timeout blocks a gunicorn worker forever, which is what turned a
+            # transient database slowdown into a 10-hour outage in Aug 2026.
+            socketTimeoutMS=int(os.getenv('MONGO_SOCKET_TIMEOUT_MS', '120000')),
             serverSelectionTimeoutMS=30000,  # 30 seconds - time to select a server
             waitQueueTimeoutMS=10000,  # 10 seconds - wait for available connection from pool
             retryWrites=False,
@@ -292,59 +299,89 @@ def preprocess_sample_data(sample_data, copy=True, decimal_place=2):
     return sample_data
 
 
-def get_one_sample(project_name, sample_name):
-    # Optimized: Use projection to only exclude large fields not needed for sample page
-    # MongoDB doesn't allow mixing inclusion and exclusion (except for _id)
-    # So we exclude only the large unnecessary fields
-    projection = {
-        'Oncogenes': 0,
-        'Classification': 0,
-        'sample_data': 0,
-        'aggregate_df': 0,
-        'previous_versions': 0,
-        'tarfile': 0
-    }
-    
-    # Fetch project with optimized projection
-    try:
-        project = collection_handle.find_one(
-            {'_id': ObjectId(project_name)},
-            projection
-        )
-        if project is None:
-            # Try by alias
-            project = collection_handle.find_one(
-                {'alias_name': project_name, 'delete': False},
-                projection
-            )
-        if project is None:
-            # Try by project name
-            project = collection_handle.find_one(
-                {'project_name': project_name, 'delete': False},
-                projection
-            )
-    except Exception:
-        # Fallback to old method if ObjectId conversion fails
-        project = collection_handle.find_one(
-            {'project_name': project_name, 'delete': False},
-            projection
-        )
-    
-    project = validate_project(project, project_name)
+def page_query_timeout():
+    """Deadline (seconds) for database work behind a page render.
+
+    ``socketTimeoutMS`` only bounds a single socket operation, so it cannot cap
+    a query that is slow for any other reason.  This is a true deadline for the
+    whole operation (server selection, pool checkout and every socket op), which
+    is what guarantees a worker comes back instead of wedging.
+
+    Sized for recoverability, not for trimming tail latency: normal sample
+    lookups run well under a second, so this is a large multiple of healthy
+    latency and should only ever fire when something is genuinely wrong.
+    Tune with MONGO_PAGE_TIMEOUT_SECONDS once you have measured the real
+    distribution (grep '[PERF] get_one_sample took' in the app log).
+    """
+    return float(os.getenv('MONGO_PAGE_TIMEOUT_SECONDS', '20'))
+
+
+def _fetch_sample_slice(match, sample_name):
+    """Fetch one sample's feature rows plus a compact index of every sample name.
+
+    Asks the server for just the matching run and a ``{run key -> first
+    Sample_name}`` index (a few bytes per sample), instead of transferring the
+    whole ``runs`` dict.  Returns ``(rows, prev_name, next_name)``.
+    """
+    pipeline = [
+        {'$match': match},
+        {'$limit': 1},
+        {'$project': {
+            '_sample_index': {'$map': {
+                'input': {'$objectToArray': '$runs'},
+                'as': 'r',
+                'in': {'k': '$$r.k',
+                       's': {'$arrayElemAt': ['$$r.v.Sample_name', 0]}},
+            }},
+            '_matched': {'$filter': {
+                'input': {'$objectToArray': '$runs'},
+                'as': 'r',
+                'cond': {'$eq': [{'$arrayElemAt': ['$$r.v.Sample_name', 0]},
+                                 sample_name]},
+            }},
+        }},
+    ]
+    doc = next(iter(collection_handle.aggregate(pipeline)), None)
+    if doc is None:
+        return None, None, None
+
+    # Sorted by run key so prev/next ordering matches the previous implementation.
+    index = sorted(
+        ((entry.get('k'), entry.get('s')) for entry in doc.get('_sample_index') or []),
+        key=lambda kv: kv[0],
+    )
+    position = next(
+        (i for i, (_, name) in enumerate(index) if name == sample_name), None)
+    if position is None:
+        return None, None, None
+
+    matched_key = index[position][0]
+    rows = next((entry.get('v') for entry in doc.get('_matched') or []
+                 if entry.get('k') == matched_key), None)
+
+    prev_name = index[position - 1][1] if position > 0 else None
+    next_name = index[position + 1][1] if position < len(index) - 1 else None
+    return rows, prev_name, next_name
+
+
+def _get_one_sample_full_scan(project_name, sample_name):
+    """Original whole-document implementation, kept as a fallback.
+
+    Used only if the server-side slice above fails (e.g. an aggregation operator
+    the backing engine does not support), so a server quirk degrades performance
+    rather than breaking sample pages outright.
+    """
+    project = validate_project(get_one_project(project_name), project_name)
     prepare_project_linkid(project)
 
-    # print("ID --- ", project['_id'])
     runs = project['runs']
-    
-    # Get all sample keys as a sorted list
     sample_keys = sorted(runs.keys())
-    
+
     sample_out = None
     prev_sample = None
     next_sample = None
     current_index = None
-    
-    # Find the current sample and its index
+
     for idx, sample_num in enumerate(sample_keys):
         current = runs[sample_num]
         try:
@@ -352,21 +389,72 @@ def get_one_sample(project_name, sample_name):
                 sample_out = current
                 current_index = idx
                 break
-        except:
+        except Exception:
             # should not get here but we do sometimes for new projects, issue 194
             pass
-    
-    # Get previous and next samples if current sample was found
+
     if current_index is not None:
         if current_index > 0:
-            prev_sample_key = sample_keys[current_index - 1]
-            prev_sample = runs[prev_sample_key]
-        
+            prev_sample = runs[sample_keys[current_index - 1]]
         if current_index < len(sample_keys) - 1:
-            next_sample_key = sample_keys[current_index + 1]
-            next_sample = runs[next_sample_key]
-    
+            next_sample = runs[sample_keys[current_index + 1]]
+
     return project, sample_out, prev_sample, next_sample
+
+
+def get_one_sample(project_name, sample_name):
+    """Return ``(project, sample_rows, prev_sample, next_sample)`` for one sample.
+
+    The project document is returned WITHOUT ``runs``.  Loading ``runs`` — every
+    sample and every feature row in the project — to render a single sample page
+    pulled megabytes from the database per request and was the read
+    amplification behind the repeated production outages of 2026-07/08.
+    No caller of this function uses ``project['runs']``.
+
+    ``prev_sample``/``next_sample`` are name-only stubs: the sole consumer
+    (``views.sample_page``) reads ``[0]['Sample_name']`` from them for the
+    prev/next navigation links.
+    """
+    try:
+        with pymongo.timeout(page_query_timeout()):
+            # get_one_project_sans_runs() carries the full lookup semantics —
+            # ObjectId, alias, project name, older versions (current=False) and
+            # deleted-version redirect tombstones — while excluding runs.
+            project = get_one_project_sans_runs(project_name)
+
+            if project is None:
+                # Preserve the previous not-found behaviour (log, return None).
+                return validate_project(None, project_name), None, None, None
+
+            # Match on the RESOLVED id: for a tombstone redirect this is the
+            # surviving project, which is not the id in the URL.
+            rows, prev_name, next_name = _fetch_sample_slice(
+                {'_id': project['_id']}, sample_name)
+    except PyMongoError as exc:
+        # ExecutionTimeout subclasses OperationFailure, so the error type alone
+        # cannot tell a deadline from an unsupported aggregation operator.
+        # Let deadlines propagate — falling back to the slower whole-document
+        # scan is the last thing a database under stress needs.
+        if getattr(exc, 'timeout', False):
+            logging.warning(
+                "get_one_sample: timed out after %ss loading %s/%s",
+                page_query_timeout(), project_name, sample_name)
+            raise
+        logging.warning(
+            "get_one_sample: server-side sample lookup failed for %s (%s); "
+            "falling back to a full project scan", project_name, exc)
+        return _get_one_sample_full_scan(project_name, sample_name)
+
+    # validate_project() used to normalise space-containing keys for every
+    # caller.  It needed the whole runs dict to do that, so apply the same
+    # normalisation to just this sample's rows instead.
+    if rows:
+        rows = replace_space_to_underscore(rows)
+
+    prev_sample = [{'Sample_name': prev_name}] if prev_name is not None else None
+    next_sample = [{'Sample_name': next_name}] if next_name is not None else None
+
+    return project, rows, prev_sample, next_sample
 
 
 def initialize_ecDNA_context(project):
