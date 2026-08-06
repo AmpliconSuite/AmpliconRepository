@@ -207,7 +207,63 @@ CACHES = {
         'OPTIONS': {
             'MAX_ENTRIES': 1000,  # Maximum number of cache entries
         }
-    }
+    },
+    # Separate cache for API rate-limit counters (caper/throttles.py).
+    # It is deliberately NOT the 'default' cache: throttling stores one key per
+    # client per scope, so sharing 'default' would let a burst of API traffic
+    # evict every cached chart and GridFS entry (MAX_ENTRIES is 1000 there), and
+    # equally would let ordinary page caching evict throttle counters mid-window.
+    #
+    # FileBasedCache is used because it is shared across all 9 Gunicorn workers,
+    # which LocMemCache is not -- a per-worker cache would make the effective
+    # limit a multiple of the configured one, and vary with worker count.
+    # The tradeoff: FileBasedCache lists its cache directory on every write, so
+    # MAX_ENTRIES is kept modest. 10k distinct clients per window is far above
+    # legitimate API traffic, and traffic beyond that is the edge WAF rate
+    # rule's job, not this one's.
+    'throttle': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': '/tmp/django_cache_throttle',
+        'TIMEOUT': 3600,  # unused in practice: DRF sets a per-key timeout
+        'OPTIONS': {
+            'MAX_ENTRIES': 10000,
+            'CULL_FREQUENCY': 4,
+        }
+    },
+}
+
+# ── Django REST Framework ───────────────────────────────────────────────────
+#
+# Only throttling is configured here. Authentication is intentionally left at
+# DRF's defaults: the /api/v1/ views authenticate manually (see
+# _authenticate_api_request in views_apis.py) so they can return their own JSON
+# error bodies, and routing them through DEFAULT_AUTHENTICATION_CLASSES would
+# replace those with DRF's stock 401 shape.
+#
+# NUM_PROXIES is the security-relevant setting here. With it unset, DRF derives
+# the throttle identity from the whole X-Forwarded-For chain, which the client
+# controls -- anyone could mint unlimited identities by prepending fake entries
+# and bypass throttling entirely. The application load balancer *appends* the
+# real client IP to XFF, so with exactly one proxy in front (the ALB; there is
+# no CloudFront on the app domains) the last entry is the trustworthy one, and
+# NUM_PROXIES = 1 makes DRF use it.
+REST_FRAMEWORK = {
+    'NUM_PROXIES': 1,
+    'DEFAULT_THROTTLE_CLASSES': [],  # opt-in per view via throttle_scope
+    'DEFAULT_THROTTLE_RATES': {
+        # Read endpoints returning metadata.
+        'api_read': '60/min',
+        'api_read_auth': '180/min',
+        # Archive downloads: heavier per request, and the endpoint crawlers
+        # hit hardest.
+        'api_download': '20/min',
+        'api_download_auth': '60/min',
+        # Batch resolve: one request fans out into N project lookups.
+        'api_batch': '10/min',
+        'api_batch_auth': '30/min',
+        # Token create/revoke, from a logged-in browser session.
+        'api_token': '10/min',
+    },
 }
 
 # The numeric mode to set newly-uploaded files to. The value should be

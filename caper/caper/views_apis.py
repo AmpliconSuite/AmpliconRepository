@@ -395,6 +395,8 @@ from django.http import StreamingHttpResponse, HttpResponseRedirect
 from rest_framework.authentication import TokenAuthentication, SessionAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
+from .throttles import ApiScopedRateThrottle
+
 
 # ── Auth + access-control helpers ───────────────────────────────────────────
 
@@ -520,6 +522,8 @@ class ProjectListView(APIView):
              -H "Authorization: Token <your-token>"
     """
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
 
     def get(self, request):
         user, err = _authenticate_api_request(request)
@@ -566,6 +570,8 @@ class ProjectDetailView(APIView):
              -H "Authorization: Token <your-token>"
     """
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
 
     def get(self, request, project_id):
         user, err = _authenticate_api_request(request)
@@ -597,6 +603,8 @@ class ProjectSamplesView(APIView):
              -H "Authorization: Token <your-token>"
     """
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
 
     def get(self, request, project_id):
         user, err = _authenticate_api_request(request)
@@ -638,6 +646,8 @@ class ProjectDownloadView(APIView):
              -H "Authorization: Token <your-token>"
     """
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_download'
 
     def get(self, request, project_id):
         from django.conf import settings as django_settings
@@ -733,6 +743,8 @@ class ProjectBatchDownloadView(APIView):
              -d '{"ids": ["abc123", "def456"]}'
     """
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_batch'
 
     def post(self, request):
         user, err = _authenticate_api_request(request)
@@ -800,6 +812,8 @@ class ApiTokenView(APIView):
 
     authentication_classes = [_NoCsrfSessionAuth]
     permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_token'
 
     def _session_user(self, request):
         user = request.user

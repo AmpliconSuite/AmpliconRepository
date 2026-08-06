@@ -72,6 +72,24 @@ Land fixes #2/#3, get the scoped WAF exception + rate-based rule for #1, and add
 per-endpoint DRF throttling (`ScopedRateThrottle`, ~1 search/s) with standard
 rate-limit response headers.
 
+**Throttling — done** (`caper/caper/throttles.py`, `REST_FRAMEWORK` in `settings.py`).
+Per-endpoint scopes with a higher limit for token-authenticated callers, 429 +
+`Retry-After` on the way out, counters in a dedicated cache alias. Tests in
+`tests/test_api_throttling.py`. Two things worth knowing before changing it:
+
+- `NUM_PROXIES = 1` is load-bearing. Without it DRF keys throttling on the whole
+  client-supplied `X-Forwarded-For` chain, and any caller can mint unlimited
+  identities by prepending junk. The ALB appends the real client IP last.
+- The limits are **per client**. They stop one runaway script and give clients a
+  documented back-off signal. They do nothing against a distributed crawl —
+  that is what the read-amplification work is for.
+
+**WAF exception — proposed, not applied.** Rate rule + `/api/v1/*` prefix allow,
+ordered so `KnownBadInputs` still inspects API traffic (`Allow` is terminating in
+WAF, so a naive priority-0 allow would disable it). Bot Control stays enforcing for
+the rest of the site. Making the *prefix* the boundary rather than enumerating
+endpoints means Phases 2–4 need no further WAF edits.
+
 ### Phase 2 — Site-wide search endpoint
 Wrap the existing `search.perform_search()` as `GET /api/v1/search/?q=...` (genes,
 projects, classifications, metadata; same wildcard/logic support as the UI), returning
