@@ -308,7 +308,9 @@ class TestProjectListView:
         priv = self._private_doc(member='testuser')
         mock_user = _MockUser()
 
-        def fake_find(q):
+        # projection is passed by ProjectListView to avoid pulling 'runs' for
+        # every project; see tests/test_api_read_amplification.py.
+        def fake_find(q, projection=None):
             if q.get('private', {}).get('$in', [None])[0] in (False, 'public'):
                 return [pub]
             return [priv]

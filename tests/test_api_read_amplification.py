@@ -118,6 +118,72 @@ def _assert_no_runs_loaded(loaded_docs):
         )
 
 
+@pytest.fixture
+def listed_docs(monkeypatch):
+    """Record every document ProjectListView pulls via collection_handle.find().
+
+    ProjectListView queries the collection directly rather than going through
+    get_one_project*(), so the loaded_docs spy above cannot see it.  MongoDB is
+    still never mocked — the real query runs, we only observe the results.
+    """
+    from caper import views_apis
+
+    seen = []
+    real = views_apis.collection_handle
+
+    class _RecordingCollection:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def find(self, *args, **kwargs):
+            docs = list(real.find(*args, **kwargs))
+            seen.extend(docs)
+            return docs
+
+    monkeypatch.setattr(views_apis, 'collection_handle', _RecordingCollection())
+    return seen
+
+
+@pytest.mark.integration
+def test_project_list_does_not_fetch_runs(bulky_project, listed_docs):
+    """
+    The listing spans every public project, so leaving the projection off here
+    pulls every feature row on the site to build a few KB of metadata — and it
+    is the first call any client, crawler or agent makes.
+    """
+    from caper.views_apis import ProjectListView
+
+    rf = APIRequestFactory()
+    resp = ProjectListView.as_view()(rf.get('/api/v1/projects/'))
+
+    assert resp.status_code == 200
+    assert bulky_project in [p['id'] for p in resp.data], \
+        "the listing dropped the project"
+    assert listed_docs, "the view did not load any project documents"
+    for doc in listed_docs:
+        assert 'runs' not in doc, (
+            f"ProjectListView loaded a project carrying 'runs' "
+            f"({len(doc.get('runs') or {})} samples). Listing every public "
+            "project this way multiplies the amplification by the number of "
+            "projects on the site."
+        )
+
+
+@pytest.mark.integration
+def test_project_list_response_fields_survive_the_projection(bulky_project, listed_docs):
+    """The projection must not strip anything _project_to_dict() reports."""
+    from caper.views_apis import ProjectListView
+
+    rf = APIRequestFactory()
+    resp = ProjectListView.as_view()(rf.get('/api/v1/projects/'))
+
+    entry = next(p for p in resp.data if p['id'] == bulky_project)
+    assert entry['project_name'] == 'ApiReadAmplificationTest'
+    assert entry['sample_count'] == 3
+    assert entry['visibility'] == 'public'
+    assert entry['creator']
+
+
 @pytest.mark.integration
 def test_project_detail_does_not_fetch_runs(bulky_project, loaded_docs):
     """Project metadata is a few KB; it must not drag every feature row along."""

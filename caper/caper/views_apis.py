@@ -536,7 +536,12 @@ class ProjectListView(APIView):
         public_q = {'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}
         if name_q:
             public_q['project_name'] = name_q
-        projects = list(collection_handle.find(public_q))
+        # Same projection as the detail/download views: _project_to_dict() reads
+        # only top-level metadata, but this query spans EVERY public project, so
+        # without it one listing pulls every feature row on the site.  This is
+        # the API's entry point -- the first call any client, crawler or agent
+        # makes -- which makes it the worst place to leave the amplification in.
+        projects = list(collection_handle.find(public_q, _PROJECT_METADATA_PROJECTION))
 
         if user is not None:
             private_q = {
@@ -548,7 +553,7 @@ class ProjectListView(APIView):
             if name_q:
                 private_q['project_name'] = name_q
             seen = {str(p['_id']) for p in projects}
-            for p in collection_handle.find(private_q):
+            for p in collection_handle.find(private_q, _PROJECT_METADATA_PROJECTION):
                 if str(p['_id']) not in seen:
                     projects.append(p)
 
