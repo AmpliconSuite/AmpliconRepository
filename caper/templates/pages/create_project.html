@@ -128,7 +128,7 @@
       {% endfor %}
   <div class="uk-margin">
           <div class="alert alert-info" role="alert" style="margin-bottom: 15px;">
-        <strong>📦 What to upload:</strong> A <code>.tar.gz</code> of your AmpliconSuite-pipeline (AmpliconArchitect) or CoRAL output files.
+        <strong>📦 What to upload:</strong> A <code>.tar.gz</code> or <code>.zip</code> archive of your AmpliconSuite-pipeline (AmpliconArchitect) or CoRAL output files.
         <button type="button" class="btn btn-link btn-sm" data-toggle="collapse" data-target="#uploadHelp"
                 aria-expanded="false" style="padding: 0; font-size: 1em; vertical-align: baseline;">
             Expand details →
@@ -146,7 +146,7 @@
       <span uk-icon="icon: cloud-upload"></span>
       <span class="uk-text-middle">Drag files here or</span>
       <div uk-form-custom>
-        <input id="fileuploadfield" type="file" name="document" multiple />
+        <input id="fileuploadfield" type="file" name="document" accept=".tar.gz,.zip" multiple />
         <span class="uk-link">select files</span>
       </div>
     </div>
@@ -382,7 +382,7 @@
     }
   
     input.addEventListener('change', (event) => {
-      const validFileExtension = ".tar.gz";
+      const validFileExtensions = [".tar.gz", ".zip"];
       const files = Array.from(input.files);
       let allFilesValid = true;
       let invalidFileNames = [];
@@ -391,7 +391,7 @@
       // Validate all selected files
       files.forEach(file => {
           const fileName = file.name;
-          if (!fileName.toLowerCase().endsWith(validFileExtension)) {
+          if (!validFileExtensions.some(extension => fileName.toLowerCase().endsWith(extension))) {
               allFilesValid = false;
               invalidFileNames.push(fileName);
           }
@@ -402,7 +402,7 @@
       });
 
       if (!allFilesValid) {
-          alert("Sorry, the following files are invalid inputs:\n\n" + invalidFileNames.join(', ') + "\n\nPlease select .tar.gz files only.\n\nSee bottom of page for instructions on how to generate an aggregated input file.");
+          alert("Sorry, the following files are invalid inputs:\n\n" + invalidFileNames.join(', ') + "\n\nPlease select .tar.gz or .zip files only.\n\nSee bottom of page for instructions on how to generate an aggregated input file.");
           throw new Error("Bad file extension!");
       }
 
@@ -479,7 +479,7 @@
   
     function uploadFiles() {
       if (!validateFiles()) {
-        alert("Please select a .tar.gz file before submitting.");
+        alert("Please select a .tar.gz or .zip file before submitting.");
         return;
       }
 

@@ -203,3 +203,82 @@ def test_add_samples_requires_project_member(mongo_collection):
     # Non-member must be rejected
     assert response.status_code in (403, 404), \
         f"Non-member should be rejected (403/404), got {response.status_code}"
+
+
+# ---------------------------------------------------------------------------
+# project_members parsing on /upload_api/
+# ---------------------------------------------------------------------------
+
+def _members_from_post(data):
+    """Build a POST request and run it through parse_project_members."""
+    from rest_framework.test import APIRequestFactory
+    from caper.views_apis import parse_project_members
+
+    req = APIRequestFactory().post('/upload_api/', data=data, format='multipart')
+    return parse_project_members(req)
+
+
+@pytest.mark.integration
+def test_parse_project_members_single_user():
+    """
+    A single member must come back whole, not split into characters.
+
+    Regression: the old code did request.POST['project_members'][0], which
+    took the first *character* of the string, so the project creator ended
+    up as 'p' instead of 'pytest_test_user'.
+    """
+    members = _members_from_post({'project_members': 'pytest_test_user'})
+    assert members == ['pytest_test_user'], \
+        f"Expected the whole username, got {members}"
+
+
+@pytest.mark.integration
+def test_parse_project_members_multiple_and_order():
+    """Separators are commas/semicolons/whitespace; the owner stays first."""
+    members = _members_from_post(
+        {'project_members': 'owner@example.com, second@example.com;third@example.com  fourth'})
+    assert members == ['owner@example.com', 'second@example.com',
+                       'third@example.com', 'fourth'], \
+        f"Members parsed in the wrong order or wrongly split: {members}"
+
+
+@pytest.mark.integration
+def test_parse_project_members_empty():
+    """Blank or absent project_members yields no members."""
+    assert _members_from_post({'project_members': '  '}) == []
+    assert _members_from_post({'project_name': 'x'}) == []
+
+
+@pytest.mark.integration
+def test_upload_api_without_project_members_returns_400():
+    """
+    POST /upload_api/ with no project_members must be rejected with 400
+    rather than creating an ownerless project (or raising a 500).
+    """
+    from rest_framework.test import APIRequestFactory
+    from caper.views_apis import FileUploadView
+
+    assert os.path.exists(DATASET_SMALL_TAR), \
+        f"Test dataset not found: {DATASET_SMALL_TAR}"
+
+    rf = APIRequestFactory()
+    with open(DATASET_SMALL_TAR, 'rb') as fh:
+        req = rf.post(
+            '/upload_api/',
+            data={
+                'project_name':     'APITest_NoMembers',
+                'description':      'Automated pytest API upload test',
+                'private':          'private',
+                'publication_link': '',
+                'project_members':  '',
+                'alias':            '',
+                'remap_sample_names': 'false',
+                'accept_license':   'on',
+                'file':             fh,
+            },
+            format='multipart')
+
+    response = FileUploadView.as_view()(req)
+
+    assert response.status_code == 400, \
+        f"Expected 400 without project_members, got {response.status_code}"

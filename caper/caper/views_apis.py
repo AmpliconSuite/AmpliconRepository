@@ -7,6 +7,7 @@ import glob
 import logging
 import math
 import os
+import re
 import shutil
 import uuid
 import tarfile
@@ -38,6 +39,20 @@ from .project_version_cleanup import retarget_deleted_version_tombstones
 from .extra_metadata import *
 from .background_tasks import get_background_task_status
 
+
+def parse_project_members(request):
+    """
+    Read the 'project_members' form field off a request and return the members
+    as a list, in the order they were given.
+
+    The field is a free-text list of usernames/emails separated by whitespace,
+    commas or semicolons, and may also be repeated as multiple form fields.
+    The first entry is the project owner. Returns [] if nothing was supplied.
+    """
+    raw = ','.join(request.POST.getlist('project_members'))
+    return [member.strip() for member in re.split(r'[\s,;]+', raw) if member.strip()]
+
+
 class FileUploadView(APIView):
     parser_class = (MultiPartParser,)
     permission_classes = []
@@ -50,6 +65,14 @@ class FileUploadView(APIView):
         '''
         Post API
         '''
+        # the first member listed owns the project. Checked before the upload is
+        # saved so a bad request does not leave a stray file behind.
+        project_members = parse_project_members(request)
+        if not project_members:
+            return Response({'error': 'project_members is required'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        current_user = project_members[0]
         file_serializer = FileSerializer(data = request.data)
 
         if file_serializer.is_valid():
@@ -59,7 +82,6 @@ class FileUploadView(APIView):
             proj_name = form_dict['project_name']
             request_file = request.FILES['file']
             # extract contents of file
-            current_user = request.POST['project_members'][0]
             logging.info(f'Creating project for user {current_user}')
             if 'MULTIPART' in proj_name:
                 _, api_id, final_file, actual_proj_name = proj_name.split('__')
@@ -98,10 +120,9 @@ class FileUploadView(APIView):
                 helper_thread.start()
 
             print('hanging up now')
-            if 'MULTIPART':
-                return Response({'Message': 'Successfully uploaded. Project creation will take more than 2 mins. Upload may time-out.'}, status=status.HTTP_201_CREATED)
-            else:
-                return Response(file_serializer.data, status=status.HTTP_201_CREATED)
+            # Both paths hand off to api_helper in a thread and return before the
+            # project exists, so both get the same 'come back later' message.
+            return Response({'Message': 'Successfully uploaded. Project creation will take more than 2 mins. Upload may time-out.'}, status=status.HTTP_201_CREATED)
         else:
             return Response(file_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

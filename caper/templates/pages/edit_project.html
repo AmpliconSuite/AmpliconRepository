@@ -276,11 +276,15 @@
                 <!-- File upload area — hidden when Re-aggregate is selected -->
                 <div id="file-upload-section">
                 <div class="uk-margin">
+                  <p class="text-muted">
+                    See the <a href="https://docs.ampliconrepository.org/en/latest/getting-started/" target="_blank">getting-started documentation</a>
+                    for instructions on preparing project archives.
+                  </p>
                   <div id="file-drop-area" class="uk-placeholder uk-text-center js-upload">
                     <span uk-icon="icon: cloud-upload"></span>
-                    <span class="uk-text-middle">To add samples to the project, drag files here or</span>
+                    <span class="uk-text-middle">To add samples to the project, drag <code>.tar.gz</code> or <code>.zip</code> files here or</span>
                     <div uk-form-custom>
-                      <input id="fileuploadfield" type="file" name="document" multiple />
+                      <input id="fileuploadfield" type="file" name="document" accept=".tar.gz,.zip" multiple />
                       <span class="uk-link">select files</span>
                     </div>
                   </div>
@@ -548,7 +552,7 @@
     }
   
     input.addEventListener('change', (event) => {
-      const validFileExtension = ".tar.gz";
+      const validFileExtensions = [".tar.gz", ".zip"];
       const files = Array.from(input.files);
       let allFilesValid = true;
       let invalidFileNames = [];
@@ -557,14 +561,14 @@
       files.forEach(file => {
           const fileName = file.name;
           console.log(fileName, "fname");
-          if (!fileName.toLowerCase().endsWith(validFileExtension)) {
+          if (!validFileExtensions.some(extension => fileName.toLowerCase().endsWith(extension))) {
               allFilesValid = false;
               invalidFileNames.push(fileName);
           }
       });
   
       if (!allFilesValid) {
-          alert("Sorry, the following files are invalid inputs:\n\n" + invalidFileNames.join(', ') + "\n\nPlease select .tar.gz files only.\n\nSee bottom of page for instructions on how to generate an aggregated input file.");
+          alert("Sorry, the following files are invalid inputs:\n\n" + invalidFileNames.join(', ') + "\n\nPlease select .tar.gz or .zip files only.\n\nSee bottom of page for instructions on how to generate an aggregated input file.");
           throw new Error("Bad file extension!");
       }
   

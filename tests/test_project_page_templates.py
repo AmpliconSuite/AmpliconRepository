@@ -19,8 +19,23 @@ def test_loading_page_uses_requested_processing_message():
     ) in source
 
 
-def test_edit_project_drop_zone_prevents_browser_default_and_selects_files():
-    source = (TEMPLATE_DIR / "edit_project.html").read_text()
+def test_project_archive_inputs_accept_zip_and_edit_drop_zone_selects_files():
+    sources = [
+        (TEMPLATE_DIR / template_name).read_text()
+        for template_name in ("create_project.html", "edit_project.html")
+    ]
+
+    for source in sources:
+        assert 'accept=".tar.gz,.zip"' in source
+        assert 'const validFileExtensions = [".tar.gz", ".zip"];' in source
+        assert "validFileExtensions.some(extension =>" in source
+        assert "Please select .tar.gz or .zip files only." in source
+        assert (
+            'href="https://docs.ampliconrepository.org/en/latest/getting-started/"'
+            in source
+        )
+
+    source = sources[1]
 
     assert "fileDropArea.addEventListener('dragover'" in source
     assert "fileDropArea.addEventListener('drop'" in source
