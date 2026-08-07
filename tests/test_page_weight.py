@@ -102,6 +102,26 @@ def test_template_loads_plotly_once_before_the_figures(template_path, figure_mar
 
 
 @pytest.mark.parametrize('template_path', (SAMPLE_TEMPLATE, PROJECT_TEMPLATE))
+def test_no_multiline_hash_comments(template_path):
+    """``{# #}`` is single-line only in Django; a multi-line one renders verbatim.
+
+    Caught in dev testing on 2026-08-07, with a paragraph about plotly.js
+    displayed to users at the top of every project and sample page.  Multi-line
+    commentary belongs in ``{% comment %} ... {% endcomment %}``.
+    """
+    with open(template_path) as fh:
+        lines = fh.read().splitlines()
+
+    for number, line in enumerate(lines, start=1):
+        if '{#' in line:
+            assert '#}' in line[line.index('{#'):], (
+                f"{os.path.basename(template_path)}:{number} opens a {{# #}} "
+                f"comment that does not close on the same line. Django renders "
+                f"that as literal page text -- use {{% comment %}} instead."
+            )
+
+
+@pytest.mark.parametrize('template_path', (SAMPLE_TEMPLATE, PROJECT_TEMPLATE))
 def test_pinned_cdn_version_matches_the_installed_package(template_path):
     """Upgrading the plotly package must not silently desync the templates.
 

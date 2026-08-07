@@ -221,12 +221,14 @@
         <span style='margin-left: 1rem'> Display IGV Viewer </span>
         <input id="toggle-igv" type="checkbox" class="form-check-input" data-toggle="toggle">
         <span style='margin-left: 2rem'> Hover and click to interact with plots </span>
-        {# plotly.js is loaded once, here, rather than embedded in the figure.
+        {% comment %}
+           plotly.js is loaded once, here, rather than embedded in the figure.
            The figures use include_plotlyjs=False (sample_plot.py); the default
            inlined a 3.7 MB copy of the library into every page view.  This tag
            must stay ABOVE the figure below -- the figure's own inline script
            calls Plotly.newPlot as the page parses.  The version is pinned to the
-           plotly python package by tests/test_page_weight.py. #}
+           plotly python package by tests/test_page_weight.py.
+        {% endcomment %}
         <script src="https://cdn.plot.ly/plotly-2.16.1.min.js" charset="utf-8"></script>
         {{ graph|safe }}
         <br>
