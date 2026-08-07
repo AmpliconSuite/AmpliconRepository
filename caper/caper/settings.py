@@ -508,6 +508,11 @@ CRISPY_TEMPLATE_PACK = 'bootstrap4'
 # these middleware classes will be applied in the order given, and in the
 # response phase the middleware will be applied in reverse order.
 MIDDLEWARE = (
+    # First on purpose: the health check must not touch sessions, the DB or a
+    # template, and a request the load shedder is about to reject should not
+    # cost a worker any of that work either.  See caper/middleware.py.
+    "caper.middleware.HealthCheckMiddleware",
+    "caper.middleware.LoadShedMiddleware",
     "mezzanine.core.middleware.UpdateCacheMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     # Uncomment if using internationalisation or localisation

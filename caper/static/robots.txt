@@ -7,28 +7,79 @@ Disallow: /admin-*
 Disallow: /*/download
 Disallow: /api/
 
-# Heaviest observed download crawler (410 file-download requests in a single
-# 40-minute sample) with negligible search-visibility value.
-User-agent: Amazonbot
-Disallow: /
+# ---------------------------------------------------------------------------
+# Policy
+#
+# AI assistants are WELCOME to read the pages.  When someone asks an assistant
+# about ecDNA data or about a project hosted here, we want it to know this site
+# and to be able to answer from it.  That means GPTBot, ClaudeBot, PerplexityBot,
+# Google-Extended, Applebot-Extended, CCBot and the user-triggered fetchers
+# (ChatGPT-User, Claude-User, Perplexity-User, OAI-SearchBot) are deliberately
+# NOT listed below, and neither are the search indexers.  Anything absent from
+# this file is governed by the "User-agent: *" block above, which is what we
+# want: pages yes, bulk downloads and the API no.
+#
+# Do not "helpfully" give an allowed crawler its own Allow group.  A robots.txt
+# agent obeys only the single most specific group that matches it, so a group of
+# its own would silently release it from the /*/download and /api/ disallows
+# above -- the opposite of the intent.
+#
+# What remains blocked is bots that take without giving anything back: SEO and
+# data-resale crawlers that send no readers and feed no assistant, plus three
+# with measured harm here.  Crawl *volume* is no longer what this file is for --
+# caper/middleware.py caps concurrent sample-page rendering, so a well-behaved
+# crawler that is merely enthusiastic now gets 503s instead of taking the site
+# down.  That is what makes it safe to be generous above.
+# ---------------------------------------------------------------------------
 
-User-agent: Bytespider
-Disallow: /
+# --- SEO and data-resale crawlers: no readers, no assistant, no reason ---
 
-User-agent: CCBot
+User-agent: AhrefsBot
 Disallow: /
 
 User-agent: claritybot
 Disallow: /
 
-User-agent: Google-Extended
+User-agent: DataForSeoBot
 Disallow: /
 
-User-agent: GPTBot
+User-agent: Diffbot
+Disallow: /
+
+User-agent: ImagesiftBot
+Disallow: /
+
+User-agent: MJ12bot
 Disallow: /
 
 User-Agent: omgili
 Disallow: /
 
 User-Agent: omgilibot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: Timpibot
+Disallow: /
+
+User-agent: Webzio-Extended
+Disallow: /
+
+# --- Measured harm on this site; revisit if that changes ---
+
+# Heaviest observed download crawler: 410 file-download requests in a single
+# 40-minute sample.
+User-agent: Amazonbot
+Disallow: /
+
+# Large share of the dispersed swarm of Aug 2026, and widely reported to crawl
+# far harder than it is asked to.
+User-agent: Bytespider
+Disallow: /
+
+# Also prominent in the dispersed swarm; the search engine it feeds sends this
+# audience essentially no readers.
+User-agent: PetalBot
 Disallow: /

@@ -8,11 +8,20 @@ import os
 bind = "0.0.0.0:8000"
 # Accept-queue depth: connections that have connected but no worker has picked
 # up yet.  This is a burst buffer, not capacity -- capacity is `workers`.
-# At ~1s per page and 9 workers (~9 req/s), a full 2048-deep queue meant the
-# last client waited ~4 minutes, long after it had given up; the queue simply
-# converted overload into latency collapse and hid the problem from the load
-# balancer.  512 still buffers a large burst while failing fast beyond it.
-backlog = int(os.getenv("GUNICORN_BACKLOG", "512"))
+# At 2048 the last client in a full queue waited ~4 minutes, long after it had
+# given up; the queue simply converted overload into latency collapse and hid
+# the problem from the load balancer.  512 was better but still ~2 minutes at
+# the *measured* ceiling: not the theoretical ~9 req/s, but the ~200-250 req/min
+# at which the box actually collapsed on 2026-08-05, because project aggregation
+# threads share the same 8 vCPUs.  64 is roughly 15 seconds' worth at that rate,
+# which is as long as a queued client is plausibly still waiting.  The 460s in
+# the ALB logs (1,119 on Aug 6, 3,248 on Jul 31) are clients that had already
+# hung up, i.e. queue depth that was never doing anyone any good.
+#
+# Do not ship this without the cheap /healthz endpoint (caper/middleware.py) and
+# the target group repointed at it: a shorter queue makes the kernel refuse
+# connections sooner, which would also trip a health check that has to queue.
+backlog = int(os.getenv("GUNICORN_BACKLOG", "64"))
 
 # Worker processes
 # For t4g.2xlarge (8 vCPUs): Using 9 workers as default (CPU * 1 + 1)
@@ -40,7 +49,9 @@ errorlog = "/srv/logs/gunicorn_error.log"
 loglevel = os.getenv("GUNICORN_LOG_LEVEL", "info")
 access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
 
-# Process naming
+# Process naming.  Inert unless `setproctitle` is installed, which it is not, so
+# the processes appear under their default name.  Tooling that needs to find
+# them (py-spy, wedge-capture) must match on "gunicorn caper.wsgi" instead.
 proc_name = "amplicon_gunicorn"
 
 # Server mechanics
