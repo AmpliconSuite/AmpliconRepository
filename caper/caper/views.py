@@ -73,6 +73,7 @@ from .utils import (
     get_latest_project_version, flatten, classify_ac_version,
     AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
+from .tar_safety import safe_extract_member, safe_extractall
 from .project_version_cleanup import (
     build_deleted_version_tombstone,
     delete_gridfs_payload_for_project,
@@ -1107,15 +1108,20 @@ def project_summary_download(request, project_name):
                         logging.info(f"Found run.json candidates in GridFS tar: {run_json_members}")
                         
                         try:
-                            tar.extract('results/run.json', path=f'tmp/{project_id}')
+                            safe_extract_member(tar, 'results/run.json', f'tmp/{project_id}')
                             logging.info(f"Successfully extracted run.json from GridFS to {run_json_path}")
                         except KeyError:
                             logging.warning(f"'results/run.json' not found in GridFS tarfile. First 20 members: {member_names[:20]}")
                             # Try alternative path if run.json exists with different structure
                             if run_json_members:
                                 logging.info(f"Attempting to extract alternative path: {run_json_members[0]}")
+                                # Member name is attacker-influenced here: any name
+                                # containing 'run.json' matches, including one that
+                                # traverses out of tmp/{project_id}.
                                 member = tar.getmember(run_json_members[0])
-                                tar.extract(member, path=f'tmp/{project_id}')
+                                if not safe_extract_member(tar, member, f'tmp/{project_id}'):
+                                    raise ValueError(
+                                        f'Refused unsafe run.json member: {member.name}')
                                 # Move to expected location if different
                                 extracted_path = os.path.join(f'tmp/{project_id}', run_json_members[0])
                                 if extracted_path != run_json_path:
@@ -1166,7 +1172,7 @@ def project_summary_download(request, project_name):
                         
                         extracted = False
                         try:
-                            tar.extract('results/run.json', path=f'tmp/{project_id}')
+                            safe_extract_member(tar, 'results/run.json', f'tmp/{project_id}')
                             logging.info(f"Successfully extracted run.json from S3 to {run_json_path}")
                             extracted = True
                         except KeyError:
@@ -1174,8 +1180,13 @@ def project_summary_download(request, project_name):
                             # Try alternative path if run.json exists with different structure
                             if run_json_members:
                                 logging.info(f"Attempting to extract alternative path: {run_json_members[0]}")
+                                # Member name is attacker-influenced here: any name
+                                # containing 'run.json' matches, including one that
+                                # traverses out of tmp/{project_id}.
                                 member = tar.getmember(run_json_members[0])
-                                tar.extract(member, path=f'tmp/{project_id}')
+                                if not safe_extract_member(tar, member, f'tmp/{project_id}'):
+                                    raise ValueError(
+                                        f'Refused unsafe run.json member: {member.name}')
                                 # Move to expected location if different
                                 extracted_path = os.path.join(f'tmp/{project_id}', run_json_members[0])
                                 if extracted_path != run_json_path:
@@ -3685,7 +3696,8 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
 
         # Extract the tar file
         with tarfile.open(download_path, 'r:gz') as tar:
-            tar.extractall(path=temp_extract_dir)
+            safe_extractall(tar, temp_extract_dir,
+                            description=f"project {project.get('_id')}")
 
         # Remove the sample directories
         for sample in samples_to_remove:
@@ -3751,8 +3763,12 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             logging.info(f"run.json locations in tar: {run_json_members}")
         
         with tarfile.open(file_location, "r:gz") as tar_file:
-            tar_file.extractall(path=project_data_path)
-        
+            # Uploaded tarballs are untrusted: /upload_api/ takes them without
+            # authentication.  safe_extractall keeps every member inside
+            # project_data_path.
+            safe_extractall(tar_file, project_data_path,
+                            description=f'project {project_id}')
+
         # Verify extraction completed by checking if the path exists
         if not os.path.exists(project_data_path):
             logging.error(f"CRITICAL: Extraction target directory doesn't exist after extractall: {project_data_path}")
@@ -4830,7 +4846,10 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     with tarfile.open(file_location, 'r') as tar:
         try:
             # run_location = [run for run in tar.getnames() if 'run.json' in run]
-            tar.extract('results/run.json', path=project_data_path)
+            # Literal name, so not a traversal vector by itself — but a symlink
+            # member of that exact name would be, hence the safe extract.
+            if not safe_extract_member(tar, 'results/run.json', project_data_path):
+                raise ValueError('Refused unsafe results/run.json member')
         except:
             logging.error(str(file_location) + " had an issue. could not place ./results/run.json into " + project_data_path)
             failed = True

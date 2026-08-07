@@ -11,6 +11,7 @@ import tarfile
 import tempfile
 import logging
 from bson import ObjectId
+from .tar_safety import safe_extract_member
 from .utils import fs_handle, collection_handle
 
 logger = logging.getLogger(__name__)
@@ -165,13 +166,16 @@ def _extract_matching_members(tar, path_filter, output_dir):
     # Show what will be extracted
     logger.info(f"First 10 matching members: {[m.name for m in matching_members[:10]]}")
     
-    # Extract matching members
+    # Extract matching members.  The prefix check above is not a containment
+    # check: 'results/../../x' starts with 'results' and still escapes, so each
+    # member goes through the safe extract, which skips and logs escapes.
     extracted_count = 0
     for member in matching_members:
         try:
-            tar.extract(member, path=output_dir)
+            if not safe_extract_member(tar, member, output_dir):
+                continue
             extracted_count += 1
-            
+
             if extracted_count % 100 == 0:
                 logger.info(f"Extracted {extracted_count}/{len(matching_members)} files...")
         except Exception as e:
