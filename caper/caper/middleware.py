@@ -126,7 +126,23 @@ UNREFERRED_DOWNLOAD_CONCURRENCY = int(
 # exactly what happens during the incidents this defends against).  Without an
 # expiry those slots would leak until the cap reached zero and the site shed
 # everything -- worse than the disease.
-SLOT_STALE_SECONDS = float(os.getenv('AMPREPO_SLOT_STALE_SECONDS', '120'))
+#
+# This must not be shorter than the longest request a worker can actually be
+# stuck in, or the cap silently stops capping: the slot is released for counting
+# while the worker is still busy, another request is admitted, and the two caps
+# no longer bound how many workers a slow request class can occupy.  Prod and dev
+# access logs both show sample- and project-page requests running to exactly
+# gunicorn's `timeout` (900s) -- on dev, 2026-06-18, nine at a time on a 15-minute
+# cycle for four hours, which is `workers` and `timeout` precisely.  At 120s the
+# limiter would have admitted two more of those every two minutes and all nine
+# workers would still have been consumed.  So it tracks gunicorn's timeout: a
+# slot is never freed for accounting before the worker itself can be free.
+#
+# The cost of the longer window is that a slot leaked some way the dead-pid
+# reaper cannot see (_reap_dead_slots, which fires immediately for a SIGKILLed
+# worker) is held for 15 minutes instead of 2.  That reaper covers the case this
+# expiry was originally written for, which is what makes the trade acceptable.
+SLOT_STALE_SECONDS = float(os.getenv('AMPREPO_SLOT_STALE_SECONDS', '900'))
 
 ENABLED = os.getenv('AMPREPO_LOAD_SHED', 'on').lower() not in ('off', 'false', '0')
 
