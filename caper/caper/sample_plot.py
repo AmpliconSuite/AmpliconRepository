@@ -394,7 +394,14 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
                                 }
                                }
 
-        plot_html = fig.to_html(full_html=False, config=updated_config_dict, div_id='plotly_div')
+        # include_plotlyjs=False: the library is loaded once by the template.
+        # Leaving it at the default inlined a 3.7 MB copy of plotly.js into
+        # every single page view -- 98.7% of the response, re-sent every time
+        # and uncacheable because it was part of the HTML.  The template's
+        # <script src> version is pinned to this package by
+        # tests/test_page_weight.py.
+        plot_html = fig.to_html(full_html=False, config=updated_config_dict, div_id='plotly_div',
+                                include_plotlyjs=False)
         
         # Log total plot generation time
         total_plot_time = time.time() - start_time
@@ -411,6 +418,7 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
                                             family = 'sans serif',
                                             size = 50,
                                             color = "crimson"
-                                       ))).to_html(full_html=False, div_id='plotly_div')
+                                       ))).to_html(full_html=False, div_id='plotly_div',
+                                                   include_plotlyjs=False)
 
         return plot

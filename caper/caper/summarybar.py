@@ -108,4 +108,6 @@ def summarybar(sample, fa_cmap):
         'toImageButtonOptions': {'format': 'svg'}
     }
 
-    return fig.to_html(full_html=False, config=updated_config_dict, div_id='summarybar_plotly_div')
+    # include_plotlyjs=False -- see the note in sample_plot.py.
+    return fig.to_html(full_html=False, config=updated_config_dict, div_id='summarybar_plotly_div',
+                       include_plotlyjs=False)

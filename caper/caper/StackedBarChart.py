@@ -78,4 +78,8 @@ def StackedBarChart(sample, fa_cmap):
                             }
                            }
     logging.info(f"Created project barchart plot in {elapsed_time} seconds")
-    return fig.to_html(full_html=False, config=updated_config_dict, div_id="project_bar_plotly_div")
+    # include_plotlyjs=False -- see the note in sample_plot.py.  The project page
+    # renders two figures, so the default embedded plotly.js *twice*: 7.4 MB of a
+    # 7.6 MB response.  The library is loaded once by the template instead.
+    return fig.to_html(full_html=False, config=updated_config_dict, div_id="project_bar_plotly_div",
+                       include_plotlyjs=False)

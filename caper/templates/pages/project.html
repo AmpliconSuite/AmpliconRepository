@@ -959,6 +959,12 @@
         </div>
     </div>
     
+{# plotly.js once for both figures below, which use include_plotlyjs=False
+   (StackedBarChart.py, summarybar.py).  The default embedded the library twice
+   here -- 7.4 MB of a 7.6 MB response.  Must stay above both figures; their
+   inline scripts call Plotly.newPlot as the page parses.  Version pinned by
+   tests/test_page_weight.py. #}
+<script src="https://cdn.plot.ly/plotly-2.16.1.min.js" charset="utf-8"></script>
 <div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; display:none; overflow-x: auto;">
     <div style="display: flex; flex-wrap: nowrap; align-items: flex-end; width: max-content;">
         <div style="flex: 0 0 auto;">{{ stackedbar_graph|safe }}
