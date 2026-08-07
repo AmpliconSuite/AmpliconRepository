@@ -1,4 +1,4 @@
-Version= v2.18.7_080626
+Version= v2.19.0_080726
 Creator= jluebeck
-Date= Thu Aug  6 22:58:06 UTC 2026
-CommitID=4fb830fc413e94d3e4d324b0f326237bebbe32a0
+Date= Fri Aug  7 22:47:37 UTC 2026
+CommitID=2594d2d8a1506a868914d1732d21957b1d315bc5
