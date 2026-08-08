@@ -122,15 +122,14 @@ def test_upload_api_accepts_tar_file(mongo_collection):
 # Add samples to project API
 # ---------------------------------------------------------------------------
 
-@pytest.mark.slow
 @pytest.mark.integration
 def test_add_samples_requires_valid_project_key(mongo_collection):
     """
     POST /add_samples_to_project_api/ with an invalid project_key must
     return 403 Forbidden.
 
-    Uses project_medium (Contino, 9 samples) since the endpoint requires
-    the project to exist.  The endpoint validates the key before touching files.
+    Uses a real existing project because the endpoint requires the project to
+    exist. The endpoint validates the key before touching files.
     """
     from rest_framework.test import APIRequestFactory
     from caper.views_apis import ProjectFileAddView
@@ -138,9 +137,8 @@ def test_add_samples_requires_valid_project_key(mongo_collection):
     assert os.path.exists(DATASET_ADDL_TAR), \
         f"Test dataset not found: {DATASET_ADDL_TAR}"
 
-    # We need a real project UUID.  Use the medium dataset fixture directly
-    # rather than loaded_datasets (which is session-scoped and may not be
-    # available here).  Instead, pick any existing non-deleted project.
+    # Use an existing non-deleted project to exercise the authorization check
+    # against realistic MongoDB state without invoking aggregation.
     existing = mongo_collection.find_one({'delete': False, 'current': True})
     if not existing:
         pytest.skip("No existing projects in database — cannot test add_samples auth")
@@ -166,7 +164,6 @@ def test_add_samples_requires_valid_project_key(mongo_collection):
         f"Invalid project key should be rejected (403/404), got {response.status_code}"
 
 
-@pytest.mark.slow
 @pytest.mark.integration
 def test_add_samples_requires_project_member(mongo_collection):
     """

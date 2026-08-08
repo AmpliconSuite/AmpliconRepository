@@ -59,6 +59,51 @@ def get_chrom_num(location: str):
 #     return chrom_len_dict
 
 
+CNV_COLUMNS = ["Chromosome Number", "Feature Start Position", "Feature End Position",
+               "Source", "Copy Number"]
+
+
+def empty_cnv_frame():
+    """An empty CNV frame with the canonical columns, for the no-data paths."""
+    return pd.DataFrame(columns=CNV_COLUMNS)
+
+
+def normalize_cnv_frame(df):
+    """Coerce a CNV BED of any supported width into the canonical five columns.
+
+    A CNV file may carry a 'Source' column (chrom/start/end/source/CN) or omit
+    it (chrom/start/end/CN); users are instructed to keep copy number in the
+    last column either way.  The previous code renamed columns 0-4 positionally,
+    so a 4-column file never got a 'Copy Number' column at all and the plotting
+    loop raised KeyError -- taking down every sample page in the project.
+
+    The output is always these five columns whatever the input width: the outage
+    came from shape variation, so having one output contract is the point.  Only
+    the 5-column CNVkit layout has a column we can name as the source; anything
+    wider carries fields we cannot identify, so 'Source' stays "Not Provided"
+    rather than guessing at column 3.
+
+    Coercing start/end/CN to numbers here also keeps a stray track line or a
+    non-numeric copy number from surfacing as a TypeError deep inside the
+    per-chromosome loop, which reads these positionally as row[1], row[2] and
+    row[-1].
+    """
+    if df.empty or len(df.columns) < 4:
+        return empty_cnv_frame()
+
+    normalized = pd.DataFrame({
+        "Chromosome Number": df.iloc[:, 0].astype(str),
+        "Feature Start Position": pd.to_numeric(df.iloc[:, 1], errors='coerce'),
+        "Feature End Position": pd.to_numeric(df.iloc[:, 2], errors='coerce'),
+        "Source": df.iloc[:, 3] if len(df.columns) == 5 else "Not Provided",
+        "Copy Number": pd.to_numeric(df.iloc[:, -1], errors='coerce'),
+    })
+
+    normalized = normalized.dropna(
+        subset=["Feature Start Position", "Feature End Position", "Copy Number"])
+    return normalized.reset_index(drop=True)
+
+
 def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
     """
     Generates an interactive Plotly plot for a sample's amplicon data.
@@ -111,20 +156,14 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
         cnv_file = fs_handle.get(ObjectId(cnv_file_id)).read()
         cnv_decode = str(cnv_file, 'utf-8')
         cnv_string = StringIO(cnv_decode)
-        df = pd.read_csv(cnv_string, sep="\t", header=None)
-        df.rename(columns={0: 'Chromosome Number', 1: "Feature Start Position", 2: "Feature End Position", 3: 'Source',
-                           4: 'Copy Number'}, inplace=True)
+        df = normalize_cnv_frame(pd.read_csv(cnv_string, sep="\t", header=None, comment='#'))
 
     except InvalidId:
         logging.debug(f'CNV_BED_file not available for {sample_name} (value: {cnv_file_id!r})')
-        df = pd.DataFrame(columns=["Chromosome Number", "Feature Start Position", "Feature End Position", "Source",
-                                   "Copy Number"])
+        df = empty_cnv_frame()
     except Exception as e:
         logging.exception(e)
-        df = pd.DataFrame(columns=["Chromosome Number", "Feature Start Position", "Feature End Position", "Source",
-                                   "Copy Number"])
-
-    # Note, that a 4 column CNV file, instead of a 5 column CNV file may be given. We instruct users to place Copy Number in the last column.
+        df = empty_cnv_frame()
 
     amplicon = pd.DataFrame(sample)
     amplicon['AA_amplicon_number'] = pd.to_numeric(amplicon['AA_amplicon_number'], errors='coerce')
@@ -187,7 +226,10 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
             x_array = []
             y_array = []
             if key in dfs:
-                if len(dfs[key].columns) >= 4 and is_numeric_dtype(df['Copy Number'][0]):
+                # Test the column, not df['Copy Number'][0]: the scalar lookup
+                # raised KeyError on an empty frame as well as on a CNV file
+                # with no 'Copy Number' column.
+                if len(dfs[key].columns) >= 4 and is_numeric_dtype(df['Copy Number']):
                     for ind, row in dfs[key].iterrows():
                         # CN Start
                         x_array.append(row[1])

@@ -257,10 +257,10 @@ def test_replace_project_file_version_history(
         assert edited_doc is not None, \
             f"[Edit] Timed out waiting for reaggregation ({POLL_TIMEOUT}s)"
 
-        if edited_doc.get('aggregation_failed'):
-            pytest.xfail(
-                f"Reaggregation failed (may require a newer aggregator). "
-                f"Error: {edited_doc.get('error_message', 'none')}")
+        assert not edited_doc.get('aggregation_failed'), (
+            f"Reaggregation failed: "
+            f"{edited_doc.get('error_message', '(none)')}"
+        )
 
         assert edited_doc.get('FINISHED?'), "[Edit] FINISHED? not set after reaggregation"
 
@@ -333,9 +333,9 @@ def test_featured_flag_preserved_after_reaggregation(
         assert new_doc is not None, \
             f"Timed out waiting for reaggregation ({POLL_TIMEOUT}s)"
 
-        if new_doc.get('aggregation_failed'):
-            pytest.xfail(
-                f"Reaggregation failed: {new_doc.get('error_message', 'none')}")
+        assert not new_doc.get('aggregation_failed'), (
+            f"Reaggregation failed: {new_doc.get('error_message', '(none)')}"
+        )
 
         assert new_doc.get('featured'), \
             "featured=True must be preserved on the new project version after reaggregation (Issue #511)"
@@ -412,9 +412,9 @@ def test_reaggregation_does_not_double_count_stats(
         assert new_doc is not None, \
             f"Timed out waiting for reaggregation ({POLL_TIMEOUT}s)"
 
-        if new_doc.get('aggregation_failed'):
-            pytest.xfail(
-                f"Reaggregation failed: {new_doc.get('error_message', 'none')}")
+        assert not new_doc.get('aggregation_failed'), (
+            f"Reaggregation failed: {new_doc.get('error_message', '(none)')}"
+        )
 
         # After reaggregation: still exactly baseline + 1, NOT baseline + 2
         stats_after_reag = get_latest_site_statistics() or {}
@@ -488,9 +488,9 @@ def test_tool_versions_preserved_in_version_history(
         assert new_doc is not None, \
             f"Timed out waiting for reaggregation ({POLL_TIMEOUT}s)"
 
-        if new_doc.get('aggregation_failed'):
-            pytest.xfail(
-                f"Reaggregation failed: {new_doc.get('error_message', 'none')}")
+        assert not new_doc.get('aggregation_failed'), (
+            f"Reaggregation failed: {new_doc.get('error_message', '(none)')}"
+        )
 
         prev = new_doc.get('previous_versions', [])
         assert len(prev) > 0, \

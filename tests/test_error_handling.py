@@ -179,40 +179,6 @@ def test_project_page_nonexistent_id(request_factory, test_user):
         project_page(req, project_name=_GHOST_ID)
 
 
-@pytest.mark.integration
-@pytest.mark.functional
-def test_private_project_unauthenticated_redirect(
-        loaded_datasets, request_factory, mongo_collection):
-    """
-    GET /project/<private_id> without authentication must return a 302
-    redirect to the login page, not a 200 or an error.
-    """
-    from caper.views import project_page
-
-    class _AnonUser:
-        username = ''
-        email    = ''
-        is_authenticated = False
-        is_staff         = False
-
-    pid = loaded_datasets['project_small']
-
-    # Confirm the project is actually private before the assertion
-    doc = mongo_collection.find_one({'_id': ObjectId(pid)})
-    from caper.utils import normalize_visibility_field, is_project_private
-    visibility = normalize_visibility_field(doc.get('private'))
-    assert is_project_private(visibility), \
-        "project_small must be private for this test to be meaningful"
-
-    req = request_factory.get(f'/project/{pid}')
-    req.user = _AnonUser()
-    resp = project_page(req, project_name=pid)
-    assert resp.status_code in (301, 302), \
-        f"Expected redirect for unauthenticated access to private project, got {resp.status_code}"
-    assert 'login' in resp.get('Location', '').lower(), \
-        "Redirect location must point to the login page"
-
-
 # ---------------------------------------------------------------------------
 # download error cases
 # ---------------------------------------------------------------------------

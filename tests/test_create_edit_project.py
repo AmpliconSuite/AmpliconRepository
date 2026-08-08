@@ -922,10 +922,8 @@ def test_create_tar_and_metadata_with_remap(
     """
     Create with tar + metadata xlsx, remap_sample_names=True.
 
-    With the current AGGREGATOR_DEV_PATH this is expected to fail aggregation.
-    The test passes in either case but prints a clear note about which outcome
-    was observed, so the result acts as a diagnostic.
-    Update AGGREGATOR_DEV_PATH to a v6-capable aggregator to get a full success.
+    Aggregation must succeed. A failure reports both the aggregator error and
+    the configured AGGREGATOR_DEV_PATH so environment problems are visible.
     """
     from caper.views import create_project
     created_ids = []
@@ -950,14 +948,11 @@ def test_create_tar_and_metadata_with_remap(
         doc = _poll_until_finished(mongo_collection, project_id)
         assert doc is not None, f"Timed out waiting for aggregation ({POLL_TIMEOUT}s)"
 
-        if doc.get('aggregation_failed'):
-            aggregator_path = os.environ.get('AGGREGATOR_DEV_PATH', '(not set)')
-            pytest.xfail(
-                f"Aggregation failed as expected with current AGGREGATOR_DEV_PATH "
-                f"({aggregator_path}). "
-                f"Error: {doc.get('error_message', '(none)')}. "
-                f"Update AGGREGATOR_DEV_PATH to a v6-capable aggregator to fully pass."
-            )
+        assert not doc.get('aggregation_failed'), (
+            f"Aggregation failed: {doc.get('error_message', '(none)')} "
+            f"(AGGREGATOR_DEV_PATH="
+            f"{os.environ.get('AGGREGATOR_DEV_PATH', '(not set)')})"
+        )
 
         assert doc.get('FINISHED?'), "Project did not set FINISHED?=True"
         assert doc.get('sample_count', 0) > 0, "Project has no samples"
@@ -973,8 +968,9 @@ def test_create_then_edit_with_remap(
     """
     Create a project (tar only), then edit it adding metadata + remap=True.
 
-    The create step must succeed.  The edit/reaggregation step is expected to
-    fail until AGGREGATOR_DEV_PATH is updated — marked xfail in that case.
+    Both steps must succeed. A reaggregation failure is a real failure: the
+    error message and the aggregator in use are reported so it can be told
+    apart from an environment problem.
     """
     from caper.views import create_project, edit_project_page
     created_ids = []
@@ -1023,14 +1019,11 @@ def test_create_then_edit_with_remap(
         assert edited_doc is not None, \
             f"[Edit] Timed out waiting for aggregation ({POLL_TIMEOUT}s)"
 
-        if edited_doc.get('aggregation_failed'):
-            aggregator_path = os.environ.get('AGGREGATOR_DEV_PATH', '(not set)')
-            pytest.xfail(
-                f"[Edit] Aggregation failed as expected with current AGGREGATOR_DEV_PATH "
-                f"({aggregator_path}). "
-                f"Error: {edited_doc.get('error_message', '(none)')}. "
-                f"Update AGGREGATOR_DEV_PATH to a v6-capable aggregator to fully pass."
-            )
+        assert not edited_doc.get('aggregation_failed'), (
+            f"[Edit] Reaggregation failed: {edited_doc.get('error_message', '(none)')} "
+            f"(AGGREGATOR_DEV_PATH="
+            f"{os.environ.get('AGGREGATOR_DEV_PATH', '(not set)')})"
+        )
 
         assert edited_doc.get('FINISHED?'), "[Edit] Project did not set FINISHED?=True"
         assert edited_doc.get('sample_count', 0) > 0, "[Edit] Project has no samples"

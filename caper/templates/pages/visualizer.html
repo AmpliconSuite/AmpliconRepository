@@ -131,12 +131,15 @@
                 <input type="checkbox" id="oncogenes_only">
                 </div>
                 <button id="filterButton">Filter</button>
+                <span id="filterStale" class="filter-stale" hidden>
+                    Filters changed &mdash; click Filter to update the graph.
+                </span>
             </div>
 
             <!-- Right column: Downloads -->
             <div class="filter-right">
-                <button id="download-btn">Download CSV</button>
-                <button id="download-full-csv-btn">Download full CSV</button>
+                <button id="download-btn" title="CSV of the genes and edges currently drawn">Download current graph</button>
+                <button id="download-full-csv-btn" title="CSV of every co-amplification edge across the selected projects">Download all data</button>
             </div>
         </div>
     </div>
@@ -151,12 +154,14 @@
                     <!-- <th onclick="sortTable(0)">Rank</th> -->
                     <th>Gene</th>
                     <th>Oncogene</th>
+                    <th title="Number of samples in which this gene is amplified">Amplifications</th>
+                    <th title="Number of samples in which this gene is amplified together with the query gene">Coamplifications</th>
                     <th>Coamplification Frequency</th>
                 </tr>
             </thead>
             <tbody id="data-container">
                 <tr class="no-data">
-                    <td colspan="3">No data available</td>
+                    <td colspan="5">No data available</td>
                 </tr>
             </tbody>
         </table>

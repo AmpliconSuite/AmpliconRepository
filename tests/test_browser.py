@@ -49,10 +49,7 @@ def public_project_id():
     Return the linkid of the first non-deleted, finished public project
     in MongoDB.  Skips if none exists.
     """
-    try:
-        from caper.utils import collection_handle
-    except Exception as exc:
-        pytest.skip(f"Cannot import caper.utils: {exc}")
+    from caper.utils import collection_handle
 
     doc = collection_handle.find_one({
         'private': {'$in': [False, 'public']},
@@ -71,10 +68,7 @@ def private_project_id():
     Return the linkid of the first non-deleted, finished private project
     in MongoDB.  Skips if none exists.
     """
-    try:
-        from caper.utils import collection_handle
-    except Exception as exc:
-        pytest.skip(f"Cannot import caper.utils: {exc}")
+    from caper.utils import collection_handle
 
     doc = collection_handle.find_one({
         'private': {'$in': [True, 'private']},
@@ -100,14 +94,10 @@ def authenticated_page(page, base_url):
     before the session cookie is committed.
 
     Cleans up the user and session after the test.
-    Skips if Django ORM / session backend setup fails.
     """
-    try:
-        from django.conf import settings as dj_settings
-        from django.contrib.auth.models import User
-        from django.contrib.sessions.backends.db import SessionStore
-    except Exception as exc:
-        pytest.skip(f"Cannot import Django auth/session models: {exc}")
+    from django.conf import settings as dj_settings
+    from django.contrib.auth.models import User
+    from django.contrib.sessions.backends.db import SessionStore
 
     username = 'playwright_auth_user'
     email    = 'playwright_auth@test.local'
@@ -116,11 +106,8 @@ def authenticated_page(page, base_url):
     os.environ['DJANGO_ALLOW_ASYNC_UNSAFE'] = 'true'
 
     User.objects.filter(username=username).delete()
-    try:
-        user = User.objects.create_user(
-            username=username, email=email, password=password)
-    except Exception as exc:
-        pytest.skip(f"Could not create test user: {exc}")
+    user = User.objects.create_user(
+        username=username, email=email, password=password)
 
     # Write a real Django session and inject it as a browser cookie.
     # Using ModelBackend explicitly so the session hash is valid regardless of
@@ -149,34 +136,31 @@ def authenticated_page(page, base_url):
         'url':   server_url,
     }])
 
-    # Validate that the dev server recognised our injected session.  If the
-    # server is running from a different repository clone it will use a
-    # different SQLite database, so our user / session will not exist there
-    # and the cookie will be cleared.  Skip (rather than fail) with a clear
-    # message so CI doesn't break when the dev server is from another clone.
-    page.goto(f'{server_url}/create-project/')
-    page.wait_for_load_state('domcontentloaded')
-    if page.locator('#upload-form').count() == 0:
+    try:
+        # Validate that the dev server recognised our injected session. If the
+        # server uses a different SQLite database, this requested browser run
+        # is misconfigured and must fail rather than report a skip.
+        page.goto(f'{server_url}/create-project/')
+        page.wait_for_load_state('domcontentloaded')
         caper_root = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'caper')
-        pytest.skip(
+        assert page.locator('#upload-form').count() > 0, (
             "Session injection failed — the dev server appears to be using a "
             "different database from the pytest process (possibly a different "
-            "repository clone).  "
+            "repository clone). "
             f"Start the server from: cd {caper_root} && python manage.py runserver"
         )
 
-    yield page
-
-    # Teardown
-    try:
-        session.delete()
-    except Exception:
-        pass
-    try:
-        User.objects.filter(username=username).delete()
-    except Exception:
-        pass
+        yield page
+    finally:
+        try:
+            session.delete()
+        except Exception:
+            pass
+        try:
+            User.objects.filter(username=username).delete()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -196,20 +180,6 @@ def test_homepage_loads(page):
     title = page.title()
     assert 'error' not in title.lower() and '500' not in title, \
         f"Homepage title suggests an error: {title!r}"
-
-
-@pytest.mark.browser
-def test_homepage_has_project_rows(page):
-    """
-    When any public or private projects exist, at least one DataTable row
-    with a data-project-type attribute must appear.
-    """
-    page.goto('/')
-    page.wait_for_selector('#unifiedProjectTable', timeout=15_000)
-    rows = page.locator('tr[data-project-type]')
-    # Acceptable if zero rows (empty DB); just verify no JS crash
-    count = rows.count()
-    assert count >= 0  # tautologically true — the real check is no 500/JS error
 
 
 @pytest.mark.browser
@@ -391,7 +361,7 @@ def test_login_page_renders(page):
 
 
 @pytest.mark.browser
-def test_email_password_login_form_works(page):
+def test_email_password_login_form_works(page, base_url):
     """
     Submitting the login form with valid credentials must redirect away from
     the login page, confirming the form actually authenticates the user.
@@ -400,10 +370,7 @@ def test_email_password_login_form_works(page):
     test fills #id_login with the username (not the email).  If the project ever
     switches to email-only auth, change the fill value to ``email``.
     """
-    try:
-        from django.contrib.auth.models import User
-    except Exception as exc:
-        pytest.skip(f"Cannot import Django User model: {exc}")
+    from django.contrib.auth.models import User
 
     os.environ['DJANGO_ALLOW_ASYNC_UNSAFE'] = 'true'
 
@@ -412,13 +379,10 @@ def test_email_password_login_form_works(page):
     password = 'LoginForm!789'
 
     User.objects.filter(username=username).delete()
-    try:
-        User.objects.create_user(username=username, email=email, password=password)
-    except Exception as exc:
-        pytest.skip(f"Could not create test user: {exc}")
+    User.objects.create_user(username=username, email=email, password=password)
 
     try:
-        server_url = 'http://127.0.0.1:8000'
+        server_url = base_url.rstrip('/')
 
         # ?next=/ makes allauth redirect to the homepage on success instead of
         # /accounts/profile/, which in turn redirects anonymous users back to
@@ -445,7 +409,7 @@ def test_email_password_login_form_works(page):
                 timeout=10_000,
             )
         except PlaywrightTimeout:
-            pytest.skip(
+            pytest.fail(
                 "Login form did not redirect to homepage within 10 s — the dev "
                 "server may be using a different database from the pytest process "
                 "(user created by pytest not found on the server).  "

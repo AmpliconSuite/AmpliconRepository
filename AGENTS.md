@@ -184,6 +184,12 @@ To recover a deleted version tombstone into a project's `previous_versions`, use
 ### Do NOT commit
 - `caper/caper.sqlite3`
 - `caper/config.sh` / `.env`
+- `docs/handoff-*.md` — local-only working notes, intentionally untracked. Read
+  them, never stage them. Nothing in `.gitignore` prevents `git add -A` or
+  `git add docs/` from picking them up, so check `git status` before staging.
+  (Other files under `docs/` — `*-todo.md`, `api-roadmap.md` — *are* tracked.)
+  See `CLAUDE.md`, which is gitignored, for what they contain and where the
+  backups live.
 
 ---
 
@@ -253,6 +259,33 @@ def test_my_feature(client, live_mongo):
     # arrange → act → assert
     ...
 ```
+
+### Test addition policy
+
+Do not add a new test automatically for every code edit. First search for the
+nearest existing test that owns the behavior.
+
+Add or strengthen a test when the change reproduces a bug, closes a numbered
+issue, protects an outage, security, or data-integrity invariant, or introduces
+a materially new branch that existing assertions do not exercise. For a
+refactor, text/style-only change, or behavior already covered at the same
+boundary, run the existing test and add nothing.
+
+Prefer extending the nearest existing test and file. Create a new test file
+only for a distinct subsystem or when it requires a different marker, fixture,
+or execution environment. A one-test file needs a short reason why it does not
+belong in an existing subject file.
+
+Test at the lowest layer that proves the regression. Do not repeat the same
+outcome with a mock, a direct view call, and a browser test unless each test
+names the different failure boundary it protects.
+
+`skip` and `xfail` may guard an unmet precondition checked before the system
+under test runs. Never skip or xfail because the tested action failed. Assert
+that fixtures created by the suite remain available.
+
+Before adding a test file, state in the change summary which existing file was
+considered and why it was not the right home.
 
 ---
 

@@ -17,10 +17,12 @@
 # moving parts between the failure and the recovery.  The alarm stays as the
 # notification channel.
 #
-# It captures before it restarts.  A restart destroys the only evidence of the
-# second, still-undiagnosed wedge mechanism (docs/handoff-attack-mitigations.md
-# §2), so an automated restart that skipped the capture would trade the
-# diagnosis away for the uptime.
+# It captures before it restarts.  That capture is what solved the wedge on
+# 2026-08-07: run by hand during a live outage, it showed every worker blocked in
+# write(gunicorn/http/wsgi.py:346) -- not the pymongo fork deadlock that had been
+# the leading theory for two days.  A restart destroys that evidence, so the
+# capture stays even though the known mechanism is fixed; the next unexplained
+# wedge will be diagnosed the same way.
 #
 # Install:
 #     sudo install -m 755 wedge-watchdog.sh /usr/local/bin/wedge-watchdog

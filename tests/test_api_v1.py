@@ -2,8 +2,8 @@
 Unit and integration tests for views_apis.py — the REST API v1 layer.
 
 Unit tests use unittest.mock to avoid MongoDB/GridFS/S3/ORM dependencies.
-Integration tests (marked integration+functional+slow) use the loaded_datasets
-fixture for real MongoDB round-trips.
+Integration tests marked integration+functional use the loaded_datasets fixture
+for real MongoDB round-trips.
 """
 
 import io
@@ -817,7 +817,6 @@ def _make_django_user():
 # Section I — Integration tests (require live MongoDB + loaded_datasets)
 # ===========================================================================
 
-@pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.functional
 def test_project_list_anonymous_excludes_private(loaded_datasets, mongo_collection):
@@ -833,7 +832,6 @@ def test_project_list_anonymous_excludes_private(loaded_datasets, mongo_collecti
     assert loaded_datasets['project_medium'] not in ids_returned
 
 
-@pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.functional
 def test_project_detail_member_sees_private(loaded_datasets):
@@ -847,8 +845,8 @@ def test_project_detail_member_sees_private(loaded_datasets):
     # Resolve the project's owner from MongoDB to get a real Django user
     from caper.views_apis import get_one_project
     project = get_one_project(pid)
-    if not project:
-        pytest.skip("project_small not found in MongoDB")
+    assert project is not None, \
+        "loaded_datasets project_small was not found in MongoDB"
 
     members = project.get('project_members') or ['pytest_test_user']
     if isinstance(members, str):
@@ -884,10 +882,8 @@ def test_project_detail_member_sees_private(loaded_datasets):
                 user.save(update_fields=['is_active'])
 
 
-@pytest.mark.slow
 @pytest.mark.integration
-@pytest.mark.functional
-def test_project_detail_not_found_returns_404(loaded_datasets):
+def test_project_detail_not_found_returns_404():
     """A request for a non-existent project ID must return 404."""
     from caper.views_apis import ProjectDetailView
     rf = APIRequestFactory()
@@ -896,7 +892,6 @@ def test_project_detail_not_found_returns_404(loaded_datasets):
     assert resp.status_code == 404
 
 
-@pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.functional
 def test_project_samples_returns_correct_count(loaded_datasets):
@@ -906,8 +901,8 @@ def test_project_samples_returns_correct_count(loaded_datasets):
     for key, expected_min in [('project_small', 1), ('project_medium', 9)]:
         pid = loaded_datasets[key]
         project = get_one_project(pid)
-        if not project:
-            pytest.skip(f"{key} not found")
+        assert project is not None, \
+            f"loaded_datasets {key} was not found in MongoDB"
 
         # Make project temporarily public to test without token
         original_private = project.get('private')
@@ -929,7 +924,6 @@ def test_project_samples_returns_correct_count(loaded_datasets):
                 {'_id': project['_id']}, {'$set': {'private': original_private}})
 
 
-@pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.functional
 def test_batch_download_resolves_known_projects(loaded_datasets):
@@ -939,8 +933,8 @@ def test_batch_download_resolves_known_projects(loaded_datasets):
 
     pid = loaded_datasets['project_small']
     project = get_one_project(pid)
-    if not project:
-        pytest.skip("project_small not found")
+    assert project is not None, \
+        "loaded_datasets project_small was not found in MongoDB"
 
     # Make public so anonymous batch resolves it
     collection_handle.update_one(
