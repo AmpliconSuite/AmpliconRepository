@@ -235,6 +235,66 @@ def fetch_subgraph(gene_name, min_weight, min_samples, oncogenes, all_edges, cac
                                             cache_key)
     return nodes, edges
 
+
+# How many ranked genes the landing chart may draw. Charting more than this is
+# not readable, and the true totals are reported separately.
+OVERVIEW_LIMIT = 300
+
+
+def fetch_overview_helper(driver, cache_key, limit):
+    """Genes ranked by the number of samples carrying them on ecDNA.
+
+    Two lists rather than one: an oncogene-only view sliced off the top of a
+    single all-genes list would miss oncogenes sitting below the cut, and the
+    caller has to know how many oncogenes exist before it can pick a list.
+    """
+    scope = " {cache_key: $cache_key}" if cache_key else ""
+
+    ranked = """
+    MATCH (n:Node{scope}){onco}
+    RETURN n.label AS label, n.oncogene AS oncogene,
+           size(coalesce(n.samples, [])) AS amps
+    ORDER BY amps DESC, label ASC
+    LIMIT $limit
+    """
+
+    totals = """
+    MATCH (n:Node{scope})
+    RETURN count(n) AS gene_total,
+           sum(CASE WHEN n.oncogene = "True" THEN 1 ELSE 0 END) AS oncogene_total
+    """.format(scope=scope)
+
+    def rows(onco_only):
+        query = ranked.format(
+            scope=scope,
+            onco='\n    WHERE n.oncogene = "True"' if onco_only else ''
+        )
+        result = driver.run(query, cache_key=cache_key, limit=limit)
+        return [
+            {
+                'label': record['label'],
+                'oncogene': record['oncogene'] == 'True',
+                'amps': record['amps'],
+            }
+            for record in result
+        ]
+
+    counts = driver.run(totals, cache_key=cache_key).single()
+
+    return {
+        'genes': rows(False),
+        'oncogenes': rows(True),
+        'gene_total': counts['gene_total'] if counts else 0,
+        'oncogene_total': counts['oncogene_total'] if counts else 0,
+    }
+
+
+def fetch_overview(cache_key=None, limit=OVERVIEW_LIMIT):
+    driver = get_driver()
+    with driver.session() as session:
+        return session.execute_read(fetch_overview_helper, cache_key, limit)
+
+
 # CREATE ROUTE with csrf_exempt (optional?)
 def load_graph(dataset=None, project_ids=None, force_reload=False):
     """

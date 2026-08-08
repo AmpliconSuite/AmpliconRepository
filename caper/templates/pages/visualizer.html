@@ -2,6 +2,7 @@
 {% load static %}
 
 {% block extra_js %}
+<script src="https://cdn.plot.ly/plotly-2.16.1.min.js" charset="utf-8"></script>
 <script src="{% static 'js/coamp_frontend.js' %}"></script>
 {% endblock %}
 
@@ -10,191 +11,343 @@
 {% endblock %}
 
 {% block main %}
-<!--convert project_stats dictionary to json object, used to display projects on coamp tool page-->
 {{ projects_stats|json_script:"project-stats-data" }}
+{{ reference_genomes|json_script:"reference-genomes-data" }}
 
-<!-- <p>You selected:</p>
-    {% for project in selected_projects %}
-            <div>
-                <label for="project_{{ forloop.counter }}">{{ project }}</label>
-            </div>
-    {% endfor %} -->
+<div class="coamp-page">
 
-    <!-- {% for l in log %}
-            <div>
-                <label for="project_{{ forloop.counter }}">{{ l }}/n</label>
-            </div>
-    {% endfor %} -->
-
-    <div class="header" id="titleText">ecDNA Coamplification Tool</div>
-    <!-- gene input button -->
-    <div class="text-storage">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <textarea id="textBox" placeholder="Enter gene name"></textarea>
-            <button id="storeButton">→</button>
-            <div id="sampleDisplay">
-                <div class="sample-title">Projects loaded:</div>
-                <div id="sampleList"></div>
-            </div>
-        </div>
-        <p id="storedText"></p>
-        <div class="slider-box">
-            <div class="slider-header">
-                Showing <span id="sliderTooltip">0</span> of <span id="queryResult">0</span> genes
-            </div>
-            <!-- Ensure all sliders use the same structure -->
-            <div class="slider-container">
-                <div class="value-left" id="limitMinText">0</div>
-                <input type="range" id="limit" class="slider" min="1" max="50" step="1" value="50">
-                <div class="value-right" id="limitMaxText">0</div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Updated settings section with proper grouping -->
-    <div class="settings">
-        <!--Buttons to choose significance test for slider-->
-        <div class="edge-slider">
-            <label>Significance Test:</label><br>
-            <div style="display: flex; flex-direction: column; gap: 2px;">
-                <label style="margin: 0;">
-                    <input type="radio" name="sigTest" value="any" checked> Any
-                </label>
-                <label style="margin: 0;">
-                    <input type="radio" name="sigTest" value="single_interval"> Single Interval
-                </label>
-                <label style="margin: 0;">
-                    <input type="radio" name="sigTest" value="multi_interval"> Multi Interval
-                </label>
-                <label style="margin: 0;">
-                    <input type="radio" name="sigTest" value="multi_chromosomal"> Multi Chromosomal
-                </label>
-            </div>
+    <!-- ======================== heading + search ======================== -->
+    <!-- Title and search share one band: the search is narrow, and stacking it
+         under a three-line paragraph left the whole top right of the page empty. -->
+    <header class="page-header">
+        <div class="page-heading">
+            <h1>ecDNA Co-Amplification Analysis</h1>
+            <p>
+                Genes co-amplified on extrachromosomal DNA across the selected projects.
+                Only focal amplifications classified as <strong>ecDNA</strong> are included
+                &mdash; BFB and other amplification classes are excluded.
+            </p>
         </div>
 
-        <!-- probability slider -->
-        <div class="edge-slider">
-            <!-- <label class="tooltip-wrapper">
-                <span class="tooltip-icon">?⃝
-                    <span class="tooltip-text">
-                        <strong>Significance score is computed using a chi-squared test.</strong><br>
-                        Explanation here for tooltip.
-                    </span>
-                </span>
-                Significance Threshold ≥ <span id="qValue">0.05</span>
-            </label> -->
-            Significance Threshold &ge;
-            <span id="qValue">0.05</span>
-            <div class="slider-info">
-                <div class="value-left">0</div>
-                <input type="range" id="sigThreshold" class="slider" min="0" max="1" step="0.01" value="0.05">
-                <div class="value-right">1</div>
-            </div>
-        </div>
-
-        <!-- edge slider -->
-        <div class="edge-slider">
-            Coamplification frequency &ge;
-            <span id="sliderValue">0.1</span>
-            <div class="slider-info">
-                <div class="value-left">0.1</div>
-                <input type="range" id="edgeWeight" class="slider" min="0.1" max="1" step="0.01" value="0.1">
-                <div class="value-right">1</div>
-            </div>
-        </div>
-
-        <!-- samples slider -->
-        <div class="edge-slider">
-            Coamplified in &ge;
-            <span id="sampleValue">1</span> samples
-            <div class="slider-info">
-                <div class="value-left">1</div>
-                <input type="range" id="numSamples" class="slider" min="1" max="10" step="1" value="1">
-                <div class="value-right" id="sampleMaxText">10</div>
-            </div>
-        </div>
-
-        <!--<div class="filter-buttons">
-            <div class="oncogene-option">
-            <span>Oncogenes only</span>
-            <input type="checkbox" id="oncogenes_only">
-            </div>
-            <button id="filterButton">Filter</button>
-            <button id="download-btn">Download CSV</button>
-            
-        </div>-->
-        <div class="filter-container">
-            <!-- Left column: Oncogenes + Filter -->
-            <div class="filter-left">
-                <div class="oncogene-option">
-                <span>Oncogenes only</span>
-                <input type="checkbox" id="oncogenes_only">
+        <div class="search-block">
+            <div class="coamp-topbar">
+                <div class="search-field">
+                    <span class="search-icon" aria-hidden="true">&#128269;</span>
+                    <input type="text" id="geneSearch" placeholder="Search for a gene"
+                           autocomplete="off" autocapitalize="characters" spellcheck="false"
+                           aria-label="Gene name" title="Type a gene name and press Enter, or click the arrow">
                 </div>
-                <button id="filterButton">Filter</button>
-                <span id="filterStale" class="filter-stale" hidden>
-                    Filters changed &mdash; click Filter to update the graph.
-                </span>
+                <button type="button" id="searchButton" class="submit-button" title="Search for this gene">
+                    &rarr;<span class="sr-only">Search</span>
+                </button>
+            </div>
+            <p class="search-hint">Search for a gene &mdash; or pick one from the overview chart &mdash;
+               to build its ecDNA co-amplification graph.</p>
+            <span id="busyIndicator" class="busy-indicator" hidden>Updating&hellip;</span>
+        </div>
+    </header>
+
+    <div id="searchError" class="search-error" role="alert" hidden></div>
+
+    <!-- ======================= query gene summary ======================= -->
+    <div id="geneHeader" class="gene-header" hidden>
+        <div class="gene-header-name" id="ghName"></div>
+        <dl class="gene-header-facts">
+            <div class="fact">
+                <dt>Type</dt><dd id="ghType"></dd>
+            </div>
+            <div class="fact">
+                <dt>Location</dt><dd id="ghLocation"></dd>
+            </div>
+            <div class="fact fact-wide">
+                <dt>ecDNA samples</dt><dd id="ghSamples"></dd>
+            </div>
+            <div class="fact">
+                <dt>Across projects</dt><dd id="ghProjects"></dd>
+            </div>
+        </dl>
+    </div>
+
+    <!-- ========================== workspace ========================== -->
+    <div class="workspace">
+
+        <!-- Filters live in a persistent rail rather than a pop-over: they are the
+             page's main controls and stay legible while the graph is read. -->
+        <aside class="filter-sidebar">
+            <section class="sidebar-section">
+                <h3 class="sidebar-title">Filters</h3>
+                <p class="sidebar-hint">Changes apply automatically.</p>
+
+                <!-- Frequency and sample count are one gate, not two: an edge has
+                     to clear both, so the frequency cutoff already implies a floor
+                     on shared samples. They sit in one group with that floor spelled
+                     out, because as separate fields the interaction was invisible. -->
+                <div class="field field-group" data-filter="cutoff">
+                    <label for="edgeWeightRange">
+                        Co-amplification cutoff
+                        <span class="info-dot" tabindex="0"
+                              title="An edge is kept only when it clears both cutoffs below.">i</span>
+                    </label>
+
+                    <input type="range" id="edgeWeightRange" class="range range-block"
+                           min="0" max="1" step="0.01" value="0.10"
+                           aria-label="Minimum co-amplification frequency">
+
+                    <div class="linked-row">
+                        <label for="edgeWeight">
+                            Frequency at least
+                            <span class="info-dot" tabindex="0"
+                                  title="Of the samples with either gene on ecDNA, the fraction with both (Jaccard index). 0 to 1.">i</span>
+                        </label>
+                        <input type="number" id="edgeWeight" class="pill-input pill-input-sm"
+                               min="0" max="1" step="0.01" value="0.10">
+                    </div>
+
+                    <div class="linked-row">
+                        <label for="numSamples">
+                            Samples with either gene at least
+                            <span class="info-dot" tabindex="0"
+                                  title="Size of the union: samples carrying the query gene, the partner, or both on ecDNA.">i</span>
+                        </label>
+                        <input type="number" id="numSamples" class="pill-input pill-input-sm"
+                               min="1" step="1" value="1">
+                    </div>
+
+                    <p class="field-note" id="cutoffNote"></p>
+                </div>
+
+                <div class="field field-inline" data-filter="oncogenes_only">
+                    <label for="oncogenes_only">Oncogenes only</label>
+                    <label class="switch">
+                        <input type="checkbox" id="oncogenes_only">
+                        <span class="switch-track" aria-hidden="true"></span>
+                        <span class="sr-only">Oncogenes only</span>
+                    </label>
+                </div>
+
+                <div class="field" data-filter="limit">
+                    <label for="limitRange">
+                        Show top genes
+                        <span class="info-dot" tabindex="0"
+                              title="Trims the drawn graph to the strongest partners. Applied in the browser, so it never re-queries the database.">i</span>
+                    </label>
+                    <div class="field-control">
+                        <input type="range" id="limitRange" class="range" min="1" max="50" step="1" value="50">
+                        <input type="number" id="limit" class="pill-input pill-input-sm" min="1" step="1" value="50">
+                    </div>
+                    <p class="field-note" id="limitNote"></p>
+                    <div class="field-sub">
+                        <label for="rankBy">ranked by</label>
+                        <select id="rankBy" class="pill-select">
+                            <option value="weight">co-amplification frequency</option>
+                            <option value="leninter">number of co-amplifications</option>
+                            <option value="amps">amplification count</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="button" id="resetFilters" class="link-button">Reset to defaults</button>
+            </section>
+
+            <section class="sidebar-section">
+                <h3 class="sidebar-title">Highlighting</h3>
+                <p class="sidebar-hint">Re-colours edges &mdash; never removes a gene.</p>
+
+                <div class="field" data-filter="sigThreshold">
+                    <label for="sigThreshold">
+                        Significant at q &le;
+                        <span class="info-dot" tabindex="0"
+                              title="Benjamini-Hochberg corrected p-value. Lower is stricter.">i</span>
+                    </label>
+                    <div class="field-control">
+                        <input type="number" id="sigThreshold" class="pill-input" min="0" max="1" step="0.01" value="0.05">
+                    </div>
+                </div>
+
+                <div class="field" data-filter="sigTest">
+                    <label for="sigTest">Using test</label>
+                    <div class="field-control">
+                        <select id="sigTest" class="pill-select pill-select-wide">
+                            <option value="any">any test</option>
+                            <option value="single_interval">single interval</option>
+                            <option value="multi_interval">multi interval</option>
+                            <option value="multi_chromosomal">multi chromosomal</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+        </aside>
+
+        <div class="workspace-main">
+
+            <div id="viewBar" class="view-bar">
+                <!-- Overview is a tab rather than a state the first search destroys:
+                     it is the only way back to the ranked gene list afterwards. -->
+                <div class="tabs" role="tablist">
+                    <button type="button" class="tab is-active" role="tab" data-view="overview" aria-selected="true">Overview</button>
+                    <button type="button" class="tab" role="tab" data-view="graph" aria-selected="false" disabled>Graph</button>
+                    <button type="button" class="tab" role="tab" data-view="table" aria-selected="false" disabled>Table</button>
+                </div>
+                <div class="view-count" id="viewCount"></div>
+                <div class="view-actions">
+                    <button type="button" id="download-btn" class="ghost-button"
+                            title="CSV of the genes and edges currently drawn">Current graph (CSV)</button>
+                    <button type="button" id="download-svg-btn" class="ghost-button"
+                            title="Vector image of the graph as drawn">Graph image (SVG)</button>
+                    <button type="button" id="download-full-csv-btn" class="ghost-button"
+                            title="CSV of every ecDNA co-amplification edge across the selected projects">All data (CSV)</button>
+                </div>
             </div>
 
-            <!-- Right column: Downloads -->
-            <div class="filter-right">
-                <button id="download-btn" title="CSV of the genes and edges currently drawn">Download current graph</button>
-                <button id="download-full-csv-btn" title="CSV of every co-amplification edge across the selected projects">Download all data</button>
+            <!-- ======================== overview view ======================= -->
+            <div id="overviewView" class="view">
+                <p class="view-note" id="overviewNote" hidden></p>
+
+                <div class="split-view">
+                    <div class="panel chart-panel">
+                        <div class="panel-head">
+                            Most frequently amplified <span id="overviewScope">genes</span> on ecDNA
+                        </div>
+                        <div class="chart-scroll">
+                            <div id="overviewChart"></div>
+                            <p class="chart-empty" id="overviewEmpty" hidden>No genes in graph</p>
+                        </div>
+                    </div>
+
+                    <div class="secondary-column">
+                        <div class="panel summary-panel">
+                            <div class="panel-head">Analysis will use</div>
+                            <div class="project-summary">
+                                <div class="summary-totals" id="summaryTotals"></div>
+                                <ul class="project-list" id="projectList"></ul>
+                                <p class="summary-genes" id="summaryGenes"></p>
+                                <p class="summary-ref" id="summaryRef"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================= graph view ========================= -->
+            <div id="graphView" class="view split-view" hidden>
+                <div class="panel graph-panel">
+                    <div class="panel-head legend">
+                        <span class="legend-item">
+                            <i class="swatch swatch-query" aria-hidden="true"></i>Query gene
+                        </span>
+                        <span class="legend-item">
+                            <i class="swatch swatch-onco" aria-hidden="true"></i>Oncogene
+                        </span>
+                        <span class="legend-item">
+                            <i class="swatch swatch-gene" aria-hidden="true"></i>Other gene
+                        </span>
+                        <span class="legend-item">
+                            <i class="line line-sig" aria-hidden="true"></i>Significant
+                            <span class="legend-note" id="legendSig"></span>
+                        </span>
+                        <span class="legend-item">
+                            <i class="line line-plain" aria-hidden="true"></i>Not significant
+                        </span>
+                    </div>
+                    <div id="cy"></div>
+                </div>
+
+                <div class="secondary-column">
+                    <div class="panel chart-panel">
+                        <div class="panel-head">
+                            Top ecDNA co-amplification partners by <span id="chartMetricLabel">co-amplification frequency</span>
+                        </div>
+                        <div class="chart-scroll">
+                            <div id="chartPartners"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================= table view ========================= -->
+            <div id="tableView" class="view table-view" hidden>
+                <div class="table-scroll">
+                    <table id="data-table">
+                        <thead>
+                            <tr>
+                                <th rowspan="2" data-col="0">Gene</th>
+                                <th rowspan="2" data-col="1">Oncogene</th>
+                                <th rowspan="2" data-col="2" id="locationHeader">Location</th>
+                                <th rowspan="2" data-col="3" class="num"
+                                    title="Number of samples in which this gene is amplified on ecDNA">Amps</th>
+                                <th rowspan="2" data-col="4" class="num"
+                                    title="Number of samples in which this gene is on ecDNA together with the query gene">Co-amps</th>
+                                <th rowspan="2" data-col="5" class="num"
+                                    title="Of the samples with either gene on ecDNA, the fraction with both (Jaccard index)">Co-amp freq.</th>
+                                <th rowspan="2" data-col="6" class="num"
+                                    title="Genomic distance between the two genes; N/A when they are on different chromosomes">Distance (bp)</th>
+                                <th colspan="3" class="group-head group-start"
+                                    title="Both genes fall in a single amplified interval">Single interval</th>
+                                <th colspan="3" class="group-head group-start"
+                                    title="The genes fall in separate intervals of the same amplicon">Multi interval</th>
+                                <th colspan="3" class="group-head group-start"
+                                    title="The genes are on different chromosomes">Multi chromosomal</th>
+                            </tr>
+                            <tr>
+                                <th data-col="7" class="num group-start"
+                                    title="p-value: probability of seeing this much co-amplification by chance under the single-interval test">p</th>
+                                <th data-col="8" class="num"
+                                    title="q-value: p-value after Benjamini-Hochberg correction for multiple testing (false discovery rate)">q</th>
+                                <th data-col="9" class="num"
+                                    title="Odds ratio: how many times more likely the two genes are to be amplified together than apart. 1 means no association">OR</th>
+                                <th data-col="10" class="num group-start"
+                                    title="p-value: probability of seeing this much co-amplification by chance under the multi-interval test">p</th>
+                                <th data-col="11" class="num"
+                                    title="q-value: p-value after Benjamini-Hochberg correction for multiple testing (false discovery rate)">q</th>
+                                <th data-col="12" class="num"
+                                    title="Odds ratio: how many times more likely the two genes are to be amplified together than apart. 1 means no association">OR</th>
+                                <th data-col="13" class="num group-start"
+                                    title="p-value: probability of seeing this much co-amplification by chance under the multi-chromosomal test">p</th>
+                                <th data-col="14" class="num"
+                                    title="q-value: p-value after Benjamini-Hochberg correction for multiple testing (false discovery rate)">q</th>
+                                <th data-col="15" class="num"
+                                    title="Odds ratio: how many times more likely the two genes are to be amplified together than apart. 1 means no association">OR</th>
+                            </tr>
+                        </thead>
+                        <tbody id="data-container">
+                            <tr class="no-data">
+                                <td colspan="16">No data available</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- container for cytoscape graph -->
-    <div class="container">
-        <div id="cy" class="cy-container"></div>
-        <div class="table-wrapper">
-        <table id="data-table">
-            <thead>
-                <tr>
-                    <!-- <th onclick="sortTable(0)">Rank</th> -->
-                    <th>Gene</th>
-                    <th>Oncogene</th>
-                    <th title="Number of samples in which this gene is amplified">Amps</th>
-                    <th title="Number of samples in which this gene is amplified together with the query gene">Co-amps</th>
-                    <th title="Fraction of samples amplifying either gene that amplify both">Co-amp freq.</th>
-                </tr>
-            </thead>
-            <tbody id="data-container">
-                <tr class="no-data">
-                    <td colspan="5">No data available</td>
-                </tr>
-            </tbody>
-        </table>
-        </div>
+<!-- ======================= tooltip templates ======================= -->
+<div id="node-template" style="display: none;">
+    <div style="position: relative;">
+        <button class="tooltip-close-btn">&times;</button>
+        <strong>Gene:</strong> <span id="ntip-name"></span><br>
+        <strong>Location:</strong> <span id="ntip-location"></span><br>
+        <strong>Oncogene:</strong> <span id="ntip-oncogene"></span><br>
+        <strong>Amplified in:</strong> <span id="ntip-nsamples"></span> sample(s)<br>
+        <strong>Sample(s):</strong> <span id="ntip-samples"></span>
     </div>
-    
-    <!-- Hidden tooltip templates -->
-    <div id="node-template" style="display: none;">
-        <div style="position: relative;">
-            <button class="tooltip-close-btn" style="position: absolute; top: -5px; right: -5px; background: #333; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;">&times;</button>
-            <strong>Gene:</strong> <span id="ntip-name"></span><br>
-            <strong>Location:</strong> <span id="ntip-location"></span><br>
-            <strong>Oncogene:</strong> <span id="ntip-oncogene"></span><br>
-            <strong>Amplified in:</strong> <span id="ntip-nsamples"></span> sample(s)<br>
-            <strong>Sample(s):</strong> <span id="ntip-samples"></span>
-        </div>
+</div>
+<div id="edge-template" style="display: none;">
+    <div style="position: relative;">
+        <button class="tooltip-close-btn">&times;</button>
+        <strong>Relationship:</strong> <span id="etip-name"></span><br>
+        <strong>Coamplification frequency:</strong> <span id="etip-weight"></span><br>
+        <strong>Coamplification fraction:</strong> <span id="etip-frac"></span><br>
+        <strong>Distance:</strong> <span id="etip-distance"></span><strong>bp</strong><br>
+        <strong>Significance Testing Results:</strong>
+        <ul>
+            <li><strong>Single Interval:</strong> p = <span id="etip-pval-single_interval"></span>, q = <span id="etip-qval-single_interval"></span>, OR = <span id="etip-odds_ratio-single_interval"></span></li>
+            <li><strong>Multi Interval:</strong> p = <span id="etip-pval-multi_interval"></span>, q = <span id="etip-qval-multi_interval"></span>, OR = <span id="etip-odds_ratio-multi_interval"></span></li>
+            <li><strong>Multi Chromosomal:</strong> p = <span id="etip-pval-multi_chromosomal"></span>, q = <span id="etip-qval-multi_chromosomal"></span>, OR = <span id="etip-odds_ratio-multi_chromosomal"></span></li>
+        </ul>
+        <strong>Coamplified in:</strong> <span id="etip-nsamples"></span> sample(s)<br>
+        <strong>Sample(s):</strong> <span id="etip-samples"></span>
     </div>
-    <div id="edge-template" style="display: none;">
-        <div style="position: relative;">
-            <button class="tooltip-close-btn" style="position: absolute; top: -5px; right: -5px; background: #333; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;">&times;</button>
-            <strong>Relationship:</strong> <span id="etip-name"></span><br>
-            <strong>Coamplification frequency:</strong> <span id="etip-weight"></span><br>
-            <strong>Coamplification fraction:</strong> <span id="etip-frac"></span><br>
-            <strong>Distance:</strong> <span id="etip-distance"></span><strong>bp</strong><br>
-            <strong>Significance Testing Results:</strong>
-            <ul>
-                <li><strong>Single Interval:</strong> p = <span id="etip-pval-single_interval"></span>, q = <span id="etip-qval-single_interval"></span>, OR = <span id="etip-odds_ratio-single_interval"></span></li>
-                <li><strong>Multi Interval:</strong> p = <span id="etip-pval-multi_interval"></span>, q = <span id="etip-qval-multi_interval"></span>, OR = <span id="etip-odds_ratio-multi_interval"></span></li>
-                <li><strong>Multi Chromosomal:</strong> p = <span id="etip-pval-multi_chromosomal"></span>, q = <span id="etip-qval-multi_chromosomal"></span>, OR = <span id="etip-odds_ratio-multi_chromosomal"></span></li>
-            </ul>
-            <strong>Coamplified in:</strong> <span id="etip-nsamples"></span> sample(s)<br>
-            <strong>Sample(s):</strong> <span id="etip-samples"></span>
-        </div>
-    </div>
+</div>
 
 {% endblock %}

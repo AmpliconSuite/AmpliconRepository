@@ -1,456 +1,1118 @@
-* {
+/* ===========================================================================
+   ecDNA co-amplification visualizer.
+
+   Everything page-specific is scoped under .coamp-page. An earlier version of
+   this file styled bare `button`, `table`, `th` and `td`, which leaked into the
+   site chrome rendered by base.html.
+   =========================================================================== */
+
+.coamp-page {
+    --accent: #1e88e5;
+    --accent-dark: #1565c0;
+    --accent-soft: #e3f0fd;
+    --ink: #1f2933;
+    --ink-muted: #6b7785;
+    --line: #dfe3e8;
+    --line-strong: #b9c1c9;
+    --surface: #ffffff;
+    --danger: #e5384f;
+    --oncogene: #ff4757;
+    --gene: #a7c6ed;
+    --significant: #f5a623;
+
+    box-sizing: border-box;
+    max-width: 1620px;
+    margin: 0 auto;
+    padding: 20px 20px 48px;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    color: var(--ink);
+}
+
+.coamp-page *,
+.coamp-page *::before,
+.coamp-page *::after {
     box-sizing: border-box;
 }
 
-body {
-    margin: 0;
+.coamp-page .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
     padding: 0;
-    background-color: #f4f6f9;
-    font-family: 'Helvetica Neue', Arial, sans-serif;
-    color: #333;
-}
-
-/* Header and Text Input */
-.header {
-    text-align: center;
-    font-size: 1.8rem;
-    padding: 20px 0;
-    color: #2c3e50;
-}
-
-.text-storage {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: flex-start; /* Change from center to flex-start */
-    gap: 20px;
-    margin: 0 auto 30px;
-    max-width: 1400px;
-    padding: 0 15px;
-}
-
-textarea {
-    width: 250px;
-    height: 60px;
-    padding: 10px 15px;
-    font-size: 1.8rem;
-    border: 1px solid #66aaff;
-    border-radius: 4px;
-    outline: none;
+    margin: -1px;
     overflow: hidden;
-    resize: none;
-    transition: border-color 0.3s;
+    clip: rect(0, 0, 0, 0);
     white-space: nowrap;
+    border: 0;
 }
 
-textarea:focus {
-    border-color: #0056b3;
+/* --------------------------- heading + search ----------------------------- */
+
+.coamp-page .page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 40px;
+    margin-bottom: 6px;
 }
 
-/* Button Styling */
-button {
-    height: auto;
-    font-size: 1rem;
-    cursor: pointer;
-    padding: 8px 15px;
-    background-color: #ff4757;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    transition: background-color 0.3s, transform 0.2s;
-    margin: 5px;
+.coamp-page .page-heading {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
-button:hover {
-    background-color: #e04347;
-    transform: translateY(-2px);
+.coamp-page .search-block {
+    flex: 0 0 auto;
+    width: 380px;
 }
 
-#storeButton {
-    width: 60px;
-    height: 60px; /* Match textarea height */
-    padding: 0;
+.coamp-page .search-hint {
+    margin: 9px 0 0;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--ink-muted);
+}
+
+.coamp-page .page-heading h1 {
+    margin: 0 0 4px;
+    font-size: 1.7rem;
+    font-weight: 300;
+    color: var(--ink);
+}
+
+.coamp-page .page-heading p {
+    max-width: 78ch;
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--ink-muted);
+}
+
+/* -------------------------------- search ---------------------------------- */
+
+.coamp-page .coamp-topbar {
     display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 1.5rem; /* Increase arrow size */
-    margin: 0; /* Remove the margin that's causing misalignment */
-}
-
-#sampleDisplay {
-    background-color: white;
-    border: 1px solid rgba(211, 211, 211, 0.792);
-    padding: 12px 16px;
-    max-width: 350px;
-    font-size: 14px;
-    line-height: 1.4;
-    border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-    min-height: auto;
-    display: flex;
-    flex-direction: column;
     gap: 10px;
-    margin-left: 40px;
-    max-height: 120px;          
-    overflow-y: auto;           
 }
 
-.sample-title {
-    font-weight: 600;
-    font-size: 15px;
-    margin-bottom: 4px;
-}
-
-#sampleList {
-    list-style: disc;
-    padding-left: 18px;
-    margin: 0;
-}
-
-#sampleList li {
-    margin-bottom: 4px;
-}
-
-/* Slider Box Styling */
-.slider-box {
-    background-color: white;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    width: 350px;
-    max-width: 100%;
-    padding: 15px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    margin-left: auto;
-}
-
-.slider-header {
-    font-size: 1.1rem;
-    margin-bottom: 15px;
-    text-align: center;
-    white-space: nowrap;
-}
-
-/* Slider structure with absolute positioning */
-.slider-container, .slider-info {
+.coamp-page .search-field {
     position: relative;
-    width: 100%;
-    height: 30px;
-    margin: 15px 0;
-    padding: 0 30px;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
-.value-left {
+.coamp-page .search-icon {
     position: absolute;
-    left: 0;
+    left: 11px;
     top: 50%;
     transform: translateY(-50%);
-    font-size: 0.9rem;
-}
-
-.value-right {
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 0.9rem;
-}
-
-.slider {
-    position: absolute;
-    left: 30px;
-    right: 30px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: calc(100% - 60px);
-    height: 6px;
-    background: #ddd;
-    border-radius: 5px;
-    outline: none;
-    -webkit-appearance: none;
-}
-
-.slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #ff4757;
-    cursor: pointer;
-}
-
-.slider::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #ff4757;
-    cursor: pointer;
-}
-
-.slider-tooltip {
-    position: absolute;
-    top: -17px;
-    left: 90%;
-    transform: translateX(-50%);
-    background-color: transparent;
-    color: #000000;
-    padding: 1px;
-    border-radius: 2px;
     font-size: 13px;
-    font-weight: bold;
-    white-space: nowrap;
+    opacity: 0.45;
     pointer-events: none;
 }
 
-/* Improved settings panel layout */
-.settings {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  flex-wrap: nowrap;
-  max-width: 1400px;
-  margin: 0 auto 20px;
-  padding: 15px;
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+.coamp-page #geneSearch {
+    width: 100%;
+    height: 40px;
+    padding: 0 12px 0 32px;
+    font-size: 15px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.filter-container {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start; /* Align tops of columns */
-  gap: 20px;
-  margin: 10px 15px;
-  flex-wrap: wrap;
+.coamp-page #geneSearch::placeholder {
+    color: #9aa5b1;
 }
 
-.filter-left, .filter-right {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.coamp-page #geneSearch:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.oncogene-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.coamp-page .search-field.has-error #geneSearch {
+    border-color: var(--danger);
 }
 
-#filterButton, #download-btn, #download-full-csv-btn, #download-svg-btn {
-  min-width: 150px;
-  width: auto;
-  height: 36px;
-  font-size: 14px;
-  white-space: nowrap;
+.coamp-page .submit-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    font-size: 20px;
+    line-height: 1;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.15s, transform 0.12s;
 }
 
-/* Style filter button */
-#filterButton {
-    min-width: 150px;
-    height: 36px;
-    line-height: 20px;
-    font-size: 14px;
-    padding: 8px 16px;
-    border-radius: 4px;
-    margin: 0 0 5px 0;
+.coamp-page .submit-button:hover {
+    background: var(--accent-dark);
 }
 
-/* Server-side filters changed but the graph has not been re-queried yet */
-#filterButton.stale {
-    background-color: #ff4757;
-    color: white;
-    animation: filter-stale-pulse 1.6s ease-in-out infinite;
+.coamp-page .submit-button:active {
+    transform: translateY(1px);
 }
 
-@keyframes filter-stale-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.5); }
-    50%      { box-shadow: 0 0 0 6px rgba(255, 71, 87, 0); }
+.coamp-page .busy-indicator {
+    display: block;
+    margin-top: 4px;
+    font-size: 13px;
+    font-style: italic;
+    color: var(--ink-muted);
 }
 
-.filter-stale {
-    max-width: 180px;
+.coamp-page .busy-indicator[hidden] {
+    display: none;
+}
+
+.coamp-page .search-error {
+    margin: 12px 0 0;
+    padding: 12px 16px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--danger);
+    border-radius: 8px;
+}
+
+.coamp-page .search-error[hidden] {
+    display: none;
+}
+
+/* ------------------------------ gene header ------------------------------- */
+
+.coamp-page .gene-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px 32px;
+    margin: 16px 0 0;
+    padding: 14px 20px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(31, 41, 51, 0.06);
+}
+
+.coamp-page .gene-header[hidden] {
+    display: none;
+}
+
+.coamp-page .gene-header-name {
+    flex: 0 0 auto;
+    min-width: 140px;
+    font-size: 2.1rem;
+    font-weight: 300;
+}
+
+/* min-width:0 is load-bearing: without it this flex item floors at its max-content
+   width, so a long sample list pushed the trailing facts past the card's edge
+   instead of letting the wide fact ellipsise. */
+.coamp-page .gene-header-facts {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    gap: 12px 34px;
+    min-width: 0;
+    margin: 0;
+}
+
+.coamp-page .gene-header-facts .fact {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.coamp-page .gene-header-facts .fact-wide {
+    flex: 1 1 200px;
+    max-width: 100%;
+}
+
+.coamp-page .gene-header-facts dt {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--ink-muted);
+}
+
+.coamp-page .gene-header-facts dd {
+    margin: 2px 0 0;
+    font-size: 15px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.coamp-page .gene-header-facts dd .more,
+.coamp-page .gene-header-facts dd .qualifier {
+    font-weight: 400;
+    color: var(--ink-muted);
+}
+
+.coamp-page .gene-header-facts dd .more {
+    cursor: help;
+}
+
+/* ------------------------------- workspace -------------------------------- */
+
+.coamp-page .workspace {
+    display: flex;
+    align-items: flex-start;
+    gap: 18px;
+    margin-top: 18px;
+}
+
+.coamp-page .workspace-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* ----------------------------- filter sidebar ----------------------------- */
+
+.coamp-page .filter-sidebar {
+    flex: 0 0 268px;
+    width: 268px;
+    padding: 4px 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(31, 41, 51, 0.06);
+}
+
+.coamp-page .sidebar-section {
+    padding: 16px 18px;
+}
+
+.coamp-page .sidebar-section + .sidebar-section {
+    border-top: 1px solid var(--line);
+}
+
+.coamp-page .sidebar-title {
+    margin: 0;
     font-size: 12px;
-    line-height: 1.3;
-    color: #b32430;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+}
+
+.coamp-page .sidebar-hint {
+    margin: 4px 0 16px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--ink-muted);
+}
+
+.coamp-page .field {
+    margin-bottom: 18px;
+}
+
+.coamp-page .field:last-of-type {
+    margin-bottom: 12px;
+}
+
+.coamp-page .field > label {
+    display: block;
+    margin-bottom: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--ink);
+}
+
+.coamp-page .field-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.coamp-page .field-unit {
+    font-size: 12.5px;
+    color: var(--ink-muted);
+}
+
+/* A cutoff group: one slider over the rows it drives, boxed so the rows read as
+   parts of a single control rather than as unrelated fields. */
+.coamp-page .field-group {
+    padding: 12px 12px 10px;
+    background: #f7f9fb;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+
+.coamp-page .range-block {
+    display: block;
+    width: 100%;
+    margin-bottom: 12px;
+}
+
+.coamp-page .linked-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.coamp-page .linked-row label {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.35;
+    font-weight: 400;
+    color: var(--ink);
+}
+
+.coamp-page .linked-row .pill-input {
+    flex: 0 0 auto;
+}
+
+.coamp-page .field-note {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--ink-muted);
+}
+
+/* The label sits above its control rather than beside it: side by side, the
+   longest option ("co-amplification frequency") set the select's minimum width
+   and pushed it out through the side of the rail. */
+.coamp-page .field-sub {
+    margin-top: 10px;
+}
+
+.coamp-page .field-sub label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12.5px;
+    color: var(--ink-muted);
+}
+
+.coamp-page .field-sub .pill-select {
+    width: 100%;
+}
+
+.coamp-page .field-inline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.coamp-page .field-inline > label {
+    margin-bottom: 0;
+}
+
+.coamp-page .link-button {
+    padding: 0;
+    font-family: inherit;
+    font-size: 12.5px;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.coamp-page .link-button:hover {
+    color: var(--accent-dark);
+}
+
+/* Inline pill controls */
+.coamp-page .pill-input,
+.coamp-page .pill-select {
+    height: 30px;
+    padding: 0 10px;
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    background: #eceff3;
+    border: 1px solid #dfe3e8;
+    border-radius: 15px;
+    outline: none;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.coamp-page .pill-input {
+    width: 72px;
+    text-align: center;
+    -moz-appearance: textfield;
+}
+
+.coamp-page .pill-input-sm {
+    width: 62px;
+}
+
+.coamp-page .pill-input::-webkit-outer-spin-button,
+.coamp-page .pill-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.coamp-page .pill-select {
+    min-width: 0;
+    max-width: 100%;
+    padding-right: 26px;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    appearance: none;
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--ink) 50%),
+        linear-gradient(135deg, var(--ink) 50%, transparent 50%);
+    background-position: right 13px center, right 8px center;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+}
+
+.coamp-page .pill-select-wide {
+    width: 100%;
+}
+
+.coamp-page .pill-input:focus,
+.coamp-page .pill-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Controls sitting off their default value, so the applied state is scannable. */
+.coamp-page .pill-input.is-modified,
+.coamp-page .pill-select.is-modified {
+    color: #fff;
+    background-color: var(--accent);
+    border-color: var(--accent);
+}
+
+.coamp-page .pill-select.is-modified {
+    background-image:
+        linear-gradient(45deg, transparent 50%, #fff 50%),
+        linear-gradient(135deg, #fff 50%, transparent 50%);
+}
+
+/* Range slider */
+.coamp-page .range {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 6px;
+    margin: 0;
+    background: #dfe3e8;
+    border-radius: 3px;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+}
+
+.coamp-page .range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(31, 41, 51, 0.3);
+    cursor: pointer;
+}
+
+.coamp-page .range::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(31, 41, 51, 0.3);
+    cursor: pointer;
+}
+
+.coamp-page .range:focus-visible {
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Toggle switch */
+.coamp-page .switch {
+    position: relative;
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 44px;
+    height: 24px;
+    margin: 0;
+}
+
+.coamp-page .switch input {
+    position: absolute;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.coamp-page .switch-track {
+    position: absolute;
+    inset: 0;
+    background: #b6bcc4;
+    border-radius: 12px;
+    transition: background-color 0.2s;
+}
+
+.coamp-page .switch-track::before {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.coamp-page .switch input:checked + .switch-track {
+    background: var(--accent);
+}
+
+.coamp-page .switch input:checked + .switch-track::before {
+    transform: translateX(20px);
+}
+
+.coamp-page .switch input:focus-visible + .switch-track {
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Definition tooltips */
+.coamp-page .info-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-left: 2px;
+    font-size: 10px;
+    font-style: italic;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
+    background: var(--ink-muted);
+    border-radius: 50%;
+    cursor: help;
+    vertical-align: text-top;
+}
+
+/* ------------------------------ overview view ----------------------------- */
+
+/* Outcome-only slot: the standing instruction lives under the search box, so
+   this appears solely when a search comes back with nothing to draw. */
+.coamp-page .view-note {
+    margin: 0 0 14px;
+    padding: 11px 16px;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px dashed var(--line-strong);
+    border-radius: 8px;
+}
+
+.coamp-page .view-note[hidden] {
+    display: none;
+}
+
+/* Hugs its content: the chart beside it is 660px tall and the accounting is a
+   dozen short lines. */
+.coamp-page .summary-panel {
+    flex: 0 0 auto;
+}
+
+.coamp-page .project-summary {
+    padding: 14px 16px;
+}
+
+.coamp-page .chart-empty {
+    margin: 0;
+    padding: 60px 20px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--ink-muted);
+}
+
+.coamp-page .chart-empty[hidden] {
+    display: none;
+}
+
+.coamp-page .summary-genes {
+    margin: 12px 0 0;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.coamp-page .summary-totals {
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--line);
+}
+
+.coamp-page .summary-totals .figure {
+    color: var(--accent);
+}
+
+.coamp-page .project-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.coamp-page .project-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 5px 0;
+    font-size: 13.5px;
+}
+
+.coamp-page .project-list .project-name {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.coamp-page .project-list .project-counts {
+    flex: 0 0 auto;
+    color: var(--ink-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.coamp-page .summary-ref {
+    margin: 12px 0 0;
+    font-size: 12.5px;
+    color: var(--ink-muted);
+}
+
+/* -------------------------------- view bar -------------------------------- */
+
+.coamp-page .view-bar {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0 0 14px;
+    border-bottom: 1px solid var(--line);
+}
+
+.coamp-page .view-bar[hidden] {
+    display: none;
+}
+
+.coamp-page .tabs {
+    display: flex;
+    gap: 4px;
+}
+
+.coamp-page .tab {
+    padding: 8px 22px 10px;
+    margin-bottom: -1px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink-muted);
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.coamp-page .tab:hover {
+    color: var(--ink);
+}
+
+.coamp-page .tab.is-active {
+    color: var(--ink);
+    border-bottom-color: var(--accent);
+}
+
+/* Graph and Table stay disabled until a search resolves - there is nothing for
+   them to show, and the bar is present from the first paint. */
+.coamp-page .tab:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.coamp-page .tab:disabled:hover {
+    color: var(--ink-muted);
+}
+
+.coamp-page .view-count {
+    flex: 1 1 auto;
+    padding-bottom: 10px;
+    font-size: 13px;
+    color: var(--ink-muted);
+}
+
+.coamp-page .view-actions {
+    display: flex;
+    gap: 8px;
+    padding-bottom: 8px;
+}
+
+.coamp-page .ghost-button {
+    height: 32px;
+    padding: 0 14px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.coamp-page .ghost-button:hover:not(:disabled) {
+    color: #fff;
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.coamp-page .ghost-button:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+/* --------------------------------- views ---------------------------------- */
+
+.coamp-page .view[hidden] {
+    display: none;
+}
+
+.coamp-page .split-view {
+    display: flex;
+    gap: 14px;
+    align-items: stretch;
+}
+
+.coamp-page .panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(31, 41, 51, 0.06);
+    overflow: hidden;
+}
+
+.coamp-page .graph-panel {
+    flex: 1 1 60%;
+    min-width: 0;
+    height: 660px;
+}
+
+.coamp-page #cy {
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+}
+
+.coamp-page .secondary-column {
+    display: flex;
+    flex: 1 1 40%;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+.coamp-page .chart-panel {
+    flex: 1 1 auto;
+    height: 660px;
+}
+
+.coamp-page .panel-head {
+    flex: 0 0 auto;
+    padding: 11px 16px;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--ink);
+    border-bottom: 1px solid var(--line);
+}
+
+.coamp-page .panel-head span {
+    font-weight: 400;
+    color: var(--ink-muted);
+}
+
+/* --------------------------------- legend --------------------------------- */
+
+.coamp-page .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    font-weight: 400;
+}
+
+.coamp-page .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--ink);
+    font-weight: 600;
+}
+
+.coamp-page .legend-note {
+    font-weight: 400;
+    color: var(--ink-muted);
+}
+
+.coamp-page .swatch {
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+}
+
+.coamp-page .swatch-query {
+    background: var(--oncogene);
+    border: 2px solid #8b1f2a;
+}
+
+.coamp-page .swatch-onco {
+    background: var(--oncogene);
+}
+
+.coamp-page .swatch-gene {
+    background: var(--gene);
+}
+
+.coamp-page .line {
+    display: inline-block;
+    width: 18px;
+    border-radius: 2px;
+}
+
+.coamp-page .line-sig {
+    height: 3px;
+    background: var(--significant);
+}
+
+.coamp-page .line-plain {
+    height: 1px;
+    background: #b6bcc4;
+}
+
+/* --------------------------------- chart ---------------------------------- */
+
+/* The bar chart grows with the gene count; the panel scrolls rather than
+   squeezing 50 bars into a fixed height. */
+.coamp-page .chart-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.coamp-page #chartPartners,
+.coamp-page #overviewChart {
+    width: 100%;
+}
+
+/* -------------------------------- table view ------------------------------ */
+
+.coamp-page .table-view {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(31, 41, 51, 0.06);
+}
+
+.coamp-page .table-scroll {
+    max-height: 720px;
+    overflow: auto;
+    border-radius: 10px;
+}
+
+.coamp-page #data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13.5px;
+}
+
+.coamp-page #data-table th,
+.coamp-page #data-table td {
+    padding: 8px 12px;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+}
+
+/* Header alignment follows the cells beneath it: text left, numbers right. */
+.coamp-page #data-table th,
+.coamp-page #data-table td {
+    text-align: left;
+}
+
+.coamp-page #data-table th.num,
+.coamp-page #data-table td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.coamp-page #data-table thead th {
+    position: sticky;
+    z-index: 2;
+    background: #f1f3f6;
+    font-weight: 700;
+    user-select: none;
+    cursor: pointer;
+}
+
+.coamp-page #data-table thead tr:first-child th { top: 0; }
+.coamp-page #data-table thead tr:last-child th  { top: 35px; }
+/* Cells spanning both header rows must not also be offset. */
+.coamp-page #data-table thead th[rowspan] { top: 0; }
+
+.coamp-page #data-table th.group-head {
+    text-align: center;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--ink-muted);
+    cursor: help;
+}
+
+/* Test-group separators run the full height of the table, not just the header,
+   so it stays obvious which p/q/OR triplet belongs to which test. */
+.coamp-page #data-table th.group-start,
+.coamp-page #data-table tbody td:nth-child(8),
+.coamp-page #data-table tbody td:nth-child(11),
+.coamp-page #data-table tbody td:nth-child(14) {
+    border-left: 2px solid var(--line-strong);
+}
+
+.coamp-page #data-table td a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.coamp-page #data-table td a:hover {
+    text-decoration: underline;
+}
+
+.coamp-page #data-table tbody tr:hover td {
+    background: #f7f9fb;
+}
+
+.coamp-page #data-table tbody tr.query-row td {
+    background: #fff6f7;
+    font-weight: 600;
+}
+
+.coamp-page #data-table tbody tr.active td {
+    background: var(--accent-soft);
+}
+
+.coamp-page #data-table th.sort-asc::after  { content: ' \25B2'; font-size: 0.7em; }
+.coamp-page #data-table th.sort-desc::after { content: ' \25BC'; font-size: 0.7em; }
+
+.coamp-page .no-data td {
+    height: 60px;
+    text-align: center;
+    color: var(--ink-muted);
+}
+
+/* ------------------------------- tooltips --------------------------------- */
+/* tippy appends to document.body, so these cannot be scoped to .coamp-page. */
+
+.tippy-box[data-theme~='edge'],
+.tippy-box[data-theme~='node'] {
+    background-color: rgba(31, 41, 51, 0.96);
+    color: #fff;
+    font-size: 13px;
+    border-radius: 6px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+}
+
+.tippy-box[data-theme~='edge'] ul {
+    margin: 4px 0;
+    padding-left: 18px;
+}
+
+.tooltip-close-btn {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    font-size: 14px;
+    line-height: 1;
+    color: #fff;
+    background: #333;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+/* ------------------------------- responsive ------------------------------- */
+
+@media (max-width: 1400px) {
+    .coamp-page .split-view {
+        flex-direction: column;
+    }
+
+    .coamp-page .graph-panel,
+    .coamp-page .chart-panel {
+        height: 540px;
+    }
+}
+
+@media (max-width: 900px) {
+    .coamp-page .workspace {
+        flex-direction: column;
+    }
+
+    .coamp-page .filter-sidebar {
+        flex: 1 1 auto;
+        width: 100%;
+    }
+
+    .coamp-page .page-header {
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .coamp-page .search-block {
+        width: 100%;
+    }
+
+    .coamp-page .gene-header-name {
+        font-size: 1.7rem;
+    }
+
+    .coamp-page .view-actions {
+        flex-wrap: wrap;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    #filterButton.stale { animation: none; }
-}
-
-/* Button container for download buttons */
-.button-container {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-left: auto; /* Push to the right */
-    margin: 10px 15px;
-}
-
-/* Style download buttons */
-#download-btn, #download-full-csv-btn, #download-svg-btn {
-    min-width: 150px;
-    height: 36px;
-    line-height: 20px;
-    font-size: 14px;
-    padding: 8px 16px;
-    border-radius: 4px;
-    margin: 0 0 5px 0;
-    background-color: #28a745;
-    color: white;
-}
-
-#download-btn:hover, #download-full-csv-btn:hover, #download-svg-btn:hover {
-    background-color: #218838;
-}
-
-/* Make the main container full width but with a max-width */
-.container {
-    display: flex;
-    width: 100%;
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 0 15px;
-}
-
-/* Fix cytoscape container width */
-.cy-container {
-    flex: 7;
-    width: 70%;
-    height: 600px;
-    border: 1px solid #eaeaea;
-    margin-right: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
-    background-color: white;
-    overflow: hidden;
-    min-height: 500px; /* Ensure minimum height */
-}
-
-/* Ensure table takes up the remaining space */
-.table-wrapper {
-    flex: 3;
-    width: 30%;
-    height: 600px;
-    max-height: 600px;
-    overflow-y: auto;
-    /* auto, not hidden: if the columns ever outgrow the panel again, the table
-       scrolls instead of silently swallowing the rightmost one. */
-    overflow-x: auto;
-    border: 1px solid #eaeaea;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-    background-color: white;
-    min-height: 500px; /* Ensure minimum height */
-}
-
-/* Table Styling */
-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-th, td {
-    border: 1px solid #e0e0e0;
-    padding: 8px 10px;
-    text-align: left;
-    transition: background-color 0.3s;
-}
-
-th {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    background-color: #f4f6f9;
-    font-weight: bold;
-    border-bottom: 2px solid #e0e0e0;
-}
-
-/* The three numeric columns. Widths are narrow on purpose: the whole table has
-   to fit ~400px of side panel, and a column that does not fit gets clipped. */
-th:nth-child(3), td:nth-child(3),
-th:nth-child(4), td:nth-child(4) {
-    width: 70px;
-    text-align: center;
-}
-
-th:nth-child(5), td:nth-child(5) {
-    width: 80px;
-    text-align: right;
-}
-
-tr.active td {
-    background-color: #e6eeff !important;
-}
-
-tr:hover td {
-    background-color: #f0f2f5;
-}
-
-.no-data {
-    height: 50px;
-    text-align: center;
-    color: #888;
-}
-
-#data-table th {
-  user-select: none;
-  position: relative;
-}
-
-#data-table th.sort-asc::after {
-  content: ' ▲';
-  font-size: 0.7em;
-}
-
-#data-table th.sort-desc::after {
-  content: ' ▼';
-  font-size: 0.7em;
-}
-
-/* Tooltip Styling */
-.tippy-box[data-theme~='edge'],
-.tippy-box[data-theme~='node'] {
-    background-color: rgba(40, 44, 52, 0.95);
-    color: #fff;
-    border-radius: 4px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-}
-
-/* Responsive adjustments */
-@media (max-width: 1024px) {
-    .container {
-        flex-direction: column;
-    }
-
-    .cy-container, .table-wrapper {
-        width: 100%;
-        margin-right: 0;
-    }
-
-    .cy-container {
-        margin-bottom: 20px;
-    }
-
-    .settings {
-        flex-direction: column;
-        align-items: center;
-    }
-
-    .filter-container, .button-container {
-        margin: 10px 0;
-        align-items: center;
-    }
-
-    .oncogene-option {
-        justify-content: center;
-    }
-
-    .slider-box {
-        margin-left: 0;
-        margin-top: 20px;
-        width: 100%;
+    .coamp-page * {
+        transition: none !important;
     }
 }

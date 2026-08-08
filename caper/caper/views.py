@@ -84,7 +84,7 @@ from .project_version_cleanup import (
 from .extra_metadata import *
 
 # imports for coamp graph
-from .neo4j_utils import load_graph, fetch_subgraph
+from .neo4j_utils import load_graph, fetch_subgraph, fetch_overview
 
 # Import search function
 from .search import perform_search
@@ -5534,6 +5534,23 @@ def fetch_graph(request, gene_name):
             'edges': edges
         })
 
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def coamp_overview(request):
+    """
+    Genes ranked by how many samples carry them on ecDNA, for the landing view.
+
+    Independent of the edge filters: amplification counts are a property of a
+    gene, not of an edge, so this is fetched once and re-ranked in the browser.
+    """
+    cache_key = request.session.get('active_cache_key')
+    if not cache_key:
+        logging.warning("No active_cache_key in session for coamp_overview")
+
+    try:
+        return JsonResponse(fetch_overview(cache_key))
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
