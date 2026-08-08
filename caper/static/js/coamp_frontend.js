@@ -6,6 +6,8 @@ window.addEventListener('DOMContentLoaded', function () {
     let inputNode = null
     let total_data = 0;
     let completeData = null;
+    // column index of "Coamplification Frequency" in #data-table
+    const COL_COAMP_FREQ = 4;
     console.log(document.styleSheets)
 
     cytoscape.use( cytoscapePopper(tippyFactory) );
@@ -32,47 +34,62 @@ window.addEventListener('DOMContentLoaded', function () {
     async function fetchSubgraph() {
         console.log("Load graph pressed");
 
-        removeAllTooltips();
-
-        cy = null
-        nodeID = {};
-        inputNode = null
-
         // input gene
-        inputNode = $('#textBox').val().trim().toUpperCase();
-
-        // filters
-        const minWeight = parseFloat($('#edgeWeight').val());
-        const sampleMinimum = parseFloat($('#numSamples').val());
-        const oncogenesChecked = $('#oncogenes_only').is(':checked');
-        const limit = parseInt($('#limit').val());
-        const allEdgesChecked = false;
-        // const allEdgesChecked = $('#all_edges').is(':checked');
+        const requestedNode = $('#textBox').val().trim().toUpperCase();
 
         // alert
-        if (!inputNode) {
+        if (!requestedNode) {
             alert("Please enter a gene name.");
             return;
         }
 
-        // Clear any existing graph
-        document.getElementById('cy').innerHTML = '';
+        // These filters are applied by the query itself, so changing one needs a
+        // round trip. The gene-count slider is not among them - see renderGraph().
+        const minWeight = parseFloat($('#edgeWeight').val());
+        const sampleMinimum = parseFloat($('#numSamples').val());
+        const oncogenesChecked = $('#oncogenes_only').is(':checked');
+        const allEdgesChecked = false;
+        // const allEdgesChecked = $('#all_edges').is(':checked');
 
         // Fetch the subgraph data from Flask server
         try {
             // const response = await fetch(`http://127.0.0.1:5000/getNodeData?name=${inputNode}&min_weight=${minWeight}&min_samples=${sampleMinimum}&oncogenes=${oncogenesChecked}&all_edges=${allEdgesChecked}`);
-            const response = await fetch(`/coamplification-graph/visualizer/${inputNode}/?min_weight=${minWeight}&min_samples=${sampleMinimum}&oncogenes=${oncogenesChecked}&all_edges=${allEdgesChecked}`);
+            const response = await fetch(`/coamplification-graph/visualizer/${requestedNode}/?min_weight=${minWeight}&min_samples=${sampleMinimum}&oncogenes=${oncogenesChecked}&all_edges=${allEdgesChecked}`);
             if (!response.ok) {
-                throw new Error(`Node ${inputNode} not found or server error.`);
+                throw new Error(`Node ${requestedNode} not found or server error.`);
             }
 
             const data = await response.json();
 
             // Store the complete data for later use in CSV export
             completeData = data;
-
+            inputNode = requestedNode;
             total_data = data.nodes.length;
-            const filtered_data = filterData(data, limit)
+
+            markFiltersFresh();
+            renderGraph();
+        } catch (error) {
+            alert(error.message);
+        }
+    }
+
+    // Draw the Cytoscape view from data already fetched. The gene-count slider only
+    // trims what is shown, so it re-renders through here instead of re-querying.
+    function renderGraph() {
+        if (!completeData || !inputNode) { return; }
+
+        removeAllTooltips();
+
+        cy = null
+        nodeID = {};
+
+        // Clear any existing graph
+        document.getElementById('cy').innerHTML = '';
+
+        const limit = parseInt($('#limit').val());
+        const filtered_data = filterData(completeData, limit)
+
+        try {
             // Initialize Cytoscape with fetched data
             cy = cytoscape({
                 container: document.getElementById('cy'),
@@ -128,55 +145,6 @@ window.addEventListener('DOMContentLoaded', function () {
             console.log('Number of nodes:', Object.keys(nodeID).length);
             console.log(nodeID[inputNode] + ': ' + cy.$(nodeID[inputNode]).data('label'));
 
-            // Update significant class
-            document.getElementById('sigThreshold').addEventListener('input', function() {
-            const threshold = parseFloat(this.value);
-            const testRadios = document.getElementsByName("sigTest");
-            let selectedTest = "any"; // default fallback
-
-            for (const radio of testRadios) {
-                if (radio.checked) {
-                    selectedTest = radio.value;
-                    break;
-                }
-            }
-
-            document.getElementById('qValue').textContent = threshold;
-
-            if (cy) {
-                cy.edges().forEach(edge => {
-                    let isSignificant = false;
-
-                    if (selectedTest === "any") {
-                        // Check all q-values
-                        const qvals = [
-                            parseFloat(edge.data('qval_single_interval')),
-                            parseFloat(edge.data('qval_multi_interval')),
-                            parseFloat(edge.data('qval_multi_chromosomal'))
-                        ];
-
-                        for (const q of qvals) {
-                            if (!isNaN(q) && q <= threshold && q >= 0) {
-                                isSignificant = true;
-                                break;
-                            }
-                        }
-                    } else {
-                        const qvalKey = `qval_${selectedTest}`;
-                        const qval = parseFloat(edge.data(qvalKey));
-                        if (!isNaN(qval) && qval <= threshold && qval >= 0) {
-                            isSignificant = true;
-                        }
-                    }
-
-                    if (isSignificant) {
-                        edge.addClass('significant');
-                    } else {
-                        edge.removeClass('significant');
-                    }
-                    });
-            }
-        });
             // Update sample slider max
             updateSampleMax(cy);
             // Updata limit slider
@@ -198,76 +166,6 @@ window.addEventListener('DOMContentLoaded', function () {
             if (existingSvgBtn) {
                 existingSvgBtn.remove();
             }
-
-            // Attach click handler for full CSV download to the existing button
-            const downloadFullCsvBtn = document.getElementById('download-full-csv-btn');
-            
-            // Remove any existing event listeners by cloning the button
-            const newFullCsvBtn = downloadFullCsvBtn.cloneNode(true);
-            downloadFullCsvBtn.parentNode.replaceChild(newFullCsvBtn, downloadFullCsvBtn);
-
-            // Add click handler for full CSV download
-            newFullCsvBtn.addEventListener('click', async function(e) {
-                console.log("Full CSV download button clicked");
-                e.stopPropagation();
-
-                try {
-                    // Show loading indicator
-                    newFullCsvBtn.disabled = true;
-                    newFullCsvBtn.innerHTML = 'Downloading...';
-
-                    // Create AbortController with long timeout (5 minutes)
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
-
-                    // Fetch the CSV with include_samples=true
-                    const response = await fetch('/coamplification-graph/download-edges/?include_samples=true', {
-                        signal: controller.signal
-                    });
-
-                    clearTimeout(timeoutId);
-
-                    if (!response.ok) {
-                        throw new Error(`Server error: ${response.status}`);
-                    }
-
-                    // Get the blob from response
-                    const blob = await response.blob();
-
-                    // Create download link
-                    const link = document.createElement('a');
-                    link.href = URL.createObjectURL(blob);
-
-                    // Generate filename with timestamp
-                    const now = new Date();
-                    const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
-                    link.download = `AACoampGraph_full_${formattedDate}.csv`;
-
-                    console.log("Triggering download: " + link.download);
-
-                    // Trigger download
-                    document.body.appendChild(link);
-                    link.click();
-
-                    // Cleanup
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(link.href);
-
-                    console.log("Download completed");
-                } catch (error) {
-                    if (error.name === 'AbortError') {
-                        console.error("Download timed out after 5 minutes");
-                        alert("Download timed out. The file may be too large. Please try again or contact support.");
-                    } else {
-                        console.error("Error downloading full CSV:", error);
-                        alert("Error downloading CSV: " + error.message);
-                    }
-                } finally {
-                    // Reset button state
-                    newFullCsvBtn.disabled = false;
-                    newFullCsvBtn.innerHTML = 'Download full CSV';
-                }
-            });
 
             // Create SVG download button
             const buttonContainer = document.querySelector('.filter-right');
@@ -357,15 +255,30 @@ window.addEventListener('DOMContentLoaded', function () {
                 cellStatus = document.createElement('td');
                 cellStatus.textContent = node.data('oncogene');
 
-                cellWeight = document.createElement('td');
                 edges = node.edgesWith(cy.$(nodeID[inputNode]));
+
+                // how many samples amplify this gene at all
+                const cellAmps = document.createElement('td');
+                const samples = node.data('samples');
+                cellAmps.textContent = samples ? String(samples.length) : 'N/A';
+
+                // how many of those also amplify the query gene. The query gene has no
+                // edge to itself, so it gets a dash rather than a misleading zero.
+                const cellCoamps = document.createElement('td');
+                cellCoamps.textContent = geneName === inputNode
+                    ? '—'
+                    : String(edges[0]?.data('leninter') ?? 'N/A');
+
+                cellWeight = document.createElement('td');
                 cellWeight.textContent = String(edges[0]?.data('weight').toFixed(3) ?? 'N/A');
 
                 // row.appendChild(rownumber_element);
                 row.appendChild(cellName);
                 row.appendChild(cellStatus);
+                row.appendChild(cellAmps);
+                row.appendChild(cellCoamps);
                 row.appendChild(cellWeight);
-                
+
 
                 datacontainer.appendChild(row);
 
@@ -382,8 +295,8 @@ window.addEventListener('DOMContentLoaded', function () {
                     console.log(clickedRow);
                 });
             });
-            // initialize sorted by co-amp frequency
-            sortTable(2, 'desc');
+            // initialize sorted by co-amp frequency (last column)
+            sortTable(COL_COAMP_FREQ, 'desc');
 
             // Resize elements on tap
             cy.on('tap', 'edge', (event) => {
@@ -410,6 +323,10 @@ window.addEventListener('DOMContentLoaded', function () {
                     easing: 'ease-in-out'
                 });
             });
+
+            // A fresh Cytoscape instance starts with no edge classes, so re-apply the
+            // significance highlighting the sliders are currently asking for.
+            applySignificance();
 
         } catch (error) {
             alert(error.message);
@@ -586,11 +503,85 @@ window.addEventListener('DOMContentLoaded', function () {
     });
     $('#filterButton').on('click', fetchSubgraph);
 
+    // Re-colour the edges for the current significance test and threshold. Bound
+    // once here rather than per graph load, which used to stack up a duplicate
+    // listener on #sigThreshold every time a graph was drawn.
+    function applySignificance() {
+        const threshold = parseFloat(document.getElementById('sigThreshold').value);
+        const testRadios = document.getElementsByName("sigTest");
+        let selectedTest = "any"; // default fallback
+
+        for (const radio of testRadios) {
+            if (radio.checked) {
+                selectedTest = radio.value;
+                break;
+            }
+        }
+
+        document.getElementById('qValue').textContent = threshold;
+
+        if (cy) {
+            cy.edges().forEach(edge => {
+                let isSignificant = false;
+
+                if (selectedTest === "any") {
+                    // Check all q-values
+                    const qvals = [
+                        parseFloat(edge.data('qval_single_interval')),
+                        parseFloat(edge.data('qval_multi_interval')),
+                        parseFloat(edge.data('qval_multi_chromosomal'))
+                    ];
+
+                    for (const q of qvals) {
+                        if (!isNaN(q) && q <= threshold && q >= 0) {
+                            isSignificant = true;
+                            break;
+                        }
+                    }
+                } else {
+                    const qvalKey = `qval_${selectedTest}`;
+                    const qval = parseFloat(edge.data(qvalKey));
+                    if (!isNaN(qval) && qval <= threshold && qval >= 0) {
+                        isSignificant = true;
+                    }
+                }
+
+                if (isSignificant) {
+                    edge.addClass('significant');
+                } else {
+                    edge.removeClass('significant');
+                }
+            });
+        }
+    }
+
+    document.getElementById('sigThreshold').addEventListener('input', applySignificance);
+
     // Update graph based on chosen signficance test
     document.querySelectorAll('input[name="sigTest"]').forEach(radio => {
-        radio.addEventListener('change', () => {
-            document.getElementById('sigThreshold').dispatchEvent(new Event('input'));
-        });
+        radio.addEventListener('change', applySignificance);
+    });
+
+    // ---- "needs re-submitting" indicator ----
+    // The filters below are applied by the Neo4j query, so the displayed graph is
+    // out of date until Filter is clicked again. Flag that instead of silently
+    // leaving a stale graph on screen.
+    const filterButton = document.getElementById('filterButton');
+    const filterStale = document.getElementById('filterStale');
+
+    function markFiltersStale() {
+        if (!completeData) { return; }   // nothing drawn yet, so nothing is stale
+        filterButton.classList.add('stale');
+        filterStale.hidden = false;
+    }
+
+    function markFiltersFresh() {
+        filterButton.classList.remove('stale');
+        filterStale.hidden = true;
+    }
+
+    ['edgeWeight', 'numSamples', 'oncogenes_only'].forEach(id => {
+        document.getElementById(id).addEventListener('change', markFiltersStale);
     });
 
     document.getElementById('edgeWeight').addEventListener('input', function() {
@@ -601,6 +592,11 @@ window.addEventListener('DOMContentLoaded', function () {
     });
     document.getElementById('limit').addEventListener('input', function () {
         document.getElementById('sliderTooltip').textContent = this.value;
+    });
+    // The gene-count slider only trims data we already hold, so redraw on release
+    // (not on every 'input' tick, which would relayout the graph mid-drag).
+    document.getElementById('limit').addEventListener('change', function () {
+        renderGraph();
     });
     // update max values
     function updateSampleMax(cy) {
@@ -668,20 +664,40 @@ window.addEventListener('DOMContentLoaded', function () {
             sortOrder = table.dataset.sortOrder === 'asc' ? 'desc' : 'asc';
         }
         table.dataset.sortOrder = sortOrder;
+
+        // The query gene has no edge to itself, so its numeric cells read 'N/A'/'—'.
+        // Pin it to the top instead of letting it sort as text among the numbers -
+        // that made the comparator inconsistent and left the rest in arbitrary order.
+        // generateCSV() puts the query gene first for the same reason.
+        const queryRows = rows.filter(r => r.children[0].innerText.trim() === inputNode);
+        const sortable = rows.filter(r => r.children[0].innerText.trim() !== inputNode);
+
         // Sort rows based on the content of the selected column
-        rows.sort((a, b) => {
+        sortable.sort((a, b) => {
             const cellA = a.children[columnIndex].innerText.trim();
             const cellB = b.children[columnIndex].innerText.trim();
-            if (!isNaN(cellA) && !isNaN(cellB)) {
+            const numA = parseFloat(cellA);
+            const numB = parseFloat(cellB);
+            const aIsNum = cellA !== '' && !isNaN(numA);
+            const bIsNum = cellB !== '' && !isNaN(numB);
+
+            if (aIsNum && bIsNum) {
                 // Numeric sort
-                return sortOrder === 'asc' ? cellA - cellB : cellB - cellA;
-            } else {
-                // Text sort
-                return sortOrder === 'asc'
-                    ? cellA.localeCompare(cellB)
-                    : cellB.localeCompare(cellA);
+                return sortOrder === 'asc' ? numA - numB : numB - numA;
             }
+            if (aIsNum !== bIsNum) {
+                // Keep values without a number after the ones that have one, in both
+                // directions, so the comparator stays transitive.
+                return aIsNum ? -1 : 1;
+            }
+            // Text sort
+            return sortOrder === 'asc'
+                ? cellA.localeCompare(cellB)
+                : cellB.localeCompare(cellA);
         });
+
+        rows.length = 0;
+        rows.push(...queryRows, ...sortable);
 
         // let rownumber = 1;
         // // Re-add sorted rows to the tbody
@@ -789,6 +805,14 @@ window.addEventListener('DOMContentLoaded', function () {
         // Sort other rows by coamplification frequency descending
         otherRows.sort((a, b) => (b.weight ?? -1) - (a.weight ?? -1));
 
+        // -1 is the sentinel the graph uses for "not computed", and the query gene's
+        // own row has no edge at all, so it carries 'N/A'. Both must survive
+        // formatting - parseFloat('N/A').toFixed(3) used to emit a literal "NaN".
+        const stat = (v) => {
+            const n = parseFloat(v);
+            return (v === -1 || isNaN(n)) ? 'N/A' : n.toFixed(3);
+        };
+
         // Combine and format
         const finalRows = [queryRow, ...otherRows];
         finalRows.forEach(row => {
@@ -797,18 +821,18 @@ window.addEventListener('DOMContentLoaded', function () {
                 row.oncogene,
                 row.sample_count,
                 row.inter_count,
-                row.weight === -1 ? 'N/A' : row.weight.toFixed(3),
+                stat(row.weight),
                 row.location,
                 row.distance === -1 ? 'N/A' : row.distance,
-                row.pval_single_interval === -1 ? 'N/A' : parseFloat(row.pval_single_interval).toFixed(3),
-                row.qval_single_interval === -1 ? 'N/A' : parseFloat(row.qval_single_interval).toFixed(3),
-                row.odds_ratio_single_interval === -1 ? 'N/A' : parseFloat(row.odds_ratio_single_interval).toFixed(3),
-                row.pval_multi_interval === -1 ? 'N/A' : parseFloat(row.pval_multi_interval).toFixed(3),
-                row.qval_multi_interval === -1 ? 'N/A' : parseFloat(row.qval_multi_interval).toFixed(3),
-                row.odds_ratio_multi_interval === -1 ? 'N/A' : parseFloat(row.odds_ratio_multi_interval).toFixed(3),
-                row.pval_multi_chromosomal === -1 ? 'N/A' : parseFloat(row.pval_multi_chromosomal).toFixed(3),
-                row.qval_multi_chromosomal === -1 ? 'N/A' : parseFloat(row.qval_multi_chromosomal).toFixed(3),
-                row.odds_ratio_multi_chromosomal === -1 ? 'N/A' : parseFloat(row.odds_ratio_multi_chromosomal).toFixed(3),
+                stat(row.pval_single_interval),
+                stat(row.qval_single_interval),
+                stat(row.odds_ratio_single_interval),
+                stat(row.pval_multi_interval),
+                stat(row.qval_multi_interval),
+                stat(row.odds_ratio_multi_interval),
+                stat(row.pval_multi_chromosomal),
+                stat(row.qval_multi_chromosomal),
+                stat(row.odds_ratio_multi_chromosomal),
                 row.gene_samples,
                 row.inter,
             ].map(formatCell);
@@ -833,8 +857,14 @@ window.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        // Generate CSV content directly using the proper parameters
-        const csvContent = generateCSV(completeData, inputNode);
+        // Export exactly what is on screen, so the file matches the button label and
+        // the gene-count slider. "Download all data" covers the unfiltered case.
+        const shownData = cy
+            ? { nodes: cy.nodes().map(n => ({ data: n.data() })),
+                edges: cy.edges().map(e => ({ data: e.data() })) }
+            : completeData;
+
+        const csvContent = generateCSV(shownData, inputNode);
 
         if (!csvContent) {
             return; // Exit if CSV generation failed
@@ -856,5 +886,72 @@ window.addEventListener('DOMContentLoaded', function () {
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
         }, 100);
+    });
+
+    // "Download all data" - the whole co-amplification graph, server-side. Bound once
+    // here; it does not depend on the displayed graph.
+    const downloadAllBtn = document.getElementById('download-full-csv-btn');
+    const downloadAllLabel = downloadAllBtn.innerHTML;
+
+    downloadAllBtn.addEventListener('click', async function(e) {
+        console.log("Full CSV download button clicked");
+        e.stopPropagation();
+
+        try {
+            // Show loading indicator
+            downloadAllBtn.disabled = true;
+            downloadAllBtn.innerHTML = 'Downloading...';
+
+            // Create AbortController with long timeout (5 minutes)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+
+            // Fetch the CSV with include_samples=true
+            const response = await fetch('/coamplification-graph/download-edges/?include_samples=true', {
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status}`);
+            }
+
+            // Get the blob from response
+            const blob = await response.blob();
+
+            // Create download link
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+
+            // Generate filename with timestamp
+            const now = new Date();
+            const formattedDate = now.toISOString().replace(/:/g, '-').replace('T', '_').split('.')[0];
+            link.download = `AACoampGraph_full_${formattedDate}.csv`;
+
+            console.log("Triggering download: " + link.download);
+
+            // Trigger download
+            document.body.appendChild(link);
+            link.click();
+
+            // Cleanup
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+
+            console.log("Download completed");
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                console.error("Download timed out after 5 minutes");
+                alert("Download timed out. The file may be too large. Please try again or contact support.");
+            } else {
+                console.error("Error downloading full CSV:", error);
+                alert("Error downloading CSV: " + error.message);
+            }
+        } finally {
+            // Reset button state
+            downloadAllBtn.disabled = false;
+            downloadAllBtn.innerHTML = downloadAllLabel;
+        }
     });
 });

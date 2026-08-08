@@ -582,6 +582,11 @@ def admin_permanent_delete_project(project_id, project, project_name):
     """
     error_message = ""
     query = {'_id': ObjectId(project_id)}
+
+    # drop any cached co-amplification graph built from this project
+    from .views import invalidate_project_coamp_graphs
+    invalidate_project_coamp_graphs(project_id)
+
     try:
         # delete Samples & Features and feature files from GridFS
         runs = project.get('runs', {})

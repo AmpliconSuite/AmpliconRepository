@@ -6,6 +6,7 @@ from neo4j import GraphDatabase
 from .coamp_graph import Graph
 
 import pandas as pd
+import datetime
 import json
 import time
 import hashlib
@@ -296,15 +297,20 @@ def load_graph(dataset=None, project_ids=None, force_reload=False):
 
     # Generate cache_key for multi-graph support
     cache_key = generate_cache_key(project_ids) if project_ids else None
-    
+
     # drop previous graph for this cache_key only (allows multiple concurrent caches)
     with driver.session() as session:
         if cache_key:
-            # Delete only the graph with this specific cache_key
+            # Delete only the graph with this specific cache_key.
+            # These must be two independent statements: chaining them with WITH
+            # would skip the node cleanup whenever no GraphMetadata node matched,
+            # leaving orphaned nodes for the CREATE below to duplicate on top of.
             session.run("""
                 MATCH (m:GraphMetadata {cache_key: $cache_key})
                 DELETE m
-                WITH 1 as dummy
+                """, cache_key=cache_key
+            )
+            session.run("""
                 MATCH (n:Node {cache_key: $cache_key})
                 DETACH DELETE n
                 """, cache_key=cache_key
@@ -390,74 +396,238 @@ def load_graph(dataset=None, project_ids=None, force_reload=False):
     return graph
 
 
+def _clear_cache_keys(session, cache_keys):
+    """
+    Delete the metadata node and the graph data for each of the given cache keys.
+
+    Both must go: dropping only the GraphMetadata node leaves the nodes/edges
+    orphaned in Neo4j, where they are invisible to the cache listing but still
+    matched by every subsequent query against that cache_key.
+    """
+    for cache_key in cache_keys:
+        session.run("""
+            MATCH (m:GraphMetadata {cache_key: $cache_key})
+            DELETE m
+            """, cache_key=cache_key
+        )
+        session.run("""
+            MATCH (n:Node {cache_key: $cache_key})
+            DETACH DELETE n
+            """, cache_key=cache_key
+        )
+        print(f"Cleared graph cache for cache_key: {cache_key}")
+
+
 def clear_graph_cache(project_ids=None):
     """
-    Clear cached graph(s) from Neo4j.
-    
+    Clear cached graph(s) from Neo4j, including the graph data itself.
+
     Parameters:
-        project_ids: List of project IDs to clear specific cache, or None to clear all
-    
+        project_ids: List of project IDs identifying one cache entry, or None to
+                     clear every cache entry
+
     Returns:
         int: Number of cache entries cleared
     """
     driver = get_driver()
-    
+
     with driver.session() as session:
         if project_ids:
-            cache_key = generate_cache_key(project_ids)
-            result = session.run("""
-                MATCH (m:GraphMetadata {cache_key: $cache_key})
-                DELETE m
-                RETURN count(m) as deleted_count
-                """, cache_key=cache_key
-            )
-            count = result.single()['deleted_count']
-            print(f"Cleared cache for cache_key: {cache_key}")
+            cache_keys = [generate_cache_key(project_ids)]
         else:
-            # Clear all metadata (but keep the graph nodes/edges for current session)
+            # Every cache_key present in the DB, including orphans that have graph
+            # data but lost their GraphMetadata node to an earlier partial clear.
             result = session.run("""
                 MATCH (m:GraphMetadata)
-                DELETE m
-                RETURN count(m) as deleted_count
+                RETURN collect(DISTINCT m.cache_key) AS keys
                 """
             )
-            count = result.single()['deleted_count']
-            print(f"Cleared all graph cache metadata ({count} entries)")
-        
-        return count
+            cache_keys = set(result.single()['keys'] or [])
+            result = session.run("""
+                MATCH (n:Node)
+                WHERE n.cache_key IS NOT NULL
+                RETURN collect(DISTINCT n.cache_key) AS keys
+                """
+            )
+            cache_keys.update(result.single()['keys'] or [])
+            cache_keys = sorted(cache_keys)
+
+        _clear_cache_keys(session, cache_keys)
+        print(f"Cleared {len(cache_keys)} graph cache entry/entries")
+        return len(cache_keys)
+
+
+def clear_graph_cache_for_project(project_id):
+    """
+    Clear every cached graph that was built from a project, whichever combination
+    of projects it was selected alongside.
+
+    Call this whenever a project's underlying data changes or the project goes
+    away (edit into a new version, sample add, delete, version rollback) so the
+    cache does not keep serving — or merely keep storing — a graph built from
+    data that no longer exists.
+
+    Parameters:
+        project_id: A single project ID (linkid / ObjectId / str)
+
+    Returns:
+        int: Number of cache entries cleared
+    """
+    driver = get_driver()
+    project_id = str(project_id)
+
+    with driver.session() as session:
+        # project_ids is stored on the metadata node as a list of strings.
+        result = session.run("""
+            MATCH (m:GraphMetadata)
+            WHERE $project_id IN m.project_ids
+            RETURN collect(DISTINCT m.cache_key) AS keys
+            """, project_id=project_id
+        )
+        cache_keys = result.single()['keys'] or []
+
+        # A single-project graph is keyed by the bare project ID (see
+        # generate_cache_key), so it can be cleaned up even if its metadata node
+        # is missing.
+        if project_id not in cache_keys:
+            cache_keys.append(project_id)
+
+        _clear_cache_keys(session, cache_keys)
+        print(f"Cleared {len(cache_keys)} graph cache entry/entries for project {project_id}")
+        return len(cache_keys)
+
+
+# Rough per-entity storage overhead in Neo4j, on top of the variable-length string
+# payload measured below. Nodes carry label/all_labels/location/oncogene/samples/
+# cache_key; COAMP relationships carry weight/distance/cache_key plus three
+# four-element float arrays. Only ever used to give admins a sense of scale.
+_NODE_OVERHEAD_BYTES = 150
+_EDGE_OVERHEAD_BYTES = 200
+
+
+def measure_cached_graphs(session):
+    """
+    Measure what is actually stored in Neo4j, grouped by cache_key.
+
+    This counts the real nodes and relationships rather than trusting the counts
+    recorded on the GraphMetadata node, so it also picks up cache keys whose
+    metadata is gone but whose graph data is still taking up space.
+
+    Returns:
+        dict: cache_key -> {node_count, edge_count, size_bytes}
+    """
+    stats = {}
+
+    node_result = session.run("""
+        MATCH (n:Node)
+        WHERE n.cache_key IS NOT NULL
+        RETURN n.cache_key AS cache_key,
+               count(n) AS node_count,
+               sum(
+                 reduce(t = 0, s IN coalesce(n.samples, []) | t + size(s)) +
+                 reduce(t = 0, s IN coalesce(n.all_labels, []) | t + size(s)) +
+                 reduce(t = 0, s IN coalesce(n.location, []) | t + size(s)) +
+                 size(coalesce(n.label, ''))
+               ) AS payload_bytes
+        """
+    )
+    for record in node_result:
+        entry = stats.setdefault(record['cache_key'],
+                                 {'node_count': 0, 'edge_count': 0, 'size_bytes': 0})
+        entry['node_count'] = record['node_count']
+        entry['size_bytes'] += (record['payload_bytes'] or 0) + \
+            record['node_count'] * _NODE_OVERHEAD_BYTES
+
+    edge_result = session.run("""
+        MATCH ()-[r:COAMP]->()
+        WHERE r.cache_key IS NOT NULL
+        RETURN r.cache_key AS cache_key,
+               count(r) AS edge_count,
+               sum(
+                 reduce(t = 0, s IN coalesce(r.inter, []) | t + size(s)) +
+                 reduce(t = 0, s IN coalesce(r.union, []) | t + size(s))
+               ) AS payload_bytes
+        """
+    )
+    for record in edge_result:
+        entry = stats.setdefault(record['cache_key'],
+                                 {'node_count': 0, 'edge_count': 0, 'size_bytes': 0})
+        entry['edge_count'] = record['edge_count']
+        entry['size_bytes'] += (record['payload_bytes'] or 0) + \
+            record['edge_count'] * _EDGE_OVERHEAD_BYTES
+
+    return stats
+
+
+def _timestamp_to_datetime(ms):
+    """Convert a Cypher timestamp() value (epoch milliseconds) to a datetime."""
+    if ms is None:
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(ms / 1000.0)
+    except (TypeError, ValueError, OSError):
+        return None
 
 
 def list_cached_graphs():
     """
-    List all cached graphs in Neo4j with their metadata.
-    
+    List all cached graphs in Neo4j with their metadata and measured size.
+
+    Entries with graph data but no GraphMetadata node are included and flagged as
+    orphaned - they are unreachable as a cache hit but still occupy Neo4j.
+
     Returns:
         list: List of dictionaries containing cache information
     """
     driver = get_driver()
-    
+
     with driver.session() as session:
+        measured = measure_cached_graphs(session)
+
         result = session.run("""
             MATCH (m:GraphMetadata)
-            RETURN m.cache_key as cache_key, 
-                   m.project_ids as project_ids, 
+            RETURN m.cache_key as cache_key,
+                   m.project_ids as project_ids,
                    m.timestamp as timestamp,
                    m.node_count as node_count,
                    m.edge_count as edge_count
             ORDER BY m.timestamp DESC
             """
         )
-        
+
         cached_graphs = []
         for record in result:
+            stats = measured.pop(record['cache_key'],
+                                 {'node_count': 0, 'edge_count': 0, 'size_bytes': 0})
             cached_graphs.append({
                 'cache_key': record['cache_key'],
                 'project_ids': record['project_ids'],
-                'timestamp': record['timestamp'],
-                'node_count': record['node_count'],
-                'edge_count': record['edge_count']
+                # Cypher timestamp() is epoch milliseconds; templates need a datetime
+                'timestamp': _timestamp_to_datetime(record['timestamp']),
+                # Prefer the measured counts; the recorded ones are what the graph
+                # was built with, which drifts if anything went wrong since.
+                'node_count': stats['node_count'],
+                'edge_count': stats['edge_count'],
+                'recorded_node_count': record['node_count'],
+                'recorded_edge_count': record['edge_count'],
+                'size_bytes': stats['size_bytes'],
+                'orphaned': False,
             })
-        
+
+        # Whatever is left in `measured` has graph data but no metadata node.
+        for cache_key, stats in measured.items():
+            cached_graphs.append({
+                'cache_key': cache_key,
+                'project_ids': [],
+                'timestamp': None,
+                'node_count': stats['node_count'],
+                'edge_count': stats['edge_count'],
+                'recorded_node_count': None,
+                'recorded_edge_count': None,
+                'size_bytes': stats['size_bytes'],
+                'orphaned': True,
+            })
+
         return cached_graphs
 
 

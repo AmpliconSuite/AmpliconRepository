@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 
 {% load mezzanine_tags %}
+{% load l10n %}
 
 {% block meta_title %}Cache Management - Admin{% endblock %}
 
@@ -49,9 +50,20 @@
             </div>
             {% elif total_caches > 0 %}
             <div class="alert alert-info" role="alert">
-                <i class="fas fa-info-circle"></i> <strong>{{ total_caches }}</strong> Neo4j graph cache(s) found.
+                <i class="fas fa-info-circle"></i> <strong>{{ total_caches }}</strong> Neo4j graph cache(s) found,
+                totalling <strong>{{ total_graph_bytes|filesizeformat }}</strong>
+                ({{ total_graph_nodes }} node{{ total_graph_nodes|pluralize }}, {{ total_graph_edges }} edge{{ total_graph_edges|pluralize }}).
                 Clearing the cache will require regenerating the graphs on next use, but can help if data has been updated or to free up Neo4j storage.
+                <br><small class="text-muted">Sizes are approximate: measured string payload plus a fixed per-node and per-edge allowance.</small>
             </div>
+
+            {% if orphaned_caches > 0 %}
+            <div class="alert alert-warning" role="alert">
+                <i class="fas fa-exclamation-triangle"></i> <strong>{{ orphaned_caches }}</strong> orphaned cache(s) found &mdash;
+                graph data left in Neo4j with no metadata entry, so it can never be served as a cache hit but still occupies storage.
+                Clearing the graph caches will remove it.
+            </div>
+            {% endif %}
 
             <div class="table-responsive" style="margin-top:15px;">
                 <table id="cacheTable" class="table table-hover table-striped">
@@ -62,23 +74,29 @@
                             <th>Created</th>
                             <th>Nodes</th>
                             <th>Edges</th>
+                            <th>Size</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for cache in cached_graphs %}
                         <tr>
-                            <td><code style="font-size:0.8em;">{{ cache.cache_key|truncatechars:40 }}</code></td>
+                            <td>
+                                <code style="font-size:0.8em;">{{ cache.cache_key|truncatechars:40 }}</code>
+                                {% if cache.orphaned %}<span class="badge badge-warning" title="No metadata entry - unreachable but still stored">orphaned</span>{% endif %}
+                            </td>
                             <td style="font-size:0.9em;">{{ cache.project_ids|join:", "|truncatechars:100 }}</td>
-                            <td>{{ cache.timestamp|date:"M d, Y H:i" }}</td>
+                            <td>{% if cache.timestamp %}{{ cache.timestamp|date:"M d, Y H:i" }}{% else %}&mdash;{% endif %}</td>
                             <td><span class="badge badge-primary">{{ cache.node_count }}</span></td>
                             <td><span class="badge badge-info">{{ cache.edge_count }}</span></td>
+                            {# unlocalize: a thousands separator here would break DataTables' numeric sort #}
+                            <td data-order="{{ cache.size_bytes|unlocalize }}">{{ cache.size_bytes|filesizeformat }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
 
-            <form method="get" action="{% url 'clear_cache' %}" onsubmit="return confirm('⚠️ Are you sure you want to clear all Neo4j graph caches?\n\nThis will:\n- Remove all {{ total_caches }} cached graph(s)\n- Require regeneration on next use (slower first load)\n- Free up Neo4j storage space\n\nThis action cannot be undone.');" style="margin-top:10px; margin-bottom:10px;">
+            <form method="get" action="{% url 'clear_cache' %}" onsubmit="return confirm('⚠️ Are you sure you want to clear all Neo4j graph caches?\n\nThis will:\n- Remove all {{ total_caches }} cached graph(s), freeing roughly {{ total_graph_bytes|filesizeformat }}\n- Require regeneration on next use (slower first load)\n\nThis action cannot be undone.');" style="margin-top:10px; margin-bottom:10px;">
                 <input type="hidden" name="clear_graphs" value="true">
                 <button type="submit" class="btn btn-danger"><i class="fas fa-trash-alt"></i> Clear Graph Caches</button>
             </form>

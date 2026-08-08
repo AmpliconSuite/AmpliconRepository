@@ -236,10 +236,10 @@ class ProjectFileAddView(APIView):
         # sys.path is already primed for AGGREGATOR_DEV_PATH in settings.py
         from AmpliconSuiteAggregator import Aggregator
         from .views import (
-            project_update, project_delete, download_file, 
-            _create_project
+            project_update, project_delete, download_file,
+            _create_project, invalidate_project_coamp_graphs
         )
-        
+
         project_uuid = project['linkid']
         tmp_project_data_path = os.path.join(settings.MEDIA_ROOT, api_id)
         user_identifier = request.data.get('username')
@@ -368,6 +368,9 @@ class ProjectFileAddView(APIView):
                             f"from {project['linkid']} to {new_project_uuid}"
                         )
                     alert_message = f"Aggregation successful. New samples added to project version: {new_project_uuid}"
+
+                    # Drop the superseded version's cached co-amplification graph(s)
+                    invalidate_project_coamp_graphs(str(project['linkid']))
 
                     # Notify subscribers about the project update
                     try:

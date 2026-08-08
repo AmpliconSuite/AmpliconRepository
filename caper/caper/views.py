@@ -603,6 +603,28 @@ def invalidate_project_charts(project_id):
             logging.debug(f"Could not invalidate chart cache: {e}")
 
 
+def invalidate_project_coamp_graphs(project_id):
+    """
+    Drop any cached Neo4j co-amplification graph built from a project.
+
+    Call this whenever a project's data is superseded or removed (edit into a new
+    version, sample add via the API, project or version delete). Edits mint a new
+    project ID, so the old cache entries can never be hit again - but nothing else
+    ever reclaims them, and they can be large.
+
+    Never raises: Neo4j being unavailable must not fail the surrounding operation.
+
+    Args:
+        project_id: Project ID (string or ObjectId)
+    """
+    try:
+        from .neo4j_utils import clear_graph_cache_for_project
+        cleared = clear_graph_cache_for_project(project_id)
+        logging.info(f"[CACHE] Cleared {cleared} Neo4j graph cache entry/entries for project {project_id}")
+    except Exception as e:
+        logging.warning(f"Could not invalidate Neo4j graph cache for project {project_id}: {e}")
+
+
 def _is_deleted_version_tombstone_id(project_name_or_uuid):
     try:
         if not ObjectId.is_valid(str(project_name_or_uuid)):
@@ -2564,10 +2586,16 @@ def project_delete(request, project_name):
         new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
         delete_project_from_site_statistics(project, visibility)
-        
+
+        # No Neo4j graph invalidation here on purpose. This is a reversible soft
+        # delete and it runs synchronously on the request path (including as the
+        # first step of every project edit), so a Neo4j outage would stall the
+        # request. The cache is dropped instead by the background edit thread and
+        # by admin_permanent_delete_project.
+
         # Clean up large objects
         del project
-        
+
         return redirect('profile')
     else:
         # Clean up even on error path
@@ -2615,6 +2643,9 @@ def delete_project_version(request, project_name, version_id):
 
     deleting_current = (version_id == current_linkid)
     deleter = get_current_user(request)
+
+    # this version's data is going away; any graph cached from it is dead weight
+    invalidate_project_coamp_graphs(version_id)
 
     if deleting_current:
         prev_versions_list = latest_project.get('previous_versions', [])
@@ -3274,6 +3305,11 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
                     logging.info(f"Cleaned up name map directory: {temp_name_map_dir}")
             except Exception as e:
                 logging.warning(f"Failed to clean up name map directory: {e}")
+
+        # Drop the superseded version's cached co-amplification graph(s). The new
+        # version has a new ID, so those entries are unreachable from here on.
+        if rollback_project_id:
+            invalidate_project_coamp_graphs(rollback_project_id)
 
         # Notify subscribers after aggregation
         try:
@@ -5467,6 +5503,10 @@ def clear_cache(request):
             return render(request, 'pages/clear_cache_confirm.html', {
                 'cached_graphs': cached_graphs,
                 'total_caches': len(cached_graphs),
+                'total_graph_bytes': sum(g.get('size_bytes') or 0 for g in cached_graphs),
+                'total_graph_nodes': sum(g.get('node_count') or 0 for g in cached_graphs),
+                'total_graph_edges': sum(g.get('edge_count') or 0 for g in cached_graphs),
+                'orphaned_caches': sum(1 for g in cached_graphs if g.get('orphaned')),
                 'total_chart_caches': total_chart_caches,
                 'chart_count_is_estimate': is_estimate,
                 'neo4j_error': neo4j_error,
