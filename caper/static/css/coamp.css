@@ -336,7 +336,9 @@ button:hover {
     height: 600px;
     max-height: 600px;
     overflow-y: auto;
-    overflow-x: hidden;
+    /* auto, not hidden: if the columns ever outgrow the panel again, the table
+       scrolls instead of silently swallowing the rightmost one. */
+    overflow-x: auto;
     border: 1px solid #eaeaea;
     border-radius: 8px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
@@ -366,13 +368,16 @@ th {
     border-bottom: 2px solid #e0e0e0;
 }
 
-th:nth-child(3), td:nth-child(3) {
-    width: 80px;
+/* The three numeric columns. Widths are narrow on purpose: the whole table has
+   to fit ~400px of side panel, and a column that does not fit gets clipped. */
+th:nth-child(3), td:nth-child(3),
+th:nth-child(4), td:nth-child(4) {
+    width: 70px;
     text-align: center;
 }
 
-th:nth-child(4), td:nth-child(4) {
-    width: 120px;
+th:nth-child(5), td:nth-child(5) {
+    width: 80px;
     text-align: right;
 }
 
