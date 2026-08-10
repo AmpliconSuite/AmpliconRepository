@@ -181,8 +181,27 @@
         </div>
     </div>
     <div class="col-md-3" style='text-align:right'>
+        {% comment %}
+        These stay enabled for everyone.  Anonymous visitors are sent to a
+        one-off human check by @download_gate rather than being turned away, so
+        a disabled button here would misstate what is available.  The hint below
+        sets the expectation before the click.
+        {% endcomment %}
         <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download" style="color: white; margin-bottom: 8px;" class="btn btn-primary">Download Sample Data</a>
         <a class="btn btn-primary" href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download_metadata" style="color: white; margin-bottom: 8px;">Download Metadata</a>
+        {% if not user.is_authenticated %}
+        {% comment %}
+        The parent column is text-align:right, so an unconstrained paragraph
+        wraps mid-phrase and strands words like "Log in" on their own line.
+        Fixed width plus explicit line breaks keep the two lines balanced.
+        {% endcomment %}
+        <div class="text-muted"
+             style="font-size: 0.8em; line-height: 1.55; max-width: 16rem;
+                    margin-left: auto; margin-bottom: 8px;">
+            <i class="fas fa-info-circle"></i> One-time check before download.<br>
+            <a href="/accounts/login/">Log in</a> to skip it.
+        </div>
+        {% endif %}
 
         {% if ec3d_available %}
         <a class="btn btn-primary" href="{% url 'ec3d_visualization' sample_name=sample_name %}" target="_blank" style="color: white;">ec3D Visualization</a>

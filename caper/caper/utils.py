@@ -364,6 +364,62 @@ def _fetch_sample_slice(match, sample_name):
     return rows, prev_name, next_name
 
 
+def get_one_sample_rows(project_name, sample_name):
+    """Return ``(project, sample_rows)`` without building the sample-name index.
+
+    ``_fetch_sample_slice()`` maps over every run in the project to build the
+    ``{run key -> Sample_name}`` index that drives the prev/next links on the
+    sample page.  On a 2,471-sample project that is 2,471 elements assembled
+    server-side per request, and it measured ~1.4s on the metadata download
+    route -- which needs none of it, having no navigation to render.
+
+    Callers that only want one sample's rows should use this.  Callers that
+    render prev/next still need get_one_sample().  Falls back to the full
+    lookup on any server-side failure, so a query the backing engine dislikes
+    degrades to slower rather than broken.
+    """
+    try:
+        with pymongo.timeout(page_query_timeout()):
+            project = get_one_project_sans_runs(project_name)
+            if project is None:
+                return validate_project(None, project_name), None
+
+            pipeline = [
+                {'$match': {'_id': project['_id']}},
+                {'$limit': 1},
+                {'$project': {
+                    '_matched': {'$filter': {
+                        'input': {'$objectToArray': '$runs'},
+                        'as': 'r',
+                        'cond': {'$eq': [
+                            {'$arrayElemAt': ['$$r.v.Sample_name', 0]},
+                            sample_name]},
+                    }},
+                }},
+            ]
+            doc = next(iter(collection_handle.aggregate(pipeline)), None)
+    except PyMongoError as exc:
+        if getattr(exc, 'timeout', False):
+            logging.warning(
+                "get_one_sample_rows: timed out after %ss loading %s/%s",
+                page_query_timeout(), project_name, sample_name)
+            raise
+        logging.warning(
+            "get_one_sample_rows: server-side lookup failed for %s (%s); "
+            "falling back", project_name, exc)
+        project, rows, _, _ = get_one_sample(project_name, sample_name)
+        return project, rows
+
+    if doc is None:
+        return project, None
+
+    matched = doc.get('_matched') or []
+    rows = matched[0].get('v') if matched else None
+    if rows:
+        rows = replace_space_to_underscore(rows)
+    return project, rows
+
+
 def _get_one_sample_full_scan(project_name, sample_name):
     """Original whole-document implementation, kept as a fallback.
 

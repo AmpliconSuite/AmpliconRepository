@@ -280,6 +280,13 @@ ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.getenv('ACCOUNT_DEFAULT_HTTP_PROTOCOL', defau
 RECAPTCHA_PRIVATE_KEY = os.environ['RECAPTCHA_PRIVATE_KEY']
 RECAPTCHA_PUBLIC_KEY =  os.environ['RECAPTCHA_PUBLIC_KEY']
 
+# How long one solved download challenge is honoured, in seconds.  Set this
+# short (e.g. 60) in a dev config.sh to exercise the challenge and its expiry
+# without waiting out the production window.  Clamped to [30, 86400] and
+# validated in caper/download_gate.py; the challenge page states whatever value
+# is actually in force.
+DOWNLOAD_PASS_SECONDS = os.getenv('DOWNLOAD_PASS_SECONDS', default='3600')
+
 # add a custom account adaptor to prevent having a username match an email in another user
 # account
 ACCOUNT_ADAPTER = "caper.utils.CustomAccountAdapter"

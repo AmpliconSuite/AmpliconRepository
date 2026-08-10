@@ -144,6 +144,16 @@ class UserPreferencesForm(forms.ModelForm):
         fields = ('onAddedToProjectTeam', 'onRemovedFromProjectTeam', 'onProjectUpdate')
 
 
+class DownloadCaptchaForm(forms.Form):
+    """Single-field challenge shown before an anonymous download.
+
+    Deliberately not a ModelForm and carrying no other fields: the only thing
+    being established is that a human is present.  See caper/download_gate.py
+    for why the gate exists at all.
+    """
+    captcha = ReCaptchaField(widget=ReCaptchaV2Checkbox)
+
+
 class MySignUpForm(SignupForm):
     captcha = ReCaptchaField(widget=ReCaptchaV2Checkbox)
     def __init__(self, *args, **kwargs):

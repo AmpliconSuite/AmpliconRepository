@@ -8,6 +8,7 @@ import traceback
 import json
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote
 from .background_tasks import _thread_executor, get_background_task_status
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
@@ -59,12 +60,16 @@ from django.conf import settings
 from django.db.models import Q
 
 # from .models import File
-from .forms import RunForm, UpdateForm, UserPreferencesForm
+from .forms import RunForm, UpdateForm, UserPreferencesForm, DownloadCaptchaForm
+from .download_gate import (
+    download_gate, grant_download_pass, internal_download_headers,
+    is_download_path, may_download, pass_duration_label,
+)
 
 # Import utils functions
 from .utils import (
     collection_handle, collection_handle_primary, fs_handle, audit_log_handle,
-    get_one_project, get_one_sample, get_one_deleted_project,
+    get_one_project, get_one_sample, get_one_sample_rows, get_one_deleted_project,
     prepare_project_linkid, check_if_db_field_exists,
     get_date, get_date_short, previous_versions, form_to_dict,
     replace_space_to_underscore, sample_data_from_feature_list,
@@ -950,7 +955,10 @@ def find_one(pattern, path):
     return None
 
 
+@download_gate
 def project_download(request, project_name):
+    # The largest single response the site can produce -- a whole-project
+    # tarball, potentially hundreds of megabytes.
     project = get_one_project(project_name)
     if project is None:
         raise Http404(f"Project {project_name!r} not found")
@@ -1061,6 +1069,7 @@ def project_download(request, project_name):
        # raise Http404()
 
 
+@download_gate
 def project_summary_download(request, project_name):
     """
     Download the project summary table as JSON or CSV format.
@@ -1287,6 +1296,7 @@ def project_summary_download(request, project_name):
         return redirect(request.META.get('HTTP_REFERER', '/'))
 
 
+@download_gate
 def project_metadata_download(request, project_name):
     """
     Download all sample metadata for a project as a TSV spreadsheet.
@@ -1537,8 +1547,14 @@ def get_sample_metadata(sample_data):
 
     return sample_metadata
 
+@download_gate
 def sample_metadata_download(request, project_name, sample_name):
-    project, sample_data, _, _ = get_one_sample(project_name, sample_name)
+    # get_one_sample_rows() instead of get_one_sample(): this route renders no
+    # prev/next navigation, so the whole-project sample-name index that
+    # get_one_sample() builds is pure waste here.  It measured ~1.4s per request
+    # to return ~1KB of JSON, and made up 35% of the crawl that wedged the site
+    # on 2026-08-09.
+    project, sample_data = get_one_sample_rows(project_name, sample_name)
     sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
     extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
     try:
@@ -1554,6 +1570,55 @@ def sample_metadata_download(request, project_name, sample_name):
     except Exception as e:
         logging.exception(e)
         return HttpResponse()
+
+def download_verify(request):
+    """Human-verification challenge shown before an anonymous download.
+
+    Reached only by redirect from a @download_gate view, which stores the
+    original path in the session.  A solved challenge grants a time-boxed pass
+    covering every gated route, so a visitor collecting several files answers
+    once rather than once per file.  See caper/download_gate.py.
+    """
+    target = request.session.get('download_next') or '/'
+    # Never bounce off-site, whatever ended up in the session.
+    if not target.startswith('/') or target.startswith('//'):
+        target = '/'
+
+    def _resume():
+        """Where to send the visitor once they are allowed through.
+
+        Sending them straight to the file leaves them stranded here: a
+        Content-Disposition attachment downloads without navigating, so the
+        challenge page stays on screen.  Go back to the page they came from and
+        let it fetch the file, falling back to the file itself when there is no
+        trustworthy page to return to.
+        """
+        origin = request.session.get('download_origin')
+        if origin and is_download_path(target):
+            joiner = '&' if '?' in origin else '?'
+            return f'{origin}{joiner}auto_download={quote(target, safe="")}'
+        return target
+
+    if may_download(request):
+        return redirect(_resume())
+
+    if request.method == 'POST':
+        form = DownloadCaptchaForm(request.POST)
+        if form.is_valid():
+            grant_download_pass(request)
+            destination = _resume()
+            request.session.pop('download_next', None)
+            request.session.pop('download_origin', None)
+            return redirect(destination)
+    else:
+        form = DownloadCaptchaForm()
+
+    return render(request, 'pages/download_verify.html', {
+        'form': form,
+        'target': target,
+        'pass_duration': pass_duration_label(),
+    })
+
 
 def add_metadata(request, project_id):
     return render(request, 'pages/add_metadata.html', {'project_id': project_id})
@@ -1953,9 +2018,17 @@ def process_sample_data(project, sample_name, sample_data, output_dir=None):
     return sample_data_path, updated_data
 
 
+@download_gate
 def sample_download(request, project_name, sample_name):
     """
     Download a single sample's data.
+
+    Gated deliberately.  This is the most expensive endpoint on the site: it
+    gathers files into a temporary directory, zips them, and reads the whole
+    archive into memory before responding (0.53MB mean, 9.7MB max observed).
+    The worker then blocks writing that body to the client, and the load
+    shedder has already released its slot by then -- which is how a dispersed
+    crawl at ~110 req/min wedged all nine workers on 2026-08-09.
     """
     project, sample_data, _, _ = get_one_sample(project_name, sample_name)
 
@@ -2240,6 +2313,7 @@ def feature_page(request, project_name, sample_name, feature_name):
 _MISSING_FILE_SENTINELS = {'Not Provided', 'not provided', '', None}
 
 
+@download_gate
 def feature_download(request, project_name, sample_name, feature_name, feature_id):
     if feature_id in _MISSING_FILE_SENTINELS:
         raise Http404(f"No file available for feature {feature_name!r}")
@@ -2249,6 +2323,7 @@ def feature_download(request, project_name, sample_name, feature_name, feature_i
     return response
 
 
+@download_gate
 def pdf_download(request, project_name, sample_name, feature_name, feature_id):
     if feature_id in _MISSING_FILE_SENTINELS:
         raise Http404(f"No PDF available for feature {feature_name!r}")
@@ -2259,6 +2334,9 @@ def pdf_download(request, project_name, sample_name, feature_name, feature_id):
 
 
 def png_download(request, project_name, sample_name, feature_name, feature_id):
+    # NOT gated: the sample page embeds these as <img> sources, so a redirect to
+    # the challenge page would break the rendered page rather than protect it.
+    # Feature PNGs are also the cheapest of the download routes.
     if feature_id in _MISSING_FILE_SENTINELS:
         raise Http404(f"No PNG available for feature {feature_name!r}")
     img_file = fs_handle.get(ObjectId(feature_id)).read()
@@ -2809,8 +2887,11 @@ def project_update(request, project_name):
 
 
 def download_file(url, save_path):
-    # Send a GET request to the URL
-    response = requests.get(url)
+    # Send a GET request to the URL.  When the URL is this application's own
+    # download endpoint (project re-aggregation refetches the old tarball), the
+    # internal token identifies it to @download_gate; for any other host
+    # internal_download_headers() returns {} and nothing is disclosed.
+    response = requests.get(url, headers=internal_download_headers(url))
 
     # Raise an error for bad status codes
     response.raise_for_status()

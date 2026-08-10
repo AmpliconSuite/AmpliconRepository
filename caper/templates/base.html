@@ -176,6 +176,51 @@
         });
     </script>
     {% endif %}
+
+    <!--
+      Resume a download after the human-verification check.
+
+      download_verify sends the visitor back to the page they started from with
+      ?auto_download=<path>, rather than to the file itself: an attachment
+      response downloads without navigating, so redirecting straight to it would
+      leave them staring at the challenge page.
+
+      Deliberately outside the extra_js block -- sample.html overrides that
+      block, and the sample page is where this is needed most.  (Django parses
+      template tags inside HTML comments, so that block name must not be
+      written out in full here.)
+    -->
+    <script>
+    (function () {
+        var params = new URLSearchParams(window.location.search);
+        var path = params.get('auto_download');
+        if (!path) { return; }
+
+        // Same-site download routes only.  Refuse anything that could carry the
+        // browser off this origin or to an unrelated view.
+        if (path.charAt(0) !== '/' || path.indexOf('//') === 0) { return; }
+        if (path.indexOf('/project/') !== 0 || path.indexOf('/download') === -1) { return; }
+
+        // Strip the parameter first, so a refresh or a shared link does not
+        // start the download again.
+        params.delete('auto_download');
+        var query = params.toString();
+        window.history.replaceState({}, '',
+            window.location.pathname + (query ? '?' + query : '') + window.location.hash);
+
+        // A generated link rather than assigning location: an attachment does
+        // not navigate, but a 404 would, and this cannot move the page at all.
+        window.addEventListener('load', function () {
+            var a = document.createElement('a');
+            a.href = path;
+            a.download = '';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+    })();
+    </script>
 </body>
 
 

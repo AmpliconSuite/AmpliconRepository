@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block meta_title %}Verify to download{% endblock %}
+
+{% block main %}
+<div class="row justify-content-center" style="margin-top: 40px; margin-bottom: 60px;">
+  <div class="col-md-7 col-lg-6">
+    <div class="card">
+      <div class="card-body" style="padding: 32px;">
+
+        <h3 style="margin-bottom: 12px;">Quick check before downloading</h3>
+
+        <p class="text-muted">
+          Confirming you are not a bot lets us keep downloads available
+          without an account.
+        </p>
+
+        <div class="alert alert-light border" role="note"
+             style="font-size: 0.93em; margin: 20px 0;">
+          <i class="fas fa-check-circle text-primary"></i>
+          <strong>This is a one-time check.</strong>
+          Once you pass it, every download works normally for the next
+          {{ pass_duration }}.
+          <br>
+          <a href="/accounts/login/">Log in</a> or
+          <a href="/accounts/signup/">create an account</a> to skip it entirely.
+        </div>
+
+        <form method="post" action="">
+          {% csrf_token %}
+          <div style="margin: 24px 0;">
+            {{ form.captcha }}
+            {% if form.captcha.errors %}
+              <div class="text-danger" style="margin-top: 8px;">
+                That check did not go through. Please try again.
+              </div>
+            {% endif %}
+          </div>
+          <button type="submit" class="btn btn-primary">Continue to download</button>
+        </form>
+
+        <hr style="margin: 28px 0 20px;">
+
+        <p style="margin-bottom: 8px;"><strong>Downloading programmatically?</strong></p>
+        <p class="text-muted" style="font-size: 0.93em;">
+          Use the
+          <a href="https://docs.ampliconrepository.org/en/latest/api/"
+             target="_blank" rel="noopener">AmpliconRepository API</a>
+          instead &mdash; it is built for scripted access and skips this check.
+          Scripts pointed at the web pages will meet it on every request.
+        </p>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock main %}
