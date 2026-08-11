@@ -16,6 +16,7 @@ import zipfile
 
 import pytest
 from bson.objectid import ObjectId
+from django.contrib.auth.models import AnonymousUser
 
 from conftest import (
     _build_create_request,
@@ -276,3 +277,95 @@ def test_pdf_download(loaded_datasets, request_factory, test_user, mongo_collect
     assert resp.status_code == 200, f"pdf_download returned {resp.status_code}"
     ct = resp.get('Content-Type', '')
     assert 'pdf' in ct, f"Expected PDF content type, got: {ct!r}"
+
+
+def _nan_safe(value):
+    """Normalise NaN so two equal sample rows compare equal.
+
+    Sample metadata carries pandas NaN for absent CSV columns, and NaN != NaN
+    by IEEE 754 -- so a plain == between two identical rows reports a
+    difference that is not there.
+    """
+    if isinstance(value, float) and value != value:
+        return '<nan>'
+    if isinstance(value, dict):
+        return {k: _nan_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_nan_safe(v) for v in value]
+    return value
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_sample_metadata_download_matches_full_lookup(
+        loaded_datasets, request_factory, test_user, mongo_collection):
+    """The projected metadata query must return the same rows as the full one.
+
+    sample_metadata_download uses get_one_sample_rows(), which skips the
+    whole-project sample-name index that get_one_sample() builds for prev/next
+    navigation.  That index measured ~1.4s on a 2,471-sample project and this
+    route renders no navigation.  The optimisation is only safe if both paths
+    agree on the sample's rows.
+    """
+    from caper.utils import get_one_sample, get_one_sample_rows
+    from caper.views import sample_metadata_download
+
+    pid = loaded_datasets['project_small']
+    doc = mongo_collection.find_one({'_id': ObjectId(pid)})
+    runs = doc.get('runs', {})
+    assert runs, "project_small has no samples in 'runs'"
+
+    first_sample_key = next(iter(runs))
+    feature_list = runs[first_sample_key]
+    if isinstance(feature_list, list) and feature_list:
+        sample_name = feature_list[0].get('Sample_name', first_sample_key)
+    else:
+        sample_name = first_sample_key
+
+    _, full_rows, _, _ = get_one_sample(pid, sample_name)
+    _, fast_rows = get_one_sample_rows(pid, sample_name)
+
+    assert len(fast_rows or []) == len(full_rows or []), \
+        "projected lookup returned a different number of feature rows"
+    for i, (full_row, fast_row) in enumerate(zip(full_rows, fast_rows)):
+        only_full = sorted(set(full_row) - set(fast_row))
+        only_fast = sorted(set(fast_row) - set(full_row))
+        assert not only_full and not only_fast, (
+            f"row {i} key mismatch: only in full={only_full}, "
+            f"only in projected={only_fast}")
+        differing = {k: (full_row[k], fast_row[k])
+                     for k in full_row
+                     if _nan_safe(full_row[k]) != _nan_safe(fast_row[k])}
+        assert not differing, f"row {i} value mismatch: {differing}"
+
+    req = request_factory.get(
+        f'/project/{pid}/sample/{sample_name}/download_metadata')
+    req.user = test_user
+    resp = sample_metadata_download(
+        req, project_name=pid, sample_name=sample_name)
+    assert resp.status_code == 200, \
+        f"Unexpected status {resp.status_code} for sample_metadata_download"
+    assert len(resp.content) > 0, "metadata download must not be empty"
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_sample_metadata_download_refuses_unverified_visitor(
+        loaded_datasets, request_factory, mongo_collection):
+    """An anonymous external request must be redirected, not served."""
+    from caper.views import sample_metadata_download
+
+    pid = loaded_datasets['project_small']
+    doc = mongo_collection.find_one({'_id': ObjectId(pid)})
+    first_sample_key = next(iter(doc.get('runs', {})))
+
+    req = request_factory.get(
+        f'/project/{pid}/sample/{first_sample_key}/download_metadata',
+        REMOTE_ADDR='203.0.113.9')
+    req.user = AnonymousUser()
+    req.session = {}
+    resp = sample_metadata_download(
+        req, project_name=pid, sample_name=first_sample_key)
+
+    assert resp.status_code == 302
+    assert resp['Location'] == '/downloads/verify'

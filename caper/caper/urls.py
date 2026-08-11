@@ -63,6 +63,10 @@ urlpatterns += [
     path("accounts/login/", views.login, name="login"),
     path("project/<project_name>", views.project_page, name="project_page"),
 
+    # Human-verification challenge for the gated download routes.  Must resolve
+    # by the name 'download_verify' -- download_gate.py reverses it.
+    path("downloads/verify", views.download_verify, name="download_verify"),
+
     path("project/<project_name>/download", views.project_download, name="project_download"),
     path("project/<project_name>/download_summary", views.project_summary_download, name="project_summary_download"),
     path("project/<project_name>/download_metadata", views.project_metadata_download, name="project_metadata_download"),

@@ -31,17 +31,42 @@
     
         var table = $('#myTable1').DataTable();
 
-        // Update filtered count display
+        // Put the filtered-download control in the same band as the "Show N
+        // entries" menu and the search box.  DataTables builds that row itself,
+        // so this can only happen after init.  Default DataTables styling
+        // floats those two controls, hence the float here.
+        (function placeFilteredDownload() {
+            var $band = $('#myTable1_wrapper').find('.dataTables_length').first();
+            if (!$band.length) { return; }   // keep the fallback position
+            $('#download-filtered-wrap')
+                .css({ 'float': 'left', 'margin-left': '20px', 'margin-bottom': '0' })
+                .insertAfter($band);
+        })();
+
+        // Update filtered count display, and enable the download only once the
+        // table is actually filtered -- "download filtered samples" with no
+        // filter applied just duplicates the whole-project download.
         function updateFilteredCount() {
             var info = table.page.info();
             var filteredCount = info.recordsDisplay;
             var totalCount = info.recordsTotal;
-            
+
             if (filteredCount === totalCount) {
                 $('#filtered-count').text('(' + totalCount + ' samples)');
             } else {
                 $('#filtered-count').text('(' + filteredCount + ' of ' + totalCount + ' samples shown)');
             }
+
+            var searching = (table.search() || '').trim().length > 0;
+            var narrowed = filteredCount < totalCount;
+            var enabled = searching || narrowed;
+
+            $('#download-filtered-samples').prop('disabled', !enabled);
+            // Title lives on the wrapper: a disabled button suppresses its own
+            // tooltip, so the hint would never appear when it is most needed.
+            $('#download-filtered-wrap').attr('title', enabled
+                ? 'Download the ' + filteredCount + ' samples matching the current filter'
+                : 'Search or filter the table first, then download just the matching samples');
         }
 
         // Update count on table draw
@@ -514,6 +539,19 @@
         }
     }
 
+    // Downloads are behind a one-time human-verification check.  A fetch()
+    // follows that redirect transparently and reports ok, so a caller that
+    // trusted response.ok would hand the user the challenge page renamed as a
+    // spreadsheet.  Returns true when the caller should stop.
+    function sendToVerificationIfRedirected(response) {
+        if (response.redirected && response.url.indexOf('/downloads/verify') !== -1) {
+            document.body.classList.remove('wait-cursor');
+            window.location.href = response.url;
+            return true;
+        }
+        return false;
+    }
+
     function downloadSummaryTable() {
         // Add wait cursor class to body
         document.body.classList.add('wait-cursor');
@@ -521,12 +559,17 @@
         // Use fetch API to download the file
         fetch("/project/{{ project.linkid }}/download_summary?format=csv")
             .then(response => {
+                // The download routes are behind a human-verification check.
+                // fetch() follows its redirect transparently, so without this
+                // the challenge page would be saved as a .csv file.
+                if (sendToVerificationIfRedirected(response)) { return null; }
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
                 return response.blob();
             })
             .then(blob => {
+                if (!blob) { return; }   // redirected to verification
                 // Create a download link and trigger it
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -552,12 +595,14 @@
         document.body.classList.add('wait-cursor');
         fetch("/project/{{ project.linkid }}/download_metadata/")
             .then(response => {
+                if (sendToVerificationIfRedirected(response)) { return null; }
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
                 return response.blob();
             })
             .then(blob => {
+                if (!blob) { return; }   // redirected to verification
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.style.display = 'none';
@@ -1020,8 +1065,18 @@
 <br>
 <div class="container">
   {% if not is_empty_project %}  
-<div style="margin-bottom: 15px;">
-    <button id="download-filtered-samples" class="btn btn-primary" style="color: white;">
+{% comment %}
+Relocated by JS into the DataTables control band (next to "Show N entries" and
+the search box) once the table initialises, so it sits with the other table
+controls rather than floating above them.  It stays here in the markup as the
+fallback position if that move ever fails.
+
+Sizing matches the Download Project / Summary / Metadata buttons above.
+{% endcomment %}
+<div id="download-filtered-wrap" style="margin-bottom: 15px;"
+     title="Search or filter the table first, then download just the matching samples">
+    <button id="download-filtered-samples" class="btn btn-primary btn-sm"
+            style="color: white; white-space: nowrap; font-size: 0.8rem;" disabled>
         <i class="fas fa-download"></i> Download Filtered Samples
     </button>
     <span id="filtered-count" style="margin-left: 10px; color: #666;"></span>
