@@ -359,8 +359,44 @@ def index(request):
         'public_projects': public_projects,
         'private_projects': private_projects,
         'featured_projects': featured_projects,
-        'site_stats': site_stats
+        'site_stats': site_stats,
+        'sample_breakdown': _home_sample_breakdown(site_stats),
     })
+
+
+# Uploaders leave tissue of origin blank in several different ways; all of them
+# mean "unknown" and none of them belong in a ranked list of tissues.
+UNANNOTATED_TISSUE_VALUES = {'na', 'n/a', 'not provided', 'unknown', 'none', ''}
+
+HOME_TOP_TISSUE_COUNT = 6
+
+
+def _home_sample_breakdown(site_stats):
+    """Sample composition for the home page disclosure.
+
+    Reads only the site_statistics document the page has already loaded, so
+    this is one sort of a dict with one entry per distinct tissue value and
+    costs no extra queries -- the home page stays a single round trip.
+    """
+    tissue_counts = site_stats.get('public_tissue_of_origin_count') or {}
+
+    annotated = {
+        name: count for name, count in tissue_counts.items()
+        if str(name).strip().lower() not in UNANNOTATED_TISSUE_VALUES
+    }
+    ranked = sorted(annotated.items(), key=lambda item: -item[1])
+
+    return {
+        'total': site_stats.get('public_sample_count', 0),
+        'coral': site_stats.get('public_coral_sample_count', 0),
+        'coral_projects': site_stats.get('public_coral_project_count', 0),
+        'top_tissues': ranked[:HOME_TOP_TISSUE_COUNT],
+        'other_tissue_count': max(0, len(ranked) - HOME_TOP_TISSUE_COUNT),
+        # Stated outright rather than implied: most public samples carry no
+        # tissue annotation, so a ranked list on its own would misrepresent
+        # the corpus.
+        'annotated': sum(annotated.values()),
+    }
 
 
 def profile(request, message_to_user=None):

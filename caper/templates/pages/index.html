@@ -40,7 +40,7 @@
     }
 
     .home-mark {
-        max-width: 400px;
+        max-width: 600px;
         width: 100%;
         display: block;
     }
@@ -189,6 +189,19 @@
         color: #1f66d0;
     }
 
+    .home-breakdown-note {
+        font-size: 11.5px;
+        color: #9aa0a6;
+        line-height: 1.4;
+        padding: 1px 0 2px;
+    }
+
+    .home-breakdown-foot {
+        margin-top: 7px;
+        padding-top: 6px;
+        border-top: 1px solid #eef0f3;
+    }
+
     .home-breakdown abbr[title] {
         color: #9aa0a6;
         font-size: 11px;
@@ -266,7 +279,7 @@
     }
 
     .home-examples {
-        font-size: 12.5px;
+        font-size: 13.5px;
         color: #74777c;
         display: flex;
         gap: 7px;
@@ -278,11 +291,11 @@
         appearance: none;
         border: 1px solid #e3e6ea;
         border-radius: 999px;
-        padding: 3px 10px;
+        padding: 4px 11px;
         background: #fff;
         color: #1f66d0;
         font-family: inherit;
-        font-size: 12px;
+        font-size: 13px;
         cursor: pointer;
     }
 
@@ -291,7 +304,7 @@
     }
 
     .home-advanced {
-        font-size: 12.5px;
+        font-size: 13.5px;
         margin-left: 3px;
     }
 
@@ -532,9 +545,28 @@
         cursor: help;
     }
 
-    .home-date-value:hover {
+    .home-date-value:hover,
+    .home-date-value:focus {
         border-bottom-color: #1f66d0;
         color: #414042;
+    }
+
+    /* A native title= attribute cannot show sooner than the browser's own
+       ~1s delay, so the timestamp gets its own tooltip that appears on the
+       first mouseover. One element is reused for every date and lives on
+       <body> so .home-table-scroll's overflow cannot clip it. */
+    .home-tip {
+        position: absolute;
+        z-index: 1100;
+        background: #414042;
+        color: #fff;
+        font-size: 11.5px;
+        line-height: 1.35;
+        padding: 5px 9px;
+        border-radius: 5px;
+        white-space: nowrap;
+        pointer-events: none;
+        box-shadow: 0 3px 10px rgba(20, 30, 50, .2);
     }
 
     /* Featured rows carry a gold rule instead of spending a column on a badge. */
@@ -714,36 +746,45 @@
             queryInput.focus();
         });
 
-        // --- "Other fsCNA" is a subtotal, so it opens the class breakdown it
-        // is a subtotal of. Hand-rolled rather than a Bootstrap popover so the
-        // panel markup (and the FAN primer link inside it) stays in the
-        // template where it can be read. ------------------------------------
-        var breakdownToggle = $('#home-breakdown-toggle');
-        var breakdownPanel = $('#home-breakdown');
+        // --- Both "Samples" and "Other fsCNA" are roll-ups, so each opens the
+        // breakdown it is a roll-up of. Hand-rolled rather than a Bootstrap
+        // popover so the panel markup (and the FAN primer link inside it)
+        // stays in the template where it can be read. ------------------------
+        var figToggles = $('.home-fig-button');
 
-        function setBreakdown(open) {
-            breakdownToggle.attr('aria-expanded', open ? 'true' : 'false');
-            breakdownPanel.prop('hidden', !open);
+        function closeAllBreakdowns() {
+            figToggles.attr('aria-expanded', 'false');
+            $('.home-breakdown').prop('hidden', true);
         }
 
-        breakdownToggle.on('click', function (event) {
+        figToggles.on('click', function (event) {
             event.stopPropagation();
-            setBreakdown(breakdownToggle.attr('aria-expanded') !== 'true');
+            var toggle = $(this);
+            var open = toggle.attr('aria-expanded') !== 'true';
+            // One at a time: the panels share an anchor point and would
+            // otherwise stack on top of each other.
+            closeAllBreakdowns();
+            if (open) {
+                toggle.attr('aria-expanded', 'true');
+                $('#' + toggle.attr('data-panel')).prop('hidden', false);
+            }
         });
 
-        // Clicks inside the panel must not close it -- it contains a link.
-        breakdownPanel.on('click', function (event) {
+        // Clicks inside a panel must not close it -- one contains a link.
+        $('.home-breakdown').on('click', function (event) {
             event.stopPropagation();
         });
 
-        $(document).on('click', function () {
-            setBreakdown(false);
-        });
+        $(document).on('click', closeAllBreakdowns);
 
         $(document).on('keydown', function (event) {
-            if (event.key === 'Escape' && breakdownToggle.attr('aria-expanded') === 'true') {
-                setBreakdown(false);
-                breakdownToggle.focus();
+            if (event.key !== 'Escape') {
+                return;
+            }
+            var open = figToggles.filter('[aria-expanded="true"]');
+            if (open.length) {
+                closeAllBreakdowns();
+                open.first().focus();
             }
         });
 
@@ -780,11 +821,36 @@
                 (day.length < 2 ? '0' + day : day);
 
             cell.empty().append(
-                $('<span class="home-date-value"></span>')
+                $('<span class="home-date-value" tabindex="0"></span>')
                     .text(compact)
-                    .attr('title', formatDate(raw))
+                    .attr('data-full', formatDate(raw))
             );
         });
+
+        // Instant tooltip for the timestamps. Delegated, so it survives every
+        // DataTables redraw, and positioned only while one is actually shown.
+        var dateTip = $('<div class="home-tip" role="tooltip"></div>')
+            .appendTo('body')
+            .hide();
+
+        $('#unifiedProjectTable')
+            .on('mouseenter focus', '.home-date-value', function () {
+                var full = $(this).attr('data-full');
+                if (!full) {
+                    return;
+                }
+                dateTip.text(full).show();
+                var box = this.getBoundingClientRect();
+                dateTip.css({
+                    top: (box.top + window.pageYOffset - dateTip.outerHeight() - 7) + 'px',
+                    left: Math.max(6,
+                        box.left + window.pageXOffset +
+                        (box.width - dateTip.outerWidth()) / 2) + 'px'
+                });
+            })
+            .on('mouseleave blur', '.home-date-value', function () {
+                dateTip.hide();
+            });
 
         // --- pill filter, applied on top of whatever is in the text filter ---
         var activeFilter = 'all';
@@ -884,8 +950,11 @@
             <div class="home-figs">
                 <div class="home-figrow">
                     <div class="home-fig">
-                        <span class="home-fig-n">{{ site_stats.public_sample_count|default:0 }}</span>
-                        <span class="home-fig-l">Samples</span>
+                        <button type="button" class="home-fig-button" data-panel="home-samples"
+                                aria-expanded="false" aria-controls="home-samples">
+                            <span class="home-fig-n">{{ site_stats.public_sample_count|default:0 }}</span>
+                            <span class="home-fig-l">Samples <i class="fas fa-chevron-down home-fig-caret" aria-hidden="true"></i></span>
+                        </button>
                     </div>
                     <div class="home-fig">
                         <span class="home-fig-n">{{ site_stats.public_proj_count|default:0 }}</span>
@@ -896,12 +965,45 @@
                         <span class="home-fig-l">ecDNA</span>
                     </div>
                     <div class="home-fig">
-                        <button type="button" class="home-fig-button" id="home-breakdown-toggle"
+                        <button type="button" class="home-fig-button" data-panel="home-breakdown"
                                 aria-expanded="false" aria-controls="home-breakdown">
                             <span class="home-fig-n">{{ site_stats.public_amplicon_classifications_count.otherfscna|default:0 }}</span>
                             <span class="home-fig-l">Other fsCNA <i class="fas fa-chevron-down home-fig-caret" aria-hidden="true"></i></span>
                         </button>
                     </div>
+                </div>
+
+                <div class="home-breakdown" id="home-samples" hidden>
+                    <div class="home-breakdown-title">Public samples</div>
+                    <div class="home-breakdown-row">
+                        <span>Long-read (CoRAL)</span>
+                        <b>{{ sample_breakdown.coral|default:0 }}</b>
+                    </div>
+                    <div class="home-breakdown-note">
+                        in {{ sample_breakdown.coral_projects|default:0 }} project{{ sample_breakdown.coral_projects|pluralize }}
+                    </div>
+                    <div class="home-breakdown-group">
+                        <div class="home-breakdown-sub">By tissue of origin</div>
+                        {% for tissue, count in sample_breakdown.top_tissues %}
+                        <div class="home-breakdown-row">
+                            <span>{{ tissue }}</span>
+                            <b>{{ count }}</b>
+                        </div>
+                        {% empty %}
+                        <div class="home-breakdown-note">No tissue annotations recorded yet.</div>
+                        {% endfor %}
+                        {% if sample_breakdown.other_tissue_count %}
+                        <div class="home-breakdown-note">
+                            + {{ sample_breakdown.other_tissue_count }} more tissue{{ sample_breakdown.other_tissue_count|pluralize }}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% if sample_breakdown.annotated %}
+                    <div class="home-breakdown-note home-breakdown-foot">
+                        {{ sample_breakdown.annotated }} of {{ sample_breakdown.total }} samples
+                        carry a tissue annotation.
+                    </div>
+                    {% endif %}
                 </div>
 
                 <div class="home-breakdown" id="home-breakdown" hidden>
