@@ -636,18 +636,29 @@
 
     .home-news-src { color: #74777c; }
 
+    /* These are links and have to look like links. Charcoal titles read as
+       body copy, so they are the page's link blue with a standing underline;
+       the meta line above each one is what keeps the section from going back
+       to being an undifferentiated wall of blue. No external-link glyph: the
+       old list put one after every title and it wrapped onto a line of its
+       own on most of them, which was a good part of why the block looked
+       broken. */
     a.home-news-title {
         font-size: 14px;
         line-height: 1.4;
-        color: #414042;
+        color: #1f66d0;
         font-weight: 500;
         display: block;
-        text-decoration: none;
+        text-decoration: underline;
+        text-decoration-color: rgba(31, 102, 208, .35);
+        text-underline-offset: 2px;
     }
 
-    a.home-news-title:hover {
-        color: #1f66d0;
-        text-decoration: none;
+    a.home-news-title:hover,
+    a.home-news-title:focus {
+        color: #12489b;
+        text-decoration: underline;
+        text-decoration-color: currentColor;
     }
 
     .home-cite {
