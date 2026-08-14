@@ -2,110 +2,628 @@
 
 {% load mezzanine_tags %}
 {% load custom_filters %}
+
 {% block extra_css %}
 <style>
-    /* Search Slider Styles */
-    .search-slider {
-        position: fixed;
-        left: 0;
-        top: 50%;
-        transform: translate(-350px, -50%);
-        width: 350px;
-        max-height: 90vh;
-        background-color: white;
-        box-shadow: 2px 0 10px rgba(0,0,0,0.1);
-        transition: transform 0.3s ease-in-out;
-        z-index: 1000;
-        overflow-y: auto;
-        border-radius: 0 8px 8px 0;
-        border: 1px solid #e0e0e0;
-        border-radius: 5px;
-        
+    /* ------------------------------------------------------------------
+       Home page.
+
+       Colours are taken from assets already in use: the blue and charcoal
+       come out of img/AmpliconRepository.svg, and the pale blue tint is the
+       #E6EFFB that the stats tables already used.
+
+       Selectors are prefixed .home- because static/css/style.css sets some
+       bare element rules (notably tr:nth-child(odd) striping, and font sizes
+       on table th/td) that would otherwise apply here. style.css is loaded
+       after this block, so anything that needs to win does so on
+       specificity rather than order.
+       ------------------------------------------------------------------ */
+    .home-band {
+        background: #f7f9fc;
+        border-bottom: 1px solid #e3e6ea;
+        padding: 30px 0 26px;
     }
-    
-    .search-slider.open {
-        transform: translate(0, -50%);
+
+    .home-wrap {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 0 40px;
     }
-    
-    .search-slider-toggle {
-        position: fixed;
-        left: 0;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 40px;
-        height: 60px;
-        background-color: #0275d8;
-        color: white;
-        border: none;
-        border-radius: 0 5px 5px 0;
-        cursor: pointer;
-        font-size: 18px;
-        z-index: 999;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-        transition: left 0.3s ease-in-out;
+
+    /* ---- masthead: identity on the left, the counts on the right ---- */
+    .home-masthead {
         display: flex;
         align-items: center;
-        justify-content: center;
+        justify-content: space-between;
+        gap: 50px;
+        flex-wrap: wrap;
     }
-    
-    .search-slider-toggle i {
-        pointer-events: none;
+
+    .home-mark {
+        max-width: 400px;
+        width: 100%;
+        display: block;
     }
-    
-    .search-slider.open + .search-slider-toggle {
-        left: 350px;
+
+    /* The lede spans the whole band rather than sharing the row with the
+       figures, so the full sentence stays on one line at desktop widths
+       instead of wrapping into a narrow ragged column beside the logo. */
+    .home-lede {
+        font-size: 15px;
+        color: #4a4d52;
+        margin: 14px 0 0;
     }
-    
-    .search-slider-toggle:hover {
-        background-color: #025aa5;
+
+    .home-figs {
+        position: relative;
     }
-    
-    .search-slider-content {
-        padding: 2px;
-        
+
+    .home-figrow {
+        display: flex;
+        gap: 34px;
+        padding-top: 6px;
     }
-    
-    /* DataTables length selector styling */
-    #table-length-container {
-        display: flex !important;
+
+    .home-fig {
+        text-align: right;
+    }
+
+    .home-fig .home-fig-n {
+        display: block;
+        font-size: 25px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+        color: #414042;
+        line-height: 1.15;
+    }
+
+    .home-fig .home-fig-l {
+        display: block;
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: .085em;
+        text-transform: uppercase;
+        color: #74777c;
+        margin-top: 2px;
+    }
+
+    /* The classification total is a disclosure: the headline number is a
+       roll-up of three classes, so it has to be able to say which. */
+    .home-fig-button {
+        appearance: none;
+        background: none;
+        border: 0;
+        padding: 0;
+        font-family: inherit;
+        text-align: right;
+        cursor: pointer;
+    }
+
+    .home-fig-button:hover .home-fig-l,
+    .home-fig-button[aria-expanded="true"] .home-fig-l {
+        color: #1f66d0;
+    }
+
+    .home-fig-caret {
+        font-size: 8px;
+        margin-left: 3px;
+        transition: transform 0.15s ease;
+        display: inline-block;
+    }
+
+    .home-fig-button[aria-expanded="true"] .home-fig-caret {
+        transform: rotate(180deg);
+    }
+
+    .home-breakdown {
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        z-index: 20;
+        width: 268px;
+        background: #fff;
+        border: 1px solid #e3e6ea;
+        border-radius: 8px;
+        box-shadow: 0 6px 20px rgba(20, 30, 50, .13);
+        padding: 13px 15px 11px;
+        text-align: left;
+    }
+
+    .home-breakdown-title {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: .085em;
+        text-transform: uppercase;
+        color: #9aa0a6;
+        padding-bottom: 6px;
+        margin-bottom: 7px;
+        border-bottom: 1px solid #eef0f3;
+    }
+
+    .home-breakdown-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 13px;
+        color: #4a4d52;
+        padding: 3px 0;
+    }
+
+    .home-breakdown-row b {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        color: #414042;
+    }
+
+    /* The three classes that roll up into the headline number, indented under
+       the subtotal they belong to so the arithmetic is visible. */
+    .home-breakdown-group {
+        margin-top: 7px;
+        padding-top: 6px;
+        border-top: 1px solid #eef0f3;
+    }
+
+    .home-breakdown-group .home-breakdown-row {
+        padding-left: 13px;
+        color: #74777c;
+        font-size: 12.5px;
+    }
+
+    .home-breakdown-sub {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: .085em;
+        text-transform: uppercase;
+        color: #9aa0a6;
+        margin-bottom: 2px;
+    }
+
+    .home-breakdown a {
+        color: #9aa0a6;
+        font-size: 11px;
+    }
+
+    .home-breakdown a:hover {
+        color: #1f66d0;
+    }
+
+    .home-breakdown abbr[title] {
+        color: #9aa0a6;
+        font-size: 11px;
+        cursor: help;
+        border: 0;
+        text-decoration: none;
+    }
+
+    /* ---- the search that used to hide behind the left-edge tab ---- */
+    .home-searchrow {
+        display: flex;
         align-items: center;
+        gap: 16px;
+        margin: 20px 0 0;
+        flex-wrap: wrap;
     }
-    
-    #unifiedProjectTable_length {
-        margin: 0 !important;
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center;
+
+    .home-search {
+        display: flex;
+        align-items: stretch;
+        background: #fff;
+        flex: 1 1 460px;
+        min-width: 0;
+        border: 1px solid #cfd6de;
+        border-radius: 8px;
+        box-shadow: 0 1px 2px rgba(20,30,50,.05);
+        overflow: hidden;
     }
-    
-    #unifiedProjectTable_length label {
-        display: flex !important;
+
+    .home-scope {
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        border: 0;
+        border-right: 1px solid #e3e6ea;
+        background: #fbfcfd url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%2374777c' stroke-width='1.6'%3E%3Cpath d='M2.5 4.5L6 8l3.5-3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 12px center;
+        padding: 0 30px 0 14px;
+        font-family: inherit;
+        font-size: 13.5px;
+        font-weight: 600;
+        color: #414042;
+        cursor: pointer;
+        outline: 0;
+    }
+
+    .home-search input[type="text"] {
+        flex: 1;
+        border: 0;
+        outline: 0;
+        padding: 13px 15px;
+        font-size: 15px;
+        font-family: inherit;
+        color: #2f3033;
+        min-width: 0;
+        margin: 0;
+    }
+
+    .home-search input[type="text"]::placeholder {
+        color: #9aa0a6;
+    }
+
+    .home-search button[type="submit"] {
+        border: 0;
+        background: #1f66d0;
+        color: #fff;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        padding: 0 24px;
+        cursor: pointer;
+    }
+
+    .home-search button[type="submit"]:hover {
+        background: #12489b;
+    }
+
+    .home-examples {
+        font-size: 12.5px;
+        color: #74777c;
+        display: flex;
+        gap: 7px;
         align-items: center;
-        margin: 0 !important;
+        flex-wrap: wrap;
+    }
+
+    .home-ex {
+        appearance: none;
+        border: 1px solid #e3e6ea;
+        border-radius: 999px;
+        padding: 3px 10px;
+        background: #fff;
+        color: #1f66d0;
+        font-family: inherit;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    .home-ex:hover {
+        border-color: #5894f4;
+    }
+
+    .home-advanced {
+        font-size: 12.5px;
+        margin-left: 3px;
+    }
+
+    /* ---- what you get out of the resource ---- */
+    .home-caps {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+        margin-top: 20px;
+    }
+
+    .home-cap {
+        background: #fff;
+        border: 1px solid #e3e6ea;
+        border-radius: 8px;
+        padding: 13px 15px 12px;
+    }
+
+    .home-cap img {
+        width: 100%;
+        max-width: 170px;
+        height: 92px;
+        object-fit: contain;
+        display: block;
+        margin: 0 auto 9px;
+    }
+
+    .home-cap b {
+        display: block;
+        font-size: 13px;
+        color: #414042;
+        font-weight: 600;
+    }
+
+    .home-cap span {
+        display: block;
+        font-size: 11.5px;
+        color: #74777c;
+        margin-top: 2px;
+        line-height: 1.4;
+    }
+
+    a.home-cap {
+        display: block;
+        text-decoration: none;
+    }
+
+    a.home-cap:hover {
+        border-color: #5894f4;
+        text-decoration: none;
+    }
+
+    /* ---- one shared section label, so the page reads as one document ---- */
+    .home-eyebrow {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .1em;
+        text-transform: uppercase;
+        color: #9aa0a6;
+        padding-bottom: 7px;
+        margin: 0 0 14px;
+        border-bottom: 1px solid #e3e6ea;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .home-eyebrow .home-eyebrow-aside {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: .04em;
+        color: #1f66d0;
+    }
+
+    .home-section {
+        margin-top: 34px;
+    }
+
+    /* ---- project table ---- */
+    .home-table-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+    }
+
+    .home-filter {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        border: 1px solid #e3e6ea;
+        border-radius: 6px;
+        padding: 0 12px;
+        background: #fff;
+        flex: 1 1 300px;
+        max-width: 460px;
+    }
+
+    .home-filter input {
+        border: 0;
+        outline: 0;
+        padding: 9px 0;
+        font-size: 14px;
+        flex: 1;
+        font-family: inherit;
+        color: #2f3033;
+        margin: 0;
+        min-width: 0;
+    }
+
+    .home-filter input::placeholder {
+        color: #9aa0a6;
+    }
+
+    .home-pills {
+        display: flex;
+        gap: 6px;
+        margin-left: auto;
+        flex-wrap: wrap;
+    }
+
+    .home-pill {
+        appearance: none;
+        font-family: inherit;
+        font-size: 12.5px;
+        padding: 7px 13px;
+        border-radius: 999px;
+        border: 1px solid #e3e6ea;
+        color: #74777c;
+        background: #fff;
+        cursor: pointer;
+    }
+
+    .home-pill:hover {
+        border-color: #9aa0a6;
+    }
+
+    .home-pill.is-on {
+        background: #414042;
+        border-color: #414042;
+        color: #fff;
+    }
+
+    #home-length-container select {
+        font-family: inherit;
+        font-size: 12.5px;
+        padding: 6px 8px;
+        border: 1px solid #e3e6ea;
+        border-radius: 6px;
+        color: #74777c;
+        background: #fff;
+        width: auto;
+        margin: 0 4px;
+    }
+
+    #home-length-container label {
+        display: flex;
+        align-items: center;
+        margin: 0;
         white-space: nowrap;
         font-weight: normal;
+        font-size: 12.5px;
+        color: #74777c;
     }
-    
-    #unifiedProjectTable_length select {
-        width: auto !important;
-        display: inline-block !important;
-        margin: 0 5px !important;
-        padding: 2px 8px !important;
+
+    .home-table-scroll {
+        overflow-x: auto;
     }
-    
-    /* Make Sample count column wider to prevent header wrapping */
-    #unifiedProjectTable th:nth-child(5),
-    #unifiedProjectTable td:nth-child(5) {
-        min-width: 70px;
+
+    table.home-projects {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    table.home-projects th {
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: #74777c;
+        padding: 9px 12px;
+        border-bottom: 1px solid #e3e6ea;
         white-space: nowrap;
     }
 
+    table.home-projects td {
+        padding: 11px 12px;
+        border-bottom: 1px solid #eef0f3;
+        vertical-align: top;
+        font-size: 13px;
+    }
+
+    /* style.css stripes every odd row site-wide; this table is not striped. */
+    table.home-projects tbody tr:nth-child(odd),
+    table.home-projects tbody tr:nth-child(even) {
+        background-color: transparent;
+    }
+
+    table.home-projects tbody tr:hover {
+        background-color: #fafbfd;
+    }
+
+    .home-pname {
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .home-projects .project-description-cell {
+        color: #74777c;
+        font-size: 12.5px;
+        line-height: 1.45;
+    }
+
+    .home-num {
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    th.home-num {
+        text-align: right;
+    }
+
+    .home-date {
+        color: #74777c;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* The cell shows a compact date; the full local timestamp is on hover.
+       The dotted rule and help cursor are what advertise that there is
+       something to hover over -- without them the tooltip is undiscoverable. */
+    .home-date-value {
+        border-bottom: 1px dotted #b9bfc7;
+        cursor: help;
+    }
+
+    .home-date-value:hover {
+        border-bottom-color: #1f66d0;
+        color: #414042;
+    }
+
+    /* Featured rows carry a gold rule instead of spending a column on a badge. */
+    tr.home-featured td:first-child {
+        box-shadow: inset 3px 0 0 #e0a800;
+    }
+
+    .home-chip {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        padding: 1px 6px;
+        border-radius: 3px;
+        vertical-align: 1px;
+        white-space: nowrap;
+    }
+
+    .home-chip-featured { background: #fdf3d6; color: #8a6300; }
+    .home-chip-private  { background: #f0f1f3; color: #5a5d63; }
+    .home-chip-coral    { background: #e6f4ee; color: #2f855a; }
+
+    .home-hidden-public {
+        color: #c0392b;
+        font-weight: bold;
+        cursor: help;
+    }
+
+    /* ---- updates, replacing the bulleted list of blue links ---- */
+    .home-latest {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 30px;
+    }
+
+    .home-news-meta {
+        font-size: 11px;
+        letter-spacing: .04em;
+        color: #9aa0a6;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 3px;
+        flex-wrap: wrap;
+    }
+
+    .home-tag {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: .07em;
+        text-transform: uppercase;
+        padding: 1px 6px;
+        border-radius: 3px;
+    }
+
+    .home-tag-release { background: #eef4fd; color: #12489b; }
+    .home-tag-paper   { background: #f0f1f3; color: #5a5d63; }
+
+    .home-news-src { color: #74777c; }
+
+    a.home-news-title {
+        font-size: 14px;
+        line-height: 1.4;
+        color: #414042;
+        font-weight: 500;
+        display: block;
+        text-decoration: none;
+    }
+
+    a.home-news-title:hover {
+        color: #1f66d0;
+        text-decoration: none;
+    }
+
+    .home-cite {
+        font-size: 13px;
+        color: #74777c;
+        line-height: 1.5;
+        margin: 0;
+    }
+
+    /* ---- description expander (unchanged behaviour, restyled) ---- */
     .project-description-toggle {
         appearance: none;
         background: none;
         border: 0;
         border-radius: 2px;
-        color: #007bff;
+        color: #1f66d0;
         cursor: pointer;
         font-family: inherit;
         font-size: 0.86em;
@@ -117,7 +635,7 @@
     }
 
     .project-description-toggle:hover {
-        color: #0056b3;
+        color: #12489b;
         text-decoration: underline;
     }
 
@@ -142,107 +660,186 @@
             transition: none;
         }
     }
-    
-    /* Custom tooltip for hidden public indicator */
-    .hidden-public-indicator {
-        position: relative;
-        cursor: pointer;
+
+    /* ---- narrower viewports ---- */
+    @media (max-width: 1100px) {
+        .home-caps { grid-template-columns: repeat(2, 1fr); }
+        .home-latest { grid-template-columns: 1fr; gap: 18px; }
     }
-    
-    .hidden-public-indicator::after {
-        content: attr(data-tooltip);
-        position: absolute;
-        left: 100%;
-        top: 50%;
-        transform: translateY(-50%);
-        margin-left: 10px;
-        padding: 8px 12px;
-        background-color: #333;
-        color: white;
-        font-size: 12px;
-        font-weight: normal;
-        white-space: nowrap;
-        border-radius: 4px;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.2s;
-        z-index: 1000;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
-    
-    .hidden-public-indicator:hover::after {
-        opacity: 1;
-    }
-    
-    /* Tooltip arrow */
-    .hidden-public-indicator::before {
-        content: '';
-        position: absolute;
-        left: 100%;
-        top: 50%;
-        transform: translateY(-50%);
-        margin-left: 5px;
-        border: 5px solid transparent;
-        border-right-color: #333;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.2s;
-        z-index: 1000;
-    }
-    
-    .hidden-public-indicator:hover::before {
-        opacity: 1;
+
+    @media (max-width: 760px) {
+        .home-wrap { padding: 0 20px; }
+        .home-caps { grid-template-columns: 1fr; }
+        .home-figrow { gap: 22px; padding-top: 16px; }
+        .home-fig { text-align: left; }
+        .home-pills { margin-left: 0; }
     }
 </style>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    // get the format and sort functions from the included file
+    // Shared date sorting helper (also defines formatDate/formatDates, unused here).
     {% include 'includes/datatable_date_utils.html' %}
 
     $(document).ready(function () {
-        // Custom sorting for the Type column (Featured -> Public -> Private)
-        $.fn.dataTable.ext.type.order['project-type-pre'] = function(data) {
-            // Extract the text from the badge span
-            var type = $(data).text().trim().toLowerCase();
-            // Return sort order: Featured=1, Public=2, Private=3
-            if (type === 'featured') return 1;
-            if (type === 'public') return 2;
-            if (type === 'private') return 3;
-            return 4; // fallback for any unknown types
-        };
-        
-        // Initialize the single unified DataTable
+        // --- hero search: one field, with the scope choosing which of the
+        // search_results POST parameters it is submitted as. -----------------
+        var scopeSelect = document.getElementById('home-scope');
+        var queryInput = document.getElementById('home-query');
+
+        function applyScope() {
+            var option = scopeSelect.options[scopeSelect.selectedIndex];
+            queryInput.name = option.value;
+            queryInput.placeholder = option.getAttribute('data-placeholder');
+        }
+
+        if (scopeSelect && queryInput) {
+            scopeSelect.addEventListener('change', applyScope);
+            applyScope();
+        }
+
+        // Example queries fill the field and set the scope, but deliberately do
+        // NOT submit. search_results loads every public project document in
+        // full (get_samples_from_features needs runs and sample_data), so its
+        // cost scales with the whole corpus rather than with the result size.
+        // One-click searches on the busiest page would turn a traffic spike
+        // into a pile of concurrent full scans; requiring the user to press
+        // Search keeps the examples as discoverability without arming them.
+        $('.home-ex').on('click', function () {
+            var button = $(this);
+            scopeSelect.value = button.attr('data-scope');
+            applyScope();
+            queryInput.value = button.attr('data-query');
+            queryInput.focus();
+        });
+
+        // --- "Other fsCNA" is a subtotal, so it opens the class breakdown it
+        // is a subtotal of. Hand-rolled rather than a Bootstrap popover so the
+        // panel markup (and the FAN primer link inside it) stays in the
+        // template where it can be read. ------------------------------------
+        var breakdownToggle = $('#home-breakdown-toggle');
+        var breakdownPanel = $('#home-breakdown');
+
+        function setBreakdown(open) {
+            breakdownToggle.attr('aria-expanded', open ? 'true' : 'false');
+            breakdownPanel.prop('hidden', !open);
+        }
+
+        breakdownToggle.on('click', function (event) {
+            event.stopPropagation();
+            setBreakdown(breakdownToggle.attr('aria-expanded') !== 'true');
+        });
+
+        // Clicks inside the panel must not close it -- it contains a link.
+        breakdownPanel.on('click', function (event) {
+            event.stopPropagation();
+        });
+
+        $(document).on('click', function () {
+            setBreakdown(false);
+        });
+
+        $(document).on('keydown', function (event) {
+            if (event.key === 'Escape' && breakdownToggle.attr('aria-expanded') === 'true') {
+                setBreakdown(false);
+                breakdownToggle.focus();
+            }
+        });
+
+        // "Advanced" reuses the search modal already built into the header,
+        // so there is only one copy of the full search form on the page.
+        $('#home-advanced').on('click', function (event) {
+            event.preventDefault();
+            $('#openSearchModal').trigger('click');
+        });
+
+        // --- dates: compact in the cell, full local timestamp on hover.
+        // formatDate() from datatable_date_utils is the same function the old
+        // table used to render the whole column, so the tooltip is character
+        // for character the local-time string that used to be shown inline.
+        // The compact date is derived from the same local Date it builds, so
+        // the two can never disagree by a day either side of midnight.
+        // Runs before DataTables is initialised so the table caches the text
+        // that is actually displayed. --------------------------------------
+        $('#unifiedProjectTable .home-date').each(function () {
+            var cell = $(this);
+            var raw = cell.text().trim();
+            var parsed = Date.parse(raw);
+            if (isNaN(parsed)) {
+                // Unparseable stored date: leave the raw value alone rather
+                // than showing an invalid one.
+                return;
+            }
+            var utcDate = new Date(parsed);
+            var localDate = new Date(utcDate.getTime() - utcDate.getTimezoneOffset() * 60000);
+            var month = String(localDate.getMonth() + 1);
+            var day = String(localDate.getDate());
+            var compact = localDate.getFullYear() + '-' +
+                (month.length < 2 ? '0' + month : month) + '-' +
+                (day.length < 2 ? '0' + day : day);
+
+            cell.empty().append(
+                $('<span class="home-date-value"></span>')
+                    .text(compact)
+                    .attr('title', formatDate(raw))
+            );
+        });
+
+        // --- pill filter, applied on top of whatever is in the text filter ---
+        var activeFilter = 'all';
+
+        $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
+            if (settings.nTable.id !== 'unifiedProjectTable') {
+                return true;
+            }
+            if (activeFilter === 'all') {
+                return true;
+            }
+            var row = settings.aoData[dataIndex].nTr;
+            if (activeFilter === 'long-read') {
+                return row.getAttribute('data-tools').indexOf('CoRAL') !== -1;
+            }
+            return row.getAttribute('data-project-type') === activeFilter;
+        });
+
         var unifiedTable = $('#unifiedProjectTable').DataTable({
             searching: true,
-            dom: 'lrtip', // Keep default layout temporarily
+            dom: 'lrtip',
             columnDefs: [
                 {
-                    targets: 0, // "Type" column (zero-based index)
-                    type: 'project-type'
+                    // Visibility rank, hidden: it orders the table without
+                    // spending a visible column on a badge.
+                    targets: 0,
+                    visible: false,
+                    searchable: false
                 },
                 {
-                    targets: 3, // "Last Updated" column (zero-based index)
+                    targets: 3,
                     type: 'custom-date'
                 }
             ],
-            order: [[0, 'asc'], [3, 'desc']], // Sort by Type first (Featured->Public->Private), then by date (newest first)
+            order: [[0, 'asc'], [3, 'desc']],
             pageLength: 10,
             language: {
                 emptyTable: "No projects found matching your search",
                 zeroRecords: "No projects found matching your search",
-                lengthMenu: "Show _MENU_ entries"
+                lengthMenu: "Show _MENU_"
             }
         });
-        
-        // Manually move the length selector to our custom container
-        var lengthSelector = $('#unifiedProjectTable_length').detach();
-        $('#table-length-container').append(lengthSelector);
-        
-        // Connect the unified search box to the table
-        $('#unified-project-search').on('keyup', function() {
+
+        $('#unifiedProjectTable_length').detach().appendTo('#home-length-container');
+
+        $('#home-project-filter').on('keyup', function () {
             unifiedTable.search(this.value).draw();
+        });
+
+        $('.home-pill').on('click', function () {
+            var button = $(this);
+            $('.home-pill').removeClass('is-on').attr('aria-pressed', 'false');
+            button.addClass('is-on').attr('aria-pressed', 'true');
+            activeFilter = button.attr('data-filter');
+            unifiedTable.draw();
         });
 
         // Keep descriptions compact while allowing the full text to expand in place.
@@ -271,26 +868,7 @@
             }
         );
     });
-    // Call the formatDates function when the page is loaded
-    document.addEventListener('DOMContentLoaded', formatDates);
-
-    // Search Slider Toggle
-    $(document).ready(function() {
-        $('#search-slider-toggle').on('click', function() {
-            $('#search-slider').toggleClass('open');
-        });
-        
-        // Close slider when clicking outside
-        $(document).on('click', function(event) {
-            if (!$(event.target).closest('#search-slider, #search-slider-toggle').length) {
-                $('#search-slider').removeClass('open');
-            }
-        });
-    });
-   
 </script>
-
-
 {% endblock %}
 
 {% block meta_title %} Home
@@ -298,316 +876,262 @@
 
 {% block index %}
 
-<head>
-    <title>
-        AmpliconRepository
-    </title>
-</head>
+<div class="home-band">
+    <div class="home-wrap">
 
-    <!-- Search Slider -->
-    <div id="search-slider" class="search-slider">
-        <div class="search-slider-content">
-            <div class="search-box" style="padding: 20px; background-color: #f8f9fa; border-radius: 5px; font-size: 0.9em;">
-                {% include 'includes/searchbox.html' %}
-            </div>
-        </div>
-    </div>
-    <button id="search-slider-toggle" class="search-slider-toggle" aria-label="Toggle search" title="Advanced Search">
-        <i class="fas fa-search"></i>
-    </button>
-
-    <div class="container main-container row" style="max-width:1400px; width:90%; margin:auto;">
-    <div class="col-md-8">
-
-
-        <style>
-            .nav-tabs .nav-link {
-                color: gray;
-                border: 0;
-                border-bottom: 1px solid grey;
-            }
-            
-            .nav-tabs .nav-link:hover {
-                border: 0;
-                border-bottom: 1px solid grey;
-            }
-            
-            .nav-tabs .nav-link.active {
-                color: #000000;
-                border: 0;
-                border-radius: 0;
-                border-bottom: 2px solid  #0275d8 ;
-            }
-
-            .col-lg-3 {
-                padding:0px
-            }
-        </style>
-            <div style="margin-top: 20px">
-                <img src="{{ STATIC_URL }}img/AmpliconRepository.svg" width="100%">
-                <hr>
-                <div stlye="margin-top: 30px;">
-                    <p style="font-size:18px;">A repository of focal amplification reconstructions from AmpliconArchitect (short-read) and CoRAL (long-read). Explore and download focal amplification predictions & annotations.</p>
-                </div>
-                <div class="row">
-                    <div class="col-lg-3">
-                        <div class="card text-center" style="width: 12rem; border: none; margin: auto; padding: 5px">
-                            <img class="card-img-top" src="{{ STATIC_URL }}img/250w/cn_cartoon.png" style="width: 100%; margin: auto">
-                            <div class="card-body" style="padding-bottom: 0.75rem">
-                                <p class="card-title">Copy-number data exploration</p>
-                            </div>
-                        </div>
+        <div class="home-masthead">
+            <img class="home-mark" src="{{ STATIC_URL }}img/AmpliconRepository.svg" alt="AmpliconRepository">
+            <div class="home-figs">
+                <div class="home-figrow">
+                    <div class="home-fig">
+                        <span class="home-fig-n">{{ site_stats.public_sample_count|default:0 }}</span>
+                        <span class="home-fig-l">Samples</span>
                     </div>
-                    <div class="col-lg-3">
-                        <div class="card text-center" style="width: 12rem; border: none; margin: auto; padding: 5px">
-                            <img class="card-img-top" src="{{ STATIC_URL }}img/250w/aa_sashimi_cartoon.png" style="width: 100%; margin: auto">
-                            <div class="card-body" style="padding-bottom: 0.75rem">
-                                <p class="card-title">AmpliconArchitect output files</p>
-                            </div>
-                        </div>
+                    <div class="home-fig">
+                        <span class="home-fig-n">{{ site_stats.public_proj_count|default:0 }}</span>
+                        <span class="home-fig-l">Projects</span>
                     </div>
-                    <div class="col-lg-3">
-                        <div class="card text-center" style="width: 12rem; border: none; margin: auto; padding: 5px">
-                            <img class="card-img-top" src="{{ STATIC_URL }}img/250w/classes.png" style="width: 100%; margin: auto">
-                            <div class="card-body" style="padding-bottom: 0.75rem">
-                                <p class="card-title">Focal amplification classifications</p>
-                            </div>
-                        </div>
+                    <div class="home-fig">
+                        <span class="home-fig-n">{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</span>
+                        <span class="home-fig-l">ecDNA</span>
                     </div>
-                    <div class="col-lg-3">
-                        <div class="card text-center" style="width: 12rem; border: none; margin: auto; padding: 5px">
-                            <img class="card-img-top" src="{{ STATIC_URL }}img/250w/ecDNA_contents.png" style="width: 100%; margin: auto">
-                            <div class="card-body" style="padding-bottom: 0.75rem">
-                                <p class="card-title">Coordinates & gene annotations</p>
-                            </div>
-                        </div>
+                    <div class="home-fig">
+                        <button type="button" class="home-fig-button" id="home-breakdown-toggle"
+                                aria-expanded="false" aria-controls="home-breakdown">
+                            <span class="home-fig-n">{{ site_stats.public_amplicon_classifications_count.otherfscna|default:0 }}</span>
+                            <span class="home-fig-l">Other fsCNA <i class="fas fa-chevron-down home-fig-caret" aria-hidden="true"></i></span>
+                        </button>
                     </div>
                 </div>
-        </div>
-        <hr>
-        <div style="margin-bottom: 20px; border: 0.5px solid grey; padding: 20px; border-radius: 10px;">
-            <div>
-                <div>
-                    <!-- Unified Search Box and Length Selector -->
-                    <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: nowrap; min-width: 0;">
-                        <div style="display: flex; align-items: center; flex: 1 1 auto; min-width: 0;">
-                            <label for="unified-project-search" style="font-weight: bold; margin-right: 10px; white-space: nowrap; margin-bottom: 0; flex-shrink: 0;">Search projects:</label>
-                            <input type="text" id="unified-project-search" class="form-control" placeholder="Project name or description" style="min-width: 0; flex: 1 1 auto; margin-bottom: 0;">
-                        </div>
-                        <div id="table-length-container" style="flex: 0 0 auto; display: flex; align-items: center;"></div>
+
+                <div class="home-breakdown" id="home-breakdown" hidden>
+                    <div class="home-breakdown-title">Focal amplification counts</div>
+                    <div class="home-breakdown-row">
+                        <span>ecDNA</span>
+                        <b>{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</b>
                     </div>
-                    
-                    <!-- Single Unified Table -->
-                    <div style="overflow-x: auto;">
-                        <table id='unifiedProjectTable' class="table" style="padding-top: 20px; width:100%">
-                            <thead>
-                                <tr>
-                                    <th></th>
-                                    <th>Name</th>
-                                    <th>Description</th>
-                                    <th>Last Updated</th>
-                                    <th>Sample count</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for project in featured_projects %}
-                                <tr data-project-type="featured">
-                                    <td><span class="badge badge-success">Featured</span></td>
-                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
-                                    </td>
-                                    {% include 'includes/project_description_cell.html' %}
-                                    <td class="date">{{ project.date }}</td>
-                                    <td>{{ project.sample_count }}</td>
-                                </tr>
-                                {% endfor %}
-                                
-                                {% for project in public_projects %}
-                                <tr data-project-type="public">
-                                    <td><span class="badge badge-primary">Public</span></td>
-                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
-                                    </td>
-                                    {% include 'includes/project_description_cell.html' %}
-                                    <td class="date">{{ project.date }}</td>
-                                    <td>{{ project.sample_count }}</td>
-                                </tr>
-                                {% endfor %}
-                                
-                                {% if user.is_authenticated %}
-                                {% for project in private_projects %}
-                                <tr data-project-type="private">
-                                    <td style="white-space: nowrap;">
-                                        <span class="badge" style="background-color: #BBBBBB; color: white;">Private</span>{% if project.visibility_display == 'Hidden Public' %}<span class="hidden-public-indicator" style="color: red; font-weight: bold; font-size: 1.2em; margin-left: 2px;" data-tooltip="Hidden Public: Anyone with the link can view this project">*</span>{% endif %}
-                                    </td>
-                                    <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                                      <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
-                                    </td>
-                                    {% include 'includes/project_description_cell.html' %}
-                                    <td class="date">{{ project.date }}</td>
-                                    <td>{{ project.sample_count }}</td>
-                                </tr>
-                                {% endfor %}
-                                {% endif %}
-                            </tbody>
-                        </table>
+                    <div class="home-breakdown-row">
+                        <span>BFB <abbr title="Breakage-fusion-bridge"><i class="far fa-question-circle" aria-hidden="true"></i></abbr></span>
+                        <b>{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</b>
+                    </div>
+                    <div class="home-breakdown-row">
+                        <span>FAN <a href="https://github.com/AmpliconSuite/AmpliconClassifier/blob/main/docs/fan_primer.md"
+                                     target="_blank" rel="noopener noreferrer"
+                                     title="Focal amplification in neochromosome - click to read more"
+                                     aria-label="Focal amplification in neochromosome - click to read more"><i class="far fa-question-circle" aria-hidden="true"></i></a></span>
+                        <b>{{ site_stats.public_amplicon_classifications_count.FAN|default:0 }}</b>
+                    </div>
+                    <div class="home-breakdown-group">
+                        <div class="home-breakdown-sub">Other fsCNA</div>
+                        <div class="home-breakdown-row">
+                            <span>Complex non-cyclic</span>
+                            <b>{{ site_stats.public_amplicon_classifications_count.Complex_non_cyclic|default:0 }}</b>
+                        </div>
+                        <div class="home-breakdown-row">
+                            <span>Linear amplification</span>
+                            <b>{{ site_stats.public_amplicon_classifications_count.Linear_amplification|default:0 }}</b>
+                        </div>
+                        <div class="home-breakdown-row">
+                            <span>Virus</span>
+                            <b>{{ site_stats.public_amplicon_classifications_count.Virus|default:0 }}</b>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        
-    </div>
-    <div class="col-md-4">
-        <br>
-        <h4 style="margin-top: 20px">News & Updates</h4>
 
-        <ul>
-            <li style="margin-bottom:10px">
-                <a href="https://docs.ampliconrepository.org/en/latest/getting-started/" target="_blank">New: AmpliconRepository now accepts long-read reconstructions from CoRAL, in addition to AmpliconArchitect outputs <i class="fas fa-external-link-alt"></i></a>
-            </li>
-            <li style="margin-bottom:10px">
-                <a href="https://docs.ampliconrepository.org/en/latest/api/">New: list public projects and download project archives from the command line with the AmpliconRepository API <i class="fas fa-external-link-alt"></i></a>
-            </li>
-            <li style="margin-bottom:10px">
-                <a href="https://www.nature.com/articles/s41588-024-01949-7" target="_blank">Leveraging large-scale genomic datasets to track extrachromosomal DNA across cancer stages <i class="fas fa-external-link-alt"></i></a>
-            </li>
-            <li style="margin-bottom:10px">
-                <a href="https://www.nature.com/articles/s41588-023-01551-3" target="_blank">Study of ecDNA in medulloblastoma reveals intratumor heterogeneity of ecDNA <i class="fas fa-external-link-alt"></i></a>
-            </li>
-            <li style="margin-bottom:10px">
-                <a href="https://www.nature.com/articles/d41586-023-00982-6" target="_blank">Study of ecDNA in Barrett's esophagus patients shows ecDNA arises early in cancer development <i class="fas fa-external-link-alt"></i></a>
-            </li>
-        </ul>
-        <div id="accordion" >
-            <div class="card">
-                <style>
-                    .btn-link:not([aria-expanded="false"]).collapsed::before {
-                        content: "";
-                        display: inline-block;
-                        border-style: solid;
-                        border-width: 0.4em 0 0.4em 0.4em;
-                        border-color: transparent transparent transparent #000;
-                        margin-right: 0.5em;
-                        transform: rotate(0deg);
-                        vertical-align: middle;
-                    }
+        <p class="home-lede">
+            A repository of focal amplification reconstructions and classifications from
+            AmpliconArchitect (short-read) and CoRAL (long-read). Explore and download
+            predictions &amp; annotations.
+        </p>
 
-                    .btn-link[aria-expanded="true"]::before {
-                        content: "";
-                        display: inline-block;
-                        border-style: solid;
-                        border-width: 0.4em 0 0.4em 0.4em;
-                        border-color: transparent transparent transparent #000;
-                        margin-right: 0.5em;
-                        transform: rotate(90deg);
-                        vertical-align: middle;
-                    }
+        <form class="home-searchrow" id="home-search-form" method="POST" action="{% url 'search_results' %}">
+            {% csrf_token %}
+            <div class="home-search">
+                <select class="home-scope" id="home-scope" aria-label="What to search">
+                    <option value="genequery" data-placeholder="Find amplified genes, e.g. MYC or MYC&amp;EGFR">Genes</option>
+                    <option value="project_name" data-placeholder="Find a project by name">Projects</option>
+                    <option value="metadata_sample_name" data-placeholder="Find a sample by name">Samples</option>
+                    <option value="metadata_cancer_tissue" data-placeholder="Find a cancer type or tissue of origin">Cancer type</option>
+                </select>
+                <input type="text" id="home-query" name="genequery"
+                       placeholder="Find amplified genes, e.g. MYC or MYC&amp;EGFR"
+                       aria-label="Search query">
+                <button type="submit">Search</button>
+            </div>
+            <div class="home-examples">
+                Try
+                <button type="button" class="home-ex" data-scope="genequery" data-query="MYC">MYC</button>
+                <button type="button" class="home-ex" data-scope="genequery" data-query="EGFR">EGFR</button>
+                <button type="button" class="home-ex" data-scope="genequery" data-query="CDK4&amp;MDM2">CDK4 &amp; MDM2</button>
+                <button type="button" class="home-ex" data-scope="metadata_cancer_tissue" data-query="glioblastoma">glioblastoma</button>
+                <a href="#" id="home-advanced" class="home-advanced">Advanced</a>
+            </div>
+        </form>
 
-                    .btn-link:not([aria-expanded="true"]).collapsed::before {
-                        content: "";
-                        display: inline-block;
-                        border-style: solid;
-                        border-width: 0.4em 0 0.4em 0.4em;
-                        border-color: transparent transparent transparent #000;
-                        margin-right: 0.5em;
-                        transform: rotate(0deg);
-                        vertical-align: middle;
-                    }
-
-                    .table-not-striped tbody tr:nth-of-type(odd) {
-                        background-color: transparent!important;
-                    }
-                    .table-not-striped  th {
-                        background-color: #E6EFFB;
-                        color: #696a6c
-                    }
-                    .table-not-striped td {
-                        color: #696a6c
-                    }
-                </style>
-
-              <div class="card-header" id="headingOne" style="background:none;">
-                <h4 class="mb-0">
-                    <button class="btn btn-link collapsed" data-toggle="collapse" data-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne" style="padding: 0.25rem 0.5rem; font-weight: bold;">How to cite AmpliconRepository</button>
-                </h4>
-              </div>
-
-              <div id="collapseOne" class="collapse" aria-labelledby="headingOne" data-parent="#accordion" >
-                <div class="card-body">
-                    <a href="https://www.biorxiv.org/content/10.1101/2024.05.06.592768v1" target="_blank">Luebeck J, Huang E, et al. "AmpliconSuite: an end-to-end workflow for analyzing focal amplifications in cancer genomes." bioRxiv. 2024.</a>
-                    <br>
-                    <br>
-                    To cite results obtained from the site, please refer to the uploader's associated publication where possible.
-                </div>
-              </div>
+        <div class="home-caps">
+            <div class="home-cap">
+                <img src="{{ STATIC_URL }}img/250w/cn_cartoon.png" alt="">
+                <b>Copy number</b>
+                <span>Interactive per-sample copy-number profiles</span>
+            </div>
+            <div class="home-cap">
+                <img src="{{ STATIC_URL }}img/250w/aa_sashimi_cartoon.png" alt="">
+                <b>Reconstructions</b>
+                <span>AmpliconArchitect and CoRAL output files</span>
+            </div>
+            <div class="home-cap">
+                <img src="{{ STATIC_URL }}img/250w/classes.png" alt="">
+                <b>Classifications</b>
+                <span>ecDNA, BFB, FAN and other focal amplifications</span>
+            </div>
+            <div class="home-cap">
+                <img src="{{ STATIC_URL }}img/250w/ecDNA_contents.png" alt="">
+                <b>Annotations</b>
+                <span>Amplicon coordinates and the genes they carry</span>
             </div>
         </div>
-        <div>
-            <h4 style="margin-top: 20px; font-size: 1.2em;">What's publicly available?</h4>
-            <hr style="max-width: 60%; margin-left: 0;">
-            <div style="margin-left: 0%;">
-                <table id='statsTable0' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
-                    <col width="50%">
-                    <col width="50%">
-                    <tbody>
-                        <tr>
-                            <td style="font-size: 1em;">Projects</td>
-                            <td style="font-size: 1em;">{{ site_stats.public_proj_count|default:0 }}</td>
-                        </tr>
-                        <tr>
-                            <td style="font-size: 1em;">Samples</td>
-                            <td style="font-size: 1em;">{{ site_stats.public_sample_count|default:0 }}</td>
-                        </tr>
-                    </tbody>
-                </table>
-                <hr style="max-width: 60%; margin-left: 0;">
-                <p style="font-size: 1em;">Focal amplification counts</p>
-                <table id='statsTable1' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
-                    <col width="50%">
-                    <col width="50%">
-                    <tbody>
-                        <tr>
-                            <td style="font-size: 1em;">ecDNA</td>
-                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</td>
-                        </tr>
-                        <tr>
-                            <td style="font-size: 1em;">FAN <a href="https://github.com/AmpliconSuite/AmpliconClassifier/blob/main/docs/fan_primer.md" target="_blank" rel="noopener noreferrer" title="Focal amplification in neochromosome - click to read more" aria-label="Focal amplification in neochromosome - click to read more"><i class="far fa-question-circle"></i></a></td>
-                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.FAN|default:0 }}</td>
-                        </tr>
-                        <tr>
-                            <td style="font-size: 1em;">BFB <i class="far fa-question-circle" title="Breakage-fusion-bridge" aria-label="Breakage-fusion-bridge"></i></td>
-                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</td>
-                        </tr>
-                        <tr>
-                            <td style="font-size: 1em;">Other fsCNA <i class="far fa-question-circle" title="Complex-non-cyclic or Linear" aria-label="Complex-non-cyclic or Linear"></i></td>
-                            <td style="font-size: 1em;">{{ site_stats.public_amplicon_classifications_count.otherfscna|default:0 }}</td>
-                        </tr>
-                    </tbody>
-                </table>
-                
-            <!--
-            <hr style="max-width: 60%; margin-left: 0;">
-                <p style="font-size: 1em;">Tissue of origin sample counts</p>
-                <table id='statsTable2' class="table table-borderless table-sm table-not-striped" style="padding-top: 20px; width:100%">
-                    <col width="50%">
-                    <col width="50%">
-                    <tbody>
-                        {% for tissue_name, count in site_stats.public_tissue_of_origin_count|sort_dict_by_value_desc %}
-                        <tr>
-                            <td style="font-size: 1em;">{{ tissue_name }}</td>
-                            <td style="font-size: 1em;">{{ count|default:0 }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                -->
-            </div>
-        </div>
-
 
     </div>
 </div>
 
+<div class="home-wrap">
+
+    <div class="home-section">
+        <div class="home-eyebrow">
+            Projects
+            <span class="home-eyebrow-aside">
+                {{ site_stats.public_proj_count|default:0 }} public
+            </span>
+        </div>
+
+        <div class="home-table-head">
+            <div class="home-filter">
+                <i class="fas fa-search" style="color:#9aa0a6; font-size:13px;"></i>
+                <label for="home-project-filter" class="sr-only">Filter projects</label>
+                <input type="text" id="home-project-filter" placeholder="Filter by project name or description">
+            </div>
+            <div class="home-pills">
+                <button type="button" class="home-pill is-on" data-filter="all" aria-pressed="true">All</button>
+                <button type="button" class="home-pill" data-filter="featured" aria-pressed="false">Featured</button>
+                <button type="button" class="home-pill" data-filter="long-read" aria-pressed="false">Long-read</button>
+                {% if user.is_authenticated %}
+                <button type="button" class="home-pill" data-filter="private" aria-pressed="false">Mine</button>
+                {% endif %}
+            </div>
+            <div id="home-length-container"></div>
+        </div>
+
+        <div class="home-table-scroll">
+            <table id="unifiedProjectTable" class="home-projects" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th style="width:26%">Project</th>
+                        <th>Description</th>
+                        <th style="width:118px">Updated</th>
+                        <th class="home-num" style="width:92px">Samples</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project in featured_projects %}
+                    <tr class="home-featured" data-project-type="featured" data-tools="{{ project.Reconstruction_tools }}">
+                        <td>1</td>
+                        <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
+                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                            <span class="home-chip home-chip-featured">Featured</span>{% if "CoRAL" in project.Reconstruction_tools %}
+                            <span class="home-chip home-chip-coral" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
+                        </td>
+                        {% include 'includes/project_description_cell.html' %}
+                        <td class="home-date">{{ project.date }}</td>
+                        <td class="home-num">{{ project.sample_count }}</td>
+                    </tr>
+                    {% endfor %}
+
+                    {% for project in public_projects %}
+                    <tr data-project-type="public" data-tools="{{ project.Reconstruction_tools }}">
+                        <td>2</td>
+                        <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
+                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %}
+                            <span class="home-chip home-chip-coral" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
+                        </td>
+                        {% include 'includes/project_description_cell.html' %}
+                        <td class="home-date">{{ project.date }}</td>
+                        <td class="home-num">{{ project.sample_count }}</td>
+                    </tr>
+                    {% endfor %}
+
+                    {% if user.is_authenticated %}
+                    {% for project in private_projects %}
+                    <tr data-project-type="private" data-tools="{{ project.Reconstruction_tools }}">
+                        <td>3</td>
+                        <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
+                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
+                            <span class="home-chip home-chip-private">Private</span>{% if project.visibility_display == 'Hidden Public' %}<span class="home-hidden-public" title="Hidden Public: anyone with the link can view this project">*</span>{% endif %}{% if "CoRAL" in project.Reconstruction_tools %}
+                            <span class="home-chip home-chip-coral" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
+                        </td>
+                        {% include 'includes/project_description_cell.html' %}
+                        <td class="home-date">{{ project.date }}</td>
+                        <td class="home-num">{{ project.sample_count }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="home-section">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="home-eyebrow">
+                    Latest
+                    <a class="home-eyebrow-aside" href="https://docs.ampliconrepository.org/en/latest/" target="_blank">All updates</a>
+                </div>
+                <div class="home-latest">
+                    <div>
+                        <div class="home-news-meta">
+                            <span class="home-tag home-tag-release">Release</span>
+                        </div>
+                        <a class="home-news-title" href="https://docs.ampliconrepository.org/en/latest/getting-started/" target="_blank">
+                            Long-read reconstructions from CoRAL are now accepted alongside AmpliconArchitect
+                        </a>
+                    </div>
+                    <div>
+                        <div class="home-news-meta">
+                            <span class="home-tag home-tag-release">Release</span>
+                        </div>
+                        <a class="home-news-title" href="https://docs.ampliconrepository.org/en/latest/api/" target="_blank">
+                            List public projects and download archives from the command line with the API
+                        </a>
+                    </div>
+                    <div>
+                        <div class="home-news-meta">
+                            <span class="home-tag home-tag-paper">Paper</span>
+                            <span class="home-news-src">Nature Genetics</span>
+                        </div>
+                        <a class="home-news-title" href="https://www.nature.com/articles/s41588-024-01949-7" target="_blank">
+                            Leveraging large-scale genomic datasets to track ecDNA across cancer stages
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div class="home-eyebrow">How to cite</div>
+                <p class="home-cite">
+                    Luebeck J, Huang E, et al.
+                    <a href="https://www.biorxiv.org/content/10.1101/2024.05.06.592768v1" target="_blank">AmpliconSuite: an end-to-end workflow for analyzing focal amplifications in cancer genomes.</a>
+                    <em>bioRxiv</em>, 2024.
+                </p>
+                <p class="home-cite" style="margin-top: 8px;">
+                    For results obtained from the site, cite the uploader's associated publication where possible.
+                </p>
+            </div>
+        </div>
+    </div>
+
+</div>
 
 {% endblock index %}
 
