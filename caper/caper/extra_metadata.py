@@ -1,10 +1,30 @@
 import csv
 import time
 import os
+from collections import Counter
 
 import pandas as pd
 
 from .utils import *
+
+# Columns that carry sample identity rather than a metadata value. They are
+# indexed for lookup (see _build_metadata_lookup_from_dataframe) and are not
+# copied verbatim into extra_metadata_from_csv.
+IDENTITY_COLUMNS = ('sample_name', 'original_sample_name', 'sample_name_alias')
+
+# Bucket for samples that have metadata but no usable cancer_type value.
+UNSPECIFIED_CATEGORY = 'Not specified'
+
+# Ceiling on distinct cancer types embedded in the project page. The summary
+# popup collapses the long tail into a single "Other" slice, so categories past
+# this point cannot be drawn individually anyway; the cap stops one pathological
+# project from inflating every page load with thousands of one-sample types.
+MAX_SUMMARY_CATEGORIES = 200
+
+# Preview dimensions. Wide clinical sheets (PCAWG has ~70 columns) are truncated
+# horizontally rather than rendered in full, and the panel says so.
+PREVIEW_MAX_ROWS = 15
+PREVIEW_MAX_COLUMNS = 25
 
 
 def _has_metadata_value(value):
@@ -465,3 +485,164 @@ def has_sample_metadata(project):
             if 'extra_metadata_from_csv' in sample:
                 return True
     return False
+
+
+def _clean_display_value(value):
+    """Render a metadata cell as a display string, treating NaN as blank."""
+    if value is None:
+        return ''
+    try:
+        if bool(pd.isna(value)):
+            return ''
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def project_sample_names(project):
+    """Return the sample identities of a project, in ``runs`` order.
+
+    A sample's identity is the ``Sample_name`` carried on its feature rows. The
+    ``runs`` key is used as a fallback for samples stored with an empty feature
+    list: those cannot carry metadata (see ``_apply_metadata_to_runs``) but they
+    are still samples and belong in a coverage denominator.
+    """
+    names = []
+    for run_key, sample_list in (project.get('runs') or {}).items():
+        name = None
+        for feature in sample_list or []:
+            if isinstance(feature, dict) and feature.get('Sample_name'):
+                name = str(feature['Sample_name'])
+                break
+        names.append(name if name is not None else str(run_key))
+
+    # dict.fromkeys de-duplicates while preserving order.
+    return list(dict.fromkeys(names))
+
+
+def _sample_metadata_rows(project):
+    """Yield ``(sample_name, metadata_or_None)`` once per sample in the project.
+
+    Every feature row of a sample carries the same ``extra_metadata_from_csv``
+    copy, so only the first is read.
+    """
+    for run_key, sample_list in (project.get('runs') or {}).items():
+        name = str(run_key)
+        metadata = None
+        for feature in sample_list or []:
+            if not isinstance(feature, dict):
+                continue
+            if feature.get('Sample_name'):
+                name = str(feature['Sample_name'])
+            metadata = feature.get('extra_metadata_from_csv') or None
+            break
+        yield name, (metadata if isinstance(metadata, dict) else None)
+
+
+def metadata_coverage(project):
+    """Count how many of a project's samples currently carry uploaded metadata."""
+    total = 0
+    covered = 0
+    for _, metadata in _sample_metadata_rows(project):
+        total += 1
+        if metadata:
+            covered += 1
+    return {'total': total, 'covered': covered}
+
+
+def summarize_project_metadata(project):
+    """Build the aggregate payload behind the project page's metadata summary.
+
+    The unit is the sample, not the amplicon feature. Only counts are returned —
+    never per-sample rows — so the payload stays small enough to embed in the
+    page regardless of project size.
+    """
+    total = 0
+    covered = 0
+    cancer_counts = Counter()
+
+    for _, metadata in _sample_metadata_rows(project):
+        total += 1
+        if not metadata:
+            continue
+        covered += 1
+        cancer_counts[
+            _clean_display_value(_metadata_value(metadata, 'cancer_type'))
+            or UNSPECIFIED_CATEGORY
+        ] += 1
+
+    # Largest first, then alphabetically so equal-sized categories have a stable
+    # order across page loads.
+    ordered = sorted(cancer_counts.items(), key=lambda item: (-item[1], item[0]))
+    truncated = len(ordered) > MAX_SUMMARY_CATEGORIES
+
+    return {
+        'available': covered > 0,
+        'total_samples': total,
+        'samples_with_metadata': covered,
+        'has_cancer_type': any(
+            name != UNSPECIFIED_CATEGORY for name, _ in ordered),
+        'cancer_types': [
+            {'name': name, 'count': count}
+            for name, count in ordered[:MAX_SUMMARY_CATEGORIES]
+        ],
+        'cancer_types_truncated': truncated,
+        'cancer_types_total': len(ordered),
+    }
+
+
+def existing_metadata_preview(project, max_rows=PREVIEW_MAX_ROWS,
+                              max_columns=PREVIEW_MAX_COLUMNS):
+    """Build a truncated table preview of the metadata already stored on a project.
+
+    Mirrors what the browser renders for a freshly selected file, so the edit
+    page can show the current state before any new upload. Stored rows have no
+    ``sample_name`` key — identity lives in the sample itself — so the column is
+    synthesised here.
+    """
+    rows = []
+    columns = ['sample_name']
+    seen_columns = {'sample_name'}
+    row_count = 0
+
+    for sample_name, metadata in _sample_metadata_rows(project):
+        if not metadata:
+            continue
+        row_count += 1
+        for key in metadata:
+            if key not in seen_columns:
+                seen_columns.add(key)
+                columns.append(key)
+        if len(rows) < max_rows:
+            rows.append((sample_name, metadata))
+
+    if not rows:
+        return None
+
+    # sample_name is pinned first; the identity columns follow so a reader can
+    # confirm an alias remap at a glance, then everything else in first-seen
+    # order. The seen-order index is captured up front because CPython empties a
+    # list while list.sort() runs, so columns.index() inside the key would fail.
+    priority = ['sample_name', 'original_sample_name', 'sample_name_alias', 'cancer_type']
+    seen_order = {name: index for index, name in enumerate(columns)}
+    columns.sort(key=lambda name: (
+        priority.index(name.lower()) if name.lower() in priority else len(priority),
+        seen_order[name],
+    ))
+
+    shown_columns = columns[:max_columns]
+    return {
+        'columns': shown_columns,
+        'rows': [
+            [
+                sample_name if column == 'sample_name'
+                else _clean_display_value(_metadata_value(metadata, column))
+                for column in shown_columns
+            ]
+            for sample_name, metadata in rows
+        ],
+        'row_count': row_count,
+        'column_count': len(columns),
+        'truncated_rows': row_count > len(rows),
+        'truncated_columns': len(columns) > len(shown_columns),
+    }

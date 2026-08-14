@@ -1133,7 +1133,7 @@
                             <th>Name</th>
                             <th>Description</th>
                             <th>Last Updated</th>
-                            <th>Project Members</th>
+                            <th>Total Samples</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1142,9 +1142,7 @@
                             <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                             <td>{{ project.description }}</td>
                             <td>{{ project.date }}</td>
-                            <td>{% for person in project.project_members %}
-                                {{ person }}<br>
-                            {% endfor %}</td>
+                            <td>{{ project.runs|length }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -1206,18 +1204,17 @@
                             <th>Name</th>
                             <th>Description</th>
                             <th>Last Updated</th>
-                            <th>Project Members</th>
+                            <th>Total Samples</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for project in private_projects %}
                         <tr>
-                            <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                            {# Visibility rides along with the name rather than taking its own column. This whole tab is behind the is_authenticated check above, so the tag never renders for anonymous visitors. #}
+                            <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if project.visibility_display == 'Hidden Public' %} <span class="badge" style="background-color: #BBBBBB; color: white;" title="Unlisted: anyone with the link can view this project, but it is not listed publicly">Unlisted</span>{% elif project.visibility_display == 'Private' %} <span class="badge" style="background-color: #BBBBBB; color: white;" title="Private: visible only to project members">Private</span>{% endif %}</td>
                             <td>{{ project.description }}</td>
                             <td>{{ project.date }}</td>
-                            <td>{% for person in project.project_members %}
-                                {{ person }}<br>
-                            {% endfor %}</td>
+                            <td>{{ project.runs|length }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

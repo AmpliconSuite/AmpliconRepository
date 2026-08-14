@@ -55,20 +55,75 @@ This is the main repository for the AmpliconRepository website. The documentatio
 
 
 ## 3. Set up MongoDB locally (for development)
-- Install MongoDB
-  - In Ubuntu this can be done with `sudo apt install mongodb-server-core`
-    - For newer versions of Ubuntu (e.g. 22.04+), follow the instructions here: https://www.fosstechnix.com/how-to-install-mongodb-on-ubuntu-22-04-lts/
-  - In macOS this can be done with
-    >`git config --global init.defaultBranch main`
-    
-    >`brew tap mongodb/brew`
-    
-    >`brew install mongodb-community@6.0`
-  - If the package is not found you may need to follow the directions [here](https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-ubuntu/).
-- If you don't have a database location set up, set up a location:
-> `mkdir -p ~/data/db/`
-- In a terminal window or tab with the `ampliconenv` environment active, run MongoDB locally:
->  `mongod --dbpath ~/data/db` or `mongod --dbpath <DB_PATH>`
+
+You need a MongoDB server listening on `localhost:27017`. Pick **one** of the three
+options below. Docker is the least trouble on Linux and is what CI uses.
+
+### Option 1 (recommended on Linux): Docker
+```bash
+docker run -d --name amprepo-mongo -p 27017:27017 -v "$PWD/data:/data/db" mongo:4
+```
+Data lives in `./data` (already gitignored). Restart it later with
+`docker start amprepo-mongo`, stop it with `docker stop amprepo-mongo`, and check it
+with `docker ps`.
+
+**Why `mongo:4` and not something newer.** The dev and prod servers do not run
+MongoDB — they run an Amazon DocumentDB cluster, which implements the MongoDB API at
+the 4.0/5.0 feature level (see the version check in `verify_indexes.py`). Pinning
+`mongo:4` locally, as `docker-compose-dev.yml` and `.github/workflows/tests.yml` both
+do, keeps you from writing code against server features DocumentDB does not have.
+Local, compose, and CI are deliberately on the same tag; none of them is DocumentDB,
+so a green test run is evidence and not proof, but they at least fail in the same
+places. Do not bump any of the three without checking the DocumentDB feature level
+first.
+
+### Option 2: install natively on Ubuntu
+Ubuntu no longer ships a MongoDB server package — `mongodb-server-core` was dropped
+from the archive after MongoDB's SSPL relicense, so `sudo apt install
+mongodb-server-core` finds nothing on current releases. Use MongoDB's own apt
+repository instead:
+
+```bash
+sudo apt-get install -y gnupg curl
+curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc \
+  | sudo gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" \
+  | sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+sudo apt-get update && sudo apt-get install -y mongodb-org
+```
+
+**Watch the codename.** MongoDB only publishes for Ubuntu LTS releases — `noble`
+(24.04) and `jammy` (22.04) as of this writing. On a non-LTS release such as 25.10
+(`questing`) there is no matching repository, so you must leave `noble` in the line
+above rather than substituting your own codename. Check what exists before assuming:
+```bash
+curl -sI https://repo.mongodb.org/apt/ubuntu/dists/<codename>/mongodb-org/8.0/Release
+```
+
+**Note the version gap.** This installs MongoDB 8.0, well past the 4.0/5.0 level
+DocumentDB implements. The apt repo carries the older series only for `jammy` and
+`focal` — `noble` has 8.0 and nothing else — so matching the deployed feature level
+natively on a recent host means pointing at a two-LTS-old repository. That, more than
+the codename, is why Option 1 is recommended: the Docker images for 4.x are still
+published and carry no cross-release library baggage. If you take this option
+anyway, be aware your local server is more permissive than production.
+
+Then create a data directory and run the server:
+```bash
+mkdir -p ~/data/db
+mongod --dbpath ~/data/db
+```
+
+### Option 3: install natively on macOS
+```bash
+brew tap mongodb/brew
+brew install mongodb-community@6.0
+mkdir -p ~/data/db
+mongod --dbpath ~/data/db
+```
+
+Whichever option you choose, everything downstream — Compass, the test suite, the
+`caper-dev` database — only cares that `localhost:27017` answers.
 
 ## 3a. View MongoDB data in MongoDB Compass
 - Download MongoDB Compass: https://www.mongodb.com/docs/compass/current/install/#download-and-install-compass
@@ -172,13 +227,112 @@ For shutdown at the end of your session, you can do `sudo neo4j stop`
 - Run the command to initialize variables (from the top-level repo directory):
 `source caper/config.sh`
 
-For local deployments, you will need to ensure that the following two variables are set to FALSE, as shown below
+For local deployments, these two variables control whether S3 is used. They are independent
+and the right answers differ:
+
 ```
-export S3_STATIC_FILES=FALSE
-export S3_FILE_DOWNLOADS='FALSE'
+export S3_STATIC_FILES=TRUE      # leave TRUE -- see below
+export S3_FILE_DOWNLOADS='FALSE' # FALSE is fine locally; payloads go to local GridFS
 ```
 
+`S3_FILE_DOWNLOADS=FALSE` works well locally and needs no AWS credentials at all — project
+archives are stored in your local MongoDB GridFS instead of S3.
+
+**`S3_STATIC_FILES` should stay `TRUE` even locally.** Setting it to `FALSE` leaves the site
+completely unstyled, and the failure is confusing: `STATIC_URL` becomes `/static/`, but there
+is no `STATICFILES_DIRS` setting and `caper/static/` is not an app static directory (the app
+package is `caper/caper/`), so the staticfiles finders locate nothing. `STATIC_ROOT` is also
+that same source directory, so `collectstatic` does not help. Requests then fall through to
+Mezzanine's catch-all URL, which raises
+`AttributeError: 'WSGIRequest' object has no attribute 'user'` — a 500 that looks like an
+application bug rather than a missing file. `runserver --insecure` does not fix it either,
+because the problem is the finders, not `DEBUG`.
+
+Reading static from S3 needs **no credentials** — `amprepobucket` is publicly readable. You
+only need an SSO login (step 5a) to *write* to it via `sync_static_to_s3.sh`, which is also
+the reason a newly added file under `caper/static/` will 404 until it is synced. Prefer
+putting new page assets in a template under `caper/templates/` so they deploy with the code.
+
 **IMPORTANT**: After recieving your `config.sh`, please ensure you do not upload it to Github or make it available publicly anywhere.
+
+
+## 5a. AWS CLI and SSO login (only if you set the S3 variables to TRUE)
+
+With both S3 variables set to `FALSE` as above, **you do not need the AWS CLI at all** —
+project payloads go to your local GridFS and static files are served by Django. Set them
+to `TRUE` and install the CLI only when you want to exercise the S3 code paths (uploads,
+downloads, `sync_static_to_s3.sh`).
+
+### Install the AWS CLI v2
+
+```bash
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q -o /tmp/awscliv2.zip -d /tmp
+sudo /tmp/aws/install          # add --update if a version is already installed
+aws --version
+```
+
+Do not `pip install awscli` into `ampliconenv` — that installs v1, whose SSO support is weaker.
+
+### Configure the SSO profile
+
+The profile **must** be named `amprepo`: `caper/caper/settings.py` reads `AWS_PROFILE_NAME`
+and otherwise falls back to `default`.
+
+```bash
+aws configure sso --profile amprepo
+```
+
+Answer the prompts with UCSD's IAM Identity Center values (from awsconsole.ucsd.edu):
+
+| Prompt | Value |
+|---|---|
+| SSO session name | `awsconsole.ucsd.edu` |
+| SSO start URL | `https://d-9267a15c8f.awsapps.com/start` |
+| SSO region | `us-west-2` |
+| SSO registration scopes | `sso:account:access` |
+| Default client Region | `us-east-1` |
+| CLI default output format | `json` |
+
+**The two regions are different, and both are correct.** `us-west-2` is where UCSD's
+Identity Center directory lives; `us-east-1` is where this project's buckets live —
+both `amprepobucket` and `amprepo-private` report `x-amz-bucket-region: us-east-1`.
+
+You are not prompted for the account ID or role name: after you authenticate in the browser
+the CLI lists what your login grants and selects them automatically when there is only one
+of each. (This repository is public, so the account ID is deliberately not recorded here —
+ask a team member if you ever need it explicitly.)
+
+Equivalently, write `~/.aws/config` directly, filling in the two placeholders from the
+values `aws configure sso` selected for you:
+
+```ini
+[sso-session awsconsole.ucsd.edu]
+sso_start_url = https://d-9267a15c8f.awsapps.com/start
+sso_region = us-west-2
+sso_registration_scopes = sso:account:access
+
+[profile amprepo]
+sso_session = awsconsole.ucsd.edu
+sso_account_id = <account id>
+sso_role_name = <permission set name, e.g. AdministratorAccess>
+region = us-east-1
+output = json
+```
+
+> The portal URL is sometimes quoted with a trailing `/#`. Drop it — the `#` is a browser
+> fragment, and in an INI file it risks being read as the start of a comment.
+
+### Log in and verify
+
+```bash
+aws sso login --profile amprepo
+aws sts get-caller-identity --profile amprepo
+```
+
+The token lasts roughly 8 hours; re-run `aws sso login` when it expires. Note that a static
+`[amprepo]` block in `~/.aws/credentials` takes precedence over the SSO profile — it must be
+absent or renamed for SSO to be used.
 
 
 ## 6. Run development server (Django)
@@ -415,9 +569,11 @@ The same environment you use to run the development server is required:
    pip install pytest-playwright && playwright install chromium
    ```
 
-3. **MongoDB running locally** — the tests write to the `caper-dev` database on `localhost:27017`:
+3. **MongoDB running locally** — the tests write to the `caper-dev` database on `localhost:27017`.
+   Start it however you installed it in [step 3](#3-set-up-mongodb-locally-for-development):
    ```bash
-   mongod --dbpath ~/data/db
+   docker start amprepo-mongo     # if you used Docker
+   mongod --dbpath ~/data/db      # if you installed it natively
    ```
 
 4. **Environment variables loaded** — source `config.sh` from the `caper/` directory:

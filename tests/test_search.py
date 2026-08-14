@@ -12,6 +12,8 @@ Note on gene_search_page vs search_results:
     search_results set private='public'.
 """
 
+import re
+
 import pytest
 import pandas as pd
 from bson.objectid import ObjectId
@@ -90,48 +92,123 @@ class TestWildcardToRegex:
 
 
 # ---------------------------------------------------------------------------
-# Unit tests for _single_term_mask
+# Unit tests for tokenize_query (quote-aware splitting)
 # ---------------------------------------------------------------------------
 
-class TestSingleTermMask:
-    """Unit tests for the _single_term_mask helper function."""
+class TestTokenizeQuery:
+    """The query splitter: quotes suppress operators, '&' outranks '|'."""
 
-    def test_exact_match_case_insensitive(self):
-        from caper.search import _single_term_mask
-        s = pd.Series(['CUG', 'CUGBP1', 'cug', 'OTHER', 'CUG2'])
-        mask = _single_term_mask(s, 'CUG')
-        assert list(mask) == [True, False, True, False, False]
+    def test_plain_term(self):
+        from caper.search import tokenize_query
+        assert tokenize_query('foo') == ([('foo', False)], None)
 
-    def test_exact_match_no_substring(self):
-        """Without wildcard, 'CUG' must NOT match 'CUGBP1'."""
-        from caper.search import _single_term_mask
-        s = pd.Series(['CUG', 'CUGBP1', 'XCUG', 'XCUGX'])
-        mask = _single_term_mask(s, 'CUG')
-        assert list(mask) == [True, False, False, False]
+    def test_and_split(self):
+        from caper.search import tokenize_query
+        assert tokenize_query('a&b') == ([('a', False), ('b', False)], 'and')
 
-    def test_wildcard_prefix(self):
-        from caper.search import _single_term_mask
-        s = pd.Series(['CUG', 'CUGBP1', 'cug123', 'OTHER'])
-        mask = _single_term_mask(s, 'CUG*')
+    def test_or_split(self):
+        from caper.search import tokenize_query
+        assert tokenize_query('a|b') == ([('a', False), ('b', False)], 'or')
+
+    def test_quotes_suppress_operators(self):
+        """The whole point: & inside quotes is text, not an operator."""
+        from caper.search import tokenize_query
+        assert tokenize_query('"Head & Neck"') == ([('Head & Neck', True)], None)
+
+    def test_quoted_and_unquoted_terms_mix(self):
+        from caper.search import tokenize_query
+        terms, operator = tokenize_query('"Head & Neck"|Lung')
+        assert terms == [('Head & Neck', True), ('Lung', False)]
+        assert operator == 'or'
+
+    def test_unterminated_quote_runs_to_end(self):
+        """A half-typed query still searches for something sensible."""
+        from caper.search import tokenize_query
+        assert tokenize_query('"unterminated') == ([('unterminated', True)], None)
+
+    def test_and_outranks_or(self):
+        """Pre-existing precedence: '&' splits and the '|' stays literal."""
+        from caper.search import tokenize_query
+        assert tokenize_query('a|b&c') == ([('a|b', False), ('c', False)], 'and')
+
+    def test_star_is_not_an_operator(self):
+        from caper.search import tokenize_query
+        assert tokenize_query('FLO*') == ([('FLO*', False)], None)
+
+    def test_whitespace_stripped(self):
+        from caper.search import tokenize_query
+        assert tokenize_query('  spaced  ') == ([('spaced', False)], None)
+
+    def test_operator_alone_yields_no_terms(self):
+        from caper.search import tokenize_query
+        terms, _ = tokenize_query('&')
+        assert terms == []
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _term_mask (one term: quoted / wildcard / substring)
+# ---------------------------------------------------------------------------
+
+class TestTermMask:
+    """Unit tests for the _term_mask helper function."""
+
+    def test_substring_by_default(self):
+        """Unquoted and wildcard-free means substring — 'CUG' finds 'CUGBP1'."""
+        from caper.search import _term_mask
+        s = pd.Series(['CUG', 'CUGBP1', 'cug', 'OTHER', 'XCUGX'])
+        mask = _term_mask(s, 'CUG', quoted=False)
+        assert list(mask) == [True, True, True, False, True]
+
+    def test_quoted_is_exact(self):
+        """Quoting narrows to a whole-field match."""
+        from caper.search import _term_mask
+        s = pd.Series(['CUG', 'CUGBP1', 'cug', 'XCUG'])
+        mask = _term_mask(s, 'CUG', quoted=True)
+        assert list(mask) == [True, False, True, False]
+
+    def test_quoted_treats_operators_as_text(self):
+        from caper.search import _term_mask
+        s = pd.Series(['Head & Neck', 'Head', 'Neck'])
+        mask = _term_mask(s, 'Head & Neck', quoted=True)
+        assert list(mask) == [True, False, False]
+
+    def test_quoted_treats_star_as_text(self):
+        from caper.search import _term_mask
+        s = pd.Series(['a*b', 'axb', 'ab'])
+        mask = _term_mask(s, 'a*b', quoted=True)
+        assert list(mask) == [True, False, False]
+
+    def test_exact_mode_without_quotes(self):
+        from caper.search import _term_mask, EXACT
+        s = pd.Series(['CUG', 'CUGBP1'])
+        mask = _term_mask(s, 'CUG', quoted=False, default_mode=EXACT)
+        assert list(mask) == [True, False]
+
+    def test_wildcard_prefix_anchors(self):
+        """'CUG*' is starts-with, so it must not match 'XCUG'."""
+        from caper.search import _term_mask
+        s = pd.Series(['CUG', 'CUGBP1', 'cug123', 'XCUG'])
+        mask = _term_mask(s, 'CUG*', quoted=False)
         assert list(mask) == [True, True, True, False]
 
-    def test_wildcard_suffix(self):
-        from caper.search import _single_term_mask
-        s = pd.Series(['XCUG', 'CUG', 'PRECUG', 'OTHER'])
-        mask = _single_term_mask(s, '*CUG')
+    def test_wildcard_suffix_anchors(self):
+        from caper.search import _term_mask
+        s = pd.Series(['XCUG', 'CUG', 'PRECUG', 'CUGX'])
+        mask = _term_mask(s, '*CUG', quoted=False)
         assert list(mask) == [True, True, True, False]
 
     def test_wildcard_contains(self):
-        from caper.search import _single_term_mask
+        from caper.search import _term_mask
         s = pd.Series(['XCUGX', 'CUG', 'PRECUGPOST', 'OTHER'])
-        mask = _single_term_mask(s, '*CUG*')
+        mask = _term_mask(s, '*CUG*', quoted=False)
         assert list(mask) == [True, True, True, False]
 
-    def test_whitespace_stripped(self):
-        from caper.search import _single_term_mask
-        s = pd.Series(['CUG', 'OTHER'])
-        mask = _single_term_mask(s, '  CUG  ')
-        assert list(mask) == [True, False]
+    def test_stored_whitespace_stripped_before_exact_match(self):
+        """Values display stripped, so an exact search must find the padded row."""
+        from caper.search import _term_mask
+        s = pd.Series(['Lung ', ' Lung', 'Lung-AdenoCA'])
+        mask = _term_mask(s, 'Lung', quoted=True)
+        assert list(mask) == [True, True, False]
 
 
 # ---------------------------------------------------------------------------
@@ -141,12 +218,26 @@ class TestSingleTermMask:
 class TestTextFieldFilter:
     """Unit tests for the _text_field_filter helper function."""
 
-    def test_exact_match_default(self):
-        """Plain text without operators performs exact case-insensitive match."""
+    def test_substring_match_default(self):
+        """Plain text performs a case-insensitive substring match."""
         from caper.search import _text_field_filter
         s = pd.Series(['breast', 'breast cancer', 'BREAST', 'lung'])
         mask = _text_field_filter(s, 'breast')
+        assert list(mask) == [True, True, True, False]
+
+    def test_quoted_narrows_to_exact(self):
+        """Quoting is how you get the old exact-match behaviour back."""
+        from caper.search import _text_field_filter
+        s = pd.Series(['breast', 'breast cancer', 'BREAST', 'lung'])
+        mask = _text_field_filter(s, '"breast"')
         assert list(mask) == [True, False, True, False]
+
+    def test_quoted_term_containing_operator(self):
+        """A quoted name with '&' is one term, not an AND of two."""
+        from caper.search import _text_field_filter
+        s = pd.Series(['Head & Neck cohort', 'Head', 'Neck'])
+        mask = _text_field_filter(s, '"Head & Neck cohort"')
+        assert list(mask) == [True, False, False]
 
     def test_wildcard_match(self):
         """Wildcard pattern matches appropriately."""
@@ -167,8 +258,9 @@ class TestTextFieldFilter:
         from caper.search import _text_field_filter
         s = pd.Series(['breast', 'breast cancer', 'lung', 'lung adenocarcinoma', 'colon'])
         mask = _text_field_filter(s, 'breast*|lung')
-        # breast* matches 'breast' and 'breast cancer'; 'lung' matches exactly 'lung'
-        assert list(mask) == [True, True, True, False, False]
+        # breast* matches 'breast' and 'breast cancer'; bare 'lung' is a substring,
+        # so it also picks up 'lung adenocarcinoma'
+        assert list(mask) == [True, True, True, True, False]
 
     def test_and_operator(self):
         """Ampersand & performs AND — all terms must match the same cell."""
@@ -220,44 +312,70 @@ class TestTextFieldFilter:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests: project name exact match vs wildcard
+# Integration tests: project name partial match, quoted exact match, wildcard
 # ---------------------------------------------------------------------------
 
-@pytest.mark.integration
-def test_project_name_exact_match(request_factory, test_user, mongo_collection):
-    """
-    Searching for 'TestExact' must match only a project named exactly 'TestExact',
-    not 'TestExact_Extra' or 'PrefixTestExact'.
-    """
-    from caper.views import search_results
+def _found_project_names(**kwargs):
+    """Run perform_search and return the set of matched public project names."""
+    from caper.search import perform_search
+    result = perform_search(no_filter=True, **kwargs)
+    return {p['project_name'] for p in result['public_projects']}
 
+
+@pytest.fixture
+def _exact_match_projects(test_user, mongo_collection):
+    """Three projects whose names nest inside one another."""
     _sample = {'Sample_name': 'S1', 'Features': []}
     docs = [
-        {'project_name': 'TestExact', 'creator': test_user.username,
+        {'project_name': name, 'creator': test_user.username,
          'private': 'public', 'delete': False, 'current': True,
-         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
-        {'project_name': 'TestExact_Extra', 'creator': test_user.username,
-         'private': 'public', 'delete': False, 'current': True,
-         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
-        {'project_name': 'PrefixTestExact', 'creator': test_user.username,
-         'private': 'public', 'delete': False, 'current': True,
-         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1},
+         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1}
+        for name in ('TestExact', 'TestExact_Extra', 'PrefixTestExact')
     ]
     inserted = [mongo_collection.insert_one(d) for d in docs]
-
     try:
-        req = request_factory.post('/search_results/', {'project_name': 'TestExact'})
-        req.user = test_user
-        resp = search_results(req)
-        assert resp.status_code == 200
-        content = resp.content.decode()
-        assert 'TestExact' in content
-        # The others should NOT appear as project links (they may appear in form echo)
-        # Check that their sample rows don't show up
-        assert 'TestExact_Extra' not in content.split('search-box')[0] or \
-               content.count('TestExact_Extra') <= 1  # at most form echo
-        assert 'PrefixTestExact' not in content.split('search-box')[0] or \
-               content.count('PrefixTestExact') <= 1
+        yield
+    finally:
+        for r in inserted:
+            mongo_collection.delete_one({'_id': r.inserted_id})
+
+
+@pytest.mark.integration
+def test_project_name_partial_match_by_default(_exact_match_projects, test_user):
+    """
+    Unquoted 'TestExact' matches any project whose name contains it.
+    """
+    found = _found_project_names(project_name='TestExact', user=test_user)
+    assert found == {'TestExact', 'TestExact_Extra', 'PrefixTestExact'}
+
+
+@pytest.mark.integration
+def test_project_name_quoted_is_exact(_exact_match_projects, test_user):
+    """
+    Quoting narrows to the whole name — this is what generated links rely on.
+    """
+    found = _found_project_names(project_name='"TestExact"', user=test_user)
+    assert found == {'TestExact'}
+
+
+@pytest.mark.integration
+def test_project_name_quoted_operator_is_literal(test_user, mongo_collection):
+    """
+    A project whose name contains '&' is reachable only via quoting; unquoted it
+    would be split into an AND of two terms that no single name satisfies.
+    """
+    _sample = {'Sample_name': 'S1', 'Features': []}
+    docs = [
+        {'project_name': name, 'creator': test_user.username,
+         'private': 'public', 'delete': False, 'current': True,
+         'FINISHED?': True, 'runs': {'r': [_sample.copy()]}, 'sample_count': 1}
+        for name in ('Head & Neck cohort', 'Head cohort')
+    ]
+    inserted = [mongo_collection.insert_one(d) for d in docs]
+    try:
+        found = _found_project_names(
+            project_name='"Head & Neck cohort"', user=test_user)
+        assert found == {'Head & Neck cohort'}
     finally:
         for r in inserted:
             mongo_collection.delete_one({'_id': r.inserted_id})
@@ -334,44 +452,59 @@ def test_project_name_or_operator(request_factory, test_user, mongo_collection):
 
 
 # ---------------------------------------------------------------------------
-# Integration tests: sample name exact match vs wildcard
+# Integration tests: sample name partial match, quoted exact match, wildcard
 # ---------------------------------------------------------------------------
 
-@pytest.mark.integration
-def test_sample_name_exact_match(request_factory, test_user, mongo_collection):
-    """
-    Searching sample name 'SampleA' must only return exact match, not 'SampleA_extra'.
-    """
-    from caper.views import search_results
+def _found_sample_names(**kwargs):
+    """Run perform_search and return the set of matched public sample names."""
+    from caper.search import perform_search
+    result = perform_search(no_filter=True, **kwargs)
+    return {s['Sample_name'] for s in result['public_sample_data']}
 
-    docs = [
-        {'project_name': 'SampleNameTest', 'creator': test_user.username,
-         'private': 'public', 'delete': False, 'current': True,
-         'FINISHED?': True,
-         'runs': {'r': [
-             {'Sample_name': 'SampleA', 'Features': []},
-             {'Sample_name': 'SampleA_extra', 'Features': []},
-             {'Sample_name': 'PreSampleA', 'Features': []},
-         ]},
-         'sample_count': 3},
-    ]
-    inserted = [mongo_collection.insert_one(d) for d in docs]
 
+@pytest.fixture
+def _nested_sample_names(test_user, mongo_collection):
+    """One project holding three sample names that nest inside one another."""
+    doc = {
+        'project_name': 'SampleNameTest', 'creator': test_user.username,
+        'private': 'public', 'delete': False, 'current': True,
+        'FINISHED?': True,
+        'runs': {'r': [
+            {'Sample_name': 'SampleA', 'Features': []},
+            {'Sample_name': 'SampleA_extra', 'Features': []},
+            {'Sample_name': 'PreSampleA', 'Features': []},
+        ]},
+        'sample_count': 3,
+    }
+    inserted = mongo_collection.insert_one(doc)
     try:
-        req = request_factory.post('/search_results/', {'metadata_sample_name': 'SampleA'})
-        req.user = test_user
-        resp = search_results(req)
-        assert resp.status_code == 200
-        content = resp.content.decode()
-        # The exact match 'SampleA' should appear in results
-        assert 'SampleA' in content
-        # 'SampleA_extra' should not appear as a sample result link
-        # (counting occurrences: SampleA_extra should not be in sample links)
-        assert content.count('SampleA_extra') == 0 or \
-               'SampleA_extra' not in content.split('SampleNameTest')[1] if 'SampleNameTest' in content else True
+        yield
     finally:
-        for r in inserted:
-            mongo_collection.delete_one({'_id': r.inserted_id})
+        mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+
+@pytest.mark.integration
+def test_sample_name_partial_match_by_default(_nested_sample_names, test_user):
+    """
+    Typing part of a sample name finds every sample containing it — the common
+    case, and why this field is substring-by-default rather than exact.
+    """
+    found = _found_sample_names(metadata_sample_name='SampleA', user=test_user)
+    assert found == {'SampleA', 'SampleA_extra', 'PreSampleA'}
+
+
+@pytest.mark.integration
+def test_sample_name_quoted_is_exact(_nested_sample_names, test_user):
+    """Quoting narrows to the one sample with exactly that name."""
+    found = _found_sample_names(metadata_sample_name='"SampleA"', user=test_user)
+    assert found == {'SampleA'}
+
+
+@pytest.mark.integration
+def test_sample_name_wildcard_anchors(_nested_sample_names, test_user):
+    """'*' anchors: 'SampleA*' is starts-with, so 'PreSampleA' is excluded."""
+    found = _found_sample_names(metadata_sample_name='SampleA*', user=test_user)
+    assert found == {'SampleA', 'SampleA_extra'}
 
 
 @pytest.mark.integration
@@ -441,50 +574,51 @@ def test_sample_name_or_operator(request_factory, test_user, mongo_collection):
 
 
 # ---------------------------------------------------------------------------
-# Unit tests for _substring_term_mask (metadata fields: substring matching)
+# Unit tests for metadata-field terms (substring matching via _term_mask)
 # ---------------------------------------------------------------------------
 
-class TestSubstringTermMask:
-    """Unit tests for the _substring_term_mask helper (used for metadata fields)."""
+class TestMetadataTermMask:
+    """_term_mask as the metadata fields use it: unquoted, substring by default."""
 
     def test_substring_match(self):
         """Plain term matches as a substring, case-insensitively."""
-        from caper.search import _substring_term_mask
+        from caper.search import _term_mask
         s = pd.Series(['Bone/soft tissue', 'Bone marrow', 'Lung', 'bone'])
-        mask = _substring_term_mask(s, 'bone')
+        mask = _term_mask(s, 'bone', quoted=False)
         assert list(mask) == [True, True, False, True]
 
     def test_no_match(self):
-        from caper.search import _substring_term_mask
+        from caper.search import _term_mask
         s = pd.Series(['Lung', 'Kidney', 'Brain'])
-        mask = _substring_term_mask(s, 'bone')
+        mask = _term_mask(s, 'bone', quoted=False)
         assert list(mask) == [False, False, False]
 
     def test_substring_in_longer_value(self):
         """'sarcoma' finds 'Liposarcoma, soft tissue'."""
-        from caper.search import _substring_term_mask
+        from caper.search import _term_mask
         s = pd.Series(['Liposarcoma, soft tissue', 'Osteosarcoma', 'Breast cancer'])
-        mask = _substring_term_mask(s, 'sarcoma')
+        mask = _term_mask(s, 'sarcoma', quoted=False)
         assert list(mask) == [True, True, False]
 
     def test_case_insensitive(self):
-        from caper.search import _substring_term_mask
+        from caper.search import _term_mask
         s = pd.Series(['Breast Cancer', 'BREAST', 'breast adenocarcinoma', 'Lung'])
-        mask = _substring_term_mask(s, 'BREAST')
+        mask = _term_mask(s, 'BREAST', quoted=False)
         assert list(mask) == [True, True, True, False]
 
-    def test_whitespace_stripped(self):
-        from caper.search import _substring_term_mask
-        s = pd.Series(['cell line', 'Cell Line Derived', 'primary tumor'])
-        mask = _substring_term_mask(s, '  cell line  ')
-        assert list(mask) == [True, True, False]
+    def test_quoted_does_not_over_match(self):
+        """The click-through case: exact 'Lung' must not drag in 'Lung-AdenoCA'."""
+        from caper.search import _term_mask
+        s = pd.Series(['Lung', 'Lung-AdenoCA', 'Non-small cell lung'])
+        mask = _term_mask(s, 'Lung', quoted=True)
+        assert list(mask) == [True, False, False]
 
     def test_nan_handled(self):
         """NaN values don't cause errors and don't match."""
         import numpy as np
-        from caper.search import _substring_term_mask
+        from caper.search import _term_mask
         s = pd.Series(['bone', np.nan, 'lung', None])
-        mask = _substring_term_mask(s, 'bone')
+        mask = _term_mask(s, 'bone', quoted=False)
         assert mask.iloc[0] == True
         assert mask.iloc[1] == False
         assert mask.iloc[2] == False
@@ -2076,3 +2210,235 @@ def test_perform_search_ecdna_noamp_returns_zero_feature(
             "BFB sample must NOT be returned when only ecDNA is selected"
     finally:
         mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for the generated-link helpers
+# ---------------------------------------------------------------------------
+
+class TestGeneratedLinkHelpers:
+    """is_literal_search_term / quote_search_term, used to build search links."""
+
+    def test_operators_survive_quoting(self):
+        """The whole reason quoting exists: & and | no longer disqualify a value."""
+        from caper.search import is_literal_search_term
+        assert is_literal_search_term('Head & Neck')
+        assert is_literal_search_term('a|b')
+        assert is_literal_search_term('a*b')
+
+    def test_double_quote_cannot_be_carried(self):
+        """There is no escape for a quote inside a quoted term."""
+        from caper.search import is_literal_search_term
+        assert not is_literal_search_term('say "hi"')
+
+    def test_empty_is_not_literal(self):
+        from caper.search import is_literal_search_term
+        assert not is_literal_search_term('')
+        assert not is_literal_search_term(None)
+
+    def test_quote_search_term_round_trips(self):
+        """A quoted value must tokenize back to exactly the original text."""
+        from caper.search import quote_search_term, tokenize_query
+        for value in ['Lung', 'Head & Neck', 'a|b', 'a*b', 'PCAWG filtered']:
+            terms, operator = tokenize_query(quote_search_term(value))
+            assert terms == [(value, True)]
+            assert operator is None
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for build_project_name_query (the MongoDB side of the same rules)
+# ---------------------------------------------------------------------------
+
+class TestBuildProjectNameQuery:
+    """The Mongo name filter must agree with _term_mask, or projects vanish."""
+
+    def _matches(self, query, name):
+        """Apply the returned filter to one candidate name."""
+        import re as _re
+        clauses = (query['$and'] if '$and' in query
+                   else [{'project_name': query['project_name']}])
+        return all(_re.search(c['project_name']['$regex'], name, _re.IGNORECASE)
+                   for c in clauses)
+
+    def test_plain_term_is_substring(self):
+        from caper.search import build_project_name_query
+        query = build_project_name_query('PCAWG')
+        assert self._matches(query, 'PCAWG filtered')
+        assert self._matches(query, 'PCAWG')
+
+    def test_quoted_term_is_exact(self):
+        from caper.search import build_project_name_query
+        query = build_project_name_query('"PCAWG"')
+        assert self._matches(query, 'PCAWG')
+        assert not self._matches(query, 'PCAWG filtered')
+
+    def test_quoted_operator_is_literal(self):
+        from caper.search import build_project_name_query
+        query = build_project_name_query('"Head & Neck"')
+        assert self._matches(query, 'Head & Neck')
+        assert not self._matches(query, 'Head')
+
+    def test_wildcard_anchors(self):
+        from caper.search import build_project_name_query
+        query = build_project_name_query('PCAWG*')
+        assert self._matches(query, 'PCAWG filtered')
+        assert not self._matches(query, 'old PCAWG')
+
+    def test_and_produces_independent_clauses(self):
+        from caper.search import build_project_name_query
+        query = build_project_name_query('PCAWG&filtered')
+        assert '$and' in query and len(query['$and']) == 2
+        assert self._matches(query, 'PCAWG filtered')
+        assert not self._matches(query, 'PCAWG raw')
+
+    def test_or_combines_into_one_regex(self):
+        from caper.search import build_project_name_query
+        query = build_project_name_query('alpha|beta')
+        assert self._matches(query, 'alpha')
+        assert self._matches(query, 'beta')
+        assert not self._matches(query, 'gamma')
+
+    def test_empty_query_is_none(self):
+        from caper.search import build_project_name_query
+        assert build_project_name_query('') is None
+        assert build_project_name_query('&') is None
+
+
+# ---------------------------------------------------------------------------
+# Projects-tab columns: total sample count, and the visibility tag
+# ---------------------------------------------------------------------------
+
+def _project_doc(name, visibility, creator, n_samples):
+    """A finished project with n_samples runs, one ecDNA feature each."""
+    return {
+        'project_name': name,
+        'creator':      creator,
+        'project_members': [creator],
+        'private':      visibility,
+        'delete':       False,
+        'current':      True,
+        'FINISHED?':    True,
+        'runs': {
+            f'Sample{i}': [{
+                'Sample_name': f'Sample{i}',
+                'Feature_ID': f'feat_{i}',
+                'Classification': 'ecDNA',
+                'All_genes': ['MYC'],
+                'Oncogenes': ['MYC'],
+                'Sample_type': '',
+                'Cancer_type': '',
+                'Tissue_of_origin': '',
+            }] for i in range(n_samples)
+        },
+        'sample_count': n_samples,
+    }
+
+
+@pytest.mark.integration
+def test_projects_tab_shows_total_sample_count_not_members(
+        request_factory, test_user, mongo_collection):
+    """
+    The projects tab reports how many samples the project holds.  The member
+    list used to occupy that column; it must be gone, because member emails are
+    not search results and the count is what people are looking for.
+
+    The count is the project total, not the number of samples that matched --
+    a gene filter narrows the sample rows, never this number.
+    """
+    from caper.views import search_results
+
+    doc = _project_doc('SearchCols_Public', 'public', test_user.username, 3)
+    # Only one sample carries EGFR, so a search for it matches 1 of the 3.
+    doc['runs']['Sample0'][0]['Oncogenes'] = ['MYC', 'EGFR']
+    doc['runs']['Sample0'][0]['All_genes'] = ['MYC', 'EGFR']
+    result = mongo_collection.insert_one(doc)
+
+    try:
+        req = request_factory.post('/search_results/', {
+            'project_name': 'SearchCols_Public', 'genequery': 'EGFR'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        html = resp.content.decode()
+
+        assert 'Total Samples' in html
+        assert 'Project Members' not in html, \
+            "the members column was replaced by the sample count"
+
+        # The projects table row: name cell, description, date, then the count.
+        row = re.search(
+            r'SearchCols_Public</a></td>.*?</td>\s*<td>\s*(\d+)\s*</td>\s*</tr>',
+            html, re.S)
+        assert row, "could not find the project row in the projects tab"
+        assert row.group(1) == '3', \
+            f"expected the project total (3), got {row.group(1)}"
+    finally:
+        mongo_collection.delete_one({'_id': result.inserted_id})
+
+
+@pytest.mark.integration
+def test_private_and_unlisted_projects_are_tagged_in_results(
+        request_factory, test_user, mongo_collection):
+    """
+    Private and unlisted projects share the private tab, so the name cell
+    carries a tag saying which one it is.  Public projects get no tag.
+    """
+    from caper.views import search_results
+
+    docs = [
+        _project_doc('SearchTag_Private', 'private', test_user.username, 1),
+        _project_doc('SearchTag_Unlisted', 'hidden_public', test_user.username, 1),
+        _project_doc('SearchTag_Public', 'public', test_user.username, 1),
+    ]
+    result = mongo_collection.insert_many(docs)
+
+    try:
+        req = request_factory.post('/search_results/', {'project_name': 'SearchTag_'})
+        req.user = test_user
+        resp = search_results(req)
+        assert resp.status_code == 200
+        html = resp.content.decode()
+
+        for name, tag in (('SearchTag_Private', 'Private'),
+                          ('SearchTag_Unlisted', 'Unlisted')):
+            cell = re.search(rf'{name}</a>(.*?)</td>', html, re.S)
+            assert cell, f"{name} missing from results"
+            assert f'>{tag}</span>' in cell.group(1), \
+                f"{name} should be tagged {tag}, got: {cell.group(1).strip()!r}"
+
+        public_cell = re.search(r'SearchTag_Public</a>(.*?)</td>', html, re.S)
+        assert public_cell, "SearchTag_Public missing from results"
+        assert 'badge' not in public_cell.group(1), \
+            "public projects carry no visibility tag"
+    finally:
+        mongo_collection.delete_many({'_id': {'$in': result.inserted_ids}})
+
+
+@pytest.mark.integration
+def test_visibility_tag_absent_for_anonymous_users(
+        request_factory, test_user, mongo_collection):
+    """
+    An anonymous visitor only ever sees the public tab, so no tag is rendered
+    for them -- and no private project name reaches the page either.
+    """
+    from django.contrib.auth.models import AnonymousUser
+    from caper.views import search_results
+
+    docs = [
+        _project_doc('SearchAnon_Private', 'private', test_user.username, 1),
+        _project_doc('SearchAnon_Public', 'public', test_user.username, 1),
+    ]
+    result = mongo_collection.insert_many(docs)
+
+    try:
+        req = request_factory.post('/search_results/', {'project_name': 'SearchAnon_'})
+        req.user = AnonymousUser()
+        resp = search_results(req)
+        assert resp.status_code == 200
+        html = resp.content.decode()
+
+        assert 'SearchAnon_Public' in html
+        assert 'SearchAnon_Private' not in html
+        assert 'Private</span>' not in html and 'Unlisted</span>' not in html
+    finally:
+        mongo_collection.delete_many({'_id': {'$in': result.inserted_ids}})

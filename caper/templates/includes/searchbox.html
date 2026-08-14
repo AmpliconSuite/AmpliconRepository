@@ -3,25 +3,28 @@
 <form id="searchForm" action="{% url 'search_results' %}" method="POST" class="p-4 border rounded bg-light">
     {% csrf_token %}
 
-    <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 12px;">
-        <strong>Project, Sample Name &amp; Gene</strong> use <strong>exact match</strong> by default — use
-        <strong>*</strong> as a wildcard for partial matches (e.g. <em>NCIH*</em>, <em>*CDK*</em>, <em>MYC*</em>).<br>
-        <strong>Sample Type, Cancer Type/Tissue</strong> match on <strong>substrings</strong>
-        automatically (e.g. <em>bone</em> finds <em>Bone/soft tissue</em>).<br>
-        Use <strong>|</strong> for OR (e.g. <em>breast|lung</em>) and
-        <strong>&amp;</strong> for AND (e.g. <em>bone&amp;soft</em>) in any field.
-    </p>
+    <ul class="text-muted" style="font-size: 0.8rem; margin-bottom: 12px; padding-left: 1.1rem;">
+        <li><strong>Project, Sample Name, Sample Type, Cancer Type/Tissue</strong> match on
+            <strong>substrings</strong> (e.g. <em>bone</em> finds <em>Bone/soft tissue</em>;
+            <em>NCIH</em> finds <em>NCIH2170</em>).</li>
+        <li><strong>Gene</strong> matches exactly.</li>
+        <li>Use <strong>*</strong> to anchor: <em>NCIH*</em> starts with, <em>*CDK</em> ends with.</li>
+        <li>Wrap in <strong>"quotes"</strong> for an <strong>exact</strong> match, and to search text
+            containing <em>&amp;</em>, <em>|</em> or <em>*</em> (e.g. <em>"Head &amp; Neck"</em>).</li>
+        <li>Use <strong>|</strong> for OR (e.g. <em>breast|lung</em>) and
+            <strong>&amp;</strong> for AND (e.g. <em>bone&amp;soft</em>) in any field.</li>
+    </ul>
 
     <div class="mb-3">
         <label for="project_name" class="form-label">Project Name</label>
         <input type="text" class="form-control" name="project_name" id="project_name"
-               placeholder="Enter project name..." value="{{ user_query.project_name|default:'' }}">
+               placeholder='e.g. MyProject (partial), or "My Project" (exact)' value="{{ user_query.project_name|default:'' }}">
     </div>
 
     <div class="mb-3">
         <label for="metadata_sample_name" class="form-label">Sample Name</label>
         <input type="text" class="form-control" name="metadata_sample_name" id="metadata_sample_name"
-            placeholder="Enter sample name" value="{{ user_query.metadata_sample_name|default:'' }}">
+            placeholder='e.g. NCIH (partial), or "NCIH2170" (exact)' value="{{ user_query.metadata_sample_name|default:'' }}">
     </div>
 
     <div class="mb-3">

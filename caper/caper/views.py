@@ -92,7 +92,11 @@ from .extra_metadata import *
 from .neo4j_utils import load_graph, fetch_subgraph, fetch_overview
 
 # Import search function
-from .search import perform_search
+from .search import (
+    perform_search,
+    is_literal_search_term,
+    quote_search_term,
+)
 
 import subprocess
 import shutil
@@ -655,6 +659,40 @@ def _warn_deleted_version_redirect(request):
     )
 
 
+def annotate_metadata_summary_search_links(summary, project):
+    """
+    Mark which rows of the metadata summary can link out to a scoped search.
+
+    Clicking a cancer type searches for that exact type *within this project*,
+    so both names go out quoted -- that makes them literal, which is the only
+    way a value containing & or | survives, and exact, so clicking 'Lung' does
+    not also drag in 'Lung-AdenoCA'.  A value containing a double quote cannot
+    be quoted (there is no escape for it) and gets no link rather than a wrong
+    one; so does the synthetic 'Not specified' bucket, which is a label this
+    page invents for samples with no cancer type and matches nothing stored.
+
+    Mutates ``summary`` in place, adding 'search_project_name' and a 'searchable'
+    flag on each cancer type entry.  Both names are stored pre-quoted, ready to
+    post straight to the search view.
+    """
+    if not summary.get('available'):
+        return summary
+
+    name = project.get('project_name', '') or ''
+    project_ok = is_literal_search_term(name)
+    summary['search_project_name'] = quote_search_term(name) if project_ok else ''
+
+    for entry in summary.get('cancer_types', []):
+        entry_name = entry.get('name', '')
+        entry['searchable'] = (project_ok
+                               and entry_name != UNSPECIFIED_CATEGORY
+                               and is_literal_search_term(entry_name))
+        entry['search_term'] = (quote_search_term(entry_name)
+                                if entry['searchable'] else '')
+
+    return summary
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -858,12 +896,20 @@ def project_page(request, project_name, message=''):
         if not valid:
             item['Features'] = 0
 
+    # Aggregate counts for the on-demand metadata summary popup. Cheap: project
+    # ['runs'] is already in memory on every path above, and only per-category
+    # totals are emitted, so the embedded payload stays small no matter how many
+    # samples the project has.
+    metadata_summary = summarize_project_metadata(project)
+    annotate_metadata_summary_search_links(metadata_summary, project)
+
     # Log total page generation time
     total_time = time.time() - t_total_start
     logging.info(f"[PERF] Total project_page processing for {project_name}: {total_time:.3f}s")
 
     return render(request, "pages/project.html", {
         'project': project,
+        'metadata_summary': metadata_summary,
         'sample_data': sample_data,
         'reference_genome': reference_genome,
         'stackedbar_graph': stacked_bar_plot,
@@ -2424,8 +2470,10 @@ def gene_search_page(request):
 
     for proj in private_projects:
         prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
     for proj in public_projects:
         prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', False))
 
     def collect_class_data(projects):
         sample_data = []
@@ -2977,6 +3025,12 @@ def get_metadata_remap_edit_context(project):
     old_metadata = get_extra_metadata_from_project(project) if has_metadata else {}
     has_alias = has_retained_alias_metadata(old_metadata)
     has_reusable_map = bool(get_retained_name_map_rows(old_metadata))
+
+    # Sample identities and current coverage let the page show what metadata is
+    # already attached, and let the browser compute — before anything is
+    # uploaded — how much of the project a newly selected sheet would cover.
+    coverage = metadata_coverage(project)
+
     return {
         'has_existing_metadata': has_metadata,
         'old_metadata_has_alias': has_reusable_map,
@@ -2985,6 +3039,14 @@ def get_metadata_remap_edit_context(project):
             has_reusable_map
             and infer_metadata_remap_enabled(project, old_metadata)
         ),
+        'metadata_sample_names': project_sample_names(project),
+        'metadata_coverage_total': coverage['total'],
+        'metadata_coverage_covered': coverage['covered'],
+        'metadata_coverage_percent': (
+            round(100.0 * coverage['covered'] / coverage['total'], 1)
+            if coverage['total'] else 0.0
+        ),
+        'existing_metadata_preview': existing_metadata_preview(project),
     }
 
 

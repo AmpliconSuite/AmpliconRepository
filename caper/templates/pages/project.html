@@ -1001,6 +1001,13 @@
                onclick="downloadMetadata();">
                 <i class="fas fa-download"></i><span class="dl-btn-label"><span class="dl-btn-download"> Download</span> Metadata</span>
             </a>
+            {% if metadata_summary.available %}
+            <a class="btn btn-outline-primary btn-sm" id="metadata-summary-btn"
+               style="cursor: pointer; white-space: nowrap; font-size: 0.8rem;"
+               onclick="showMetadataSummary();">
+                <i class="fas fa-chart-pie"></i><span class="dl-btn-label"> Metadata Summary</span>
+            </a>
+            {% endif %}
         </div>
     </div>
     
@@ -1362,5 +1369,393 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
 
 
 </div>
+
+{% if metadata_summary.available %}
+{% comment %}
+On-demand sample-metadata summary.
+
+The payload is aggregate counts only -- never per-sample rows -- so it stays a
+few hundred bytes regardless of project size, and is computed in project_page()
+from the runs dict that is already in memory. That is why it is embedded rather
+than fetched: a lazy endpoint would cost a second full project document read
+from MongoDB per click, which is the expensive part on a 2,000-sample project.
+
+Nothing renders until the button is pressed; Plotly is already loaded above for
+the classification figures.
+{% endcomment %}
+{{ metadata_summary|json_script:"metadata-summary-data" }}
+
+<div id="metadata-summary-overlay" class="ms-overlay" style="display: none;"
+     role="dialog" aria-modal="true" aria-labelledby="ms-title">
+  <div class="ms-dialog">
+    <div class="ms-header">
+      <span id="ms-title">Sample metadata summary</span>
+      <button type="button" class="ms-close" aria-label="Close"
+              onclick="hideMetadataSummary();">&times;</button>
+    </div>
+    <div class="ms-body">
+      <div class="ms-coverage">
+        <div class="ms-hero"><span id="ms-hero-pct"></span></div>
+        <div class="ms-hero-sub" id="ms-hero-sub"></div>
+        <div class="ms-meter"><div class="ms-meter-fill" id="ms-meter-fill"></div></div>
+      </div>
+      <div id="ms-chart-section">
+        <div class="ms-section-title" id="ms-chart-title"></div>
+        <div id="ms-pie" style="width: 100%; height: 340px;"></div>
+        <div class="ms-table-wrap">
+          <table class="ms-table">
+            <thead>
+              <tr><th>Cancer type</th><th class="num">Samples</th><th class="num">Share</th><th></th></tr>
+            </thead>
+            <tbody id="ms-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="ms-note" id="ms-note"></div>
+    </div>
+  </div>
+</div>
+
+{% comment %}
+Click-through from a cancer type to that type's samples within this project.
+
+POSTed rather than linked: /search_results/ accepts POST only, and keeping it
+that way means no new crawlable URL that runs a search per request.  The GET
+route is not an alternative -- gene_search_page reads project_name but never
+filters on it, so a GET link would show results from every project under a
+heading naming this one.
+
+No classquery inputs on purpose.  search_results reads "no boxes checked" as
+no_filter, which returns every sample including the no-amp ones -- the right
+default for "show me all the X samples here".
+{% endcomment %}
+<form id="ms-search-form" action="{% url 'search_results' %}" method="POST"
+      target="_blank" rel="noopener" style="display: none;">
+  {% csrf_token %}
+  <input type="hidden" name="project_name" id="ms-search-project">
+  <input type="hidden" name="metadata_cancer_tissue" id="ms-search-cancer">
+</form>
+
+<style>
+  .ms-overlay {
+    position: fixed; inset: 0; z-index: 10000;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .ms-dialog {
+    background: #fcfcfb; border-radius: 6px;
+    box-shadow: 0 6px 28px rgba(0, 0, 0, 0.3);
+    width: 100%; max-width: 780px;
+    max-height: 90vh; display: flex; flex-direction: column;
+  }
+  .ms-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 18px; border-bottom: 1px solid #e4e4e1;
+    font-weight: bold; font-size: 1.05rem; color: #0b0b0b;
+  }
+  .ms-close {
+    background: none; border: none; font-size: 1.6rem; line-height: 1;
+    cursor: pointer; color: #52514e; padding: 0 4px;
+  }
+  .ms-body { padding: 16px 18px 20px; overflow-y: auto; }
+  .ms-coverage { margin-bottom: 18px; }
+  .ms-hero { font-size: 2.6rem; font-weight: 600; line-height: 1.1; color: #0b0b0b; }
+  .ms-hero-sub { color: #52514e; font-size: 0.9rem; margin-bottom: 8px; }
+  .ms-meter {
+    height: 10px; background: #e6e6e3; border-radius: 5px; overflow: hidden;
+  }
+  .ms-meter-fill { height: 100%; background: #2a78d6; border-radius: 5px; }
+  .ms-section-title {
+    font-weight: bold; margin: 4px 0 2px; color: #0b0b0b; font-size: 0.95rem;
+  }
+  .ms-table-wrap { max-height: 240px; overflow-y: auto; margin-top: 10px; }
+  .ms-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .ms-table th, .ms-table td {
+    padding: 4px 8px; border-bottom: 1px solid #eeeeec; text-align: left;
+    color: #0b0b0b;
+  }
+  .ms-table th {
+    position: sticky; top: 0; background: #fcfcfb; color: #52514e;
+    font-weight: 600; border-bottom: 1px solid #d8d8d4;
+  }
+  .ms-table td.num, .ms-table th.num { text-align: right; white-space: nowrap; }
+  .ms-table td.barcell { width: 34%; }
+  .ms-bar { height: 8px; border-radius: 4px; background: #2a78d6; min-width: 2px; }
+  .ms-swatch {
+    display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+    margin-right: 6px; vertical-align: baseline;
+  }
+  /* A real button, so the search is reachable by keyboard and announced as an
+     action; styled as a link because that is what it behaves like. */
+  .ms-type-link {
+    background: none; border: none; padding: 0; font: inherit; text-align: left;
+    color: #1a5fb4; cursor: pointer; text-decoration: underline;
+    text-decoration-color: rgba(26, 95, 180, 0.35); text-underline-offset: 2px;
+  }
+  .ms-type-link:hover, .ms-type-link:focus {
+    color: #0d3d7a; text-decoration-color: currentColor;
+  }
+  .ms-note { color: #52514e; font-size: 0.8rem; margin-top: 12px; }
+</style>
+
+<script>
+(function () {
+    'use strict';
+
+    // Validated categorical palette, assigned in fixed order and never cycled.
+    // "Other" is deliberately outside it: it is an aggregate bucket, not an
+    // identity, so it takes a neutral gray.
+    var SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100',
+                  '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
+    var OTHER_COLOR = '#8a8a85';
+    var SURFACE = '#fcfcfb';
+
+    // Slice count is capped well below the number of cancer types a project can
+    // have: past a handful of segments a part-to-whole chart stops being
+    // readable. The remainder folds into one "Other" slice and the full list
+    // stays available in the table below, which is also the relief for the
+    // palette's sub-3:1 contrast slots.
+    var MAX_SLICES = 7;
+
+    var rendered = false;
+
+    function summaryData() {
+        var node = document.getElementById('metadata-summary-data');
+        return node ? JSON.parse(node.textContent) : null;
+    }
+
+    function pct(part, whole) {
+        return whole ? (part / whole) * 100 : 0;
+    }
+
+    function fmt(n) {
+        return Number(n).toLocaleString();
+    }
+
+    /**
+     * Open a search for one cancer type scoped to this project.
+     *
+     * Both arguments arrive already quoted from the server, which is what makes
+     * the search exact and stops & or | in a name being read as operators.
+     * Only called for entries the server marked searchable.
+     */
+    function searchCancerType(projectTerm, typeTerm) {
+        var form = document.getElementById('ms-search-form');
+        if (!form || !projectTerm || !typeTerm) { return; }
+        document.getElementById('ms-search-project').value = projectTerm;
+        document.getElementById('ms-search-cancer').value = typeTerm;
+        form.submit();
+    }
+
+    function renderCoverage(data) {
+        var percent = pct(data.samples_with_metadata, data.total_samples);
+        document.getElementById('ms-hero-pct').textContent = percent.toFixed(1) + '%';
+        document.getElementById('ms-hero-sub').textContent =
+            fmt(data.samples_with_metadata) + ' of ' + fmt(data.total_samples) +
+            ' samples have uploaded metadata.';
+        document.getElementById('ms-meter-fill').style.width = percent + '%';
+    }
+
+    /** Split the categories into the slices drawn and the tail they hide. */
+    function buildSlices(types) {
+        if (types.length <= MAX_SLICES + 1) {
+            return {slices: types.slice(), tail: []};
+        }
+        return {slices: types.slice(0, MAX_SLICES), tail: types.slice(MAX_SLICES)};
+    }
+
+    function renderPie(data) {
+        var types = data.cancer_types || [];
+        var section = document.getElementById('ms-chart-section');
+        if (!types.length || !data.has_cancer_type) {
+            section.style.display = 'none';
+            return;
+        }
+        section.style.display = '';
+
+        var covered = data.samples_with_metadata;
+        var split = buildSlices(types);
+        var labels = [];
+        var values = [];
+        var colors = [];
+        var detail = [];
+
+        split.slices.forEach(function (entry, index) {
+            labels.push(entry.name);
+            values.push(entry.count);
+            colors.push(SERIES[index % SERIES.length]);
+            detail.push('');
+        });
+
+        if (split.tail.length) {
+            var tailTotal = split.tail.reduce(function (sum, e) { return sum + e.count; }, 0);
+            labels.push('Other (' + split.tail.length + ' types)');
+            values.push(tailTotal);
+            colors.push(OTHER_COLOR);
+            var names = split.tail.slice(0, 12).map(function (e) {
+                return e.name + ' (' + e.count + ')';
+            }).join('<br>');
+            if (split.tail.length > 12) {
+                names += '<br>… and ' + (split.tail.length - 12) + ' more';
+            }
+            detail.push('<br><br>' + names);
+        }
+
+        document.getElementById('ms-chart-title').textContent =
+            'Cancer type across ' + fmt(covered) + ' sample(s) with metadata — ' +
+            fmt(data.cancer_types_total) + ' distinct type(s).';
+
+        Plotly.newPlot('ms-pie', [{
+            type: 'pie',
+            hole: 0.55,
+            labels: labels,
+            values: values,
+            marker: {
+                colors: colors,
+                // A 2px surface gap keeps adjacent fills from reading as one mass.
+                line: {color: SURFACE, width: 2}
+            },
+            // Slice labels are suppressed on purpose: cancer type names are long
+            // and would collide. Identity comes from the legend and the hover.
+            textinfo: 'none',
+            customdata: detail,
+            hovertemplate:
+                '<b>%{label}</b><br>%{value} samples (%{percent})%{customdata}<extra></extra>',
+            sort: false,
+            direction: 'clockwise'
+        }], {
+            margin: {t: 10, b: 10, l: 10, r: 10},
+            paper_bgcolor: SURFACE,
+            plot_bgcolor: SURFACE,
+            showlegend: true,
+            legend: {font: {size: 11, color: '#52514e'}, orientation: 'v', x: 1, y: 0.5},
+            hoverlabel: {align: 'left'}
+        }, {displayModeBar: false, responsive: true});
+
+        // The slices are the same rows as the table, so they get the same click
+        // target. The "Other" slice is an aggregate of several types and has no
+        // single query to run, so it is left inert -- as is any type the server
+        // did not hand us a search term for.
+        var searchTerms = {};
+        split.slices.forEach(function (entry) {
+            if (entry.searchable) { searchTerms[entry.name] = entry.search_term; }
+        });
+        var plot = document.getElementById('ms-pie');
+        plot.on('plotly_click', function (event) {
+            var label = event.points && event.points.length ? event.points[0].label : null;
+            if (label && searchTerms[label]) {
+                searchCancerType(data.search_project_name, searchTerms[label]);
+            }
+        });
+    }
+
+    function renderTable(data) {
+        var body = document.getElementById('ms-table-body');
+        body.textContent = '';
+        var types = data.cancer_types || [];
+        var covered = data.samples_with_metadata;
+        var top = types.length ? types[0].count : 0;
+        var split = buildSlices(types);
+
+        types.forEach(function (entry, index) {
+            var row = body.insertRow();
+
+            var nameCell = row.insertCell();
+            var swatch = document.createElement('span');
+            swatch.className = 'ms-swatch';
+            swatch.style.background = index < split.slices.length
+                ? SERIES[index % SERIES.length]
+                : OTHER_COLOR;
+            nameCell.appendChild(swatch);
+            // textContent throughout: category names come from a user-supplied
+            // sheet and are never treated as markup.
+            if (entry.searchable) {
+                var link = document.createElement('button');
+                link.type = 'button';
+                link.className = 'ms-type-link';
+                link.textContent = entry.name;
+                link.title = 'Search this project for ' + entry.name + ' samples';
+                link.addEventListener('click', function () {
+                    searchCancerType(data.search_project_name, entry.search_term);
+                });
+                nameCell.appendChild(link);
+            } else {
+                nameCell.appendChild(document.createTextNode(entry.name));
+            }
+
+            var countCell = row.insertCell();
+            countCell.className = 'num';
+            countCell.textContent = fmt(entry.count);
+
+            var shareCell = row.insertCell();
+            shareCell.className = 'num';
+            shareCell.textContent = pct(entry.count, covered).toFixed(1) + '%';
+
+            var barCell = row.insertCell();
+            barCell.className = 'barcell';
+            var bar = document.createElement('div');
+            bar.className = 'ms-bar';
+            bar.style.width = (top ? (entry.count / top) * 100 : 0) + '%';
+            bar.style.background = index < split.slices.length
+                ? SERIES[index % SERIES.length]
+                : OTHER_COLOR;
+            barCell.appendChild(bar);
+        });
+
+        var notes = [];
+        if (data.cancer_types_truncated) {
+            notes.push('Only the ' + fmt(types.length) + ' largest of ' +
+                       fmt(data.cancer_types_total) + ' cancer types are listed.');
+        }
+        var uncovered = data.total_samples - data.samples_with_metadata;
+        if (uncovered > 0) {
+            notes.push(fmt(uncovered) + ' sample(s) have no uploaded metadata and are ' +
+                       'excluded from the breakdown.');
+        }
+        if (types.some(function (e) { return e.searchable; })) {
+            // The search is quoted, so it is an exact match on the type name --
+            // the count on the row is the count you land on. No caveat needed.
+            notes.push('Click a cancer type to search this project for its samples.');
+        }
+        document.getElementById('ms-note').textContent = notes.join(' ');
+    }
+
+    window.showMetadataSummary = function () {
+        var data = summaryData();
+        if (!data) { return; }
+        var overlay = document.getElementById('metadata-summary-overlay');
+        overlay.style.display = 'flex';
+
+        if (!rendered) {
+            renderCoverage(data);
+            renderTable(data);
+            renderPie(data);
+            rendered = true;
+        } else {
+            // Plotly sizes to a hidden container as 0x0; re-measure on reopen.
+            Plotly.Plots.resize(document.getElementById('ms-pie'));
+        }
+    };
+
+    window.hideMetadataSummary = function () {
+        document.getElementById('metadata-summary-overlay').style.display = 'none';
+    };
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var overlay = document.getElementById('metadata-summary-overlay');
+        if (!overlay) { return; }
+        overlay.addEventListener('click', function (event) {
+            if (event.target === overlay) { hideMetadataSummary(); }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && overlay.style.display !== 'none') {
+                hideMetadataSummary();
+            }
+        });
+    });
+})();
+</script>
+{% endif %}
 
 {% endblock %}

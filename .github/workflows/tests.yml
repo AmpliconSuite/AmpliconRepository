@@ -12,11 +12,17 @@ jobs:
 
     services:
       mongodb:
-        image: mongo:6
+        # Matches docker-compose-dev.yml. Deployed environments run Amazon
+        # DocumentDB, which implements the MongoDB API at the 4.0/5.0 feature
+        # level, so testing against a newer server would green-light queries
+        # that fail in production. Note 4.x ships the legacy `mongo` shell —
+        # `mongosh` does not exist in this image, so the health check below
+        # must not use it.
+        image: mongo:4
         ports:
           - 27017:27017
         options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-cmd "mongo --quiet --eval 'db.runCommand({ ping: 1 })'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5

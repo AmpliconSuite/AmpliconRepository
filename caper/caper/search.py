@@ -3,6 +3,150 @@ from pymongo import MongoClient
 from .utils import *
 
 
+# ---------------------------------------------------------------------------
+# The query language
+# ---------------------------------------------------------------------------
+#
+# A query is one or more terms joined by '&' (AND) or '|' (OR).  Mixing the two
+# is not supported: if any unquoted '&' is present it is the operator and '|'
+# stays literal text inside a term.  That has always been the behaviour here.
+#
+# Wrapping a term in double quotes makes it EXACT and LITERAL: the whole field
+# must equal the text, and '&', '|' and '*' inside the quotes are just
+# characters.  Quoting is the only way to search for a value that contains an
+# operator, so it is what generated links use -- see quote_search_term.
+#
+# Unquoted, '*' is an anchor rather than a wildcard-for-everything: 'FLO*' is
+# starts-with, '*FLO' is ends-with, '*FLO*' is contains.  With no '*' the term
+# is a plain substring match, which is what people expect when they type half a
+# sample name.  Every text field works this way; only quoting narrows it.
+
+QUOTE_CHAR = '"'
+OPERATOR_CHARS = '&|'
+
+# How an unquoted, wildcard-free term is matched.  Every field uses SUBSTRING
+# today; EXACT exists because quoted terms need it and because the MongoDB
+# project-name path builds anchored regexes from the same tokens.
+SUBSTRING = 'substring'
+EXACT = 'exact'
+
+
+def is_literal_search_term(value):
+    """
+    True when ``value`` can be carried through a generated query intact.
+
+    Quoting neutralises every operator, so the only character that cannot
+    survive is the quote itself -- there is no escape for it.  Callers building
+    a query on the user's behalf should skip values that fail this rather than
+    emit a query that quietly means something else.
+    """
+    return bool(value) and QUOTE_CHAR not in value
+
+
+def quote_search_term(value):
+    """Wrap ``value`` so perform_search reads it as one exact, literal term."""
+    return '{0}{1}{0}'.format(QUOTE_CHAR, value)
+
+
+def _scan(pattern):
+    """
+    Yield ``(char, quoted)`` for each character, dropping the quote marks.
+
+    An unterminated quote simply runs to the end of the input, so a half-typed
+    query still searches for something sensible instead of failing.
+    """
+    in_quote = False
+    for char in pattern or '':
+        if char == QUOTE_CHAR:
+            in_quote = not in_quote
+            continue
+        yield char, in_quote
+
+
+def tokenize_query(pattern):
+    """
+    Split a query into ``(terms, operator)``.
+
+    Each term is a ``(text, quoted)`` pair; operator is 'and', 'or' or None.
+    Splitting happens only outside quotes, so '"Head & Neck"|Lung' is two terms
+    rather than three.  A term counts as quoted if any part of it was quoted.
+    """
+    scanned = list(_scan(pattern))
+
+    # '&' wins over '|' regardless of position, matching the original
+    # if-'&'-elif-'|' behaviour.  The loser stays literal inside its term.
+    if any(char == '&' and not quoted for char, quoted in scanned):
+        operator, splitter = 'and', '&'
+    elif any(char == '|' and not quoted for char, quoted in scanned):
+        operator, splitter = 'or', '|'
+    else:
+        operator, splitter = None, None
+
+    terms = []
+    chars = []
+    quoted = False
+    for char, char_quoted in scanned:
+        if splitter and char == splitter and not char_quoted:
+            terms.append((''.join(chars).strip(), quoted))
+            chars, quoted = [], False
+        else:
+            chars.append(char)
+            quoted = quoted or char_quoted
+    terms.append((''.join(chars).strip(), quoted))
+
+    return [(text, was_quoted) for text, was_quoted in terms if text], operator
+
+
+def _term_mask(series, text, quoted, default_mode=SUBSTRING):
+    """
+    Boolean mask for a single term.
+
+    Values are stripped before comparison because that is how they are
+    displayed -- a stored 'Lung ' shows as 'Lung', and an exact search for what
+    is on screen has to find the row it came from.
+    """
+    values = series.astype(str).str.strip()
+
+    if quoted:
+        return values.str.lower() == text.lower()
+
+    wc_regex = wildcard_to_regex(text)
+    if wc_regex:
+        return values.str.contains(wc_regex, case=False, na=False, regex=True)
+
+    if default_mode == EXACT:
+        return values.str.lower() == text.lower()
+
+    return values.str.contains(re.escape(text), case=False, na=False, regex=True)
+
+
+def _field_filter(series, pattern, default_mode=SUBSTRING):
+    """
+    Filter a pandas Series with a full query: quotes, '&', '|' and '*'.
+
+    A pattern that tokenizes to nothing (say a lone '&') filters nothing out,
+    so a malformed query behaves like an empty one rather than hiding every row.
+    """
+    terms, operator = tokenize_query(pattern)
+    if not terms:
+        return pd.Series(True, index=series.index)
+
+    if operator == 'and':
+        mask = pd.Series(True, index=series.index)
+        for text, quoted in terms:
+            mask = mask & _term_mask(series, text, quoted, default_mode)
+        return mask
+
+    if operator == 'or':
+        mask = pd.Series(False, index=series.index)
+        for text, quoted in terms:
+            mask = mask | _term_mask(series, text, quoted, default_mode)
+        return mask
+
+    text, quoted = terms[0]
+    return _term_mask(series, text, quoted, default_mode)
+
+
 def wildcard_to_regex(pattern):
     """
     Converts a glob-style wildcard pattern (using * as wildcard) to a regex pattern.
@@ -21,88 +165,69 @@ def wildcard_to_regex(pattern):
     return '^' + '.*'.join(escaped_parts) + '$'
 
 
-def _single_term_mask(series, term):
-    """
-    Returns a boolean mask for a pandas Series matching a single search term.
-    - If term contains '*', use anchored wildcard regex matching.
-    - Otherwise, perform exact case-insensitive match.
-    """
-    term = term.strip()
-    s = series.astype(str)
-    wc_regex = wildcard_to_regex(term)
-    if wc_regex:
-        return s.str.contains(wc_regex, case=False, na=False, regex=True)
-    else:
-        # Exact case-insensitive match
-        return s.str.lower() == term.lower()
-
-
 def _text_field_filter(series, pattern):
     """
-    Filter a pandas Series using a search pattern that supports:
-    - '*' wildcard (glob-style)
-    - '|' for OR between terms
-    - '&' for AND between terms
-    - Plain text for exact case-insensitive match
+    Filter a name field -- sample name, project name.
 
-    Used for sample name and project name fields (exact match by default).
-
-    Returns a boolean mask.
+    Kept as a distinct name from _substring_field_filter even though the two now
+    behave identically: they were split when name fields matched exactly, and
+    the call sites still read better for saying which kind of field they mean.
     """
-    if '&' in pattern:
-        terms = [t.strip() for t in pattern.split('&') if t.strip()]
-        mask = pd.Series(True, index=series.index)
-        for term in terms:
-            mask = mask & _single_term_mask(series, term)
-        return mask
-    elif '|' in pattern:
-        terms = [t.strip() for t in pattern.split('|') if t.strip()]
-        mask = pd.Series(False, index=series.index)
-        for term in terms:
-            mask = mask | _single_term_mask(series, term)
-        return mask
-    else:
-        return _single_term_mask(series, pattern)
-
-
-def _substring_term_mask(series, term):
-    """
-    Returns a boolean mask for a pandas Series matching a single search term
-    using case-insensitive substring (contains) matching.
-
-    Used for metadata fields like Sample Type and Cancer Type/Tissue where
-    partial matches are desirable (e.g. 'bone' finds 'Bone/soft tissue').
-    """
-    term = term.strip()
-    s = series.astype(str)
-    return s.str.contains(re.escape(term), case=False, na=False, regex=True)
+    return _field_filter(series, pattern, SUBSTRING)
 
 
 def _substring_field_filter(series, pattern):
-    """
-    Filter a pandas Series using case-insensitive substring matching that supports:
-    - '|' for OR between terms  (e.g. 'bone|lung' finds either)
-    - '&' for AND between terms (e.g. 'bone&soft' requires both substrings)
-    - Plain text for substring match (e.g. 'bone' finds 'Bone/soft tissue')
+    """Filter a metadata field -- Sample Type, Cancer Type / Tissue of Origin."""
+    return _field_filter(series, pattern, SUBSTRING)
 
-    Used for metadata fields (Sample Type, Cancer Type/Tissue of Origin).
 
-    Returns a boolean mask.
+def _term_regex(text, quoted):
     """
-    if '&' in pattern:
-        terms = [t.strip() for t in pattern.split('&') if t.strip()]
-        mask = pd.Series(True, index=series.index)
-        for term in terms:
-            mask = mask & _substring_term_mask(series, term)
-        return mask
-    elif '|' in pattern:
-        terms = [t.strip() for t in pattern.split('|') if t.strip()]
-        mask = pd.Series(False, index=series.index)
-        for term in terms:
-            mask = mask | _substring_term_mask(series, term)
-        return mask
-    else:
-        return _substring_term_mask(series, pattern)
+    Anchored-or-not regex for one term, for the MongoDB project-name query.
+
+    Mirrors _term_mask: quoted is exact, '*' anchors, everything else is an
+    unanchored substring.  The two have to agree, or a project would pass the
+    name filter and then vanish when its samples were filtered.
+    """
+    if quoted:
+        return '^' + re.escape(text) + '$'
+    wc_regex = wildcard_to_regex(text)
+    if wc_regex:
+        return wc_regex
+    return re.escape(text)
+
+
+def build_project_name_query(pattern):
+    """
+    Translate a project-name query into MongoDB filter clauses.
+
+    Returns a dict to merge into the query object, or None when there is nothing
+    to filter on.  AND needs each term checked independently, so it comes back
+    under '$and' rather than as a single 'project_name' clause.
+    """
+    terms, operator = tokenize_query(pattern)
+    if not terms:
+        return None
+
+    regexes = [_term_regex(text, quoted) for text, quoted in terms]
+
+    if operator == 'and' and len(regexes) > 1:
+        return {'$and': [{'project_name': {'$regex': regex, '$options': 'i'}}
+                         for regex in regexes]}
+
+    combined = regexes[0] if len(regexes) == 1 else '(' + '|'.join(regexes) + ')'
+    return {'project_name': {'$regex': combined, '$options': 'i'}}
+
+
+def _apply_project_name_query(query_obj, name_query):
+    """Merge build_project_name_query output into a query, preserving any $and."""
+    if not name_query:
+        return
+    for key, value in name_query.items():
+        if key == '$and':
+            query_obj['$and'] = query_obj.get('$and', []) + value
+        else:
+            query_obj[key] = value
 
 
 def _gene_matches(query_gene, gene_list):
@@ -131,41 +256,8 @@ def perform_search(genequery=None,
 
     gen_query = {'$regex': genequery } if genequery else None
 
-    # Build the project-name MongoDB filter, respecting * wildcards and | / & operators
-    if project_name:
-        if '&' in project_name:
-            # AND logic: project name must match ALL terms (each may have wildcards)
-            terms = [t.strip() for t in project_name.split('&') if t.strip()]
-            regex_parts = []
-            for term in terms:
-                wc = wildcard_to_regex(term)
-                if wc:
-                    regex_parts.append(wc)
-                else:
-                    regex_parts.append('^' + re.escape(term) + '$')
-            # Use $and with multiple regex conditions on project_name
-            name_filter = {'$and_regex_list': regex_parts}  # handled specially below
-        elif '|' in project_name:
-            # OR logic: project name matches ANY term
-            terms = [t.strip() for t in project_name.split('|') if t.strip()]
-            regex_parts = []
-            for term in terms:
-                wc = wildcard_to_regex(term)
-                if wc:
-                    regex_parts.append(wc)
-                else:
-                    regex_parts.append('^' + re.escape(term) + '$')
-            combined = '(' + '|'.join(regex_parts) + ')'
-            name_filter = {'$regex': combined, '$options': 'i'}
-        else:
-            wc_regex = wildcard_to_regex(project_name)
-            if wc_regex:
-                name_filter = {'$regex': wc_regex, '$options': 'i'}
-            else:
-                # Exact case-insensitive match (anchored regex)
-                name_filter = {'$regex': '^' + re.escape(project_name) + '$', '$options': 'i'}
-    else:
-        name_filter = None
+    # Build the project-name MongoDB filter: quotes, * anchors, | / & operators
+    name_query = build_project_name_query(project_name) if project_name else None
 
     # Gene Search
     # Use $in to handle both legacy boolean values (True/False) and current string values
@@ -180,13 +272,7 @@ def perform_search(genequery=None,
             'current': True
         }
 
-        if name_filter:
-            if '$and_regex_list' in name_filter:
-                # AND logic: all regexes must match project_name
-                and_conditions = [{'project_name': {'$regex': r, '$options': 'i'}} for r in name_filter['$and_regex_list']]
-                query_obj['$and'] = query_obj.get('$and', []) + and_conditions
-            else:
-                query_obj['project_name'] = name_filter
+        _apply_project_name_query(query_obj, name_query)
 
         private_projects = list(collection_handle.find(query_obj))
     else:
@@ -194,19 +280,19 @@ def perform_search(genequery=None,
 
     public_query = {'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}
 
-    if name_filter:
-        if '$and_regex_list' in name_filter:
-            and_conditions = [{'project_name': {'$regex': r, '$options': 'i'}} for r in name_filter['$and_regex_list']]
-            public_query['$and'] = public_query.get('$and', []) + and_conditions
-        else:
-            public_query['project_name'] = name_filter
+    _apply_project_name_query(public_query, name_query)
 
     public_projects = list(collection_handle.find(public_query))
 
+    # visibility_display drives the Private/Unlisted tag on the results table.  The
+    # private list holds both 'private' and 'hidden_public' projects, so the tag is
+    # what tells them apart; defaults match the query each list came from.
     for proj in private_projects:
         prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
     for proj in public_projects:
         prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', False))
 
     # Fetch sample data based on new metadata fields
     public_sample_data = get_samples_from_features(

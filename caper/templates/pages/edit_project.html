@@ -467,6 +467,57 @@
                               </label>
                           </div>
                       </div>
+
+                      {% include "includes/metadata_preview.html" %}
+                      {{ metadata_sample_names|json_script:"metadata-sample-names" }}
+
+                      {% comment %}
+                      What is attached right now. Rendered server-side because it
+                      comes from the database, not from a file the browser can
+                      read; it is hidden as soon as a replacement file is picked,
+                      since at that point the JS panel above describes the change.
+                      {% endcomment %}
+                      {% if existing_metadata_preview %}
+                      <div id="existingMetadataPanel" class="metadata-preview-panel">
+                          <div class="metadata-preview-title">Metadata currently attached to this project</div>
+                          <div class="metadata-coverage">
+                              <div class="metadata-coverage-headline">
+                                  <strong>{{ metadata_coverage_percent }}%</strong>
+                                  of samples are covered — {{ metadata_coverage_covered }} of {{ metadata_coverage_total }}.
+                              </div>
+                              <div class="metadata-coverage-bar">
+                                  <div class="metadata-coverage-fill{% if metadata_coverage_percent < 100 %} partial{% endif %}"
+                                       style="width: {{ metadata_coverage_percent }}%;"></div>
+                              </div>
+                          </div>
+                          <div class="metadata-preview-tablewrap">
+                              <table class="metadata-preview-table">
+                                  <thead>
+                                      <tr>
+                                          {% for column in existing_metadata_preview.columns %}
+                                          <th>{{ column }}</th>
+                                          {% endfor %}
+                                      </tr>
+                                  </thead>
+                                  <tbody>
+                                      {% for row in existing_metadata_preview.rows %}
+                                      <tr>
+                                          {% for cell in row %}<td>{{ cell }}</td>{% endfor %}
+                                      </tr>
+                                      {% endfor %}
+                                  </tbody>
+                              </table>
+                          </div>
+                          <div class="metadata-preview-footer">
+                              Showing {{ existing_metadata_preview.rows|length }} of
+                              {{ existing_metadata_preview.row_count }} row(s) ·
+                              {% if existing_metadata_preview.truncated_columns %}
+                              first {{ existing_metadata_preview.columns|length }} of
+                              {% endif %}
+                              {{ existing_metadata_preview.column_count }} column(s).
+                          </div>
+                      </div>
+                      {% endif %}
                   </div>
               </div>
           </div>
@@ -858,6 +909,15 @@
     });
     updateSampleRemovalForMode(); // apply on page load for the initially selected mode
 
+    // Preview a newly selected sheet against this project's real sample list, so
+    // the coverage shown before submitting is exact rather than an estimate.
+    const sampleNamesNode = document.getElementById('metadata-sample-names');
+    MetadataPreview.attach({
+        fileInput: metadataInput,
+        projectSampleNames: sampleNamesNode ? JSON.parse(sampleNamesNode.textContent) : null,
+        onResult: updateRemapVisibility
+    });
+
     // Add event listener for metadata file to check for sample_name_alias column
     if (metadataInput) {
         metadataInput.addEventListener('change', function(e) {
@@ -865,8 +925,11 @@
             const retainCb = document.getElementById('retainOldMetadataCheckbox');
             const remapOldDiv = document.getElementById('remapFromOldMetadataDiv');
             const remapOldCb = document.getElementById('remapFromOldMetadataCheckbox');
+            const existingPanel = document.getElementById('existingMetadataPanel');
             if (file) {
-                checkForSampleNameAlias(file);
+                // The replacement preview above now describes what will be
+                // attached, so the "currently attached" panel would contradict it.
+                if (existingPanel) existingPanel.style.display = 'none';
                 // Auto-uncheck and disable the retain checkbox when a new file is selected
                 if (retainCb) {
                     retainCb.checked = false;
@@ -876,6 +939,7 @@
                 if (remapOldDiv) remapOldDiv.style.display = 'none';
                 if (remapOldCb) remapOldCb.checked = false;
             } else {
+                if (existingPanel) existingPanel.style.display = '';
                 // Hide the checkbox if no file is selected
                 document.getElementById('remapSampleNamesDiv').style.display = 'none';
                 // Re-enable the retain checkbox when no new file is selected
@@ -1050,65 +1114,17 @@
         });
     }
 
-    // Function to check if metadata file contains sample_name_alias column
-    function checkForSampleNameAlias(file) {
-        const fileName = file.name.toLowerCase();
+    // Show the alias remap checkbox only when the sheet actually has the column.
+    // Driven by the shared preview parse (includes/metadata_preview.html) so the
+    // file is read once and quoted headers are handled correctly.
+    function updateRemapVisibility(result) {
         const remapDiv = document.getElementById('remapSampleNamesDiv');
-        
-        if (fileName.endsWith('.csv') || fileName.endsWith('.tsv')) {
-            // Read CSV/TSV file
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const text = e.target.result;
-                const delimiter = fileName.endsWith('.tsv') ? '\t' : ',';
-                const lines = text.split('\n');
-                
-                if (lines.length > 0) {
-                    // Get header row and check for sample_name_alias (case insensitive)
-                    const headers = lines[0].split(delimiter).map(h => h.trim().toLowerCase());
-                    if (headers.includes('sample_name_alias')) {
-                        remapDiv.style.display = 'block';
-                    } else {
-                        remapDiv.style.display = 'none';
-                    }
-                }
-            };
-            reader.readAsText(file);
-        } else if (fileName.endsWith('.xlsx')) {
-            // For Excel files, we'll need a library like SheetJS
-            // For now, we'll show a message or try to handle it
-            // Since we can't easily parse Excel files in the browser without a library,
-            // we'll show the checkbox by default for Excel files
-            // A better solution would be to add SheetJS library
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    // Try to use SheetJS if available
-                    if (typeof XLSX !== 'undefined') {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, {type: 'array'});
-                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                        const jsonData = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
-                        
-                        if (jsonData.length > 0) {
-                            const headers = jsonData[0].map(h => String(h).toLowerCase());
-                            if (headers.includes('sample_name_alias')) {
-                                remapDiv.style.display = 'block';
-                            } else {
-                                remapDiv.style.display = 'none';
-                            }
-                        }
-                    } else {
-                        // SheetJS not available, show warning and hide checkbox
-                        console.warn('SheetJS library not loaded. Cannot check Excel file for sample_name_alias column.');
-                        remapDiv.style.display = 'none';
-                    }
-                } catch (error) {
-                    console.error('Error reading Excel file:', error);
-                    remapDiv.style.display = 'none';
-                }
-            };
-            reader.readAsArrayBuffer(file);
+        if (!remapDiv) { return; }
+        const hasAlias = !!(result && result.recognized && result.recognized.sample_name_alias);
+        remapDiv.style.display = hasAlias ? 'block' : 'none';
+        if (!hasAlias) {
+            const remapCb = document.getElementById('remapSampleNamesCheckbox');
+            if (remapCb) { remapCb.checked = false; }
         }
     }
 

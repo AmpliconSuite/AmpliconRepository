@@ -1,0 +1,522 @@
+{% comment %}
+Client-side preview of an uploaded sample-metadata sheet, shared by the project
+creation and project edit pages.
+
+Included rather than shipped as a static .js file on purpose: static assets are
+served from S3 in dev/prod (settings.USE_S3) and are only published by a manual
+`sync_static_to_s3.sh` run, so a new static file 404s until someone remembers to
+sync it. A template include is deployed with the code.
+
+Depends on SheetJS, which both host pages already load. SheetJS parses CSV and
+TSV as well as XLSX, which matters: the hand-rolled `line.split(',')` this
+replaces mis-splits any quoted field containing the delimiter, and real clinical
+sheets are full of them (PCAWG has values like "Adenocarcinoma, NOS").
+
+The host page drives this via MetadataPreview.attach(); see the two call sites.
+{% endcomment %}
+
+<style>
+  .metadata-preview-panel {
+    margin-top: 15px;
+    padding: 12px 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #fbfbfb;
+  }
+  .metadata-preview-title {
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  .metadata-preview-filename {
+    font-weight: normal;
+    color: #555;
+    font-size: 0.9em;
+  }
+  .metadata-coverage {
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 4px;
+    background-color: #fff;
+    border: 1px solid #e2e2e2;
+  }
+  .metadata-coverage-headline {
+    font-size: 1.05em;
+    margin-bottom: 6px;
+  }
+  .metadata-coverage-headline strong { font-size: 1.25em; }
+  .metadata-coverage-bar {
+    height: 14px;
+    width: 100%;
+    background-color: #e9ecef;
+    border-radius: 7px;
+    overflow: hidden;
+  }
+  .metadata-coverage-fill {
+    height: 100%;
+    background-color: #28a745;
+    transition: width 0.2s ease;
+  }
+  .metadata-coverage-fill.partial { background-color: #f0ad4e; }
+  .metadata-coverage-fill.none    { background-color: #dc3545; }
+  .metadata-coverage-detail {
+    font-size: 0.85em;
+    color: #555;
+    margin-top: 6px;
+  }
+  .metadata-preview-note {
+    margin: 4px 0;
+    padding: 6px 10px;
+    border-radius: 3px;
+    font-size: 0.88em;
+  }
+  .metadata-preview-note.error   { background-color: #f8d7da; border: 1px solid #f5c2c7; }
+  .metadata-preview-note.warning { background-color: #fff3cd; border: 1px solid #ffe69c; }
+  .metadata-preview-note.info    { background-color: #e7f1ff; border: 1px solid #b6d4fe; }
+  .metadata-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    margin: 2px 4px 2px 0;
+    border-radius: 10px;
+    font-size: 0.8em;
+    background-color: #e2e3e5;
+    color: #41464b;
+  }
+  .metadata-chip.recognized { background-color: #d1e7dd; color: #0f5132; }
+  .metadata-preview-tablewrap {
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid #ddd;
+    background-color: #fff;
+    margin-top: 8px;
+  }
+  .metadata-preview-table {
+    border-collapse: collapse;
+    font-size: 0.8em;
+    width: max-content;
+    min-width: 100%;
+  }
+  .metadata-preview-table th,
+  .metadata-preview-table td {
+    border: 1px solid #e4e4e4;
+    padding: 3px 8px;
+    white-space: nowrap;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .metadata-preview-table thead th {
+    position: sticky;
+    top: 0;
+    background-color: #343a40;
+    color: #fff;
+    z-index: 1;
+  }
+  .metadata-preview-table thead th.identity  { background-color: #0f5132; }
+  .metadata-preview-table thead th.recognized { background-color: #146c43; }
+  .metadata-preview-table tbody tr:nth-child(even) { background-color: #f6f6f6; }
+  .metadata-preview-footer {
+    font-size: 0.8em;
+    color: #666;
+    margin-top: 6px;
+  }
+</style>
+
+<div id="metadataPreviewPanel" class="metadata-preview-panel" style="display: none;">
+  <div class="metadata-preview-title">
+    Metadata preview <span class="metadata-preview-filename" id="metadataPreviewFilename"></span>
+  </div>
+  <div id="metadataPreviewCoverage"></div>
+  <div id="metadataPreviewNotes"></div>
+  <div id="metadataPreviewColumns"></div>
+  <div class="metadata-preview-tablewrap" id="metadataPreviewTableWrap">
+    <table class="metadata-preview-table" id="metadataPreviewTable">
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="metadata-preview-footer" id="metadataPreviewFooter"></div>
+</div>
+
+<script>
+window.MetadataPreview = (function () {
+    'use strict';
+
+    // Kept in lockstep with caper/caper/extra_metadata.py: IDENTITY_COLUMNS are
+    // the columns indexed for sample lookup, and the three below them are
+    // promoted to top-level sample fields by _apply_metadata_to_runs().
+    var IDENTITY_COLUMNS = ['sample_name', 'original_sample_name', 'sample_name_alias'];
+    var PROMOTED_COLUMNS = ['cancer_type', 'sample_type', 'tissue_of_origin'];
+
+    var MAX_ROWS = 15;
+    var MAX_COLUMNS = 25;
+    var MAX_LISTED_NAMES = 8;
+
+    function num(value) {
+        return Number(value).toLocaleString();
+    }
+
+    function text(value) {
+        return value === null || value === undefined ? '' : String(value);
+    }
+
+    /** Read the first worksheet of a metadata file into an array of rows. */
+    function readGrid(file) {
+        var name = file.name.toLowerCase();
+        var isExcel = name.endsWith('.xlsx');
+
+        return new Promise(function (resolve, reject) {
+            if (typeof XLSX === 'undefined') {
+                reject(new Error('The spreadsheet parser (SheetJS) failed to load, so no preview can be shown.'));
+                return;
+            }
+            var reader = new FileReader();
+            reader.onerror = function () { reject(new Error('The file could not be read.')); };
+            reader.onload = function (event) {
+                try {
+                    var workbook;
+                    if (isExcel) {
+                        workbook = XLSX.read(new Uint8Array(event.target.result), {type: 'array'});
+                    } else {
+                        // FS pins the separator. Letting SheetJS sniff it goes
+                        // wrong on a CSV whose header contains a tab inside a
+                        // quoted field, and vice versa for TSV.
+                        workbook = XLSX.read(event.target.result, {
+                            type: 'string',
+                            FS: name.endsWith('.tsv') ? '\t' : ','
+                        });
+                    }
+                    var sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    if (!sheet) {
+                        reject(new Error('The file contains no worksheets.'));
+                        return;
+                    }
+                    // raw:false stringifies every cell, matching the dtype=str
+                    // read in extra_metadata._read_metadata_file() that keeps
+                    // "053" from becoming 53. defval keeps rows rectangular.
+                    resolve(XLSX.utils.sheet_to_json(sheet, {header: 1, raw: false, defval: ''}));
+                } catch (err) {
+                    reject(new Error('The file could not be parsed: ' + err.message));
+                }
+            };
+            if (isExcel) {
+                reader.readAsArrayBuffer(file);
+            } else {
+                reader.readAsText(file);
+            }
+        });
+    }
+
+    function findColumn(header, name) {
+        var target = name.toLowerCase();
+        for (var i = 0; i < header.length; i++) {
+            if (header[i].toLowerCase() === target) { return i; }
+        }
+        return -1;
+    }
+
+    /**
+     * Reduce a parsed grid to the facts the panel reports on.
+     *
+     * projectSamples is the project's sample list on the edit page, or null on
+     * the create page where no samples exist yet.
+     */
+    function analyze(grid, projectSamples) {
+        var header = (grid[0] || []).map(function (cell) { return text(cell).trim(); });
+        var rows = grid.slice(1).filter(function (row) {
+            return row.some(function (cell) { return text(cell).trim() !== ''; });
+        });
+
+        var sampleNameIndex = findColumn(header, 'sample_name');
+        var identityIndexes = IDENTITY_COLUMNS
+            .map(function (column) { return findColumn(header, column); })
+            .filter(function (index) { return index >= 0; });
+
+        // Every identity value is a lookup key, mirroring
+        // _build_metadata_lookup_from_dataframe(). Values are not trimmed, to
+        // match the server; trimmedKeys exists only to explain a near miss.
+        var keys = Object.create(null);
+        var trimmedKeys = Object.create(null);
+        var seen = Object.create(null);
+        var duplicates = [];
+        var blankSampleNames = 0;
+
+        rows.forEach(function (row) {
+            identityIndexes.forEach(function (index) {
+                var value = text(row[index]);
+                if (value.trim() === '') { return; }
+                keys[value] = true;
+                trimmedKeys[value.trim()] = true;
+            });
+
+            if (sampleNameIndex >= 0) {
+                var name = text(row[sampleNameIndex]);
+                if (name.trim() === '') {
+                    blankSampleNames += 1;
+                } else if (seen[name]) {
+                    if (duplicates.indexOf(name) === -1) { duplicates.push(name); }
+                } else {
+                    seen[name] = true;
+                }
+            }
+        });
+
+        var recognized = {};
+        PROMOTED_COLUMNS.concat(IDENTITY_COLUMNS).forEach(function (column) {
+            recognized[column] = findColumn(header, column) >= 0;
+        });
+
+        var coverage = null;
+        if (projectSamples && projectSamples.length) {
+            var matched = [];
+            var unmatched = [];
+            var whitespaceOnly = [];
+            projectSamples.forEach(function (sample) {
+                if (keys[sample]) {
+                    matched.push(sample);
+                } else {
+                    unmatched.push(sample);
+                    if (trimmedKeys[String(sample).trim()]) { whitespaceOnly.push(sample); }
+                }
+            });
+            coverage = {
+                total: projectSamples.length,
+                matched: matched.length,
+                unmatched: unmatched,
+                whitespaceOnly: whitespaceOnly.length,
+                percent: projectSamples.length
+                    ? (matched.length / projectSamples.length) * 100
+                    : 0
+            };
+        }
+
+        return {
+            header: header,
+            rows: rows,
+            rowCount: rows.length,
+            columnCount: header.length,
+            sampleNameIndex: sampleNameIndex,
+            uniqueSampleNames: Object.keys(seen).length,
+            duplicates: duplicates,
+            blankSampleNames: blankSampleNames,
+            recognized: recognized,
+            coverage: coverage
+        };
+    }
+
+    function makeNote(level, message) {
+        var node = document.createElement('div');
+        node.className = 'metadata-preview-note ' + level;
+        node.textContent = message;
+        return node;
+    }
+
+    function renderCoverage(container, coverage) {
+        container.textContent = '';
+        if (!coverage) { return; }
+
+        var percent = coverage.percent;
+        var block = document.createElement('div');
+        block.className = 'metadata-coverage';
+
+        var headline = document.createElement('div');
+        headline.className = 'metadata-coverage-headline';
+        var strong = document.createElement('strong');
+        strong.textContent = percent.toFixed(1) + '%';
+        headline.appendChild(strong);
+        headline.appendChild(document.createTextNode(
+            ' of samples will be covered — ' + num(coverage.matched) +
+            ' of ' + num(coverage.total) + '.'
+        ));
+        block.appendChild(headline);
+
+        var bar = document.createElement('div');
+        bar.className = 'metadata-coverage-bar';
+        var fill = document.createElement('div');
+        fill.className = 'metadata-coverage-fill' +
+            (coverage.matched === 0 ? ' none' : (percent < 99.5 ? ' partial' : ''));
+        fill.style.width = Math.max(percent, coverage.matched > 0 ? 1 : 0) + '%';
+        bar.appendChild(fill);
+        block.appendChild(bar);
+
+        if (coverage.unmatched.length) {
+            var detail = document.createElement('div');
+            detail.className = 'metadata-coverage-detail';
+            var shown = coverage.unmatched.slice(0, MAX_LISTED_NAMES).join(', ');
+            var extra = coverage.unmatched.length - MAX_LISTED_NAMES;
+            detail.textContent = num(coverage.unmatched.length) +
+                ' project sample(s) not in this sheet: ' + shown +
+                (extra > 0 ? ', and ' + num(extra) + ' more.' : '.');
+            block.appendChild(detail);
+        }
+
+        container.appendChild(block);
+    }
+
+    function renderNotes(container, result) {
+        container.textContent = '';
+
+        if (result.sampleNameIndex < 0) {
+            container.appendChild(makeNote('error',
+                'No "sample_name" column found. Without it no metadata can be matched to samples. ' +
+                'Found columns: ' + result.header.slice(0, 10).join(', ') +
+                (result.header.length > 10 ? ', …' : '')));
+        }
+        if (result.rowCount === 0) {
+            container.appendChild(makeNote('error', 'The sheet has no data rows.'));
+        }
+        if (result.blankSampleNames) {
+            container.appendChild(makeNote('warning',
+                num(result.blankSampleNames) + ' row(s) have a blank sample_name and will be ignored.'));
+        }
+        if (result.duplicates.length) {
+            var names = result.duplicates.slice(0, MAX_LISTED_NAMES).join(', ');
+            var more = result.duplicates.length - MAX_LISTED_NAMES;
+            container.appendChild(makeNote('warning',
+                num(result.duplicates.length) + ' duplicated sample_name value(s); the last row wins for each: ' +
+                names + (more > 0 ? ', and ' + num(more) + ' more.' : '.')));
+        }
+
+        var coverage = result.coverage;
+        if (coverage && coverage.matched === 0 && result.rowCount > 0 && result.sampleNameIndex >= 0) {
+            container.appendChild(makeNote('error',
+                'None of this sheet\'s sample names match the samples in this project. ' +
+                'Check that sample_name holds the same identifiers the project uses.'));
+        }
+        if (coverage && coverage.whitespaceOnly) {
+            container.appendChild(makeNote('warning',
+                num(coverage.whitespaceOnly) + ' sample(s) would match except for leading or trailing ' +
+                'whitespace in the sheet. Matching is exact, so these will not be applied.'));
+        }
+        if (!coverage) {
+            container.appendChild(makeNote('info',
+                'Sample coverage cannot be computed before upload, because the project\'s samples are ' +
+                'determined when the archive is processed. The summary on the project page will report it.'));
+        }
+    }
+
+    function renderColumns(container, result) {
+        container.textContent = '';
+        var known = IDENTITY_COLUMNS.concat(PROMOTED_COLUMNS);
+        known.forEach(function (column) {
+            var chip = document.createElement('span');
+            chip.className = 'metadata-chip' + (result.recognized[column] ? ' recognized' : '');
+            chip.textContent = (result.recognized[column] ? '✓ ' : '— ') + column;
+            container.appendChild(chip);
+        });
+    }
+
+    function renderTable(table, result) {
+        var thead = table.tHead || table.createTHead();
+        var tbody = table.tBodies[0];
+        thead.textContent = '';
+        tbody.textContent = '';
+
+        var columnCount = Math.min(result.header.length, MAX_COLUMNS);
+        var headRow = thead.insertRow();
+        for (var c = 0; c < columnCount; c++) {
+            var th = document.createElement('th');
+            var name = result.header[c];
+            th.textContent = name;
+            var lower = name.toLowerCase();
+            if (IDENTITY_COLUMNS.indexOf(lower) >= 0) {
+                th.className = 'identity';
+            } else if (PROMOTED_COLUMNS.indexOf(lower) >= 0) {
+                th.className = 'recognized';
+            }
+            headRow.appendChild(th);
+        }
+
+        var rowCount = Math.min(result.rows.length, MAX_ROWS);
+        for (var r = 0; r < rowCount; r++) {
+            var tr = tbody.insertRow();
+            for (var cc = 0; cc < columnCount; cc++) {
+                // textContent, never innerHTML: these values come straight from
+                // a user-supplied file.
+                tr.insertCell().textContent = text(result.rows[r][cc]);
+            }
+        }
+    }
+
+    function renderFooter(container, result) {
+        var parts = ['Showing ' + num(Math.min(result.rows.length, MAX_ROWS)) +
+                     ' of ' + num(result.rowCount) + ' row(s)'];
+        if (result.columnCount > MAX_COLUMNS) {
+            parts.push('first ' + MAX_COLUMNS + ' of ' + num(result.columnCount) + ' columns');
+        } else {
+            parts.push(num(result.columnCount) + ' column(s)');
+        }
+        if (result.sampleNameIndex >= 0) {
+            parts.push(num(result.uniqueSampleNames) + ' unique sample_name value(s)');
+        }
+        container.textContent = parts.join(' · ') + '.';
+    }
+
+    function render(result, fileName) {
+        var panel = document.getElementById('metadataPreviewPanel');
+        document.getElementById('metadataPreviewFilename').textContent = fileName ? '(' + fileName + ')' : '';
+        renderCoverage(document.getElementById('metadataPreviewCoverage'), result.coverage);
+        renderNotes(document.getElementById('metadataPreviewNotes'), result);
+        renderColumns(document.getElementById('metadataPreviewColumns'), result);
+        renderTable(document.getElementById('metadataPreviewTable'), result);
+        renderFooter(document.getElementById('metadataPreviewFooter'), result);
+        document.getElementById('metadataPreviewTableWrap').style.display =
+            result.rowCount ? '' : 'none';
+        panel.style.display = '';
+    }
+
+    function renderError(message, fileName) {
+        var panel = document.getElementById('metadataPreviewPanel');
+        document.getElementById('metadataPreviewFilename').textContent = fileName ? '(' + fileName + ')' : '';
+        document.getElementById('metadataPreviewCoverage').textContent = '';
+        document.getElementById('metadataPreviewColumns').textContent = '';
+        document.getElementById('metadataPreviewFooter').textContent = '';
+        document.getElementById('metadataPreviewTableWrap').style.display = 'none';
+        var notes = document.getElementById('metadataPreviewNotes');
+        notes.textContent = '';
+        notes.appendChild(makeNote('error', message));
+        panel.style.display = '';
+    }
+
+    function hide() {
+        var panel = document.getElementById('metadataPreviewPanel');
+        if (panel) { panel.style.display = 'none'; }
+    }
+
+    /**
+     * Wire a file input to the panel.
+     *
+     * options.projectSampleNames — array on the edit page, null on create.
+     * options.onResult(result|null) — host hook, used to toggle the alias
+     *     remap checkbox from the parsed header rather than a second read.
+     */
+    function attach(options) {
+        var input = options.fileInput;
+        if (!input) { return; }
+
+        input.addEventListener('change', function (event) {
+            var file = event.target.files && event.target.files[0];
+            if (!file) {
+                hide();
+                if (options.onResult) { options.onResult(null); }
+                return;
+            }
+            readGrid(file).then(function (grid) {
+                var result = analyze(grid, options.projectSampleNames || null);
+                render(result, file.name);
+                if (options.onResult) { options.onResult(result); }
+            }).catch(function (err) {
+                renderError(err.message, file.name);
+                if (options.onResult) { options.onResult(null); }
+            });
+        });
+    }
+
+    return {
+        attach: attach,
+        hide: hide,
+        analyze: analyze,
+        readGrid: readGrid,
+        findColumn: findColumn
+    };
+})();
+</script>

@@ -315,6 +315,8 @@
                         </label>
                     </div>
                 </div>
+
+                {% include "includes/metadata_preview.html" %}
             </div>
         </div>
     </div>
@@ -602,64 +604,19 @@
       }
     }
 
-    // Function to check if metadata file contains sample_name_alias column
-    function checkForSampleNameAlias(file) {
-        const fileName = file.name.toLowerCase();
+    // Show the alias remap checkbox only when the sheet actually has the column.
+    // Driven by the shared preview parse (includes/metadata_preview.html) so the
+    // file is read once and quoted headers are handled correctly.
+    function updateRemapVisibility(result) {
         const remapDiv = document.getElementById('remapSampleNamesDiv');
-        
-        if (fileName.endsWith('.csv') || fileName.endsWith('.tsv')) {
-            // Read CSV/TSV file
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const text = e.target.result;
-                const delimiter = fileName.endsWith('.tsv') ? '\t' : ',';
-                const lines = text.split('\n');
-                
-                if (lines.length > 0) {
-                    // Get header row and check for sample_name_alias (case insensitive)
-                    const headers = lines[0].split(delimiter).map(h => h.trim().toLowerCase());
-                    if (headers.includes('sample_name_alias')) {
-                        remapDiv.style.display = 'block';
-                    } else {
-                        remapDiv.style.display = 'none';
-                    }
-                }
-            };
-            reader.readAsText(file);
-        } else if (fileName.endsWith('.xlsx')) {
-            // For Excel files, use SheetJS
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    // Try to use SheetJS if available
-                    if (typeof XLSX !== 'undefined') {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, {type: 'array'});
-                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                        const jsonData = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
-                        
-                        if (jsonData.length > 0) {
-                            const headers = jsonData[0].map(h => String(h).toLowerCase());
-                            if (headers.includes('sample_name_alias')) {
-                                remapDiv.style.display = 'block';
-                            } else {
-                                remapDiv.style.display = 'none';
-                            }
-                        }
-                    } else {
-                        // SheetJS not available, show warning and hide checkbox
-                        console.warn('SheetJS library not loaded. Cannot check Excel file for sample_name_alias column.');
-                        remapDiv.style.display = 'none';
-                    }
-                } catch (error) {
-                    console.error('Error reading Excel file:', error);
-                    remapDiv.style.display = 'none';
-                }
-            };
-            reader.readAsArrayBuffer(file);
+        if (!remapDiv) { return; }
+        const hasAlias = !!(result && result.recognized && result.recognized.sample_name_alias);
+        remapDiv.style.display = hasAlias ? 'block' : 'none';
+        if (!hasAlias) {
+            const remapCb = document.getElementById('remapSampleNamesCheckbox');
+            if (remapCb) { remapCb.checked = false; }
         }
     }
-
 
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -687,19 +644,14 @@
         //  call it initially to set correct state
         updateSubmitButtonState();
         
-        // Add event listener for metadata file to check for sample_name_alias column
-        const metadataInput = document.getElementById('metadataFileInput');
-        if (metadataInput) {
-            metadataInput.addEventListener('change', function(e) {
-                const file = e.target.files[0];
-                if (file) {
-                    checkForSampleNameAlias(file);
-                } else {
-                    // Hide the checkbox if no file is selected
-                    document.getElementById('remapSampleNamesDiv').style.display = 'none';
-                }
-            });
-        }
+        // Preview the metadata sheet and toggle the alias remap checkbox from the
+        // same parse. No sample coverage here: the project's samples do not exist
+        // until the uploaded archive is aggregated server-side.
+        MetadataPreview.attach({
+            fileInput: document.getElementById('metadataFileInput'),
+            projectSampleNames: null,
+            onResult: updateRemapVisibility
+        });
 
         // --- Username autocomplete for project_members field ---
         initUsernameAutocomplete('id_project_members', '{% url "username_autocomplete" %}');
