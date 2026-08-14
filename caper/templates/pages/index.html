@@ -46,29 +46,25 @@
     }
 
     /* The lede spans the whole band rather than sharing the row with the
-       figures, but is capped to a readable measure: at full band width a
-       two-sentence lede would run past 140 characters a line. Capped, it
-       wraps into a tidy block under the wordmark and leaves the space under
-       the figures clear. */
+       figures or sitting in a narrow measure, so it reads as a header for
+       the band and lines up with the search row beneath it. */
     .home-lede {
         font-size: 15px;
         line-height: 1.5;
         color: #4a4d52;
         margin: 14px 0 0;
-        max-width: 72ch;
         text-wrap: pretty;
     }
 
-    /* Tool provenance is a credit, not part of the pitch: same measure, one
-       step down in size and colour so it reads after the lede rather than
-       competing with it. The tool names stay as plain text so they are
-       visible to scanners and on touch, where a tooltip would not be. */
+    /* Tool provenance is a credit, not part of the pitch: one step down in
+       size and colour so it reads after the lede rather than competing with
+       it. The tool names stay as plain text so they are visible to scanners
+       and on touch, where a tooltip would not be. */
     .home-provenance {
         font-size: 13px;
         line-height: 1.45;
         color: #74777c;
         margin: 7px 0 0;
-        max-width: 72ch;
     }
 
     .home-provenance a {
@@ -1169,7 +1165,7 @@
             carry an amplification and what structure it takes, then download what you find.
         </p>
         <p class="home-provenance">
-            Produced with AmpliconArchitect (short-read) and CoRAL (long-read), part of the
+            Generated with the AmpliconArchitect (short-read) and CoRAL (long-read) tools in the
             <a href="https://github.com/AmpliconSuite" target="_blank" rel="noopener">AmpliconSuite</a> toolkit.
         </p>
 
