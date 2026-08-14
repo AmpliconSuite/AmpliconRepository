@@ -687,6 +687,100 @@ class TestSubstringFieldFilter:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests for add_extra_metadata (uploaded metadata -> searchable columns)
+# ---------------------------------------------------------------------------
+
+def _rows_with_metadata(*cancer_types, **overrides):
+    """Run rows shaped like a project whose rows carry metadata but no Cancer_type.
+
+    That is the state of any project re-uploaded without a fresh metadata sheet
+    before the upload path started rewriting the denormalised fields.
+    """
+    top_level = {'Sample_type': 'cell line', 'Tissue_of_origin': 'unknown'}
+    top_level.update(overrides)
+    return pd.DataFrame([
+        dict(top_level,
+             Sample_name='sample_%d' % index,
+             Feature_ID='sample_%d_amplicon1' % index,
+             Classification='ecDNA',
+             extra_metadata_from_csv={'cancer_type': cancer_type, 'age': str(40 + index)})
+        for index, cancer_type in enumerate(cancer_types)
+    ])
+
+
+class TestAddExtraMetadata:
+    """Every row's metadata has to reach the filters, not just the first one."""
+
+    def test_cancer_type_lifted_for_every_row(self):
+        """The bug this guards: only row 0 used to get its cancer type back."""
+        from caper.search import add_extra_metadata
+        df, _ = add_extra_metadata(_rows_with_metadata('Lung', 'Bone', 'Lung'))
+        assert list(df['Cancer_type']) == ['Lung', 'Bone', 'Lung']
+
+    def test_lifted_value_is_searchable(self):
+        """A quoted search on a lifted value matches exactly the rows that have it."""
+        from caper.search import add_extra_metadata, _substring_field_filter
+        df, _ = add_extra_metadata(_rows_with_metadata('Lung', 'Bone', 'Lung'))
+        mask = _substring_field_filter(df['Cancer_type'], '"Lung"')
+        assert list(mask) == [True, False, True]
+
+    def test_blank_metadata_does_not_erase_stored_value(self):
+        """An empty cell in the sheet must leave the run's own value alone."""
+        import numpy as np
+        from caper.search import add_extra_metadata
+        df = _rows_with_metadata('Lung', np.nan, '  ', Cancer_type='from AA run')
+        df, _ = add_extra_metadata(df)
+        assert list(df['Cancer_type']) == ['Lung', 'from AA run', 'from AA run']
+
+    def test_key_case_is_ignored(self):
+        """Sheets spell the column Cancer_Type as often as cancer_type."""
+        from caper.search import add_extra_metadata
+        df = pd.DataFrame([{'Sample_name': 's1',
+                            'extra_metadata_from_csv': {'Cancer_Type': 'Lung'}}])
+        df, _ = add_extra_metadata(df)
+        assert list(df['Cancer_type']) == ['Lung']
+
+    def test_sample_name_is_never_rewritten(self):
+        """Identity is decided at upload; rewriting it here would disagree with
+        the project page."""
+        from caper.search import add_extra_metadata
+        df = pd.DataFrame([{'Sample_name': 'canonical',
+                            'extra_metadata_from_csv': {'sample_name': 'other',
+                                                        'cancer_type': 'Lung'}}])
+        df, _ = add_extra_metadata(df)
+        assert list(df['Sample_name']) == ['canonical']
+
+    def test_extra_fields_only_lifted_on_demand(self):
+        """Wide clinical sheets cost a pass per column, so they wait for a query."""
+        from caper.search import add_extra_metadata
+        df, extra = add_extra_metadata(_rows_with_metadata('Lung'))
+        assert extra == ['age']
+        assert 'age' not in df.columns
+
+        df, extra = add_extra_metadata(_rows_with_metadata('Lung', 'Bone'),
+                                       lift_all_fields=True)
+        assert list(df['age']) == ['40', '41']
+
+    def test_no_metadata_column_is_a_no_op(self):
+        from caper.search import add_extra_metadata
+        df = pd.DataFrame([{'Sample_name': 's1', 'Cancer_type': 'Lung'}])
+        df, extra = add_extra_metadata(df)
+        assert extra is None
+        assert list(df['Cancer_type']) == ['Lung']
+
+    def test_rows_without_metadata_are_left_alone(self):
+        """Zero-feature placeholders carry no metadata dict at all."""
+        import numpy as np
+        from caper.search import add_extra_metadata
+        df = pd.DataFrame([
+            {'Sample_name': 's1', 'extra_metadata_from_csv': {'cancer_type': 'Lung'}},
+            {'Sample_name': 's2', 'extra_metadata_from_csv': np.nan},
+        ])
+        df, _ = add_extra_metadata(df)
+        assert df['Cancer_type'].tolist() == ['Lung', '']
+
+
+# ---------------------------------------------------------------------------
 # Integration tests: metadata (sample type, cancer type) substring matching & operators
 # ---------------------------------------------------------------------------
 

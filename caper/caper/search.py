@@ -340,27 +340,110 @@ def collect_metadata_samples(sample_data, metadata_to_find):
     return samples_to_return
 
 
-def add_extra_metadata(df):
-    '''
-    adds extra metadata to df
-    '''
-    if 'extra_metadata_from_csv' in df.columns:
-        ## metadata filtering:
-        corresponding_sample = df[df.extra_metadata_from_csv.notnull()].iloc[0].Sample_name
-        extra_metadata_from_csv = df[df.extra_metadata_from_csv.notnull()].iloc[0].extra_metadata_from_csv
-        for k, v in extra_metadata_from_csv.items():
-            if k == 'sample_name':
-                df.loc[df.Sample_name == corresponding_sample,'Sample_name' ]= v
-            elif k == 'sample_type':
-                df.loc[df.Sample_name == corresponding_sample, 'Sample_type'] = v
-            elif k == 'cancer_type':
-                df.loc[df.Sample_name == corresponding_sample, 'Cancer_type'] = v
-            else:
-                df.loc[df.Sample_name == corresponding_sample, k] = v
-                
+# Metadata keys that have a dedicated search field, and the run-row column each
+# one is filtered on.  A run row normally carries these already, denormalised
+# from the sample's metadata when it was uploaded -- but not always: a project
+# re-uploaded without a fresh metadata sheet before mid-2026 carried
+# extra_metadata_from_csv forward without rewriting them, so the row has the
+# metadata and no Cancer_type at all.  Lifting the values back out at search
+# time is what keeps a cancer-type search agreeing with the project page.
+METADATA_COLUMN_FOR_KEY = {
+    'sample_type': 'Sample_type',
+    'cancer_type': 'Cancer_type',
+    'tissue_of_origin': 'Tissue_of_origin',
+}
 
-        return df, extra_metadata_from_csv
-    return df, None
+# Identity, not searchable metadata.  Which name a sample carries is decided at
+# upload (see extra_metadata._apply_metadata_to_runs); renaming one here would
+# only make results disagree with the project page.
+IDENTITY_METADATA_KEYS = frozenset(
+    ('sample_name', 'original_sample_name', 'sample_name_alias'))
+
+
+def _metadata_key_map(metadata_rows):
+    """Map lower-cased metadata key -> the key as actually stored.
+
+    Rows normally share one sheet's columns, but a project whose metadata was
+    uploaded more than once can hold a union of them, so every row is consulted.
+    First spelling seen wins.
+    """
+    key_map = {}
+    for metadata in metadata_rows:
+        for key in metadata:
+            key_map.setdefault(str(key).lower(), key)
+    return key_map
+
+
+def _metadata_column_values(metadata_rows, key):
+    """Values stored under ``key``, as stripped strings, blanks dropped.
+
+    Blank and NaN are dropped rather than written through: a sheet that leaves
+    cancer_type empty for a sample must not erase the value the run row already
+    carries from the AmpliconSuite run.
+    """
+    def clean(metadata):
+        value = metadata.get(key)
+        if value is None:
+            return ''
+        try:
+            if bool(pd.isna(value)):
+                return ''
+        except (TypeError, ValueError):
+            pass
+        return str(value).strip()
+
+    values = metadata_rows.map(clean)
+    return values[values != '']
+
+
+def add_extra_metadata(df, lift_all_fields=False):
+    """Lift each row's uploaded metadata into columns the filters can read.
+
+    Returns ``(df, extra_columns)``, where extra_columns names the metadata
+    fields that have no dedicated search field -- only populated, and only
+    meaningful, when ``lift_all_fields`` is set.
+
+    Every row is handled, not just the first one with metadata: the whole
+    project shares one DataFrame here, so doing otherwise left every sample but
+    one unsearchable by cancer type.  Only the dedicated fields are lifted by
+    default, because lifting a wide clinical sheet costs a pass per column and
+    nothing reads those columns unless a free-text metadata query was given.
+    """
+    if 'extra_metadata_from_csv' not in df.columns:
+        return df, None
+
+    metadata_rows = df['extra_metadata_from_csv']
+    present = metadata_rows.map(lambda value: isinstance(value, dict) and bool(value))
+    if not present.any():
+        return df, None
+
+    metadata_rows = metadata_rows[present]
+    key_map = _metadata_key_map(metadata_rows)
+
+    extra_columns = [
+        key for lower, key in key_map.items()
+        if lower not in METADATA_COLUMN_FOR_KEY and lower not in IDENTITY_METADATA_KEYS
+    ]
+
+    targets = [(key_map[lower], column)
+               for lower, column in METADATA_COLUMN_FOR_KEY.items()
+               if lower in key_map]
+    if lift_all_fields:
+        targets += [(key, key) for key in extra_columns]
+
+    for key, column in targets:
+        values = _metadata_column_values(metadata_rows, key)
+        if values.empty:
+            continue
+        if column not in df.columns:
+            df[column] = ''
+        elif df[column].dtype != object:
+            # An all-NaN column comes back as float64; assigning strings into it
+            # is a dtype change pandas will not make in place.
+            df[column] = df[column].astype(object)
+        df.loc[values.index, column] = values
+
+    return df, extra_columns
 
 
 def _zero_feature_mask(df):
@@ -445,7 +528,8 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
             continue
 
         df = pd.DataFrame(features_list)
-        df, extra_metadata_from_csv = add_extra_metadata(df)
+        df, extra_metadata_columns = add_extra_metadata(
+            df, lift_all_fields=bool(extra_metadata))
 
         if genequery and 'All_genes' in df.columns:
             # Parse gene query for multi-gene search with | (OR) and & (AND) operators
@@ -542,12 +626,15 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         if metadata_tissue_origin and 'Tissue_of_origin' in df.columns:
             df = df[_substring_field_filter(df['Tissue_of_origin'], metadata_tissue_origin)]
 
-        if extra_metadata and ('extra_metadata_from_csv' in df.columns):
-            for key in extra_metadata_from_csv.keys():
-                if key != 'sample_name' and key != 'sample_type' and key != 'tissue_of_origin' and key != "cancer_type":
-                    query = df[df[key].str.contains(extra_metadata, case=False, na=False)]
-                    if len(query) > 0:
-                        df = query
+        if extra_metadata and extra_metadata_columns:
+            # Fields with their own search box are excluded: they are reachable
+            # through it, and add_extra_metadata leaves them out of this list.
+            for key in extra_metadata_columns:
+                if key not in df.columns:
+                    continue
+                query = df[df[key].str.contains(extra_metadata, case=False, na=False)]
+                if len(query) > 0:
+                    df = query
 
         for _, row in df.iterrows():
             sample_dict = row.to_dict()
