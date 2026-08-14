@@ -46,12 +46,41 @@
     }
 
     /* The lede spans the whole band rather than sharing the row with the
-       figures, so the full sentence stays on one line at desktop widths
-       instead of wrapping into a narrow ragged column beside the logo. */
+       figures, but is capped to a readable measure: at full band width a
+       two-sentence lede would run past 140 characters a line. Capped, it
+       wraps into a tidy block under the wordmark and leaves the space under
+       the figures clear. */
     .home-lede {
         font-size: 15px;
+        line-height: 1.5;
         color: #4a4d52;
         margin: 14px 0 0;
+        max-width: 72ch;
+        text-wrap: pretty;
+    }
+
+    /* Tool provenance is a credit, not part of the pitch: same measure, one
+       step down in size and colour so it reads after the lede rather than
+       competing with it. The tool names stay as plain text so they are
+       visible to scanners and on touch, where a tooltip would not be. */
+    .home-provenance {
+        font-size: 13px;
+        line-height: 1.45;
+        color: #74777c;
+        margin: 7px 0 0;
+        max-width: 72ch;
+    }
+
+    .home-provenance a {
+        color: #74777c;
+        text-decoration: underline;
+        text-decoration-color: #c9ced6;
+        text-underline-offset: 2px;
+    }
+
+    .home-provenance a:hover {
+        color: #1f66d0;
+        text-decoration-color: #5894f4;
     }
 
     .home-figs {
@@ -1135,9 +1164,14 @@
         </div>
 
         <p class="home-lede">
-            A repository of focal amplification reconstructions and classifications from
-            AmpliconArchitect (short-read) and CoRAL (long-read). Explore and download
-            predictions &amp; annotations.
+            Genomic focal amplifications, reconstructed and classified across public tumor
+            and cell line datasets. Search by amplified gene, cancer type or project to see
+            which samples carry an amplification and what structure it takes, then download
+            the full results.
+        </p>
+        <p class="home-provenance">
+            Produced with AmpliconArchitect (short-read) and CoRAL (long-read), part of the
+            <a href="https://github.com/AmpliconSuite" target="_blank" rel="noopener">AmpliconSuite</a> toolkit.
         </p>
 
         <form class="home-searchrow" id="home-search-form" method="POST" action="{% url 'search_results' %}">
