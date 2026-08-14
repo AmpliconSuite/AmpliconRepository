@@ -807,11 +807,26 @@
             }
         });
 
-        // "Advanced" reuses the search modal already built into the header,
-        // so there is only one copy of the full search form on the page.
+        // "Advanced" reuses the search modal already built into the header, so
+        // there is only one copy of the full search form on the page.
+        //
+        // The modal is opened by a native addEventListener in header.html, and
+        // jQuery's special.click._default returns true for anchors -- meaning
+        // .trigger('click') deliberately skips the element's own click()
+        // method to avoid double-navigating links. So a jQuery trigger never
+        // reaches that listener and the link appears dead. Call the native
+        // method instead.
+        //
+        // The href is a real destination (the full search page) rather than
+        // '#', so middle-clicking, opening in a new tab, or landing here with
+        // scripts disabled goes somewhere useful instead of nowhere.
         $('#home-advanced').on('click', function (event) {
+            var modalTrigger = document.getElementById('openSearchModal');
+            if (!modalTrigger) {
+                return;
+            }
             event.preventDefault();
-            $('#openSearchModal').trigger('click');
+            modalTrigger.click();
         });
 
         // --- dates: compact in the cell, full local timestamp on hover.
@@ -1091,7 +1106,7 @@
                 <button type="button" class="home-ex" data-scope="genequery" data-query="EGFR">EGFR</button>
                 <button type="button" class="home-ex" data-scope="genequery" data-query="CDK4&amp;MDM2">CDK4 &amp; MDM2</button>
                 <button type="button" class="home-ex" data-scope="metadata_cancer_tissue" data-query="glioblastoma">glioblastoma</button>
-                <a href="#" id="home-advanced" class="home-advanced">Advanced</a>
+                <a href="{% url 'gene_search_page' %}" id="home-advanced" class="home-advanced">Advanced</a>
             </div>
         </form>
 
@@ -1212,22 +1227,23 @@
             <div class="col-lg-8">
                 <div class="home-eyebrow">
                     Latest
-                    <a class="home-eyebrow-aside" href="https://docs.ampliconrepository.org/en/latest/" target="_blank">All updates</a>
                 </div>
                 <div class="home-latest">
                     <div>
                         <div class="home-news-meta">
                             <span class="home-tag home-tag-release">Release</span>
+                            <span class="home-news-src">GitHub</span>
                         </div>
-                        <a class="home-news-title" href="https://docs.ampliconrepository.org/en/latest/getting-started/" target="_blank">
+                        <a class="home-news-title" href="https://github.com/AmpliconSuite/CoRAL" target="_blank" rel="noopener noreferrer">
                             Long-read reconstructions from CoRAL are now accepted alongside AmpliconArchitect
                         </a>
                     </div>
                     <div>
                         <div class="home-news-meta">
                             <span class="home-tag home-tag-release">Release</span>
+                            <span class="home-news-src">Docs</span>
                         </div>
-                        <a class="home-news-title" href="https://docs.ampliconrepository.org/en/latest/api/" target="_blank">
+                        <a class="home-news-title" href="https://docs.ampliconrepository.org/en/latest/api/" target="_blank" rel="noopener noreferrer">
                             List public projects and download archives from the command line with the API
                         </a>
                     </div>
