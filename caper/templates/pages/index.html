@@ -445,8 +445,8 @@
     }
 
     .home-pill.is-on {
-        background: #414042;
-        border-color: #414042;
+        background: #6c757d;
+        border-color: #6c757d;
         color: #fff;
     }
 
@@ -569,9 +569,10 @@
         box-shadow: 0 3px 10px rgba(20, 30, 50, .2);
     }
 
-    /* Featured rows carry a gold rule instead of spending a column on a badge. */
+    /* Featured rows carry a rule instead of spending a column on a badge; it
+       matches the Featured tag rather than introducing a third colour. */
     tr.home-featured td:first-child {
-        box-shadow: inset 3px 0 0 #e0a800;
+        box-shadow: inset 3px 0 0 #28a745;
     }
 
     .home-chip {
@@ -586,9 +587,11 @@
         white-space: nowrap;
     }
 
-    .home-chip-featured { background: #fdf3d6; color: #8a6300; }
+    /* The green and the teal are Bootstrap's badge-success and badge-info,
+       which is what these tags were before the redesign. */
+    .home-chip-featured { background: #28a745; color: #fff; }
+    .home-chip-coral    { background: #17a2b8; color: #fff; }
     .home-chip-private  { background: #f0f1f3; color: #5a5d63; }
-    .home-chip-coral    { background: #e6f4ee; color: #2f855a; }
 
     .home-hidden-public {
         color: #c0392b;
@@ -983,27 +986,19 @@
                         in {{ sample_breakdown.coral_projects|default:0 }} project{{ sample_breakdown.coral_projects|pluralize }}
                     </div>
                     <div class="home-breakdown-group">
-                        <div class="home-breakdown-sub">By tissue of origin</div>
-                        {% for tissue, count in sample_breakdown.top_tissues %}
+                        <div class="home-breakdown-sub">Metadata coverage</div>
                         <div class="home-breakdown-row">
-                            <span>{{ tissue }}</span>
-                            <b>{{ count }}</b>
+                            <span>With tissue of origin</span>
+                            <b>{{ sample_breakdown.with_tissue|default:0 }}</b>
                         </div>
-                        {% empty %}
-                        <div class="home-breakdown-note">No tissue annotations recorded yet.</div>
-                        {% endfor %}
-                        {% if sample_breakdown.other_tissue_count %}
-                        <div class="home-breakdown-note">
-                            + {{ sample_breakdown.other_tissue_count }} more tissue{{ sample_breakdown.other_tissue_count|pluralize }}
+                        <div class="home-breakdown-row">
+                            <span>With cancer type</span>
+                            <b>{{ sample_breakdown.with_cancer_type|default:0 }}</b>
                         </div>
-                        {% endif %}
                     </div>
-                    {% if sample_breakdown.annotated %}
                     <div class="home-breakdown-note home-breakdown-foot">
-                        {{ sample_breakdown.annotated }} of {{ sample_breakdown.total }} samples
-                        carry a tissue annotation.
+                        Out of {{ sample_breakdown.total|default:0 }} public samples.
                     </div>
-                    {% endif %}
                 </div>
 
                 <div class="home-breakdown" id="home-breakdown" hidden>

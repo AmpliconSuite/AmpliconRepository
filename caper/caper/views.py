@@ -364,38 +364,38 @@ def index(request):
     })
 
 
-# Uploaders leave tissue of origin blank in several different ways; all of them
-# mean "unknown" and none of them belong in a ranked list of tissues.
-UNANNOTATED_TISSUE_VALUES = {'na', 'n/a', 'not provided', 'unknown', 'none', ''}
+# Uploaders record "no value" in several different ways; all of them mean
+# unknown and none of them count as an annotation.
+UNANNOTATED_LABEL_VALUES = {'na', 'n/a', 'not provided', 'unknown', 'none', ''}
 
-HOME_TOP_TISSUE_COUNT = 6
+
+def _annotated_sample_count(label_counts):
+    """Total samples carrying a real value in one of the label counters."""
+    return sum(
+        count for name, count in (label_counts or {}).items()
+        if str(name).strip().lower() not in UNANNOTATED_LABEL_VALUES
+    )
 
 
 def _home_sample_breakdown(site_stats):
     """Sample composition for the home page disclosure.
 
+    Deliberately reports how many samples are annotated rather than ranking
+    the values: tissue of origin and cancer type are free text and are not
+    standardised across projects, so a leaderboard of them would read as more
+    authoritative than the underlying data supports.
+
     Reads only the site_statistics document the page has already loaded, so
-    this is one sort of a dict with one entry per distinct tissue value and
-    costs no extra queries -- the home page stays a single round trip.
+    this costs no extra queries -- the home page stays a single round trip.
     """
-    tissue_counts = site_stats.get('public_tissue_of_origin_count') or {}
-
-    annotated = {
-        name: count for name, count in tissue_counts.items()
-        if str(name).strip().lower() not in UNANNOTATED_TISSUE_VALUES
-    }
-    ranked = sorted(annotated.items(), key=lambda item: -item[1])
-
     return {
         'total': site_stats.get('public_sample_count', 0),
         'coral': site_stats.get('public_coral_sample_count', 0),
         'coral_projects': site_stats.get('public_coral_project_count', 0),
-        'top_tissues': ranked[:HOME_TOP_TISSUE_COUNT],
-        'other_tissue_count': max(0, len(ranked) - HOME_TOP_TISSUE_COUNT),
-        # Stated outright rather than implied: most public samples carry no
-        # tissue annotation, so a ranked list on its own would misrepresent
-        # the corpus.
-        'annotated': sum(annotated.values()),
+        'with_tissue': _annotated_sample_count(
+            site_stats.get('public_tissue_of_origin_count')),
+        'with_cancer_type': _annotated_sample_count(
+            site_stats.get('public_cancer_type_count')),
     }
 
 

@@ -41,6 +41,7 @@ BUCKET_STAT_DEFAULTS = {
     'coral_sample_count': 0,
     'amplicon_classifications_count': dict,
     'tissue_of_origin_count': dict,
+    'cancer_type_count': dict,
 }
 
 
@@ -118,6 +119,7 @@ def _sum_projects_into_bucket(projects, prefix):
     """Total up every project in one visibility bucket into that bucket's statistics keys."""
     amplicon_counts = dict()
     tissue_counts = dict()
+    cancer_type_counts = dict()
     proj_count = 0
     sample_count = 0
     coral_project_count = 0
@@ -126,7 +128,10 @@ def _sum_projects_into_bucket(projects, prefix):
     for proj in projects:
         class_keys, proj_amplicon_counts = get_project_amplicon_counts(proj)
         sum_amplicon_counts_by_classification(class_keys, proj_amplicon_counts, amplicon_counts)
+        # sum_/subtract_tissue_of_origin_counts are plain dict arithmetic; the cancer type
+        # counter reuses them so both label counters clamp and warn identically.
         sum_tissue_of_origin_counts(get_project_tissue_of_origin_counts(proj), tissue_counts)
+        sum_tissue_of_origin_counts(get_project_cancer_type_counts(proj), cancer_type_counts)
         proj_count += 1
         sample_count += len(proj['runs'])
         if is_coral_project(proj):
@@ -140,6 +145,7 @@ def _sum_projects_into_bucket(projects, prefix):
         f'{prefix}_coral_sample_count': coral_sample_count,
         f'{prefix}_amplicon_classifications_count': amplicon_counts,
         f'{prefix}_tissue_of_origin_count': tissue_counts,
+        f'{prefix}_cancer_type_count': cancer_type_counts,
     }
 
 
@@ -184,14 +190,18 @@ def _apply_project_to_site_statistics(project, visibility, sign):
 
     class_keys, amplicon_counts = get_project_amplicon_counts(project)
     tissue_counts = get_project_tissue_of_origin_counts(project)
+    cancer_type_counts = get_project_cancer_type_counts(project)
     amplicon_holder = updated_stats[f'{prefix}_amplicon_classifications_count']
     tissue_holder = updated_stats[f'{prefix}_tissue_of_origin_count']
+    cancer_type_holder = updated_stats[f'{prefix}_cancer_type_count']
     if sign > 0:
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, amplicon_holder)
         sum_tissue_of_origin_counts(tissue_counts, tissue_holder)
+        sum_tissue_of_origin_counts(cancer_type_counts, cancer_type_holder)
     else:
         subtract_amplicon_counts_by_classification(class_keys, amplicon_counts, amplicon_holder)
         subtract_tissue_of_origin_counts(tissue_counts, tissue_holder)
+        subtract_tissue_of_origin_counts(cancer_type_counts, cancer_type_holder)
 
     updated_stats["date"] = get_date()
     site_statistics_handle.insert_one(updated_stats)
@@ -315,6 +325,43 @@ def get_project_tissue_of_origin_counts(project):
             tissue_counts[tissue] = tissue_counts.get(tissue, 0) + 1
     
     return tissue_counts
+
+
+def get_project_cancer_type_counts(project):
+    """
+    Counts the number of samples per Cancer_type in a project.
+
+    Mirrors get_project_tissue_of_origin_counts. Kept as its own counter rather than derived
+    on read: the home page needs to report how many public samples carry a cancer type label,
+    and working that out from the projects themselves would mean loading every project's runs
+    on a page that otherwise touches no sample data at all.
+
+    Args:
+        project (dict): Project dictionary containing runs data
+
+    Returns:
+        dict: Dictionary with Cancer_type as keys and counts as values
+    """
+    cancer_type_counts = dict()
+    runs = project['runs']
+
+    for sample_num in runs.keys():
+        sample_data = runs[sample_num]
+        # Check if sample_data is a list (array of features) or dict
+        if isinstance(sample_data, list) and len(sample_data) > 0:
+            # Get the first feature to access sample-level metadata
+            sample_info = sample_data[0]
+        else:
+            sample_info = sample_data
+
+        cancer_type = sample_info.get('Cancer_type', None)
+
+        # Only count if Cancer_type exists and is not None/empty
+        if cancer_type and str(cancer_type).strip():
+            cancer_type = str(cancer_type).strip()
+            cancer_type_counts[cancer_type] = cancer_type_counts.get(cancer_type, 0) + 1
+
+    return cancer_type_counts
 
 
 def sum_tissue_of_origin_counts(tissue_counts, sum_holder):
