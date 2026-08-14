@@ -202,12 +202,17 @@
         border-top: 1px solid #eef0f3;
     }
 
-    .home-breakdown abbr[title] {
+    .home-breakdown abbr {
         color: #9aa0a6;
         font-size: 11px;
         cursor: help;
         border: 0;
         text-decoration: none;
+    }
+
+    .home-breakdown abbr:hover,
+    .home-breakdown abbr:focus {
+        color: #1f66d0;
     }
 
     /* ---- the search that used to hide behind the left-edge tab ---- */
@@ -826,33 +831,43 @@
             cell.empty().append(
                 $('<span class="home-date-value" tabindex="0"></span>')
                     .text(compact)
-                    .attr('data-full', formatDate(raw))
+                    .attr('data-tip', formatDate(raw))
             );
         });
 
-        // Instant tooltip for the timestamps. Delegated, so it survives every
-        // DataTables redraw, and positioned only while one is actually shown.
-        var dateTip = $('<div class="home-tip" role="tooltip"></div>')
+        // Instant tooltips: anything carrying data-tip. Used by the timestamps
+        // and by the classification abbreviations in the breakdown panel, both
+        // of which previously relied on title= and so could not appear before
+        // the browser's own ~1s delay. Delegated from the document so it
+        // survives DataTables redraws and covers panels that start hidden.
+        var tip = $('<div class="home-tip" role="tooltip"></div>')
             .appendTo('body')
             .hide();
 
-        $('#unifiedProjectTable')
-            .on('mouseenter focus', '.home-date-value', function () {
-                var full = $(this).attr('data-full');
-                if (!full) {
+        $(document)
+            .on('mouseenter focus', '[data-tip]', function () {
+                var text = $(this).attr('data-tip');
+                if (!text) {
                     return;
                 }
-                dateTip.text(full).show();
+                tip.text(text).show();
+
                 var box = this.getBoundingClientRect();
-                dateTip.css({
-                    top: (box.top + window.pageYOffset - dateTip.outerHeight() - 7) + 'px',
-                    left: Math.max(6,
-                        box.left + window.pageXOffset +
-                        (box.width - dateTip.outerWidth()) / 2) + 'px'
+                var above = box.top + window.pageYOffset - tip.outerHeight() - 7;
+                tip.css({
+                    // Flip below the target if there is no room above it.
+                    top: (above < window.pageYOffset
+                        ? box.bottom + window.pageYOffset + 7
+                        : above) + 'px',
+                    left: Math.max(6, Math.min(
+                        box.left + window.pageXOffset + (box.width - tip.outerWidth()) / 2,
+                        window.pageXOffset + document.documentElement.clientWidth
+                            - tip.outerWidth() - 6
+                    )) + 'px'
                 });
             })
-            .on('mouseleave blur', '.home-date-value', function () {
-                dateTip.hide();
+            .on('mouseleave blur', '[data-tip]', function () {
+                tip.hide();
             });
 
         // --- pill filter, applied on top of whatever is in the text filter ---
@@ -1008,13 +1023,15 @@
                         <b>{{ site_stats.public_amplicon_classifications_count.ecDNA|default:0 }}</b>
                     </div>
                     <div class="home-breakdown-row">
-                        <span>BFB <abbr title="Breakage-fusion-bridge"><i class="far fa-question-circle" aria-hidden="true"></i></abbr></span>
+                        <span>BFB <abbr data-tip="Breakage-fusion-bridge"
+                                        aria-label="Breakage-fusion-bridge"
+                                        tabindex="0"><i class="far fa-question-circle" aria-hidden="true"></i></abbr></span>
                         <b>{{ site_stats.public_amplicon_classifications_count.BFB|default:0 }}</b>
                     </div>
                     <div class="home-breakdown-row">
                         <span>FAN <a href="https://github.com/AmpliconSuite/AmpliconClassifier/blob/main/docs/fan_primer.md"
                                      target="_blank" rel="noopener noreferrer"
-                                     title="Focal amplification in neochromosome - click to read more"
+                                     data-tip="Focal amplification in neochromosome - click to read more"
                                      aria-label="Focal amplification in neochromosome - click to read more"><i class="far fa-question-circle" aria-hidden="true"></i></a></span>
                         <b>{{ site_stats.public_amplicon_classifications_count.FAN|default:0 }}</b>
                     </div>
@@ -1138,7 +1155,7 @@
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                             <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
                             <span class="home-chip home-chip-featured">Featured</span>{% if "CoRAL" in project.Reconstruction_tools %}
-                            <span class="home-chip home-chip-coral" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
+                            <span class="home-chip home-chip-coral" data-tip="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                         </td>
                         {% include 'includes/project_description_cell.html' %}
                         <td class="home-date">{{ project.date }}</td>
@@ -1151,7 +1168,7 @@
                         <td>2</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                             <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %}
-                            <span class="home-chip home-chip-coral" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
+                            <span class="home-chip home-chip-coral" data-tip="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                         </td>
                         {% include 'includes/project_description_cell.html' %}
                         <td class="home-date">{{ project.date }}</td>
@@ -1165,8 +1182,8 @@
                         <td>3</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                             <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>
-                            <span class="home-chip home-chip-private">Private</span>{% if project.visibility_display == 'Hidden Public' %}<span class="home-hidden-public" title="Hidden Public: anyone with the link can view this project">*</span>{% endif %}{% if "CoRAL" in project.Reconstruction_tools %}
-                            <span class="home-chip home-chip-coral" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
+                            <span class="home-chip home-chip-private">Private</span>{% if project.visibility_display == 'Hidden Public' %}<span class="home-hidden-public" data-tip="Hidden Public: anyone with the link can view this project" aria-label="Hidden Public: anyone with the link can view this project">*</span>{% endif %}{% if "CoRAL" in project.Reconstruction_tools %}
+                            <span class="home-chip home-chip-coral" data-tip="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                         </td>
                         {% include 'includes/project_description_cell.html' %}
                         <td class="home-date">{{ project.date }}</td>
