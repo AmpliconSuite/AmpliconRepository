@@ -675,6 +675,17 @@
         font-size: 13.5px;
     }
 
+    /* A description long enough to need a More button wraps it onto a second
+       line, so those rows stood ~13px taller than the rest. Each page has a
+       different number of them, which made the table a different height on
+       every page and walked the pager up and down as you paged. On a td,
+       height is a minimum: short rows are padded out to match, long ones (an
+       expanded description) still grow, which is what a deliberate click
+       should do. */
+    table.home-projects tbody td {
+        height: 54px;
+    }
+
     /* style.css stripes every odd row site-wide; this table is not striped. */
     table.home-projects tbody tr:nth-child(odd),
     table.home-projects tbody tr:nth-child(even) {
@@ -756,20 +767,26 @@
     table.home-projects th:first-child,
     table.home-projects td:first-child {
         position: relative;
-        padding-left: 26px;
+        padding-left: 34px;
     }
 
-    .home-featured-flag {
+    /* Room for two tabs is reserved on every row, featured or not, or project
+       names would sit at several different left edges down the column. */
+    .home-flags {
         position: absolute;
         left: 0;
         top: 0;
         bottom: 0;
-        width: 15px;
+        display: flex;
+        gap: 2px;
+    }
+
+    .home-flag {
+        width: 14px;
         display: flex;
         align-items: center;
         justify-content: center;
         overflow: hidden;
-        background: #28a745;
         color: #fff;
         font-size: 8px;
         font-weight: 700;
@@ -780,6 +797,18 @@
         writing-mode: vertical-rl;
         transform: rotate(180deg);
         white-space: nowrap;
+    }
+
+    .home-flag-featured {
+        background: #28a745;
+    }
+
+    /* Mustard rather than the teal the CoRAL chip used: teal sat a step away
+       from the page's link blue and read as a third state of the same thing.
+       This is darker than a bright mustard because the type is 8px -- at that
+       size white on #b8860b is around 3:1, which is not enough to read. */
+    .home-flag-coral {
+        background: #96700a;
     }
 
     /* Sentence case, not uppercase: these sit beside the project name and are
@@ -798,7 +827,6 @@
 
     /* The green and the teal are Bootstrap's badge-success and badge-info,
        which is what these tags were before the redesign. */
-    .home-chip-coral    { background: #17a2b8; color: #fff; }
     .home-chip-private  { background: #f0f1f3; color: #5a5d63; }
 
     /* A publication is a destination, not a status, so it gets a link glyph
@@ -1504,9 +1532,11 @@
                     <tr class="home-featured" data-project-type="featured" data-tools="{{ project.Reconstruction_tools }}">
                         <td>1</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                            <span class="home-featured-flag">Featured</span>
-                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}{% if "CoRAL" in project.Reconstruction_tools %}
-                            <span class="home-chip home-chip-coral" data-tip="Long-read analysis">CoRAL</span>{% endif %}
+                            <span class="home-flags">
+                                <span class="home-flag home-flag-featured">Featured</span>{% if "CoRAL" in project.Reconstruction_tools %}
+                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis">CoRAL</span>{% endif %}
+                            </span>
+                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}
                         </td>
                         {% include 'includes/project_description_cell.html' %}
                         <td class="home-date">{{ project.date }}</td>
@@ -1518,8 +1548,10 @@
                     <tr data-project-type="public" data-tools="{{ project.Reconstruction_tools }}">
                         <td>2</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}{% if "CoRAL" in project.Reconstruction_tools %}
-                            <span class="home-chip home-chip-coral" data-tip="Long-read analysis">CoRAL</span>{% endif %}
+                            {% if "CoRAL" in project.Reconstruction_tools %}<span class="home-flags">
+                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis">CoRAL</span>
+                            </span>{% endif %}
+                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}
                         </td>
                         {% include 'includes/project_description_cell.html' %}
                         <td class="home-date">{{ project.date }}</td>
@@ -1532,9 +1564,11 @@
                     <tr data-project-type="private" data-tools="{{ project.Reconstruction_tools }}">
                         <td>3</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
+                            {% if "CoRAL" in project.Reconstruction_tools %}<span class="home-flags">
+                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis">CoRAL</span>
+                            </span>{% endif %}
                             <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}
-                            <span class="home-chip home-chip-private">Private</span>{% if project.visibility_display == 'Hidden Public' %}<span class="home-hidden-public" data-tip="Hidden Public: anyone with the link can view this project" aria-label="Hidden Public: anyone with the link can view this project">*</span>{% endif %}{% if "CoRAL" in project.Reconstruction_tools %}
-                            <span class="home-chip home-chip-coral" data-tip="Long-read analysis">CoRAL</span>{% endif %}
+                            <span class="home-chip home-chip-private">Private</span>{% if project.visibility_display == 'Hidden Public' %}<span class="home-hidden-public" data-tip="Hidden Public: anyone with the link can view this project" aria-label="Hidden Public: anyone with the link can view this project">*</span>{% endif %}
                         </td>
                         {% include 'includes/project_description_cell.html' %}
                         <td class="home-date">{{ project.date }}</td>

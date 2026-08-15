@@ -101,21 +101,38 @@ def test_home_project_rows_distinguish_featured_from_public_and_private():
     """
     source = (TEMPLATE_DIR / "index.html").read_text()
 
-    assert '<span class="home-featured-flag">Featured</span>' in source
+    assert '<span class="home-flag home-flag-featured">Featured</span>' in source
     assert '<span class="home-chip home-chip-private">Private</span>' in source
     assert '<span class="badge badge-primary">Public</span>' not in source
 
-    # Featured is a tab down the edge of the row, not a tag beside the name, so
-    # the tag slot stays free for CoRAL and a row can carry both.
-    assert ".home-featured-flag {" in source
+    # Featured and CoRAL are both tabs down the edge of the row rather than tags
+    # beside the name, so a row can carry both without the badges stacking onto
+    # a second line and pushing the name around.
+    assert source.count('home-flag home-flag-coral') == 3      # all three row loops
+    assert ".home-flag {" in source
     assert "writing-mode: vertical-rl;" in source
-    assert "background: #28a745;" in source
+    assert ".home-flag-featured {" in source
+    assert ".home-flag-coral {" in source
     assert ".home-chip-private  { background: #f0f1f3; color: #5a5d63; }" in source
 
-    # The gutter is reserved on every first cell, or project names would sit at
-    # two different left edges depending on whether the row is featured.
+    # Room for both tabs is reserved on every first cell, or project names would
+    # sit at several different left edges down the column.
     assert "table.home-projects td:first-child {" in source
-    assert "padding-left: 26px;" in source
+    assert "padding-left: 34px;" in source
+
+
+def test_home_project_rows_are_all_the_same_height():
+    """Otherwise the table is a different height on every page.
+
+    A description long enough to need a More button wraps it onto a second line.
+    Each page has a different number of those, so the pager moved up and down as
+    you paged through -- the control you were aiming at was never twice in the
+    same place.
+    """
+    source = (TEMPLATE_DIR / "index.html").read_text()
+
+    assert "table.home-projects tbody td {" in source
+    assert "height: 54px;" in source
 
 
 def test_home_project_description_toggle_only_renders_for_long_text():
