@@ -252,6 +252,25 @@
 
                     </div>
 
+                    <!--
+                      Versioning notice: applies to all three modes above.
+
+                      "Replace Entire Project" already warns that samples will be
+                      removed, which reads as permanent; it is not, and neither
+                      are the other two. All three go through
+                      edit_project_into_new_version, which files the version you
+                      have now under previous_versions and leaves it readable and
+                      downloadable. Saying so here is what makes Replace a
+                      recoverable decision rather than a one-way door.
+                    -->
+                    <div style="margin-top:12px; background:#eaf1f8; border:1px solid #b8d0e6;
+                         border-radius:6px; padding:10px 12px; color:#1a5276;">
+                        <strong>All three create a new version of the project.</strong>
+                        The version you have now is not overwritten &mdash; it stays listed in the
+                        <em>Project History</em> table on the project page, where it can still be
+                        opened and downloaded.
+                    </div>
+
                     <!-- Validation error: shown when files selected but no mode chosen -->
                     <div id="replace-mode-error" style="display:none; margin-top:12px;
                          background:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; padding:10px; color:#721c24;">
