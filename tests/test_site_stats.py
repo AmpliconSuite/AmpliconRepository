@@ -591,3 +591,44 @@ def test_publication_counts_default_on_a_document_written_before_they_existed():
         assert latest['public_ecdna_positive_sample_count'] == 0
     finally:
         _cleanup_stats_since(start_id)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_startup_rebuild_only_fires_when_the_stored_shape_is_behind():
+    """The check runs on every start; the rebuild must not.
+
+    Regeneration reads every project document in full, so paying for it on an
+    ordinary restart would put a scan of the whole corpus in front of the first
+    request. It is worth paying only when a release has added a counter the
+    newest snapshot cannot have.
+    """
+    from caper.site_stats import (
+        get_latest_site_statistics,
+        missing_statistics_keys,
+        regenerate_site_statistics_if_stale,
+        site_statistics_handle,
+    )
+
+    start_id = get_latest_site_statistics()['_id']
+    try:
+        # A current snapshot: nothing missing, and nothing written.
+        regenerate_site_statistics_if_stale()
+        assert missing_statistics_keys() == []
+
+        before_count = site_statistics_handle.count_documents({})
+        assert regenerate_site_statistics_if_stale() == []
+        assert site_statistics_handle.count_documents({}) == before_count
+
+        # A snapshot from before the publication and ecDNA counters existed.
+        site_statistics_handle.insert_one(_legacy_stats_document())
+        missing = missing_statistics_keys()
+        assert 'public_publication_links' in missing
+        assert 'public_ecdna_positive_sample_count' in missing
+
+        assert regenerate_site_statistics_if_stale() == missing
+        # ...and once rebuilt, a second start finds nothing to do.
+        assert missing_statistics_keys() == []
+        assert regenerate_site_statistics_if_stale() == []
+    finally:
+        _cleanup_stats_since(start_id)

@@ -212,6 +212,47 @@ def regenerate_site_statistics():
     return repo_stats
 
 
+def missing_statistics_keys():
+    """Keys the code now reads that the newest stored snapshot does not carry.
+
+    Read against the stored document rather than against
+    get_latest_site_statistics, which fills the defaults in on the way out and
+    so can never report anything missing.
+    """
+    if site_statistics_handle.count_documents({}) == 0:
+        return [key for key, _ in _bucket_stat_keys()]
+
+    stored = site_statistics_handle.find().sort('_id', -1).limit(1).next()
+    return [key for key, _ in _bucket_stat_keys() if key not in stored]
+
+
+def regenerate_site_statistics_if_stale():
+    """Rebuild the statistics when, and only when, the stored shape is behind.
+
+    Statistics are stored as snapshots, so a release that adds a counter leaves
+    the newest snapshot without it: get_latest_site_statistics fills a zero in,
+    the home page reports zero, and it stays zero until someone regenerates by
+    hand. That has to be caught at startup, because nothing at runtime will.
+
+    What it must not do is regenerate on every start. Regeneration reads every
+    project document in full -- ``runs`` included, which is nearly all of the
+    bytes -- and that is tens to hundreds of megabytes off a remote database,
+    paid in the master process before gunicorn forks a worker that can serve
+    anything. So the check is one query, and the scan happens only when the
+    shape actually changed.
+
+    This is deliberately not a fix for counters drifting from the truth: drift
+    accrues while the site is running, not while it is booting, so restarting is
+    the wrong moment to look for it. Regenerate from the admin page for that.
+
+    Returns the keys that were missing, or [] if the snapshot was current.
+    """
+    missing = missing_statistics_keys()
+    if missing:
+        regenerate_site_statistics()
+    return missing
+
+
 def _carry_forward_buckets(current_stats):
     """Copy every bucket's keys onto a new statistics document.
 

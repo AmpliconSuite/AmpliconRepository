@@ -31,6 +31,12 @@
     
         var table = $('#myTable1').DataTable();
 
+        // Now that the table is paged, put it back into layout. Column widths
+        // were computed while it was display:none, so they have to be redone
+        // against the real rendered width.
+        $('#samples-table-wrap').addClass('is-ready');
+        table.columns.adjust();
+
         // Put the filtered-download control in the same band as the "Show N
         // entries" menu and the search box.  DataTables builds that row itself,
         // so this can only happen after init.  Default DataTables styling
@@ -427,13 +433,9 @@
             //alert("Nothing to say")
         }
 
-        // Hide plotly_plots div if there's only one sample
-        var sampleCount = parseInt("{{ sample_data|length|default:0 }}".replace(/,/g, ''));
-        if (sampleCount === 1) {
-            $('#plotly_plots').hide();
-        } else {
-            $('#plotly_plots').show();
-        }
+        // Visibility of #plotly_plots is decided in the template now -- doing it
+        // here meant the container appeared after first paint and pushed
+        // everything below it down the page.
 
     } );
     function show_div() {
@@ -481,8 +483,39 @@
         });
     }
 
+    // The project history table shows one date per version, and the long local
+    // format was the widest column in it by some way. These cells get the
+    // compact date, with the same full string formatDate() produces on hover --
+    // so nothing is lost, it just stops costing a column.
+    function formatCompactDates() {
+        document.querySelectorAll('.date-compact').forEach(element => {
+            const original = element.textContent.trim();
+            const parsed = Date.parse(original);
+            if (isNaN(parsed)) {
+                // Unparseable stored date: leave it as it is rather than
+                // showing an invalid one.
+                return;
+            }
+            const utcDate = new Date(parsed);
+            const localDate = new Date(utcDate.getTime() - utcDate.getTimezoneOffset() * 60000);
+            const month = String(localDate.getMonth() + 1).padStart(2, '0');
+            const day = String(localDate.getDate()).padStart(2, '0');
+
+            element.textContent = localDate.getFullYear() + '-' + month + '-' + day;
+            element.setAttribute('title', formatDate(original));
+            element.setAttribute('data-toggle', 'tooltip');
+            // Bootstrap tooltips fire on focus as well as hover, so this makes
+            // the full timestamp reachable from the keyboard.
+            element.setAttribute('tabindex', '0');
+            // base.html initialises tooltips on ready, which has already
+            // happened by the time these attributes exist.
+            $(element).tooltip();
+        });
+    }
+
     // Call the formatDates function when the page is loaded
     document.addEventListener('DOMContentLoaded', formatDates);
+    document.addEventListener('DOMContentLoaded', formatCompactDates);
 
     // Description truncation and toggle
     document.addEventListener('DOMContentLoaded', function() {
@@ -1019,7 +1052,12 @@
    tests/test_page_weight.py.
 {% endcomment %}
 <script src="https://cdn.plot.ly/plotly-2.16.1.min.js" charset="utf-8"></script>
-<div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; display:none; overflow-x: auto;">
+{% comment %}
+Shown or hidden from the first paint rather than by script on ready: the figures
+already carry their own 400px height, so the only thing that used to move the
+page was this container switching on after everything below it had been laid out.
+{% endcomment %}
+<div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; overflow-x: auto;{% if sample_data|length == 1 %} display:none;{% endif %}">
     <div style="display: flex; flex-wrap: nowrap; align-items: flex-end; width: max-content;">
         <div style="flex: 0 0 auto;">{{ stackedbar_graph|safe }}
         {% block plotly_js %}
@@ -1088,6 +1126,52 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
     </button>
     <span id="filtered-count" style="margin-left: 10px; color: #666;"></span>
 </div>
+{% comment %}
+The full sample list is in the DOM -- every sample, which on a large project is
+thousands of rows -- and DataTables only cuts it to one page once it initialises.
+Rendering that raw table first makes the page briefly enormous and then snaps it
+shut, dragging everything below it back up the screen. The wrapper holds the
+height a paged table will occupy and keeps the rows out of layout until they are
+paged.
+{% endcomment %}
+<style>
+    #samples-table-wrap {
+        position: relative;
+        min-height: 430px;
+    }
+
+    /* display, not visibility: hidden rows still take their full height. */
+    #samples-table-wrap > .table-responsive {
+        display: none;
+    }
+
+    #samples-table-wrap.is-ready {
+        min-height: 0;
+    }
+
+    #samples-table-wrap.is-ready > .table-responsive {
+        display: block;
+    }
+
+    #samples-table-wrap.is-ready .samples-table-placeholder {
+        display: none;
+    }
+
+    .samples-table-placeholder {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 430px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #9aa0a6;
+        font-size: 13px;
+    }
+</style>
+<div id="samples-table-wrap">
+<div class="samples-table-placeholder" aria-hidden="true">Loading samples...</div>
 <div class="table-responsive">
     <table id='myTable1' class="table table-hover table-sm stripe no-border">
         <thead>
@@ -1116,6 +1200,7 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
             {% endfor %}
         </tbody>
     </table>
+</div>
 </div>
 {% endif %}
 
@@ -1258,13 +1343,31 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
                             <th scope="col">Version</th>
                             <th scope="col">Reconstruction tool</th>
                             {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
-                            <th scope="col">AS-p</th>
-                            <th scope="col">AA</th>
+                            <th scope="col">AS-p
+                                <span data-toggle="tooltip"
+                                      title="AmpliconSuite-pipeline"
+                                      aria-label="AmpliconSuite-pipeline"
+                                      tabindex="0"
+                                      style="color:#9aa0a6; font-size:11px; cursor:help;"><i class="far fa-question-circle" aria-hidden="true"></i></span>
+                            </th>
+                            <th scope="col">AA
+                                <span data-toggle="tooltip"
+                                      title="AmpliconArchitect"
+                                      aria-label="AmpliconArchitect"
+                                      tabindex="0"
+                                      style="color:#9aa0a6; font-size:11px; cursor:help;"><i class="far fa-question-circle" aria-hidden="true"></i></span>
+                            </th>
                             {% endif %}
                             {% if "CoRAL" in project.Reconstruction_tools %}
                             <th scope="col">CoRAL</th>
                             {% endif %}
-                            <th scope="col">AC</th>
+                            <th scope="col">AC
+                                <span data-toggle="tooltip"
+                                      title="AmpliconClassifier"
+                                      aria-label="AmpliconClassifier"
+                                      tabindex="0"
+                                      style="color:#9aa0a6; font-size:11px; cursor:help;"><i class="far fa-question-circle" aria-hidden="true"></i></span>
+                            </th>
                             <th scope="col">Aggregator
                                 <span data-toggle="tooltip"
                                       title="AmpliconSuiteAggregator: organizes each sample's tool outputs and builds the archive this site reads."
@@ -1279,7 +1382,7 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
                             {% for version in prev_versions %}
 
                             <tr>
-                                <td class="date">{{ version.date }}</td>
+                                <td class="date-compact">{{ version.date }}</td>
                                 <td scope="row">Project ID:
                                     <a href="/project/{{ version.linkid }}">{{ version.linkid }}</a>
                                     {% if version.linkid == proj_id %}

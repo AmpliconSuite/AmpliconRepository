@@ -101,18 +101,21 @@ def test_home_project_rows_distinguish_featured_from_public_and_private():
     """
     source = (TEMPLATE_DIR / "index.html").read_text()
 
-    assert '<span class="home-chip home-chip-featured">Featured</span>' in source
+    assert '<span class="home-featured-flag">Featured</span>' in source
     assert '<span class="home-chip home-chip-private">Private</span>' in source
     assert '<span class="badge badge-primary">Public</span>' not in source
 
-    # Distinct colours, not just distinct labels.
-    assert ".home-chip-featured { background: #28a745; color: #fff; }" in source
+    # Featured is a tab down the edge of the row, not a tag beside the name, so
+    # the tag slot stays free for CoRAL and a row can carry both.
+    assert ".home-featured-flag {" in source
+    assert "writing-mode: vertical-rl;" in source
+    assert "background: #28a745;" in source
     assert ".home-chip-private  { background: #f0f1f3; color: #5a5d63; }" in source
 
-    # The featured rule on the row itself, so the row stays marked even where
-    # the chip is off-screen.
-    assert "tr.home-featured td:first-child" in source
-    assert "box-shadow: inset 3px 0 0 #28a745;" in source
+    # The gutter is reserved on every first cell, or project names would sit at
+    # two different left edges depending on whether the row is featured.
+    assert "table.home-projects td:first-child {" in source
+    assert "padding-left: 26px;" in source
 
 
 def test_home_project_description_toggle_only_renders_for_long_text():

@@ -551,26 +551,31 @@
 
     #home-table-foot {
         display: flex;
-        align-items: center;
-        gap: 6px;
+        align-items: baseline;
+        gap: 16px;
         flex-wrap: wrap;
         margin-top: 4px;
-        padding-top: 13px;
+        padding-top: 12px;
         border-top: 1px solid #e3e6ea;
     }
 
-    /* DataTables ships its own type scale and button chrome from the CDN
-       stylesheet, which is where the old site's look was still showing
-       through an otherwise restyled section. These match the row count and
-       the pager to the rest of the table. The CDN rules set colours with
-       !important, so overriding them needs the same. */
-    .dataTables_wrapper .dataTables_info,
-    .dataTables_wrapper .dataTables_paginate {
+    /* DataTables' CDN stylesheet dresses the pager in the old site's look:
+       1.5em minimum widths, .5em/1em padding, and dark gradients on hover and
+       on the current page, several of them !important. Overriding it selector
+       for selector meant two sets of chrome interleaved -- a rule for every
+       button sitting after the rule for prev and next -- and the pager came out
+       a mess. It is all scoped under the footer's id now, which outranks any of
+       the CDN's class selectors outright, so this is the only chrome that
+       applies and the order within it is the order it reads in.  */
+    #home-table-foot .dataTables_info,
+    #home-table-foot .dataTables_paginate {
         font-size: 13px;
         color: #74777c;
-        padding-top: 0;
-        margin: 0;
         float: none;
+        margin: 0;
+        padding: 0;
+        text-align: left;
+        white-space: nowrap;
     }
 
     /* The count is the label for the pager beside it, so it should not be the
@@ -581,58 +586,68 @@
         font-variant-numeric: tabular-nums;
     }
 
-    .dataTables_wrapper .dataTables_paginate .paginate_button {
+    #home-table-foot .paginate_button {
+        display: inline-block;
+        box-sizing: border-box;
+        min-width: 0;
         font-family: inherit;
         font-size: 13px;
-        padding: 6px 12px;
-        margin-left: 4px;
+        line-height: 1.3;
+        padding: 5px 11px;
+        margin: 0 0 0 5px;
         border: 1px solid #e3e6ea;
         border-radius: 999px;
-        background: #fff;
+        background: #fff none;
         color: #74777c !important;
         box-shadow: none;
+        text-decoration: none !important;
+        cursor: pointer;
     }
 
-    /* Next is the one control that has to be found, so it is the one that gets
-       colour. The numbered buttons stay quiet; a page of pills all shouting is
-       how the pager became invisible in the first place. */
-    .dataTables_wrapper .dataTables_paginate .paginate_button.next:not(.disabled),
-    .dataTables_wrapper .dataTables_paginate .paginate_button.previous:not(.disabled) {
+    #home-table-foot .paginate_button:first-child {
+        margin-left: 0;
+    }
+
+    #home-table-foot .paginate_button:hover {
+        border-color: #9aa0a6;
+        color: #414042 !important;
+    }
+
+    /* Prev and Next are the controls that had to be found, so they are the ones
+       that get colour. The numbered buttons stay quiet: a row of pills all
+       shouting is how the pager became invisible in the first place. */
+    #home-table-foot .paginate_button.previous,
+    #home-table-foot .paginate_button.next {
         border-color: #a9c6ef;
         color: #1f66d0 !important;
         font-weight: 600;
     }
 
-    .dataTables_wrapper .dataTables_paginate .paginate_button.next:not(.disabled):hover,
-    .dataTables_wrapper .dataTables_paginate .paginate_button.previous:not(.disabled):hover {
-        background: #1f66d0;
+    #home-table-foot .paginate_button.previous:hover,
+    #home-table-foot .paginate_button.next:hover {
+        background: #1f66d0 none;
         border-color: #1f66d0;
         color: #fff !important;
     }
 
-    .dataTables_wrapper .dataTables_paginate .paginate_button:hover,
-    .dataTables_wrapper .dataTables_paginate .paginate_button:active {
-        background: #fff;
-        border-color: #9aa0a6;
-        color: #414042 !important;
-        box-shadow: none;
-    }
-
-    /* The current page reads like a selected filter pill, because that is
-       what it is. */
-    .dataTables_wrapper .dataTables_paginate .paginate_button.current,
-    .dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
-        background: #6c757d;
+    /* The current page reads like a selected filter pill, because that is what
+       it is. */
+    #home-table-foot .paginate_button.current,
+    #home-table-foot .paginate_button.current:hover {
+        background: #6c757d none;
         border-color: #6c757d;
         color: #fff !important;
     }
 
-    .dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
-    .dataTables_wrapper .dataTables_paginate .paginate_button.disabled:hover,
-    .dataTables_wrapper .dataTables_paginate .paginate_button.disabled:active {
-        background: #fff;
+    /* At either end of the range the button keeps its place but stops offering
+       anything, so it loses its colour rather than its position. */
+    #home-table-foot .paginate_button.disabled,
+    #home-table-foot .paginate_button.disabled:hover,
+    #home-table-foot .paginate_button.disabled:active {
+        background: #fff none;
         border-color: #eef0f3;
         color: #c3c7cc !important;
+        font-weight: 400;
         cursor: default;
     }
 
@@ -731,10 +746,40 @@
         box-shadow: 0 3px 10px rgba(20, 30, 50, .2);
     }
 
-    /* Featured rows carry a rule instead of spending a column on a badge; it
-       matches the Featured tag rather than introducing a third colour. */
-    tr.home-featured td:first-child {
-        box-shadow: inset 3px 0 0 #28a745;
+    /* Featured rows say so down the edge of the row rather than in a tag beside
+       the name. It buys back the horizontal space the tag was taking next to
+       long project names, and it leaves the tag slot free for CoRAL, so a row
+       can now be both without the badges stacking onto a second line.
+
+       The gutter is reserved on every first cell, not just featured ones, or
+       project names would sit at two different left edges down the column. */
+    table.home-projects th:first-child,
+    table.home-projects td:first-child {
+        position: relative;
+        padding-left: 26px;
+    }
+
+    .home-featured-flag {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 15px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        background: #28a745;
+        color: #fff;
+        font-size: 8px;
+        font-weight: 700;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        /* vertical-rl reads top-to-bottom; the rotation turns it the way a
+           spine label reads, bottom-to-top. */
+        writing-mode: vertical-rl;
+        transform: rotate(180deg);
+        white-space: nowrap;
     }
 
     /* Sentence case, not uppercase: these sit beside the project name and are
@@ -753,7 +798,6 @@
 
     /* The green and the teal are Bootstrap's badge-success and badge-info,
        which is what these tags were before the redesign. */
-    .home-chip-featured { background: #28a745; color: #fff; }
     .home-chip-coral    { background: #17a2b8; color: #fff; }
     .home-chip-private  { background: #f0f1f3; color: #5a5d63; }
 
@@ -848,6 +892,13 @@
     }
 
     /* ---- description expander (unchanged behaviour, restyled) ---- */
+    /* The toggle is an inline-block in the middle of a run of text, so its own
+       box takes part in sizing the line it sits on. Left to the defaults it was
+       taller than the text around it, which made every row carrying a More
+       button taller than the rows without one -- the description column looked
+       ragged even though nothing in it had changed. Matching the cell's
+       line-height and sitting on the baseline keeps the line box the same
+       height whether the button is there or not. */
     .project-description-toggle {
         appearance: none;
         background: none;
@@ -858,7 +909,8 @@
         font-family: inherit;
         font-size: 0.86em;
         font-weight: 600;
-        line-height: inherit;
+        line-height: 1.45;
+        vertical-align: baseline;
         margin-left: 0.15rem;
         padding: 0 0.15rem;
         white-space: nowrap;
@@ -877,6 +929,8 @@
     .project-description-toggle-icon {
         display: inline-block;
         font-size: 0.72em;
+        line-height: 1;
+        vertical-align: baseline;
         margin-left: 0.12rem;
         transition: transform 0.15s ease;
     }
@@ -1220,22 +1274,22 @@
 
                 <div class="home-breakdown" id="home-samples" hidden>
                     <div class="home-breakdown-title">Public samples</div>
+                    <div class="home-breakdown-sub">Metadata coverage</div>
                     <div class="home-breakdown-row">
-                        <span>Long-read (CoRAL)</span>
-                        <b>{{ sample_breakdown.coral|default:0 }}</b>
+                        <span>With tissue of origin</span>
+                        <b>{{ sample_breakdown.with_tissue|default:0 }}</b>
                     </div>
-                    <div class="home-breakdown-note">
-                        in {{ sample_breakdown.coral_projects|default:0 }} project{{ sample_breakdown.coral_projects|pluralize }}
+                    <div class="home-breakdown-row">
+                        <span>With cancer type</span>
+                        <b>{{ sample_breakdown.with_cancer_type|default:0 }}</b>
                     </div>
                     <div class="home-breakdown-group">
-                        <div class="home-breakdown-sub">Metadata coverage</div>
                         <div class="home-breakdown-row">
-                            <span>With tissue of origin</span>
-                            <b>{{ sample_breakdown.with_tissue|default:0 }}</b>
+                            <span>Long-read (CoRAL)</span>
+                            <b>{{ sample_breakdown.coral|default:0 }}</b>
                         </div>
-                        <div class="home-breakdown-row">
-                            <span>With cancer type</span>
-                            <b>{{ sample_breakdown.with_cancer_type|default:0 }}</b>
+                        <div class="home-breakdown-note">
+                            in {{ sample_breakdown.coral_projects|default:0 }} project{{ sample_breakdown.coral_projects|pluralize }}
                         </div>
                     </div>
                     <div class="home-breakdown-note home-breakdown-foot">
@@ -1255,7 +1309,7 @@
                     </div>
                     {% if site_stats.public_projects_with_publication != site_stats.public_unique_publication_count %}
                     <div class="home-breakdown-note">
-                        Fewer papers than projects: some cohorts are split across more than one project.
+                        Some publications are split into multiple projects.
                     </div>
                     {% endif %}
                     <div class="home-breakdown-note home-breakdown-foot">
@@ -1450,8 +1504,8 @@
                     <tr class="home-featured" data-project-type="featured" data-tools="{{ project.Reconstruction_tools }}">
                         <td>1</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}
-                            <span class="home-chip home-chip-featured">Featured</span>{% if "CoRAL" in project.Reconstruction_tools %}
+                            <span class="home-featured-flag">Featured</span>
+                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}{% if "CoRAL" in project.Reconstruction_tools %}
                             <span class="home-chip home-chip-coral" data-tip="Long-read analysis">CoRAL</span>{% endif %}
                         </td>
                         {% include 'includes/project_description_cell.html' %}
@@ -1498,7 +1552,7 @@
         <div class="row">
             <div class="col-lg-8">
                 <div class="home-eyebrow">
-                    Latest
+                    Latest updates
                 </div>
                 <div class="home-latest">
                     <div>
