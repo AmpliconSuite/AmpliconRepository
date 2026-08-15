@@ -675,15 +675,14 @@
         font-size: 13.5px;
     }
 
-    /* A description long enough to need a More button wraps it onto a second
-       line, so those rows stood ~13px taller than the rest. Each page has a
-       different number of them, which made the table a different height on
-       every page and walked the pager up and down as you paged. On a td,
-       height is a minimum: short rows are padded out to match, long ones (an
-       expanded description) still grow, which is what a deliberate click
-       should do. */
+    /* Rows are one line tall and all the same height, so the pager below the
+       table stops moving as you page. The evenness comes from the description
+       cell being clamped to a single line (below) rather than from padding the
+       rows out to the height of the tallest one -- that was uniform but far
+       taller than the content needed. This height only backstops a row whose
+       description is empty. */
     table.home-projects tbody td {
-        height: 54px;
+        height: 42px;
     }
 
     /* style.css stripes every odd row site-wide; this table is not striped. */
@@ -705,6 +704,34 @@
         color: #74777c;
         font-size: 13px;
         line-height: 1.45;
+    }
+
+    /* Collapsed, a description is exactly one line: the text takes the room
+       that is left and ends in an ellipsis, and the More button never wraps
+       below it. That is what keeps every row the same height. Expanding is a
+       deliberate click, so the row is allowed to grow then. Scoped to the home
+       table -- the same include is used where wrapping is fine. */
+    .home-projects .project-description {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+    }
+
+    .home-projects .project-description-preview,
+    .home-projects .project-description-full {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .home-projects .project-description.is-expanded .project-description-full {
+        overflow: visible;
+        white-space: normal;
+    }
+
+    .home-projects .project-description-toggle {
+        flex: 0 0 auto;
     }
 
     .home-num {
@@ -767,7 +794,7 @@
     table.home-projects th:first-child,
     table.home-projects td:first-child {
         position: relative;
-        padding-left: 34px;
+        padding-left: 26px;
     }
 
     /* Room for two tabs is reserved on every row, featured or not, or project
@@ -781,34 +808,58 @@
         gap: 2px;
     }
 
+    /* Closed, a tab is a colour down the edge of the row and nothing else.
+       Point at it and it opens sideways to name itself. That costs a hover to
+       read, and buys back everything setting type in a 14px column cost: no
+       8px caps shouting the same two words down the whole table, no row tall
+       enough to fit a word on its side. Width animates off max-width, because
+       the label sets the open width and auto cannot be transitioned to.
+       The label stays in the DOM when closed, so screen readers still get it. */
     .home-flag {
-        width: 14px;
+        position: relative;
         display: flex;
         align-items: center;
-        justify-content: center;
+        max-width: 9px;
         overflow: hidden;
-        color: #fff;
-        font-size: 8px;
-        font-weight: 700;
-        letter-spacing: .06em;
-        text-transform: uppercase;
-        /* vertical-rl reads top-to-bottom; the rotation turns it the way a
-           spine label reads, bottom-to-top. */
-        writing-mode: vertical-rl;
-        transform: rotate(180deg);
+        border-radius: 0 2px 2px 0;
+        cursor: default;
+        transition: max-width .18s ease, box-shadow .18s ease;
+    }
+
+    .home-flag:hover {
+        max-width: 130px;
+        z-index: 3;
+        box-shadow: 1px 0 4px rgba(20, 24, 30, .22);
+    }
+
+    .home-flag-label {
+        padding: 0 9px 0 7px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: .01em;
         white-space: nowrap;
     }
 
-    .home-flag-featured {
-        background: #28a745;
+    @media (prefers-reduced-motion: reduce) {
+        .home-flag {
+            transition: none;
+        }
     }
 
-    /* Mustard rather than the teal the CoRAL chip used: teal sat a step away
-       from the page's link blue and read as a third state of the same thing.
-       This is darker than a bright mustard because the type is 8px -- at that
-       size white on #b8860b is around 3:1, which is not enough to read. */
+    /* A step down from the badge green so the open label clears 4.5:1 on it;
+       at a glance it is the same green the tag was. */
+    .home-flag-featured {
+        background: #218838;
+        color: #fff;
+    }
+
+    /* Amber, not the teal the CoRAL chip used: teal sat a step away from the
+       page's link blue and read as a third state of the same thing. It carries
+       dark type rather than white -- an amber bright enough to read as amber
+       cannot hold white text, which is what dragged the last one to brown. */
     .home-flag-coral {
-        background: #96700a;
+        background: #f0a202;
+        color: #3d2f05;
     }
 
     /* Sentence case, not uppercase: these sit beside the project name and are
@@ -1533,8 +1584,8 @@
                         <td>1</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                             <span class="home-flags">
-                                <span class="home-flag home-flag-featured">Featured</span>{% if "CoRAL" in project.Reconstruction_tools %}
-                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis">CoRAL</span>{% endif %}
+                                <span class="home-flag home-flag-featured"><span class="home-flag-label">Featured</span></span>{% if "CoRAL" in project.Reconstruction_tools %}
+                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis"><span class="home-flag-label">CoRAL</span></span>{% endif %}
                             </span>
                             <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}
                         </td>
@@ -1549,7 +1600,7 @@
                         <td>2</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                             {% if "CoRAL" in project.Reconstruction_tools %}<span class="home-flags">
-                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis">CoRAL</span>
+                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis"><span class="home-flag-label">CoRAL</span></span>
                             </span>{% endif %}
                             <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}
                         </td>
@@ -1565,7 +1616,7 @@
                         <td>3</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                             {% if "CoRAL" in project.Reconstruction_tools %}<span class="home-flags">
-                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis">CoRAL</span>
+                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis"><span class="home-flag-label">CoRAL</span></span>
                             </span>{% endif %}
                             <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}
                             <span class="home-chip home-chip-private">Private</span>{% if project.visibility_display == 'Hidden Public' %}<span class="home-hidden-public" data-tip="Hidden Public: anyone with the link can view this project" aria-label="Hidden Public: anyone with the link can view this project">*</span>{% endif %}

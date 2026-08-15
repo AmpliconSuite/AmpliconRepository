@@ -101,7 +101,7 @@ def test_home_project_rows_distinguish_featured_from_public_and_private():
     """
     source = (TEMPLATE_DIR / "index.html").read_text()
 
-    assert '<span class="home-flag home-flag-featured">Featured</span>' in source
+    assert '<span class="home-flag home-flag-featured">' in source
     assert '<span class="home-chip home-chip-private">Private</span>' in source
     assert '<span class="badge badge-primary">Public</span>' not in source
 
@@ -110,29 +110,41 @@ def test_home_project_rows_distinguish_featured_from_public_and_private():
     # a second line and pushing the name around.
     assert source.count('home-flag home-flag-coral') == 3      # all three row loops
     assert ".home-flag {" in source
-    assert "writing-mode: vertical-rl;" in source
     assert ".home-flag-featured {" in source
     assert ".home-flag-coral {" in source
     assert ".home-chip-private  { background: #f0f1f3; color: #5a5d63; }" in source
 
+    # A closed tab shows no text, so the label has to stay in the DOM for anyone
+    # who cannot hover it, and it is written the way the words are written --
+    # not upper-cased by CSS, which would also render CoRAL as CORAL.
+    assert source.count('<span class="home-flag-label">') == 4
+    assert '<span class="home-flag-label">CoRAL</span>' in source
+    label_rule = source.split(".home-flag-label {")[1].split("}")[0]
+    assert "text-transform" not in label_rule
+
     # Room for both tabs is reserved on every first cell, or project names would
     # sit at several different left edges down the column.
     assert "table.home-projects td:first-child {" in source
-    assert "padding-left: 34px;" in source
+    assert "padding-left: 26px;" in source
 
 
 def test_home_project_rows_are_all_the_same_height():
     """Otherwise the table is a different height on every page.
 
-    A description long enough to need a More button wraps it onto a second line.
-    Each page has a different number of those, so the pager moved up and down as
-    you paged through -- the control you were aiming at was never twice in the
-    same place.
+    A description that wraps makes its row taller, and each page has a different
+    number of those, so the pager moved up and down as you paged through -- the
+    control you were aiming at was never twice in the same place. The fix is the
+    collapsed description occupying exactly one line, not padding every row out
+    to the height of the tallest.
     """
     source = (TEMPLATE_DIR / "index.html").read_text()
 
+    assert ".home-projects .project-description {" in source
+    assert "white-space: nowrap;" in source
+    assert ".home-projects .project-description.is-expanded .project-description-full {" in source
+    assert "white-space: normal;" in source
     assert "table.home-projects tbody td {" in source
-    assert "height: 54px;" in source
+    assert "height: 42px;" in source
 
 
 def test_home_project_description_toggle_only_renders_for_long_text():
