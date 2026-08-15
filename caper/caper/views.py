@@ -21,6 +21,7 @@ from bson.objectid import ObjectId
 from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, HttpResponseNotFound, Http404, JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
+from django.utils.http import urlencode
 
 from django.contrib.auth.models import User
 
@@ -750,6 +751,30 @@ def annotate_metadata_summary_search_links(summary, project):
     return summary
 
 
+def no_access_response(request):
+    """The right answer to "you cannot see this", which depends on who is asking.
+
+    A visitor who is not signed in gets the login form with the page they were
+    trying to reach attached, so signing in finishes the trip.  Private project
+    and sample links are handed around -- a member mails a colleague a link, the
+    colleague has no session yet -- so the login form is almost never where they
+    were going.  ``next`` is what allauth reads back: account/login.html posts it
+    as a hidden field and provider_login_url puts it on the Globus and Google
+    buttons, so it survives whichever way they sign in.  The whole path goes in,
+    urlencoded, because a project can be reached by its alias and an alias is
+    user-supplied text that may contain an ampersand.
+
+    A visitor who is already signed in and still has no access gets a 404.  The
+    login form has nothing to offer them, and sending them there is a redirect
+    loop: allauth bounces an authenticated visitor straight back to ``next``,
+    which bounces them back to the login form.
+    """
+    if request.user.is_authenticated:
+        raise Http404("Project not found")
+
+    return redirect('/accounts/login/?' + urlencode({'next': request.get_full_path()}))
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -793,7 +818,7 @@ def project_page(request, project_name, message=''):
         # For private and hidden_public projects, members can view
         # For private, non-members must login
         if not is_project_hidden_public(visibility):
-            return redirect('/accounts/login?next=/project/' + project_name)
+            return no_access_response(request)
 
     # if we got here by an OLD project id (prior to edits) then we want to redirect to the new one
     if not project_name == str(project['linkid']):
@@ -1745,8 +1770,8 @@ def sample_page(request, project_name, sample_name):
         # For private and hidden_public projects, members can view
         # For private, non-members must login
         if not is_project_hidden_public(visibility):
-            return redirect('/accounts/login')
-    
+            return no_access_response(request)
+
     # Extract sample names from prev_sample and next_sample
     prev_sample_name = None
     if prev_sample and len(prev_sample) > 0:
@@ -2403,6 +2428,18 @@ def batch_sample_download(request):
 
 def feature_page(request, project_name, sample_name, feature_name):
     project, sample_data, feature = get_one_feature(project_name,sample_name, feature_name)
+
+    # The same gate the project and sample pages carry. This page had none, so a
+    # private project's amplicon detail rendered for anyone holding the URL --
+    # and the URL is guessable from a project id, since the sample and feature
+    # names in it are the ones printed in the archive.
+    if project is None:
+        raise Http404(f"Project {project_name!r} not found")
+    visibility = normalize_visibility_field(project.get('private', 'private'))
+    if is_project_private(visibility) and not is_user_a_project_member(project, request):
+        if not is_project_hidden_public(visibility):
+            return no_access_response(request)
+
     feature_data = replace_space_to_underscore(feature)
     return render(request, "pages/feature.html", {
         'project': project,
