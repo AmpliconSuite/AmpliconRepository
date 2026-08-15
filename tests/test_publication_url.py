@@ -1,17 +1,22 @@
 """
-Tests for the ``publication_url`` template filter.
+Tests for resolving the free-text ``publication_link`` field.
 
 ``publication_link`` is free text -- the upload form asks for "a PMID or link
-to a publication" -- so the filter has to turn whatever an uploader typed into
+to a publication" -- so the resolver has to turn whatever an uploader typed into
 something safe to put in an ``href``.  Two properties matter and are pinned
 here: the bare forms the form invites resolve to a real URL, and anything the
-filter cannot resolve returns '' so the caller renders no link at all rather
+resolver cannot resolve returns '' so the caller renders no link at all rather
 than a link to an address nobody stored.
+
+``count_unique_publications`` is the other half: the home page reports how many
+distinct papers the repository covers, and uploaders reach the same paper by
+different routes, so equal papers have to count once however they were typed.
 """
 
 import pytest
 
-from caper.templatetags.custom_filters import publication_url
+from caper.publications import count_unique_publications, publication_url
+from caper.templatetags.custom_filters import register
 
 
 @pytest.mark.parametrize('stored, expected', [
@@ -62,3 +67,31 @@ def test_unresolvable_values_yield_no_link(stored):
 def test_script_schemes_never_become_links(stored):
     """Only http(s) is accepted, so a stored script URL cannot be clicked."""
     assert publication_url(stored) == ''
+
+
+def test_the_template_filter_is_the_same_resolver():
+    """The home page glyph and the site statistics must agree on what resolves."""
+    assert register.filters['publication_url'] is publication_url
+
+
+@pytest.mark.parametrize('stored_values, expected', [
+    # The same paper reached three ways: a bare PMID, the PubMed URL, and the
+    # PubMed URL without its trailing slash.
+    (['39402156',
+      'https://pubmed.ncbi.nlm.nih.gov/39402156/',
+      'https://pubmed.ncbi.nlm.nih.gov/39402156'], 1),
+    # Scheme and www. are not part of a paper's identity.
+    (['http://www.nature.com/articles/s41586-019-1763-5',
+      'https://nature.com/articles/s41586-019-1763-5'], 1),
+    # A DOI typed bare and typed as a doi.org URL.
+    (['10.1038/s41588-024-01949-7',
+      'https://doi.org/10.1038/s41588-024-01949-7'], 1),
+    # Different papers stay different.
+    (['39402156', '31554527', '10.1038/s41588-024-01949-7'], 3),
+    # Values that resolve to nothing contribute nothing.
+    (['manuscript in preparation', '', 'Smith et al. 2024'], 0),
+    ([], 0),
+])
+def test_unique_publication_counting(stored_values, expected):
+    resolved = [publication_url(value) for value in stored_values]
+    assert count_unique_publications(resolved) == expected

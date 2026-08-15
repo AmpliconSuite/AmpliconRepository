@@ -1,5 +1,6 @@
 import datetime
 
+from .publications import publication_url, count_unique_publications
 from .utils import get_collection_handle, collection_handle, db_handle_primary, replace_space_to_underscore, preprocess_sample_data, get_one_sample, sample_data_from_feature_list, is_project_private, is_project_public, normalize_visibility_field
 
 site_statistics_handle = get_collection_handle(db_handle_primary, 'site_statistics')
@@ -39,10 +40,39 @@ BUCKET_STAT_DEFAULTS = {
     'sample_count': 0,
     'coral_project_count': 0,
     'coral_sample_count': 0,
+    # Samples carrying at least one ecDNA amplicon. Not derivable from
+    # amplicon_classifications_count, which counts amplicons: one sample can
+    # carry several, so the two numbers answer different questions.
+    'ecdna_positive_sample_count': 0,
     'amplicon_classifications_count': dict,
     'tissue_of_origin_count': dict,
     'cancer_type_count': dict,
+    # One resolved publication URL per project that has one -- a list, not a
+    # counter dict keyed by URL, because publication URLs contain dots and dots
+    # are not legal in MongoDB field names. Keeping every project's entry
+    # (rather than a set) is what lets a project be removed without dropping a
+    # paper that another project also cites.
+    'publication_links': list,
 }
+
+# Derived on read from publication_links rather than stored, so the two can
+# never disagree.
+UNIQUE_PUBLICATION_SUFFIX = 'unique_publication_count'
+PUBLICATION_PROJECT_SUFFIX = 'projects_with_publication'
+
+
+def count_ecdna_positive_samples(project):
+    """Number of samples in a project carrying at least one ecDNA amplicon.
+
+    Counted per project and stored, rather than worked out on read: answering
+    it from the projects themselves means loading every project's runs, which
+    is exactly what the statistics document exists to avoid.
+    """
+    positive = 0
+    for features in project['runs'].values():
+        if any(feature.get('Classification') == 'ecDNA' for feature in features):
+            positive += 1
+    return positive
 
 
 def is_coral_project(project):
@@ -77,6 +107,15 @@ def get_latest_site_statistics():
     # the full set until the next regeneration writes them for real.
     for key, default in _bucket_stat_keys():
         latest.setdefault(key, default)
+
+    # Derived, not stored: a handful of set operations over one string per
+    # project, which costs nothing next to the queries this document exists to
+    # avoid. Both numbers are wanted because they differ -- two projects can
+    # cite the same paper -- and the difference is the interesting part.
+    for prefix in BUCKET_PREFIXES.values():
+        links = latest[f'{prefix}_publication_links']
+        latest[f'{prefix}_{UNIQUE_PUBLICATION_SUFFIX}'] = count_unique_publications(links)
+        latest[f'{prefix}_{PUBLICATION_PROJECT_SUFFIX}'] = len(links)
 
     # for public display we want to collect these 3, this is a backstop for backwards compatibility
     linear = latest['public_amplicon_classifications_count'].get('Linear_amplification',0)
@@ -120,10 +159,12 @@ def _sum_projects_into_bucket(projects, prefix):
     amplicon_counts = dict()
     tissue_counts = dict()
     cancer_type_counts = dict()
+    publication_links = []
     proj_count = 0
     sample_count = 0
     coral_project_count = 0
     coral_sample_count = 0
+    ecdna_positive_sample_count = 0
 
     for proj in projects:
         class_keys, proj_amplicon_counts = get_project_amplicon_counts(proj)
@@ -137,15 +178,21 @@ def _sum_projects_into_bucket(projects, prefix):
         if is_coral_project(proj):
             coral_project_count += 1
             coral_sample_count += len(proj['runs'])
+        ecdna_positive_sample_count += count_ecdna_positive_samples(proj)
+        link = publication_url(proj.get('publication_link', ''))
+        if link:
+            publication_links.append(link)
 
     return {
         f'{prefix}_proj_count': proj_count,
         f'{prefix}_sample_count': sample_count,
         f'{prefix}_coral_project_count': coral_project_count,
         f'{prefix}_coral_sample_count': coral_sample_count,
+        f'{prefix}_ecdna_positive_sample_count': ecdna_positive_sample_count,
         f'{prefix}_amplicon_classifications_count': amplicon_counts,
         f'{prefix}_tissue_of_origin_count': tissue_counts,
         f'{prefix}_cancer_type_count': cancer_type_counts,
+        f'{prefix}_publication_links': publication_links,
     }
 
 
@@ -187,6 +234,9 @@ def _apply_project_to_site_statistics(project, visibility, sign):
             0, updated_stats[f'{prefix}_coral_project_count'] + sign)
         updated_stats[f'{prefix}_coral_sample_count'] = max(
             0, updated_stats[f'{prefix}_coral_sample_count'] + sign * sample_count)
+    updated_stats[f'{prefix}_ecdna_positive_sample_count'] = max(
+        0, updated_stats[f'{prefix}_ecdna_positive_sample_count']
+        + sign * count_ecdna_positive_samples(project))
 
     class_keys, amplicon_counts = get_project_amplicon_counts(project)
     tissue_counts = get_project_tissue_of_origin_counts(project)
@@ -202,6 +252,19 @@ def _apply_project_to_site_statistics(project, visibility, sign):
         subtract_amplicon_counts_by_classification(class_keys, amplicon_counts, amplicon_holder)
         subtract_tissue_of_origin_counts(tissue_counts, tissue_holder)
         subtract_tissue_of_origin_counts(cancer_type_counts, cancer_type_holder)
+
+    # A project's publication is one entry, so removal takes out one entry and
+    # leaves any other project citing the same paper counted. If the stored
+    # value changed since the project was added there is nothing to remove and
+    # the list drifts -- the same exposure the label counters above already
+    # carry, and the same fix: regenerate.
+    links_holder = updated_stats[f'{prefix}_publication_links']
+    link = publication_url(project.get('publication_link', ''))
+    if link:
+        if sign > 0:
+            links_holder.append(link)
+        elif link in links_holder:
+            links_holder.remove(link)
 
     updated_stats["date"] = get_date()
     site_statistics_handle.insert_one(updated_stats)
