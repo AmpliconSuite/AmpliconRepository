@@ -21,6 +21,24 @@
            #6a6d73  muted     labels, credits, secondary cells
            #8b9096  faint     panel titles, glyphs, footnotes
 
+       Type is one scale, and the only sizes off it are the two glyphs that
+       are sized against the text they sit in (the disclosure caret and the
+       More button) rather than against the page. Six steps,
+       each far enough from the next to be seen as a step; a page with a dozen
+       sizes a half-pixel apart looks like it was assembled rather than set:
+
+           27     display   the figures, and nothing else
+           16     lede
+           15     the search field and its button, update titles -- ways in
+           13.5   body      table cells, descriptions, credits, card text
+           12.5   controls  pills, pager, page length, column headings
+           11     micro     uppercase labels, chips, tags
+
+       Emphasis inside a size is weight, not a size of its own -- which is why
+       the project name is bold 13.5 and not 15. Tracking is two values and no
+       more: -0.02em to close up the display figures, and .08em on text set in
+       uppercase at 11px. Nothing set in mixed case is tracked.
+
        Selectors are prefixed .home- because static/css/style.css sets some
        bare element rules (notably tr:nth-child(odd) striping, and font sizes
        on table th/td) that would otherwise apply here. style.css is loaded
@@ -148,7 +166,7 @@
         display: block;
         font-size: 11px;
         font-weight: 700;
-        letter-spacing: .085em;
+        letter-spacing: .08em;
         text-transform: uppercase;
         color: #6a6d73;
         margin-top: 2px;
@@ -199,7 +217,7 @@
     .home-breakdown-title {
         font-size: 11px;
         font-weight: 700;
-        letter-spacing: .085em;
+        letter-spacing: .08em;
         text-transform: uppercase;
         color: #8b9096;
         padding-bottom: 6px;
@@ -234,13 +252,12 @@
     .home-breakdown-group .home-breakdown-row {
         padding-left: 13px;
         color: #6a6d73;
-        font-size: 13px;
     }
 
     .home-breakdown-sub {
         font-size: 11px;
         font-weight: 700;
-        letter-spacing: .085em;
+        letter-spacing: .08em;
         text-transform: uppercase;
         color: #8b9096;
         margin-bottom: 2px;
@@ -248,7 +265,7 @@
 
     .home-breakdown a {
         color: #8b9096;
-        font-size: 11.5px;
+        font-size: 12.5px;
     }
 
     .home-breakdown a:hover {
@@ -256,7 +273,7 @@
     }
 
     .home-breakdown-note {
-        font-size: 12px;
+        font-size: 12.5px;
         color: #8b9096;
         line-height: 1.4;
         padding: 1px 0 2px;
@@ -270,7 +287,7 @@
 
     .home-breakdown abbr {
         color: #8b9096;
-        font-size: 11.5px;
+        font-size: 12.5px;
         cursor: help;
         border: 0;
         text-decoration: none;
@@ -316,7 +333,7 @@
         background: #eef1f5 url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23414042' stroke-width='2'%3E%3Cpath d='M2.5 4.5L6 8l3.5-3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 11px center;
         padding: 0 30px 0 14px;
         font-family: inherit;
-        font-size: 14px;
+        font-size: 13.5px;
         font-weight: 600;
         color: #414042;
         cursor: pointer;
@@ -337,7 +354,7 @@
         border: 0;
         outline: 0;
         padding: 13px 15px;
-        font-size: 15.5px;
+        font-size: 15px;
         font-family: inherit;
         color: #414042;
         min-width: 0;
@@ -353,7 +370,7 @@
         background: #1f66d0;
         color: #fff;
         font-family: inherit;
-        font-size: 14.5px;
+        font-size: 15px;
         font-weight: 600;
         padding: 0 24px;
         cursor: pointer;
@@ -364,7 +381,7 @@
     }
 
     .home-examples {
-        font-size: 14px;
+        font-size: 13.5px;
         color: #6a6d73;
         display: flex;
         gap: 7px;
@@ -389,7 +406,7 @@
     }
 
     .home-advanced {
-        font-size: 14px;
+        font-size: 13.5px;
         margin-left: 3px;
     }
 
@@ -421,7 +438,7 @@
 
     .home-cap b {
         display: block;
-        font-size: 14px;
+        font-size: 13.5px;
         color: #414042;
         font-weight: 600;
     }
@@ -446,9 +463,9 @@
 
     /* ---- one shared section label, so the page reads as one document ---- */
     .home-eyebrow {
-        font-size: 11.5px;
+        font-size: 11px;
         font-weight: 700;
-        letter-spacing: .1em;
+        letter-spacing: .08em;
         text-transform: uppercase;
         color: #8b9096;
         padding-bottom: 7px;
@@ -460,35 +477,11 @@
         gap: 12px;
     }
 
-    .home-eyebrow .home-eyebrow-aside {
-        font-size: 11.5px;
-        font-weight: 600;
-        letter-spacing: .04em;
-        color: #1f66d0;
-    }
-
     .home-section {
         margin-top: 34px;
     }
 
     /* ---- project table ---- */
-
-    /* The frame is the table's edge, so it is drawn at the weight of the rules
-       inside it rather than heavier -- a frame darker than its own content
-       becomes the loudest thing on the page. It holds the toolbar and the pager
-       as well as the rows: those controls act on the table and nothing else, so
-       putting them inside says so without a word. */
-    .home-tableframe {
-        border: 1px solid #c8cfd8;
-        border-radius: 8px;
-        background: #fff;
-        padding: 14px 16px 10px;
-    }
-
-    @media (max-width: 640px) {
-        .home-tableframe { padding: 12px 10px 8px; }
-    }
-
     .home-table-head {
         display: flex;
         align-items: center;
@@ -513,7 +506,7 @@
         border: 0;
         outline: 0;
         padding: 9px 0;
-        font-size: 14.5px;
+        font-size: 13.5px;
         flex: 1;
         font-family: inherit;
         color: #414042;
@@ -552,7 +545,7 @@
     .home-pill {
         appearance: none;
         font-family: inherit;
-        font-size: 13px;
+        font-size: 12.5px;
         padding: 7px 13px;
         border-radius: 999px;
         border: 1px solid #e3e6ea;
@@ -573,7 +566,7 @@
 
     #home-length-container select {
         font-family: inherit;
-        font-size: 13px;
+        font-size: 12.5px;
         padding: 6px 8px;
         border: 1px solid #e3e6ea;
         border-radius: 6px;
@@ -589,7 +582,7 @@
         margin: 0;
         white-space: nowrap;
         font-weight: normal;
-        font-size: 13px;
+        font-size: 12.5px;
         color: #6a6d73;
     }
 
@@ -616,7 +609,7 @@
         align-items: baseline;
         gap: 16px;
         flex-wrap: wrap;
-        margin-top: 0;
+        margin-top: 4px;
         padding-top: 10px;
         border-top: 1px solid #d6dbe2;
     }
@@ -631,7 +624,7 @@
        applies and the order within it is the order it reads in.  */
     #home-table-foot .dataTables_info,
     #home-table-foot .dataTables_paginate {
-        font-size: 13px;
+        font-size: 12.5px;
         color: #6a6d73;
         float: none;
         margin: 0;
@@ -653,7 +646,7 @@
         box-sizing: border-box;
         min-width: 0;
         font-family: inherit;
-        font-size: 13px;
+        font-size: 12.5px;
         line-height: 1.3;
         padding: 5px 11px;
         margin: 0 0 0 5px;
@@ -723,7 +716,7 @@
        at 11.5px in grey are decoration standing where a heading should be. */
     table.home-projects th {
         text-align: left;
-        font-size: 13px;
+        font-size: 12.5px;
         font-weight: 700;
         color: #414042;
         padding: 7px 12px;
@@ -770,14 +763,15 @@
         background-color: #fafbfd;
     }
 
+    /* The name is the row's subject, and weight says so at the size of the
+       row rather than a size above it. Set larger it forced the row taller than
+       its own text needed and made every other cell look like a footnote. */
     .home-pname {
-        font-size: 15px;
-        font-weight: 500;
+        font-weight: 700;
     }
 
     .home-projects .project-description-cell {
         color: #4a4d52;
-        font-size: 13px;
         line-height: 1.45;
     }
 
@@ -850,7 +844,7 @@
         z-index: 1100;
         background: #414042;
         color: #fff;
-        font-size: 12px;
+        font-size: 12.5px;
         line-height: 1.35;
         padding: 5px 9px;
         border-radius: 5px;
@@ -900,9 +894,8 @@
        rendering CoRAL as "CORAL", which is not how the tool is written. */
     .home-chip {
         display: inline-block;
-        font-size: 10.5px;
+        font-size: 11px;
         font-weight: 600;
-        letter-spacing: .01em;
         padding: 1px 6px;
         border-radius: 3px;
         vertical-align: 1px;
@@ -926,7 +919,7 @@
        grow a row taller. */
     .home-pub {
         color: #8b9096;
-        font-size: 12px;
+        font-size: 12.5px;
         margin-left: 5px;
         vertical-align: 1px;
         text-decoration: none;
@@ -952,8 +945,7 @@
     }
 
     .home-news-meta {
-        font-size: 11.5px;
-        letter-spacing: .04em;
+        font-size: 12.5px;
         color: #8b9096;
         display: flex;
         align-items: center;
@@ -963,9 +955,9 @@
     }
 
     .home-tag {
-        font-size: 10.5px;
+        font-size: 11px;
         font-weight: 700;
-        letter-spacing: .07em;
+        letter-spacing: .08em;
         text-transform: uppercase;
         padding: 1px 6px;
         border-radius: 3px;
@@ -1581,16 +1573,9 @@
 <div class="home-wrap">
 
     <div class="home-section">
-        {% comment %}
-        Everything about the table is inside one frame -- the filter and pills
-        that narrow it, the table, and the pager that walks it -- so the group
-        reads as one object rather than three stacked bands. This is the frame
-        the current site draws around its table.
-        {% endcomment %}
-        <div class="home-tableframe">
         <div class="home-table-head">
             <div class="home-filter">
-                <i class="fas fa-search" style="color:#9aa0a6; font-size:13px;"></i>
+                <i class="fas fa-search" style="color:#9aa0a6; font-size:12.5px;"></i>
                 <label for="home-project-filter" class="sr-only">Filter projects</label>
                 <input type="text" id="home-project-filter" placeholder="Filter by project name or description">
             </div>
@@ -1673,7 +1658,6 @@
             </table>
         </div>
         <div id="home-table-foot"></div>
-        </div>
     </div>
 
     <div class="home-section">

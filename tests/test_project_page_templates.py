@@ -141,6 +141,42 @@ def test_home_project_rows_are_all_the_same_height():
     assert "height: 35px;" in source
 
 
+def test_home_page_type_stays_on_one_scale():
+    """Six sizes and two tracking values, or the page stops looking set.
+
+    The home page had fourteen sizes, several of them half a pixel apart, and
+    six different letter-spacings -- differences too small to mean anything but
+    large enough to make the page look assembled from parts. Anything new here
+    should land on a step that already exists; adding a step is a decision, and
+    this test is where it gets made rather than drifted into.
+    """
+    import re
+    from collections import Counter
+
+    source = (TEMPLATE_DIR / "index.html").read_text()
+    css = source[: source.index("{% endblock %}")]
+
+    scale = {"27px", "16px", "15px", "13.5px", "12.5px", "11px"}
+    # Sized against the text they sit in, not against the page: the disclosure
+    # caret and the description's More button.
+    glyphs = {"8px", "0.86em", "0.72em"}
+
+    sizes = Counter(re.findall(r"font-size:\s*([^;]+);", css))
+    assert set(sizes) <= scale | glyphs, f"off-scale: {set(sizes) - scale - glyphs}"
+
+    # -0.02em closes up the display figures; .08em is uppercase micro-labels.
+    # Mixed-case text is not tracked.
+    tracking = Counter(re.findall(r"letter-spacing:\s*([^;]+);", css))
+    assert set(tracking) == {"-0.02em", ".08em"}
+
+    # The project name is the row's subject, said with weight at the size of the
+    # row rather than with a size of its own.
+    name_rule = css[css.index(".home-pname {"):]
+    name_rule = name_rule[: name_rule.index("}")]
+    assert "font-weight: 700;" in name_rule
+    assert "font-size" not in name_rule
+
+
 def test_home_project_counts_sit_in_the_filter_band_without_a_heading():
     """The table says it is the projects; only the counts add anything.
 
