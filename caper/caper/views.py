@@ -80,6 +80,7 @@ from .utils import (
     AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
 from .tar_safety import safe_extract_member, safe_extractall
+from .sample_removal import remove_samples_from_results
 from .project_version_cleanup import (
     build_deleted_version_tombstone,
     delete_gridfs_payload_for_project,
@@ -3267,7 +3268,12 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
     - Membership (project_members)
     - Version strings (AA_version, AC_version, ASP_version)
     - Metadata updates
-    - Sample removal
+
+    Sample removal is handled here too, but no longer reaches it from the edit
+    form: removals now version the project.  The in-place removal below is the
+    fallback for the one case where the versioning path declines to run -- a
+    "replace entire project" submitted with no file, where there is nothing to
+    aggregate and edit_project_into_new_version returns None.
     """
     if 'file' in form_dict:
         runs = samples_to_dict(form_dict['file'])
@@ -3467,7 +3473,8 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
                 logging.error(f'Failed to make directory {project_data_path}: {e}')
             
             # Download and strip samples from the old project
-            stripped_tar = remove_samples_from_tar(old_project_data, samples_to_remove, download_path, download_url)
+            stripped_tar = remove_samples_from_tar(old_project_data, samples_to_remove, download_path,
+                                                   download_url, placeholder_project_id)
             if stripped_tar:
                 file_fps.append(stripped_tar)
                 logging.info(f"Successfully created stripped tar file: {stripped_tar}")
@@ -3855,7 +3862,18 @@ def edit_project_page(request, project_name):
         # 2. Metadata file is being uploaded with name remapping
         # 3. Name remapping is requested (requires re-aggregation)
         # 4. reaggregate_project is requested (force re-aggregation on existing data)
-        
+        # 5. Samples are being removed
+        #
+        # (5) is the one that changed.  Removing a sample used to edit the
+        # project in place: the form said it would make a new version, the
+        # accordion above the checkboxes still says so, and it did not.  The
+        # sample left the runs, it left the archive on the next download, and
+        # there was nothing left to go back to -- which is the wrong shape for
+        # an irreversible operation on data other people may already be citing.
+        # It now takes the same road as the other three: the old version stays
+        # in Project History, openable and downloadable, and the new one is the
+        # project minus the samples.
+
         files_uploaded = request.FILES.getlist('document')
 
         # Determine mode from the new 3-way radio button (project_mode) or fall back
@@ -3871,7 +3889,8 @@ def edit_project_page(request, project_name):
 
         needs_new_version = (len(files_uploaded) > 0 or
                             remap_sample_names or
-                            reaggregate_project)
+                            reaggregate_project or
+                            len(samples_to_remove) > 0)
 
         if needs_new_version:
             # Create a new version with aggregation
@@ -3949,12 +3968,23 @@ def edit_project_page(request, project_name):
                    })
 
 
-def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
-    # remove the sample data for the samples removed
-    # from the project zip file. They will be in a directory in the tar file called
-    # results/other_files/<SAMPLE_NAME>_classification/
-    project_name = project['project_name']
+def  remove_samples_from_tar(project, samples_to_remove, download_path, url, stripped_name):
+    """Download the project archive and return a copy without the given samples.
 
+    The archive matters as much as the database here: it is what people
+    download, and it is what the aggregator is handed when this edit is
+    re-aggregated into the new version, so a sample left in it comes back.
+
+    What has to come out of it is aggregator-format knowledge, and it lives in
+    sample_removal.py.  This function is the part that belongs to the site:
+    fetch, extract, hand over, repack.
+
+    stripped_name is the new version's project id.  The repacked file used to be
+    named after the project, which is text the uploader typed: a name with a
+    slash in it wrote outside the directory, and every other name missed the
+    cleanup in _process_edit_and_notify, which looks for
+    <project_id>_stripped.tar.gz and so left the archive on disk.
+    """
     try:
         download_file(url, download_path)
     except Exception as e:
@@ -3972,24 +4002,16 @@ def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
             safe_extractall(tar, temp_extract_dir,
                             description=f"project {project.get('_id')}")
 
-        # Remove the sample directories
-        for sample in samples_to_remove:
-            sample_dir = os.path.join(temp_extract_dir, 'results', 'other_files', f'{sample}_classification')
-            if os.path.exists(sample_dir):
-                shutil.rmtree(sample_dir)
-
-            # Also remove other directories left behind in other_files
-            sample_dir2 = os.path.join(temp_extract_dir, 'results', 'AA_outputs', f'{sample}_AA_results')
-            if os.path.exists(sample_dir2):
-                shutil.rmtree(sample_dir2)
-
-            sample_dir3 = os.path.join(temp_extract_dir, 'results', 'AA_outputs','extracted_from_zips', f'{sample}_AA_results')
-            if os.path.exists(sample_dir3):
-                shutil.rmtree(sample_dir3)
+        summary = remove_samples_from_results(
+            os.path.join(temp_extract_dir, 'results'), samples_to_remove)
+        logging.info(
+            f"Stripped {samples_to_remove} from the archive of project "
+            f"{project.get('_id')}: removed {summary['directories']}, "
+            f"{summary['files']} feature file(s), {summary['rows']} table row(s)")
 
         # Create a new tar file without the removed samples
 
-        new_project_tar_fp = f'{parent_dir}/{project_name}_stripped.tar.gz'
+        new_project_tar_fp = f'{parent_dir}/{stripped_name}_stripped.tar.gz'
         with tarfile.open(new_project_tar_fp, 'w:gz') as tar:
             tar.add(os.path.join(temp_extract_dir, 'results'), arcname='results')
 
