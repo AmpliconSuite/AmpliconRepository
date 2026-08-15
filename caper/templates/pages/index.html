@@ -8,9 +8,22 @@
     /* ------------------------------------------------------------------
        Home page.
 
-       Colours are taken from assets already in use: the blue and charcoal
-       come out of img/AmpliconRepository.svg, and the pale blue tint is the
-       #E6EFFB that the stats tables already used.
+       Colours are taken from assets already in use: the blue and the charcoal
+       both come out of img/AmpliconRepository.svg.
+
+       Blue is three values, and each one has exactly one job:
+
+           #1f66d0  link      anything you can follow, at rest. The logo's
+                                #5894f4 darkened until it clears 4.5:1 on white
+           #12489b  pressed   the hover and active state of the above
+           #5894f4  border    the logo blue itself, at 3:1 -- enough for a rule
+                                or an outline, not enough to set text in
+
+       That is the whole set. Blue does not also mean "this update is a
+       release", or "this is a heading". Every one of those was a second meaning
+       competing with the first, and the link is the one that has to win. The site-wide a{} rule in static/css/style.css
+       carries the same #1f66d0 into the footer, the header and anything else
+       left on Bootstrap's #007bff.
 
        Text is four greys and no more -- anything else is a fill or a rule.
        Adding a fifth is how a page ends up with a dozen nearly identical
@@ -137,7 +150,7 @@
 
     .home-provenance a:hover {
         color: #1f66d0;
-        text-decoration-color: #5894f4;
+        text-decoration-color: currentColor;
     }
 
     .home-figs {
@@ -678,7 +691,7 @@
        shouting is how the pager became invisible in the first place. */
     #home-table-foot .paginate_button.previous,
     #home-table-foot .paginate_button.next {
-        border-color: #a9c6ef;
+        border-color: #5894f4;
         color: #1f66d0 !important;
         font-weight: 600;
     }
@@ -993,34 +1006,52 @@
         border-radius: 3px;
     }
 
-    .home-tag-release { background: #eef4fd; color: #12489b; }
-    .home-tag-paper   { background: #f0f1f3; color: #4a4d52; }
+    /* Both tags are the same kind of thing -- what sort of update this is -- so
+       they are the same grey. Release was blue, which said it was the important
+       one next to a Paper that is grey, and put a blue fill next to a blue title
+       in a page where blue otherwise means "you can click this". Colour in a tag
+       is reserved for the amber CoRAL chip, where it marks a fact about the data
+       rather than a category of news. */
+    .home-tag-release,
+    .home-tag-paper { background: #f0f1f3; color: #4a4d52; }
 
     .home-news-src { color: #6a6d73; }
 
-    /* These are links and have to look like links. Charcoal titles read as
-       body copy, so they are the page's link blue with a standing underline;
-       the meta line above each one is what keeps the section from going back
-       to being an undifferentiated wall of blue. No external-link glyph: the
-       old list put one after every title and it wrapped onto a line of its
-       own on most of them, which was a good part of why the block looked
-       broken. */
+    /* Three blue paragraphs side by side was the largest field of blue on the
+       page, and it was competing with the project names in the table below for
+       the same meaning. The titles are set in the ink instead and the arrow
+       carries the affordance -- it only ever appears on something you can
+       follow, so it says "link" without spending the colour. Blue comes back on
+       hover and focus, which is where it is actually answering a question.
+
+       The whole title stays the link rather than growing a separate "Read more"
+       beneath it: one destination should have one target, and a headline you
+       cannot click is a worse trade than a headline that is not blue. The arrow
+       is generated content so it cannot wrap onto a line of its own, which is
+       what went wrong with the external-link glyph in the old list. */
     a.home-news-title {
         font-size: 15px;
         line-height: 1.4;
-        color: #1f66d0;
+        color: #414042;
         font-weight: 500;
         display: block;
-        text-decoration: underline;
-        text-decoration-color: rgba(31, 102, 208, .35);
-        text-underline-offset: 2px;
+        text-decoration: none;
+    }
+
+    /* A no-break space, and the closing tag sits tight against the last word in
+       the markup, so the arrow cannot be left stranded on a line of its own. */
+    a.home-news-title::after {
+        content: "\00a0\2192";
+        color: #8b9096;
     }
 
     a.home-news-title:hover,
-    a.home-news-title:focus {
-        color: #12489b;
+    a.home-news-title:focus,
+    a.home-news-title:hover::after,
+    a.home-news-title:focus::after {
+        color: #1f66d0;
         text-decoration: underline;
-        text-decoration-color: currentColor;
+        text-underline-offset: 2px;
     }
 
     .home-cite {
@@ -1703,8 +1734,7 @@
                             <span class="home-news-src">GitHub</span>
                         </div>
                         <a class="home-news-title" href="https://github.com/AmpliconSuite/CoRAL" target="_blank" rel="noopener noreferrer">
-                            Long-read reconstructions from CoRAL are now accepted alongside AmpliconArchitect
-                        </a>
+                            Long-read reconstructions from CoRAL are now accepted alongside AmpliconArchitect</a>
                     </div>
                     <div>
                         <div class="home-news-meta">
@@ -1712,8 +1742,7 @@
                             <span class="home-news-src">Docs</span>
                         </div>
                         <a class="home-news-title" href="https://docs.ampliconrepository.org/en/latest/api/" target="_blank" rel="noopener noreferrer">
-                            List public projects and download archives from the command line with the API
-                        </a>
+                            List public projects and download archives from the command line with the API</a>
                     </div>
                     <div>
                         <div class="home-news-meta">
@@ -1721,8 +1750,7 @@
                             <span class="home-news-src">Nature Genetics</span>
                         </div>
                         <a class="home-news-title" href="https://www.nature.com/articles/s41588-024-01949-7" target="_blank">
-                            Leveraging large-scale genomic datasets to track ecDNA across cancer stages
-                        </a>
+                            Leveraging large-scale genomic datasets to track ecDNA across cancer stages</a>
                     </div>
                 </div>
             </div>

@@ -37,9 +37,27 @@ table.dataTable tbody td.select-checkbox::before, table.dataTable tbody td.selec
     position: none !important;
 }
 
+/* One link blue for the whole site.
+
+   Bootstrap's default #007bff was left in place on anything we had not styled
+   by hand -- the header's Search, the home page's Advanced, every link in the
+   footer and in the citation -- while the home page set its own #1f66d0 on the
+   links it did style. Two blues a hue apart on one page read as a printing
+   error rather than as a distinction, and #007bff is 4.0:1 on white, under the
+   4.5:1 that body-sized text needs. #1f66d0 is 5.4:1 and is the logo's own blue
+   (#5894f4 in AmpliconRepository.svg) darkened until it is legible as text, so
+   it is the one that stays. */
+a {
+    color: #1f66d0;
+}
+
+a:hover,
+a:focus {
+    color: #12489b;
+}
+
 .footer {
     margin-top: 100px;
-    background: #5391F4;
 }
 
 .sample-link {

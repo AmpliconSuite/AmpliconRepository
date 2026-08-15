@@ -177,6 +177,59 @@ def test_home_page_type_stays_on_one_scale():
     assert "font-size" not in name_rule
 
 
+def test_home_page_blue_means_one_thing():
+    """Three blues, each with one job, and none of them Bootstrap's.
+
+    The page had accumulated eight: our link blue and its hover, a border blue
+    and a second border blue, a tint and a text blue for the Release tag, plus
+    Bootstrap's #007bff and its hover on everything we had not styled by hand
+    (Advanced, the citation, every footer link). Blue that also means "release"
+    or "heading" stops meaning "you can follow this", which is the only meaning
+    it has to keep.
+    """
+    import re
+
+    source = (TEMPLATE_DIR / "index.html").read_text()
+    css = source[: source.index("{% endblock %}")]
+    # The palette note at the top of the block names the retired values.
+    rules = css[css.index(".home-band {"):]
+
+    blues = {
+        value.lower()
+        # Six digits first: the alternation is ordered, and #1f66d0 would
+        # otherwise match as #1f6 and be read as a green.
+        for value in re.findall(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b", rules)
+        if _is_blue(value)
+    }
+    assert blues == {"#1f66d0", "#12489b", "#5894f4"}, blues
+
+    # Bootstrap's default link colour is replaced once, site-wide, rather than
+    # per-element: otherwise the next unstyled link brings #007bff back.
+    site_css = (
+        Path(__file__).resolve().parents[1] / "caper" / "static" / "css" / "style.css"
+    ).read_text()
+    assert "\na {\n    color: #1f66d0;\n}" in site_css
+    assert "color: #12489b;" in site_css
+    assert "#5391F4" not in site_css
+
+    # The two update tags are the same category of thing, so the same grey.
+    assert ".home-tag-release,\n    .home-tag-paper { background: #f0f1f3;" in rules
+
+    # News titles carry the arrow, not the colour.
+    title_rule = rules[rules.index("a.home-news-title {"):]
+    title_rule = title_rule[: title_rule.index("}")]
+    assert "color: #414042;" in title_rule
+    assert 'content: "\\00a0\\2192";' in rules
+
+
+def _is_blue(value):
+    """True when the hex is blue-dominant by a clear margin."""
+    if len(value) == 4:
+        value = "#" + "".join(char * 2 for char in value[1:])
+    red, green, blue = (int(value[index:index + 2], 16) for index in (1, 3, 5))
+    return blue > red + 40 and blue > green + 40
+
+
 def test_home_project_counts_sit_in_the_filter_band_without_a_heading():
     """The table says it is the projects; only the counts add anything.
 
