@@ -718,11 +718,17 @@
         border-bottom: 0;
     }
 
-    /* Mockup F's header: small grey capitals over a hairline, so the column
-       names label the table without competing with what is in it. This is a
-       deliberate return -- the bold ink version was answering the complaint
-       that the page ran thin and grey, and the answer to that turned out to be
-       the body text and the rules, not the headings.
+    /* Mockup F's header: small grey capitals, so the column names label the
+       table without competing with what is in it. This is a deliberate return
+       -- the bold ink version was answering the complaint that the page ran
+       thin and grey, and the answer to that turned out to be the body text and
+       the rules, not the headings.
+
+       The rule under it is black and the only black on the page. A register
+       rules off its headings and then keeps its entries light; the weight
+       belongs to the line, which is structure, rather than to the words, which
+       would then be shouting the names of the columns. It also means the
+       heaviest line in the table is the one that says where the data starts.
 
        thead is named because DataTables' own "table.dataTable thead th" carries
        one element more than "table.home-projects th" and so was winning: the
@@ -737,7 +743,7 @@
         text-transform: uppercase;
         color: #8b9096;
         padding: 6px 12px;
-        border-bottom: 1px solid #d6dbe2;
+        border-bottom: 2px solid #000;
         white-space: nowrap;
     }
 
