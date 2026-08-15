@@ -55,9 +55,17 @@
         <div class="row">
             <div class="col-md-9">
                 <h2 style="margin-bottom:2px">My projects</h2>
+                {% comment %}
+                The API token lives on Settings, because it is a credential:
+                you regenerate it, you revoke it, it belongs beside the
+                password. But nobody goes to Settings looking for it -- the
+                person who wants a token is thinking about projects, which is
+                this page. Hence a pointer here rather than the panel itself.
+                {% endcomment %}
                 <p class="text-muted">
                     Signed in as {% if user.email %}{{ user.email }}{% else %}{{ user.username }}{% endif %}
                     &middot; <a href="{% url 'user_settings' %}">Settings</a>
+                    &middot; <a href="{% url 'user_settings' %}#api-token">API token</a>
                 </p>
             </div>
             <div class="col-md-3 text-right">
