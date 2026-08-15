@@ -49,7 +49,7 @@
     }
 
     .home-mark {
-        max-width: 600px;
+        max-width: 660px;
         width: 100%;
         display: block;
     }
@@ -71,7 +71,7 @@
     .home-lede {
         font-size: 16px;
         line-height: 1.5;
-        color: #4a4d52;
+        color: #414042;
         margin: 0;
         flex: 1 1 460px;
         max-width: 640px;
@@ -408,10 +408,12 @@
         padding: 10px 14px 11px;
     }
 
+    /* 250px is the artwork's own width. Below it the strokes render thinner
+       than they were drawn, which is most of why these read as faint. */
     .home-cap img {
         width: 100%;
-        max-width: 205px;
-        height: 114px;
+        max-width: 250px;
+        height: 138px;
         object-fit: contain;
         display: block;
         margin: 0 auto 8px;
@@ -682,15 +684,16 @@
         border-collapse: collapse;
     }
 
+    /* Written the way a table header is written -- the words, in ink, over a
+       rule you can see -- rather than as pale letterspaced capitals. Capitals
+       at 11.5px in grey are decoration standing where a heading should be. */
     table.home-projects th {
         text-align: left;
-        font-size: 11.5px;
+        font-size: 13px;
         font-weight: 700;
-        letter-spacing: .08em;
-        text-transform: uppercase;
-        color: #6a6d73;
-        padding: 9px 12px;
-        border-bottom: 1px solid #e3e6ea;
+        color: #414042;
+        padding: 8px 12px;
+        border-bottom: 2px solid #cfd6de;
         white-space: nowrap;
     }
 
@@ -701,7 +704,7 @@
        lesser oddity of the two. */
     table.home-projects td {
         padding: 11px 12px;
-        border-bottom: 1px solid #eef0f3;
+        border-bottom: 1px solid #e6e9ee;
         vertical-align: middle;
         font-size: 13.5px;
     }
@@ -732,7 +735,7 @@
     }
 
     .home-projects .project-description-cell {
-        color: #6a6d73;
+        color: #4a4d52;
         font-size: 13px;
         line-height: 1.45;
     }
@@ -776,7 +779,7 @@
     }
 
     .home-date {
-        color: #6a6d73;
+        color: #4a4d52;
         white-space: nowrap;
         font-variant-numeric: tabular-nums;
     }
@@ -815,84 +818,40 @@
         box-shadow: 0 3px 10px rgba(20, 30, 50, .2);
     }
 
-    /* Featured rows say so down the edge of the row rather than in a tag beside
-       the name. It buys back the horizontal space the tag was taking next to
-       long project names, and it leaves the tag slot free for CoRAL, so a row
-       can now be both without the badges stacking onto a second line.
+    /* Two things get said about a row, and they are not the same kind of thing,
+       so they are not said the same way.
 
-       The gutter is reserved on every first cell, not just featured ones, or
-       project names would sit at two different left edges down the column. */
-    table.home-projects th:first-child,
+       Featured is the site's own emphasis. It applies to whole rows, it is why
+       they sort to the top, and writing the word on every one of them says
+       nothing a reader could act on. So the row carries a green rule down its
+       edge and a tint, and the rule answers "Featured project" on hover. No
+       text, no column of it repeating down the table.
+
+       CoRAL is a fact about the data -- which tool reconstructed it, and so
+       whether the reads were long or short. That is worth reading at a glance
+       and worth a word, so it stays a label, beside the name where a reader
+       already is. It is five characters; the horizontal space argument that
+       moved it into the gutter was really about "Featured" next to it. */
     table.home-projects td:first-child {
         position: relative;
-        padding-left: 26px;
     }
 
-    /* Room for two tabs is reserved on every row, featured or not, or project
-       names would sit at several different left edges down the column. */
-    .home-flags {
+    .home-featured-rule {
         position: absolute;
         left: 0;
         top: 0;
         bottom: 0;
-        display: flex;
-        gap: 2px;
-    }
-
-    /* Closed, a tab is a colour down the edge of the row and nothing else.
-       Point at it and it opens sideways to name itself. That costs a hover to
-       read, and buys back everything setting type in a 14px column cost: no
-       8px caps shouting the same two words down the whole table, no row tall
-       enough to fit a word on its side. Width animates off max-width, because
-       the label sets the open width and auto cannot be transitioned to.
-       The label stays in the DOM when closed, so screen readers still get it. */
-    .home-flag {
-        position: relative;
-        display: flex;
-        align-items: center;
-        max-width: 9px;
-        overflow: hidden;
-        border-radius: 0 2px 2px 0;
-        cursor: default;
-        transition: max-width .18s ease, box-shadow .18s ease;
-    }
-
-    .home-flag:hover {
-        max-width: 130px;
-        z-index: 3;
-        box-shadow: 1px 0 4px rgba(20, 24, 30, .22);
-    }
-
-    .home-flag-label {
-        padding: 0 9px 0 7px;
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: .01em;
-        white-space: nowrap;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-        .home-flag {
-            transition: none;
-        }
-    }
-
-    /* The badge green the Featured tag has always used, unchanged. Darkening it
-       would have bought the open label 4.5:1 instead of 3.1:1, but it read as a
-       different green in the row, and the tab says what it is by colour and
-       position as well as by the word. */
-    .home-flag-featured {
+        width: 4px;
         background: #28a745;
-        color: #fff;
+        cursor: help;
     }
 
-    /* Amber, not the teal the CoRAL chip used: teal sat a step away from the
-       page's link blue and read as a third state of the same thing. It carries
-       dark type rather than white -- an amber bright enough to read as amber
-       cannot hold white text, which is what dragged the last one to brown. */
-    .home-flag-coral {
-        background: #f0a202;
-        color: #3d2f05;
+    tr.home-featured td {
+        background: #f4faf6;
+    }
+
+    tr.home-featured:hover td {
+        background: #eef7f1;
     }
 
     /* Sentence case, not uppercase: these sit beside the project name and are
@@ -909,9 +868,14 @@
         white-space: nowrap;
     }
 
-    /* The green and the teal are Bootstrap's badge-success and badge-info,
-       which is what these tags were before the redesign. */
     .home-chip-private  { background: #f0f1f3; color: #4a4d52; }
+
+    /* Amber, not the teal this chip used to be: teal sat a step away from the
+       page's link blue and read as a third state of the same thing. It carries
+       dark type rather than white -- an amber bright enough to read as amber
+       cannot hold white text, and darkening one until it can is how you end up
+       with brown. */
+    .home-chip-coral    { background: #f0a202; color: #3d2f05; }
 
     /* A publication is a destination, not a status, so it gets a link glyph
        rather than a fourth chip colour. Two thirds of projects have one, and a
@@ -1506,11 +1470,11 @@
             reconstructed and classified by structure across cancer datasets.
         </p>
         <p class="home-provenance">
-            Results generated by the
+            Results generated with
             <a href="https://github.com/AmpliconSuite/AmpliconSuite-pipeline" target="_blank" rel="noopener">AmpliconArchitect</a>
             (short-read) and
             <a href="https://github.com/AmpliconSuite/CoRAL" target="_blank" rel="noopener">CoRAL</a>
-            (long-read) tools from the
+            (long-read) tools in the
             <a href="https://github.com/AmpliconSuite" target="_blank" rel="noopener">AmpliconSuite</a> toolkit.
         </p>
         </div>
@@ -1625,11 +1589,8 @@
                     <tr class="home-featured" data-project-type="featured" data-tools="{{ project.Reconstruction_tools }}">
                         <td>1</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                            <span class="home-flags">
-                                <span class="home-flag home-flag-featured"><span class="home-flag-label">Featured</span></span>{% if "CoRAL" in project.Reconstruction_tools %}
-                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis"><span class="home-flag-label">CoRAL</span></span>{% endif %}
-                            </span>
-                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}
+                            <span class="home-featured-rule" data-tip="Featured project" aria-label="Featured project"></span>
+                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}{% if "CoRAL" in project.Reconstruction_tools %}<span class="home-chip home-chip-coral" data-tip="Reconstructed with CoRAL, from long reads">CoRAL</span>{% endif %}
                         </td>
                         {% include 'includes/project_description_cell.html' %}
                         <td class="home-date">{{ project.date }}</td>
@@ -1641,10 +1602,7 @@
                     <tr data-project-type="public" data-tools="{{ project.Reconstruction_tools }}">
                         <td>2</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                            {% if "CoRAL" in project.Reconstruction_tools %}<span class="home-flags">
-                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis"><span class="home-flag-label">CoRAL</span></span>
-                            </span>{% endif %}
-                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}
+                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}{% if "CoRAL" in project.Reconstruction_tools %}<span class="home-chip home-chip-coral" data-tip="Reconstructed with CoRAL, from long reads">CoRAL</span>{% endif %}
                         </td>
                         {% include 'includes/project_description_cell.html' %}
                         <td class="home-date">{{ project.date }}</td>
@@ -1657,10 +1615,7 @@
                     <tr data-project-type="private" data-tools="{{ project.Reconstruction_tools }}">
                         <td>3</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                            {% if "CoRAL" in project.Reconstruction_tools %}<span class="home-flags">
-                                <span class="home-flag home-flag-coral" data-tip="Long-read analysis"><span class="home-flag-label">CoRAL</span></span>
-                            </span>{% endif %}
-                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}
+                            <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}{% if "CoRAL" in project.Reconstruction_tools %}<span class="home-chip home-chip-coral" data-tip="Reconstructed with CoRAL, from long reads">CoRAL</span>{% endif %}
                             <span class="home-chip home-chip-private">Private</span>{% if project.visibility_display == 'Hidden Public' %}<span class="home-hidden-public" data-tip="Hidden Public: anyone with the link can view this project" aria-label="Hidden Public: anyone with the link can view this project">*</span>{% endif %}
                         </td>
                         {% include 'includes/project_description_cell.html' %}

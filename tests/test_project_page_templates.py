@@ -92,40 +92,34 @@ def test_home_project_descriptions_expand_inline_and_remain_searchable():
 
 
 def test_home_project_rows_distinguish_featured_from_public_and_private():
-    """Featured and private rows are tagged; a plain public row is the default.
+    """Featured and private rows are marked; a plain public row is the default.
 
     The redesign dropped the "Public" badge -- a tag on two thirds of the rows
-    is not information -- so what has to hold is that the tags which remain are
-    told apart by colour rather than only by their text, and that a featured row
-    is still marked when its tag scrolls out of a narrow viewport.
+    is not information. Featured is the site's own emphasis and applies to the
+    whole row, so it is the row that carries it, silently; CoRAL is a fact about
+    the data, so it keeps a word.
     """
     source = (TEMPLATE_DIR / "index.html").read_text()
 
-    assert '<span class="home-flag home-flag-featured">' in source
     assert '<span class="home-chip home-chip-private">Private</span>' in source
     assert '<span class="badge badge-primary">Public</span>' not in source
 
-    # Featured and CoRAL are both tabs down the edge of the row rather than tags
-    # beside the name, so a row can carry both without the badges stacking onto
-    # a second line and pushing the name around.
-    assert source.count('home-flag home-flag-coral') == 3      # all three row loops
-    assert ".home-flag {" in source
-    assert ".home-flag-featured {" in source
-    assert ".home-flag-coral {" in source
-    assert ".home-chip-private  { background: #f0f1f3; color: #4a4d52; }" in source
-
-    # A closed tab shows no text, so the label has to stay in the DOM for anyone
-    # who cannot hover it, and it is written the way the words are written --
-    # not upper-cased by CSS, which would also render CoRAL as CORAL.
-    assert source.count('<span class="home-flag-label">') == 4
-    assert '<span class="home-flag-label">CoRAL</span>' in source
-    label_rule = source.split(".home-flag-label {")[1].split("}")[0]
-    assert "text-transform" not in label_rule
-
-    # Room for both tabs is reserved on every first cell, or project names would
-    # sit at several different left edges down the column.
+    # Featured says so with a rule down the edge of the row and a tint, not with
+    # the word repeated down a column. The rule is the hover target, so it has to
+    # say what it means to anyone who reaches it by pointer or by screen reader.
+    assert 'class="home-featured-rule"' in source
+    assert 'data-tip="Featured project"' in source
+    assert 'aria-label="Featured project"' in source
+    assert ".home-featured-rule {" in source
+    assert "tr.home-featured td {" in source
     assert "table.home-projects td:first-child {" in source
-    assert "padding-left: 26px;" in source
+
+    # CoRAL is a chip beside the name, in all three row loops, and written the
+    # way the tool is written rather than upper-cased by CSS.
+    assert source.count('class="home-chip home-chip-coral"') == 3
+    assert ">CoRAL</span>" in source
+    assert ".home-chip-coral    { background: #f0a202; color: #3d2f05; }" in source
+    assert ".home-chip-private  { background: #f0f1f3; color: #4a4d52; }" in source
 
 
 def test_home_project_rows_are_all_the_same_height():
