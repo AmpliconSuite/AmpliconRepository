@@ -1166,6 +1166,29 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
             .table-not-striped td {
                 color: #696a6c
             }
+
+            /* Both version tables are mostly narrow columns holding short
+               version strings, and Bootstrap's .table padding was spending more
+               width on the gaps than on the values -- enough that the history
+               table's header wrapped onto a second line. Tightening the cells
+               and refusing to wrap a header keeps the row one line deep; if a
+               project ever has enough columns to overflow anyway, the
+               .table-responsive wrapper scrolls rather than wrapping. */
+            .tool-versions-table th,
+            .tool-versions-table td {
+                padding: 0.45rem 0.5rem;
+                font-size: 13px;
+                line-height: 1.3;
+            }
+
+            .tool-versions-table th {
+                white-space: nowrap;
+                vertical-align: bottom;
+            }
+
+            .tool-versions-table .date {
+                white-space: nowrap;
+            }
         </style>
 
         <div class="card-header" id="headingToolVersions">
@@ -1178,7 +1201,7 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
         <div id="collapseToolVersions" class="collapse" aria-labelledby="headingToolVersions" data-parent="#accordion">
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table">
+                    <table class="table tool-versions-table">
                         <thead>
                             <th scope="col">Reconstruction tool</th>
                             {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
@@ -1229,7 +1252,7 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
         <div id="collapsePrevVersions" class="collapse" aria-labelledby="headingPrevVersions" data-parent="#accordion">
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table">
+                    <table class="table tool-versions-table">
                         <thead>
                             <th scope="col">Date Created</th>
                             <th scope="col">Version</th>
@@ -1280,7 +1303,7 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
                                     {% if version.version_deleted_from_history %}
                                         <span class="text-muted">Project deleted</span>
                                     {% else %}
-                                        <a class="btn btn-primary" href="/project/{{ version.linkid }}/download" style="color: white; margin-bottom: 12px;">Download version</a>
+                                        <a class="btn btn-primary btn-sm" href="/project/{{ version.linkid }}/download" style="color: white;">Download</a>
                                     {% endif %}
                                 </td>
                                 <td scope="row" class="version-delete-col" style="display: none;">

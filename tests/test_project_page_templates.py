@@ -72,8 +72,10 @@ def test_home_project_descriptions_expand_inline_and_remain_searchable():
     assert "'.project-description-toggle'" in source
     assert "button.attr('aria-expanded'" in source
     assert "'aria-label'," in source
-    assert "color: #007bff;" in source
-    assert "color: #0056b3;" in source
+    # The toggle is the page's link blue and its hover, both taken from the
+    # home page palette rather than from Bootstrap's defaults.
+    assert "color: #1f66d0;" in source
+    assert "color: #12489b;" in source
     assert "color: #386f9d;" not in source
 
     description_cell = (
@@ -89,13 +91,28 @@ def test_home_project_descriptions_expand_inline_and_remain_searchable():
     assert ">More<" in description_cell
 
 
-def test_home_project_type_badge_colors_distinguish_featured_and_public():
+def test_home_project_rows_distinguish_featured_from_public_and_private():
+    """Featured and private rows are tagged; a plain public row is the default.
+
+    The redesign dropped the "Public" badge -- a tag on two thirds of the rows
+    is not information -- so what has to hold is that the tags which remain are
+    told apart by colour rather than only by their text, and that a featured row
+    is still marked when its tag scrolls out of a narrow viewport.
+    """
     source = (TEMPLATE_DIR / "index.html").read_text()
 
-    assert '<span class="badge badge-success">Featured</span>' in source
-    assert '<span class="badge badge-primary">Public</span>' in source
-    assert '<span class="badge badge-primary">Featured</span>' not in source
-    assert '<span class="badge badge-success">Public</span>' not in source
+    assert '<span class="home-chip home-chip-featured">Featured</span>' in source
+    assert '<span class="home-chip home-chip-private">Private</span>' in source
+    assert '<span class="badge badge-primary">Public</span>' not in source
+
+    # Distinct colours, not just distinct labels.
+    assert ".home-chip-featured { background: #28a745; color: #fff; }" in source
+    assert ".home-chip-private  { background: #f0f1f3; color: #5a5d63; }" in source
+
+    # The featured rule on the row itself, so the row stays marked even where
+    # the chip is off-screen.
+    assert "tr.home-featured td:first-child" in source
+    assert "box-shadow: inset 3px 0 0 #28a745;" in source
 
 
 def test_home_project_description_toggle_only_renders_for_long_text():
@@ -112,3 +129,46 @@ def test_home_project_description_toggle_only_renders_for_long_text():
     assert long_description in long_html
     assert "project-description-toggle" in long_html
     assert "project-description-toggle" not in short_html
+
+
+def test_home_figure_disclosures_point_at_panels_that_exist():
+    """Every figure that offers a breakdown must open one.
+
+    The buttons and the panels are matched by hand-written ids, and a typo in
+    either produces a caret that opens nothing -- which looks like a broken
+    page but throws no error, so nothing else would catch it.
+    """
+    import re
+
+    source = (TEMPLATE_DIR / "index.html").read_text()
+
+    panels = set(re.findall(r'class="home-breakdown" id="([\w-]+)"', source))
+    targets = set(re.findall(r'data-panel="([\w-]+)"', source))
+    controls = set(re.findall(r'aria-controls="([\w-]+)"', source))
+
+    assert targets, "no figure disclosures found"
+    assert targets <= panels, f"buttons point at missing panels: {targets - panels}"
+    assert panels <= targets, f"panels no button opens: {panels - targets}"
+    # A screen reader needs the same relationship the click handler uses.
+    assert targets <= controls
+
+
+def test_home_table_pager_is_moved_out_of_the_scrolling_wrapper():
+    """The row count and the pager belong together, and outside the scroller.
+
+    Inside .home-table-scroll they scroll sideways out of view on a narrow
+    screen, which is most of why the table looked like it had no more rows.
+    """
+    source = (TEMPLATE_DIR / "index.html").read_text()
+
+    assert 'id="home-table-foot"' in source
+    assert "$('#unifiedProjectTable_info, #unifiedProjectTable_paginate')" in source
+    assert ".detach().appendTo('#home-table-foot')" in source
+    # The count names its unit and the pager is arrowed, so the footer reads as
+    # a control rather than as a caption.
+    assert 'info: "Showing _START_ to _END_ of <b>_TOTAL_</b> projects"' in source
+    assert 'next: "Next \\u2192"' in source
+
+    foot_marker = source.index('id="home-table-foot"')
+    scroll_close = source.index('id="unifiedProjectTable"')
+    assert foot_marker > scroll_close
