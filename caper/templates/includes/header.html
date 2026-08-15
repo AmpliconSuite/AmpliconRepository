@@ -105,8 +105,27 @@
     <div class="custom-bootstrap-menu navbar-collapse collapse w-200 order-2 dual-collapse2" id = "navbarTogglerDemo01">
             <ul class="navbar-nav ">
                 <li class="nav-item">
+                    {% comment %}
+                    Signing in is almost never the thing you came to do: you were
+                    reading a project or a sample and hit something that needed an
+                    account, so ?next= carries the page you were on and hands it
+                    back afterwards.
 
-                    <a class="nav-link" href="/accounts/login">Login</a>
+                    Two places send you to your account page instead. The home
+                    page, because "back to the home page" is not somewhere you
+                    were sent, and the account pages themselves, because a link
+                    that returns you to the login form has done nothing.
+
+                    ?next= is what allauth reads: account/login.html posts it
+                    back as a hidden field, and provider_login_url picks it up
+                    off the query string for the Globus and Google buttons, so
+                    it survives the round trip through either.
+                    {% endcomment %}
+                    {% if request.path == '/' or '/accounts/' in request.path %}
+                    <a class="nav-link" href="/accounts/login/?next=/accounts/profile/">Login</a>
+                    {% else %}
+                    <a class="nav-link" href="/accounts/login/?next={{ request.get_full_path|urlencode }}">Login</a>
+                    {% endif %}
                 </li>
             </ul>
     </div>
