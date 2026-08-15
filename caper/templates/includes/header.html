@@ -164,14 +164,21 @@
         {% endif %}
                      
                 <ul class="dropdown-menu dropdown-menu-right" style="margin-top:0px;">
-                    <li class="dropdown-item "><a href="/accounts/profile">Profile</a></li>
+                    {% comment %}
+                    "My projects", not "Profile": a profile is a page about a
+                    person, and this one is a table of your projects with your
+                    notification preferences and your API token under it. The
+                    URL stays /accounts/profile/ -- it is bookmarked, it is
+                    LOGIN_REDIRECT_URL, and nothing is gained by breaking it.
+                    {% endcomment %}
+                    <li class="dropdown-item "><a href="/accounts/profile">My projects</a></li>
                     <li class="dropdown-item"> <a href="/create-project">New Project</a></li>
-
-
-                    <li class="dropdown-item "><a href="/accounts/email">Change Email</a></li>
-                    {% if user.has_usable_password %}
-                    <li class="dropdown-item "><a href="{% url 'account_change_password' %}">Change Password</a></li>
-                    {% endif %}
+                    {% comment %}
+                    Change Email and Change Password are on the Settings page
+                    now, next to the notification preferences and the API token,
+                    rather than being four account items in a menu of six.
+                    {% endcomment %}
+                    <li class="dropdown-item "><a href="{% url 'user_settings' %}">Settings</a></li>
                     <li class="dropdown-item "><a href="/accounts/logout">Logout</a></li>
 
                     

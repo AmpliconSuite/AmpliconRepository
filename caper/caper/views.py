@@ -428,15 +428,36 @@ def profile(request, message_to_user=None):
         proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
 
     prefs = get_user_preferences(request.user)
-    form = UserPreferencesForm(prefs)
     if (prefs.pop('welcomeMessage', None)):
         if (message_to_user == None):
             message_to_user = ""
-        message_to_user = message_to_user + "Email notification preferences can now be set on your profile page."
+        message_to_user = message_to_user + "Email notification preferences can now be set under Settings."
 
 
     messages.add_message(request, messages.INFO, message_to_user)
-    return render(request, "pages/profile.html", {'projects': projects, 'SITE_TITLE':settings.SITE_TITLE, 'preferences': prefs})
+    return render(request, "pages/profile.html", {'projects': projects, 'SITE_TITLE':settings.SITE_TITLE})
+
+
+@login_required(login_url='/accounts/login/')
+def user_settings(request, message_to_user=None):
+    """Everything about the account that is not a project.
+
+    The projects page was carrying three unrelated things: your projects, your
+    notification preferences and your API token.  The preferences and the token
+    are settings, and so are the two account actions that were only reachable
+    from the header menu -- changing your email and changing your password --
+    so they are all in one place and the projects page is about projects.
+    """
+    prefs = get_user_preferences(request.user)
+    prefs.pop('welcomeMessage', None)
+
+    if message_to_user:
+        messages.add_message(request, messages.INFO, message_to_user)
+
+    return render(request, "pages/settings.html", {
+        'SITE_TITLE': settings.SITE_TITLE,
+        'preferences': prefs,
+    })
 
 
 def login(request):
@@ -2187,7 +2208,7 @@ def handle_email_results(request, batch_dir, zip_filename):
         # Get user email
         user_email = request.user.email
         if not user_email:
-            messages.error(request, "Your account does not have an email address. Please update your profile.")
+            messages.error(request, "Your account does not have an email address. Please add one under Change Email.")
             # Clean up S3 file
             s3_client.delete_object(Bucket=bucket_name, Key=s3_key)
             return redirect('gene_search_page')
@@ -3960,7 +3981,7 @@ def update_notification_preferences(request):
         form_dict = form_to_dict(form)
         update_user_preferences(request.user, form_dict)
 
-    return profile(request, message_to_user="User preferences updated.")
+    return user_settings(request, message_to_user="User preferences updated.")
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project

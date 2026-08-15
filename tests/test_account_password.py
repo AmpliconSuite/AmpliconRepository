@@ -36,16 +36,32 @@ def password_user():
         user.delete()
 
 
-def test_account_menu_links_to_password_change(django_client, password_user):
+def test_settings_page_links_to_password_change(django_client, password_user):
+    """The way in is the Settings page.
+
+    It used to be an item in the header's account menu, which put it on every
+    page of the site; the menu now carries one Settings item and the account
+    actions live behind it, so that is where the link has to be.
+    """
     django_client.force_login(password_user)
 
-    response = django_client.get(reverse('account_change_password'))
+    response = django_client.get(reverse('user_settings'))
 
     assert response.status_code == 200
     assert (
         f'href="{reverse("account_change_password")}"'.encode()
         in response.content
     )
+    assert b'href="/accounts/email"' in response.content
+
+
+def test_password_change_form_has_the_three_fields(
+        django_client, password_user):
+    django_client.force_login(password_user)
+
+    response = django_client.get(reverse('account_change_password'))
+
+    assert response.status_code == 200
     assert response.content.count(b'type="password"') == 3
     assert b'id="id_oldpassword"' in response.content
     assert b'id="id_password1"' in response.content
@@ -150,25 +166,28 @@ def test_user_without_password_cannot_open_password_change(
     response = django_client.get(reverse('account_change_password'))
 
     assert response.status_code == 302
-    assert response.url == reverse('profile')
+    assert response.url == reverse('user_settings')
 
 
-def test_user_without_password_has_no_password_menu_or_set_password(
+def test_user_without_password_has_no_password_link_or_set_password(
         django_client, password_user):
     password_user.set_unusable_password()
     password_user.save(update_fields=['password'])
     django_client.force_login(password_user)
 
-    email_response = django_client.get(reverse('account_email'))
+    settings_response = django_client.get(reverse('user_settings'))
     set_response = django_client.get(reverse('account_set_password'))
 
-    assert email_response.status_code == 200
+    assert settings_response.status_code == 200
     assert (
         f'href="{reverse("account_change_password")}"'.encode()
-        not in email_response.content
+        not in settings_response.content
     )
+    # Not a dead link and not silence either: the page says why there is
+    # nothing to change.
+    assert b'signs in through Google or Globus' in settings_response.content
     assert set_response.status_code == 302
-    assert set_response.url == reverse('profile')
+    assert set_response.url == reverse('user_settings')
 
 
 def test_user_without_password_cannot_request_password_reset(

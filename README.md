@@ -665,7 +665,7 @@ Public projects are accessible without any credentials.  Private projects requir
 ### Getting a token
 
 1. Log in to [ampliconrepository.org](https://ampliconrepository.org) (Google, Globus, or username/password).
-2. Go to your **Profile** page.
+2. Open **Settings** from the account menu.
 3. Under **Developer API Token**, click **Generate / Regenerate Token**.
 4. Copy the token immediately — it is shown only once.
 
@@ -675,7 +675,7 @@ Pass the token on every request:
 -H "Authorization: Token <your-token>"
 ```
 
-Tokens can be revoked at any time from the Profile page.
+Tokens can be revoked at any time from the Settings page.
 
 ## Endpoints
 
