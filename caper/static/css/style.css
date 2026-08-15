@@ -82,6 +82,15 @@ a:focus {
     padding-bottom: 0px;
 }
 
+/* The bar holds a 35px mark and one row of links. Bootstrap puts half a rem of
+   air above and below that, which is more than a bar this shallow needs, and it
+   is the first thing on every page: the home page reclaims the difference for
+   the wordmark, and every other page starts a little higher up. */
+.navbar {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+}
+
 @media {
      #custom-bootstrap-menu >a {
         color: rgba(0,0,0,.5) !important;

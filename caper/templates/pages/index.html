@@ -71,10 +71,15 @@
        after this block, so anything that needs to win does so on
        specificity rather than order.
        ------------------------------------------------------------------ */
+    /* The band is tight on purpose. Every vertical value in it -- this padding,
+       the masthead gaps, the margins on the intro, the search row and the
+       cards -- was cut so the wordmark could grow by a fifth without pushing
+       the project table further down the page. The wordmark is the one thing
+       here that gets bigger; everything else gives up a few pixels for it. */
     .home-band {
         background: #f7f9fc;
         border-bottom: 1px solid #e3e6ea;
-        padding: 26px 0 22px;
+        padding: 16px 0 18px;
     }
 
     .home-wrap {
@@ -88,12 +93,17 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 50px;
+        gap: 36px;
         flex-wrap: wrap;
     }
 
+    /* 780px on a full-width band, and it shrinks from there rather than pushing
+       the figures onto a line of their own -- which is what a fixed width did on
+       any window narrower than about 1300px. The min-width is where shrinking
+       stops and wrapping is the better answer instead. */
     .home-mark {
-        max-width: 660px;
+        max-width: 780px;
+        min-width: 320px;
         width: 100%;
         display: block;
     }
@@ -109,9 +119,16 @@
         align-items: flex-start;
         justify-content: space-between;
         gap: 50px;
-        margin-top: 14px;
+        margin-top: 12px;
     }
 
+    /* balance, not pretty. Both are two-line paragraphs, and pretty only
+       protects the last line from being a single short word -- it leaves the
+       first line full and the second line whatever is left, which is where the
+       break looked arbitrary. balance evens the lines against each other, so
+       the break lands where the two halves come out closest in length. It is
+       for short blocks only, which is exactly what these are; browsers without
+       it fall back to a normal greedy wrap, which is what happens today. */
     .home-lede {
         font-size: 16px;
         line-height: 1.5;
@@ -119,7 +136,7 @@
         margin: 0;
         flex: 1 1 460px;
         max-width: 640px;
-        text-wrap: pretty;
+        text-wrap: balance;
     }
 
     /* Tool provenance is a credit, not part of the pitch: one step down in
@@ -134,7 +151,7 @@
         flex: 0 1 auto;
         max-width: 420px;
         text-align: right;
-        text-wrap: pretty;
+        text-wrap: balance;
     }
 
     /* The size and copy-number definition is supplementary -- the lede reads
@@ -170,7 +187,7 @@
 
     .home-figrow {
         display: flex;
-        gap: 34px;
+        gap: 28px;
         padding-top: 6px;
     }
 
@@ -329,7 +346,7 @@
         display: flex;
         align-items: center;
         gap: 16px;
-        margin: 20px 0 0;
+        margin: 14px 0 0;
         flex-wrap: wrap;
     }
 
@@ -447,7 +464,7 @@
         display: grid;
         grid-template-columns: repeat(4, 1fr);
         gap: 14px;
-        margin-top: 16px;
+        margin-top: 14px;
     }
 
     .home-cap {
@@ -515,6 +532,13 @@
 
     .home-section {
         margin-top: 34px;
+    }
+
+    /* The first section follows the band's own bottom padding and its rule, so
+       it is already separated from what is above it; 34 on top of that is a
+       hole. The sections further down have only white space to work with. */
+    .home-band + .home-wrap > .home-section:first-child {
+        margin-top: 22px;
     }
 
     /* ---- project table ---- */
