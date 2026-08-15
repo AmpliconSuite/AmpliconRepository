@@ -472,6 +472,23 @@
     }
 
     /* ---- project table ---- */
+
+    /* The frame is the table's edge, so it is drawn at the weight of the rules
+       inside it rather than heavier -- a frame darker than its own content
+       becomes the loudest thing on the page. It holds the toolbar and the pager
+       as well as the rows: those controls act on the table and nothing else, so
+       putting them inside says so without a word. */
+    .home-tableframe {
+        border: 1px solid #c8cfd8;
+        border-radius: 8px;
+        background: #fff;
+        padding: 14px 16px 10px;
+    }
+
+    @media (max-width: 640px) {
+        .home-tableframe { padding: 12px 10px 8px; }
+    }
+
     .home-table-head {
         display: flex;
         align-items: center;
@@ -599,9 +616,9 @@
         align-items: baseline;
         gap: 16px;
         flex-wrap: wrap;
-        margin-top: 4px;
-        padding-top: 12px;
-        border-top: 1px solid #e3e6ea;
+        margin-top: 0;
+        padding-top: 10px;
+        border-top: 1px solid #d6dbe2;
     }
 
     /* DataTables' CDN stylesheet dresses the pager in the old site's look:
@@ -734,6 +751,13 @@
        description is empty. */
     table.home-projects tbody td {
         height: 35px;
+    }
+
+    /* The pager's own rule closes the table, so the last row does not draw one
+       too -- two lines a few pixels apart is the sort of thing you see before
+       you can say what you are seeing. */
+    table.home-projects tbody tr:last-child td {
+        border-bottom: 0;
     }
 
     /* style.css stripes every odd row site-wide; this table is not striped. */
@@ -1557,6 +1581,13 @@
 <div class="home-wrap">
 
     <div class="home-section">
+        {% comment %}
+        Everything about the table is inside one frame -- the filter and pills
+        that narrow it, the table, and the pager that walks it -- so the group
+        reads as one object rather than three stacked bands. This is the frame
+        the current site draws around its table.
+        {% endcomment %}
+        <div class="home-tableframe">
         <div class="home-table-head">
             <div class="home-filter">
                 <i class="fas fa-search" style="color:#9aa0a6; font-size:13px;"></i>
@@ -1642,6 +1673,7 @@
             </table>
         </div>
         <div id="home-table-foot"></div>
+        </div>
     </div>
 
     <div class="home-section">
