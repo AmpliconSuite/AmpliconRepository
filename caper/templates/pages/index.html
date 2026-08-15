@@ -950,13 +950,8 @@
        Featured is the site's own emphasis. It applies to whole rows, it is why
        they sort to the top, and writing the word on every one of them says
        nothing a reader could act on. So the row carries a green rule down its
-       edge and a tint, and answers "Featured project" on hover. No text, no
-       column of it repeating down the table.
-
-       The whole row answers, not just the rule: the tint is what a reader
-       notices, the tint covers the row, and a four-pixel target at the far left
-       is not where anyone puts the pointer to ask about it. The tip anchors to
-       the row's left edge so it still comes from the marker.
+       edge and a tint, and the rule answers "Featured project" on hover. No
+       text, no column of it repeating down the table.
 
        CoRAL is a fact about the data -- which tool reconstructed it, and so
        whether the reads were long or short. That is worth reading at a glance
@@ -974,12 +969,6 @@
         bottom: 0;
         width: 4px;
         background: #28a745;
-    }
-
-    /* The cursor is the only standing hint that the row has something to say;
-       the links inside it set their own, so it shows on the row and not on
-       what you would click. */
-    tr.home-featured {
         cursor: help;
     }
 
@@ -1342,54 +1331,30 @@
             .appendTo('body')
             .hide();
 
-        function showTip(target) {
-            var text = target.getAttribute('data-tip');
-            if (!text) {
-                return;
-            }
-            tip.text(text).show();
-
-            var box = target.getBoundingClientRect();
-            var above = box.top + window.pageYOffset - tip.outerHeight() - 7;
-            // Centred over the target, except where the target is a whole table
-            // row: centring on a row a thousand pixels wide puts the tip
-            // nowhere near the thing it explains, so those anchor to their left
-            // edge, over the marker that carries the meaning.
-            var left = target.getAttribute('data-tip-align') === 'left'
-                ? box.left + window.pageXOffset
-                : box.left + window.pageXOffset + (box.width - tip.outerWidth()) / 2;
-
-            tip.css({
-                // Flip below the target if there is no room above it.
-                top: (above < window.pageYOffset
-                    ? box.bottom + window.pageYOffset + 7
-                    : above) + 'px',
-                left: Math.max(6, Math.min(
-                    left,
-                    window.pageXOffset + document.documentElement.clientWidth
-                        - tip.outerWidth() - 6
-                )) + 'px'
-            });
-        }
-
         $(document)
             .on('mouseenter focus', '[data-tip]', function () {
-                showTip(this);
-            })
-            .on('mouseleave blur', '[data-tip]', function (event) {
-                tip.hide();
-
-                // A tip inside another tip -- the CoRAL chip inside a featured
-                // row -- hands the tooltip back on the way out instead of
-                // leaving the row silent until it is re-entered. Leaving the
-                // outer one hides it a moment later, since handlers run from
-                // the inside out.
-                if (event.type === 'mouseleave') {
-                    var outer = $(this).parent().closest('[data-tip]');
-                    if (outer.length) {
-                        showTip(outer[0]);
-                    }
+                var text = $(this).attr('data-tip');
+                if (!text) {
+                    return;
                 }
+                tip.text(text).show();
+
+                var box = this.getBoundingClientRect();
+                var above = box.top + window.pageYOffset - tip.outerHeight() - 7;
+                tip.css({
+                    // Flip below the target if there is no room above it.
+                    top: (above < window.pageYOffset
+                        ? box.bottom + window.pageYOffset + 7
+                        : above) + 'px',
+                    left: Math.max(6, Math.min(
+                        box.left + window.pageXOffset + (box.width - tip.outerWidth()) / 2,
+                        window.pageXOffset + document.documentElement.clientWidth
+                            - tip.outerWidth() - 6
+                    )) + 'px'
+                });
+            })
+            .on('mouseleave blur', '[data-tip]', function () {
+                tip.hide();
             });
 
         // --- pill filter, applied on top of whatever is in the text filter ---
@@ -1763,11 +1728,10 @@
                 </thead>
                 <tbody>
                     {% for project in featured_projects %}
-                    <tr class="home-featured" data-project-type="featured" data-tools="{{ project.Reconstruction_tools }}"
-                        data-tip="Featured project" data-tip-align="left">
+                    <tr class="home-featured" data-project-type="featured" data-tools="{{ project.Reconstruction_tools }}">
                         <td>1</td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
-                            <span class="home-featured-rule" aria-label="Featured project"></span>
+                            <span class="home-featured-rule" data-tip="Featured project" aria-label="Featured project"></span>
                             <a class="home-pname" target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}{% if "CoRAL" in project.Reconstruction_tools %}<span class="home-chip home-chip-coral" data-tip="Reconstructed with CoRAL, from long reads">CoRAL</span>{% endif %}
                         </td>
                         {% include 'includes/project_description_cell.html' %}
