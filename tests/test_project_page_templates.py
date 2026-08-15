@@ -138,7 +138,32 @@ def test_home_project_rows_are_all_the_same_height():
     assert ".home-projects .project-description.is-expanded .project-description-full {" in source
     assert "white-space: normal;" in source
     assert "table.home-projects tbody td {" in source
-    assert "height: 42px;" in source
+    assert "height: 35px;" in source
+
+
+def test_home_project_counts_sit_in_the_filter_band_without_a_heading():
+    """The table says it is the projects; only the counts add anything.
+
+    A "PROJECTS" label over a table of projects is a caption for something
+    already obvious, and the figures band above already gives the public total.
+    The counts move down into the band with the filter, where they qualify what
+    the filter is searching.
+    """
+    source = (TEMPLATE_DIR / "index.html").read_text()
+
+    assert 'class="home-counts"' in source
+    assert ".home-counts {" in source
+    assert '<div class="home-eyebrow">\n            Projects' not in source
+
+    band = source.index('class="home-table-head"')
+    counts = source.index('class="home-counts"')
+    table = source.index('id="unifiedProjectTable"')
+    assert band < counts < table
+
+    # The private count is still explained, and still only shown to someone who
+    # has private projects to be counted.
+    assert "{% if user.is_authenticated %}" in source
+    assert "{{ private_projects|length }} private" in source
 
 
 def test_home_project_description_toggle_only_renders_for_long_text():

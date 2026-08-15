@@ -508,6 +508,23 @@
         color: #8b9096;
     }
 
+    /* What used to be the section heading, said as a fact instead of a label:
+       the table underneath is self-evidently the projects, so the only thing
+       worth saying above it is how many there are. Numbers in ink, words
+       muted, so the pair reads as one phrase and the figures carry it. */
+    .home-counts {
+        font-size: 13.5px;
+        color: #6a6d73;
+        white-space: nowrap;
+        flex: 0 0 auto;
+    }
+
+    .home-counts b {
+        color: #414042;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+
     .home-pills {
         display: flex;
         gap: 6px;
@@ -692,8 +709,8 @@
         font-size: 13px;
         font-weight: 700;
         color: #414042;
-        padding: 8px 12px;
-        border-bottom: 2px solid #cfd6de;
+        padding: 7px 12px;
+        border-bottom: 2px solid #aab3bd;
         white-space: nowrap;
     }
 
@@ -703,8 +720,8 @@
        case where the other cells then centre against a tall row, which is the
        lesser oddity of the two. */
     table.home-projects td {
-        padding: 11px 12px;
-        border-bottom: 1px solid #e6e9ee;
+        padding: 8px 12px;
+        border-bottom: 1px solid #d6dbe2;
         vertical-align: middle;
         font-size: 13.5px;
     }
@@ -716,7 +733,7 @@
        taller than the content needed. This height only backstops a row whose
        description is empty. */
     table.home-projects tbody td {
-        height: 42px;
+        height: 35px;
     }
 
     /* style.css stripes every odd row site-wide; this table is not striped. */
@@ -1540,27 +1557,24 @@
 <div class="home-wrap">
 
     <div class="home-section">
-        <div class="home-eyebrow">
-            Projects
-            <span class="home-eyebrow-aside">
-                {% comment %}
-                The private count is the signed-in user's own, not a site total: it is
-                the rows only they can see, so it belongs next to the public count that
-                explains the rest of the table.
-                {% endcomment %}
-                {{ site_stats.public_proj_count|default:0 }} public{% if user.is_authenticated %},
-                <span class="home-def"
-                      data-tip="Projects you are a member of that are not publicly listed, including hidden public projects."
-                      aria-label="{{ private_projects|length }} private: projects you are a member of that are not publicly listed, including hidden public projects."
-                      tabindex="0">{{ private_projects|length }} private</span>{% endif %}
-            </span>
-        </div>
-
         <div class="home-table-head">
             <div class="home-filter">
                 <i class="fas fa-search" style="color:#9aa0a6; font-size:13px;"></i>
                 <label for="home-project-filter" class="sr-only">Filter projects</label>
                 <input type="text" id="home-project-filter" placeholder="Filter by project name or description">
+            </div>
+            {% comment %}
+            The counts stand where the "PROJECTS" heading used to: the table below
+            says what it is without being told. The private count is the signed-in
+            user's own, not a site total -- the rows only they can see -- so it
+            belongs beside the public count that explains the rest of the table.
+            {% endcomment %}
+            <div class="home-counts">
+                <b>{{ site_stats.public_proj_count|default:0 }}</b> public{% if user.is_authenticated %},
+                <span class="home-def"
+                      data-tip="Projects you are a member of that are not publicly listed, including hidden public projects."
+                      aria-label="{{ private_projects|length }} private: projects you are a member of that are not publicly listed, including hidden public projects."
+                      tabindex="0"><b>{{ private_projects|length }}</b> private</span>{% endif %}
             </div>
             <div class="home-pills">
                 <button type="button" class="home-pill is-on" data-filter="all" aria-pressed="true">All</button>
