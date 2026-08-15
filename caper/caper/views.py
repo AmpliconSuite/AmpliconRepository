@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import gc
+import inspect
 import traceback
 import json
 from collections import defaultdict
@@ -80,7 +81,6 @@ from .utils import (
     AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
 from .tar_safety import safe_extract_member, safe_extractall
-from .sample_removal import remove_samples_from_results
 from .project_version_cleanup import (
     build_deleted_version_tombstone,
     delete_gridfs_payload_for_project,
@@ -3464,22 +3464,20 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
         # Download old project file if not replacing the entire project
         download_path = os.path.join(project_data_path, 'download.tar.gz')
         
-        if samples_to_remove and len(samples_to_remove) > 0:
-            # Need to strip samples from the current project runs before aggregation
-            logging.info(f"Downloading old project and removing samples: {samples_to_remove}")
+        if replace_project and not samples_to_remove:
+            logging.info("Skipping old project download - replacing entire project")
+        else:
+            # The old archive always goes in whole.  Removing samples is the
+            # aggregator's job (exclude_samples), so there is nothing for the
+            # site to rewrite first: the sample's rows live in cohort-level
+            # classification tables that only the merge can filter correctly.
+            if samples_to_remove:
+                logging.info(f"Aggregation will exclude samples: {samples_to_remove}")
             try:
                 os.makedirs(project_data_path, exist_ok=True)
             except Exception as e:
                 logging.error(f'Failed to make directory {project_data_path}: {e}')
-            
-            # Download and strip samples from the old project
-            stripped_tar = remove_samples_from_tar(old_project_data, samples_to_remove, download_path,
-                                                   download_url, placeholder_project_id)
-            if stripped_tar:
-                file_fps.append(stripped_tar)
-                logging.info(f"Successfully created stripped tar file: {stripped_tar}")
-        elif not replace_project:
-            # Download the old project file to include in aggregation (unless replacing entire project)
+
             try:
                 logging.info(f"Downloading old project from {download_url}")
                 download_file(download_url, download_path)
@@ -3488,8 +3486,6 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             except Exception as e:
                 logging.error(f'Failed to download the old project file: {e}')
                 # Continue without the old project file - user might be replacing it
-        else:
-            logging.info("Skipping old project download - replacing entire project")
         
         logging.info(f"Files to aggregate: {file_fps}")
         
@@ -3498,13 +3494,9 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
         if name_map_file_path:
             files_to_cleanup.append(name_map_file_path)
         if not replace_project:
-            # Add downloaded old project file and any stripped tar files
+            # Add downloaded old project file
             if os.path.exists(download_path):
                 files_to_cleanup.append(download_path)
-            # Check for stripped tar file
-            stripped_tar_path = os.path.join(project_data_path, f'{placeholder_project_id}_stripped.tar.gz')
-            if os.path.exists(stripped_tar_path):
-                files_to_cleanup.append(stripped_tar_path)
         
         # Call _process_and_aggregate_files to do the actual aggregation and project creation.
         # Passing audit_event_type causes the audit log to be written inside
@@ -3525,6 +3517,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             oldFeatured=oldFeatured,
             rollback_project_id=rollback_project_id,
             old_extra_metadata=old_extra_metadata,
+            exclude_samples=samples_to_remove,
         )
 
         # Clean up temporary files (downloaded old project and name map) after aggregation
@@ -3968,59 +3961,6 @@ def edit_project_page(request, project_name):
                    })
 
 
-def  remove_samples_from_tar(project, samples_to_remove, download_path, url, stripped_name):
-    """Download the project archive and return a copy without the given samples.
-
-    The archive matters as much as the database here: it is what people
-    download, and it is what the aggregator is handed when this edit is
-    re-aggregated into the new version, so a sample left in it comes back.
-
-    What has to come out of it is aggregator-format knowledge, and it lives in
-    sample_removal.py.  This function is the part that belongs to the site:
-    fetch, extract, hand over, repack.
-
-    stripped_name is the new version's project id.  The repacked file used to be
-    named after the project, which is text the uploader typed: a name with a
-    slash in it wrote outside the directory, and every other name missed the
-    cleanup in _process_edit_and_notify, which looks for
-    <project_id>_stripped.tar.gz and so left the archive on disk.
-    """
-    try:
-        download_file(url, download_path)
-    except Exception as e:
-        logging.error(f'Failed to download the file: {e}')
-        return None
-
-    if os.path.exists(download_path):
-        parent_dir = os.path.abspath(os.path.dirname(download_path))
-        # Create a temporary directory to extract the tar file
-        temp_extract_dir = f'{parent_dir}/extracted'
-        os.makedirs(temp_extract_dir, exist_ok=True)
-
-        # Extract the tar file
-        with tarfile.open(download_path, 'r:gz') as tar:
-            safe_extractall(tar, temp_extract_dir,
-                            description=f"project {project.get('_id')}")
-
-        summary = remove_samples_from_results(
-            os.path.join(temp_extract_dir, 'results'), samples_to_remove)
-        logging.info(
-            f"Stripped {samples_to_remove} from the archive of project "
-            f"{project.get('_id')}: removed {summary['directories']}, "
-            f"{summary['files']} feature file(s), {summary['rows']} table row(s)")
-
-        # Create a new tar file without the removed samples
-
-        new_project_tar_fp = f'{parent_dir}/{stripped_name}_stripped.tar.gz'
-        with tarfile.open(new_project_tar_fp, 'w:gz') as tar:
-            tar.add(os.path.join(temp_extract_dir, 'results'), arcname='results')
-
-        # Clean up the temporary extraction directory
-        shutil.rmtree(temp_extract_dir)
-        os.remove(download_path)
-        return new_project_tar_fp
-
-
 def clear_tmp(folder = 'tmp/'):
     for filename in os.listdir(folder):
         file_path = os.path.join(folder, filename)
@@ -4452,7 +4392,7 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None):
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None, exclude_samples=None):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
@@ -4477,6 +4417,8 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                              failure the old project is restored to current/non-deleted state and
                              the failed placeholder is updated with rollback_project_id so that
                              project_page can redirect the user to the old project's edit page.
+        exclude_samples: Sample names to leave out of the aggregation (optional).  Requires
+                         AmpliconSuiteAggregator >= 8.3.0; see the guard below.
     """
 
     def _do_rollback(failed_placeholder_id, old_project_id, error_msg):
@@ -4519,12 +4461,35 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         # Resolve to absolute paths so the Aggregator works correctly regardless of cwd
         abs_temp_directory = os.path.abspath(temp_directory)
         abs_name_map_file_path = os.path.abspath(name_map_file_path) if name_map_file_path else None
+
+        agg_kwargs = {}
+        if exclude_samples:
+            # Fail loudly rather than aggregating without the exclusion: an old
+            # aggregator would silently hand back a project that still contains
+            # the sample the user asked us to remove, which is the one outcome
+            # worse than an error.
+            if 'exclude_samples' not in inspect.signature(Aggregator).parameters:
+                raise RuntimeError(
+                    f'Sample removal needs AmpliconSuiteAggregator >= 8.3.0, but '
+                    f'{AmpliconSuiteAggregator.__file__} is version '
+                    f'{AmpliconSuiteAggregator.__version__}.')
+            agg_kwargs['exclude_samples'] = exclude_samples
+
         agg = Aggregator(
             input_paths=file_fps,
             project_name=str(temp_proj_id),
             name_map_file=abs_name_map_file_path,
             work_dir=abs_temp_directory,
+            **agg_kwargs,
         )
+
+        # A name that matched nothing means the user asked to remove a sample
+        # that is not in the project — worth a log line, since the edit
+        # otherwise reports success.
+        for missing in getattr(agg, 'unmatched_exclusions', []):
+            logging.warning(
+                f"Project {temp_proj_id}: asked to remove sample {missing!r}, "
+                f"which is not in the project.")
 
         logging.info(f"_process_and_aggregate_files - Aggregator END")
 

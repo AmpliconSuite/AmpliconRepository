@@ -201,8 +201,12 @@ def test_removing_a_sample_end_to_end(
     """Create a two-sample project, remove one, and check both versions.
 
     This is the part the routing tests cannot reach: the old archive is
-    downloaded, the sample's directories are stripped out of it, and the
-    aggregator runs on what is left.
+    downloaded whole and handed to the aggregator with the sample named in
+    exclude_samples, so what comes back never contained it.
+
+    That the sample is gone from the *classification tables* — as opposed to
+    run.json, which is what this checks — is proven upstream, by
+    AmpliconSuiteAggregator's tests/synthetic/make_prefix_collision_project.py.
     """
     from django.conf import settings
     from caper.views import create_project, edit_project_page
