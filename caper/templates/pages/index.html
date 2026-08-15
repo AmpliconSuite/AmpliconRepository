@@ -329,8 +329,8 @@
         -webkit-appearance: none;
         -moz-appearance: none;
         border: 0;
-        border-right: 1px solid #cfd6de;
-        background: #eef1f5 url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23414042' stroke-width='2'%3E%3Cpath d='M2.5 4.5L6 8l3.5-3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 11px center;
+        border-right: 1px solid #e3e6ea;
+        background: #f5f7fa url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23414042' stroke-width='2'%3E%3Cpath d='M2.5 4.5L6 8l3.5-3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 11px center;
         padding: 0 30px 0 14px;
         font-family: inherit;
         font-size: 13.5px;
@@ -341,11 +341,11 @@
     }
 
     .home-scope:hover {
-        background-color: #e2e8f0;
+        background-color: #eaeef4;
     }
 
     .home-scope:focus {
-        background-color: #e2e8f0;
+        background-color: #eaeef4;
         box-shadow: inset 0 0 0 2px #1f66d0;
     }
 
@@ -463,7 +463,7 @@
 
     /* ---- one shared section label, so the page reads as one document ---- */
     .home-eyebrow {
-        font-size: 11px;
+        font-size: 12.5px;
         font-weight: 700;
         letter-spacing: .08em;
         text-transform: uppercase;
@@ -711,16 +711,33 @@
         border-collapse: collapse;
     }
 
-    /* Written the way a table header is written -- the words, in ink, over a
-       rule you can see -- rather than as pale letterspaced capitals. Capitals
-       at 11.5px in grey are decoration standing where a heading should be. */
-    table.home-projects th {
+    /* DataTables draws its own rule under a table that has no footer, which
+       lands a pixel above the pager's rule and reads as a double line. The
+       pager's rule is the one that closes the table. */
+    table.home-projects.no-footer {
+        border-bottom: 0;
+    }
+
+    /* Mockup F's header: small grey capitals over a hairline, so the column
+       names label the table without competing with what is in it. This is a
+       deliberate return -- the bold ink version was answering the complaint
+       that the page ran thin and grey, and the answer to that turned out to be
+       the body text and the rules, not the headings.
+
+       thead is named because DataTables' own "table.dataTable thead th" carries
+       one element more than "table.home-projects th" and so was winning: the
+       header was taking its 10px padding and its rgba(0,0,0,.3) rule, and none
+       of what is written here applied. */
+    table.home-projects thead th {
+        background: #fff;
         text-align: left;
-        font-size: 12.5px;
+        font-size: 11px;
         font-weight: 700;
-        color: #414042;
-        padding: 7px 12px;
-        border-bottom: 2px solid #aab3bd;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: #8b9096;
+        padding: 6px 12px;
+        border-bottom: 1px solid #d6dbe2;
         white-space: nowrap;
     }
 

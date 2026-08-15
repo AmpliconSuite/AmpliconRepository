@@ -1,20 +1,56 @@
+{% comment %}
+Three lines, grouped by what they are: how to reach us, what you may do with
+the data, and who built and funded it. Items on a line are separated the same
+way everywhere -- a middle dot -- rather than a pipe on one line and a run of
+non-breaking spaces on the next.
+{% endcomment %}
 <div class="footer bg-light" style='margin-top:40px;'>
     <div class='row mx-auto' style="width:90%; padding: 20px;">
-        <div class="col-md-12 text-center">
-            <p style="font-size: 14px; display: inline-block; color: #777;">Got questions, or want to report a bug?&nbsp;&nbsp;
-                <a href="https://github.com/AmpliconSuite/AmpliconRepository/issues" target="_blank" href=""><i class="fab fa-github" style="font-size: 25px; color: #777;"> </i></a>
-            </p>
-            <span style="font-size: 14px; color: #999;">&nbsp;&nbsp;|&nbsp;&nbsp;</span>
-            <p style="font-size: 14px; display: inline-block; color: #777;">
+        <div class="col-md-12 text-center footer-lines">
+            <p>Got questions, or want to report a bug?
+                <a href="https://github.com/AmpliconSuite/AmpliconRepository/issues" target="_blank" aria-label="Report an issue on GitHub"><i class="fab fa-github"></i></a>
+                <span class="footer-sep">&middot;</span>
                 <a href="https://docs.ampliconrepository.org/en/latest/contributors/" target="_blank">About the development team</a>
-            </p> &nbsp;&nbsp;&nbsp;
-            <span class="hide"><a href="/admin/" style="color: #777;">Admin</a></span>
+                <span class="footer-sep">&middot;</span>
+                Site version: {{ SERVER_VERSION }}
+                <span class="hide"><span class="footer-sep">&middot;</span> <a href="/admin/">Admin</a></span>
+            </p>
 
-            <p style="font-size: 14px; color: #777; margin-top:0;"> AmpliconRepository is not intended for use with Protected Health Information (PHI). &nbsp;&nbsp; Hosted data is released under a <a href="https://raw.githubusercontent.com/AmpliconSuite/AmpliconRepository/main/licenses/CCv4-BY.txt">Creative Commons v4 license</a>.</p>
+            <p>Hosted data is released under a <a href="https://raw.githubusercontent.com/AmpliconSuite/AmpliconRepository/main/licenses/CCv4-BY.txt">Creative Commons v4 license</a>
+                <span class="footer-sep">&middot;</span>
+                AmpliconRepository is not intended for use with Protected Health Information (PHI)
+            </p>
 
-            <p style="font-size: 14px; color: #777;">Site developed under BSD 3-clause license with funding support from the <a href="https://itcr.cancer.gov/">NCI ITCR program</a> and <a href="https://www.cancergrandchallenges.org/edynamic" target="_blank">CRUK Cancer Grand Challenges</a>. &nbsp;&nbsp; Site version: {{ SERVER_VERSION  }}. </p>
-
-            <p style="font-size: 14px; color: #777;">© <script type="application/javascript">document.write(new Date().getFullYear());</script> Regents of the University of California and the Broad Institute. </p>
+            <p>Site developed under BSD 3-clause license with funding support from the <a href="https://itcr.cancer.gov/">NCI ITCR program</a> and <a href="https://www.cancergrandchallenges.org/edynamic" target="_blank">CRUK Cancer Grand Challenges</a>
+                <span class="footer-sep">&middot;</span>
+                &copy; <script type="application/javascript">document.write(new Date().getFullYear());</script> Regents of the University of California and the Broad Institute
+            </p>
         </div>
     </div>
 </div>
+
+<style>
+    .footer-lines p {
+        font-size: 14px;
+        color: #777;
+        line-height: 1.5;
+        margin: 0 0 4px;
+    }
+
+    .footer-lines p:last-child {
+        margin-bottom: 0;
+    }
+
+    /* The separator is punctuation between items, not an item: one step lighter
+       than the text so the eye groups the words and not the dots. */
+    .footer-sep {
+        color: #b3b3b3;
+        padding: 0 5px;
+    }
+
+    .footer-lines .fab.fa-github {
+        font-size: 17px;
+        color: #777;
+        vertical-align: -1px;
+    }
+</style>
