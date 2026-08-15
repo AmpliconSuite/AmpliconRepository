@@ -16,7 +16,9 @@
        Adding a fifth is how a page ends up with a dozen nearly identical
        greys that no longer say anything by being different:
 
-           #414042  ink       headings, numbers, what you are meant to read
+           #414042  ink       headings, numbers, what you are meant to read;
+                                also the rule under the table header and the
+                                fill behind a selected pill or page
            #4a4d52  body      running text
            #6a6d73  muted     labels, credits, secondary cells
            #8b9096  faint     panel titles, glyphs, footnotes
@@ -558,9 +560,12 @@
         border-color: #8b9096;
     }
 
+    /* Selected is the ink, the same value as the rule under the table header:
+       blue is for what you can go to, ink for the state you are in. Bootstrap's
+       #6c757d was a grey that belonged to no other part of the page. */
     .home-pill.is-on {
-        background: #6c757d;
-        border-color: #6c757d;
+        background: #414042;
+        border-color: #414042;
         color: #fff;
     }
 
@@ -689,8 +694,8 @@
        it is. */
     #home-table-foot .paginate_button.current,
     #home-table-foot .paginate_button.current:hover {
-        background: #6c757d none;
-        border-color: #6c757d;
+        background: #414042 none;
+        border-color: #414042;
         color: #fff !important;
     }
 
@@ -724,7 +729,9 @@
        thin and grey, and the answer to that turned out to be the body text and
        the rules, not the headings.
 
-       The rule under it is black and the only black on the page. A register
+       The rule under it is the ink the figures are set in, not #000: one
+       dark value on the page, used for the numbers you read and the line that
+       rules them off. A register
        rules off its headings and then keeps its entries light; the weight
        belongs to the line, which is structure, rather than to the words, which
        would then be shouting the names of the columns. It also means the
@@ -743,7 +750,7 @@
         text-transform: uppercase;
         color: #8b9096;
         padding: 6px 12px;
-        border-bottom: 2px solid #000;
+        border-bottom: 2px solid #414042;
         white-space: nowrap;
     }
 
