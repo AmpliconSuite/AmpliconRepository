@@ -112,7 +112,7 @@ def test_home_project_rows_distinguish_featured_from_public_and_private():
     assert ".home-flag {" in source
     assert ".home-flag-featured {" in source
     assert ".home-flag-coral {" in source
-    assert ".home-chip-private  { background: #f0f1f3; color: #5a5d63; }" in source
+    assert ".home-chip-private  { background: #f0f1f3; color: #4a4d52; }" in source
 
     # A closed tab shows no text, so the label has to stay in the DOM for anyone
     # who cannot hover it, and it is written the way the words are written --

@@ -12,6 +12,15 @@
        come out of img/AmpliconRepository.svg, and the pale blue tint is the
        #E6EFFB that the stats tables already used.
 
+       Text is four greys and no more -- anything else is a fill or a rule.
+       Adding a fifth is how a page ends up with a dozen nearly identical
+       greys that no longer say anything by being different:
+
+           #414042  ink       headings, numbers, what you are meant to read
+           #4a4d52  body      running text
+           #6a6d73  muted     labels, credits, secondary cells
+           #8b9096  faint     panel titles, glyphs, footnotes
+
        Selectors are prefixed .home- because static/css/style.css sets some
        bare element rules (notably tr:nth-child(odd) striping, and font sizes
        on table th/td) that would otherwise apply here. style.css is loaded
@@ -45,14 +54,27 @@
         display: block;
     }
 
-    /* The lede spans the whole band rather than sharing the row with the
-       figures or sitting in a narrow measure, so it reads as a header for
-       the band and lines up with the search row beneath it. */
+    /* The lede and the credit share one line of the band rather than stacking
+       two full-width paragraphs under the masthead. The lede runs under the
+       wordmark and stops where the figures start; the credit sits under the
+       figures it is a footnote to, ranged right against the same edge. Both
+       are free to wrap -- what matters is that the band opens with one block
+       of text, not two. */
+    .home-intro {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 50px;
+        margin-top: 14px;
+    }
+
     .home-lede {
         font-size: 16px;
         line-height: 1.5;
         color: #4a4d52;
-        margin: 14px 0 0;
+        margin: 0;
+        flex: 1 1 460px;
+        max-width: 640px;
         text-wrap: pretty;
     }
 
@@ -63,8 +85,12 @@
     .home-provenance {
         font-size: 13.5px;
         line-height: 1.45;
-        color: #74777c;
-        margin: 7px 0 0;
+        color: #6a6d73;
+        margin: 0;
+        flex: 0 1 auto;
+        max-width: 420px;
+        text-align: right;
+        text-wrap: pretty;
     }
 
     /* The size and copy-number definition is supplementary -- the lede reads
@@ -83,7 +109,7 @@
     }
 
     .home-provenance a {
-        color: #74777c;
+        color: #6a6d73;
         text-decoration: underline;
         text-decoration-color: #c9ced6;
         text-underline-offset: 2px;
@@ -124,7 +150,7 @@
         font-weight: 700;
         letter-spacing: .085em;
         text-transform: uppercase;
-        color: #74777c;
+        color: #6a6d73;
         margin-top: 2px;
     }
 
@@ -175,7 +201,7 @@
         font-weight: 700;
         letter-spacing: .085em;
         text-transform: uppercase;
-        color: #9aa0a6;
+        color: #8b9096;
         padding-bottom: 6px;
         margin-bottom: 7px;
         border-bottom: 1px solid #eef0f3;
@@ -207,7 +233,7 @@
 
     .home-breakdown-group .home-breakdown-row {
         padding-left: 13px;
-        color: #74777c;
+        color: #6a6d73;
         font-size: 13px;
     }
 
@@ -216,12 +242,12 @@
         font-weight: 700;
         letter-spacing: .085em;
         text-transform: uppercase;
-        color: #9aa0a6;
+        color: #8b9096;
         margin-bottom: 2px;
     }
 
     .home-breakdown a {
-        color: #9aa0a6;
+        color: #8b9096;
         font-size: 11.5px;
     }
 
@@ -231,7 +257,7 @@
 
     .home-breakdown-note {
         font-size: 12px;
-        color: #9aa0a6;
+        color: #8b9096;
         line-height: 1.4;
         padding: 1px 0 2px;
     }
@@ -243,7 +269,7 @@
     }
 
     .home-breakdown abbr {
-        color: #9aa0a6;
+        color: #8b9096;
         font-size: 11.5px;
         cursor: help;
         border: 0;
@@ -313,13 +339,13 @@
         padding: 13px 15px;
         font-size: 15.5px;
         font-family: inherit;
-        color: #2f3033;
+        color: #414042;
         min-width: 0;
         margin: 0;
     }
 
     .home-search input[type="text"]::placeholder {
-        color: #9aa0a6;
+        color: #8b9096;
     }
 
     .home-search button[type="submit"] {
@@ -339,7 +365,7 @@
 
     .home-examples {
         font-size: 14px;
-        color: #74777c;
+        color: #6a6d73;
         display: flex;
         gap: 7px;
         align-items: center;
@@ -401,7 +427,7 @@
     .home-cap span {
         display: block;
         font-size: 12.5px;
-        color: #74777c;
+        color: #6a6d73;
         margin-top: 2px;
         line-height: 1.4;
     }
@@ -422,7 +448,7 @@
         font-weight: 700;
         letter-spacing: .1em;
         text-transform: uppercase;
-        color: #9aa0a6;
+        color: #8b9096;
         padding-bottom: 7px;
         margin: 0 0 14px;
         border-bottom: 1px solid #e3e6ea;
@@ -471,13 +497,13 @@
         font-size: 14.5px;
         flex: 1;
         font-family: inherit;
-        color: #2f3033;
+        color: #414042;
         margin: 0;
         min-width: 0;
     }
 
     .home-filter input::placeholder {
-        color: #9aa0a6;
+        color: #8b9096;
     }
 
     .home-pills {
@@ -494,13 +520,13 @@
         padding: 7px 13px;
         border-radius: 999px;
         border: 1px solid #e3e6ea;
-        color: #74777c;
+        color: #6a6d73;
         background: #fff;
         cursor: pointer;
     }
 
     .home-pill:hover {
-        border-color: #9aa0a6;
+        border-color: #8b9096;
     }
 
     .home-pill.is-on {
@@ -515,7 +541,7 @@
         padding: 6px 8px;
         border: 1px solid #e3e6ea;
         border-radius: 6px;
-        color: #74777c;
+        color: #6a6d73;
         background: #fff;
         width: auto;
         margin: 0 4px;
@@ -528,7 +554,7 @@
         white-space: nowrap;
         font-weight: normal;
         font-size: 13px;
-        color: #74777c;
+        color: #6a6d73;
     }
 
     .home-table-scroll {
@@ -570,7 +596,7 @@
     #home-table-foot .dataTables_info,
     #home-table-foot .dataTables_paginate {
         font-size: 13px;
-        color: #74777c;
+        color: #6a6d73;
         float: none;
         margin: 0;
         padding: 0;
@@ -598,7 +624,7 @@
         border: 1px solid #e3e6ea;
         border-radius: 999px;
         background: #fff none;
-        color: #74777c !important;
+        color: #6a6d73 !important;
         box-shadow: none;
         text-decoration: none !important;
         cursor: pointer;
@@ -609,7 +635,7 @@
     }
 
     #home-table-foot .paginate_button:hover {
-        border-color: #9aa0a6;
+        border-color: #8b9096;
         color: #414042 !important;
     }
 
@@ -662,16 +688,21 @@
         font-weight: 700;
         letter-spacing: .08em;
         text-transform: uppercase;
-        color: #74777c;
+        color: #6a6d73;
         padding: 9px 12px;
         border-bottom: 1px solid #e3e6ea;
         white-space: nowrap;
     }
 
+    /* Cells centre rather than sit at the top: the row is a fixed height and
+       most cells hold one line, so top alignment left every line riding above
+       the middle of its own row. A row with an expanded description is the one
+       case where the other cells then centre against a tall row, which is the
+       lesser oddity of the two. */
     table.home-projects td {
         padding: 11px 12px;
         border-bottom: 1px solid #eef0f3;
-        vertical-align: top;
+        vertical-align: middle;
         font-size: 13.5px;
     }
 
@@ -697,11 +728,11 @@
 
     .home-pname {
         font-size: 15px;
-        font-weight: 600;
+        font-weight: 500;
     }
 
     .home-projects .project-description-cell {
-        color: #74777c;
+        color: #6a6d73;
         font-size: 13px;
         line-height: 1.45;
     }
@@ -745,7 +776,7 @@
     }
 
     .home-date {
-        color: #74777c;
+        color: #6a6d73;
         white-space: nowrap;
         font-variant-numeric: tabular-nums;
     }
@@ -846,10 +877,12 @@
         }
     }
 
-    /* A step down from the badge green so the open label clears 4.5:1 on it;
-       at a glance it is the same green the tag was. */
+    /* The badge green the Featured tag has always used, unchanged. Darkening it
+       would have bought the open label 4.5:1 instead of 3.1:1, but it read as a
+       different green in the row, and the tab says what it is by colour and
+       position as well as by the word. */
     .home-flag-featured {
-        background: #218838;
+        background: #28a745;
         color: #fff;
     }
 
@@ -878,7 +911,7 @@
 
     /* The green and the teal are Bootstrap's badge-success and badge-info,
        which is what these tags were before the redesign. */
-    .home-chip-private  { background: #f0f1f3; color: #5a5d63; }
+    .home-chip-private  { background: #f0f1f3; color: #4a4d52; }
 
     /* A publication is a destination, not a status, so it gets a link glyph
        rather than a fourth chip colour. Two thirds of projects have one, and a
@@ -887,7 +920,7 @@
        instead of a filled block -- so the badge stack beside the name does not
        grow a row taller. */
     .home-pub {
-        color: #9aa0a6;
+        color: #8b9096;
         font-size: 12px;
         margin-left: 5px;
         vertical-align: 1px;
@@ -916,7 +949,7 @@
     .home-news-meta {
         font-size: 11.5px;
         letter-spacing: .04em;
-        color: #9aa0a6;
+        color: #8b9096;
         display: flex;
         align-items: center;
         gap: 8px;
@@ -934,9 +967,9 @@
     }
 
     .home-tag-release { background: #eef4fd; color: #12489b; }
-    .home-tag-paper   { background: #f0f1f3; color: #5a5d63; }
+    .home-tag-paper   { background: #f0f1f3; color: #4a4d52; }
 
-    .home-news-src { color: #74777c; }
+    .home-news-src { color: #6a6d73; }
 
     /* These are links and have to look like links. Charcoal titles read as
        body copy, so they are the page's link blue with a standing underline;
@@ -965,7 +998,7 @@
 
     .home-cite {
         font-size: 13.5px;
-        color: #74777c;
+        color: #6a6d73;
         line-height: 1.5;
         margin: 0;
     }
@@ -1028,6 +1061,13 @@
     @media (max-width: 1100px) {
         .home-caps { grid-template-columns: repeat(2, 1fr); }
         .home-latest { grid-template-columns: 1fr; gap: 18px; }
+    }
+
+    @media (max-width: 900px) {
+        /* Two columns of text this narrow is two narrow columns, so the credit
+           goes back under the lede and ranges left with it. */
+        .home-intro { display: block; }
+        .home-provenance { max-width: none; text-align: left; margin-top: 7px; }
     }
 
     @media (max-width: 760px) {
@@ -1457,6 +1497,7 @@
             </div>
         </div>
 
+        <div class="home-intro">
         <p class="home-lede">
             <span class="home-def"
                   data-tip="Somatic events typically above 5 copies, sometimes above 100 copies, and usually 10 kbp to 10 Mbp in size."
@@ -1472,6 +1513,7 @@
             (long-read) tools from the
             <a href="https://github.com/AmpliconSuite" target="_blank" rel="noopener">AmpliconSuite</a> toolkit.
         </p>
+        </div>
 
         <form class="home-searchrow" id="home-search-form" method="POST" action="{% url 'search_results' %}">
             {% csrf_token %}
