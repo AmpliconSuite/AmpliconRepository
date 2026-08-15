@@ -95,3 +95,60 @@ def test_the_template_filter_is_the_same_resolver():
 def test_unique_publication_counting(stored_values, expected):
     resolved = [publication_url(value) for value in stored_values]
     assert count_unique_publications(resolved) == expected
+
+
+# ---------------------------------------------------------------------------
+# The project page line
+# ---------------------------------------------------------------------------
+# The home page has had the resolver behind its glyph for a while; the project
+# page had not, and rendered the stored text through replace_urls, which only
+# linkifies what already looks like a URL.  A project whose publication was
+# recorded as a PMID therefore showed a bare number and no way to reach the
+# paper.
+
+def _publication_line(stored):
+    from django.template.loader import render_to_string
+
+    return render_to_string(
+        'includes/project_publication_line.html',
+        {'project': {'publication_link': stored}},
+    )
+
+
+@pytest.mark.parametrize('stored, expected_url', [
+    ('39402156', 'https://pubmed.ncbi.nlm.nih.gov/39402156/'),
+    ('PMID: 39402156', 'https://pubmed.ncbi.nlm.nih.gov/39402156/'),
+    ('10.1158/2159-8290.CD-24-1532',
+     'https://doi.org/10.1158/2159-8290.CD-24-1532'),
+    ('www.nature.com/articles/s41586-024-07802-5',
+     'https://www.nature.com/articles/s41586-024-07802-5'),
+])
+def test_project_page_links_a_reference_that_is_not_already_a_url(
+        stored, expected_url):
+    """The address is shown as well as linked: a reader who stored a PMID gets
+    to see which paper it is without following the link."""
+    html = _publication_line(stored)
+
+    assert f'href="{expected_url}"' in html
+    assert f'>{expected_url}</a>' in html
+
+
+def test_project_page_leaves_a_stored_url_reading_as_it_was_stored():
+    html = _publication_line('https://pubmed.ncbi.nlm.nih.gov/39402156/')
+
+    assert 'href="https://pubmed.ncbi.nlm.nih.gov/39402156/"' in html
+    assert html.count('<a ') == 1
+
+
+def test_project_page_keeps_free_text_it_cannot_resolve():
+    """Free text is still worth showing -- and a URL buried in it is still
+    worth linking, which is what the old rendering did well."""
+    html = _publication_line('Smith et al. 2024, https://example.org/paper')
+
+    assert 'Smith et al. 2024' in html
+    assert 'href="https://example.org/paper"' in html
+
+
+def test_project_page_omits_the_line_when_nothing_is_stored():
+    """A label with nothing after it is not information."""
+    assert 'Publication link' not in _publication_line('')

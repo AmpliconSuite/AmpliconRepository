@@ -889,7 +889,7 @@
             <span id="description-full" style="display: none;">{{ project.description }}</span>
             <a href="javascript:void(0);" id="description-toggle" style="font-style: italic; display: none;" onclick="toggleDescription()"></a>
         </span></h5>
-        <h5>Publication link: <span style="font-weight: 200">{{ project.publication_link|escape|replace_urls|safe }}</span></h5>
+        {% include 'includes/project_publication_line.html' %}
         {% if not is_empty_project %}
         <h5>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h5>
         {% endif %}

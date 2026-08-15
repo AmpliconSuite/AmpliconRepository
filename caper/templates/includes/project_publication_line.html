@@ -1,0 +1,17 @@
+{% load custom_filters %}{% comment %}
+The upload form asks for "a PMID or link to a publication", and people take it
+at its word: some rows hold a URL, some hold a bare PMID or DOI.  This line used
+to run the stored text through replace_urls, which only linkifies something that
+already looks like a URL -- so a project whose publication is recorded as a PMID
+showed a bare number, with no way to reach the paper.
+
+publication_url resolves all three forms to a real URL, and that URL is what is
+shown: for a stored URL nothing changes, and for a PMID you get the PubMed
+address instead of eight digits.  Anything it cannot resolve without guessing
+falls back to the old rendering, so free text like "Nature 2023, PMID 12345678"
+still shows, with any URL inside it still linked.
+{% endcomment %}{% with pub_url=project.publication_link|publication_url %}{% if pub_url %}
+<h5>Publication link: <span style="font-weight: 200"><a href="{{ pub_url }}" target="_blank" rel="noopener noreferrer">{{ pub_url }}</a></span></h5>
+{% elif project.publication_link %}
+<h5>Publication link: <span style="font-weight: 200">{{ project.publication_link|escape|replace_urls|safe }}</span></h5>
+{% endif %}{% endwith %}
