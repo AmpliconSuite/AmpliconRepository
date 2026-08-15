@@ -178,6 +178,17 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', default="")  #new
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', default="")
 EMAIL_HOST_USER_SECRET = EMAIL_HOST_USER
 EMAIL_USE_TLS = True #new
+
+# Who the site's mail comes from.
+#
+# The project's own notifications pass EMAIL_HOST_USER_SECRET explicitly, but
+# allauth does not: password resets, email confirmations and email-change
+# notices are sent by its adapter, which uses DEFAULT_FROM_EMAIL.  That was left
+# at Django's default, so every one of them went out as webmaster@localhost --
+# an address that fails SPF for this domain, which is how a password reset ends
+# up in a spam folder or refused outright.
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER or 'webmaster@localhost'
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
 SITE_URL = os.environ.get("SITE_URL", default="http://127.0.0.1:8000/")
 
 SERVER_IDENTIFICATION_BANNER=os.getenv('SERVER_IDENTIFICATION_BANNER', default=None)
