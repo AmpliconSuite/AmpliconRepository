@@ -19,11 +19,22 @@
            #5894f4  border    the logo blue itself, at 3:1 -- enough for a rule
                                 or an outline, not enough to set text in
 
-       That is the whole set. Blue does not also mean "this update is a
-       release", or "this is a heading". Every one of those was a second meaning
-       competing with the first, and the link is the one that has to win. The site-wide a{} rule in static/css/style.css
-       carries the same #1f66d0 into the footer, the header and anything else
-       left on Bootstrap's #007bff.
+       That is the whole set, and the rule it follows is: blue leaves the page,
+       ink acts on it. Project names, publication links, update titles, Advanced
+       and the footer are blue; More, Prev, Next, the example pills and the
+       filter pills are ink, because every one of them redraws what is already
+       in front of you.
+
+       Those four controls looked like the darkest blue on the page even though
+       they were the same #1f66d0 as everything else: small, bold, boxed text
+       concentrates a colour in a way a project name spread across a row does
+       not, so they were spending the most weight to say the least true thing.
+       The one blue left on a control is the Search button's fill, which is the
+       primary action and the page's only large area of colour.
+
+       The site-wide a{} rule in static/css/style.css carries the same #1f66d0
+       into the footer, the header and anything else left on Bootstrap's
+       #007bff.
 
        Text is four greys and no more -- anything else is a fill or a rule.
        Adding a fifth is how a page ends up with a dozen nearly identical
@@ -404,20 +415,26 @@
         flex-wrap: wrap;
     }
 
+    /* These are the same object as the filter pills over the table -- a pill you
+       press to set a query -- and they were the only reason to look twice: blue
+       at 13.5 against the pills' grey at 12.5, one section apart, for the same
+       kind of act. They do not submit; they fill the field and hand it back to
+       you. So they take the pill's treatment exactly, and Advanced beside them
+       keeps the blue, because Advanced is the one that leaves the page. */
     .home-ex {
         appearance: none;
         border: 1px solid #e3e6ea;
         border-radius: 999px;
         padding: 4px 11px;
         background: #fff;
-        color: #1f66d0;
+        color: #6a6d73;
         font-family: inherit;
-        font-size: 13.5px;
+        font-size: 12.5px;
         cursor: pointer;
     }
 
     .home-ex:hover {
-        border-color: #5894f4;
+        border-color: #8b9096;
     }
 
     .home-advanced {
@@ -471,6 +488,10 @@
         text-decoration: none;
     }
 
+    /* Waiting on destinations: the cards are still divs, so this is the only
+       rule in the block that nothing currently matches. It is the one place the
+       logo blue is spent on the page, and it stays here so the cards arrive
+       styled the day they get hrefs. */
     a.home-cap:hover {
         border-color: #5894f4;
         text-decoration: none;
@@ -686,20 +707,23 @@
         color: #414042 !important;
     }
 
-    /* Prev and Next are the controls that had to be found, so they are the ones
-       that get colour. The numbered buttons stay quiet: a row of pills all
-       shouting is how the pager became invisible in the first place. */
+    /* Prev and Next are still the controls that had to be found, but they are
+       found by weight now, not by hue: ink text and a border two steps darker
+       than the numbered buttons keep them the strongest thing in the bar, and
+       the numbers stay quiet. Blue would say they lead somewhere else, and they
+       do not -- they redraw this table in place, which is exactly what the ink
+       fill on the current page already says. */
     #home-table-foot .paginate_button.previous,
     #home-table-foot .paginate_button.next {
-        border-color: #5894f4;
-        color: #1f66d0 !important;
+        border-color: #b9bfc7;
+        color: #414042 !important;
         font-weight: 600;
     }
 
     #home-table-foot .paginate_button.previous:hover,
     #home-table-foot .paginate_button.next:hover {
-        background: #1f66d0 none;
-        border-color: #1f66d0;
+        background: #414042 none;
+        border-color: #414042;
         color: #fff !important;
     }
 
@@ -1074,7 +1098,7 @@
         background: none;
         border: 0;
         border-radius: 2px;
-        color: #1f66d0;
+        color: #414042;
         cursor: pointer;
         font-family: inherit;
         font-size: 0.86em;
@@ -1086,13 +1110,16 @@
         white-space: nowrap;
     }
 
+    /* More opens the row it sits in; it does not go anywhere, so it is not blue.
+       It is findable without the colour because it is bold against the lighter
+       description text and carries a chevron, and the chevron says "this opens"
+       in a way blue never did -- blue said "this navigates", which was wrong. */
     .project-description-toggle:hover {
-        color: #12489b;
         text-decoration: underline;
     }
 
     .project-description-toggle:focus-visible {
-        outline: 2px solid rgba(0, 123, 255, 0.45);
+        outline: 2px solid rgba(31, 102, 208, .45);
         outline-offset: 2px;
     }
 

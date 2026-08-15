@@ -72,11 +72,16 @@ def test_home_project_descriptions_expand_inline_and_remain_searchable():
     assert "'.project-description-toggle'" in source
     assert "button.attr('aria-expanded'" in source
     assert "'aria-label'," in source
-    # The toggle is the page's link blue and its hover, both taken from the
-    # home page palette rather than from Bootstrap's defaults.
-    assert "color: #1f66d0;" in source
-    assert "color: #12489b;" in source
-    assert "color: #386f9d;" not in source
+    # The toggle opens the row it sits in rather than going anywhere, so it is
+    # ink with a chevron, not blue. Its focus ring is the page's blue and not
+    # Bootstrap's, which is the last place #007bff was hiding.
+    # Anchored on the standalone rule: .home-projects scopes an earlier one.
+    toggle = source[source.index("\n    .project-description-toggle {"):]
+    toggle = toggle[: toggle.index("focus-visible") + 200]
+    assert "color: #414042;" in toggle
+    assert "#1f66d0" not in toggle
+    assert "#12489b" not in toggle
+    assert "rgba(0, 123, 255" not in source
 
     description_cell = (
         TEMPLATE_DIR.parent / "includes" / "project_description_cell.html"
@@ -214,6 +219,19 @@ def test_home_page_blue_means_one_thing():
 
     # The two update tags are the same category of thing, so the same grey.
     assert ".home-tag-release,\n    .home-tag-paper { background: #f0f1f3;" in rules
+
+    # Blue leaves the page; ink acts on it. The example pills are the filter
+    # pills' twin and take their colour and size, and the pager moves the table
+    # in place, so neither is blue -- only the Search button's fill is.
+    examples = rules[rules.index(".home-ex {"):]
+    examples = examples[: examples.index("}")]
+    assert "color: #6a6d73;" in examples
+    assert "font-size: 12.5px;" in examples
+
+    pager = rules[rules.index(".paginate_button.previous,"):]
+    pager = pager[: pager.index(".paginate_button.current")]
+    assert "#1f66d0" not in pager
+    assert "color: #414042 !important;" in pager
 
     # News titles carry the arrow, not the colour.
     title_rule = rules[rules.index("a.home-news-title {"):]
