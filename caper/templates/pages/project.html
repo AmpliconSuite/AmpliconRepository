@@ -29,7 +29,30 @@
       });
     
     
-        var table = $('#myTable1').DataTable();
+        var table = $('#myTable1').DataTable({
+            // Same treatment as the home page table: name the unit so the count
+            // says what it is counting, and arrow the pager so it reads as a
+            // control rather than as a caption.
+            language: {
+                info: "Showing _START_ to _END_ of <b>_TOTAL_</b> samples",
+                infoEmpty: "No samples to show",
+                infoFiltered: " (filtered from _MAX_)",
+                paginate: {
+                    previous: "\u2190 Prev",
+                    next: "Next \u2192"
+                }
+            }
+        });
+
+        // The count and the pager end up at opposite ends of the page, where
+        // neither reads as a control for the other. One bar, count first.
+        $('#myTable1_info, #myTable1_paginate').detach().appendTo('#samples-table-foot');
+
+        // Now that the table is paged, put it back into layout. Column widths
+        // were computed while it was display:none, so they have to be redone
+        // against the real rendered width.
+        $('#samples-table-wrap').addClass('is-ready');
+        table.columns.adjust();
 
         // Put the filtered-download control in the same band as the "Show N
         // entries" menu and the search box.  DataTables builds that row itself,
@@ -427,13 +450,9 @@
             //alert("Nothing to say")
         }
 
-        // Hide plotly_plots div if there's only one sample
-        var sampleCount = parseInt("{{ sample_data|length|default:0 }}".replace(/,/g, ''));
-        if (sampleCount === 1) {
-            $('#plotly_plots').hide();
-        } else {
-            $('#plotly_plots').show();
-        }
+        // Visibility of #plotly_plots is decided in the template now -- doing it
+        // here meant the container appeared after first paint and pushed
+        // everything below it down the page.
 
     } );
     function show_div() {
@@ -481,8 +500,46 @@
         });
     }
 
+    // The project history table shows one date per version, and the long local
+    // format was the widest column in it by some way. These cells get the
+    // compact date, with the same full string formatDate() produces on hover --
+    // so nothing is lost, it just stops costing a column.
+    function formatCompactDates() {
+        document.querySelectorAll('.date-compact').forEach(element => {
+            const original = element.textContent.trim();
+            const parsed = Date.parse(original);
+            if (isNaN(parsed)) {
+                // Unparseable stored date: leave it as it is rather than
+                // showing an invalid one.
+                return;
+            }
+            const utcDate = new Date(parsed);
+            const localDate = new Date(utcDate.getTime() - utcDate.getTimezoneOffset() * 60000);
+            const month = String(localDate.getMonth() + 1).padStart(2, '0');
+            const day = String(localDate.getDate()).padStart(2, '0');
+
+            // The tooltip hangs off an inner span, not the cell, so the dotted
+            // rule that advertises it sits under the date rather than running
+            // the width of the column.
+            const marker = document.createElement('span');
+            marker.textContent = localDate.getFullYear() + '-' + month + '-' + day;
+            marker.setAttribute('title', formatDate(original));
+            marker.setAttribute('data-toggle', 'tooltip');
+            // Bootstrap tooltips fire on focus as well as hover, so this makes
+            // the full timestamp reachable from the keyboard.
+            marker.setAttribute('tabindex', '0');
+
+            element.textContent = '';
+            element.appendChild(marker);
+            // base.html initialises tooltips on ready, which has already
+            // happened by the time this element exists.
+            $(marker).tooltip();
+        });
+    }
+
     // Call the formatDates function when the page is loaded
     document.addEventListener('DOMContentLoaded', formatDates);
+    document.addEventListener('DOMContentLoaded', formatCompactDates);
 
     // Description truncation and toggle
     document.addEventListener('DOMContentLoaded', function() {
@@ -832,7 +889,7 @@
             <span id="description-full" style="display: none;">{{ project.description }}</span>
             <a href="javascript:void(0);" id="description-toggle" style="font-style: italic; display: none;" onclick="toggleDescription()"></a>
         </span></h5>
-        <h5>Publication link: <span style="font-weight: 200">{{ project.publication_link|escape|replace_urls|safe }}</span></h5>
+        {% include 'includes/project_publication_line.html' %}
         {% if not is_empty_project %}
         <h5>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h5>
         {% endif %}
@@ -1019,7 +1076,12 @@
    tests/test_page_weight.py.
 {% endcomment %}
 <script src="https://cdn.plot.ly/plotly-2.16.1.min.js" charset="utf-8"></script>
-<div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; display:none; overflow-x: auto;">
+{% comment %}
+Shown or hidden from the first paint rather than by script on ready: the figures
+already carry their own 400px height, so the only thing that used to move the
+page was this container switching on after everything below it had been laid out.
+{% endcomment %}
+<div id="plotly_plots" style="margin:auto; border: 0.5px solid grey; padding: 0px; overflow-x: auto;{% if sample_data|length == 1 %} display:none;{% endif %}">
     <div style="display: flex; flex-wrap: nowrap; align-items: flex-end; width: max-content;">
         <div style="flex: 0 0 auto;">{{ stackedbar_graph|safe }}
         {% block plotly_js %}
@@ -1088,6 +1150,144 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
     </button>
     <span id="filtered-count" style="margin-left: 10px; color: #666;"></span>
 </div>
+{% comment %}
+The full sample list is in the DOM -- every sample, which on a large project is
+thousands of rows -- and DataTables only cuts it to one page once it initialises.
+Rendering that raw table first makes the page briefly enormous and then snaps it
+shut, dragging everything below it back up the screen. The wrapper holds the
+height a paged table will occupy and keeps the rows out of layout until they are
+paged.
+{% endcomment %}
+<style>
+    #samples-table-wrap {
+        position: relative;
+        min-height: 430px;
+    }
+
+    /* display, not visibility: hidden rows still take their full height. */
+    #samples-table-wrap > .table-responsive {
+        display: none;
+    }
+
+    #samples-table-wrap.is-ready {
+        min-height: 0;
+    }
+
+    #samples-table-wrap.is-ready > .table-responsive {
+        display: block;
+    }
+
+    #samples-table-wrap.is-ready .samples-table-placeholder {
+        display: none;
+    }
+
+    .samples-table-placeholder {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 430px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #9aa0a6;
+        font-size: 13px;
+    }
+
+    /* Scoped under the footer's id, which outranks DataTables' own class
+       selectors outright, so none of the CDN's button chrome survives to be
+       interleaved with this. */
+    #samples-table-foot {
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-top: 4px;
+        padding-top: 12px;
+        border-top: 1px solid #e3e6ea;
+    }
+
+    #samples-table-foot:empty {
+        display: none;
+    }
+
+    #samples-table-foot .dataTables_info,
+    #samples-table-foot .dataTables_paginate {
+        font-size: 13px;
+        color: #74777c;
+        float: none;
+        margin: 0;
+        padding: 0;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    #samples-table-foot .dataTables_info b {
+        color: #414042;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+
+    #samples-table-foot .paginate_button {
+        display: inline-block;
+        box-sizing: border-box;
+        min-width: 0;
+        font-family: inherit;
+        font-size: 13px;
+        line-height: 1.3;
+        padding: 5px 11px;
+        margin: 0 0 0 5px;
+        border: 1px solid #e3e6ea;
+        border-radius: 999px;
+        background: #fff none;
+        color: #74777c !important;
+        box-shadow: none;
+        text-decoration: none !important;
+        cursor: pointer;
+    }
+
+    #samples-table-foot .paginate_button:first-child {
+        margin-left: 0;
+    }
+
+    #samples-table-foot .paginate_button:hover {
+        border-color: #9aa0a6;
+        color: #414042 !important;
+    }
+
+    #samples-table-foot .paginate_button.previous,
+    #samples-table-foot .paginate_button.next {
+        border-color: #a9c6ef;
+        color: #1f66d0 !important;
+        font-weight: 600;
+    }
+
+    #samples-table-foot .paginate_button.previous:hover,
+    #samples-table-foot .paginate_button.next:hover {
+        background: #1f66d0 none;
+        border-color: #1f66d0;
+        color: #fff !important;
+    }
+
+    #samples-table-foot .paginate_button.current,
+    #samples-table-foot .paginate_button.current:hover {
+        background: #6c757d none;
+        border-color: #6c757d;
+        color: #fff !important;
+    }
+
+    #samples-table-foot .paginate_button.disabled,
+    #samples-table-foot .paginate_button.disabled:hover,
+    #samples-table-foot .paginate_button.disabled:active {
+        background: #fff none;
+        border-color: #eef0f3;
+        color: #c3c7cc !important;
+        font-weight: 400;
+        cursor: default;
+    }
+</style>
+<div id="samples-table-wrap">
+<div class="samples-table-placeholder" aria-hidden="true">Loading samples...</div>
 <div class="table-responsive">
     <table id='myTable1' class="table table-hover table-sm stripe no-border">
         <thead>
@@ -1116,6 +1316,8 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
             {% endfor %}
         </tbody>
     </table>
+</div>
+<div id="samples-table-foot"></div>
 </div>
 {% endif %}
 
@@ -1166,6 +1368,45 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
             .table-not-striped td {
                 color: #696a6c
             }
+
+            /* Both version tables are mostly narrow columns holding short
+               version strings, and Bootstrap's .table padding was spending more
+               width on the gaps than on the values -- enough that the history
+               table's header wrapped onto a second line. Tightening the cells
+               and refusing to wrap a header keeps the row one line deep; if a
+               project ever has enough columns to overflow anyway, the
+               .table-responsive wrapper scrolls rather than wrapping. */
+            .tool-versions-table th,
+            .tool-versions-table td {
+                padding: 0.45rem 0.5rem;
+                font-size: 13px;
+                line-height: 1.3;
+            }
+
+            .tool-versions-table th {
+                white-space: nowrap;
+                vertical-align: bottom;
+            }
+
+            .tool-versions-table .date,
+            .tool-versions-table .date-compact {
+                white-space: nowrap;
+            }
+
+            /* The cell shows a compact date and the full local timestamp is on
+               hover; the dotted rule and the help cursor are the only things
+               advertising that, and without them the tooltip is undiscoverable.
+               Same treatment as the dates on the home page table. */
+            .tool-versions-table .date-compact span {
+                border-bottom: 1px dotted #b9bfc7;
+                cursor: help;
+            }
+
+            .tool-versions-table .date-compact span:hover,
+            .tool-versions-table .date-compact span:focus {
+                border-bottom-color: #1f66d0;
+                color: #414042;
+            }
         </style>
 
         <div class="card-header" id="headingToolVersions">
@@ -1178,7 +1419,7 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
         <div id="collapseToolVersions" class="collapse" aria-labelledby="headingToolVersions" data-parent="#accordion">
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table">
+                    <table class="table tool-versions-table">
                         <thead>
                             <th scope="col">Reconstruction tool</th>
                             {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
@@ -1189,7 +1430,13 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
                             <th scope="col">CoRAL</th>
                             {% endif %}
                             <th scope="col">AmpliconClassifier</th>
-                            <th scope="col">AmpliconSuiteAggregator</th>
+                            <th scope="col">AmpliconSuiteAggregator
+                                <span data-toggle="tooltip"
+                                      title="Organizes each sample's tool outputs and builds the archive this site reads."
+                                      aria-label="AmpliconSuiteAggregator organizes each sample's tool outputs and builds the archive this site reads."
+                                      tabindex="0"
+                                      style="color:#9aa0a6; font-size:12px; cursor:help;"><i class="far fa-question-circle" aria-hidden="true"></i></span>
+                            </th>
                         </thead>
                         <tbody>
                             <tr>
@@ -1223,20 +1470,44 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
         <div id="collapsePrevVersions" class="collapse" aria-labelledby="headingPrevVersions" data-parent="#accordion">
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table">
+                    <table class="table tool-versions-table">
                         <thead>
                             <th scope="col">Date Created</th>
                             <th scope="col">Version</th>
                             <th scope="col">Reconstruction tool</th>
                             {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
-                            <th scope="col">AS-p</th>
-                            <th scope="col">AA</th>
+                            <th scope="col">AS-p
+                                <span data-toggle="tooltip"
+                                      title="AmpliconSuite-pipeline"
+                                      aria-label="AmpliconSuite-pipeline"
+                                      tabindex="0"
+                                      style="color:#9aa0a6; font-size:11px; cursor:help;"><i class="far fa-question-circle" aria-hidden="true"></i></span>
+                            </th>
+                            <th scope="col">AA
+                                <span data-toggle="tooltip"
+                                      title="AmpliconArchitect"
+                                      aria-label="AmpliconArchitect"
+                                      tabindex="0"
+                                      style="color:#9aa0a6; font-size:11px; cursor:help;"><i class="far fa-question-circle" aria-hidden="true"></i></span>
+                            </th>
                             {% endif %}
                             {% if "CoRAL" in project.Reconstruction_tools %}
                             <th scope="col">CoRAL</th>
                             {% endif %}
-                            <th scope="col">AC</th>
-                            <th scope="col">Aggregator</th>
+                            <th scope="col">AC
+                                <span data-toggle="tooltip"
+                                      title="AmpliconClassifier"
+                                      aria-label="AmpliconClassifier"
+                                      tabindex="0"
+                                      style="color:#9aa0a6; font-size:11px; cursor:help;"><i class="far fa-question-circle" aria-hidden="true"></i></span>
+                            </th>
+                            <th scope="col">Aggregator
+                                <span data-toggle="tooltip"
+                                      title="AmpliconSuiteAggregator: organizes each sample's tool outputs and builds the archive this site reads."
+                                      aria-label="AmpliconSuiteAggregator organizes each sample's tool outputs and builds the archive this site reads."
+                                      tabindex="0"
+                                      style="color:#9aa0a6; font-size:12px; cursor:help;"><i class="far fa-question-circle" aria-hidden="true"></i></span>
+                            </th>
                             <th scope="col">Download</th>
                             <th scope="col" class="version-delete-col" style="display: none;">Delete</th>
                         </thead>
@@ -1244,7 +1515,7 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
                             {% for version in prev_versions %}
 
                             <tr>
-                                <td class="date">{{ version.date }}</td>
+                                <td class="date-compact">{{ version.date }}</td>
                                 <td scope="row">Project ID:
                                     <a href="/project/{{ version.linkid }}">{{ version.linkid }}</a>
                                     {% if version.linkid == proj_id %}
@@ -1268,7 +1539,7 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
                                     {% if version.version_deleted_from_history %}
                                         <span class="text-muted">Project deleted</span>
                                     {% else %}
-                                        <a class="btn btn-primary" href="/project/{{ version.linkid }}/download" style="color: white; margin-bottom: 12px;">Download version</a>
+                                        <a class="btn btn-primary btn-sm" href="/project/{{ version.linkid }}/download" style="color: white;">Download</a>
                                     {% endif %}
                                 </td>
                                 <td scope="row" class="version-delete-col" style="display: none;">

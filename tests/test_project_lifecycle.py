@@ -9,6 +9,7 @@ loaded_datasets projects are never modified here.
 
 import pytest
 from bson.objectid import ObjectId
+from django.http import Http404
 
 from conftest import (
     _build_create_request,
@@ -162,13 +163,17 @@ def test_add_and_remove_project_member(
         assert doc and not doc.get('aggregation_failed'), \
             f"Aggregation failed: {doc.get('error_message') if doc else 'timeout'}"
 
-        # non_member_user is not yet a member — should be redirected
+        # non_member_user is not yet a member.  Someone who is *signed in* and
+        # still cannot see the project gets a 404, not a redirect: sending them
+        # to the login form would bounce them straight back, because allauth
+        # redirects an already-authenticated user away from it.  (A signed-out
+        # visitor is the case that does get redirected, with ?next= — see
+        # tests/test_private_link_login.py.)
         req_denied = request_factory.get(f'/project/{project_id}')
         req_denied.user = non_member_user
         req_denied.session = {}
-        resp_denied = project_page(req_denied, project_name=project_id)
-        assert resp_denied.status_code in (301, 302), \
-            "Non-member should be redirected from private project"
+        with pytest.raises(Http404):
+            project_page(req_denied, project_name=project_id)
 
         # Add non_member_user
         mongo_collection.update_one(
@@ -190,9 +195,8 @@ def test_add_and_remove_project_member(
         req_removed = request_factory.get(f'/project/{project_id}')
         req_removed.user = non_member_user
         req_removed.session = {}
-        resp_removed = project_page(req_removed, project_name=project_id)
-        assert resp_removed.status_code in (301, 302), \
-            "Removed member must be denied access to private project"
+        with pytest.raises(Http404):
+            project_page(req_removed, project_name=project_id)
 
     finally:
         _cleanup_project(mongo_collection, project_id)

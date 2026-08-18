@@ -12,7 +12,7 @@ class LocalPasswordChangeView(PasswordChangeView):
                 "This account uses Google or Globus sign-in and does not have "
                 "a local password to change.",
             )
-            return redirect('profile')
+            return redirect('user_settings')
         return super().dispatch(request, *args, **kwargs)
 
 
@@ -26,4 +26,4 @@ def password_set_unavailable(request):
         "This account uses Google or Globus sign-in and does not need a "
         "local password.",
     )
-    return redirect('profile')
+    return redirect('user_settings')

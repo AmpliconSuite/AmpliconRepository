@@ -59,6 +59,7 @@ urlpatterns += [
     ),
     path('accounts/', include('allauth.urls')),
     path("accounts/profile/", views.profile, name="profile"),
+    path("accounts/settings/", views.user_settings, name="user_settings"),
     path("profile-update-notification-preferences/", views.update_notification_preferences , name="profile-update-notification-preferences"),
     path("accounts/login/", views.login, name="login"),
     path("project/<project_name>", views.project_page, name="project_page"),

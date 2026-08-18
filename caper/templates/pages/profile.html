@@ -2,7 +2,7 @@
 
 {% load mezzanine_tags %}
 
-{% block meta_title %} Profile
+{% block meta_title %} My projects
 {% endblock %}
 
 
@@ -30,108 +30,6 @@
 
     } );
 
-    // ── API Token management ──────────────────────────────────────────────────
-
-    function getCsrfToken() {
-        const match = document.cookie.match(/csrftoken=([^;]+)/);
-        return match ? match[1] : '';
-    }
-
-    function apiFetch(url, method) {
-        return fetch(url, {
-            method: method,
-            headers: {
-                'X-CSRFToken': getCsrfToken(),
-                'Content-Type': 'application/json',
-            },
-            credentials: 'same-origin',
-        }).then(response => {
-            return response.text().then(text => {
-                let data = {};
-                if (text) {
-                    try {
-                        data = JSON.parse(text);
-                    } catch (e) {
-                        throw new Error('Unexpected response from the token API.');
-                    }
-                }
-                if (!response.ok) {
-                    throw new Error(data.error || data.detail || 'Token API request failed.');
-                }
-                return data;
-            });
-        });
-    }
-
-    function setTokenUI(hasToken, suffix) {
-        const status = document.getElementById('token-status');
-        if (!status) return;
-        status.textContent =
-            hasToken ? 'Active (ends in …' + suffix + ')' : 'No active token.';
-        const revokeButton = document.getElementById('btn-revoke-token');
-        if (revokeButton) {
-            revokeButton.style.display = hasToken ? 'inline-block' : 'none';
-        }
-    }
-
-    function setTokenError(message) {
-        const status = document.getElementById('token-status');
-        if (status) {
-            status.textContent = message || 'Unable to load API token status.';
-        }
-    }
-
-    document.addEventListener('DOMContentLoaded', function () {
-        // Load current token status on page load
-        apiFetch('/api/v1/token/', 'GET')
-            .then(data => setTokenUI(data.has_token, data.token_suffix))
-            .catch(error => setTokenError(error.message));
-
-        const generateButton = document.getElementById('btn-generate-token');
-        if (generateButton) {
-            generateButton.addEventListener('click', function () {
-                if (!confirm('This will invalidate any existing token. Continue?')) return;
-                setTokenError('Generating token...');
-                apiFetch('/api/v1/token/', 'POST')
-                    .then(data => {
-                        if (!data.token) {
-                            throw new Error('Token API did not return a token.');
-                        }
-                        document.getElementById('token-value').value = data.token;
-                        document.getElementById('token-reveal').style.display = 'block';
-                        setTokenUI(true, data.token.slice(-8));
-                    })
-                    .catch(error => setTokenError(error.message));
-            });
-        }
-
-        const revokeButton = document.getElementById('btn-revoke-token');
-        if (revokeButton) {
-            revokeButton.addEventListener('click', function () {
-                if (!confirm('Revoke your API token? Any scripts using it will stop working.')) return;
-                setTokenError('Revoking token...');
-                apiFetch('/api/v1/token/', 'DELETE')
-                    .then(() => {
-                        document.getElementById('token-reveal').style.display = 'none';
-                        document.getElementById('token-value').value = '';
-                        setTokenUI(false, null);
-                    })
-                    .catch(error => setTokenError(error.message));
-            });
-        }
-
-        const copyButton = document.getElementById('btn-copy-token');
-        if (copyButton) {
-            copyButton.addEventListener('click', function () {
-                const val = document.getElementById('token-value').value;
-                navigator.clipboard.writeText(val).then(() => {
-                    this.textContent = 'Copied!';
-                    setTimeout(() => this.textContent = 'Copy', 2000);
-                });
-            });
-        }
-    });
-
 </script>
 {% endblock %}
 {% block main %}
@@ -147,26 +45,34 @@
     </div>
 
 
-        <div class="row">
-            <div class="col-md-12">
-                <h2>
-                    {% if user.email  %}
-                     {{ user.email }}:
-                    {% else %}
-                     {{ user.username }}:
-                    {% endif %}
-                </h2>
-                <hr>
-            </div>
-        </div>
+        {% comment %}
+        The heading was the signed-in address on its own, which named the
+        account rather than the page. The address is still worth having -- it is
+        how you tell which of two logins you are using -- so it stays as a
+        credit line under the title, with the way out to the settings that used
+        to live further down this page.
+        {% endcomment %}
         <div class="row">
             <div class="col-md-9">
-                <h3>Projects</h3>
+                <h2 style="margin-bottom:2px">My projects</h2>
+                {% comment %}
+                The API token lives on Settings, because it is a credential:
+                you regenerate it, you revoke it, it belongs beside the
+                password. But nobody goes to Settings looking for it -- the
+                person who wants a token is thinking about projects, which is
+                this page. Hence a pointer here rather than the panel itself.
+                {% endcomment %}
+                <p class="text-muted">
+                    Signed in as {% if user.email %}{{ user.email }}{% else %}{{ user.username }}{% endif %}
+                    &middot; <a href="{% url 'user_settings' %}">Settings</a>
+                    &middot; <a href="{% url 'user_settings' %}#api-token">API token</a>
+                </p>
             </div>
             <div class="col-md-3 text-right">
                 <a href="/create-project/" class="btn btn-primary">Create Project</a>
             </div>
         </div>
+        <hr>
         <div class="table-responsive">
             <table id='projectTable' class="table table-hover table-sm">
                 <thead>
@@ -210,100 +116,9 @@
             </table>
         </div>
 
-        <div class="row" style="margin-top:20px">
-                <div class="col-md-9">
-                    <h3>Preferences</h3>
-                </div>
-        </div>
-        <div class="row">
-                <div class="col-md-9">
-                    <h4>Notifications</h4>
-                    Check the checkbox to have {{ SITE_TITLE }} send you emails when the following events happen:
-                </div>
-        </div>
-
-        <form id="form__submit" action="/profile-update-notification-preferences/" method="post">
-                       {% csrf_token %}
-
-            <div class="row" style="margin-top:15px"><div class="col-md-4">When <b><i>added</i></b> as a project member:</div>
-                <div class="col-md-4">   <input id="form__onAddedToProjectTeam" type="checkbox"
-                                              onchange="document.getElementById('updateNotificationsBtn').disabled = false"
-                                                name="onAddedToProjectTeam"  {% if preferences.onAddedToProjectTeam %} checked{% endif %}  /></div></div>
-             <div class="row" style="margin-top:15px"><div class="col-md-4">When <b><i>removed</i></b> as a project member:</div>
-                 <div class="col-md-4">   <input id="form__onRemovedFromProjectTeam" type="checkbox"
-                                              onchange="document.getElementById('updateNotificationsBtn').disabled = false"
-                                                 name="onRemovedFromProjectTeam"  {% if preferences.onRemovedFromProjectTeam %} checked{% endif %}  /></div></div>
-             <div class="row" style="margin-top:15px"><div class="col-md-4">When a subscribed project is <b><i>updated</i></b>:</div>
-                 <div class="col-md-4">   <input id="form__onProjectUpdate" type="checkbox"
-                                              onchange="document.getElementById('updateNotificationsBtn').disabled = false"
-                                                 name="onProjectUpdate"  {% if preferences.onProjectUpdate %} checked{% endif %}  /></div></div>
-             <div class="row" style="margin-top:5px"><div class="col-md-9" style="margin-left:15px;font-size:0.9em;color:#666;"><i>Unchecking this will disable project update emails for any projects you have subscribed to.</i></div></div>
-
-             <div class="row" style="margin-top: 25px">
-                <div class="col-md-9">
-                   <button id="updateNotificationsBtn" class="btn btn-primary" disabled="true">Update notification preferences</button>
-                </div>
-        </div>
-        </form>
-
-
-        <!-- ── Developer API Token ─────────────────────────────────────── -->
-        <div class="row" style="margin-top:30px">
-            <div class="col-md-9">
-                <h3>Developer API Token</h3>
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-md-9">
-                <p>Use an API token to access your projects programmatically with
-                   <code>curl</code> or the AmpliconRepository Python client.</p>
-                <p><strong>Status:</strong> <span id="token-status">Loading…</span></p>
-                <button id="btn-generate-token" class="btn btn-primary btn-sm">Generate / Regenerate Token</button>
-                <button id="btn-revoke-token" class="btn btn-danger btn-sm" style="display:none; margin-left:8px">Revoke Token</button>
-            </div>
-        </div>
-
-        <div id="token-reveal" style="display:none; margin-top:16px">
-            <div class="row">
-                <div class="col-md-9">
-                    <div class="alert alert-warning" role="alert">
-                        <strong>Copy your token now.</strong> It will not be shown again.
-                    </div>
-                    <div class="input-group">
-                        <input id="token-value" type="text" class="form-control" readonly
-                               style="font-family:monospace">
-                        <div class="input-group-append">
-                            <button id="btn-copy-token" class="btn btn-outline-secondary" type="button">Copy</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="row" style="margin-top:16px">
-                <div class="col-md-9">
-                    <p><strong>Usage examples:</strong>
-                       (full docs at <a href="https://docs.ampliconrepository.org/en/latest/api/" target="_blank" rel="noopener">docs.ampliconrepository.org</a>)</p>
-                    <pre style="background:#f5f5f5; padding:12px; border-radius:4px; font-size:0.85em"># Set these once. A browser-style User-Agent header is required by the gateway.
-TOKEN="&lt;your-token&gt;"
-UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-
-# List your projects
-curl -s -A "$UA" -H "Authorization: Token $TOKEN" \
-     https://ampliconrepository.org/api/v1/projects/
-
-# Download a project archive (use -o, not -O; the URL ends in /download/)
-curl -sS -L -A "$UA" -H "Authorization: Token $TOKEN" \
-     -o "&lt;id&gt;.tar.gz" https://ampliconrepository.org/api/v1/projects/&lt;id&gt;/download/
-
-# Get sample metadata
-curl -s -A "$UA" -H "Authorization: Token $TOKEN" \
-     https://ampliconrepository.org/api/v1/projects/&lt;id&gt;/samples/</pre>
-                </div>
-            </div>
-        </div>
-
     </div>
     {% endif %}
     {% if not user.is_authenticated %}
-    <h1>Please sign in to view your profile</h1>
+    <h1>Please sign in to see your projects</h1>
     {% endif %}
 {% endblock %}

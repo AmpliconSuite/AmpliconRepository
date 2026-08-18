@@ -484,3 +484,151 @@ def test_admin_stats_table_renders_from_a_document_written_before_the_unlisted_b
         assert 'Unlisted public' in html
     finally:
         _cleanup_stats_since(start_id)
+
+
+def _publication_project(sample_specs, publication_link, visibility='public'):
+    """A project whose samples can carry more than one feature each.
+
+    _project above gives every sample exactly one feature, which cannot show the
+    difference between counting amplicons and counting the samples that have
+    them.
+    """
+    runs = {}
+    for idx, classifications in enumerate(sample_specs, start=1):
+        sample_name = f'PubStatsSample_{idx}'
+        runs[sample_name] = [{
+            'Sample_name': sample_name,
+            'Classification': classification,
+            'Tissue_of_origin': 'brain',
+        } for classification in classifications]
+    return {
+        '_id': ObjectId(),
+        'project_name': 'PublicationStatsProject',
+        'private': visibility,
+        'publication_link': publication_link,
+        'delete': False,
+        'current': True,
+        'runs': runs,
+    }
+
+
+def _publication_subset(stats):
+    return {
+        'projects': stats['public_projects_with_publication'],
+        'papers': stats['public_unique_publication_count'],
+        'ecdna_positive': stats['public_ecdna_positive_sample_count'],
+        'ecdna_amplicons': stats['public_amplicon_classifications_count'].get('ecDNA', 0),
+    }
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_publication_and_ecdna_sample_counts_track_projects():
+    """The home page's two derived counts have to survive add and remove.
+
+    Both are there because they answer questions the stored totals cannot: two
+    projects can cite one paper, and one sample can carry several ecDNA
+    amplicons, so neither number can be read off proj_count or the amplicon
+    counter.
+    """
+    from caper.site_stats import (
+        add_project_to_site_statistics,
+        delete_project_from_site_statistics,
+        get_latest_site_statistics,
+    )
+
+    start_id = get_latest_site_statistics()['_id']
+    before = _publication_subset(get_latest_site_statistics())
+
+    # Three samples, four amplicons, two of the samples ecDNA-positive.
+    first = _publication_project(
+        [['ecDNA', 'ecDNA'], ['ecDNA', 'BFB'], ['BFB']],
+        # A DOI no real project cites, so the test measures its own effect on
+        # the totals rather than colliding with whatever the database holds.
+        '10.9999/sitestats.fixture.0001',
+    )
+    # The same paper, stored the other way an uploader might type it.
+    second = _publication_project([['ecDNA']], 'https://doi.org/10.9999/sitestats.fixture.0001')
+
+    try:
+        add_project_to_site_statistics(first, 'public')
+        after_first = _publication_subset(get_latest_site_statistics())
+        assert after_first['projects'] == before['projects'] + 1
+        assert after_first['papers'] == before['papers'] + 1
+        assert after_first['ecdna_positive'] == before['ecdna_positive'] + 2
+        assert after_first['ecdna_amplicons'] == before['ecdna_amplicons'] + 3
+
+        add_project_to_site_statistics(second, 'public')
+        after_second = _publication_subset(get_latest_site_statistics())
+        # Two projects now cite it, but it is still one paper.
+        assert after_second['projects'] == before['projects'] + 2
+        assert after_second['papers'] == after_first['papers']
+
+        # Removing one citation must not take the paper away from the other.
+        delete_project_from_site_statistics(second, 'public')
+        assert _publication_subset(get_latest_site_statistics()) == after_first
+
+        delete_project_from_site_statistics(first, 'public')
+        assert _publication_subset(get_latest_site_statistics()) == before
+    finally:
+        _cleanup_stats_since(start_id)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_publication_counts_default_on_a_document_written_before_they_existed():
+    """Every stored statistics document predates these keys."""
+    from caper.site_stats import get_latest_site_statistics, site_statistics_handle
+
+    start_id = get_latest_site_statistics()['_id']
+    try:
+        site_statistics_handle.insert_one(_legacy_stats_document())
+        latest = get_latest_site_statistics()
+
+        assert latest['public_publication_links'] == []
+        assert latest['public_projects_with_publication'] == 0
+        assert latest['public_unique_publication_count'] == 0
+        assert latest['public_ecdna_positive_sample_count'] == 0
+    finally:
+        _cleanup_stats_since(start_id)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_startup_rebuild_only_fires_when_the_stored_shape_is_behind():
+    """The check runs on every start; the rebuild must not.
+
+    Regeneration reads every project document in full, so paying for it on an
+    ordinary restart would put a scan of the whole corpus in front of the first
+    request. It is worth paying only when a release has added a counter the
+    newest snapshot cannot have.
+    """
+    from caper.site_stats import (
+        get_latest_site_statistics,
+        missing_statistics_keys,
+        regenerate_site_statistics_if_stale,
+        site_statistics_handle,
+    )
+
+    start_id = get_latest_site_statistics()['_id']
+    try:
+        # A current snapshot: nothing missing, and nothing written.
+        regenerate_site_statistics_if_stale()
+        assert missing_statistics_keys() == []
+
+        before_count = site_statistics_handle.count_documents({})
+        assert regenerate_site_statistics_if_stale() == []
+        assert site_statistics_handle.count_documents({}) == before_count
+
+        # A snapshot from before the publication and ecDNA counters existed.
+        site_statistics_handle.insert_one(_legacy_stats_document())
+        missing = missing_statistics_keys()
+        assert 'public_publication_links' in missing
+        assert 'public_ecdna_positive_sample_count' in missing
+
+        assert regenerate_site_statistics_if_stale() == missing
+        # ...and once rebuilt, a second start finds nothing to do.
+        assert missing_statistics_keys() == []
+        assert regenerate_site_statistics_if_stale() == []
+    finally:
+        _cleanup_stats_since(start_id)

@@ -831,7 +831,7 @@ class ApiTokenView(APIView):
     DELETE — revoke token → {"detail": "API token revoked"}
     """
     # Use session auth but without DRF's per-request CSRF check.  CSRF for this
-    # endpoint is the caller's responsibility (the profile page always sends a
+    # endpoint is the caller's responsibility (the settings page always sends a
     # CSRF cookie; tests set req.user directly and don't have a real session).
     # The endpoint is harmless to CSRF-attack: a cross-origin POST can generate
     # a token but cannot read the response body, so the attacker gains nothing.

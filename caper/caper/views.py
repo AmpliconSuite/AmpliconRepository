@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import gc
+import inspect
 import traceback
 import json
 from collections import defaultdict
@@ -21,6 +22,7 @@ from bson.objectid import ObjectId
 from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, HttpResponseNotFound, Http404, JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
+from django.utils.http import urlencode
 
 from django.contrib.auth.models import User
 
@@ -359,8 +361,44 @@ def index(request):
         'public_projects': public_projects,
         'private_projects': private_projects,
         'featured_projects': featured_projects,
-        'site_stats': site_stats
+        'site_stats': site_stats,
+        'sample_breakdown': _home_sample_breakdown(site_stats),
     })
+
+
+# Uploaders record "no value" in several different ways; all of them mean
+# unknown and none of them count as an annotation.
+UNANNOTATED_LABEL_VALUES = {'na', 'n/a', 'not provided', 'unknown', 'none', ''}
+
+
+def _annotated_sample_count(label_counts):
+    """Total samples carrying a real value in one of the label counters."""
+    return sum(
+        count for name, count in (label_counts or {}).items()
+        if str(name).strip().lower() not in UNANNOTATED_LABEL_VALUES
+    )
+
+
+def _home_sample_breakdown(site_stats):
+    """Sample composition for the home page disclosure.
+
+    Deliberately reports how many samples are annotated rather than ranking
+    the values: tissue of origin and cancer type are free text and are not
+    standardised across projects, so a leaderboard of them would read as more
+    authoritative than the underlying data supports.
+
+    Reads only the site_statistics document the page has already loaded, so
+    this costs no extra queries -- the home page stays a single round trip.
+    """
+    return {
+        'total': site_stats.get('public_sample_count', 0),
+        'coral': site_stats.get('public_coral_sample_count', 0),
+        'coral_projects': site_stats.get('public_coral_project_count', 0),
+        'with_tissue': _annotated_sample_count(
+            site_stats.get('public_tissue_of_origin_count')),
+        'with_cancer_type': _annotated_sample_count(
+            site_stats.get('public_cancer_type_count')),
+    }
 
 
 def profile(request, message_to_user=None):
@@ -392,15 +430,36 @@ def profile(request, message_to_user=None):
         proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
 
     prefs = get_user_preferences(request.user)
-    form = UserPreferencesForm(prefs)
     if (prefs.pop('welcomeMessage', None)):
         if (message_to_user == None):
             message_to_user = ""
-        message_to_user = message_to_user + "Email notification preferences can now be set on your profile page."
+        message_to_user = message_to_user + "Email notification preferences can now be set under Settings."
 
 
     messages.add_message(request, messages.INFO, message_to_user)
-    return render(request, "pages/profile.html", {'projects': projects, 'SITE_TITLE':settings.SITE_TITLE, 'preferences': prefs})
+    return render(request, "pages/profile.html", {'projects': projects, 'SITE_TITLE':settings.SITE_TITLE})
+
+
+@login_required(login_url='/accounts/login/')
+def user_settings(request, message_to_user=None):
+    """Everything about the account that is not a project.
+
+    The projects page was carrying three unrelated things: your projects, your
+    notification preferences and your API token.  The preferences and the token
+    are settings, and so are the two account actions that were only reachable
+    from the header menu -- changing your email and changing your password --
+    so they are all in one place and the projects page is about projects.
+    """
+    prefs = get_user_preferences(request.user)
+    prefs.pop('welcomeMessage', None)
+
+    if message_to_user:
+        messages.add_message(request, messages.INFO, message_to_user)
+
+    return render(request, "pages/settings.html", {
+        'SITE_TITLE': settings.SITE_TITLE,
+        'preferences': prefs,
+    })
 
 
 def login(request):
@@ -693,6 +752,30 @@ def annotate_metadata_summary_search_links(summary, project):
     return summary
 
 
+def no_access_response(request):
+    """The right answer to "you cannot see this", which depends on who is asking.
+
+    A visitor who is not signed in gets the login form with the page they were
+    trying to reach attached, so signing in finishes the trip.  Private project
+    and sample links are handed around -- a member mails a colleague a link, the
+    colleague has no session yet -- so the login form is almost never where they
+    were going.  ``next`` is what allauth reads back: account/login.html posts it
+    as a hidden field and provider_login_url puts it on the Globus and Google
+    buttons, so it survives whichever way they sign in.  The whole path goes in,
+    urlencoded, because a project can be reached by its alias and an alias is
+    user-supplied text that may contain an ampersand.
+
+    A visitor who is already signed in and still has no access gets a 404.  The
+    login form has nothing to offer them, and sending them there is a redirect
+    loop: allauth bounces an authenticated visitor straight back to ``next``,
+    which bounces them back to the login form.
+    """
+    if request.user.is_authenticated:
+        raise Http404("Project not found")
+
+    return redirect('/accounts/login/?' + urlencode({'next': request.get_full_path()}))
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -736,7 +819,7 @@ def project_page(request, project_name, message=''):
         # For private and hidden_public projects, members can view
         # For private, non-members must login
         if not is_project_hidden_public(visibility):
-            return redirect('/accounts/login?next=/project/' + project_name)
+            return no_access_response(request)
 
     # if we got here by an OLD project id (prior to edits) then we want to redirect to the new one
     if not project_name == str(project['linkid']):
@@ -1688,8 +1771,8 @@ def sample_page(request, project_name, sample_name):
         # For private and hidden_public projects, members can view
         # For private, non-members must login
         if not is_project_hidden_public(visibility):
-            return redirect('/accounts/login')
-    
+            return no_access_response(request)
+
     # Extract sample names from prev_sample and next_sample
     prev_sample_name = None
     if prev_sample and len(prev_sample) > 0:
@@ -2151,7 +2234,7 @@ def handle_email_results(request, batch_dir, zip_filename):
         # Get user email
         user_email = request.user.email
         if not user_email:
-            messages.error(request, "Your account does not have an email address. Please update your profile.")
+            messages.error(request, "Your account does not have an email address. Please add one under Change Email.")
             # Clean up S3 file
             s3_client.delete_object(Bucket=bucket_name, Key=s3_key)
             return redirect('gene_search_page')
@@ -2346,6 +2429,18 @@ def batch_sample_download(request):
 
 def feature_page(request, project_name, sample_name, feature_name):
     project, sample_data, feature = get_one_feature(project_name,sample_name, feature_name)
+
+    # The same gate the project and sample pages carry. This page had none, so a
+    # private project's amplicon detail rendered for anyone holding the URL --
+    # and the URL is guessable from a project id, since the sample and feature
+    # names in it are the ones printed in the archive.
+    if project is None:
+        raise Http404(f"Project {project_name!r} not found")
+    visibility = normalize_visibility_field(project.get('private', 'private'))
+    if is_project_private(visibility) and not is_user_a_project_member(project, request):
+        if not is_project_hidden_public(visibility):
+            return no_access_response(request)
+
     feature_data = replace_space_to_underscore(feature)
     return render(request, "pages/feature.html", {
         'project': project,
@@ -3173,7 +3268,12 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
     - Membership (project_members)
     - Version strings (AA_version, AC_version, ASP_version)
     - Metadata updates
-    - Sample removal
+
+    Sample removal is handled here too, but no longer reaches it from the edit
+    form: removals now version the project.  The in-place removal below is the
+    fallback for the one case where the versioning path declines to run -- a
+    "replace entire project" submitted with no file, where there is nothing to
+    aggregate and edit_project_into_new_version returns None.
     """
     if 'file' in form_dict:
         runs = samples_to_dict(form_dict['file'])
@@ -3364,21 +3464,20 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
         # Download old project file if not replacing the entire project
         download_path = os.path.join(project_data_path, 'download.tar.gz')
         
-        if samples_to_remove and len(samples_to_remove) > 0:
-            # Need to strip samples from the current project runs before aggregation
-            logging.info(f"Downloading old project and removing samples: {samples_to_remove}")
+        if replace_project and not samples_to_remove:
+            logging.info("Skipping old project download - replacing entire project")
+        else:
+            # The old archive always goes in whole.  Removing samples is the
+            # aggregator's job (exclude_samples), so there is nothing for the
+            # site to rewrite first: the sample's rows live in cohort-level
+            # classification tables that only the merge can filter correctly.
+            if samples_to_remove:
+                logging.info(f"Aggregation will exclude samples: {samples_to_remove}")
             try:
                 os.makedirs(project_data_path, exist_ok=True)
             except Exception as e:
                 logging.error(f'Failed to make directory {project_data_path}: {e}')
-            
-            # Download and strip samples from the old project
-            stripped_tar = remove_samples_from_tar(old_project_data, samples_to_remove, download_path, download_url)
-            if stripped_tar:
-                file_fps.append(stripped_tar)
-                logging.info(f"Successfully created stripped tar file: {stripped_tar}")
-        elif not replace_project:
-            # Download the old project file to include in aggregation (unless replacing entire project)
+
             try:
                 logging.info(f"Downloading old project from {download_url}")
                 download_file(download_url, download_path)
@@ -3387,8 +3486,6 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             except Exception as e:
                 logging.error(f'Failed to download the old project file: {e}')
                 # Continue without the old project file - user might be replacing it
-        else:
-            logging.info("Skipping old project download - replacing entire project")
         
         logging.info(f"Files to aggregate: {file_fps}")
         
@@ -3397,13 +3494,9 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
         if name_map_file_path:
             files_to_cleanup.append(name_map_file_path)
         if not replace_project:
-            # Add downloaded old project file and any stripped tar files
+            # Add downloaded old project file
             if os.path.exists(download_path):
                 files_to_cleanup.append(download_path)
-            # Check for stripped tar file
-            stripped_tar_path = os.path.join(project_data_path, f'{placeholder_project_id}_stripped.tar.gz')
-            if os.path.exists(stripped_tar_path):
-                files_to_cleanup.append(stripped_tar_path)
         
         # Call _process_and_aggregate_files to do the actual aggregation and project creation.
         # Passing audit_event_type causes the audit log to be written inside
@@ -3424,6 +3517,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             oldFeatured=oldFeatured,
             rollback_project_id=rollback_project_id,
             old_extra_metadata=old_extra_metadata,
+            exclude_samples=samples_to_remove,
         )
 
         # Clean up temporary files (downloaded old project and name map) after aggregation
@@ -3761,7 +3855,18 @@ def edit_project_page(request, project_name):
         # 2. Metadata file is being uploaded with name remapping
         # 3. Name remapping is requested (requires re-aggregation)
         # 4. reaggregate_project is requested (force re-aggregation on existing data)
-        
+        # 5. Samples are being removed
+        #
+        # (5) is the one that changed.  Removing a sample used to edit the
+        # project in place: the form said it would make a new version, the
+        # accordion above the checkboxes still says so, and it did not.  The
+        # sample left the runs, it left the archive on the next download, and
+        # there was nothing left to go back to -- which is the wrong shape for
+        # an irreversible operation on data other people may already be citing.
+        # It now takes the same road as the other three: the old version stays
+        # in Project History, openable and downloadable, and the new one is the
+        # project minus the samples.
+
         files_uploaded = request.FILES.getlist('document')
 
         # Determine mode from the new 3-way radio button (project_mode) or fall back
@@ -3777,7 +3882,8 @@ def edit_project_page(request, project_name):
 
         needs_new_version = (len(files_uploaded) > 0 or
                             remap_sample_names or
-                            reaggregate_project)
+                            reaggregate_project or
+                            len(samples_to_remove) > 0)
 
         if needs_new_version:
             # Create a new version with aggregation
@@ -3855,56 +3961,6 @@ def edit_project_page(request, project_name):
                    })
 
 
-def  remove_samples_from_tar(project, samples_to_remove, download_path, url):
-    # remove the sample data for the samples removed
-    # from the project zip file. They will be in a directory in the tar file called
-    # results/other_files/<SAMPLE_NAME>_classification/
-    project_name = project['project_name']
-
-    try:
-        download_file(url, download_path)
-    except Exception as e:
-        logging.error(f'Failed to download the file: {e}')
-        return None
-
-    if os.path.exists(download_path):
-        parent_dir = os.path.abspath(os.path.dirname(download_path))
-        # Create a temporary directory to extract the tar file
-        temp_extract_dir = f'{parent_dir}/extracted'
-        os.makedirs(temp_extract_dir, exist_ok=True)
-
-        # Extract the tar file
-        with tarfile.open(download_path, 'r:gz') as tar:
-            safe_extractall(tar, temp_extract_dir,
-                            description=f"project {project.get('_id')}")
-
-        # Remove the sample directories
-        for sample in samples_to_remove:
-            sample_dir = os.path.join(temp_extract_dir, 'results', 'other_files', f'{sample}_classification')
-            if os.path.exists(sample_dir):
-                shutil.rmtree(sample_dir)
-
-            # Also remove other directories left behind in other_files
-            sample_dir2 = os.path.join(temp_extract_dir, 'results', 'AA_outputs', f'{sample}_AA_results')
-            if os.path.exists(sample_dir2):
-                shutil.rmtree(sample_dir2)
-
-            sample_dir3 = os.path.join(temp_extract_dir, 'results', 'AA_outputs','extracted_from_zips', f'{sample}_AA_results')
-            if os.path.exists(sample_dir3):
-                shutil.rmtree(sample_dir3)
-
-        # Create a new tar file without the removed samples
-
-        new_project_tar_fp = f'{parent_dir}/{project_name}_stripped.tar.gz'
-        with tarfile.open(new_project_tar_fp, 'w:gz') as tar:
-            tar.add(os.path.join(temp_extract_dir, 'results'), arcname='results')
-
-        # Clean up the temporary extraction directory
-        shutil.rmtree(temp_extract_dir)
-        os.remove(download_path)
-        return new_project_tar_fp
-
-
 def clear_tmp(folder = 'tmp/'):
     for filename in os.listdir(folder):
         file_path = os.path.join(folder, filename)
@@ -3924,7 +3980,7 @@ def update_notification_preferences(request):
         form_dict = form_to_dict(form)
         update_user_preferences(request.user, form_dict)
 
-    return profile(request, message_to_user="User preferences updated.")
+    return user_settings(request, message_to_user="User preferences updated.")
 
 # extract_project_files is meant to be called in a seperate thread to reduce the wait
 # for users as they create the project
@@ -4336,7 +4392,7 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None):
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None, exclude_samples=None):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
@@ -4361,6 +4417,8 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                              failure the old project is restored to current/non-deleted state and
                              the failed placeholder is updated with rollback_project_id so that
                              project_page can redirect the user to the old project's edit page.
+        exclude_samples: Sample names to leave out of the aggregation (optional).  Requires
+                         AmpliconSuiteAggregator >= 8.3.0; see the guard below.
     """
 
     def _do_rollback(failed_placeholder_id, old_project_id, error_msg):
@@ -4403,12 +4461,35 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         # Resolve to absolute paths so the Aggregator works correctly regardless of cwd
         abs_temp_directory = os.path.abspath(temp_directory)
         abs_name_map_file_path = os.path.abspath(name_map_file_path) if name_map_file_path else None
+
+        agg_kwargs = {}
+        if exclude_samples:
+            # Fail loudly rather than aggregating without the exclusion: an old
+            # aggregator would silently hand back a project that still contains
+            # the sample the user asked us to remove, which is the one outcome
+            # worse than an error.
+            if 'exclude_samples' not in inspect.signature(Aggregator).parameters:
+                raise RuntimeError(
+                    f'Sample removal needs AmpliconSuiteAggregator >= 8.3.0, but '
+                    f'{AmpliconSuiteAggregator.__file__} is version '
+                    f'{AmpliconSuiteAggregator.__version__}.')
+            agg_kwargs['exclude_samples'] = exclude_samples
+
         agg = Aggregator(
             input_paths=file_fps,
             project_name=str(temp_proj_id),
             name_map_file=abs_name_map_file_path,
             work_dir=abs_temp_directory,
+            **agg_kwargs,
         )
+
+        # A name that matched nothing means the user asked to remove a sample
+        # that is not in the project — worth a log line, since the edit
+        # otherwise reports success.
+        for missing in getattr(agg, 'unmatched_exclusions', []):
+            logging.warning(
+                f"Project {temp_proj_id}: asked to remove sample {missing!r}, "
+                f"which is not in the project.")
 
         logging.info(f"_process_and_aggregate_files - Aggregator END")
 

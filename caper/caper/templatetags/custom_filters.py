@@ -1,7 +1,14 @@
 from re import sub
 from django import template
 
+from caper.publications import publication_url as resolve_publication_url
+
 register = template.Library()
+
+# The resolver itself lives in caper.publications: the site statistics count
+# distinct publications with the same logic, and they cannot import a template
+# library to get at it.
+register.filter('publication_url', resolve_publication_url)
 
 @register.filter
 def replace_urls(content):

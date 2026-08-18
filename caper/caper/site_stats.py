@@ -1,5 +1,6 @@
 import datetime
 
+from .publications import publication_url, count_unique_publications
 from .utils import get_collection_handle, collection_handle, db_handle_primary, replace_space_to_underscore, preprocess_sample_data, get_one_sample, sample_data_from_feature_list, is_project_private, is_project_public, normalize_visibility_field
 
 site_statistics_handle = get_collection_handle(db_handle_primary, 'site_statistics')
@@ -39,9 +40,39 @@ BUCKET_STAT_DEFAULTS = {
     'sample_count': 0,
     'coral_project_count': 0,
     'coral_sample_count': 0,
+    # Samples carrying at least one ecDNA amplicon. Not derivable from
+    # amplicon_classifications_count, which counts amplicons: one sample can
+    # carry several, so the two numbers answer different questions.
+    'ecdna_positive_sample_count': 0,
     'amplicon_classifications_count': dict,
     'tissue_of_origin_count': dict,
+    'cancer_type_count': dict,
+    # One resolved publication URL per project that has one -- a list, not a
+    # counter dict keyed by URL, because publication URLs contain dots and dots
+    # are not legal in MongoDB field names. Keeping every project's entry
+    # (rather than a set) is what lets a project be removed without dropping a
+    # paper that another project also cites.
+    'publication_links': list,
 }
+
+# Derived on read from publication_links rather than stored, so the two can
+# never disagree.
+UNIQUE_PUBLICATION_SUFFIX = 'unique_publication_count'
+PUBLICATION_PROJECT_SUFFIX = 'projects_with_publication'
+
+
+def count_ecdna_positive_samples(project):
+    """Number of samples in a project carrying at least one ecDNA amplicon.
+
+    Counted per project and stored, rather than worked out on read: answering
+    it from the projects themselves means loading every project's runs, which
+    is exactly what the statistics document exists to avoid.
+    """
+    positive = 0
+    for features in project['runs'].values():
+        if any(feature.get('Classification') == 'ecDNA' for feature in features):
+            positive += 1
+    return positive
 
 
 def is_coral_project(project):
@@ -76,6 +107,15 @@ def get_latest_site_statistics():
     # the full set until the next regeneration writes them for real.
     for key, default in _bucket_stat_keys():
         latest.setdefault(key, default)
+
+    # Derived, not stored: a handful of set operations over one string per
+    # project, which costs nothing next to the queries this document exists to
+    # avoid. Both numbers are wanted because they differ -- two projects can
+    # cite the same paper -- and the difference is the interesting part.
+    for prefix in BUCKET_PREFIXES.values():
+        links = latest[f'{prefix}_publication_links']
+        latest[f'{prefix}_{UNIQUE_PUBLICATION_SUFFIX}'] = count_unique_publications(links)
+        latest[f'{prefix}_{PUBLICATION_PROJECT_SUFFIX}'] = len(links)
 
     # for public display we want to collect these 3, this is a backstop for backwards compatibility
     linear = latest['public_amplicon_classifications_count'].get('Linear_amplification',0)
@@ -118,28 +158,41 @@ def _sum_projects_into_bucket(projects, prefix):
     """Total up every project in one visibility bucket into that bucket's statistics keys."""
     amplicon_counts = dict()
     tissue_counts = dict()
+    cancer_type_counts = dict()
+    publication_links = []
     proj_count = 0
     sample_count = 0
     coral_project_count = 0
     coral_sample_count = 0
+    ecdna_positive_sample_count = 0
 
     for proj in projects:
         class_keys, proj_amplicon_counts = get_project_amplicon_counts(proj)
         sum_amplicon_counts_by_classification(class_keys, proj_amplicon_counts, amplicon_counts)
+        # sum_/subtract_tissue_of_origin_counts are plain dict arithmetic; the cancer type
+        # counter reuses them so both label counters clamp and warn identically.
         sum_tissue_of_origin_counts(get_project_tissue_of_origin_counts(proj), tissue_counts)
+        sum_tissue_of_origin_counts(get_project_cancer_type_counts(proj), cancer_type_counts)
         proj_count += 1
         sample_count += len(proj['runs'])
         if is_coral_project(proj):
             coral_project_count += 1
             coral_sample_count += len(proj['runs'])
+        ecdna_positive_sample_count += count_ecdna_positive_samples(proj)
+        link = publication_url(proj.get('publication_link', ''))
+        if link:
+            publication_links.append(link)
 
     return {
         f'{prefix}_proj_count': proj_count,
         f'{prefix}_sample_count': sample_count,
         f'{prefix}_coral_project_count': coral_project_count,
         f'{prefix}_coral_sample_count': coral_sample_count,
+        f'{prefix}_ecdna_positive_sample_count': ecdna_positive_sample_count,
         f'{prefix}_amplicon_classifications_count': amplicon_counts,
         f'{prefix}_tissue_of_origin_count': tissue_counts,
+        f'{prefix}_cancer_type_count': cancer_type_counts,
+        f'{prefix}_publication_links': publication_links,
     }
 
 
@@ -157,6 +210,47 @@ def regenerate_site_statistics():
     print(f"SITE STATS REGENERATED FROM SCRATCH    {repo_stats['public_amplicon_classifications_count']} ")
 
     return repo_stats
+
+
+def missing_statistics_keys():
+    """Keys the code now reads that the newest stored snapshot does not carry.
+
+    Read against the stored document rather than against
+    get_latest_site_statistics, which fills the defaults in on the way out and
+    so can never report anything missing.
+    """
+    if site_statistics_handle.count_documents({}) == 0:
+        return [key for key, _ in _bucket_stat_keys()]
+
+    stored = site_statistics_handle.find().sort('_id', -1).limit(1).next()
+    return [key for key, _ in _bucket_stat_keys() if key not in stored]
+
+
+def regenerate_site_statistics_if_stale():
+    """Rebuild the statistics when, and only when, the stored shape is behind.
+
+    Statistics are stored as snapshots, so a release that adds a counter leaves
+    the newest snapshot without it: get_latest_site_statistics fills a zero in,
+    the home page reports zero, and it stays zero until someone regenerates by
+    hand. That has to be caught at startup, because nothing at runtime will.
+
+    What it must not do is regenerate on every start. Regeneration reads every
+    project document in full -- ``runs`` included, which is nearly all of the
+    bytes -- and that is tens to hundreds of megabytes off a remote database,
+    paid in the master process before gunicorn forks a worker that can serve
+    anything. So the check is one query, and the scan happens only when the
+    shape actually changed.
+
+    This is deliberately not a fix for counters drifting from the truth: drift
+    accrues while the site is running, not while it is booting, so restarting is
+    the wrong moment to look for it. Regenerate from the admin page for that.
+
+    Returns the keys that were missing, or [] if the snapshot was current.
+    """
+    missing = missing_statistics_keys()
+    if missing:
+        regenerate_site_statistics()
+    return missing
 
 
 def _carry_forward_buckets(current_stats):
@@ -181,17 +275,37 @@ def _apply_project_to_site_statistics(project, visibility, sign):
             0, updated_stats[f'{prefix}_coral_project_count'] + sign)
         updated_stats[f'{prefix}_coral_sample_count'] = max(
             0, updated_stats[f'{prefix}_coral_sample_count'] + sign * sample_count)
+    updated_stats[f'{prefix}_ecdna_positive_sample_count'] = max(
+        0, updated_stats[f'{prefix}_ecdna_positive_sample_count']
+        + sign * count_ecdna_positive_samples(project))
 
     class_keys, amplicon_counts = get_project_amplicon_counts(project)
     tissue_counts = get_project_tissue_of_origin_counts(project)
+    cancer_type_counts = get_project_cancer_type_counts(project)
     amplicon_holder = updated_stats[f'{prefix}_amplicon_classifications_count']
     tissue_holder = updated_stats[f'{prefix}_tissue_of_origin_count']
+    cancer_type_holder = updated_stats[f'{prefix}_cancer_type_count']
     if sign > 0:
         sum_amplicon_counts_by_classification(class_keys, amplicon_counts, amplicon_holder)
         sum_tissue_of_origin_counts(tissue_counts, tissue_holder)
+        sum_tissue_of_origin_counts(cancer_type_counts, cancer_type_holder)
     else:
         subtract_amplicon_counts_by_classification(class_keys, amplicon_counts, amplicon_holder)
         subtract_tissue_of_origin_counts(tissue_counts, tissue_holder)
+        subtract_tissue_of_origin_counts(cancer_type_counts, cancer_type_holder)
+
+    # A project's publication is one entry, so removal takes out one entry and
+    # leaves any other project citing the same paper counted. If the stored
+    # value changed since the project was added there is nothing to remove and
+    # the list drifts -- the same exposure the label counters above already
+    # carry, and the same fix: regenerate.
+    links_holder = updated_stats[f'{prefix}_publication_links']
+    link = publication_url(project.get('publication_link', ''))
+    if link:
+        if sign > 0:
+            links_holder.append(link)
+        elif link in links_holder:
+            links_holder.remove(link)
 
     updated_stats["date"] = get_date()
     site_statistics_handle.insert_one(updated_stats)
@@ -315,6 +429,43 @@ def get_project_tissue_of_origin_counts(project):
             tissue_counts[tissue] = tissue_counts.get(tissue, 0) + 1
     
     return tissue_counts
+
+
+def get_project_cancer_type_counts(project):
+    """
+    Counts the number of samples per Cancer_type in a project.
+
+    Mirrors get_project_tissue_of_origin_counts. Kept as its own counter rather than derived
+    on read: the home page needs to report how many public samples carry a cancer type label,
+    and working that out from the projects themselves would mean loading every project's runs
+    on a page that otherwise touches no sample data at all.
+
+    Args:
+        project (dict): Project dictionary containing runs data
+
+    Returns:
+        dict: Dictionary with Cancer_type as keys and counts as values
+    """
+    cancer_type_counts = dict()
+    runs = project['runs']
+
+    for sample_num in runs.keys():
+        sample_data = runs[sample_num]
+        # Check if sample_data is a list (array of features) or dict
+        if isinstance(sample_data, list) and len(sample_data) > 0:
+            # Get the first feature to access sample-level metadata
+            sample_info = sample_data[0]
+        else:
+            sample_info = sample_data
+
+        cancer_type = sample_info.get('Cancer_type', None)
+
+        # Only count if Cancer_type exists and is not None/empty
+        if cancer_type and str(cancer_type).strip():
+            cancer_type = str(cancer_type).strip()
+            cancer_type_counts[cancer_type] = cancer_type_counts.get(cancer_type, 0) + 1
+
+    return cancer_type_counts
 
 
 def sum_tissue_of_origin_counts(tissue_counts, sum_holder):

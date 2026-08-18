@@ -777,11 +777,16 @@ class TestApiTokenView:
         assert resp.status_code == 404
 
 
-def test_profile_token_javascript_waits_for_dom_before_binding_buttons():
-    """Regression test for the profile token controls running from <head>."""
+def test_settings_token_javascript_waits_for_dom_before_binding_buttons():
+    """Regression test for the token controls running from <head>.
+
+    The controls moved from the projects page to Settings along with the token
+    section itself; the block is rendered into extra_js, which base.html puts in
+    <head>, so it still has to wait for the DOM before it looks for buttons.
+    """
     from pathlib import Path
 
-    template_path = Path(__file__).resolve().parents[1] / 'caper' / 'templates' / 'pages' / 'profile.html'
+    template_path = Path(__file__).resolve().parents[1] / 'caper' / 'templates' / 'pages' / 'settings.html'
     source = template_path.read_text()
     dom_ready_pos = source.index("document.addEventListener('DOMContentLoaded'")
     generate_lookup_pos = source.index("const generateButton = document.getElementById('btn-generate-token')")

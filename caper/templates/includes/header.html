@@ -105,8 +105,27 @@
     <div class="custom-bootstrap-menu navbar-collapse collapse w-200 order-2 dual-collapse2" id = "navbarTogglerDemo01">
             <ul class="navbar-nav ">
                 <li class="nav-item">
+                    {% comment %}
+                    Signing in is almost never the thing you came to do: you were
+                    reading a project or a sample and hit something that needed an
+                    account, so ?next= carries the page you were on and hands it
+                    back afterwards.
 
-                    <a class="nav-link" href="/accounts/login">Login</a>
+                    Two places send you to your account page instead. The home
+                    page, because "back to the home page" is not somewhere you
+                    were sent, and the account pages themselves, because a link
+                    that returns you to the login form has done nothing.
+
+                    ?next= is what allauth reads: account/login.html posts it
+                    back as a hidden field, and provider_login_url picks it up
+                    off the query string for the Globus and Google buttons, so
+                    it survives the round trip through either.
+                    {% endcomment %}
+                    {% if request.path == '/' or '/accounts/' in request.path %}
+                    <a class="nav-link" href="/accounts/login/?next=/accounts/profile/">Login</a>
+                    {% else %}
+                    <a class="nav-link" href="/accounts/login/?next={{ request.get_full_path|urlencode }}">Login</a>
+                    {% endif %}
                 </li>
             </ul>
     </div>
@@ -145,14 +164,21 @@
         {% endif %}
                      
                 <ul class="dropdown-menu dropdown-menu-right" style="margin-top:0px;">
-                    <li class="dropdown-item "><a href="/accounts/profile">Profile</a></li>
+                    {% comment %}
+                    "My projects", not "Profile": a profile is a page about a
+                    person, and this one is a table of your projects with your
+                    notification preferences and your API token under it. The
+                    URL stays /accounts/profile/ -- it is bookmarked, it is
+                    LOGIN_REDIRECT_URL, and nothing is gained by breaking it.
+                    {% endcomment %}
+                    <li class="dropdown-item "><a href="/accounts/profile">My projects</a></li>
                     <li class="dropdown-item"> <a href="/create-project">New Project</a></li>
-
-
-                    <li class="dropdown-item "><a href="/accounts/email">Change Email</a></li>
-                    {% if user.has_usable_password %}
-                    <li class="dropdown-item "><a href="{% url 'account_change_password' %}">Change Password</a></li>
-                    {% endif %}
+                    {% comment %}
+                    Change Email and Change Password are on the Settings page
+                    now, next to the notification preferences and the API token,
+                    rather than being four account items in a menu of six.
+                    {% endcomment %}
+                    <li class="dropdown-item "><a href="{% url 'user_settings' %}">Settings</a></li>
                     <li class="dropdown-item "><a href="/accounts/logout">Logout</a></li>
 
                     

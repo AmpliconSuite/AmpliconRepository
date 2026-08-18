@@ -50,6 +50,25 @@ class CaperConfig(AppConfig):
         except Exception as e:
             logger.warning(f"Could not determine AmpliconSuiteAggregator version: {e}")
 
+        # Site statistics are stored as snapshots, so a release that adds a
+        # counter leaves the newest snapshot without it and the home page reads
+        # zero until someone regenerates by hand. Nothing at runtime notices, so
+        # it is checked here. The check is one query; the rebuild only runs when
+        # the stored shape is behind the code, because rebuilding reads every
+        # project document in full. gunicorn preloads the app, so this happens
+        # once per restart rather than once per worker.
+        try:
+            from .site_stats import regenerate_site_statistics_if_stale
+            missing = regenerate_site_statistics_if_stale()
+            if missing:
+                logger.info(
+                    "Site statistics rebuilt: stored snapshot was missing %d key(s), e.g. %s",
+                    len(missing), ', '.join(sorted(missing)[:3]))
+            else:
+                logger.info("Site statistics snapshot is current")
+        except Exception as e:
+            logger.warning(f"Site statistics staleness check failed: {str(e)}")
+
         # Remove orphaned temp dirs left by any previous run that crashed or
         # was killed before it could clean up after itself.
         try:
