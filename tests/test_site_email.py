@@ -23,8 +23,21 @@ from django.test import override_settings
 pytestmark = pytest.mark.integration
 
 
+def _skip_without_mail_credentials():
+    """CI has no mail credentials, and an unset sender is not a regression.
+
+    EMAIL_HOST_USER comes from config.sh, which is not in the repository.  With
+    it unset there is no address for DEFAULT_FROM_EMAIL to take, so it falls
+    back to Django's placeholder legitimately and there is nothing to check.
+    """
+    if not settings.EMAIL_HOST_USER:
+        pytest.skip('EMAIL_HOST_USER is unset; source caper/config.sh to run this')
+
+
 def test_the_site_has_a_from_address_of_its_own():
     """Anything Django or allauth sends without naming a sender uses this."""
+    _skip_without_mail_credentials()
+
     assert settings.DEFAULT_FROM_EMAIL == settings.EMAIL_HOST_USER
     assert settings.DEFAULT_FROM_EMAIL != 'webmaster@localhost', \
         'DEFAULT_FROM_EMAIL is still Django\'s placeholder'
@@ -61,8 +74,13 @@ def test_allauth_sends_password_resets_from_that_address():
 def test_membership_notifications_name_the_site_as_the_sender():
     from caper.user_preferences import send_project_membership_changed_email
 
+    # Pin the sender rather than reading it from config.sh, so this runs the
+    # same way in CI, where there are no mail credentials.
+    sender = 'notifications@example.org'
+
     with override_settings(
-            EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+            EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+            EMAIL_HOST_USER_SECRET=sender):
         mail.outbox = []
         send_project_membership_changed_email(
             'You have been added to a project',
@@ -75,7 +93,7 @@ def test_membership_notifications_name_the_site_as_the_sender():
 
     assert len(mail.outbox) == 1
     message = mail.outbox[0]
-    assert message.from_email == settings.EMAIL_HOST_USER_SECRET
+    assert message.from_email == sender
     assert message.to == ['recipient@example.com']
     # Sent as HTML, and the template has to have rendered something -- an
     # unrendered template variable in an email cannot be corrected afterwards.
