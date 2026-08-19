@@ -183,6 +183,60 @@ def test_homepage_loads(page):
 
 
 @pytest.mark.browser
+def test_homepage_projects_are_ordered_newest_first(page):
+    """
+    The Updated column must actually sort, within a visibility group.
+
+    This is worth a browser test because it cannot fail server-side: the view
+    sends rows in Mongo's natural order and the ordering is entirely the
+    client's doing.  It regressed once already, when the date cell went from
+    plain text to a span holding a compact date -- DataTables reads a DOM
+    cell's innerHTML as its sort data, so the date parser scored every row 0,
+    every row tied, and the table silently fell back to the order it was
+    served in.  The dates on screen looked fine throughout.
+    """
+    page.goto('/')
+    page.wait_for_selector('#unifiedProjectTable tbody tr', timeout=15_000)
+
+    # Read through the DataTables API rather than the DOM: the table paginates,
+    # and the rank column is hidden, so neither is present in tbody.  data-order
+    # is the sort key the page sets on each date cell, and reading it rather
+    # than the visible text is what pins the defect -- the text was never wrong.
+    rows = page.evaluate(
+        """() => {
+            const dt = jQuery('#unifiedProjectTable').DataTable();
+            const ranks = dt.column(0, {order: 'applied'}).data().toArray();
+            const cells = dt.column(3, {order: 'applied'}).nodes().toArray();
+            return cells.map((cell, i) => ({
+                rank: String(ranks[i]).trim(),
+                order: cell.getAttribute('data-order'),
+            }));
+        }""")
+
+    # Skip on too little data, never on a missing sort key -- a key that is not
+    # there is the regression, so it has to fail rather than quietly skip.
+    if len(rows) < 2:
+        pytest.skip('Need at least two projects on the home page')
+
+    missing = [row for row in rows if row['order'] in (None, '')]
+    assert not missing, \
+        (f'{len(missing)} of {len(rows)} date cells carry no data-order, '
+         f'so the column has no sort key to order on')
+
+    dated = rows
+    keys = [int(r['order']) for r in dated]
+    assert len(set(keys)) > 1, \
+        'Every row has the same sort key -- the date column is not sorting'
+
+    for previous, current in zip(dated, dated[1:]):
+        if previous['rank'] != current['rank']:
+            continue        # a visibility-group boundary restarts the dates
+        assert int(previous['order']) >= int(current['order']), \
+            (f"Rows out of order within rank {current['rank']}: "
+             f"{previous['order']} came before {current['order']}")
+
+
+@pytest.mark.browser
 def test_gene_search_page_renders_form(page):
     """
     /gene-search/ must render the search form with a visible gene name input
@@ -224,22 +278,23 @@ def test_gene_search_form_submits(page):
 @pytest.mark.browser
 def test_search_results_via_searchbox(page):
     """
-    The slide-out search panel on the homepage (#searchForm) must submit
-    to /search_results/ and render the results page.
+    The homepage search box must submit to /search_results/ and render results.
+
+    The redesign replaced the slide-out panel (#search-slider-toggle) this test
+    used to open with a search row sitting in the page, so the selectors moved;
+    what is being tested -- that the homepage's own search reaches the results
+    page -- did not.
     """
     page.goto('/')
-    page.wait_for_selector('#search-slider-toggle', timeout=10_000)
+    page.wait_for_selector('#home-search-form', timeout=10_000)
+    assert page.locator('#home-search-form').is_visible(), \
+        "Homepage search form (#home-search-form) is not visible"
 
-    # Open the search slider panel
-    page.locator('#search-slider-toggle').click()
-    # Use parent selector to avoid the hidden duplicate inside #searchModal in the header
-    page.wait_for_selector('#search-slider #searchForm', timeout=5_000)
-    assert page.locator('#search-slider #searchForm').is_visible(), \
-        "Search form (#searchForm) not visible after toggling the search panel"
-
-    # Submit with empty query
-    page.locator('#search-slider #searchForm button[type="submit"]').click()
-    page.wait_for_url('**/search_results/**', timeout=10_000)
+    # A real term rather than an empty one: the scope select defaults to genes,
+    # and an empty gene query is the one case the form declines to submit.
+    page.locator('#home-query').fill('MYC')
+    page.locator('#home-search-form button[type="submit"]').click()
+    page.wait_for_url('**/search_results/**', timeout=20_000)
 
     assert '500' not in page.title(), \
         "Search form submission caused a 500 error"

@@ -815,6 +815,32 @@
         white-space: nowrap;
     }
 
+    /* DataTables draws the sort arrows as ::before/::after on the th, in the
+       header's own colour, at opacity .125 idle and .6 active. Under the grey
+       capitals above that puts the idle pair at about #f0f1f1 on white: in the
+       DOM, and invisible. They were legible on the old table only because it
+       never restyled the header, so they inherited the page's dark text.
+
+       An arrow here is a control, not a label, so it takes the ink the figures
+       are set in rather than the grey the column names are: quiet enough when
+       idle to leave the headings alone, full strength on the one column the
+       table is actually ordered by. The selector carries .dataTable because
+       DataTables' own rule is more specific than "table.home-projects th". */
+    table.home-projects.dataTable thead > tr > th.sorting::before,
+    table.home-projects.dataTable thead > tr > th.sorting::after,
+    table.home-projects.dataTable thead > tr > th.sorting_asc::before,
+    table.home-projects.dataTable thead > tr > th.sorting_asc::after,
+    table.home-projects.dataTable thead > tr > th.sorting_desc::before,
+    table.home-projects.dataTable thead > tr > th.sorting_desc::after {
+        color: #414042;
+        opacity: .45;
+    }
+
+    table.home-projects.dataTable thead > tr > th.sorting_asc::before,
+    table.home-projects.dataTable thead > tr > th.sorting_desc::after {
+        opacity: 1;
+    }
+
     /* Cells centre rather than sit at the top: the row is a fixed height and
        most cells hold one line, so top alignment left every line riding above
        the middle of its own row. A row with an expanded description is the one
@@ -1304,9 +1330,16 @@
             var parsed = Date.parse(raw);
             if (isNaN(parsed)) {
                 // Unparseable stored date: leave the raw value alone rather
-                // than showing an invalid one.
+                // than showing an invalid one, and sort it to the bottom of a
+                // newest-first column rather than wherever the text lands.
+                cell.attr('data-order', 0);
                 return;
             }
+            // The sort key has to be the stamp, not the cell: DataTables reads
+            // a DOM cell's innerHTML as its sort data, and the cell is about to
+            // hold a span. Full precision, so two projects updated on the same
+            // day still order by time of day.
+            cell.attr('data-order', parsed);
             var utcDate = new Date(parsed);
             var localDate = new Date(utcDate.getTime() - utcDate.getTimezoneOffset() * 60000);
             var month = String(localDate.getMonth() + 1);
@@ -1386,8 +1419,11 @@
                     searchable: false
                 },
                 {
+                    // Sorted on the data-order stamp the loop above wrote, not
+                    // on the cell text. 'custom-date' would parse the cell's
+                    // innerHTML -- span and all -- and score every row 0.
                     targets: 3,
-                    type: 'custom-date'
+                    type: 'num'
                 }
             ],
             order: [[0, 'asc'], [3, 'desc']],

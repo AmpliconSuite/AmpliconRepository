@@ -985,6 +985,21 @@ cd /home/ubuntu/AmpliconRepository-prod   # or AmpliconRepository-dev
 
 This launches a gunicorn container named `amplicon-${AMPLICON_ENV}` with the source checkout mounted at `/srv/`. Confirm it is running with `docker ps`. Logs are written to the `logs/` directory in the checkout root.
 
+### ix. Install log rotation
+
+Nothing rotates the application logs by default, and they do not stop growing: before this was installed, prod had accumulated a 1.7 GB `gunicorn_access.log` and a 1.3 GB `stdout.txt`. Copy `logrotate-ampliconrepo.conf` from the repository into place:
+
+```bash
+sudo cp logrotate-ampliconrepo.conf /etc/logrotate.d/ampliconrepo
+sudo chown root:root /etc/logrotate.d/ampliconrepo
+sudo chmod 644 /etc/logrotate.d/ampliconrepo
+sudo logrotate -d /etc/logrotate.d/ampliconrepo    # dry run; parses and reports, changes nothing
+```
+
+The file globs both `AmpliconRepository-dev` and `-prod`, so it is the same on either server. It rotates weekly, keeps 52 compressed archives, and rotates early if a file passes 500 MB. Rotation is by `copytruncate`, so **the server does not restart and no handles are reopened** — the writers all append, and gunicorn and the `tee` in `run-manage-py.sh` both continue into the truncated file.
+
+To rotate immediately rather than waiting for the timer, `sudo logrotate -f /etc/logrotate.d/ampliconrepo`. It takes about 15 seconds per gigabyte, most of it gzip, and the archives compress more than tenfold. Files rotated by hand in the past (`stdout.txt.old` and similar) do not match the pattern and are left alone.
+
 ## 1. How to start the server
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)
   - this requires a PEM key
