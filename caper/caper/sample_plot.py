@@ -201,7 +201,13 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
 
     n_amps = len(amplicon_numbers)
     cmap = cm.get_cmap('Spectral', n_amps + 2)
-    amplicon_colors = [f"rgba({', '.join([str(val) for val in cmap(i)])})" for i in range(1, n_amps + 1)]
+    # Purely a size change: plotly parses the 0-1 float form identically, but
+    # str(float) spends ~19 characters per channel on binary-repr noise, and
+    # every colour is emitted twice per trace (fillcolor + line.color).
+    amplicon_colors = [
+        "rgba({}, {}, {}, {})".format(*(round(c * 255) for c in cmap(i)[:3]), round(cmap(i)[3], 3))
+        for i in range(1, n_amps + 1)
+    ]
     #print(df[df['Chromosome Number'] == 'hpv16ref_1'])
     if chromosomes:
         rows = (len(chromosomes) // 4) + 1 if len(chromosomes) % 4 else len(chromosomes) // 4

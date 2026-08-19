@@ -531,6 +531,12 @@ MIDDLEWARE = (
     # cost a worker any of that work either.  See caper/middleware.py.
     "caper.middleware.HealthCheckMiddleware",
     "caper.middleware.LoadShedMiddleware",
+    # Above UpdateCacheMiddleware on purpose: response middleware runs bottom-up,
+    # so listing gzip here means the cache stores the *uncompressed* body and
+    # compression happens last -- otherwise clients that did not send
+    # Accept-Encoding could be served compressed bytes from the cache.  Sample
+    # pages are ~75% inline JSON and compress ~5x.
+    "django.middleware.gzip.GZipMiddleware",
     "mezzanine.core.middleware.UpdateCacheMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     # Uncomment if using internationalisation or localisation
