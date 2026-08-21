@@ -1002,7 +1002,7 @@ To rotate immediately rather than waiting for the timer, `sudo logrotate -f /etc
 
 ## 1. How to start the server
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)
-  - this requires a PEM key
+  - see [Getting a shell on the dev and prod servers](docs/server-ssh-access.md) — access is via EC2 Instance Connect and your AWS SSO login, not a PEM key
 - Go to project directory
 > `cd /home/ubuntu/caper/`
 - Check to see if the Docker container is running
@@ -1012,7 +1012,7 @@ To rotate immediately rather than waiting for the timer, `sudo logrotate -f /etc
 
 ## 2. How to stop the server
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)
-  - this requires a PEM key
+  - see [Getting a shell on the dev and prod servers](docs/server-ssh-access.md) — access is via EC2 Instance Connect and your AWS SSO login, not a PEM key
 - Go to project directory
 > `cd /home/ubuntu/caper/`
 - Check to see if the Docker container is running
@@ -1033,7 +1033,7 @@ To rotate immediately rather than waiting for the timer, `sudo logrotate -f /etc
 - After the release is published, wait for the "On Release" GitHub Action to finish before deploying. The action force-moves the release tag to the auto-generated `caper/version.txt` commit.
 - In the site admin UI, go to `/admin-prepare-shutdown/`, confirm no background tasks are running, and enable shutdown mode before restarting the server. Shutdown mode prevents new project creation/editing while deployment is in progress and persists across the restart.
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04` in us-east-1)
-  - this requires a PEM key
+  - see [Getting a shell on the dev and prod servers](docs/server-ssh-access.md) — access is via EC2 Instance Connect and your AWS SSO login, not a PEM key
 - Go to project directory
 > `cd /home/ubuntu/AmpliconRepository-prod/`
 > `source caper/config.sh`

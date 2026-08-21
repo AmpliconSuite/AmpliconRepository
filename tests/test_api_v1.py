@@ -7,6 +7,8 @@ for real MongoDB round-trips.
 """
 
 import io
+import uuid
+
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 from bson.objectid import ObjectId
@@ -878,6 +880,16 @@ def test_project_detail_member_sees_private(loaded_datasets):
         assert resp.data['id'] == pid
     finally:
         if user_created:
+            # This account was manufactured to impersonate an existing project
+            # member, so deleting it as-is would fire the post_delete purge in
+            # caper.account_signals and strip that member from every live
+            # project -- the correct behaviour for a real account closure, and
+            # the wrong one for tearing down a fixture. Renaming first makes the
+            # purge a no-op: by the time it runs the account no longer shares an
+            # identifier with the member it stood in for.
+            user.username = f'{member_name}_teardown_{uuid.uuid4().hex[:8]}'
+            user.email = f'teardown_{uuid.uuid4().hex[:8]}@example.invalid'
+            user.save(update_fields=['username', 'email'])
             user.delete()
         else:
             if token_created:

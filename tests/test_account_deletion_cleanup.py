@@ -248,6 +248,56 @@ def test_deleting_a_user_triggers_the_purge(monkeypatch):
 
 
 @pytest.mark.integration
+def test_end_to_end_against_a_real_mongo(request):
+    """The same decisions, but with pymongo doing the work rather than the fake.
+
+    The tests above use FakeCollection so the fixtures stay readable, which
+    leaves the fake's ``$pull``/``$in`` semantics unverified against the real
+    thing. This one deletes an actual Django user and checks an actual pair of
+    MongoDB documents, so a divergence between the two shows up here.
+    """
+    from django.contrib.auth import get_user_model
+    from caper.utils import (
+        collection_handle_primary, db_handle_primary, get_collection_handle)
+
+    prefs = get_collection_handle(db_handle_primary, 'user_preferences')
+
+    suffix = uuid.uuid4().hex[:12]
+    username = f'purge_e2e_{suffix}'
+    email = f'purge_e2e_{suffix}@example.invalid'
+    marker = f'purge-e2e-{suffix}'
+
+    live = collection_handle_primary.insert_one({
+        'project_name': marker, 'current': True, 'delete': True,
+        'project_members': [username, 'coworker'],
+        'subscribers': [email, 'coworker@example.invalid'],
+    }).inserted_id
+    historical = collection_handle_primary.insert_one({
+        'project_name': marker, 'current': False, 'delete': True,
+        'project_members': [username, 'coworker'],
+        'subscribers': [email],
+    }).inserted_id
+    prefs.insert_one({'email': email, 'onProjectUpdate': True})
+
+    def _cleanup():
+        collection_handle_primary.delete_many({'project_name': marker})
+        prefs.delete_many({'email': email})
+    request.addfinalizer(_cleanup)
+
+    get_user_model().objects.create_user(username=username, email=email).delete()
+
+    live_doc = collection_handle_primary.find_one({'_id': live})
+    assert live_doc['project_members'] == ['coworker']
+    assert live_doc['subscribers'] == ['coworker@example.invalid']
+
+    historical_doc = collection_handle_primary.find_one({'_id': historical})
+    assert historical_doc['project_members'] == [username, 'coworker']
+    assert historical_doc['subscribers'] == [email]
+
+    assert prefs.find_one({'email': email}) is None
+
+
+@pytest.mark.integration
 def test_a_mongo_failure_does_not_break_the_deletion(monkeypatch):
     """The account is already gone by then; an outage must not surface as a 500."""
     from django.contrib.auth import get_user_model
