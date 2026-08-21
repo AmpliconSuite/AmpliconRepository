@@ -330,3 +330,23 @@ def test_home_table_pager_is_moved_out_of_the_scrolling_wrapper():
     foot_marker = source.index('id="home-table-foot"')
     scroll_close = source.index('id="unifiedProjectTable"')
     assert foot_marker > scroll_close
+
+
+def test_project_sample_table_refits_horizontal_scroller_after_reveal():
+    """The hidden table's intrinsic width must not survive its reveal.
+
+    DataTables puts both the wide sample table and its controls in one wrapper.
+    The wrapper must be allowed to fit the viewport, then the table's stale
+    inline pixel width must be reset before its columns are adjusted. Otherwise
+    CCLE is two pixels too wide, producing a scrollbar and clipping the filter.
+    """
+    source = (TEMPLATE_DIR / "project.html").read_text()
+
+    assert "#myTable1_wrapper {" in source
+    wrapper_rule = source[source.index("#myTable1_wrapper {"):]
+    wrapper_rule = wrapper_rule[:wrapper_rule.index("}")]
+    assert "min-width: 0;" in wrapper_rule
+
+    width_reset = "$('#myTable1').css('width', '100%');"
+    assert width_reset in source
+    assert source.index(width_reset) < source.index("table.columns.adjust();")

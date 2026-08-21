@@ -48,10 +48,11 @@
         // neither reads as a control for the other. One bar, count first.
         $('#myTable1_info, #myTable1_paginate').detach().appendTo('#samples-table-foot');
 
-        // Now that the table is paged, put it back into layout. Column widths
-        // were computed while it was display:none, so they have to be redone
-        // against the real rendered width.
+        // Now that the table is paged, put it back into layout. Its pixel width
+        // and column widths were computed while it was display:none, so clear
+        // the stale table width before measuring the visible scrolling area.
         $('#samples-table-wrap').addClass('is-ready');
+        $('#myTable1').css('width', '100%');
         table.columns.adjust();
 
         // Put the filtered-download control in the same band as the "Show N
@@ -1179,6 +1180,12 @@ paged.
 
     #samples-table-wrap.is-ready .samples-table-placeholder {
         display: none;
+    }
+
+    /* The sample table may be wider than its scrolling viewport, but its
+       DataTables controls should remain aligned to the visible viewport. */
+    #myTable1_wrapper {
+        min-width: 0;
     }
 
     .samples-table-placeholder {
