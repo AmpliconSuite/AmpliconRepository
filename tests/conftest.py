@@ -33,6 +33,14 @@ DATASET_ADDL_TAR   = os.path.join(TEST_DATA_DIR, 'two_hg38_samples_no_ecdna.tar.
 # test_data/README.md for what is in it and how to rebuild it.
 DATASET_CORAL_TAR  = os.path.join(TEST_DATA_DIR, 'coral_four_samples.tar.gz')
 
+# AmpliconArchitect runs carrying an AmpliconClassifier 2.0 classification. Three
+# of them, because the three things worth covering do not occur together in one
+# cohort: plain AC 2.0 ingestion, FAN feature rows, and a GRCh38 project with
+# every classification AC emits. test_data/README.md has the rebuild recipes.
+DATASET_AC2_TAR      = os.path.join(TEST_DATA_DIR, 'ac2_nine_samples.tar.gz')
+DATASET_AC2_FAN_TAR  = os.path.join(TEST_DATA_DIR, 'ac2_five_fan_samples.tar.gz')
+DATASET_AC2_HG38_TAR = os.path.join(TEST_DATA_DIR, 'ac2_four_samples_hg38.tar.gz')
+
 # Legacy aliases so existing tests that reference TAR_FILE / XLSX_FILE still work
 TAR_FILE  = DATASET_SMALL_TAR
 XLSX_FILE = DATASET_SMALL_XLSX

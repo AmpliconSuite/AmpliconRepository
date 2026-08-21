@@ -23,6 +23,9 @@ from conftest import (
     _cleanup_project,
     _poll_until_finished,
     _project_id_from_redirect,
+    DATASET_AC2_FAN_TAR,
+    DATASET_AC2_HG38_TAR,
+    DATASET_AC2_TAR,
     DATASET_CORAL_TAR,
     DATASET_SMALL_TAR,
     DATASET_SMALL_XLSX,
@@ -38,15 +41,16 @@ from conftest import (
 @pytest.mark.integration
 def test_create_ac2_project(
         request_factory, test_user, mongo_collection, monkeypatch):
-    """An AC 2.0 unaggregated archive must complete normal project creation."""
-    archive_path = os.environ.get('CAPER_AC2_TEST_ARCHIVE')
-    if not archive_path:
-        pytest.skip('Set CAPER_AC2_TEST_ARCHIVE to run the AC 2.0 ingestion test')
-    if not os.path.exists(archive_path):
-        pytest.skip(f'AC 2.0 test archive not found: {archive_path}')
+    """An AC 2.0 unaggregated archive must complete normal project creation.
 
+    Nine GRCh37 glioma samples, committed as test_data/ac2_nine_samples.tar.gz.
+    See test_data/README.md for what is in it and how to rebuild it.
+    """
     from django.conf import settings
     from caper.views import create_project, fs_handle
+
+    archive_path = DATASET_AC2_TAR
+    assert os.path.exists(archive_path), f'Missing test dataset: {archive_path}'
 
     monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', False)
     project_name = 'pytest_AC2_compatibility'
@@ -74,8 +78,9 @@ def test_create_ac2_project(
             for sample_features in doc['runs'].values()
             for feature in sample_features
         ]
-        assert len(features) == 12
-        assert {feature['Classification'] for feature in features} == {'ecDNA'}
+        assert len(features) == 11
+        assert {feature['Classification'] for feature in features} == {'ecDNA', 'FAN'}
+        assert {feature['Reference_version'] for feature in features} == {'GRCh37'}
         assert all('Sample_name' in feature for feature in features)
         assert all('Feature_ID' in feature for feature in features)
 
@@ -113,15 +118,20 @@ def test_create_ac2_project(
 @pytest.mark.integration
 def test_create_ac2_fan_project(
         request_factory, test_user, mongo_collection, monkeypatch):
-    """FAN feature rows from AC 2.0 must survive normal project creation."""
-    archive_path = os.environ.get('CAPER_AC2_FAN_TEST_ARCHIVE')
-    if not archive_path:
-        pytest.skip('Set CAPER_AC2_FAN_TEST_ARCHIVE to run the FAN ingestion test')
-    if not os.path.exists(archive_path):
-        pytest.skip(f'AC 2.0 FAN test archive not found: {archive_path}')
+    """FAN feature rows from AC 2.0 must survive normal project creation.
 
+    FAN is the classification AC 2.0 added, so it is the one most likely to be
+    dropped by code that predates it. Five GLASS tumour/normal pairs, one FAN
+    feature each, committed as test_data/ac2_five_fan_samples.tar.gz. It is the
+    only fixture carrying a full AmpliconSuite-pipeline sample directory --
+    cnvkit output and the run/sample metadata JSONs -- so it is also what pins
+    the tool versions read out of those files.
+    """
     from django.conf import settings
     from caper.views import create_project
+
+    archive_path = DATASET_AC2_FAN_TAR
+    assert os.path.exists(archive_path), f'Missing test dataset: {archive_path}'
 
     monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', False)
     request, handles = _build_create_request(
@@ -140,15 +150,15 @@ def test_create_ac2_fan_project(
         doc = _poll_until_finished(mongo_collection, project_id)
         assert doc is not None, 'AC 2.0 FAN project did not finish before timeout'
         assert not doc.get('aggregation_failed'), doc.get('error_message')
-        assert doc.get('sample_count') == 140
-        assert len(doc.get('runs', {})) == 140
+        assert doc.get('sample_count') == 5
+        assert len(doc.get('runs', {})) == 5
 
         features = [
             feature
             for sample_features in doc['runs'].values()
             for feature in sample_features
         ]
-        assert len(features) == 374
+        assert len(features) == 13
         fan_features = [
             feature for feature in features
             if feature.get('Classification') == 'FAN'
@@ -156,6 +166,10 @@ def test_create_ac2_fan_project(
         assert len(fan_features) == 5
         assert len({feature['Sample_name'] for feature in fan_features}) == 5
         assert 'FAN' in doc.get('Classification', [])
+
+        # Read out of the per-sample metadata JSONs, which only this fixture has.
+        assert doc.get('AC_version') == '2.0.0'
+        assert doc.get('AA_version') == '1.3.r2'
     finally:
         for handle in handles:
             handle.close()
@@ -167,15 +181,18 @@ def test_create_ac2_fan_project(
 @pytest.mark.integration
 def test_create_ac2_hg38_project(
         request_factory, test_user, mongo_collection, monkeypatch):
-    """A mixed-classification AC 2.0 hg38 archive must remain ingestible."""
-    archive_path = os.environ.get('CAPER_AC2_HG38_TEST_ARCHIVE')
-    if not archive_path:
-        pytest.skip('Set CAPER_AC2_HG38_TEST_ARCHIVE to run the hg38 ingestion test')
-    if not os.path.exists(archive_path):
-        pytest.skip(f'AC 2.0 hg38 test archive not found: {archive_path}')
+    """A mixed-classification AC 2.0 hg38 archive must remain ingestible.
 
+    Four breast and neuroblastoma cell lines chosen because between them they
+    carry every classification AC 2.0 emits -- ecDNA, BFB, FAN, Linear and
+    Complex-non-cyclic -- against GRCh38. Committed as
+    test_data/ac2_four_samples_hg38.tar.gz; see test_data/README.md.
+    """
     from django.conf import settings
     from caper.views import create_project
+
+    archive_path = DATASET_AC2_HG38_TAR
+    assert os.path.exists(archive_path), f'Missing test dataset: {archive_path}'
 
     monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', False)
     request, handles = _build_create_request(
@@ -194,15 +211,15 @@ def test_create_ac2_hg38_project(
         doc = _poll_until_finished(mongo_collection, project_id)
         assert doc is not None, 'AC 2.0 hg38 project did not finish before timeout'
         assert not doc.get('aggregation_failed'), doc.get('error_message')
-        assert doc.get('sample_count') == 63
-        assert len(doc.get('runs', {})) == 63
+        assert doc.get('sample_count') == 4
+        assert len(doc.get('runs', {})) == 4
 
         features = [
             feature
             for sample_features in doc['runs'].values()
             for feature in sample_features
         ]
-        assert len(features) == 333
+        assert len(features) == 33
         classification_counts = {
             classification: sum(
                 feature.get('Classification') == classification
@@ -211,11 +228,11 @@ def test_create_ac2_hg38_project(
             for classification in {'ecDNA', 'FAN', 'BFB', 'Linear', 'Complex-non-cyclic'}
         }
         assert classification_counts == {
-            'ecDNA': 58,
-            'FAN': 8,
-            'BFB': 16,
-            'Linear': 223,
-            'Complex-non-cyclic': 28,
+            'ecDNA': 9,
+            'FAN': 3,
+            'BFB': 5,
+            'Linear': 13,
+            'Complex-non-cyclic': 3,
         }
         assert {feature['Reference_version'] for feature in features} == {'GRCh38'}
     finally:

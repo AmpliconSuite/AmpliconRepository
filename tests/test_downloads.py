@@ -23,6 +23,7 @@ from conftest import (
     _cleanup_project,
     _poll_until_finished,
     _project_id_from_redirect,
+    DATASET_AC2_TAR,
 )
 
 
@@ -97,9 +98,8 @@ def test_project_summary_download(loaded_datasets, request_factory, test_user):
 def test_ac2_single_and_batch_sample_download_contents(
         request_factory, test_user, mongo_collection, monkeypatch):
     """AC 2.0 file fields must resolve to real members in both ZIP paths."""
-    archive_path = os.environ.get('CAPER_AC2_TEST_ARCHIVE')
-    if not archive_path:
-        pytest.skip('Set CAPER_AC2_TEST_ARCHIVE to run AC 2.0 download tests')
+    archive_path = DATASET_AC2_TAR
+    assert os.path.exists(archive_path), f'Missing test dataset: {archive_path}'
 
     from django.conf import settings
     from caper.views import batch_sample_download, create_project, sample_download
