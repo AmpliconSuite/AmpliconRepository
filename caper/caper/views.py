@@ -2279,7 +2279,10 @@ Best regards,
         )
         email.send(fail_silently=False)
         
-        logging.info(f"Download link emailed to {user_email}")
+        # The recipient is the requesting user, so naming the archive is enough to
+        # tie this line to the request that produced it without copying an address
+        # into the application log.
+        logging.info(f"Batch download link emailed for {zip_filename}")
         
         # Check if this is an AJAX request
         is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
@@ -2789,7 +2792,12 @@ def log_project_audit_event(user, project_uuid, project_name, is_new_version,
             'sample_count': sample_count,
         }
         audit_log_handle.insert_one(audit_entry)
-        logging.info(f"Audit log written for project {project_uuid} ({event_type}) by {user_email}, "
+        # The submitter stays in the audit entry above -- that record is the point
+        # of provenance and is meant to name who did what. This line only confirms
+        # the write succeeded, so it does not repeat the address into the general
+        # application log, where it would be retained on a different schedule and
+        # for no purpose.
+        logging.info(f"Audit log written for project {project_uuid} ({event_type}), "
                      f"samples={sample_count}, s3_size={s3_file_size_bytes}")
     except Exception as e:
         logging.error(f"Failed to write audit log for project {project_uuid}: {e}")

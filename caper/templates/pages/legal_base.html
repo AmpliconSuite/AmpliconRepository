@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+
+{% comment %}
+Shared shell for the Privacy and Terms pages.
+
+These two are the only pages on the site that are read rather than used: no
+tables, no controls, just prose someone is checking a specific fact in. So they
+get a narrower column than the rest of the site (a measure of roughly 75
+characters, against the 1000px the settings page uses for form rows), headings
+that are scannable enough to find a section without reading the whole page, and
+nothing else.
+
+The pair share this file so they cannot drift apart visually, which is the usual
+fate of two pages written on the same afternoon and then edited separately.
+{% endcomment %}
+
+{% block extra_css %}
+<style>
+    .legal-page {
+        max-width: 720px;
+        width: 92%;
+        margin: 0 auto 60px;
+    }
+
+    /* Prose measure and rhythm. 1.65 leading because these are long paragraphs
+       read once, not scanned repeatedly. */
+    .legal-page p,
+    .legal-page li {
+        font-size: 15px;
+        line-height: 1.65;
+        color: #333;
+    }
+
+    .legal-page h2 {
+        margin-bottom: 4px;
+    }
+
+    /* Section headings carry the page. They are set smaller than a Bootstrap h3
+       but heavier than the body, so the eye lands on them when skimming for one
+       topic without them competing with the page title. */
+    .legal-page h3 {
+        font-size: 17px;
+        font-weight: 600;
+        color: #222;
+        margin-top: 34px;
+        margin-bottom: 8px;
+    }
+
+    .legal-page ul {
+        margin-bottom: 14px;
+    }
+
+    .legal-updated {
+        font-size: 13px;
+        margin-bottom: 0;
+    }
+
+    /* The cross-link between the two pages, and out to the UCSD statements. */
+    .legal-page .legal-footnote {
+        font-size: 13px;
+        color: #777;
+        margin-top: 40px;
+        padding-top: 14px;
+        border-top: 1px solid #e5e5e5;
+    }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="container main-container legal-page">
+    <h2>{% block legal_title %}{% endblock %}</h2>
+    <p class="text-muted legal-updated">Last updated: {% block legal_updated %}20 August 2026{% endblock %}</p>
+    <hr>
+
+    {% block legal_body %}{% endblock %}
+</div>
+{% endblock %}

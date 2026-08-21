@@ -1,0 +1,87 @@
+{% extends 'pages/legal_base.html' %}
+
+{% comment %}
+Terms of Use.
+
+Kept to the handful of things a free academic resource actually needs to say:
+that it comes with no warranty, that the calls in it are research output and not
+a clinical result, that you are responsible for what you upload, and that we can
+change or withdraw things. Everything past that -- controlled-access rules, IRB
+and HIPAA obligations, genomic-privacy terms -- belongs to the study that
+generated the data, not to a general terms page, and writing it here would only
+create a second, worse copy of it.
+
+The upload note is one sentence on purpose. The footer already carries the "not
+intended for PHI" line sitewide.
+{% endcomment %}
+
+{% block meta_title %}Terms of Use{% endblock %}
+{% block meta_description %}Terms of use for AmpliconRepository, an academic research resource.{% endblock %}
+
+{% block legal_title %}Terms of Use{% endblock %}
+
+{% block legal_body %}
+
+<p>
+    AmpliconRepository is a free academic and scientific resource developed and maintained
+    by the Bafna Lab at the University of California San Diego. By using the site you
+    agree to the following.
+</p>
+
+<h3>Research resource</h3>
+<p>
+    The repository exists to support research. It aggregates focal amplification calls and
+    related annotations produced by automated analysis, and it is intended to be used and
+    interpreted by researchers in that context.
+</p>
+
+<h3>No warranty</h3>
+<p>
+    The site, and the predictions, annotations, and other content in it, are provided
+    "as is". We make no warranty as to their accuracy or completeness, their fitness for
+    any particular purpose, or the uninterrupted availability of the service.
+</p>
+
+<h3>Not medical advice</h3>
+<p>
+    Predictions and annotations in the repository are research output. They are not medical
+    advice or a clinical diagnosis, and they are not a substitute for professional clinical
+    interpretation.
+</p>
+
+<h3>Data you submit</h3>
+<p>
+    You are responsible for ensuring that you have the right and the necessary
+    authorization to upload or submit any data you contribute, and that doing so is
+    consistent with the terms under which that data was generated or shared with you.
+</p>
+
+<h3>Operation of the service</h3>
+<p>
+    We may modify, remove, or discontinue content or functionality when there is a
+    technical, scientific, security, or administrative reason to do so.
+</p>
+
+<h3>Acceptable use</h3>
+<p>
+    You may not intentionally interfere with the service, bypass or attempt to bypass its
+    security controls, misuse accounts or API access, or upload unlawful or unauthorized
+    material.
+</p>
+
+<h3>External resources</h3>
+<p>
+    The site links to external tools, datasets, and publications. We do not control those
+    resources and are not responsible for their availability, content, or policies.
+</p>
+
+<p class="legal-footnote">
+    See also the
+    <a href="https://ucsd.edu/about/terms-of-use.html" target="_blank" rel="noopener">UC San Diego Website Terms of Use</a>
+    for general institutional terms, and this site's
+    <a href="{% url 'privacy' %}">Privacy</a> notice.
+    Hosted data is released under a
+    <a href="https://raw.githubusercontent.com/AmpliconSuite/AmpliconRepository/main/licenses/CCv4-BY.txt" target="_blank" rel="noopener">Creative Commons v4 license</a>.
+</p>
+
+{% endblock %}

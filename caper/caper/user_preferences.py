@@ -1,3 +1,5 @@
+import logging
+
 from bson.objectid import ObjectId
 from .utils import get_collection_handle, db_handle
 from .forms import UserPreferencesForm
@@ -7,7 +9,15 @@ from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.core.mail import EmailMessage
 
+logger = logging.getLogger(__name__)
+
 user_preferences_handle = get_collection_handle(db_handle,'user_preferences')
+
+# This module decides who to email, so nearly every value it handles is an email
+# address. None of it belongs in the application log: the log answers "did the
+# notification go out?", and a count or a project name answers that as well as an
+# address does. Membership itself is recorded in the project document and in the
+# audit log, which is where it belongs and where it stays.
 
 def get_user_preferences(user):
     latest = user_preferences_handle.find_one({'email': user.email})
@@ -37,12 +47,11 @@ def update_user_preferences(user, prefs_dict):
         query = {'_id': ObjectId(old_prefs['_id'])}
         new_val = {"$set":  prefs_dict}
         res = user_preferences_handle.update_one(query, new_val)
-        print (f"Updated { res } --  {  prefs_dict }")
+        logger.info("Updated notification preferences (%s modified)", res.modified_count)
 
 
 def notify_users_of_project_membership_change(user, old_membership, new_membership, project_name, project_id):
 
-    print(' user is ' + user.email  + "   " + user.username)
     # we ignore the user making the change and do not email them
     ignore_set = {user.email, user.username}
 
@@ -50,15 +59,13 @@ def notify_users_of_project_membership_change(user, old_membership, new_membersh
     new_set = set(new_membership) - ignore_set
 
     if old_set == new_set:
-        print("Membership unchanged")
+        logger.info("Project membership unchanged for project %s", project_id)
         return
 
     removed = old_set - new_set
     added = new_set - old_set
-    print(' removed is ')
-    print(*removed, sep=", ")
-    print(' added is ')
-    print(*added, sep=", ")
+    logger.info("Project membership changed for project %s: %d added, %d removed",
+                project_id, len(added), len(removed))
 
     # now get the prefs for each and send an email if they elcted to get them
     for add_user_id in added:
@@ -72,7 +79,7 @@ def notify_users_of_project_membership_change(user, old_membership, new_membersh
                 emailOK = added_user_prefs['onAddedToProjectTeam']
 
             if emailOK:
-                print("send project add email to " + user_obj.email)
+                logger.info("Sending project membership notification (added) for project %s", project_id)
                 send_added_to_project_membership_email( user_obj.email, user.email, project_name, project_id)
 
 
@@ -87,7 +94,7 @@ def notify_users_of_project_membership_change(user, old_membership, new_membersh
                 emailOK = removed_user_prefs['onRemovedFromProjectTeam']
 
             if emailOK:
-                print("send project remove email to " + user_obj.email)
+                logger.info("Sending project membership notification (removed) for project %s", project_id)
                 send_removed_from_project_membership_email( user_obj.email, user.email, project_name, project_id)
 
 
@@ -153,12 +160,14 @@ def notify_subscribers_of_project_update(old_project, new_project_id, new_sample
     subscribers = old_project.get('subscribers', [])
     
     if not subscribers:
-        print(f"No subscribers to notify for project {old_project.get('project_name', 'Unknown')}")
+        logger.info("No subscribers to notify for project %s",
+                    old_project.get('project_name', 'Unknown'))
         return
-    
+
     project_name = old_project.get('project_name', 'Unknown Project')
-    
-    print(f"Notifying {len(subscribers)} subscribers about update to project {project_name}")
+
+    logger.info("Notifying %d subscribers about update to project %s",
+                len(subscribers), project_name)
     
     # Prepare email context
     form_dict = {
@@ -186,7 +195,8 @@ def notify_subscribers_of_project_update(old_project, new_project_id, new_sample
                     emailOK = user_prefs.get('onProjectUpdate', True)
                 
                 if not emailOK:
-                    print(f"Skipping notification to {subscriber_email} - user opted out")
+                    logger.info("Skipping project update notification for project %s - user opted out",
+                                project_name)
                     continue
             
             email = EmailMessage(
@@ -198,9 +208,14 @@ def notify_subscribers_of_project_update(old_project, new_project_id, new_sample
             )
             email.content_subtype = "html"
             email.send(fail_silently=False)
-            print(f"Sent project update notification to {subscriber_email}")
+            logger.info("Sent project update notification for project %s", project_name)
         except Exception as e:
-            print(f"Failed to send notification to {subscriber_email}: {str(e)}")
+            # The address is deliberately absent: a bounce or SMTP refusal is
+            # diagnosable from the exception and the project, and logging every
+            # failed recipient would put a list of subscriber addresses in the
+            # error log precisely when something is going wrong.
+            logger.error("Failed to send project update notification for project %s: %s",
+                         project_name, str(e))
 
 
 

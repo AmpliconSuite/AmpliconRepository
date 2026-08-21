@@ -996,7 +996,7 @@ sudo chmod 644 /etc/logrotate.d/ampliconrepo
 sudo logrotate -d /etc/logrotate.d/ampliconrepo    # dry run; parses and reports, changes nothing
 ```
 
-The file globs both `AmpliconRepository-dev` and `-prod`, so it is the same on either server. It rotates weekly, keeps 52 compressed archives, and rotates early if a file passes 500 MB. Rotation is by `copytruncate`, so **the server does not restart and no handles are reopened** — the writers all append, and gunicorn and the `tee` in `run-manage-py.sh` both continue into the truncated file.
+The file globs both `AmpliconRepository-dev` and `-prod`, so it is the same on either server. It rotates weekly, keeps 12 compressed archives (roughly three months — the access log holds client IPs, referrers, and user-agents, which we have no reason to retain longer), and rotates early if a file passes 500 MB. Rotation is by `copytruncate`, so **the server does not restart and no handles are reopened** — the writers all append, and gunicorn and the `tee` in `run-manage-py.sh` both continue into the truncated file.
 
 To rotate immediately rather than waiting for the timer, `sudo logrotate -f /etc/logrotate.d/ampliconrepo`. It takes about 15 seconds per gigabyte, most of it gzip, and the archives compress more than tenfold. Files rotated by hand in the past (`stdout.txt.old` and similar) do not match the pattern and are left alone.
 

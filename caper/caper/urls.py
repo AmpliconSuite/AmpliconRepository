@@ -89,6 +89,12 @@ urlpatterns += [
     path("batch-sample-download/", views.batch_sample_download, name="batch_sample_download"),
     # path('gene-search/download', views.gene_search_download, name='gene_search_download'),
     # path('class-search/', views.class_search_page, name='class_search_page'),
+    # Static prose, so they are TemplateViews rather than functions in views.py.
+    # CommonMiddleware's APPEND_SLASH redirects /privacy and /terms here, so the
+    # slashless forms people type by hand resolve too.
+    path('privacy/', TemplateView.as_view(template_name='pages/privacy.html'), name='privacy'),
+    path('terms/', TemplateView.as_view(template_name='pages/terms.html'), name='terms'),
+
     path('admin-featured-projects/', views.admin_featured_projects, name='admin_featured_projects'),
     path('admin-stats/', views.admin_stats, name='admin_stats'),
     path('admin-stats/download/user/',views.user_stats_download,name="user_stats_download"),

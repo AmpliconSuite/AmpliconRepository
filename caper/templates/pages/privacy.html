@@ -1,0 +1,130 @@
+{% extends 'pages/legal_base.html' %}
+
+{% comment %}
+Privacy notice.
+
+Deliberately short. The site collects an account and writes server logs, and
+that is very nearly the whole story, so the notice says that plainly instead of
+padding it out to look like a corporate policy. Two things it does not do:
+
+  * promise a specific log retention period. The repository's own logrotate
+    config keeps twelve weeks, but requests also pass through AWS and UCSD
+    infrastructure this repository does not configure, so "a limited period" is
+    the honest claim.
+  * assert who the legal data controller is. The Bafna Lab operates the site;
+    whether the Regents are formally the controller is not ours to declare here.
+
+Sections are ordered by how likely someone is to have come looking for them.
+{% endcomment %}
+
+{% block meta_title %}Privacy{% endblock %}
+{% block meta_description %}How AmpliconRepository handles account information, cookies, and server logs.{% endblock %}
+
+{% block legal_title %}Privacy{% endblock %}
+
+{% block legal_body %}
+
+<p>
+    AmpliconRepository is an academic research resource developed and maintained by the
+    Bafna Lab at the University of California San Diego. This page describes what
+    information the site handles and why. It is short because the site collects little.
+</p>
+
+<h3>Account information</h3>
+<p>
+    If you create or use an account, you may provide or associate information such as a
+    username, an email address, other account or profile information, and the
+    authentication information needed to sign you in.
+</p>
+
+<h3>Signing in through Google or Globus</h3>
+<p>
+    You may sign in through a third-party authentication provider such as Google or
+    Globus. When you do, AmpliconRepository receives the limited account or profile
+    information that the provider makes available for sign-in — typically name or profile
+    information and an email address, as applicable. AmpliconRepository does not receive
+    or store your password for those providers.
+</p>
+
+<h3>How account information is used</h3>
+<p>
+    Account information is used to operate the repository — to maintain your account and
+    to support project ownership and membership, project access, notifications, uploads
+    and submissions, API access, and other functionality you ask the site to perform.
+</p>
+
+<h3>Cookies and sessions</h3>
+<p>
+    AmpliconRepository uses cookies and similar browser or session mechanisms that are
+    necessary for the site to work: signing you in and keeping you signed in, security,
+    cross-site request forgery (CSRF) protection, maintaining your session, and
+    preventing abusive automated downloads or requests. The site does not use analytics
+    or advertising cookies.
+</p>
+
+<h3>Anti-abuse and CAPTCHA services</h3>
+<p>
+    Some actions, such as creating an account or requesting certain downloads, may use a
+    third-party CAPTCHA or anti-abuse service to distinguish people from automated
+    traffic. Those providers receive the technical information they need in order to
+    provide that service.
+</p>
+
+<h3>Server and application logs</h3>
+<p>
+    Operating the site produces logs that may record information such as your IP address,
+    browser and user-agent information, the URLs requested, timestamps, referrer
+    information, and technical or error information. These logs are used for security,
+    troubleshooting, and operating the repository, and are retained for a limited period.
+</p>
+
+<h3>Project history and provenance</h3>
+<p>
+    The repository keeps a limited history of submissions and projects — including records
+    of who submitted or changed a dataset and when. This information is retained where it
+    is needed for repository integrity, provenance, audit and history, security, and
+    reproducibility of the scientific record. Because these records exist to describe what
+    happened, they are generally preserved even after an associated account is closed.
+</p>
+
+<h3>Email</h3>
+<p>
+    AmpliconRepository may send you functional messages related to your use of the site:
+    account activity, project membership, repository updates for projects you follow, and
+    downloads or processing you have requested. These are not marketing emails. You can
+    adjust which notifications you receive on your
+    {% if user.is_authenticated %}<a href="{% url 'user_settings' %}">Settings</a> page{% else %}Settings page once signed in{% endif %}.
+</p>
+
+<h3>API access</h3>
+<p>
+    Signed-in users may be issued an API credential associated with their account so that
+    scripts and pipelines can access the repository on their behalf. You can generate or
+    revoke that credential yourself at any time.
+</p>
+
+<h3>No advertising, no sale of personal information</h3>
+<p>
+    AmpliconRepository does not serve targeted advertising and does not sell users'
+    personal information.
+</p>
+
+<h3>Questions, corrections, and account deletion</h3>
+<p>
+    If you have a privacy question, need to correct your account information, or want your
+    account deleted, email
+    <a href="mailto:jluebeck@ucsd.edu?subject=AmpliconRepository%20privacy%20request">jluebeck@ucsd.edu</a>.
+    For anything that is not privacy- or account-specific — bugs, feature requests, and
+    questions about the data — the
+    <a href="https://github.com/AmpliconSuite/AmpliconRepository/issues" target="_blank" rel="noopener">GitHub issue tracker</a>
+    is the better place, and gets a faster answer.
+</p>
+
+<p class="legal-footnote">
+    See also the
+    <a href="https://ucsd.edu/about/privacy.html" target="_blank" rel="noopener">UC San Diego Website Privacy Statement</a>
+    for general institutional information, and this site's
+    <a href="{% url 'terms' %}">Terms of Use</a>.
+</p>
+
+{% endblock %}

@@ -19,7 +19,17 @@ came here on purpose.
 <script>
     // ── API Token management ──────────────────────────────────────────────────
 
+    // The token endpoint enforces CSRF on POST/DELETE, so this has to find a
+    // token or those calls fail with a 403. The hidden input rendered by the
+    // {% csrf_token %} tag in the preferences form below is the reliable source:
+    // it is present whatever CSRF storage backend is configured. The cookie is
+    // the fallback for the case where this block is reused on a page that has no
+    // form on it.
     function getCsrfToken() {
+        const field = document.querySelector('input[name="csrfmiddlewaretoken"]');
+        if (field && field.value) {
+            return field.value;
+        }
         const match = document.cookie.match(/csrftoken=([^;]+)/);
         return match ? match[1] : '';
     }

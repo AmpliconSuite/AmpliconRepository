@@ -507,6 +507,7 @@ def admin_stats(request):
     })
 
 
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def user_stats_download(request):
     # Get all user data
     User = get_user_model()
@@ -542,6 +543,7 @@ def site_stats_regenerate(request):
     return admin_stats(request)
 
 
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def project_stats_download(request):
     # Get public and private project data
     public_projects = list(collection_handle.find({'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}))
@@ -658,6 +660,49 @@ def admin_permanent_delete_project(project_id, project, project_name):
     return error_message
 
 
+def _account_identifiers(username):
+    """Every string an account can appear as in a project's member list.
+
+    The members box takes a username or an email address interchangeably, so a
+    single account can be recorded either way -- often both ways, on different
+    projects. Matching on the username alone misses the rest, which is how a
+    "solo" project ends up neither deleted nor reassigned and then has its last
+    member stripped out from under it.
+    """
+    identifiers = [username] if username else []
+    try:
+        user = User.objects.get(username=username)
+    except User.DoesNotExist:
+        return identifiers, None
+    if user.email and user.email not in identifiers:
+        identifiers.append(user.email)
+    return identifiers, user
+
+
+def _split_projects_by_membership(identifiers):
+    """Split the account's active projects into solo-owned and shared.
+
+    Solo means every remaining member is this same account, under whichever
+    identifier -- those need deleting or reassigning, because removing the
+    account would otherwise leave a project no one owns. Shared projects just
+    lose the member.
+    """
+    if not identifiers:
+        return [], []
+
+    projects = list(collection_handle.find({
+        'current': True,
+        'project_members': {'$in': identifiers},
+    }))
+
+    solo, shared = [], []
+    for project in projects:
+        others = [m for m in project.get('project_members', [])
+                  if m not in identifiers]
+        (shared if others else solo).append(project)
+    return solo, shared
+
+
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_delete_user(request):
     if not request.user.is_staff:
@@ -672,29 +717,20 @@ def admin_delete_user(request):
         action = request.POST.get("action", "select_user")
 
         if action == 'select_user':
-            solo_projects = list(collection_handle.find({'current': True, 'project_members': [username]}))
-            # Add formatted visibility to solo projects
-            for proj in solo_projects:
-                proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
-            
-            # Member projects: username is one of the members, but not the only one
-            # Query for projects where the username is in the project_members array
-            member_projects = list(collection_handle.find({
-                'current': True,
-                'project_members': {'$all': [username]}
-            }))
+            identifiers, _ = _account_identifiers(username)
+            solo_projects, member_projects = _split_projects_by_membership(identifiers)
 
-            # Filter the results to ensure the project_members array has more than one member
-            member_projects = [project for project in member_projects if len(project.get('project_members', [])) > 1]
-            # Add formatted visibility to member projects
-            for proj in member_projects:
+            for proj in solo_projects + member_projects:
                 proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
 
         elif action == 'delete_user':
 
-            # for solo projects that are private, delete them
-            solo_projects = list(collection_handle.find({'current': True, 'project_members': [username]}))
+            # Resolve the account before deleting it -- afterwards the email is
+            # gone and the member lists recorded against it cannot be found.
+            identifiers, user = _account_identifiers(username)
+            solo_projects, member_projects = _split_projects_by_membership(identifiers)
 
+            # for solo projects that are private, delete them
             for project in solo_projects:
                 project_name = project['project_name']
                 project_id = project['_id']
@@ -720,26 +756,24 @@ def admin_delete_user(request):
                     collection_handle.update_one(query, new_val)
 
             # for member projects, remove the user from the project members
-            member_projects = [
-                project for project in collection_handle.find({
-                    'current': True,
-                    'project_members': {'$all': [username]}
-                })
-                if len(project.get('project_members', [])) > 1  # Ensure the array size is greater than 1
-            ]
             for project in member_projects:
                 project_name = project['project_name']
                 project_id = project['_id']
                 query = {'_id': ObjectId(project_id)}
-                new_val = {"$pull": {'project_members': username}}
+                new_val = {"$pull": {'project_members': {'$in': identifiers}}}
                 collection_handle.update_one(query, new_val)
                 error_message += f"User {username} removed from project {project_name}. "
-            # delete the user
-            try:
-                user = User.objects.get(username=username)
+
+            # Delete the user. The post_delete receiver in account_signals.py then
+            # sweeps up whatever else still names the account -- subscriber lists,
+            # the notification-preferences document, and any member entry the loops
+            # above did not reach -- and the CASCADE on the auth token takes the
+            # user's API credentials with it. Historical project versions and the
+            # audit log keep their record of who submitted what.
+            if user is not None:
                 user.delete()
                 error_message += f"User {username} deleted successfully."
-            except User.DoesNotExist:
+            else:
                 error_message += f"User {username} does not exist."
 
             solo_projects = []

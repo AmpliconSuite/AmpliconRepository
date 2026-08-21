@@ -326,11 +326,16 @@ SOCIALACCOUNT_PROVIDERS = {
         # For each OAuth based provider, either add a ``SocialApp``
         # (``socialaccount`` app) containing the required client
         # credentials, or list them here:
+        # Authentication and profile only.  The Globus Transfer scope
+        # (urn:globus:auth:scope:transfer.api.globus.org:all) was requested here
+        # historically but nothing in the site ever called the Transfer API, so
+        # it was dropped: it grants full access to the user's Globus endpoints
+        # and collections, which is far more than a login button needs.  Add it
+        # back only alongside code that actually performs transfers.
         'SCOPE': [
             'openid',
             'profile',
             'email',
-            'urn:globus:auth:scope:transfer.api.globus.org:all'
         ],
         'APP': {
             'client_id': '61af67c2-8697-4afd-a5df-2a46a8ef17df',

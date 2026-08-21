@@ -822,7 +822,8 @@ class ApiTokenView(APIView):
     Manage the caller's personal API token.
 
     Must be called from a logged-in browser session (Django session cookie +
-    CSRF token).  Not reachable via the API token itself.
+    CSRF token).  Not reachable via the API token itself, by design: a stolen
+    token should not be usable to mint its own replacement.
 
     GET    — {"has_token": true,  "token_suffix": "...last8chars"}
              {"has_token": false, "token_suffix": null}
@@ -830,16 +831,17 @@ class ApiTokenView(APIView):
              The full token is returned only on creation; store it securely.
     DELETE — revoke token → {"detail": "API token revoked"}
     """
-    # Use session auth but without DRF's per-request CSRF check.  CSRF for this
-    # endpoint is the caller's responsibility (the settings page always sends a
-    # CSRF cookie; tests set req.user directly and don't have a real session).
-    # The endpoint is harmless to CSRF-attack: a cross-origin POST can generate
-    # a token but cannot read the response body, so the attacker gains nothing.
-    class _NoCsrfSessionAuth(SessionAuthentication):
-        def enforce_csrf(self, request):
-            pass  # intentionally omitted — see class docstring
-
-    authentication_classes = [_NoCsrfSessionAuth]
+    # Plain SessionAuthentication, which enforces CSRF on unsafe methods.  This
+    # previously used a subclass with enforce_csrf() stubbed out, on the reasoning
+    # that a cross-origin POST cannot read the response body and so gains the
+    # attacker nothing.  That misses the damage such a POST does even unread:
+    # POST rotates the token, so a forged request silently invalidates whatever
+    # token the victim's scripts and pipelines are using, and DELETE revokes it
+    # outright.  Both are state-changing operations on an authenticated session,
+    # which is exactly the case CSRF protection exists for.  GET is unaffected --
+    # Django's CSRF check exempts safe methods -- so the settings page's initial
+    # status fetch still works with no token.
+    authentication_classes = [SessionAuthentication]
     permission_classes = []
     throttle_classes = [ApiScopedRateThrottle]
     throttle_scope = 'api_token'
