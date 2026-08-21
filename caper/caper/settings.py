@@ -149,6 +149,12 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SITE_ID = 1
 SITE_TITLE = 'AmpliconRepository'
 
+# Who inherits a publicly reachable project when the only member closes their
+# account. Deleting it would break links that may already be in print, so it is
+# handed over instead -- see caper/account_deletion.py. Falls back to the
+# lowest-numbered staff account if this one does not exist on the deployment.
+ORPHANED_PROJECT_OWNER = os.getenv('ORPHANED_PROJECT_OWNER', 'jluebeck')
+
 # If you set this to False, Django will make some optimizations so as not
 # to load the internationalization machinery.
 USE_I18N = False

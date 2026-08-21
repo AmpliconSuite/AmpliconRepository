@@ -61,8 +61,9 @@
             <hr>
             <div style="margin-top: 30px">
                 <p>Permanently delete a user account.<br/>
-                Solo private projects owned by the user will be permanently deleted.<br/>
-                Public solo projects owned by the user will be transferred to an admin user.<br/>
+                Private projects with no other member will be permanently deleted.<br/>
+                Public and unlisted projects with no other member will be transferred to an admin user,
+                since links to them may already have been published.<br/>
                 Projects that are shared with other users will have this user removed from their teams.</p>
 
             </div>
@@ -124,7 +125,7 @@
         {% if username %}
         <div style="margin-top:20px">
             <h4>Solo projects for {{ username }} </h4>
-            <p>Projects will be deleted unless public, then they will be reassigned to an admin.</p>
+            <p>These projects have no other member. Private ones are deleted; publicly reachable ones are reassigned to an admin.</p>
             <div class="tab-content" style="padding-top: 30px;">
                 <div class="tab-pane active" id="tab-table0">
                     <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
@@ -138,7 +139,7 @@
                                 <th>Deleted on</th>
                                 <th>Project Members</th>
                                 <th>Public?</th>
-                               
+                                <th>What happens</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -152,6 +153,11 @@
                                     {{ person }}<br>
                                 {% endfor%}</td>
                                 <td>{{ project.visibility_display }}</td>
+                                <td>{% if project.deletion_action == 'delete' %}
+                                        <span style="color:#a94442"><b>Permanently deleted</b></span>
+                                    {% else %}
+                                        Reassigned to an admin
+                                    {% endif %}</td>
                            </tr>
                             {% endfor %}
                         </tbody>

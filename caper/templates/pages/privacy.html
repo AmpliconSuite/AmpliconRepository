@@ -109,10 +109,22 @@ Sections are ordered by how likely someone is to have come looking for them.
     personal information.
 </p>
 
-<h3>Questions, corrections, and account deletion</h3>
+<h3>Deleting your account</h3>
 <p>
-    If you have a privacy question, need to correct your account information, or want your
-    account deleted, email
+    You can delete your account yourself from your
+    {% if user.is_authenticated %}<a href="{% url 'delete_account' %}">Settings</a> page{% else %}Settings page once signed in{% endif %}.
+    Doing so removes your sign-in, your notification preferences and any API credential
+    immediately. Private projects you are the only member of are deleted with it; projects
+    that are publicly reachable, or that have other members, are kept, since other people
+    may already be relying on them. The page shows you exactly which of your projects fall
+    into which case before you confirm. Superseded project versions and upload records that
+    name you are preserved, for the reasons described under Data retention above.
+</p>
+
+<h3>Questions and corrections</h3>
+<p>
+    If you have a privacy question, need to correct your account information, or want help
+    with a deletion, email
     <a href="mailto:jluebeck@ucsd.edu?subject=AmpliconRepository%20privacy%20request">jluebeck@ucsd.edu</a>.
     For anything that is not privacy- or account-specific — bugs, feature requests, and
     questions about the data — the

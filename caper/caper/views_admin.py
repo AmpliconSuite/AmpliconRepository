@@ -29,6 +29,7 @@ import boto3
 
 from bson.objectid import ObjectId
 
+from .account_deletion import RELEASE, plan_account_deletion, summarize
 from .forms import FeaturedProjectForm, DeletedProjectForm, SendEmailForm
 from .utils import (
     collection_handle, collection_handle_primary, fs_handle, audit_log_handle,
@@ -660,46 +661,29 @@ def admin_permanent_delete_project(project_id, project, project_name):
     return error_message
 
 
-def _account_identifiers(username):
-    """Every string an account can appear as in a project's member list.
+def _lookup_account(username):
+    """The Django user behind a username, or None."""
+    return User.objects.filter(username=username).first()
 
-    The members box takes a username or an email address interchangeably, so a
-    single account can be recorded either way -- often both ways, on different
-    projects. Matching on the username alone misses the rest, which is how a
-    "solo" project ends up neither deleted nor reassigned and then has its last
-    member stripped out from under it.
+
+def _preview_projects(user, username):
+    """Split the account's live projects for the confirmation table.
+
+    Same walk as the deletion itself -- plan_account_deletion is what decides,
+    here and in caper.account_signals -- so the table cannot show one outcome
+    and the deletion produce another.
+
+    The username is passed separately from the user because the page is also
+    asked about names that do not resolve to an account, and a project can still
+    name one of those in its member list.
     """
-    identifiers = [username] if username else []
-    try:
-        user = User.objects.get(username=username)
-    except User.DoesNotExist:
-        return identifiers, None
-    if user.email and user.email not in identifiers:
-        identifiers.append(user.email)
-    return identifiers, user
-
-
-def _split_projects_by_membership(identifiers):
-    """Split the account's active projects into solo-owned and shared.
-
-    Solo means every remaining member is this same account, under whichever
-    identifier -- those need deleting or reassigning, because removing the
-    account would otherwise leave a project no one owns. Shared projects just
-    lose the member.
-    """
-    if not identifiers:
-        return [], []
-
-    projects = list(collection_handle.find({
-        'current': True,
-        'project_members': {'$in': identifiers},
-    }))
-
     solo, shared = [], []
-    for project in projects:
-        others = [m for m in project.get('project_members', [])
-                  if m not in identifiers]
-        (shared if others else solo).append(project)
+    plan = plan_account_deletion(username, getattr(user, 'email', None))
+    for project, action, _visibility in plan:
+        project['visibility_display'] = format_visibility_for_display(
+            project.get('private', True))
+        project['deletion_action'] = action
+        (shared if action == RELEASE else solo).append(project)
     return solo, shared
 
 
@@ -717,62 +701,26 @@ def admin_delete_user(request):
         action = request.POST.get("action", "select_user")
 
         if action == 'select_user':
-            identifiers, _ = _account_identifiers(username)
-            solo_projects, member_projects = _split_projects_by_membership(identifiers)
-
-            for proj in solo_projects + member_projects:
-                proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
+            solo_projects, member_projects = _preview_projects(
+                _lookup_account(username), username)
 
         elif action == 'delete_user':
+            user = _lookup_account(username)
 
-            # Resolve the account before deleting it -- afterwards the email is
-            # gone and the member lists recorded against it cannot be found.
-            identifiers, user = _account_identifiers(username)
-            solo_projects, member_projects = _split_projects_by_membership(identifiers)
-
-            # for solo projects that are private, delete them
-            for project in solo_projects:
-                project_name = project['project_name']
-                project_id = project['_id']
-
-                # delete the project
-                if project['private']:
-                    error_message += f"User {username} deleted, project {project_name} was private and deleted. "
-                    error_message += admin_permanent_delete_project(project_id, project, project_name)
-                else:
-                    # replace username as owner with 'jluebeck' if a user exists by that name
-                    # or by an admin user
-                    query = {'_id': ObjectId(project_id)}
-                    # check if user jluebeck exists
-                    anAdmin = 'admin'
-                    if User.objects.filter(username='jluebeck').exists():
-                        anAdmin = 'jluebeck'
-                    else:
-                        # replace with admin user
-                        if User.objects.filter(is_staff=True).exists():
-                            anAdmin = User.objects.filter(is_staff=True).first().username
-                    new_val = {"$set": {'project_members': [anAdmin]}}
-                    error_message += f"User {username} deleted, project {project_name} was public and reassigned to {anAdmin}. "
-                    collection_handle.update_one(query, new_val)
-
-            # for member projects, remove the user from the project members
-            for project in member_projects:
-                project_name = project['project_name']
-                project_id = project['_id']
-                query = {'_id': ObjectId(project_id)}
-                new_val = {"$pull": {'project_members': {'$in': identifiers}}}
-                collection_handle.update_one(query, new_val)
-                error_message += f"User {username} removed from project {project_name}. "
-
-            # Delete the user. The post_delete receiver in account_signals.py then
-            # sweeps up whatever else still names the account -- subscriber lists,
-            # the notification-preferences document, and any member entry the loops
-            # above did not reach -- and the CASCADE on the auth token takes the
-            # user's API credentials with it. Historical project versions and the
-            # audit log keep their record of who submitted what.
+            # Everything that happens to the projects is done by the post_delete
+            # receiver in account_signals.py: solo projects deleted or reassigned,
+            # membership of shared projects dropped, subscriber lists and
+            # notification preferences cleared, and the CASCADE on the auth token
+            # taking the API credentials with it. Doing it there rather than here
+            # is what makes Django's own /admin/ and the shell behave the same as
+            # this page. Historical project versions and the audit log keep their
+            # record of who submitted what.
             if user is not None:
                 user.delete()
-                error_message += f"User {username} deleted successfully."
+                report = getattr(user, '_amprepo_deletion_report', None)
+                error_message += f"User {username} deleted successfully. "
+                if report:
+                    error_message += summarize(report)
             else:
                 error_message += f"User {username} does not exist."
 

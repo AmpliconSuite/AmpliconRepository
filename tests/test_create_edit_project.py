@@ -13,6 +13,7 @@ regardless of whether the test passed or failed:
 import io
 import os
 import zipfile
+from collections import Counter
 
 import pytest
 
@@ -22,6 +23,7 @@ from conftest import (
     _cleanup_project,
     _poll_until_finished,
     _project_id_from_redirect,
+    DATASET_CORAL_TAR,
     DATASET_SMALL_TAR,
     DATASET_SMALL_XLSX,
     POLL_TIMEOUT,
@@ -227,22 +229,26 @@ def test_create_ac2_hg38_project(
 @pytest.mark.integration
 def test_create_coral_ac2_project(
         request_factory, test_user, mongo_collection, monkeypatch):
-    """CoRAL reconstructions must be identified and versioned distinctly from AA."""
-    archive_path = os.environ.get('CAPER_CORAL_TEST_ARCHIVE')
-    if not archive_path:
-        pytest.skip('Set CAPER_CORAL_TEST_ARCHIVE to run the CoRAL ingestion test')
-    if not os.path.exists(archive_path):
-        pytest.skip(f'CoRAL test archive not found: {archive_path}')
+    """CoRAL reconstructions must be identified and versioned distinctly from AA.
 
+    Runs against test_data/coral_four_samples.tar.gz, which is committed with the
+    repository -- four cell lines, seven amplicons, and the AmpliconClassifier 2.0
+    run over them. It used to need a 250 MB archive named by an environment
+    variable, which meant the test skipped for everyone who did not have that
+    archive, which was everyone but its author. See test_data/README.md for how
+    the fixture was cut down and how to rebuild it.
+    """
     from django.conf import settings
     from caper.views import create_project, sample_download
+
+    assert os.path.exists(DATASET_CORAL_TAR), f'Missing test dataset: {DATASET_CORAL_TAR}'
 
     monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', False)
     request, handles = _build_create_request(
         request_factory,
         test_user,
         'pytest_CoRAL_compatibility',
-        tar_path=archive_path,
+        tar_path=DATASET_CORAL_TAR,
     )
     project_id = None
 
@@ -252,20 +258,29 @@ def test_create_coral_ac2_project(
         doc = _poll_until_finished(mongo_collection, project_id)
 
         assert doc and not doc.get('aggregation_failed'), doc.get('error_message') if doc else None
-        assert doc.get('sample_count') == 24
+        assert doc.get('sample_count') == 4
         assert doc.get('Reconstruction_tools') == 'CoRAL'
         assert doc.get('CoRAL_version') == '2.2.0'
+        # No AA anywhere in this project, so nothing should claim an AA version.
+        assert doc.get('AA_version') in (None, 'NA', '')
 
         features = [
             feature
             for sample_features in doc['runs'].values()
             for feature in sample_features
         ]
-        assert len(features) == 95
+        assert len(features) == 7
+        assert {feature.get('Sample_name') for feature in features} == {
+            'GBM39EC', 'H2009', 'HCC1395', 'TR14'}
         assert {feature.get('Reconstruction_tool') for feature in features} == {'CoRAL'}
         assert {feature.get('Reconstruction_version') for feature in features} == {'2.2.0'}
+        assert {feature.get('Reference_version') for feature in features} == {'GRCh38'}
+        assert Counter(f.get('Classification') for f in features) == {
+            'ecDNA': 6, 'Linear': 1}
         assert all(feature.get('Graph_PNG_file') != 'Not Provided' for feature in features)
         assert all(feature.get('Cycles_PNG_file') != 'Not Provided' for feature in features)
+        # The cnvkit output travels with a CoRAL run and is what these come from.
+        assert all(feature.get('CNV_BED_file') != 'Not Provided' for feature in features)
 
         first_run = next(iter(doc['runs'].values()))
         sample_name = first_run[0]['Sample_name']

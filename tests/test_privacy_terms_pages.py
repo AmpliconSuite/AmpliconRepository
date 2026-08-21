@@ -79,9 +79,15 @@ def test_privacy_page_covers_the_required_topics(client):
     assert 'retained for a limited period' in body
     assert not re.search(r'retained for \d+ (day|week|month|year)', body)
 
-    # Contact route for privacy questions, corrections, and deletion.
+    # Contact route for privacy questions and corrections.
     assert 'mailto:jluebeck@ucsd.edu' in body
-    assert 'account deleted' in body
+
+    # Deletion is self-service, and the page has to say what it costs -- a
+    # privacy policy that says "you can delete your account" without saying that
+    # it takes your private projects with it is not informing anyone.
+    assert 'delete your account yourself' in body
+    assert 'Private projects you are the only member of are deleted' in body
+    assert 'other members, are kept' in body
 
     # Institutional statement, linked as additional information.
     assert 'https://ucsd.edu/about/privacy.html' in body

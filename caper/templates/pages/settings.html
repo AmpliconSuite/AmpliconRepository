@@ -168,6 +168,18 @@ came here on purpose.
                     This account signs in through Google or Globus, so it has no password here.
                 </p>
                 {% endif %}
+                {% comment %}
+                Deliberately a link to a confirmation page rather than a button
+                that acts. What happens to your projects depends on which ones
+                you are the only member of, and that has to be read before it can
+                be agreed to.
+                {% endcomment %}
+                <p style="margin-top:20px">
+                    <a href="{% url 'delete_account' %}" style="color:#a94442">Delete my account</a>
+                    <span class="text-muted" style="font-size:0.9em">
+                        &mdash; permanent, and deletes private projects you are the only member of
+                    </span>
+                </p>
             </div>
         </div>
 

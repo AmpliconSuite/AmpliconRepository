@@ -462,6 +462,65 @@ def user_settings(request, message_to_user=None):
     })
 
 
+@login_required(login_url='/accounts/login/')
+def delete_account(request):
+    """Let people close their own account, having first shown them the damage.
+
+    Everything this does to the projects is done by the post_delete receiver in
+    account_signals.py, so this view is only the consent step: show what will
+    happen, make the person type their username to say they mean it, then call
+    delete(). The listing comes from plan_account_deletion, the same function
+    the deletion itself uses, so the page cannot promise an outcome the deletion
+    does not deliver.
+
+    The typed username is not a security control -- the session already proves
+    who they are and the form is CSRF-protected. It is there because the action
+    cannot be undone and a misplaced click should not be enough to trigger it.
+    """
+    from django.contrib.auth import logout as auth_logout
+    from .account_deletion import DELETE, REASSIGN, RELEASE, plan_account_deletion
+
+    user = request.user
+    plan = plan_account_deletion(user.username, user.email)
+    to_delete = [p for p, action, _ in plan if action == DELETE]
+    to_reassign = [p for p, action, _ in plan if action == REASSIGN]
+    to_release = [p for p, action, _ in plan if action == RELEASE]
+
+    if request.method == "POST":
+        typed = (request.POST.get('confirm_username') or '').strip()
+        if typed != user.username:
+            messages.add_message(
+                request, messages.ERROR,
+                "That did not match your username, so nothing was deleted.")
+        else:
+            username = user.username
+            deleted_count = len(to_delete)
+            reassigned_count = len(to_reassign)
+
+            # Log out before deleting: afterwards request.user names a row that
+            # is gone while the session still points at its primary key. Logging
+            # out flushes the session, so the confirmation message has to be
+            # added after that or it is flushed along with everything else --
+            # the fallback storage puts it in a cookie, which survives.
+            auth_logout(request)
+            user.delete()
+            logging.info(
+                "Account closed by its owner: %d project(s) deleted, "
+                "%d reassigned", deleted_count, reassigned_count)
+
+            messages.add_message(
+                request, messages.SUCCESS,
+                f"The account {username} has been deleted.")
+            return redirect('/')
+
+    return render(request, "pages/delete_account.html", {
+        'SITE_TITLE': settings.SITE_TITLE,
+        'projects_to_delete': to_delete,
+        'projects_to_reassign': to_reassign,
+        'projects_to_release': to_release,
+    })
+
+
 def login(request):
     return render(request, "pages/login.html")
 

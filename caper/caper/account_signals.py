@@ -139,21 +139,46 @@ def purge_account_references(
 
 @receiver(post_delete, sender=get_user_model())
 def purge_references_for_deleted_account(sender, instance, **kwargs):
-    """Run the purge for every deletion path, not just the admin page.
+    """Clean up after a deleted account, whichever route deleted it.
 
     Accounts are also deleted through Django's own /admin/ and from the shell,
-    and those paths would otherwise leave the Mongo-side references behind.
-    Hanging it on post_delete covers all of them from one place.
+    and neither of those can be taught to call a view first. Hanging the whole
+    cleanup off post_delete is what makes those paths behave the same as the
+    admin page and the account-holder's own delete button.
 
-    Failures are logged and swallowed: the account is already gone by the time
-    this runs, and a MongoDB hiccup should not turn a completed deletion into a
-    500 for the administrator who requested it.
+    Two stages, in this order:
+
+    1. Solo projects get their decision -- deleted if private, handed to a
+       caretaker if publicly reachable. This has to run first, while the member
+       lists still name the account and it is still possible to tell a solo
+       project from a shared one.
+    2. Everything else that names the account is removed: membership of shared
+       projects, subscriber lists, and the notification-preferences document.
+
+    Each stage catches its own failures. The account is already gone by the time
+    this runs, so there is nothing to roll back and no reason to let a MongoDB
+    hiccup surface as a 500 -- but a failure in the first stage must not stop
+    the second from running.
+
+    The report is stashed on the instance so a caller that just invoked
+    ``user.delete()`` can tell the person what happened. Nothing depends on
+    reading it.
     """
+    username = getattr(instance, 'username', None)
+    email = getattr(instance, 'email', None)
+    report = {'deleted': [], 'reassigned': [], 'released': [], 'errors': []}
+
     try:
-        counts = purge_account_references(
-            getattr(instance, 'username', None),
-            getattr(instance, 'email', None),
+        from .account_deletion import dispose_of_projects
+        report = dispose_of_projects(username, email)
+    except Exception:
+        logger.exception(
+            "Failed to dispose of solo projects for deleted user %s",
+            getattr(instance, 'pk', None),
         )
+
+    try:
+        counts = purge_account_references(username, email)
         logger.info(
             "Purged deleted account's references: %d project list(s) updated, "
             "%d preference record(s) deleted",
@@ -165,3 +190,5 @@ def purge_references_for_deleted_account(sender, instance, **kwargs):
             "Failed to purge MongoDB references for deleted user %s",
             getattr(instance, 'pk', None),
         )
+
+    instance._amprepo_deletion_report = report

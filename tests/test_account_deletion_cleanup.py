@@ -74,6 +74,21 @@ class FakeCollection:
         self.docs = keep
         return type('Result', (), {'deleted_count': deleted})()
 
+    def find(self, query):
+        return [doc for doc in self.docs if self._matches(doc, query)]
+
+    def update_one(self, query, update):
+        for doc in self.docs:
+            if not self._matches(doc, query):
+                continue
+            for field, value in update.get('$set', {}).items():
+                doc[field] = value
+            for field, condition in update.get('$pull', {}).items():
+                doc[field] = [v for v in doc.get(field, [])
+                              if v not in condition['$in']]
+            return type('Result', (), {'modified_count': 1})()
+        return type('Result', (), {'modified_count': 0})()
+
 
 USERNAME = 'departing_user'
 EMAIL = 'departing_user@example.com'

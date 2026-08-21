@@ -29,6 +29,9 @@ DATASET_SMALL_TAR  = os.path.join(TEST_DATA_DIR, 'one_amprepo_sample.tar.gz')
 DATASET_SMALL_XLSX = os.path.join(TEST_DATA_DIR, 'one_amprepo_sample.xlsx')
 DATASET_MEDIUM_TAR = os.path.join(TEST_DATA_DIR, 'Contino_unagg_040423.tar.gz')
 DATASET_ADDL_TAR   = os.path.join(TEST_DATA_DIR, 'two_hg38_samples_no_ecdna.tar.gz')
+# CoRAL reconstructions plus the AmpliconClassifier run over them. See
+# test_data/README.md for what is in it and how to rebuild it.
+DATASET_CORAL_TAR  = os.path.join(TEST_DATA_DIR, 'coral_four_samples.tar.gz')
 
 # Legacy aliases so existing tests that reference TAR_FILE / XLSX_FILE still work
 TAR_FILE  = DATASET_SMALL_TAR
