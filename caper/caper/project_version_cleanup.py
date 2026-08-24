@@ -1,27 +1,55 @@
 from bson import ObjectId
 
 
-GRIDFS_FILE_KEYS = {
-    'tarfile',
-    'AA PNG file',
-    'AA PDF file',
+# Per-feature keys that hold a GridFS file id, in the order ingestion writes
+# them.  This is the single source of truth: views.py iterates this list when
+# uploading, and the cleanup paths below derive their key set from it, so the
+# two cannot drift apart.  A key missing here is a file the site uploads and
+# then never deletes — that is how the existing orphan population accumulated.
+#
+# Aggregator <=6 emitted the AA-prefixed image/text keys.  7.0 emits distinct
+# graph/cycles artifacts.  Both schemas are live, so both are listed.
+FEATURE_FILE_KEYS = (
     'Feature BED file',
     'CNV BED file',
-    'AA directory',
-    'cnvkit directory',
-    'Sample metadata JSON',
+    'AA PDF file',
+    'AA PNG file',
+    'Graph PNG file',
+    'Graph PDF file',
+    'Cycles PNG file',
+    'Cycles PDF file',
     'AA graph file',
     'AA cycles file',
-    'AA_PNG_file',
-    'AA_PDF_file',
-    'Feature_BED_file',
-    'CNV_BED_file',
-    'AA_directory',
-    'cnvkit_directory',
-    'Sample_metadata_JSON',
-    'AA_graph_file',
-    'AA_cycles_file',
-}
+    'Graph file',
+    'Cycles file',
+    'Run metadata JSON',
+    'Sample metadata JSON',
+)
+
+# Directory-shaped payloads, tarred into GridFS by the same code path.
+DIRECTORY_FILE_KEYS = (
+    'Reconstruction directory',
+    'AA directory',
+    'cnvkit directory',
+)
+
+# Project-level keys.
+PROJECT_FILE_KEYS = ('tarfile',)
+
+
+def _with_underscore_variants(keys):
+    """Documents are stored with spaces in keys replaced by underscores in some
+    code paths and left as-is in others, so both spellings must be recognised."""
+    variants = set()
+    for key in keys:
+        variants.add(key)
+        variants.add(key.replace(' ', '_'))
+    return variants
+
+
+GRIDFS_FILE_KEYS = _with_underscore_variants(
+    FEATURE_FILE_KEYS + DIRECTORY_FILE_KEYS + PROJECT_FILE_KEYS
+)
 
 VERSION_HISTORY_FIELDS = (
     'AA_version',

@@ -82,6 +82,7 @@ from .utils import (
 )
 from .tar_safety import safe_extract_member, safe_extractall
 from .project_version_cleanup import (
+    FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
     delete_gridfs_payload_for_project,
     iter_gridfs_file_ids,
@@ -4130,16 +4131,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                     # Aggregator <=6 used the AA-prefixed image/text keys. 7.0
                     # emits distinct graph/cycles artifacts. Upload whichever
                     # schema is present and retain its original field names.
-                    key_names = [
-                        'Feature BED file', 'CNV BED file',
-                        'AA PDF file', 'AA PNG file',
-                        'Graph PNG file', 'Graph PDF file',
-                        'Cycles PNG file', 'Cycles PDF file',
-                        'AA graph file', 'AA cycles file',
-                        'Graph file', 'Cycles file',
-                        'Run metadata JSON', 'Sample metadata JSON',
-                    ]
-                    for k in key_names:
+                    # The list lives in project_version_cleanup so the deletion
+                    # paths cannot fall behind what this loop uploads.
+                    for k in FEATURE_FILE_KEYS:
                         if k not in feature:
                             continue
                         try:

@@ -1,6 +1,10 @@
 from bson import ObjectId
 
 from caper.project_version_cleanup import (
+    DIRECTORY_FILE_KEYS,
+    FEATURE_FILE_KEYS,
+    GRIDFS_FILE_KEYS,
+    PROJECT_FILE_KEYS,
     build_deleted_version_tombstone,
     delete_gridfs_payload_for_project,
     iter_gridfs_file_ids,
@@ -584,3 +588,48 @@ def test_retarget_deleted_version_tombstones_points_to_new_latest():
     assert modified == 1
     assert collection.docs[str(tombstone_id)]['redirect_to_project'] == str(new_latest_id)
     assert collection.docs[str(untouched_tombstone_id)]['redirect_to_project'] != str(new_latest_id)
+
+
+def test_every_uploaded_key_is_also_a_deletable_key():
+    """Every key ingestion writes a GridFS id to must be one the cleanup paths
+    recognise, in both the spaced and underscored spelling.
+
+    A key that is uploaded but not listed for deletion produces a file the site
+    can never reclaim.  Six such keys accumulated before this was caught
+    (Reconstruction directory, Cycles file, Graph file, Graph PNG/PDF file,
+    Run metadata JSON), which is a large part of why the GridFS orphan
+    population exists at all.
+    """
+    for key in FEATURE_FILE_KEYS + DIRECTORY_FILE_KEYS + PROJECT_FILE_KEYS:
+        assert key in GRIDFS_FILE_KEYS, f"{key!r} is uploaded but never deleted"
+        assert key.replace(' ', '_') in GRIDFS_FILE_KEYS, (
+            f"{key!r} is not covered in its underscored spelling"
+        )
+
+
+def test_ingestion_loop_uses_the_shared_key_list():
+    """views.py must iterate the shared constant rather than a private copy.
+
+    The original defect was a hand-maintained list in views.py that drifted
+    from the one the deletion code used.  Importing the same object is what
+    makes drift impossible, so assert the identity rather than the contents.
+    """
+    assert views.FEATURE_FILE_KEYS is FEATURE_FILE_KEYS
+
+
+def test_gridfs_ids_are_found_under_the_coral_era_keys():
+    """Regression: the CoRAL/aggregator-7.0 key names must be walked."""
+    file_id = ObjectId()
+    project = {
+        'runs': {
+            'sample_1': [{
+                'Graph_file': str(file_id),
+                'Reconstruction_directory': str(ObjectId()),
+                'Cycles_file': str(ObjectId()),
+                'Run_metadata_JSON': str(ObjectId()),
+            }],
+        },
+    }
+    found = list(iter_gridfs_file_ids(project))
+    assert file_id in found
+    assert len(found) == 4
