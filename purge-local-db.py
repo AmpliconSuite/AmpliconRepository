@@ -26,29 +26,19 @@ from pymongo import MongoClient
 
 from cleanup_orphaned_projects import collect_protected_ids
 
+# cleanup_orphaned_projects puts caper/ on sys.path, so this import resolves.
+from caper.project_version_cleanup import GRIDFS_FILE_KEYS
+
 
 GRIDFS_COLLECTIONS = ('fs.files', 'fs.chunks')
-APP_GRIDFS_KEYS = {
-    'tarfile',
-    'AA PNG file',
-    'AA PDF file',
-    'Feature BED file',
-    'CNV BED file',
-    'AA directory',
-    'cnvkit directory',
-    'Sample metadata JSON',
-    'AA graph file',
-    'AA cycles file',
-    'AA_PNG_file',
-    'AA_PDF_file',
-    'Feature_BED_file',
-    'CNV_BED_file',
-    'AA_directory',
-    'cnvkit_directory',
-    'Sample_metadata_JSON',
-    'AA_graph_file',
-    'AA_cycles_file',
-}
+
+# Imported, never re-typed. This set decides which files count as REFERENCED,
+# so a key missing from it makes live files look like garbage. The hand-written
+# copy that used to live here was 8 keys behind the application, and measured
+# against prod on 2026-08-25 that gap put **80,170 live GridFS files** into the
+# "unreferenced" bucket -- every one of them still named by a live project
+# document. --reference-strategy app-fields --execute would have deleted them.
+APP_GRIDFS_KEYS = GRIDFS_FILE_KEYS
 
 
 def get_db_handle(db_name, host):

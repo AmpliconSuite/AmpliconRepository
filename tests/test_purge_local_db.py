@@ -72,7 +72,7 @@ def test_find_unreferenced_gridfs_files_ignores_project_referenced_files():
     ]
 
 
-def test_reachable_scope_does_not_protect_deleted_non_current_projects():
+def test_reachable_scope_protects_deleted_non_current_projects():
     active_file = ObjectId()
     deleted_file = ObjectId()
     active_project = {
@@ -91,11 +91,18 @@ def test_reachable_scope_does_not_protect_deleted_non_current_projects():
     }
     collection = FakeCursorCollection([active_project, deleted_project])
 
+    # This test previously asserted the opposite, and that assumption was
+    # wrong. get_one_project() falls back to
+    # {'_id': ..., 'current': False, 'delete': True} (caper/utils.py:722) and
+    # again by project_name (:736), so a superseded version is still reachable
+    # by its old URL. "Reachable" scope must therefore protect its payload;
+    # measured on prod 2026-08-25, 14 such documents resolved by URL and 77
+    # still held a tarfile.
     assert purge_local_db.collect_project_referenced_ids(
         collection,
         scope='reachable',
         strategy='app-fields',
-    ) == {str(active_file)}
+    ) == {str(active_file), str(deleted_file)}
 
 
 def test_app_fields_strategy_does_not_protect_unrecognized_object_id_fields():
@@ -184,3 +191,23 @@ def test_report_tarfile_references_handles_existing_missing_and_absent_tarfiles(
     assert 'Missing tarfile references: 1' in out
     assert 'Projects without tarfile field/value: 1' in out
     assert str(missing_tar) in out
+
+
+def test_app_gridfs_keys_is_the_canonical_set_not_a_copy():
+    """The reference key set decides what counts as garbage.
+
+    A hand-written copy that drifts behind the application makes live files
+    look unreferenced. Measured on prod 2026-08-25, the previous copy was 8
+    keys short and would have marked 80,170 live GridFS files -- all named by
+    live project documents -- as deletable under
+    `--smart-gridfs --reference-strategy app-fields --execute`.
+    """
+    from caper.project_version_cleanup import GRIDFS_FILE_KEYS
+
+    assert purge_local_db.APP_GRIDFS_KEYS == GRIDFS_FILE_KEYS
+
+    # The specific keys whose absence caused the incident.
+    for key in ('Run metadata JSON', 'Run_metadata_JSON',
+                'Reconstruction directory', 'Reconstruction_directory',
+                'Graph_PNG_file', 'Graph_PDF_file', 'Cycles_file', 'Graph_file'):
+        assert key in purge_local_db.APP_GRIDFS_KEYS, key
