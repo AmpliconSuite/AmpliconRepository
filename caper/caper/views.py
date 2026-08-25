@@ -85,6 +85,7 @@ from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
     delete_gridfs_payload_for_project,
+    discard_unrecorded_gridfs_files,
     iter_gridfs_file_ids,
     retarget_deleted_version_tombstones,
 )
@@ -4112,6 +4113,11 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         feature_count = 0
         total_features = sum(len(features) for features in runs.values())
 
+        # Every GridFS id written below, until the project document that names
+        # them is saved.  If this run fails before that point the ids are
+        # discarded, because nothing would ever reference — or delete — them.
+        uploaded_file_ids = []
+
         gfs_start_time = time.time()
         # get cnv, image, bed files
         for sample, features in runs.items():
@@ -4136,14 +4142,26 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                     for k in FEATURE_FILE_KEYS:
                         if k not in feature:
                             continue
+                        id_var = "Not Provided"
                         try:
                             path_var = feature[k]
                             with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
                                 id_var = fs_handle.put(file_var)
+                            uploaded_file_ids.append(id_var)
                             # Explicitly delete the file data reference
                             del path_var
-                        except:
-                            id_var = "Not Provided"
+                        except Exception as upload_error:
+                            # Previously a bare `except:` that silently recorded
+                            # "Not Provided".  A missing artifact left no trace at
+                            # all, so nobody could tell a file had been dropped.
+                            if isinstance(id_var, ObjectId):
+                                discard_unrecorded_gridfs_files(fs_handle, [id_var])
+                                id_var = "Not Provided"
+                            logging.warning(
+                                f"GridFS upload failed for {k!r} in sample {sample!r} "
+                                f"of project {project_id}: {type(upload_error).__name__}: "
+                                f"{upload_error}"
+                            )
                         feature[k] = id_var
 
                     # Existing pages and API clients use AA_PNG/PDF. For 7.0
@@ -4157,6 +4175,12 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                     # Handle AA directory: new-format archives supply a plain directory;
                     # old-format archives supply a .tar.gz file.  Either way we end up with
                     # a named tar.gz blob in GridFS.
+                    # Reset before the try: `id_var` still holds the last id from
+                    # the loop above, and the failure path below deletes whatever
+                    # it points at.  Without this, a directory that fails to
+                    # upload would delete the *previous* artifact — one that the
+                    # document does reference.
+                    id_var = 'Not Provided'
                     try:
                         import io
                         directory_key = (
@@ -4197,8 +4221,16 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         else:
                             with open(full_path, 'rb') as file_var:
                                 id_var = fs_handle.put(file_var)
-                    except:
+                        uploaded_file_ids.append(id_var)
+                    except Exception as upload_error:
+                        if isinstance(id_var, ObjectId):
+                            discard_unrecorded_gridfs_files(fs_handle, [id_var])
                         id_var = 'Not Provided'
+                        logging.warning(
+                            f"GridFS upload failed for {directory_key!r} in sample "
+                            f"{sample!r} of project {project_id}: "
+                            f"{type(upload_error).__name__}: {upload_error}"
+                        )
                     feature[directory_key] = id_var
                     if directory_key == 'Reconstruction directory':
                         feature['AA directory'] = id_var
@@ -4233,6 +4265,10 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
 
         collection_handle.update_one(query, new_val)
 
+        # The document now names every file written above, so they are reachable
+        # and must NOT be discarded if a later step fails.
+        uploaded_file_ids = []
+
         finish_flag = {
             "$set" : {
                 'FINISHED?' : True
@@ -4248,6 +4284,19 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         logging.error(type(anError))  # the exception type
         logging.error(anError.args)  # arguments stored in .args
         logging.error(anError)
+
+        # This handler swallows the error, so without the following the run's
+        # GridFS writes would survive with nothing referencing them: unreachable
+        # by the app and invisible to every deletion path. That is where the
+        # existing orphan population came from.
+        stranded = locals().get('uploaded_file_ids') or []
+        if stranded:
+            discarded = discard_unrecorded_gridfs_files(fs_handle, stranded)
+            logging.error(
+                f"Discarded {discarded} of {len(stranded)} GridFS files written "
+                f"before this failure; they were never recorded in project "
+                f"{project_id} and would otherwise be unreachable."
+            )
         # print error to file called project_extraction_errors.txt that we can
         # see and let owner know to contact an admin
         with open(project_data_path + '/project_extraction_errors.txt', 'a') as fh:

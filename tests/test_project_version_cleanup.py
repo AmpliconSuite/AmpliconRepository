@@ -7,6 +7,7 @@ from caper.project_version_cleanup import (
     PROJECT_FILE_KEYS,
     build_deleted_version_tombstone,
     delete_gridfs_payload_for_project,
+    discard_unrecorded_gridfs_files,
     iter_gridfs_file_ids,
     retarget_deleted_version_tombstones,
 )
@@ -633,3 +634,64 @@ def test_gridfs_ids_are_found_under_the_coral_era_keys():
     found = list(iter_gridfs_file_ids(project))
     assert file_id in found
     assert len(found) == 4
+
+
+def test_discard_unrecorded_gridfs_files_deletes_only_object_ids():
+    """Ingestion accumulates raw ids; sentinels like "Not Provided" must not
+    be passed to fs.delete()."""
+    fs = FakeGridFS()
+    good_a, good_b = ObjectId(), ObjectId()
+
+    deleted = discard_unrecorded_gridfs_files(
+        fs, [good_a, 'Not Provided', None, good_b, str(ObjectId())]
+    )
+
+    assert deleted == 2
+    assert fs.deleted == [str(good_a), str(good_b)]
+
+
+def test_discard_unrecorded_gridfs_files_never_masks_the_original_error():
+    """A failure to clean up must not raise: the caller is already handling a
+    more important exception, and losing it would hide the real cause."""
+    class ExplodingGridFS:
+        def __init__(self):
+            self.attempts = 0
+
+        def delete(self, file_id):
+            self.attempts += 1
+            raise RuntimeError('gridfs is unreachable')
+
+    fs = ExplodingGridFS()
+    assert discard_unrecorded_gridfs_files(fs, [ObjectId(), ObjectId()]) == 0
+    assert fs.attempts == 2
+
+
+def test_discard_unrecorded_gridfs_files_tolerates_empty_input():
+    fs = FakeGridFS()
+    assert discard_unrecorded_gridfs_files(fs, []) == 0
+    assert discard_unrecorded_gridfs_files(fs, None) == 0
+    assert fs.deleted == []
+
+
+def test_ingestion_discards_files_it_cannot_record():
+    """The orphan factory, guarded.
+
+    extract_project_files() writes artifacts to GridFS before the document that
+    names them is saved, and its outer handler swallows exceptions.  Assert the
+    source actually resets the tracking list only after the document is written,
+    and discards on the failure path -- the ordering is the whole correctness
+    argument and is easy to silently break.
+    """
+    import inspect
+
+    source = inspect.getsource(views.extract_project_files)
+
+    assert 'uploaded_file_ids = []' in source
+    assert 'discard_unrecorded_gridfs_files' in source
+
+    # The reset must come AFTER the update that records the ids, otherwise a
+    # later failure would delete files the project legitimately references.
+    record_at = source.index('collection_handle.update_one(query, new_val)')
+    reset_at = source.index('uploaded_file_ids = []', record_at)
+    discard_at = source.index('discard_unrecorded_gridfs_files(fs_handle, stranded)')
+    assert record_at < reset_at < discard_at

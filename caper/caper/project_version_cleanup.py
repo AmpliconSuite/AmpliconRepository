@@ -100,6 +100,34 @@ def delete_gridfs_payload_for_project(fs_handle, project, protected_file_ids=Non
     return deleted
 
 
+def discard_unrecorded_gridfs_files(fs_handle, file_ids):
+    """
+    Delete GridFS files that were written but will never be referenced.
+
+    Ingestion writes each artifact to GridFS *before* the project document that
+    names it is updated.  If anything fails in between, those bytes become
+    unreachable: no document points at them, so no deletion path will ever
+    collect them, and they are billed forever.  That window is where the
+    existing orphan population came from.
+
+    Callers accumulate ids as they write them and pass them here on failure.
+    Best-effort by design — a file that cannot be deleted must not mask the
+    original error, which is the thing the operator actually needs to see.
+
+    Returns the number of files actually deleted.
+    """
+    deleted = 0
+    for file_id in (file_ids or ()):
+        if file_id is None or not isinstance(file_id, ObjectId):
+            continue
+        try:
+            fs_handle.delete(file_id)
+            deleted += 1
+        except Exception:
+            pass
+    return deleted
+
+
 def build_deleted_version_tombstone(old_project, latest_project, deleter, delete_date):
     tombstone = {
         '_id': old_project['_id'],
