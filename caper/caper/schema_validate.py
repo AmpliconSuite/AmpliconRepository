@@ -9,6 +9,15 @@ import copy
 from jsonschema import Draft7Validator
 from typing import Any, Dict, List, Optional, Tuple
 
+# This module is both imported (caper.schema_validate, by views_admin and the
+# tests) and run directly as a script, so the resolver import has to work under
+# both.  It is not optional: the "skip deleted projects" test below is a status
+# predicate, and Phase 0's whole point is that there is one copy of it.
+try:
+    from .project_status import DELETE_FLAG_QUERY, matches
+except ImportError:  # executed as a standalone script
+    from project_status import DELETE_FLAG_QUERY, matches
+
 # Import the database utilities from utils module
 # Adjust the import based on your project structure
 try:
@@ -179,8 +188,10 @@ def validate_collection(
         for doc in cursor:
             doc_count += 1
 
-            # Skip deleted projects
-            deleted = doc.get('delete', False)
+            # Skip deleted projects.  matches() is type-bracketed the way Mongo
+            # is, so a document with a non-boolean flag is not silently treated
+            # as deleted the way `doc.get('delete', False)` truthiness would.
+            deleted = matches(doc, DELETE_FLAG_QUERY)
             if deleted:
                 skipped_deleted_count += 1
                 continue
@@ -595,8 +606,10 @@ def run_fix_schema(
         documents_processed += 1
         doc_id_str = str(doc["_id"])
 
-        # Skip deleted projects
-        deleted = doc.get('delete', False)
+        # Skip deleted projects.  matches() is type-bracketed the way Mongo is,
+        # so a document with a non-boolean flag is not silently treated as
+        # deleted the way `doc.get('delete', False)` truthiness would.
+        deleted = matches(doc, DELETE_FLAG_QUERY)
         if deleted:
             documents_skipped += 1
             continue

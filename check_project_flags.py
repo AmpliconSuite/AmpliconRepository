@@ -21,6 +21,7 @@ try:
     import django
     django.setup()
     from caper.utils import collection_handle
+    from caper.project_status import DETACHED, classify, is_reachable_by_url
     print("✓ Using Django database connection")
     using_django = True
 except ImportError as e:
@@ -164,14 +165,14 @@ def main():
     print()
     
     # Find all projects with delete=False and current=False
-    old_versions = []
-    for project in all_projects:
-        delete_val = project.get('delete', None)
-        current_val = project.get('current', None)
-        
-        # Must have delete=False and current=False
-        if delete_val == False and current_val == False:
-            old_versions.append(project)
+    # DETACHED is the resolver's name for a document matching none of the four
+    # defined flag pairs.  The is_reachable_by_url() conjunct is what keeps this
+    # to the delete=False/current=False population rather than widening to all
+    # 109 ambiguous documents: the other 70 are delete=True with no 'current'
+    # field, which is equally DETACHED but is reachable by neither resolver
+    # step.  Spec D2/D3 and §12.
+    old_versions = [project for project in all_projects
+                    if classify(project) == DETACHED and is_reachable_by_url(project)]
     
     if not old_versions:
         print("✓ No projects found with delete=False and current=False")

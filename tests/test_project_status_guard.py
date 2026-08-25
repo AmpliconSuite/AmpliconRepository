@@ -36,14 +36,62 @@ RESOLVER = os.path.join('caper', 'caper', 'project_status.py')
 
 APPLICATION_PACKAGE = os.path.join('caper', 'caper')
 
-# Two spellings, because the codebase uses both and the audit's own grep for
-# `'delete':` saw only the first:
-#   {'delete': False}     -- a dict key, in a filter, a $set or a document
+# Four spellings, because the codebase uses all four:
+#   {'delete': False}          -- a dict key, in a filter, a $set or a document
 #   project['delete'] = False  -- item assignment while building a document
-# The second form is how _create_project() built every project document on the
-# site, and no grep in the audit had looked for it.
+#   doc.get('delete', ...)     -- reading the flag back out
+#   doc['delete'] == False     -- comparing it
+#
+# The first two were what the original guard caught, and finding them was
+# already worth the file.  The last two were the hole: a predicate spelled
+# `delete_val == False and current_val == False` contains no quoted flag
+# adjacent to a colon or an assignment, so the earlier pattern walked past
+# check_project_flags.py's orphan finder, its Django twin, views_apis.py's
+# "is this the live one" test, and schema_validate.py's skip-deleted test --
+# four more copies of the predicate, one of them in a live API path.
+#
+# That is the whole lesson of this codebase in miniature: the guard was written
+# to catch the spelling the last bug happened to use.  Reading the flag is as
+# much a re-derivation as querying it, so the pattern now covers reads too, and
+# the display-only reads are listed as allowances below.
 FLAG_LITERAL = re.compile(
-    r"""['"](?:delete|current)['"]\s*(?::|\]\s*=(?!=))""")
+    r"""['"](?:delete|current)['"]\s*(?::|\]\s*(?:=(?!=)|==|!=|\sis\s)|[,)])""")
+
+
+# Widening the pattern to cover reads turned up 36 lines, none of them
+# predicates: index field-name tuples, a form's `fields`, argparse choices,
+# display reads defaulting to 'NOT SET'.  Listing all 36 individually would
+# have made the allowance table four times the size of the guard, and a table
+# that big stops being read -- which is how the previous hole survived.
+#
+# So benign *shapes* are named once here, with the property that makes each
+# safe, rather than line by line.  The test below asserts every one of these
+# still matches something, so a shape that stops occurring gets deleted rather
+# than sitting here widening the guard for nothing.
+BENIGN_READS = [
+    (re.compile(r'^\s*#'),
+     "a comment; prose about the flags is not a use of them"),
+    (re.compile(r"""\.get\(['"](?:delete|current)['"],\s*['"]NOT SET['"]\)"""),
+     "read with a string sentinel default -- formats a flag for display, and a "
+     "sentinel that is neither True nor False cannot be mistaken for a decision"),
+    (re.compile(r"""check_flag_value\([^)]*['"](?:delete|current)['"]\)"""),
+     "the display helper in the flag-report scripts; it returns a label, not a "
+     "verdict"),
+    (re.compile(r"""['"](?:delete|current)['"]\s*[,)]"""
+                r"""(?![^#]*(?:==|!=|\bis\b|\bnot\b))"""),
+     "the flag named as a field, not tested: an index spec, a form's field "
+     "list, a projection, a key tuple, an argparse choice.  The lookahead is "
+     "what keeps this narrow -- a line that names the flag and then compares "
+     "anything on the same line is not covered here and needs its own reason"),
+]
+
+
+def _benign_reason(text):
+    """The first benign shape matching this line, or None."""
+    for pattern, reason in BENIGN_READS:
+        if pattern.search(text):
+            return reason
+    return None
 
 
 # Every remaining occurrence, keyed by file and by the text of the line, with
@@ -91,6 +139,11 @@ ALLOWED = {
     ('purge-local-db.py',
      "if scope == 'current':"):
         "string comparison on a --reference-scope argument named 'current'",
+    ('purge-local-db.py',
+     "choices=['reachable', 'active', 'current', 'not-deleted', 'all'],"):
+        "argparse choices for --reference-scope.  Named here rather than left "
+        "to the field-name shape because the neighbouring choice 'not-deleted' "
+        "contains the word 'not', which trips that shape's comparison lookahead",
     ('purge-local-db.py',
      "for project in projects.find({}, {'_id': 1, 'project_name': 1, "
      "'current': 1, 'delete': 1, 'tarfile': 1}):"):
@@ -163,7 +216,7 @@ def test_no_unlisted_delete_or_current_literal():
     """
     unlisted = [(path, number, text)
                 for path, number, text in _occurrences()
-                if (path, text) not in ALLOWED]
+                if (path, text) not in ALLOWED and _benign_reason(text) is None]
 
     assert not unlisted, "unlisted 'delete'/'current' literals:\n" + "\n".join(
         f"  {path}:{number}: {text}" for path, number, text in unlisted)
@@ -188,6 +241,45 @@ def test_every_allowance_matches_exactly_one_line():
         f"{ {f'{p}: {t}': n for (p, t), n in wrong.items()} }")
 
 
+def test_every_benign_shape_still_matches_something():
+    """A benign shape that matches nothing is a hole with no purpose.
+
+    Each entry in BENIGN_READS widens the guard.  That is only worth it while
+    the shape actually occurs; once it stops, the entry should go, not sit here
+    quietly excusing whatever grows into it later.
+    """
+    lines = [text for _path, _number, text in _occurrences()]
+    dead = [reason for pattern, reason in BENIGN_READS
+            if not any(pattern.search(text) for text in lines)]
+
+    assert not dead, (
+        "these benign shapes no longer match any line and should be deleted "
+        f"rather than left widening the guard: {dead}")
+
+
+def test_a_predicate_spelled_as_a_comparison_is_caught():
+    """The regression that motivated widening the pattern.
+
+    ``delete_val == False and current_val == False`` -- the DETACHED predicate
+    as check_project_flags.py spelled it -- contains no quoted flag next to a
+    colon, so the original pattern walked past it.  What it does contain is the
+    read that feeds it.  This pins the read forms as caught and, just as
+    importantly, pins them as *not* benign: shape 4's lookahead must decline a
+    line that goes on to compare something.
+    """
+    predicate_reads = [
+        "        delete_val = project.get('delete', None)",
+        "        current_val = project.get('current', None)",
+        "        if project.get('delete') == False:",
+        "        if doc['current'] is False:",
+    ]
+    for line in predicate_reads:
+        assert FLAG_LITERAL.search(line), f"pattern no longer catches: {line}"
+
+    assert _benign_reason("        if project.get('delete') == False:") is None
+    assert _benign_reason("        if doc['current'] is False:") is None
+
+
 def test_the_resolver_is_where_the_predicate_lives():
     """Sanity: the one exempt file is actually the one holding the definitions."""
     with open(os.path.join(REPO_ROOT, RESOLVER), encoding='utf-8') as handle:
@@ -209,6 +301,7 @@ def test_the_resolver_is_where_the_predicate_lives():
     'caper.account_deletion',
     'caper.account_signals',
     'caper.project_version_cleanup',
+    'caper.schema_validate',
 ])
 def test_status_consumers_import_the_resolver(module):
     """Every module that used to spell the predicate out now imports it.
@@ -229,6 +322,8 @@ def test_status_consumers_import_the_resolver(module):
     'purge-local-db.py',
     'restore_sample_csv_metadata.py',
     'migrate_project_visibility.py',
+    'check_project_flags.py',
+    'check_project_flags_django.py',
 ])
 def test_operational_scripts_import_the_resolver(script):
     """The scripts are where both incidents happened.  They read the predicate
