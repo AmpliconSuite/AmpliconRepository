@@ -5,14 +5,27 @@ cleanup_orphaned_projects.py
 Safely cleans up orphaned projects that are no longer reachable by the
 application through any code path.
 
-Protected projects (NEVER deleted by this script):
-  1. Active projects        – current=True  AND delete=False
-  2. Soft-deleted projects  – delete=True   AND current=True
-     (visible on the admin "permanently delete" page; can be un-deleted)
-  3. Previous versions of any protected project – referenced in
-     previous_versions[].linkid of a project from group 1 or 2
-  4. Any project with delete=False – reachable via get_one_project()
-     by direct URL regardless of the 'current' flag
+Protected projects (NEVER deleted by this script).  Every rule below mirrors a
+specific query in caper/utils.py; the line references are load-bearing, because
+this list drifting out of step with the resolver is exactly how this script
+became dangerous once already:
+
+  1. delete=False – findable by get_one_project() via _id, alias_name or
+     project_name, regardless of the 'current' flag   (utils.py:692/703/711)
+  2. delete=True AND current=True – shown on the admin "permanently delete"
+     page and can be un-deleted by an admin
+  3. delete=True AND current=False – STILL RESOLVABLE BY URL.  get_one_project()
+     falls back to exactly this query, by _id and again by project_name
+     (utils.py:722 and utils.py:736), logging "had to use previous project
+     ids!".  These are superseded project versions, and old links to them work
+     today.
+  4. delete=True with NO 'current' field – not resolvable right now only
+     because {'current': False} does not match a missing field.  One routine
+     backfill away from being reachable, and on prod these hold real payloads.
+     Reported for human review, never deleted.
+  5. Previous versions of anything protected above – referenced in
+     previous_versions[].linkid
+  6. Deleted-version redirect tombstones
 
 Everything else in the projects collection is considered orphaned and
 is cleaned up from:
@@ -26,8 +39,10 @@ tmp/ directory for UUID-like folders that have no corresponding project
 in the database and removes them (and their S3 counterparts).
 
 Usage:
-    source caper/config.sh && cd caper && python ../cleanup_orphaned_projects.py --dry-run
-    source caper/config.sh && cd caper && python ../cleanup_orphaned_projects.py
+    source caper/config.sh && python cleanup_orphaned_projects.py
+    source caper/config.sh && python cleanup_orphaned_projects.py --execute
+
+    Reporting is the default.  Nothing is deleted without --execute.
 
 Requirements:
     - Environment variables set via  source caper/config.sh
@@ -46,6 +61,13 @@ import argparse
 from bson import ObjectId
 from pymongo import MongoClient
 import gridfs
+
+# The canonical GridFS key list lives with the application so the upload path
+# and every delete path share one definition.  Importing it here — rather than
+# keeping a second hand-written copy, which is what this script used to do —
+# is the only way the two cannot drift.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
+from caper.project_version_cleanup import GRIDFS_FILE_KEYS, iter_gridfs_file_ids
 
 # Optional: boto3 for S3 cleanup
 try:
@@ -80,6 +102,16 @@ def get_db_handle(db_name, host):
     return db_handle, client
 
 
+def redact_uri(uri):
+    """Strip credentials from a Mongo URI so it can be logged.
+
+    The previous version logged DB_URI_SECRET verbatim, which put the database
+    password into every log file and every terminal scrollback this script
+    touched.
+    """
+    return re.sub(r'://[^@/]+@', '://<credentials-redacted>@', str(uri))
+
+
 def is_uuid_like(name):
     """True when *name* looks like a MongoDB ObjectId or uuid4 hex string."""
     return bool(OBJECTID_RE.match(name) or UUID_HEX_RE.match(name))
@@ -94,15 +126,27 @@ def previous_version_linkid(previous_version):
     return None
 
 
-def get_s3_client(aws_profile):
-    """Create an S3 client or return None if unavailable."""
+def get_s3_client(aws_profile, bucket=None):
+    """Create an S3 client or return None if unavailable.
+
+    The connectivity check is `head_bucket` on the bucket this script actually
+    uses, not `list_buckets`.  `list_buckets` needs s3:ListAllMyBuckets, which
+    the prod EC2 role does not have and does not need — so the old check failed
+    on prod every run and silently skipped all S3 cleanup.
+    """
     if not HAS_BOTO3:
         logger.warning("boto3 is not installed – S3 cleanup will be skipped.")
         return None
     try:
-        session = boto3.Session(profile_name=aws_profile)
+        # An instance role is the normal case on the servers; a named profile
+        # only exists on developer machines.
+        try:
+            session = boto3.Session(profile_name=aws_profile)
+        except Exception:
+            session = boto3.Session()
         client = session.client('s3')
-        client.list_buckets()  # quick connectivity check
+        if bucket:
+            client.head_bucket(Bucket=bucket)
         return client
     except Exception as e:
         logger.warning(f"Could not create S3 client (profile={aws_profile!r}): {e}")
@@ -117,38 +161,43 @@ def collect_protected_ids(collection):
     """
     Return a set of project _id strings that must NOT be deleted.
 
-    A project is protected if it is reachable through any application
-    code path:
+    A project is protected if get_one_project() can return it, or an admin can
+    reach it.  Each rule below names the query in caper/utils.py it mirrors.
 
-      (a) delete=False  – findable by get_one_project() via direct URL
-          regardless of the 'current' flag.
-      (b) delete=True AND current=True  – shown on the admin
-          "permanently delete" page; an admin can un-delete these.
-      (c) Any project referenced in previous_versions[].linkid of a
-          project that is itself protected by (a) or (b).
+      (a) delete=False                  – utils.py:692 / :703 / :711
+      (b) delete=True AND current=True  – admin "permanently delete" page
+      (c) delete=True AND current=False – utils.py:722 / :736.  This rule was
+          MISSING and its absence made the script delete live URLs.
+      (d) previous_versions[].linkid of anything protected above
+      (e) deleted-version redirect tombstones
     """
     protected = set()
 
-    # ── (a) Every non-deleted project ────────────────────────────────
-    for doc in collection.find({'delete': False}, {'_id': 1, 'previous_versions': 1}):
+    def protect(doc):
         protected.add(str(doc['_id']))
-        # also protect its previous versions  (c)
-        for pv in doc.get('previous_versions', []):
+        for pv in doc.get('previous_versions', []):      # rule (d)
             lid = previous_version_linkid(pv)
             if lid:
                 protected.add(str(lid))
 
-    # ── (b) Soft-deleted projects on the admin page ──────────────────
-    for doc in collection.find({'delete': True, 'current': True},
-                               {'_id': 1, 'previous_versions': 1}):
-        protected.add(str(doc['_id']))
-        # also protect their previous versions  (c)
-        for pv in doc.get('previous_versions', []):
-            lid = previous_version_linkid(pv)
-            if lid:
-                protected.add(str(lid))
+    projection = {'_id': 1, 'previous_versions': 1}
 
-    # ── (d) Deleted-version redirect tombstones ──────────────────────
+    # ── (a) Anything not soft-deleted ────────────────────────────────
+    for doc in collection.find({'delete': False}, projection):
+        protect(doc)
+
+    # ── (b) Soft-deleted, still on the admin page ────────────────────
+    for doc in collection.find({'delete': True, 'current': True}, projection):
+        protect(doc)
+
+    # ── (c) Superseded versions — STILL RESOLVABLE BY URL ────────────
+    # get_one_project() falls back to this exact query by _id and by
+    # project_name.  Old links to superseded versions resolve today; deleting
+    # these documents breaks them and destroys the payload behind them.
+    for doc in collection.find({'delete': True, 'current': False}, projection):
+        protect(doc)
+
+    # ── (e) Deleted-version redirect tombstones ──────────────────────
     # These keep old UUIDs resolvable after their heavy GridFS payload has
     # been purged and should not be removed as orphan project documents.
     for doc in collection.find(
@@ -159,6 +208,63 @@ def collect_protected_ids(collection):
         protected.add(str(doc['_id']))
 
     return protected
+
+
+def is_resolvable_by_url(collection, project_id, project_name=None):
+    """
+    True if get_one_project() could still return this document.
+
+    Mirrors caper/utils.py:692, :703, :711, :722 and :736 as *queries against
+    the live database*, one document at a time.  collect_protected_ids() works
+    in bulk for speed; this exists to be asked again immediately before a
+    delete, so the two have to disagree before anything reachable is lost.
+    """
+    try:
+        oid = ObjectId(project_id)
+    except Exception:
+        oid = None
+
+    queries = []
+    if oid is not None:
+        queries.append({'_id': oid, 'delete': False})                       # :692
+        queries.append({'_id': oid, 'current': False, 'delete': True})      # :722
+    if project_name:
+        queries.append({'alias_name': project_name, 'delete': False})       # :703
+        queries.append({'project_name': project_name, 'delete': False})     # :711
+        queries.append({'project_name': project_name,
+                        'current': False, 'delete': True})                  # :736
+
+    for query in queries:
+        try:
+            hit = collection.find_one(query, {'_id': 1})
+        except Exception:
+            # A query that cannot be evaluated must not read as "safe to delete".
+            return True
+        # The name lookups can match a *different* document that happens to
+        # share a name — that document being reachable says nothing about this
+        # one. Only a hit on this exact _id means this document is reachable.
+        if hit is not None and str(hit['_id']) == str(project_id):
+            return True
+    return False
+
+
+def collect_needs_review_ids(collection):
+    """
+    Documents that are unreachable only because a field is *missing*.
+
+    `{'current': False}` does not match a document with no 'current' field, so
+    a soft-deleted document lacking that field escapes rule (c) above on a
+    technicality.  Backfilling 'current' — an obvious hygiene action — would
+    make every one of them resolvable again.
+
+    On prod this class is 70 documents and most of them still hold a GridFS
+    tarfile.  They are reported, never deleted: a human decides.
+    """
+    return {
+        str(doc['_id'])
+        for doc in collection.find(
+            {'delete': True, 'current': {'$exists': False}}, {'_id': 1})
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -205,64 +311,39 @@ def delete_s3_prefix(s3_client, bucket, prefix, dry_run=False):
 
 def delete_gridfs_files_for_project(fs_handle, project, dry_run=False):
     """
-    Delete GridFS files owned by *project*:
-      - the project tarfile
-      - per-sample feature files (PNG, PDF, BED, graph, cycles, …)
-    Returns total count of files deleted / that would be deleted.
+    Delete every GridFS file the *project* document names — the tarfile, the
+    per-sample feature files, and the directory-shaped payloads.
+
+    The traversal is the application's own: `iter_gridfs_file_ids` walks the
+    whole document rather than a list of key names maintained here.  The
+    hand-written list this replaced was missing 8 canonical keys, including
+    'Run metadata JSON' (120,726 live values on prod) and
+    'Reconstruction directory' (33,758) — every cleanup silently left those
+    files behind, which is one of the ways the orphan population grew.
+
+    Returns the count deleted, or the count that would be deleted.
     """
-    count = 0
+    file_ids = []
+    seen = set()
+    for file_id in iter_gridfs_file_ids(project):
+        if file_id in seen:
+            continue
+        seen.add(file_id)
+        file_ids.append(file_id)
 
-    # ── tarfile ──────────────────────────────────────────────────────
-    tar_id = project.get('tarfile')
-    if tar_id:
+    if dry_run:
+        for file_id in file_ids:
+            logger.debug(f"  [DRY RUN] Would delete GridFS: {file_id}")
+        return len(file_ids)
+
+    deleted = 0
+    for file_id in file_ids:
         try:
-            if dry_run:
-                logger.info(f"  [DRY RUN] Would delete GridFS tarfile: {tar_id}")
-            else:
-                fs_handle.delete(ObjectId(str(tar_id)))
-                logger.debug(f"  Deleted GridFS tarfile: {tar_id}")
-            count += 1
+            fs_handle.delete(file_id)
+            deleted += 1
         except Exception as e:
-            logger.debug(f"  Could not delete GridFS tarfile {tar_id}: {e}")
-
-    # ── per-sample feature files ─────────────────────────────────────
-    # Union of keys from admin_permanent_delete_project (views_admin.py)
-    # and the newer deletion code path that iterates dicts.
-    feature_keys = [
-        'AA PNG file', 'AA PDF file', 'Feature BED file', 'CNV BED file',
-        'AA directory', 'cnvkit directory',
-        'Sample metadata JSON', 'AA graph file', 'AA cycles file',
-        'AA_PNG_file', 'AA_PDF_file', 'Feature_BED_file', 'CNV_BED_file',
-        'AA_directory', 'cnvkit_directory',
-        'Sample_metadata_JSON', 'AA_graph_file', 'AA_cycles_file',
-    ]
-
-    runs = project.get('runs', {})
-    try:
-        for sample_name, features in runs.items():
-            if not isinstance(features, list):
-                continue
-            for feature in features:
-                if not isinstance(feature, dict):
-                    continue
-                for key in feature_keys:
-                    fid = feature.get(key)
-                    if fid and fid != 'Not Provided':
-                        try:
-                            if dry_run:
-                                logger.debug(
-                                    f"  [DRY RUN] Would delete GridFS: {fid} ({key})")
-                            else:
-                                fs_handle.delete(ObjectId(str(fid)))
-                                logger.debug(f"  Deleted GridFS: {fid} ({key})")
-                            count += 1
-                        except Exception as e:
-                            logger.debug(
-                                f"  Could not delete GridFS {fid} ({key}): {e}")
-    except Exception as e:
-        logger.error(f"  Error walking runs for GridFS cleanup: {e}")
-
-    return count
+            logger.debug(f"  Could not delete GridFS {file_id}: {e}")
+    return deleted
 
 
 def delete_local_directory(name, tmp_dir, dry_run=False):
@@ -291,19 +372,27 @@ def main():
         description='Clean up orphaned projects from MongoDB, GridFS, '
                     'local disk, and S3.')
     parser.add_argument(
+        '--execute', action='store_true',
+        help='Actually delete. Without this the script only reports.')
+    parser.add_argument(
         '--dry-run', action='store_true',
-        help='Show what would be deleted without changing anything.')
+        help='Deprecated; reporting is now the default and this is a no-op.')
     parser.add_argument(
         '--verbose', '-v', action='store_true',
         help='Enable DEBUG-level logging.')
     args = parser.parse_args()
+
+    # Reporting is the default. This script once deleted 84 documents on prod
+    # that the application could still resolve, so the destructive path is
+    # opt-in rather than opt-out.
+    args.dry_run = not args.execute
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
     if args.dry_run:
         logger.info("=" * 70)
-        logger.info("DRY RUN MODE — no changes will be made")
+        logger.info("REPORT MODE — no changes will be made (pass --execute to delete)")
         logger.info("=" * 70)
 
     # ─── Configuration from environment ──────────────────────────────
@@ -332,7 +421,8 @@ def main():
             logger.warning(f"tmp/ not found at {tmp_dir} or {alt}; "
                            "local cleanup may be incomplete.")
 
-    logger.info(f"Database     : {db_name} @ {db_uri}")
+    # Never log the URI itself — it carries the password.
+    logger.info(f"Database     : {db_name} @ {redact_uri(db_uri)}")
     logger.info(f"S3 enabled   : {use_s3}")
     if use_s3:
         logger.info(f"S3 bucket    : {s3_bucket}")
@@ -346,7 +436,7 @@ def main():
 
     s3_client = None
     if use_s3:
-        s3_client = get_s3_client(aws_profile)
+        s3_client = get_s3_client(aws_profile, s3_bucket)
         if s3_client is None:
             logger.warning("S3 cleanup will be skipped.")
 
@@ -365,7 +455,31 @@ def main():
     all_ids = {str(p['_id']) for p in all_projects}
     logger.info(f"  Total projects in database           : {len(all_ids)}")
 
-    orphaned_ids = all_ids - protected_ids
+    # Unreachable only because a field is absent — never deleted automatically.
+    review_ids = collect_needs_review_ids(collection) - protected_ids
+    if review_ids:
+        logger.info("")
+        logger.warning(
+            f"  {len(review_ids)} document(s) are soft-deleted with NO 'current' "
+            f"field.")
+        logger.warning(
+            "  They escape the URL-resolution rule on a technicality: "
+            "{'current': False}")
+        logger.warning(
+            "  does not match a missing field. Backfilling 'current' would make "
+            "them")
+        logger.warning(
+            "  resolvable again, and most still hold a GridFS payload. "
+            "NOT DELETED —")
+        logger.warning("  decide about these deliberately:")
+        for rid in sorted(review_ids):
+            doc = next((p for p in all_projects if str(p['_id']) == rid), {})
+            logger.warning(
+                f"    {rid}  {str(doc.get('project_name'))[:44]!r}  "
+                f"tarfile={'yes' if doc.get('tarfile') else 'no'}")
+
+    orphaned_ids = all_ids - protected_ids - review_ids
+    logger.info("")
     logger.info(f"  Orphaned projects to clean up        : {len(orphaned_ids)}")
 
     # Show breakdown of protected projects
@@ -400,6 +514,18 @@ def main():
             logger.info("")
             logger.info(f"  [{idx}/{len(orphaned_ids)}] {name}")
             logger.info(f"    _id={pid}  current={cur}  delete={dlt}")
+
+            # 2·0 Last-line guard, independent of the rules above.
+            # collect_protected_ids() replicates queries that live in
+            # caper/utils.py, and replication is how this script came to delete
+            # live URLs. Re-ask the database directly, per document, so a future
+            # drift between the two costs nothing.
+            if is_resolvable_by_url(collection, pid, name):
+                logger.error(
+                    f"    REFUSING to delete {pid}: get_one_project() can still "
+                    f"resolve it. The protection rules and the resolver have "
+                    f"drifted apart — fix collect_protected_ids().")
+                continue
 
             # 2a. GridFS
             g = delete_gridfs_files_for_project(fs, project,
