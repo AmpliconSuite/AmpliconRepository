@@ -481,6 +481,128 @@ That is what makes a torn multi-document chain reconstructible (§5.3).
 
 ---
 
+## 6A · Worked transitions
+
+The schema in §6 is only useful if every mutation has one defined before/after.
+These are the five that matter. Each is written as the state change, the events
+emitted, and the invariants that must survive it.
+
+**Read `delete_project_version()` (`caper/views.py:2914` onward) alongside this.**
+It is the operation these replace, and it is where the current model hurts most.
+
+### T1 · New version created (re-aggregation)
+
+```
+before:  A[ordinal=1, is_latest=True,  status=LIVE]
+after:   A[ordinal=1, is_latest=False, status=SUPERSEDED, next_version_id=B]
+         B[ordinal=2, is_latest=True,  status=LIVE, previous_version_id=A,
+           version_chain_id = A.version_chain_id]
+events:  EDIT_NEW_VERSION  (before/after on A and B)
+holds:   I3 (one head), I4 (contiguous ordinals), I5 (mutual inverses)
+```
+
+A keeps its payload. `SUPERSEDED` is reachable by URL — that is the point.
+
+### T2 · A non-head version is deleted from history
+
+This is the case the question "replace a historical version with a tombstone and
+delete the old project" describes.
+
+```
+before:  A[ordinal=1, SUPERSEDED] -> B[ordinal=2, SUPERSEDED] -> C[ordinal=3, LIVE]
+delete B
+after:   A[ordinal=1, SUPERSEDED, next_version_id=B]      <-- unchanged
+         B[ordinal=2, status=TOMBSTONE, payload_state=purged,
+           redirect_to_project=C, previous_version_id=A, next_version_id=C]
+         C[ordinal=3, LIVE, previous_version_id=B]        <-- unchanged
+events:  VERSION_DELETED, then PAYLOAD_PURGED
+holds:   I4 (B keeps ordinal 2 — the chain does NOT renumber),
+         I5 (A<->B and B<->C still mutual), I8 + I14 (no GridFS ids remain on B)
+```
+
+**The tombstone stays in the chain.** It is a node whose payload is gone, not a
+node that is gone. That is what keeps `/project/<B>` resolving, and it is why
+ordinals must not be renumbered on delete — renumbering would break I4 for every
+downstream version and invalidate every audit event referencing the old ordinal.
+
+Contrast with today: B is `replace_one`'d wholesale by a tombstone document, its
+position in history is reconstructed by merging `previous_versions[]` with
+tombstone documents, and `retarget_deleted_version_tombstones()` must walk and
+repoint every other tombstone. In the target model, B's neighbours do not change
+at all.
+
+### T3 · The head version is deleted, a previous version is promoted
+
+```
+before:  A[ordinal=1, SUPERSEDED] -> B[ordinal=2, LIVE]
+delete B
+after:   A[ordinal=1, status=LIVE, is_latest=True, next_version_id=None]
+         B[ordinal=2, status=TOMBSTONE, payload_state=purged,
+           redirect_to_project=A, previous_version_id=A, next_version_id=None]
+events:  VERSION_DELETED, VERSION_PROMOTED, PAYLOAD_PURGED
+holds:   I3 (exactly one is_latest — A), I7 (A is LIVE and no longer a member
+         of anyone else's chain)
+```
+
+Note the shape: `is_latest` moves backwards along the chain while ordinals stay
+fixed. `is_latest` is position-in-time; `version_ordinal` is identity. Conflating
+them is how the current model ends up needing "Un-delete."
+
+**Two hazards this transition carries today, both must be fixed here:**
+
+1. **Promotion order comes from array position.** `prev_versions_list[-1]`
+   (`views.py:2944`) picks the last element of `previous_versions[]`. Nothing
+   guarantees that array is ordered, and production contains same-day version
+   pairs where a date sort would also tie. **Use `version_ordinal`** — promote
+   `max(ordinal)` among surviving non-tombstone members.
+2. **Project-level metadata is carried forward by a hardcoded list** — see D12.
+
+### T4 · Project soft-deleted, then restored
+
+```
+before:  A[SUPERSEDED] -> B[LIVE]
+after:   A[SUPERSEDED] -> B[status=SOFT_DELETED, is_latest=True]
+events:  SOFT_DELETED / RESTORED
+holds:   I3 (B is still the head — soft delete does not move the head),
+         payload retained on both
+```
+
+`SOFT_DELETED` applies to the head and therefore to the whole lineage. It is a
+visibility state, not a lineage state. A `SUPERSEDED` member of a soft-deleted
+chain stays `SUPERSEDED`.
+
+### T5 · Permanent delete of an entire project
+
+```
+before:  A[SUPERSEDED] -> B[SUPERSEDED] -> C[SOFT_DELETED, is_latest]
+after:   every member TOMBSTONE, payload_state=purged, redirect_to_project=None
+         chain retained, marked retired=True on the chain document
+events:  PERMANENTLY_DELETED (one per member)
+holds:   I8, I14 on every member
+```
+
+**Documents are not removed.** The lineage survives as tombstones so old URLs
+give "this project was deleted" rather than a 404, and so the audit trail still
+resolves. Removing the documents is a separate decision and is out of scope
+(§12).
+
+### The atomicity gap, stated plainly
+
+T2, T3 and T5 each touch several documents plus GridFS plus site statistics.
+DocumentDB will not make that atomic without transactions, and the current
+implementation does it as an unguarded sequence: update the promoted document →
+purge GridFS → replace the old document with a tombstone → retarget other
+tombstones → update statistics. A crash at any step leaves an inconsistent
+state, and nothing detects it.
+
+The mitigation required by §5.3: **write the event first**, carrying the
+intended `after` state for every document the transition will touch. Then a torn
+transition is not merely detectable by the validator (§8) — the audit log says
+what the end state should have been, so `CHAIN_REPAIRED` can finish the job.
+
+
+---
+
 ## 7 · Danger cases
 
 Each of these is a real population, measured. An implementation that does not
@@ -602,6 +724,39 @@ invariant before it stops being true.
 **Requirement:** implement §6.4. Until a file carries a backlink, every deletion
 decision about it rests on a traversal being correct, and correctness of that
 traversal is not locally checkable.
+
+### D12 · Version promotion drops project-level fields — hardcoded carry-forward list
+
+`delete_project_version()` copies exactly **9** fields from the deleted head onto
+the promoted version (`views.py:2955`): `project_members`, `subscribers`,
+`views`, `downloads`, `alias_name`, `publication_link`, `private`, `privateKey`,
+`featured`.
+
+Live production projects carry **25 further fields** not in that list. Most are
+legitimately version-owned and *should* come from the promoted version
+(`Classification`, `Oncogenes`, `aggregate_df`, `sample_data`,
+`reference_genome`, `description`). Several are not:
+
+| Field | On N of 119 live projects | Why it looks project-level |
+| --- | ---: | --- |
+| `owner` | 16 | ownership is not a property of an aggregation run |
+| `project_downloads` | 56 | a counter — and `downloads` **is** copied |
+| `sample_downloads` | 39 | same |
+| `sample_name_remap_enabled` | 21 | a project setting |
+| `original_project_name` | 16 | project identity |
+| `alias` | 2 | distinct field from the copied `alias_name` |
+
+The tell is `downloads` being copied while `project_downloads` and
+`sample_downloads` are not: the list was written once and later fields were never
+added to it. **This is the same hand-maintained-list defect as the GridFS keys
+(D7), in a fourth location.**
+
+**Requirement:** replace the hardcoded list with an explicit split — declare
+which fields are *chain-level* (carried, or better, stored once on the chain
+document per §6.2) and which are *version-level* (never carried). Add a test that
+fails when a project document grows a field belonging to neither set, so the
+next addition cannot silently fall through. Adjudicate the six fields above with
+a human before changing behaviour; this spec does not assume the answer.
 
 ---
 
@@ -740,6 +895,14 @@ Beyond the invariants, these behaviours must be covered:
 9. `classify()` and `STATUS_QUERIES` agree over the entire database.
 10. No module outside `project_version_cleanup.py` defines a GridFS key list
     (D7).
+11. Each transition T1–T5 in §6A produces exactly the stated end state, and the
+    validator passes after each — including a same-day version pair, where
+    promotion must pick by `version_ordinal` and not by date or array position.
+12. A version deleted from the middle of a chain leaves its neighbours' pointers
+    and ordinals unchanged (T2), and `/project/<deleted>` still resolves.
+13. Promotion preserves every field declared chain-level and no field declared
+    version-level (D12); a project document carrying a field in neither set
+    fails the test.
 
 ### Test fixtures — build these on dev
 
@@ -806,7 +969,12 @@ measurement only.
   `project_status.py`.
 - Zero GridFS key lists outside `project_version_cleanup.py`.
 - The reverse lookup `{previous_version_id: …}` is an `IXSCAN`.
-- Every state transition in §6.5 writes an audit event.
+- Every state transition in §6.5 writes an audit event, written **before** the
+  mutation and carrying the intended end state.
+- Every transition in §6A is covered by a test that asserts the full end state,
+  not just the changed field.
+- No hardcoded field list governs promotion; the chain-level / version-level
+  split is declared and test-enforced (D12).
 - Every `fs.files` row carries `metadata` naming its project, chain, sample and
   feature key — or is positively identified as stranded.
 - "Is this file orphaned?" is answerable with a single `find_one`, and its
