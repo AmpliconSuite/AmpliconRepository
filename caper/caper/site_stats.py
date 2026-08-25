@@ -1,5 +1,6 @@
 import datetime
 
+from .project_status import LIVE, status_query
 from .publications import publication_url, count_unique_publications
 from .utils import get_collection_handle, collection_handle, db_handle_primary, replace_space_to_underscore, preprocess_sample_data, get_one_sample, sample_data_from_feature_list, is_project_private, is_project_public, normalize_visibility_field
 
@@ -10,12 +11,11 @@ site_statistics_handle = get_collection_handle(db_handle_primary, 'site_statisti
 # functions never counted them. Regeneration has to skip them too, or it reports projects the
 # running totals never included. Deliberately not filtering on 'FINISHED?': that is False on
 # real projects while their files extract, and those are counted incrementally.
-COMPLETED_PROJECT_FILTER = {
-    'delete': False,
-    'current': True,
-    'aggregation_in_progress': {'$ne': True},
-    'aggregation_failed': {'$ne': True},
-}
+COMPLETED_PROJECT_FILTER = status_query(
+    LIVE,
+    aggregation_in_progress={'$ne': True},
+    aggregation_failed={'$ne': True},
+)
 
 # Each visibility owns a set of site_statistics keys, prefixed as below. The three buckets are
 # mutually exclusive and sum to the site total: unlisted ('hidden_public') projects are counted

@@ -16,6 +16,8 @@ endpoint with no auth requirements and is always tested.
 import os
 import pytest
 
+from caper.project_status import LIVE, NOT_DELETED_QUERY, STATUS_QUERIES, combine
+
 from conftest import (
     _cleanup_project,
     _poll_until_finished,
@@ -113,7 +115,7 @@ def test_upload_api_accepts_tar_file(mongo_collection):
     # If a project document was created, clean it up
     if response.status_code in (200, 201):
         new_doc = mongo_collection.find_one(
-            {'project_name': 'APITest_Upload', 'delete': False})
+            combine(NOT_DELETED_QUERY, project_name='APITest_Upload'))
         if new_doc:
             _cleanup_project(mongo_collection, str(new_doc['_id']))
 
@@ -139,7 +141,7 @@ def test_add_samples_requires_valid_project_key(mongo_collection):
 
     # Use an existing non-deleted project to exercise the authorization check
     # against realistic MongoDB state without invoking aggregation.
-    existing = mongo_collection.find_one({'delete': False, 'current': True})
+    existing = mongo_collection.find_one(STATUS_QUERIES[LIVE])
     if not existing:
         pytest.skip("No existing projects in database — cannot test add_samples auth")
 
@@ -176,7 +178,7 @@ def test_add_samples_requires_project_member(mongo_collection):
     assert os.path.exists(DATASET_ADDL_TAR), \
         f"Test dataset not found: {DATASET_ADDL_TAR}"
 
-    existing = mongo_collection.find_one({'delete': False, 'current': True})
+    existing = mongo_collection.find_one(STATUS_QUERIES[LIVE])
     if not existing:
         pytest.skip("No existing projects in database — cannot test add_samples auth")
 

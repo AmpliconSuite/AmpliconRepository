@@ -1,0 +1,575 @@
+"""
+The Phase 0 cross-check: classify(), STATUS_QUERIES and matches() must agree.
+
+This is the mechanism of the phase, not a nicety.  Both production incidents in
+docs/project-version-history-and-provenance-spec.md §2 were one predicate
+maintained in two places, drifting.  project_status.py collapses that pair; if
+its three forms can disagree, the bug is rebuilt one level up.
+
+Three layers, deliberately:
+
+  1. ``test_truth_table_*`` -- exhaustive over every combination of the four
+     flags, no database.  Covers states production does not have, so a future
+     backfill cannot introduce one that nothing has ever classified.
+  2. ``test_mongo_agrees_*`` -- the same fixtures inserted into a real MongoDB,
+     because the semantics at stake are MongoDB's: ``{'current': False}`` does
+     not match a missing field, and ``{'delete': False}`` does not match ``0``.
+     A pure-Python test cannot prove agreement with a database.
+  3. ``test_classify_agrees_with_status_queries_over_the_whole_database`` --
+     the literal §9 requirement, over whatever documents actually exist.
+"""
+
+import itertools
+
+import pytest
+from bson import ObjectId
+
+from caper.project_status import (
+    ALL_STATUSES,
+    DELETE_FLAG_QUERY,
+    DETACHED,
+    HEAD_VERSION_QUERY,
+    LIVE,
+    NOT_DELETED_QUERY,
+    PARTIAL_TOMBSTONE_QUERY,
+    PRIOR_VERSION_QUERY,
+    REACHABLE_BY_URL_QUERY,
+    SOFT_DELETED,
+    STATUS_QUERIES,
+    SUPERSEDED,
+    TOMBSTONE,
+    classify,
+    combine,
+    is_reachable_by_url,
+    matches,
+    resolver_queries,
+    status_flags,
+    status_query,
+)
+
+# Absent is a value here, because on prod it is one: 70 documents have no
+# 'current' field at all and that absence is what keeps them unreachable.
+ABSENT = object()
+
+# 0 and 1 are included because Python's `==` accepts them for False/True while
+# MongoDB's equality does not.  If classify() ever loosens to `==`, these rows
+# are what fails.
+FLAG_VALUES = (True, False, ABSENT, 0, 1)
+
+
+def _doc(**flags):
+    return {key: value for key, value in flags.items() if value is not ABSENT}
+
+
+def _all_flag_combinations():
+    for delete, current, vdfh, purged in itertools.product(FLAG_VALUES, repeat=4):
+        yield _doc(delete=delete, current=current,
+                   version_deleted_from_history=vdfh, payload_purged=purged)
+
+
+ALL_QUERIES = {
+    'STATUS_QUERIES[%s]' % status: query for status, query in STATUS_QUERIES.items()
+}
+ALL_QUERIES.update({
+    'NOT_DELETED_QUERY': NOT_DELETED_QUERY,
+    'PRIOR_VERSION_QUERY': PRIOR_VERSION_QUERY,
+    'DELETE_FLAG_QUERY': DELETE_FLAG_QUERY,
+    'HEAD_VERSION_QUERY': HEAD_VERSION_QUERY,
+    'PARTIAL_TOMBSTONE_QUERY': PARTIAL_TOMBSTONE_QUERY,
+    'REACHABLE_BY_URL_QUERY': REACHABLE_BY_URL_QUERY,
+})
+
+
+# ---------------------------------------------------------------------------
+# 1 -- exhaustive, offline
+# ---------------------------------------------------------------------------
+
+def test_the_five_statuses_partition_every_flag_combination():
+    """Exactly one status query matches each document.  No overlap, no gap.
+
+    DETACHED is written as the complement of the other four precisely so this
+    holds by construction; the test is here to catch someone rewriting it as a
+    condition of its own.
+    """
+    for doc in _all_flag_combinations():
+        hits = [status for status in ALL_STATUSES
+                if matches(doc, STATUS_QUERIES[status])]
+        assert len(hits) == 1, f"{doc} matched {hits}"
+
+
+def test_classify_agrees_with_status_queries_on_every_flag_combination():
+    for doc in _all_flag_combinations():
+        by_query = [status for status in ALL_STATUSES
+                    if matches(doc, STATUS_QUERIES[status])]
+        assert classify(doc) == by_query[0], (
+            f"classify() and STATUS_QUERIES disagree on {doc}")
+
+
+def test_the_documented_production_populations_classify_as_documented():
+    """Spec §2.3's observed state table, row by row.
+
+    These six rows are all of production.  If a change to this module moves a
+    row to a different status, it changes what every cleanup script does to
+    345 real documents.
+    """
+    assert classify({'delete': False, 'current': True}) == LIVE               # 119
+    assert classify({'delete': True, 'current': False}) == SUPERSEDED         # 103
+    assert classify({'delete': True}) == DETACHED                             # 70
+    assert classify({'delete': False, 'current': False}) == DETACHED          # 39
+    assert classify({'delete': True, 'current': True}) == SOFT_DELETED        # 12
+    assert classify({'delete': True, 'current': False,                        # 2
+                     'version_deleted_from_history': True,
+                     'payload_purged': True,
+                     'redirect_to_project': str(ObjectId())}) == TOMBSTONE
+
+
+def test_absence_of_current_is_not_the_same_as_current_false():
+    """Spec D2.  The 70 documents that hold a tarfile and are unreachable only
+    because a field is missing.  Backfilling 'current' on its own would move
+    all 70 from DETACHED to SUPERSEDED and make them reachable at once."""
+    absent = {'delete': True}
+    explicit = {'delete': True, 'current': False}
+
+    assert classify(absent) != classify(explicit)
+    assert not matches(absent, PRIOR_VERSION_QUERY)
+    assert matches(explicit, PRIOR_VERSION_QUERY)
+
+
+def test_integer_flags_are_not_booleans():
+    """MongoDB's equality is type-bracketed; Python's `==` is not."""
+    assert classify({'delete': 0, 'current': 1}) == DETACHED
+    assert classify({'delete': False, 'current': True}) == LIVE
+
+
+def test_a_partial_tombstone_is_superseded_not_a_tombstone():
+    """Spec D13: delete_project_version()'s sole-version path removes a version
+    from history without purging its payload.  Calling that a TOMBSTONE would
+    tell a future cleanup the payload is already gone; it is not."""
+    partial = {'delete': True, 'current': False,
+               'version_deleted_from_history': True}
+
+    assert classify(partial) == SUPERSEDED
+    assert matches(partial, PARTIAL_TOMBSTONE_QUERY)
+    assert not matches({'delete': True, 'current': False,
+                        'version_deleted_from_history': True,
+                        'payload_purged': True}, PARTIAL_TOMBSTONE_QUERY)
+
+
+def test_a_tombstone_without_a_redirect_is_still_a_tombstone():
+    """Transitions T7 and T8 produce a tombstone with nowhere to redirect to."""
+    assert classify({'delete': True, 'current': False,
+                     'version_deleted_from_history': True,
+                     'payload_purged': True,
+                     'redirect_to_project': None}) == TOMBSTONE
+
+
+# ---------------------------------------------------------------------------
+# Reachability
+# ---------------------------------------------------------------------------
+
+def test_superseded_documents_are_reachable_by_url():
+    """Spec D1.  103 production documents; deleting one breaks a live link."""
+    assert is_reachable_by_url({'delete': True, 'current': False})
+
+
+def test_soft_deleted_documents_are_not_reachable_by_url():
+    assert not is_reachable_by_url({'delete': True, 'current': True})
+
+
+def test_detached_documents_can_be_reachable():
+    """The 39 delete=False/current=False documents resolve today (spec D3), and
+    the 70 with no 'current' field do not.  Both are DETACHED: status and
+    reachability are independent axes in Phase 0."""
+    reachable = {'delete': False, 'current': False}
+    unreachable = {'delete': True}
+
+    assert classify(reachable) == classify(unreachable) == DETACHED
+    assert is_reachable_by_url(reachable)
+    assert not is_reachable_by_url(unreachable)
+
+
+def test_reachability_matches_the_resolver_id_steps_on_every_combination():
+    """is_reachable_by_url() must agree with resolver_queries()' two _id steps
+    for every flag combination -- that equivalence is the argument for why the
+    name steps can be left out."""
+    for doc in _all_flag_combinations():
+        id_steps = [query for line, query in resolver_queries(project_id=ObjectId())
+                    if line in ('utils.py:692', 'utils.py:722')]
+        by_steps = any(matches(doc, {k: v for k, v in query.items() if k != '_id'})
+                       for query in id_steps)
+        assert is_reachable_by_url(doc) is by_steps, doc
+
+
+def test_resolver_queries_are_the_five_documented_steps():
+    steps = resolver_queries(project_id=ObjectId(), project_name='CCLE')
+    assert [line for line, _ in steps] == [
+        'utils.py:692', 'utils.py:703', 'utils.py:711',
+        'utils.py:722', 'utils.py:736',
+    ]
+
+
+def test_resolver_queries_drops_id_steps_for_a_non_objectid():
+    steps = resolver_queries(project_id='not-an-object-id', project_name='CCLE')
+    assert [line for line, _ in steps] == [
+        'utils.py:703', 'utils.py:711', 'utils.py:736']
+
+
+# ---------------------------------------------------------------------------
+# Composition and writes
+# ---------------------------------------------------------------------------
+
+def test_combine_does_not_drop_a_colliding_constraint():
+    """The whole point.  A plain dict merge would silently discard one $nor and
+    turn a status filter back into the bare flag test."""
+    merged = combine(STATUS_QUERIES[LIVE], STATUS_QUERIES[SUPERSEDED])
+
+    assert '$and' in merged
+    assert not matches({'delete': False, 'current': True}, merged)
+    assert not matches({'delete': True, 'current': False}, merged)
+
+
+def test_combine_keeps_a_flat_query_when_nothing_collides():
+    merged = combine(STATUS_QUERIES[LIVE], private='public')
+    assert merged['private'] == 'public'
+    assert merged['delete'] is False
+
+
+def test_status_query_rejects_an_unknown_status():
+    with pytest.raises(ValueError):
+        status_query('ARCHIVED')
+
+
+def test_status_flags_round_trip_through_classify():
+    """What status_flags() writes is what classify() reads back."""
+    for status in (LIVE, SUPERSEDED, SOFT_DELETED, TOMBSTONE):
+        assert classify(status_flags(status)) == status
+
+
+def test_detached_cannot_be_written():
+    with pytest.raises(ValueError):
+        status_flags(DETACHED)
+
+
+def test_matches_refuses_operators_it_does_not_implement():
+    """A partial evaluator that guesses is worse than no evaluator."""
+    with pytest.raises(ValueError):
+        matches({'a': 1}, {'a': {'$gt': 0}})
+    with pytest.raises(ValueError):
+        matches({'a': 1}, {'$where': 'true'})
+
+
+# ---------------------------------------------------------------------------
+# 2 -- the same rules, evaluated by a real MongoDB
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def status_fixture_collection():
+    """A scratch collection holding one document per awkward state (spec §10).
+
+    Separate from 'projects' on purpose: this test writes, and Phase 0 writes
+    nothing to real project documents.
+    """
+    from caper.utils import db_handle
+
+    name = f'phase0_status_crosscheck_{ObjectId()}'
+    collection = db_handle[name]
+    try:
+        yield collection
+    finally:
+        collection.drop()
+
+
+def test_mongo_agrees_with_matches_on_every_flag_combination(status_fixture_collection):
+    """The in-memory evaluator against the database's own semantics.
+
+    matches() is a second implementation of a slice of the query language, so
+    it is exactly the kind of thing this spec exists to distrust.  This is how
+    it stays honest.
+    """
+    docs = []
+    for doc in _all_flag_combinations():
+        doc = dict(doc, _id=ObjectId())
+        docs.append(doc)
+    status_fixture_collection.insert_many(docs)
+
+    for label, query in ALL_QUERIES.items():
+        from_mongo = {d['_id'] for d in status_fixture_collection.find(query, {'_id': 1})}
+        in_memory = {d['_id'] for d in docs if matches(d, query)}
+        assert from_mongo == in_memory, (
+            f"{label}: MongoDB and matches() disagree on "
+            f"{ {str(i) for i in from_mongo ^ in_memory} }")
+
+
+def test_mongo_agrees_with_matches_on_the_shapes_the_app_queries(status_fixture_collection):
+    """matches() implements more than the status flags -- $in, dotted paths,
+    array-contains -- because the fakes in the test suite delegate to it and
+    the resolver's lineage lookups use all three.  Every one of those is a
+    place it could quietly disagree with MongoDB, so every one is checked here.
+
+    The fixtures are the shapes this codebase actually stores: project_members
+    as an array, previous_versions as an array of subdocuments, visibility as
+    either a legacy boolean or a string.
+    """
+    alice, bob = 'alice@example.com', 'bob@example.com'
+    prior, other = ObjectId(), ObjectId()
+
+    docs = [
+        {'_id': ObjectId(), 'project_members': [alice, bob], 'private': 'public',
+         'previous_versions': [{'linkid': str(prior)}], 'delete': False, 'current': True},
+        {'_id': ObjectId(), 'project_members': [bob], 'private': False,
+         'previous_versions': [], 'delete': False, 'current': True},
+        {'_id': ObjectId(), 'project_members': [], 'private': True,
+         'delete': True, 'current': False},
+        {'_id': ObjectId(), 'project_members': [alice], 'private': 'hidden_public',
+         'previous_versions': [{'linkid': str(other)}, {'linkid': str(prior)}],
+         'delete': True},
+        # No project_members and no previous_versions at all.
+        {'_id': ObjectId(), 'private': 'public', 'delete': False, 'current': False},
+    ]
+    status_fixture_collection.insert_many(docs)
+
+    queries = [
+        {'project_members': alice},
+        {'project_members': {'$in': [alice, bob]}},
+        {'project_members': {'$in': ['nobody@example.com']}},
+        {'previous_versions.linkid': str(prior)},
+        {'previous_versions.linkid': {'$exists': True}},
+        {'private': {'$in': [False, 'public']}},
+        {'private': {'$in': [True, 'private', 'hidden_public']}},
+        {'project_members': {'$ne': alice}},
+        {'$or': [{'project_members': alice}, {'private': 'public'}]},
+        combine(STATUS_QUERIES[LIVE],
+                **{'previous_versions.linkid': str(prior)}),
+        status_query(LIVE, private={'$in': [False, 'public']}),
+    ]
+
+    for query in queries:
+        from_mongo = {d['_id'] for d in status_fixture_collection.find(query, {'_id': 1})}
+        in_memory = {d['_id'] for d in docs if matches(d, query)}
+        assert from_mongo == in_memory, (
+            f"{query}: MongoDB and matches() disagree on "
+            f"{ {str(i) for i in from_mongo ^ in_memory} }")
+
+
+def test_mongo_agrees_with_classify_on_every_flag_combination(status_fixture_collection):
+    docs = [dict(doc, _id=ObjectId()) for doc in _all_flag_combinations()]
+    status_fixture_collection.insert_many(docs)
+
+    for status in ALL_STATUSES:
+        from_mongo = {d['_id'] for d in
+                      status_fixture_collection.find(STATUS_QUERIES[status], {'_id': 1})}
+        in_memory = {d['_id'] for d in docs if classify(d) == status}
+        assert from_mongo == in_memory, f"{status}: disagreement"
+
+    counted = sum(status_fixture_collection.count_documents(STATUS_QUERIES[s])
+                  for s in ALL_STATUSES)
+    assert counted == len(docs), "the five status queries do not partition the collection"
+
+
+# ---------------------------------------------------------------------------
+# 3 -- over every document that actually exists (spec §9, §13)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_classify_agrees_with_status_queries_over_the_whole_database():
+    """Read-only.  The literal Phase 0 requirement.
+
+    A local database holding only healthy projects proves little on its own --
+    which is the point of the two layers above.  This one is what gets run
+    against dev, where the awkward states live.
+    """
+    from caper.utils import collection_handle
+
+    projection = {'delete': 1, 'current': 1,
+                  'version_deleted_from_history': 1, 'payload_purged': 1}
+    documents = list(collection_handle.find({}, projection))
+    if not documents:
+        pytest.skip("no project documents in this database")
+
+    for status in ALL_STATUSES:
+        from_mongo = {d['_id'] for d in
+                      collection_handle.find(STATUS_QUERIES[status], {'_id': 1})}
+        in_memory = {d['_id'] for d in documents if classify(d) == status}
+        assert from_mongo == in_memory, (
+            f"{status}: classify() and STATUS_QUERIES disagree on "
+            f"{sorted(str(i) for i in from_mongo ^ in_memory)}")
+
+    counted = sum(collection_handle.count_documents(STATUS_QUERIES[s])
+                  for s in ALL_STATUSES)
+    assert counted == len(documents), (
+        "the five status queries do not partition the projects collection")
+
+
+@pytest.mark.integration
+def test_every_legacy_query_agrees_with_matches_over_the_whole_database():
+    """The named legacy predicates, not just the five statuses.
+
+    NOT_DELETED_QUERY and PRIOR_VERSION_QUERY are the ones the resolver
+    actually uses, so they are the ones a cleanup script must not get wrong.
+    """
+    from caper.utils import collection_handle
+
+    projection = {'delete': 1, 'current': 1,
+                  'version_deleted_from_history': 1, 'payload_purged': 1}
+    documents = list(collection_handle.find({}, projection))
+    if not documents:
+        pytest.skip("no project documents in this database")
+
+    for label, query in ALL_QUERIES.items():
+        from_mongo = {d['_id'] for d in collection_handle.find(query, {'_id': 1})}
+        in_memory = {d['_id'] for d in documents if matches(d, query)}
+        assert from_mongo == in_memory, f"{label}: disagreement"
+
+
+# ---------------------------------------------------------------------------
+# 4 -- the rewrite is behaviour-preserving
+# ---------------------------------------------------------------------------
+#
+# Phase 0 routes 72 call sites through this module and changes no behaviour.
+# "Changes no behaviour" is a claim about query results, so it is checked as
+# one: every literal that was replaced, run against the same documents as its
+# replacement, over a fixture set built from the §10 table -- one document per
+# awkward state production actually holds.
+#
+# Left column: exactly what the code said before this change.
+# Right column: what it says now.
+
+REPLACED_QUERIES = [
+    # utils.py -- the resolver and its neighbours
+    ("utils.py:190/593/692/703/711/774/1100/1111/1119/1232 and views.py",
+     {'delete': False},
+     lambda: NOT_DELETED_QUERY),
+    ("utils.py:722/736/1131/1145 -- the fallback every cleanup tool missed",
+     {'current': False, 'delete': True},
+     lambda: PRIOR_VERSION_QUERY),
+    ("utils.py:762 -- get_one_deleted_project",
+     {'delete': True},
+     lambda: DELETE_FLAG_QUERY),
+    ("utils.py:203/671 and search/site_stats/views/views_admin/views_apis",
+     {'delete': False, 'current': True},
+     lambda: STATUS_QUERIES[LIVE]),
+    ("utils.py:1012/1069 -- reverse lineage lookup",
+     {'current': True},
+     lambda: HEAD_VERSION_QUERY),
+    ("views_admin.py:773 -- the admin permanent-delete page",
+     {'delete': True, 'current': True},
+     lambda: STATUS_QUERIES[SOFT_DELETED]),
+    ("project_version_cleanup.py:161 -- tombstone retargeting",
+     {'version_deleted_from_history': True, 'payload_purged': True},
+     lambda: STATUS_QUERIES[TOMBSTONE]),
+    ("cleanup_orphaned_projects.py:266 -- the 70 with no 'current' field",
+     {'delete': True, 'current': {'$exists': False}},
+     lambda: combine(DELETE_FLAG_QUERY, current={'$exists': False})),
+]
+
+
+def _fixture_documents():
+    """One document per row of the spec's §10 fixture table, plus the six
+    production state combinations of §2.3."""
+    head = ObjectId()
+    prior = ObjectId()
+    return [
+        # §2.3 row 1 -- LIVE (119 on prod)
+        {'_id': head, 'project_name': 'live', 'delete': False, 'current': True,
+         'previous_versions': [{'linkid': str(prior)}], 'tarfile': ObjectId()},
+        # §2.3 row 2 -- SUPERSEDED referenced by a head (89 on prod)
+        {'_id': prior, 'project_name': 'superseded-referenced',
+         'delete': True, 'current': False, 'tarfile': ObjectId()},
+        # SUPERSEDED reachable but referenced by nothing (14 on prod)
+        {'_id': ObjectId(), 'project_name': 'superseded-orphan',
+         'delete': True, 'current': False, 'tarfile': ObjectId()},
+        # §2.3 row 3 -- delete=True with NO 'current' field (70 on prod)
+        {'_id': ObjectId(), 'project_name': 'no-current-field',
+         'delete': True, 'tarfile': ObjectId()},
+        # §2.3 row 4 -- delete=False, current=False (39 on prod)
+        {'_id': ObjectId(), 'project_name': 'detached-reachable',
+         'delete': False, 'current': False, 'tarfile': ObjectId()},
+        # §2.3 row 5 -- SOFT_DELETED (12 on prod)
+        {'_id': ObjectId(), 'project_name': 'soft-deleted',
+         'delete': True, 'current': True, 'tarfile': ObjectId()},
+        # §2.3 row 6 -- complete tombstone (2 on prod)
+        {'_id': ObjectId(), 'project_name': 'tombstone',
+         'delete': True, 'current': False,
+         'version_deleted_from_history': True, 'payload_purged': True,
+         'redirect_to_project': str(head)},
+        # D13 -- removed from history, payload never purged (0 on prod, latent)
+        {'_id': ObjectId(), 'project_name': 'partial-tombstone',
+         'delete': True, 'current': False,
+         'version_deleted_from_history': True, 'tarfile': ObjectId()},
+        # D5 -- a dangling previous_versions.linkid (2 prod / 6 dev)
+        {'_id': ObjectId(), 'project_name': 'dangling-history',
+         'delete': False, 'current': True,
+         'previous_versions': [{'linkid': str(ObjectId())}]},
+        # D6 -- live and also referenced as history (3 on dev, 0 on prod)
+        {'_id': ObjectId(), 'project_name': 'live-and-superseded',
+         'delete': False, 'current': True},
+        # D4 -- a detached document sharing a name with a live project
+        {'_id': ObjectId(), 'project_name': 'live',
+         'delete': True, 'tarfile': ObjectId()},
+        # No 'delete' field at all -- not a production state, but nothing in
+        # the schema forbids it and every query has to have an answer for it.
+        {'_id': ObjectId(), 'project_name': 'no-delete-field', 'current': True},
+    ]
+
+
+@pytest.fixture
+def spec_fixture_collection(status_fixture_collection):
+    status_fixture_collection.insert_many(_fixture_documents())
+    return status_fixture_collection
+
+
+@pytest.mark.parametrize('label,before,after',
+                         [(label, before, after) for label, before, after in REPLACED_QUERIES],
+                         ids=[label.split(' --')[0] for label, _, _ in REPLACED_QUERIES])
+def test_the_rewrite_selects_exactly_what_the_old_literal_did(
+        spec_fixture_collection, label, before, after):
+    """No behaviour change, checked rather than asserted.
+
+    A difference here is not necessarily a bug -- STATUS_QUERIES excludes
+    tombstones where some old literals did not -- but it is always a decision
+    someone has to have made on purpose, and this is where it surfaces.
+    """
+    old_ids = {d['_id'] for d in spec_fixture_collection.find(before, {'_id': 1})}
+    new_ids = {d['_id'] for d in spec_fixture_collection.find(after(), {'_id': 1})}
+
+    assert old_ids == new_ids, (
+        f"{label}: routing changed which documents are selected. "
+        f"only before: {sorted(str(i) for i in old_ids - new_ids)}; "
+        f"only after: {sorted(str(i) for i in new_ids - old_ids)}")
+
+
+def test_the_one_deliberate_difference_is_the_tombstone_exclusion(spec_fixture_collection):
+    """STATUS_QUERIES[SUPERSEDED] is narrower than the literal it replaced.
+
+    {'delete': True, 'current': False} matches tombstones too, which is why
+    the resolver's fallback uses PRIOR_VERSION_QUERY and not this -- excluding
+    them there would stop deleted-version URLs redirecting.  Nothing else in
+    the rewrite narrows anything, and this test is what says so out loud.
+    """
+    literal = {'delete': True, 'current': False}
+    literal_ids = {d['_id'] for d in spec_fixture_collection.find(literal, {'_id': 1})}
+    superseded_ids = {d['_id'] for d in
+                      spec_fixture_collection.find(STATUS_QUERIES[SUPERSEDED], {'_id': 1})}
+    tombstone_ids = {d['_id'] for d in
+                     spec_fixture_collection.find(STATUS_QUERIES[TOMBSTONE], {'_id': 1})}
+
+    assert literal_ids - superseded_ids == tombstone_ids
+    assert tombstone_ids, "fixture set no longer contains a tombstone"
+
+
+def test_the_resolver_reaches_every_state_the_application_serves(spec_fixture_collection):
+    """Spec I10 and D1, on the fixture set: every LIVE and every SUPERSEDED
+    document resolves by _id through the queries get_one_project() issues."""
+    for doc in spec_fixture_collection.find({}):
+        expected = classify(doc) in (LIVE, SUPERSEDED, TOMBSTONE) or is_reachable_by_url(doc)
+        if not expected:
+            continue
+        hit = None
+        for _line, query in resolver_queries(doc['_id'], doc.get('project_name')):
+            found = spec_fixture_collection.find_one(query, {'_id': 1})
+            if found is not None and found['_id'] == doc['_id']:
+                hit = found
+                break
+        assert hit is not None, (
+            f"{doc.get('project_name')} ({classify(doc)}) is served by the "
+            f"application but no resolver step reaches it")

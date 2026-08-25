@@ -26,8 +26,15 @@ from pymongo import MongoClient
 
 from cleanup_orphaned_projects import collect_protected_ids
 
-# cleanup_orphaned_projects puts caper/ on sys.path, so this import resolves.
+# cleanup_orphaned_projects puts caper/ on sys.path, so these imports resolve.
 from caper.project_version_cleanup import GRIDFS_FILE_KEYS
+from caper.project_status import (
+    HEAD_VERSION_QUERY,
+    LIVE,
+    NOT_DELETED_QUERY,
+    classify,
+    matches,
+)
 
 
 GRIDFS_COLLECTIONS = ('fs.files', 'fs.chunks')
@@ -129,11 +136,11 @@ def project_matches_scope(project, protected_ids, scope):
     if scope == 'reachable':
         return project_id in protected_ids
     if scope == 'active':
-        return project.get('current') is True and project.get('delete') is False
+        return classify(project) == LIVE
     if scope == 'current':
-        return project.get('current') is True
+        return matches(project, HEAD_VERSION_QUERY)
     if scope == 'not-deleted':
-        return project.get('delete') is False
+        return matches(project, NOT_DELETED_QUERY)
     raise ValueError(f"Unknown reference scope: {scope}")
 
 

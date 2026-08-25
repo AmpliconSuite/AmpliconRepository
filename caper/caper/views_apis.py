@@ -26,6 +26,8 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework import status
 
+from .project_status import LIVE, status_query
+
 from threading import Thread
 
 from .serializers import FileSerializer
@@ -557,7 +559,7 @@ class ProjectListView(APIView):
         name_filter = request.query_params.get('name', '').strip()
         name_q = {'$regex': name_filter, '$options': 'i'} if name_filter else None
 
-        public_q = {'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}
+        public_q = status_query(LIVE, private={'$in': [False, 'public']})
         if name_q:
             public_q['project_name'] = name_q
         # Same projection as the detail/download views: _project_to_dict() reads
@@ -568,12 +570,11 @@ class ProjectListView(APIView):
         projects = list(collection_handle.find(public_q, _PROJECT_METADATA_PROJECTION))
 
         if user is not None:
-            private_q = {
-                'private': {'$in': [True, 'private', 'hidden_public']},
-                '$or': [{'project_members': user.username}, {'project_members': user.email}],
-                'delete': False,
-                'current': True,
-            }
+            private_q = status_query(
+                LIVE,
+                private={'$in': [True, 'private', 'hidden_public']},
+                **{'$or': [{'project_members': user.username},
+                           {'project_members': user.email}]})
             if name_q:
                 private_q['project_name'] = name_q
             seen = {str(p['_id']) for p in projects}
