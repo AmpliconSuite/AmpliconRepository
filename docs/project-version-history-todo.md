@@ -1,3 +1,18 @@
+> **SUPERSEDED 2026-08-25** by
+> [`project-version-history-and-provenance-spec.md`](project-version-history-and-provenance-spec.md).
+>
+> This document framed the work as an enhancement. Measurement against
+> production on 2026-08-25 reclassified it: a cleanup script was one flag away
+> from deleting 84 project documents, 14 of which resolved by URL and 77 of
+> which still held a payload, and a second script was one stale key list away
+> from marking 80,170 live GridFS files as garbage. 109 of 345 production
+> documents are in a state whose meaning the schema cannot express.
+>
+> The successor spec keeps the Option A / Option B analysis below, recommends a
+> hybrid, and adds the problem-surface map, the measured danger cases, the
+> invariants and the phased plan. Read it instead. This file is kept for
+> history.
+
 # TODO: Formal Project Version History Model
 
 ## Summary
