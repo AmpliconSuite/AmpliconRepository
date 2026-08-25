@@ -474,6 +474,8 @@ Event types to add. Existing: `CREATE`, `EDIT_NEW_VERSION`, `EDIT_NO_VERSION`.
 | `PERMANENTLY_DELETED` | admin permanent delete |
 | `MEMBERS_CHANGED` | project_members modified |
 | `VISIBILITY_CHANGED` | private/public/hidden_public change |
+| `PROJECT_EMPTIED` | the last non-tombstone version was deleted (T7, T8) |
+| `PROJECT_REPOPULATED` | a version was uploaded into an empty chain (T9) |
 | `CHAIN_REPAIRED` | the validator rebuilt or repaired a lineage |
 
 **Write the event before the mutation**, carrying the intended `after` state.
@@ -585,6 +587,116 @@ holds:   I8, I14 on every member
 give "this project was deleted" rather than a 404, and so the audit trail still
 resolves. Removing the documents is a separate decision and is out of scope
 (§12).
+
+### T6 · The chain is the project — and "empty" is a chain state
+
+The transitions below need one thing named first. In the target model the
+**chain document is the project**; the version documents are its history. That
+is what makes the terminal cases expressible, because today there is no project
+entity separate from its versions, so deleting the last version deletes the
+thing that owned the name, the members and the URL.
+
+```
+EMPTY  ==  every member of the chain has status == TOMBSTONE
+```
+
+`EMPTY` is therefore **not a sixth document status**. It is a derived property
+of the chain, and it must stay derived — a stored flag would be the same
+second-source-of-truth mistake as everything else here.
+
+An empty project is **live and appendable**, not dead:
+
+- its URL resolves, to a shell page rather than a 404
+- `canonical_name`, members, visibility and ownership survive on the chain
+- a new upload appends `ordinal = max(ordinal) + 1` and the chain is non-empty
+  again
+
+**This answers D12.** The chain-level / version-level split is not a matter of
+taste: **a field is chain-level exactly when it must survive the deletion of
+every version.** Name, members, visibility, ownership and alias must. AA/AC
+versions, sample data, classifications and payloads must not. Adjudicate the six
+disputed fields in D12 against that test.
+
+**Note on the existing `EMPTY?` field.** It already exists and is already
+unreliable: on prod, **22 live projects have no `runs`, and only 3 carry
+`EMPTY?: True`.** `is_empty_project` (`views.py:875`) survives on a fallback
+(`or not project.get('runs')`). Do not extend that field. Derive emptiness from
+the chain, and treat `EMPTY?` as legacy to be read-only during transition.
+
+### T7 · Deleting the head when no restorable version remains
+
+Generalises T3. Promotion targets **the highest `version_ordinal` among members
+whose status is not `TOMBSTONE`** — never array position, never date.
+
+```
+before:  A[ordinal=1, TOMBSTONE] -> B[ordinal=2, LIVE]
+delete B
+after:   A[ordinal=1, TOMBSTONE]                       <-- not restorable
+         B[ordinal=2, TOMBSTONE, payload_state=purged,
+           is_latest=True, redirect_to_project=None]
+         chain: EMPTY  (every member is a TOMBSTONE)
+events:  VERSION_DELETED, PAYLOAD_PURGED, then PROJECT_EMPTIED
+holds:   I3 (B keeps is_latest — position, not state), I4, I8, I14
+```
+
+`redirect_to_project` is `None` because there is nowhere to redirect *to*. The
+URL resolves to the empty-project shell. That is the distinction between an
+empty project and a deleted one, and it is why T7 does not remove documents.
+
+### T8 · Deleting the only version
+
+The degenerate case of T7, and the one the current code gets wrong.
+
+```
+before:  A[ordinal=1, is_latest=True, LIVE]      (no previous versions)
+delete A
+after:   A[ordinal=1, is_latest=True, TOMBSTONE, payload_state=purged,
+           redirect_to_project=None]
+         chain: EMPTY
+events:  VERSION_DELETED, PAYLOAD_PURGED, PROJECT_EMPTIED
+holds:   I8 + I14 — **the payload must actually be purged**
+```
+
+**What the current implementation does instead** (`views.py:3012`, "Case 3"):
+
+| | Case 1 / Case 2 | **Case 3 (sole version)** |
+| --- | --- | --- |
+| purge GridFS | yes | **no** |
+| `payload_purged` | set | **not set** |
+| `redirect_to_project` | set | **not set** |
+| resulting document | complete tombstone | `delete=True, current=False` + `version_deleted_from_history` only |
+
+The log line reads `"project fully removed"`. It is not removed: the document is
+still resolvable through `utils.py:722`, and its entire GridFS payload is still
+stored and still billed. The user is redirected to `/accounts/profile/` as if
+the project were gone.
+
+**Measured on prod: 0 documents in this partial state**, so the path is latent
+rather than damaging — but it is unexercised, not correct. It is also a
+plausible source of the 14 documents in §2.1 that are reachable while referenced
+by nothing.
+
+**Requirement:** T8 must purge the payload and write a complete tombstone, the
+same as every other deletion path. There must be exactly one tombstone-creation
+routine, used by T2, T3, T5, T7 and T8 alike — a fifth divergent code path for
+the degenerate case is how this bug happened.
+
+### T9 · Re-populating an empty project
+
+```
+before:  A[ordinal=1, TOMBSTONE]  chain EMPTY
+upload
+after:   A[ordinal=1, TOMBSTONE, is_latest=False, next_version_id=B]
+         B[ordinal=2, is_latest=True, LIVE, previous_version_id=A]
+         chain: not empty
+events:  CREATE  (or EDIT_NEW_VERSION), PROJECT_REPOPULATED
+holds:   I3, I4 (ordinals still contiguous — A was never renumbered), I5
+```
+
+A tombstone is a legitimate `previous_version_id`. History reads
+"version 1 deleted, version 2 current", which is true and is exactly what the
+current model cannot represent.
+
 
 ### The atomicity gap, stated plainly
 
@@ -758,6 +870,30 @@ fails when a project document grows a field belonging to neither set, so the
 next addition cannot silently fall through. Adjudicate the six fields above with
 a human before changing behaviour; this spec does not assume the answer.
 
+### D13 · The sole-version deletion path is a fifth, divergent code path
+
+`delete_project_version()` Case 3 (`views.py:3012`) handles "no previous
+versions" separately from Case 1 and Case 2, and diverges from both: it does not
+purge GridFS, does not set `payload_purged`, does not set `redirect_to_project`,
+and logs `"project fully removed"` for a document that stays resolvable via
+`utils.py:722` with its full payload intact.
+
+**0 documents are in this state on prod** — the path is latent. It is still a
+plausible origin for the 14 documents in §2.1 that are reachable while
+referenced by nothing.
+
+**Requirement:** T8. One tombstone-creation routine, used by every deletion
+path (I18). The degenerate case must not get its own implementation.
+
+### D14 · `EMPTY?` does not mean empty
+
+On prod, **22 live projects have no `runs` and only 3 carry `EMPTY?: True`.**
+`is_empty_project` (`views.py:875`) is correct only because it falls back to
+`not project.get('runs')`.
+
+**Requirement:** derive emptiness from the chain (T6). Do not write `EMPTY?`;
+read it only during transition, and drop it in Phase 4.
+
 ---
 
 ## 8 · Invariants and the validator
@@ -781,6 +917,10 @@ is a hard assertion with a named error.
 | I12 | Every GridFS id named by a retained document exists in `fs.files` — **currently 0 violations on prod; keep it that way** |
 | I13 | Every `fs.files` row whose `metadata.project_id` names an existing document is still referenced by that document |
 | I14 | No `TOMBSTONE` document has any GridFS id remaining, and no `fs.files` row points at one |
+| I15 | A chain is `EMPTY` iff every member is a `TOMBSTONE` — never stored, always derived |
+| I16 | Every chain, including an `EMPTY` one, has exactly one `is_latest` member; `is_latest` is position, `status` is state, and they are independent |
+| I17 | Every field declared chain-level survives the emptying of a chain (T6); no version-level field does |
+| I18 | Exactly one tombstone-creation routine exists, and every deletion path calls it |
 
 **I2 and I10 are the ones that would have prevented both incidents in §2.**
 
@@ -903,6 +1043,15 @@ Beyond the invariants, these behaviours must be covered:
 13. Promotion preserves every field declared chain-level and no field declared
     version-level (D12); a project document carrying a field in neither set
     fails the test.
+14. Deleting the sole version of a project purges its payload and writes a
+    complete tombstone (T8, D13) — the assertion is on `fs.files`, not on the
+    document alone.
+15. Deleting the head when every remaining member is a tombstone empties the
+    chain rather than promoting a tombstone (T7).
+16. An empty project's URL resolves to a shell, its name, members and visibility
+    survive, and a subsequent upload appends `max(ordinal)+1` without
+    renumbering the tombstones (T9).
+17. `EMPTY` is never read from a stored field (I15).
 
 ### Test fixtures — build these on dev
 
