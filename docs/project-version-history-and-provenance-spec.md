@@ -284,7 +284,7 @@ Benefit 4 (ordering) is solved directly on the document with an explicit
 `version_ordinal`, not by the chain.
 
 Benefit 1 (atomicity) is the cost we accept. Mitigation: every multi-document
-lineage mutation writes an audit event **first** (§6.4) describing the intended
+lineage mutation writes an audit event **first** (§6.5) describing the intended
 end state, so a torn chain is reconstructible rather than merely detectable. The
 validator in §8 finds tears; the audit log says what the chain should have been.
 
@@ -361,7 +361,87 @@ from documents and compare. No field-by-field diff needed for the common case.
 | `{status: 1, is_latest: 1}` | listing pages |
 | `{head_project_id: 1}` on chains | document → chain |
 
-### 6.4 The provenance event
+### 6.4 File-level backlinks — making "is this file orphaned?" a lookup
+
+**The problem this solves.** Today, deciding whether a single GridFS file is
+orphaned requires traversing **every** project document — 345 documents,
+232 MiB, building a set of 948,515 ids — and diffing it against 1,065,019
+`fs.files` rows. There is no way to ask the question about one file. Both
+incidents in §2 happened inside exactly that whole-database traversal, and both
+were traversal bugs.
+
+Measured on prod, 2026-08-25:
+
+| | |
+| --- | ---: |
+| Distinct file ids named by project documents | 948,515 |
+| `fs.files` total | 1,065,019 |
+| **Unreferenced (orphaned) files** | **116,504** |
+| Documents naming a file that no longer exists | **0** |
+| Total bytes in `fs.files` | 347.1 GiB |
+
+The reachability graph is currently **one-directional**: documents point at
+files, files point at nothing. So the only way to evaluate a file is to
+reconstruct the whole graph, and a single mistake in that reconstruction is
+worth 80,170 files (§2.2).
+
+**The fix, following the same authority rule as §5.3.** GridFS supports a
+`metadata` subdocument. Write derived backlinks into it:
+
+```python
+# fs.files.metadata          ← DERIVED. Documents remain authoritative.
+{
+  "project_id":        ObjectId(...),   # the document that named this file
+  "version_chain_id":  ObjectId(...),   # which lineage it belongs to
+  "sample_name":       "...",
+  "feature_key":       "AA_PNG_file",   # which GRIDFS_FILE_KEYS slot
+  "written_at":        datetime,
+  "written_by_event":  ObjectId(...),   # the project_audit_log entry
+}
+```
+
+**Authority direction: documents → files, never the reverse.** A file is
+retained because a retained document names it. `metadata` is an index into that
+fact, not a substitute for it — the validator (I12–I14) asserts they agree, and
+on disagreement the metadata is rebuilt from documents.
+
+**What this buys, in the terms of the question that prompted it:**
+
+| Question | Today | With backlinks |
+| --- | --- | --- |
+| Is this one file orphaned? | traverse 345 docs / 232 MiB | one `find_one` |
+| What was this file? | unanswerable | `metadata` says project, version, sample, feature |
+| Why is it orphaned? | unanswerable | see the classification below |
+| Can I delete it? | only by re-deriving the whole graph correctly | check the named document's `status` |
+
+**Orphan classification becomes possible**, which is the part that matters for
+deciding what is safe to remove:
+
+| `metadata` state | Meaning | Safe to delete |
+| --- | --- | --- |
+| absent | written before this change, **or** by an ingestion that crashed before recording it | after backfill, absent ⇒ genuinely stranded |
+| names a document that exists and still references it | live file | **no** |
+| names a document that exists but no longer references it | residue of a version edit | yes, once the document's `status` is confirmed |
+| names a document that no longer exists | residue of a purge or permanent delete | yes |
+| names a `TOMBSTONE` document | payload was supposed to be purged and was not | yes — and that is a bug worth reporting |
+
+**Synergy with #620.** That fix discards GridFS files written before the
+document that names them could be updated. Writing `metadata` at `fs.put()`
+time — carrying the *intended* `project_id` — means even a crashed ingestion
+leaves a file that says what it was for. The orphan-factory failure mode becomes
+self-describing rather than anonymous.
+
+**Scale caution.** 1,065,019 files. Backfilling `metadata` is a large one-time
+operation and must be batched, resumable, and idempotent. It is read-mostly
+against `projects` and write-only against `fs.files`, so it can run without
+downtime, but it should run on dev first and be measured there.
+
+**This section is a prerequisite for reclaiming the 116,504 orphans — it is not
+that reclamation.** Deleting them stays out of scope (§12). The point is to make
+the decision *checkable per file* instead of resting on a whole-database
+traversal being correct, because that traversal has now been wrong twice.
+
+### 6.5 The provenance event
 
 Extend the **existing** `project_audit_log` collection and the existing helper
 at `caper/views.py:2855`. Do not build a new mechanism; the shape is already
@@ -507,6 +587,22 @@ production while "running on dev."
 **Requirement:** the migration asserts its target database name explicitly and
 refuses to run against `caper` without an additional flag.
 
+### D11 · File orphan status is not answerable per file — **116,504 orphans**
+
+Deciding whether one GridFS file is orphaned currently requires rebuilding the
+entire reachability graph: 345 documents, 232 MiB, 948,515 ids, diffed against
+1,065,019 `fs.files` rows. Both incidents in §2 occurred inside that
+reconstruction.
+
+Measured on prod: **116,504 unreferenced files** out of 1,065,019, and
+**0 documents naming a file that no longer exists** — the graph is currently
+clean in the document→file direction, and that is worth locking in as an
+invariant before it stops being true.
+
+**Requirement:** implement §6.4. Until a file carries a backlink, every deletion
+decision about it rests on a traversal being correct, and correctness of that
+traversal is not locally checkable.
+
 ---
 
 ## 8 · Invariants and the validator
@@ -527,6 +623,9 @@ is a hard assertion with a named error.
 | I9 | Chain document `source_digest` matches the digest recomputed from its members |
 | I10 | `get_one_project()` resolves every `LIVE` and every `SUPERSEDED` document by `_id` |
 | I11 | The denormalised `previous_versions[]` matches the lineage derived from pointers (during the compatibility window only) |
+| I12 | Every GridFS id named by a retained document exists in `fs.files` — **currently 0 violations on prod; keep it that way** |
+| I13 | Every `fs.files` row whose `metadata.project_id` names an existing document is still referenced by that document |
+| I14 | No `TOMBSTONE` document has any GridFS id remaining, and no `fs.files` row points at one |
 
 **I2 and I10 are the ones that would have prevented both incidents in §2.**
 
@@ -592,9 +691,18 @@ exposure risk (all queries use `$in` across both forms).
 - Add the derived `project_version_chains` view and its rebuild command. Feature
   code reads it; only the rebuild command writes it (§5.3).
 
+### Phase 2b — file backlinks
+
+Implement §6.4. Write `metadata` at `fs.put()` time for all new uploads first —
+that is small and stops the problem growing — then backfill the existing
+1,065,019 files in resumable batches. Run and measure on dev before prod.
+
+Ship the per-file orphan classifier from §6.4 as a read-only report. **Do not
+delete anything with it.**
+
 ### Phase 3 — provenance
 
-- Extend the existing helper (`views.py:2855`) with the event types in §6.4.
+- Extend the existing helper (`views.py:2855`) with the event types in §6.5.
 - Write the event **before** each mutation, carrying the intended `after` state.
 - Add `version_chain_id` to every event.
 - Add an admin view: given a project, show its full event history.
@@ -680,7 +788,11 @@ measurement only.
   Requires human adjudication; a name match is not evidence.
 - **A standalone `previous_versions.linkid` index** (§3.4). The new lineage
   indexes replace it.
-- **Reclaiming the ~239,000 orphaned GridFS files.** Independent of this work.
+- **Reclaiming the 116,504 orphaned GridFS files** (~11% of 1,065,019; total
+  store 347.1 GiB). §6.4 makes each deletion *checkable per file* rather than
+  dependent on a whole-database traversal; actually deleting them is a separate,
+  human-approved exercise. An earlier estimate of ~239,000 circulated internally
+  and was **wrong** — it is corrected here and measured in §6.4.
 - **Changing how `runs` is embedded.** Related (it is why documents are 690 KB)
   but a separate problem with a separate risk profile.
 
@@ -694,6 +806,10 @@ measurement only.
   `project_status.py`.
 - Zero GridFS key lists outside `project_version_cleanup.py`.
 - The reverse lookup `{previous_version_id: …}` is an `IXSCAN`.
-- Every state transition in §6.4 writes an audit event.
+- Every state transition in §6.5 writes an audit event.
+- Every `fs.files` row carries `metadata` naming its project, chain, sample and
+  feature key — or is positively identified as stranded.
+- "Is this file orphaned?" is answerable with a single `find_one`, and its
+  answer is classified by the table in §6.4.
 - The `DETACHED` report is produced, reviewed, and its contents recorded — with
-  no document deleted as part of this work.
+  no document and no file deleted as part of this work.
