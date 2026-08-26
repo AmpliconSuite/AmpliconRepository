@@ -547,6 +547,110 @@ def test_the_flags_are_booleans_or_absent():
         f"{offenders}")
 
 
+# The five steps of get_one_project() as their query literals stood at
+# 5fb238a~1, immediately before Phase 0 replaced them, plus the two inside
+# resolve_redirect_tombstone().  Transcribed rather than derived: deriving them
+# from project_status would let one edit move both sides at once, which is the
+# whole failure this comparison exists to detect.
+_PRE_PHASE_0_STEPS = (
+    ('1 _id', lambda key, oid: {'_id': oid, 'delete': False},
+     lambda key, oid: combine(NOT_DELETED_QUERY, _id=oid)),
+    ('2 alias_name', lambda key, oid: {'alias_name': key, 'delete': False},
+     lambda key, oid: combine(NOT_DELETED_QUERY, alias_name=key)),
+    ('3 project_name', lambda key, oid: {'project_name': key, 'delete': False},
+     lambda key, oid: combine(NOT_DELETED_QUERY, project_name=key)),
+    ('4 _id/prior',
+     lambda key, oid: {'_id': oid, 'current': False, 'delete': True},
+     lambda key, oid: combine(PRIOR_VERSION_QUERY, _id=oid)),
+    ('5 project_name/prior',
+     lambda key, oid: {'project_name': key, 'current': False, 'delete': True},
+     lambda key, oid: combine(PRIOR_VERSION_QUERY, project_name=key)),
+)
+
+
+@pytest.mark.integration
+def test_the_pre_phase_0_query_literals_select_the_same_documents():
+    """Read-only.  The differential the phase is actually claiming.
+
+    Layer 4 below compares old spelling against new over fixtures *I* wrote, so
+    it proves agreement only on states I thought of.  This runs the same
+    comparison over every lookup key the database really contains -- every
+    ObjectId, every project_name, every alias_name -- and compares the whole
+    match set of each query rather than the document the resolver happens to
+    pick, which makes it independent of natural ordering and strictly stronger
+    than comparing return values.
+
+    On dev this is 484 keys x 5 steps plus the redirect pair: 2,062 query pairs,
+    all agreeing.  It is the evidence that Phase 0 changed no behaviour, and it
+    is worth more than any amount of soak time, because a soak only exercises
+    the documents someone happens to visit.
+
+    One asymmetry it is *designed* to catch, and did not on dev:
+    resolve_redirect_tombstone()'s second query gained a tombstone exclusion
+    (status_query(LIVE, ...) carries the $nor; the old literal did not).  A
+    document that is delete=False, current=True and carries both tombstone
+    markers would be a redirect target for the old spelling and not for the
+    new.  There are none on dev.  If this ever fails on step R2, that is what
+    happened, and the new behaviour is the intended one -- redirecting to a
+    purged payload helps nobody -- but it is a real difference, not a no-op.
+    """
+    db_name = _assert_known_target()
+
+    from caper.utils import collection_handle
+
+    documents = list(collection_handle.find({}, {
+        '_id': 1, 'project_name': 1, 'alias_name': 1, 'redirect_to_project': 1}))
+    if not documents:
+        pytest.skip(f"no project documents in {db_name}")
+
+    def ids(query):
+        return frozenset(d['_id'] for d in collection_handle.find(query, {'_id': 1}))
+
+    keys = {(str(doc['_id']), doc['_id']) for doc in documents}
+    for doc in documents:
+        for field in ('project_name', 'alias_name'):
+            if isinstance(doc.get(field), str) and doc[field]:
+                keys.add((doc[field], None))
+
+    disagreements = []
+    pairs = 0
+    for key, oid in sorted(keys, key=lambda pair: pair[0]):
+        for label, old, new in _PRE_PHASE_0_STEPS:
+            if oid is None and '_id' in label:
+                continue        # a name is not an ObjectId; the old code threw
+            pairs += 1
+            before, after = ids(old(key, oid)), ids(new(key, oid))
+            if before != after:
+                disagreements.append(
+                    f"step {label}, key {key!r}: "
+                    f"{sorted(str(i) for i in before ^ after)}")
+
+    for doc in documents:
+        redirect_to = doc.get('redirect_to_project')
+        if not redirect_to:
+            continue
+        rid = str(redirect_to)
+        for label, before, after in (
+                ('R1 redirect _id',
+                 ids({'_id': ObjectId(rid), 'delete': False}),
+                 ids(combine(NOT_DELETED_QUERY, _id=ObjectId(rid)))),
+                ('R2 redirect backlink',
+                 ids({'current': True, 'delete': False,
+                      'previous_versions.linkid': rid}),
+                 ids(status_query(LIVE, **{'previous_versions.linkid': rid})))):
+            pairs += 1
+            if before != after:
+                disagreements.append(
+                    f"step {label}, tombstone {doc['_id']}: "
+                    f"{sorted(str(i) for i in before ^ after)}")
+
+    print(f"\n{db_name}: {pairs} query pairs compared across "
+          f"{len(keys)} lookup keys")
+    assert not disagreements, (
+        f"in {db_name}, the pre-Phase-0 literals and project_status disagree:\n"
+        + "\n".join(disagreements[:40]))
+
+
 # ---------------------------------------------------------------------------
 # 4 -- the rewrite is behaviour-preserving
 # ---------------------------------------------------------------------------
