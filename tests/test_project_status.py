@@ -20,6 +20,7 @@ Three layers, deliberately:
 """
 
 import itertools
+import os
 
 import pytest
 from bson import ObjectId
@@ -370,6 +371,53 @@ def test_mongo_agrees_with_classify_on_every_flag_combination(status_fixture_col
 # 3 -- over every document that actually exists (spec §9, §13)
 # ---------------------------------------------------------------------------
 
+def _assert_known_target():
+    """Name the database out loud before reading it.  Spec D10.
+
+    Dev and prod are two databases on one DocumentDB cluster, so the target is
+    decided entirely by whichever config.sh was sourced -- there is nothing in
+    a connection failure to tell you that you reached the wrong one.  These
+    tests only read, so the risk is a misleading *result* rather than damage:
+    numbers measured against prod, reported as dev, acted on later.
+
+    Against a non-local host the tests therefore refuse to guess.  Set
+
+        STATUS_CHECK_EXPECT_DB=<name>
+
+    to state which database you meant; a mismatch fails rather than skips,
+    because being connected somewhere other than where you think you are is
+    the thing worth stopping for.  The connection string itself is never read
+    here and never printed -- only the host list, and only to decide local vs
+    remote.
+
+    Returns the database name, which the caller prints alongside its counts so
+    the report says what it measured.
+    """
+    from pymongo import uri_parser
+
+    from caper.utils import collection_handle
+
+    db_name = collection_handle.database.name
+    expected = os.environ.get('STATUS_CHECK_EXPECT_DB')
+
+    if expected is not None:
+        assert db_name == expected, (
+            f"connected to database {db_name!r}, but STATUS_CHECK_EXPECT_DB "
+            f"says {expected!r}. Check which config.sh is sourced.")
+        return db_name
+
+    hosts = uri_parser.parse_uri(os.environ['DB_URI_SECRET'])['nodelist']
+    local = all(host in ('localhost', '127.0.0.1', 'mongodb', '::1')
+                for host, _port in hosts)
+    if not local:
+        pytest.skip(
+            f"refusing to measure a remote database ({db_name!r}) without being "
+            "told which one was intended: set STATUS_CHECK_EXPECT_DB to the "
+            "database name you mean to read.")
+
+    return db_name
+
+
 @pytest.mark.integration
 def test_classify_agrees_with_status_queries_over_the_whole_database():
     """Read-only.  The literal Phase 0 requirement.
@@ -378,13 +426,23 @@ def test_classify_agrees_with_status_queries_over_the_whole_database():
     which is the point of the two layers above.  This one is what gets run
     against dev, where the awkward states live.
     """
+    db_name = _assert_known_target()
+
     from caper.utils import collection_handle
 
     projection = {'delete': 1, 'current': 1,
                   'version_deleted_from_history': 1, 'payload_purged': 1}
     documents = list(collection_handle.find({}, projection))
     if not documents:
-        pytest.skip("no project documents in this database")
+        pytest.skip(f"no project documents in {db_name!r}")
+
+    # The census belongs in the output whether or not the assertions hold: a
+    # run that passes over 24 uniformly healthy documents and one that passes
+    # over 345 including the 109 ambiguous ones are very different evidence,
+    # and only this line tells them apart afterwards.
+    census = {s: sum(1 for d in documents if classify(d) == s) for s in ALL_STATUSES}
+    print(f"\n{db_name}: {len(documents)} documents -- "
+          + ", ".join(f"{s} {census[s]}" for s in ALL_STATUSES))
 
     for status in ALL_STATUSES:
         from_mongo = {d['_id'] for d in
@@ -407,18 +465,68 @@ def test_every_legacy_query_agrees_with_matches_over_the_whole_database():
     NOT_DELETED_QUERY and PRIOR_VERSION_QUERY are the ones the resolver
     actually uses, so they are the ones a cleanup script must not get wrong.
     """
+    db_name = _assert_known_target()
+
     from caper.utils import collection_handle
 
     projection = {'delete': 1, 'current': 1,
                   'version_deleted_from_history': 1, 'payload_purged': 1}
     documents = list(collection_handle.find({}, projection))
     if not documents:
-        pytest.skip("no project documents in this database")
+        pytest.skip(f"no project documents in {db_name!r}")
 
     for label, query in ALL_QUERIES.items():
         from_mongo = {d['_id'] for d in collection_handle.find(query, {'_id': 1})}
         in_memory = {d['_id'] for d in documents if matches(d, query)}
         assert from_mongo == in_memory, f"{label}: disagreement"
+
+
+@pytest.mark.integration
+def test_the_flags_are_booleans_or_absent():
+    """Read-only.  The precondition the behaviour-preservation proof rests on.
+
+    Everything in layer 4 below compares an old spelling against a new one over
+    documents *I chose*, so it can only prove agreement on shapes I thought to
+    write down.  The shapes I cannot fabricate my way to confidence about are
+    the ones nobody intended: a flag holding 1 instead of True, or the string
+    "false", or None.
+
+    Those are exactly where the two spellings come apart.  Python's
+    ``doc.get('delete', False)`` is truthiness, so 1 is deleted and 0 is not;
+    Mongo's ``{'delete': True}`` is type-bracketed, so 1 matches nothing.  Every
+    place Phase 0 replaced a truthiness read with ``matches()`` -- both passes
+    of schema_validate.py -- is a behaviour change on such a document and a
+    no-op on every other.  The spec says there are none (§2.3: `delete` bool on
+    all 345, `current` bool on 275 and absent on 70), and absence is fine
+    because both spellings agree there.  This is that claim, checked rather
+    than inherited.
+
+    A failure here does not mean the resolver is wrong.  It means a document
+    exists that neither spelling handles the way anyone assumed, and the fix is
+    a decision about that document, not a patch to this module.
+    """
+    db_name = _assert_known_target()
+
+    from caper.utils import collection_handle
+
+    # Scanned in Python rather than asked as {'$not': {'$type': 'bool'}}:
+    # DocumentDB's $not is narrower than Mongo's, and a server-side operator
+    # that quietly matches nothing would turn this check into a test that
+    # always passes -- the exact failure mode Phase 0 exists to prevent.
+    fields = ('delete', 'current', 'version_deleted_from_history', 'payload_purged')
+    projection = {field: 1 for field in fields}
+
+    offenders = {}
+    for doc in collection_handle.find({}, projection):
+        for field in fields:
+            if field in doc and not isinstance(doc[field], bool):
+                offenders.setdefault(field, []).append(
+                    (str(doc['_id']), repr(doc[field])))
+
+    assert not offenders, (
+        f"in {db_name}, these documents hold a non-boolean status flag, so "
+        f"truthiness and Mongo's type-bracketed equality disagree about them: "
+        f"{offenders}")
 
 
 # ---------------------------------------------------------------------------
