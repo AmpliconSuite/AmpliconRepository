@@ -379,6 +379,95 @@ def resolver_queries(project_id=None, project_name=None):
 
 
 # ---------------------------------------------------------------------------
+# Reading previous_versions[], which has had two encodings
+# ---------------------------------------------------------------------------
+
+CURRENT_ENCODING = 'linkid'
+"""An entry is ``{'date': ..., 'linkid': '<hex id>'}``, plus optional tool
+version fields.  191 of the 196 entries on dev use this."""
+
+LEGACY_JSON_ENCODING = 'legacy-json'
+"""An entry is a *string* holding JSON -- either a one-element list or a bare
+object -- whose reference is keyed ``link`` rather than ``linkid``.
+
+Written by the code that predates April 2024, when the serialisation was
+changed to store the array directly ("was being saved as an array, holding
+another array, holding a json dumped string").  The documents written before
+that were never migrated: 5 remain on dev, all created between February and
+April 2024, and the two variants (list-wrapped and bare object) sit side by
+side because the wrapping changed too.
+
+Nothing in the application reads this encoding.  ``previous_versions()`` coerces
+the string to ``{'linkid': '<the whole JSON text>'}``, which renders as a link
+to ``/project/[{"date": ...}]`` and matches no query.  The reference is intact;
+only the reader is missing."""
+
+
+def iter_previous_versions(doc):
+    """Yield ``(entry, encoding)`` for every version *doc* names as an ancestor.
+
+    The one place that knows how ``previous_versions[]`` is written.  Both
+    encodings are decoded here and both come back in the same shape -- a dict
+    with ``linkid`` as a string, plus whatever else the entry carried -- so a
+    caller gets a usable id either way and decides separately whether it cares
+    about the encoding.  That separation is the reason this is a function
+    rather than an inline loop: read as ``entry['linkid']`` alone, five dev
+    documents look like references to a document that does not exist, and they
+    are all references to a document that does.
+
+    An entry in no recognised encoding yields ``encoding=None`` with its raw
+    text as ``linkid``, rather than being skipped.  A reference that cannot be
+    read is a finding; dropping it silently is how the history table came to be
+    shorter than the history.
+    """
+    import json
+
+    entries = doc.get('previous_versions')
+    if not entries:
+        return
+    if not isinstance(entries, list):     # never seen; do not iterate a str
+        entries = [entries]
+
+    for entry in entries:
+        if isinstance(entry, dict):
+            if entry.get('linkid'):
+                found = dict(entry)
+                found['linkid'] = str(found['linkid'])
+                yield found, CURRENT_ENCODING
+            elif entry.get('link'):       # an unwrapped legacy object
+                found = dict(entry)
+                found['linkid'] = str(found.pop('link'))
+                yield found, LEGACY_JSON_ENCODING
+            continue
+
+        if not isinstance(entry, str):
+            yield {'linkid': repr(entry)}, None
+            continue
+
+        try:
+            parsed = json.loads(entry)
+        except ValueError:
+            # A bare id string.  Not a format anything is known to have
+            # written, but it is readable, so read it.
+            yield {'linkid': entry}, CURRENT_ENCODING
+            continue
+
+        for item in (parsed if isinstance(parsed, list) else [parsed]):
+            if isinstance(item, dict) and (item.get('link') or item.get('linkid')):
+                found = dict(item)
+                found['linkid'] = str(found.pop('link', None) or found['linkid'])
+                yield found, LEGACY_JSON_ENCODING
+            else:
+                yield {'linkid': entry}, None
+
+
+def iter_lineage_references(doc):
+    """``(linkid, encoding)`` for every version *doc* names, ids only."""
+    for entry, encoding in iter_previous_versions(doc):
+        yield entry['linkid'], encoding
+
+
+# ---------------------------------------------------------------------------
 # In-memory evaluation of the filters above
 # ---------------------------------------------------------------------------
 #

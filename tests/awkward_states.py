@@ -41,6 +41,7 @@ cannot tell you which.  A shape with no ``violates`` entry must produce no findi
 at all; an unexpected finding fails the test just as loudly as a missed one.
 """
 
+import json
 import os
 import sys
 
@@ -218,6 +219,39 @@ def _dangling_lineage(mint):
     ]
 
 
+def _legacy_json_lineage(mint):
+    """The encoding used before April 2024, in both of its variants.
+
+    Verbatim shapes from the five dev documents that still carry it -- a JSON
+    string rather than a document, keyed ``link`` rather than ``linkid``, and
+    wrapped in a list in three cases and not in the other two.  The referrers
+    here are SUPERSEDED rather than DETACHED because that is the reachable
+    case: a SUPERSEDED document renders its own page, so this is the shape a
+    person can actually arrive at.
+    """
+    list_head, list_prior = mint(), mint()
+    bare_head, bare_prior = mint(), mint()
+    return [
+        ('list_prior', _document('AwkwardChain_LegacyList',
+                                 {'delete': False, 'current': False},
+                                 _id=list_prior, date=_DATES[0], tarfile=PAYLOAD)),
+        ('list_head', _document(
+            'AwkwardChain_LegacyList', status_flags(SUPERSEDED),
+            _id=list_head, date=_DATES[1], tarfile=PAYLOAD,
+            previous_versions=[json.dumps(
+                [{'date': _DATES[0], 'link': str(list_prior)}])])),
+
+        ('bare_prior', _document('AwkwardChain_LegacyBare',
+                                 {'delete': False, 'current': False},
+                                 _id=bare_prior, date=_DATES[0], tarfile=PAYLOAD)),
+        ('bare_head', _document(
+            'AwkwardChain_LegacyBare', status_flags(SUPERSEDED),
+            _id=bare_head, date=_DATES[1], tarfile=PAYLOAD,
+            previous_versions=[json.dumps(
+                {'date': _DATES[0], 'link': str(bare_prior)})])),
+    ]
+
+
 def _live_also_history(mint):
     live, head = mint(), mint()
     return [
@@ -327,13 +361,28 @@ SHAPES = (
 
     Shape(
         name='dangling_lineage_reference',
-        mirrors='2 prod / 6 dev documents',
+        mirrors='2 prod / 1 dev document',
         build=_dangling_lineage,
         expect={'head': LIVE},
         violates=(('I6', 'head'),),
         why="A live head whose previous_versions[] names a document that is "
             "not in the collection. History rendering silently drops the "
             "entry, so the chain looks shorter than it was."),
+
+    Shape(
+        name='legacy_json_lineage_entry',
+        mirrors='5 dev documents (3 list-wrapped, 2 bare)',
+        build=_legacy_json_lineage,
+        expect={'list_head': SUPERSEDED, 'list_prior': DETACHED,
+                'bare_head': SUPERSEDED, 'bare_prior': DETACHED},
+        violates=(('I19', 'list_head'), ('I19', 'bare_head')),
+        why="previous_versions[] holds a JSON *string* keyed 'link', the "
+            "format written before April 2024. The reference is intact -- the "
+            "document it names is right there -- but nothing reads it: the "
+            "history table renders a link to /project/[{\"date\": ...}] and "
+            "{'previous_versions.linkid': id} matches nothing, so both "
+            "documents look unreferenced to every caller that asks that way. "
+            "Not a dangling reference, which is why it gets its own invariant."),
 
     Shape(
         name='live_also_referenced_as_history',

@@ -30,6 +30,8 @@ from .project_status import (
     LIVE,
     TOMBSTONE,
     combine,
+    iter_lineage_references,
+    iter_previous_versions,
     status_query,
 )
 
@@ -872,14 +874,18 @@ DELETED_VERSION_HISTORY_FIELDS = [
 ]
 
 
-def _coerce_previous_version_entry(entry):
-    if isinstance(entry, dict):
-        coerced = entry.copy()
-    else:
-        coerced = {'linkid': str(entry)}
-    if coerced.get('linkid') is not None:
-        coerced['linkid'] = str(coerced['linkid'])
-    return coerced
+def _previous_version_entries(project):
+    """The history entries stored on *project*, in one readable shape.
+
+    Was a per-entry coercion here that turned anything non-dict into
+    ``{'linkid': str(entry)}``.  For the five documents written before the
+    April 2024 serialisation change that produced a linkid holding the entry's
+    entire JSON text, which the template rendered as a link to
+    ``/project/[{"date": ...}]`` and which matched no query.  Decoding lives in
+    project_status.iter_previous_versions() so the site and the validator read
+    the field the same way.
+    """
+    return [entry for entry, _encoding in iter_previous_versions(project)]
 
 
 def _current_version_history_entry(project):
@@ -912,13 +918,11 @@ def _version_history_linkids(project):
     project_id = project.get('_id', project.get('linkid'))
     if project_id:
         linkids.append(str(project_id))
-    for entry in project.get('previous_versions', []):
-        if isinstance(entry, dict):
-            linkid = entry.get('linkid')
-        else:
-            linkid = entry
-        if linkid:
-            linkids.append(str(linkid))
+    # Third copy of "read previous_versions[]" that this module used to carry.
+    # They disagreed about the pre-April 2024 encoding, which is how five
+    # documents ended up with a history table nothing could follow.
+    for linkid, _encoding in iter_lineage_references(project):
+        linkids.append(linkid)
     return list(dict.fromkeys(linkids))
 
 
@@ -989,9 +993,23 @@ def _backfill_version_info_from_db(entries):
             if linkid:
                 linkid_to_entry[str(linkid)] = entry
 
-        if linkid_to_entry:
+        # One unreadable linkid used to take the whole batch down with it: the
+        # comprehension below raised on the first bad id, the except swallowed
+        # it, and every *other* entry in the same history table silently went
+        # unbackfilled and rendered as NA.  Skip the ones that cannot be looked
+        # up rather than the ones that can.
+        object_ids = []
+        for lid in list(linkid_to_entry):
             try:
-                object_ids = [ObjectId(lid) for lid in linkid_to_entry]
+                object_ids.append(ObjectId(lid))
+            except Exception:
+                logging.warning(
+                    "previous_versions entry has an unusable linkid %r; "
+                    "leaving its version columns as NA", lid[:80])
+                linkid_to_entry.pop(lid)
+
+        if object_ids:
+            try:
                 proj_docs = collection_handle.find(
                     {'_id': {'$in': object_ids}},
                     {field: 1 for field in VERSION_HISTORY_FIELDS}
@@ -1040,10 +1058,7 @@ def previous_versions(project):
 
     if len(data) == 1:
         # Viewing an older version — data[0] is the current/latest project document
-        res = [
-            _coerce_previous_version_entry(entry)
-            for entry in data[0].get('previous_versions', [])
-        ]
+        res = _previous_version_entries(data[0])
         # Populate version fields from the actual old project documents
         _backfill_version_info_from_db(res)
         res = _merge_deleted_version_entries(res, _deleted_version_entries_for_project(data[0]))
@@ -1055,10 +1070,7 @@ def previous_versions(project):
     else:
         # Viewing the current version — build history from this project's previous_versions list
         if "previous_versions" in project:
-            res = [
-                _coerce_previous_version_entry(entry)
-                for entry in project.get('previous_versions', [])
-            ]
+            res = _previous_version_entries(project)
             # Populate version fields from the actual old project documents
             _backfill_version_info_from_db(res)
         res = _merge_deleted_version_entries(res, _deleted_version_entries_for_project(project))

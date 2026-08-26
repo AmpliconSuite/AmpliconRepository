@@ -104,7 +104,8 @@ def test_the_catalogue_covers_the_states_that_occur_for_real():
         'detached_no_current_field',        # 70 prod
         'detached_both_false',              # 39 prod
         'tombstone_triple',                 # 2 prod
-        'dangling_lineage_reference',       # 2 prod / 6 dev
+        'dangling_lineage_reference',       # 2 prod / 1 dev
+        'legacy_json_lineage_entry',        # 5 dev
         'live_also_referenced_as_history',  # 3 dev
         'name_collision_detached_vs_live',  # 12 prod
     }

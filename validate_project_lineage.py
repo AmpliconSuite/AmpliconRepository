@@ -2,11 +2,11 @@
 """
 What has to be true about project version history, checked against a database.
 
-Eighteen invariants.  Six of them can be evaluated against the schema as it
+Nineteen invariants.  Seven of them can be evaluated against the schema as it
 stands; the other twelve are about fields that do not exist yet -- a stored
 ``status``, ``version_chain_id``, ``version_ordinal``, ``is_latest``, and the
 ``previous_version_id`` / ``next_version_id`` pointers that would replace the
-denormalised ``previous_versions[]`` array.  This script declares all eighteen
+denormalised ``previous_versions[]`` array.  This script declares all nineteen
 and reports each as ok, FAIL or SKIP with the reason.
 
 Declaring the ones that cannot run is the point.  A validator that quietly
@@ -49,8 +49,9 @@ if os.path.join(_REPO_ROOT, 'caper') not in sys.path:
 from bson import ObjectId                                          # noqa: E402
 
 from caper.project_status import (                                 # noqa: E402
-    DETACHED, LIVE, NOT_DELETED_QUERY, PRIOR_VERSION_QUERY, SUPERSEDED,
-    TOMBSTONE, classify, is_reachable_by_url,
+    CURRENT_ENCODING, DETACHED, LEGACY_JSON_ENCODING, LIVE, NOT_DELETED_QUERY,
+    PRIOR_VERSION_QUERY, SUPERSEDED, TOMBSTONE, classify,
+    is_reachable_by_url, iter_lineage_references,
 )
 from caper.project_version_cleanup import iter_gridfs_file_ids     # noqa: E402
 
@@ -114,12 +115,17 @@ class Snapshot:
 
         # linkid string -> ids of the documents whose previous_versions[] names
         # it.  Built once; I6 and I7 both walk it from opposite ends.
+        #
+        # Decoded through iter_lineage_references rather than by reading
+        # entry['linkid'] here, and that is not a detail: this loop used to do
+        # the latter, and reported five dev documents as naming a document that
+        # is not in the collection.  All five name a document that is.
         self.referenced_by = defaultdict(list)
+        self.encodings = defaultdict(list)     # doc id -> encoding per reference
         for doc in self.documents:
-            for entry in doc.get('previous_versions') or []:
-                linkid = entry.get('linkid') if isinstance(entry, dict) else entry
-                if linkid:
-                    self.referenced_by[str(linkid)].append(doc['_id'])
+            for linkid, encoding in iter_lineage_references(doc):
+                self.referenced_by[linkid].append(doc['_id'])
+                self.encodings[doc['_id']].append((linkid, encoding))
 
         # doc id -> the GridFS ids it names.  Streamed one document at a time so
         # the heavy field is never held for more than one document.
@@ -156,7 +162,13 @@ class Snapshot:
 # ---------------------------------------------------------------------------
 
 def _check_i6(snap):
-    """Every previous_versions[].linkid resolves to a document that exists."""
+    """Every lineage reference resolves to a document that exists.
+
+    About the target, not the encoding.  A reference written in the pre-April
+    2024 JSON-string format still points at a real document, and saying so is
+    the difference between "someone deleted a version" and "the reader is out
+    of date" -- I19 reports the format separately.
+    """
     findings = []
     for linkid, referrers in sorted(snap.referenced_by.items()):
         try:
@@ -165,13 +177,54 @@ def _check_i6(snap):
             for referrer in referrers:
                 findings.append(Finding(
                     'I6', referrer, snap.name(referrer),
-                    f'previous_versions[] names {linkid!r}, which is not an ObjectId'))
+                    f'lineage reference {linkid!r} is not an ObjectId in any '
+                    f'known encoding'))
             continue
         if target not in snap.by_id:
             for referrer in referrers:
                 findings.append(Finding(
                     'I6', referrer, snap.name(referrer),
                     f'previous_versions[] names {linkid}, which is not in the collection'))
+    return findings
+
+
+def _check_i19(snap):
+    """Every lineage reference is stored in the encoding the application reads.
+
+    Separate from I6 because the consequence is different and so is the fix.  A
+    dangling reference means a document is gone and the history is short by one
+    entry.  A legacy-encoded reference means the document is right there and the
+    reader cannot see it: previous_versions() turns the entry into
+    ``{'linkid': '<the whole JSON text>'}``, the history table renders a link to
+    /project/[{"date":...}], and the query the site uses to find a document's
+    successors -- ``{'previous_versions.linkid': <id>}`` -- matches nothing, so
+    both documents look unreferenced to every caller that asks that way,
+    including the orphan check in check_project_flags.py.
+
+    Nothing crashes.  That is why it survived two years.
+    """
+    findings = []
+    for doc_id in sorted(snap.encodings, key=str):
+        for linkid, encoding in snap.encodings[doc_id]:
+            if encoding == CURRENT_ENCODING:
+                continue
+            if encoding == LEGACY_JSON_ENCODING:
+                try:
+                    target = ObjectId(linkid)
+                except Exception:
+                    target = None
+                whereabouts = (
+                    f'-> {snap.name(target)!r} ({snap.status[target]})'
+                    if target in snap.by_id else '-> target missing too')
+                findings.append(Finding(
+                    'I19', doc_id, snap.name(doc_id),
+                    f'lineage reference {linkid} is stored in the pre-April '
+                    f'2024 JSON-string format {whereabouts}'))
+            else:
+                findings.append(Finding(
+                    'I19', doc_id, snap.name(doc_id),
+                    f'previous_versions[] entry is in no recognised encoding: '
+                    f'{linkid[:60]!r}'))
     return findings
 
 
@@ -428,6 +481,8 @@ INVARIANTS = (
                     'chain and which to a version; six are still unclassified'),
     Invariant('I18', 'Exactly one tombstone-creation routine exists and every '
                      'deletion path calls it', check=_check_i18),
+    Invariant('I19', 'Every lineage reference is stored in the encoding the '
+                     'application reads', check=_check_i19),
 )
 
 
