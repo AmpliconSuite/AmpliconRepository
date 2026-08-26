@@ -17,6 +17,18 @@ Three layers, deliberately:
      A pure-Python test cannot prove agreement with a database.
   3. ``test_classify_agrees_with_status_queries_over_the_whole_database`` --
      the literal §9 requirement, over whatever documents actually exist.
+
+Layer 3 is only worth as much as the database it runs against.  On a laptop it
+sees 24 healthy documents and proves nothing; the states that matter live on
+the servers.  To run it there, once this branch is deployed::
+
+    amprepo-ssh.sh dev 'docker exec -w /srv amplicon-dev env
+        STATUS_CHECK_EXPECT_DB=caper-dev /opt/venv/bin/python -m pytest
+        tests/test_project_status.py -m integration -s'
+
+It reads and never writes, so it is safe to run against either server -- but
+see ``_assert_known_target`` for why it refuses to run without being told which
+one it is pointed at.
 """
 
 import itertools
@@ -390,32 +402,38 @@ def _assert_known_target():
     here and never printed -- only the host list, and only to decide local vs
     remote.
 
-    Returns the database name, which the caller prints alongside its counts so
-    the report says what it measured.
+    Returns a label naming both the database and whether it was reached
+    locally or over the network, which the caller prints alongside its counts
+    so the report says what it measured.
     """
     from pymongo import uri_parser
 
     from caper.utils import collection_handle
 
     db_name = collection_handle.database.name
-    expected = os.environ.get('STATUS_CHECK_EXPECT_DB')
+    hosts = uri_parser.parse_uri(os.environ['DB_URI_SECRET'])['nodelist']
+    local = all(host in ('localhost', '127.0.0.1', 'mongodb', '::1')
+                for host, _port in hosts)
+    where = 'local' if local else 'remote'
 
+    # The name on its own does not identify the target: the dev server's
+    # database is *also* called 'caper-dev', so a laptop with the docker mongo
+    # running satisfies STATUS_CHECK_EXPECT_DB=caper-dev while measuring 24
+    # documents that prove nothing.  Both halves go into the label, and the
+    # label is what the census line prints, so a result cannot later be read as
+    # evidence about a database it did not come from.
+    expected = os.environ.get('STATUS_CHECK_EXPECT_DB')
     if expected is not None:
         assert db_name == expected, (
             f"connected to database {db_name!r}, but STATUS_CHECK_EXPECT_DB "
             f"says {expected!r}. Check which config.sh is sourced.")
-        return db_name
-
-    hosts = uri_parser.parse_uri(os.environ['DB_URI_SECRET'])['nodelist']
-    local = all(host in ('localhost', '127.0.0.1', 'mongodb', '::1')
-                for host, _port in hosts)
-    if not local:
+    elif not local:
         pytest.skip(
             f"refusing to measure a remote database ({db_name!r}) without being "
             "told which one was intended: set STATUS_CHECK_EXPECT_DB to the "
             "database name you mean to read.")
 
-    return db_name
+    return f"{db_name} ({where})"
 
 
 @pytest.mark.integration
