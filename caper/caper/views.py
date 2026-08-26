@@ -3023,14 +3023,14 @@ def delete_project_version(request, project_name, version_id):
             })
         else:
             # Case 3: No previous versions - delete the entire project
-            # NOTE (spec D13/T8): this is the one deletion path that does NOT
+            # NOTE: this is the one deletion path that does NOT
             # purge the GridFS payload, set 'payload_purged' or set
             # 'redirect_to_project'.  The document it leaves therefore
             # classifies as SUPERSEDED, not TOMBSTONE -- it stays resolvable
             # through utils.py:722 with its whole payload still stored, while
             # the log line below says "project fully removed".  0 documents are
-            # in this state on prod.  Phase 0 leaves the behaviour exactly as
-            # it is; T8 fixes it by routing every deletion path through one
+            # in this state on prod.  The behaviour is left exactly as it is;
+            # fixing it means routing every deletion path through one
             # tombstone-creation routine.
             collection_handle.update_one(
                 {'_id': ObjectId(current_linkid)},
@@ -4575,11 +4575,12 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         # placeholder was inserted with status_flags(LIVE), so clearing
         # 'current' while leaving 'delete' False produces delete=False,
         # current=False: DETACHED by classify(), and still reachable by URL.
-        # That is exactly the 39-document population of spec D3, and this is
+        # That is exactly the 39-document delete=False/current=False
+        # population, and this is
         # the most plausible way they were made.  status_flags() deliberately
         # refuses to write DETACHED, so the literal stays until the state has
-        # a name -- deciding what a failed placeholder should be is a Phase 1
-        # question, and Phase 0 changes no behaviour.
+        # a name -- deciding what a failed placeholder should be is a separate
+        # question, and this change alters no behaviour.
         try:
             collection_handle.update_one(
                 {'_id': ObjectId(failed_placeholder_id)},

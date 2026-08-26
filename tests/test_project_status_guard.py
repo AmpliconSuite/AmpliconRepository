@@ -1,7 +1,8 @@
 """
 The grep guard: no 'delete' / 'current' literal outside project_status.py.
 
-Spec §13's third bullet.  It is blunt on purpose.  A guard that reasoned about
+Zero query literals containing 'delete' or 'current' outside
+project_status.py.  It is blunt on purpose.  A guard that reasoned about
 which literals are filters and which are payloads would have to read the code
 the way a person does, and every case it got wrong would be an argument for
 switching it off.  This one asks a question with no judgement in it -- does the
@@ -10,17 +11,17 @@ down below with its reason.
 
 It earns its keep: writing it turned up two soft-delete writes in views.py
 spelled ``{'delete' : True}``, with a space before the colon, which the audit's
-own grep for ``'delete':`` had walked straight past.  Spec §3.2 lists that
-exact spacing divergence among the 21 query shapes.
+own grep for ``'delete':`` had walked straight past.  That exact spacing
+divergence is one of the 21 distinct query shapes the audit counted.
 
 Scope: application code (``caper/caper/``) and the operational scripts at the
 repo root.  ``tests/`` is exempt -- fixture documents have to be free to spell
-out the awkward states the §10 fixture table demands, and a guard with two
+out the awkward states the fixture catalogue demands, and a guard with two
 hundred exemptions is a guard nobody keeps.  The protection for tests is
 different in kind: ``FakeCollection`` and the truth-table fixtures evaluate
 through ``project_status.matches()``, so a test can no longer encode a
 *different* belief about reachability, which is what
-``tests/test_purge_local_db.py`` once did (spec §2.1).
+``tests/test_purge_local_db.py`` once did.
 """
 
 import importlib
@@ -170,13 +171,13 @@ ALLOWED = {
      "new_val = { \"$set\": {'current': status_flags(SUPERSEDED)['current'],"):
         "project_update() clears 'current' only: SOFT_DELETED -> SUPERSEDED",
 
-    # -- the one write with no status to name (spec D3) ------------------
+    # -- the one write with no status to name -----------------------------
     (os.path.join('caper', 'caper', 'views.py'),
      "'current': False,"):
         "_do_rollback() marks a failed placeholder current=False while leaving "
         "delete=False, producing a DETACHED document that is still reachable "
         "by URL. That is the defect itself, not a routing miss -- see the "
-        "comment above the line and spec D3, where the population is 39 "
+        "comment above the line, where the population is 39 "
         "documents. status_flags() refuses to write DETACHED on purpose.",
 }
 
@@ -207,7 +208,7 @@ def _occurrences():
 
 
 def test_no_unlisted_delete_or_current_literal():
-    """Spec §13: zero query literals containing 'delete' or 'current' outside
+    """Zero query literals containing 'delete' or 'current' outside
     project_status.py.
 
     A failure here is not a style complaint.  It means a predicate this

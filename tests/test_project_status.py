@@ -1,10 +1,11 @@
 """
-The Phase 0 cross-check: classify(), STATUS_QUERIES and matches() must agree.
+The cross-check: classify(), STATUS_QUERIES and matches() must agree.
 
-This is the mechanism of the phase, not a nicety.  Both production incidents in
-docs/project-version-history-and-provenance-spec.md §2 were one predicate
-maintained in two places, drifting.  project_status.py collapses that pair; if
-its three forms can disagree, the bug is rebuilt one level up.
+This is the mechanism, not a nicety.  Both production incidents behind
+project_status.py were one predicate maintained in two places, drifting -- a
+cleanup script that deleted reachable documents, and a purge script whose
+GridFS key list had fallen eight keys behind.  The module collapses that pair;
+if its three forms can disagree, the bug is rebuilt one level up.
 
 Three layers, deliberately:
 
@@ -16,7 +17,7 @@ Three layers, deliberately:
      not match a missing field, and ``{'delete': False}`` does not match ``0``.
      A pure-Python test cannot prove agreement with a database.
   3. ``test_classify_agrees_with_status_queries_over_the_whole_database`` --
-     the literal §9 requirement, over whatever documents actually exist.
+     over whatever documents actually exist.
 
 Layer 3 is only worth as much as the database it runs against.  On a laptop it
 sees 24 healthy documents and proves nothing; the states that matter live on
@@ -37,6 +38,7 @@ import os
 import pytest
 from bson import ObjectId
 
+from awkward_states import build_all, documents_with_plain_ids
 from caper.project_status import (
     ALL_STATUSES,
     DELETE_FLAG_QUERY,
@@ -119,11 +121,11 @@ def test_classify_agrees_with_status_queries_on_every_flag_combination():
 
 
 def test_the_documented_production_populations_classify_as_documented():
-    """Spec §2.3's observed state table, row by row.
+    """The six flag combinations production actually holds, row by row.
 
-    These six rows are all of production.  If a change to this module moves a
-    row to a different status, it changes what every cleanup script does to
-    345 real documents.
+    These six rows are all of production, as measured in August 2026.  If a
+    change to this module moves a row to a different status, it changes what
+    every cleanup script does to 345 real documents.
     """
     assert classify({'delete': False, 'current': True}) == LIVE               # 119
     assert classify({'delete': True, 'current': False}) == SUPERSEDED         # 103
@@ -137,8 +139,8 @@ def test_the_documented_production_populations_classify_as_documented():
 
 
 def test_absence_of_current_is_not_the_same_as_current_false():
-    """Spec D2.  The 70 documents that hold a tarfile and are unreachable only
-    because a field is missing.  Backfilling 'current' on its own would move
+    """The 70 documents that hold a tarfile and are unreachable only because
+    a field is missing.  Backfilling 'current' on its own would move
     all 70 from DETACHED to SUPERSEDED and make them reachable at once."""
     absent = {'delete': True}
     explicit = {'delete': True, 'current': False}
@@ -155,7 +157,7 @@ def test_integer_flags_are_not_booleans():
 
 
 def test_a_partial_tombstone_is_superseded_not_a_tombstone():
-    """Spec D13: delete_project_version()'s sole-version path removes a version
+    """delete_project_version()'s sole-version path removes a version
     from history without purging its payload.  Calling that a TOMBSTONE would
     tell a future cleanup the payload is already gone; it is not."""
     partial = {'delete': True, 'current': False,
@@ -169,7 +171,8 @@ def test_a_partial_tombstone_is_superseded_not_a_tombstone():
 
 
 def test_a_tombstone_without_a_redirect_is_still_a_tombstone():
-    """Transitions T7 and T8 produce a tombstone with nowhere to redirect to."""
+    """Deleting the last restorable version produces a tombstone with
+    nowhere to redirect to."""
     assert classify({'delete': True, 'current': False,
                      'version_deleted_from_history': True,
                      'payload_purged': True,
@@ -181,7 +184,7 @@ def test_a_tombstone_without_a_redirect_is_still_a_tombstone():
 # ---------------------------------------------------------------------------
 
 def test_superseded_documents_are_reachable_by_url():
-    """Spec D1.  103 production documents; deleting one breaks a live link."""
+    """103 production documents; deleting one breaks a live link."""
     assert is_reachable_by_url({'delete': True, 'current': False})
 
 
@@ -190,9 +193,9 @@ def test_soft_deleted_documents_are_not_reachable_by_url():
 
 
 def test_detached_documents_can_be_reachable():
-    """The 39 delete=False/current=False documents resolve today (spec D3), and
-    the 70 with no 'current' field do not.  Both are DETACHED: status and
-    reachability are independent axes in Phase 0."""
+    """The 39 delete=False/current=False documents resolve today, and the 70
+    with no 'current' field do not.  Both are DETACHED: status and
+    reachability are independent axes."""
     reachable = {'delete': False, 'current': False}
     unreachable = {'delete': True}
 
@@ -277,9 +280,9 @@ def test_matches_refuses_operators_it_does_not_implement():
 
 @pytest.fixture
 def status_fixture_collection():
-    """A scratch collection holding one document per awkward state (spec §10).
+    """A scratch collection holding one document per awkward state.
 
-    Separate from 'projects' on purpose: this test writes, and Phase 0 writes
+    Separate from 'projects' on purpose: this test writes, and this work writes
     nothing to real project documents.
     """
     from caper.utils import db_handle
@@ -380,11 +383,11 @@ def test_mongo_agrees_with_classify_on_every_flag_combination(status_fixture_col
 
 
 # ---------------------------------------------------------------------------
-# 3 -- over every document that actually exists (spec §9, §13)
+# 3 -- over every document that actually exists
 # ---------------------------------------------------------------------------
 
 def _assert_known_target():
-    """Name the database out loud before reading it.  Spec D10.
+    """Name the database out loud before reading it.
 
     Dev and prod are two databases on one DocumentDB cluster, so the target is
     decided entirely by whichever config.sh was sourced -- there is nothing in
@@ -438,7 +441,7 @@ def _assert_known_target():
 
 @pytest.mark.integration
 def test_classify_agrees_with_status_queries_over_the_whole_database():
-    """Read-only.  The literal Phase 0 requirement.
+    """Read-only.  The cross-check, over real data.
 
     A local database holding only healthy projects proves little on its own --
     which is the point of the two layers above.  This one is what gets run
@@ -512,11 +515,11 @@ def test_the_flags_are_booleans_or_absent():
     Those are exactly where the two spellings come apart.  Python's
     ``doc.get('delete', False)`` is truthiness, so 1 is deleted and 0 is not;
     Mongo's ``{'delete': True}`` is type-bracketed, so 1 matches nothing.  Every
-    place Phase 0 replaced a truthiness read with ``matches()`` -- both passes
-    of schema_validate.py -- is a behaviour change on such a document and a
-    no-op on every other.  The spec says there are none (§2.3: `delete` bool on
-    all 345, `current` bool on 275 and absent on 70), and absence is fine
-    because both spellings agree there.  This is that claim, checked rather
+    place a truthiness read became a ``matches()`` call -- both passes of
+    schema_validate.py -- is a behaviour change on such a document and a no-op
+    on every other.  The measured answer is that there are none: `delete` is a
+    bool on all 345, `current` a bool on 275 and absent on 70, and absence is
+    fine because both spellings agree there.  This is that claim, checked rather
     than inherited.
 
     A failure here does not mean the resolver is wrong.  It means a document
@@ -530,7 +533,7 @@ def test_the_flags_are_booleans_or_absent():
     # Scanned in Python rather than asked as {'$not': {'$type': 'bool'}}:
     # DocumentDB's $not is narrower than Mongo's, and a server-side operator
     # that quietly matches nothing would turn this check into a test that
-    # always passes -- the exact failure mode Phase 0 exists to prevent.
+    # always passes -- the exact failure mode this module exists to prevent.
     fields = ('delete', 'current', 'version_deleted_from_history', 'payload_purged')
     projection = {field: 1 for field in fields}
 
@@ -548,7 +551,7 @@ def test_the_flags_are_booleans_or_absent():
 
 
 # The five steps of get_one_project() as their query literals stood at
-# 5fb238a~1, immediately before Phase 0 replaced them, plus the two inside
+# 5fb238a~1, immediately before they were replaced, plus the two inside
 # resolve_redirect_tombstone().  Transcribed rather than derived: deriving them
 # from project_status would let one edit move both sides at once, which is the
 # whole failure this comparison exists to detect.
@@ -581,7 +584,7 @@ def test_the_pre_phase_0_query_literals_select_the_same_documents():
     than comparing return values.
 
     On dev this is 484 keys x 5 steps plus the redirect pair: 2,062 query pairs,
-    all agreeing.  It is the evidence that Phase 0 changed no behaviour, and it
+    all agreeing.  It is the evidence that the rewrite changed no behaviour, and it
     is worth more than any amount of soak time, because a soak only exercises
     the documents someone happens to visit.
 
@@ -655,11 +658,10 @@ def test_the_pre_phase_0_query_literals_select_the_same_documents():
 # 4 -- the rewrite is behaviour-preserving
 # ---------------------------------------------------------------------------
 #
-# Phase 0 routes 72 call sites through this module and changes no behaviour.
-# "Changes no behaviour" is a claim about query results, so it is checked as
-# one: every literal that was replaced, run against the same documents as its
-# replacement, over a fixture set built from the §10 table -- one document per
-# awkward state production actually holds.
+# Routing 72 call sites through this module changes no behaviour.  "Changes no
+# behaviour" is a claim about query results, so it is checked as one: every
+# literal that was replaced, run against the same documents as its replacement,
+# over the awkward-state catalogue -- one document per state production holds.
 #
 # Left column: exactly what the code said before this change.
 # Right column: what it says now.
@@ -694,52 +696,16 @@ REPLACED_QUERIES = [
 
 
 def _fixture_documents():
-    """One document per row of the spec's §10 fixture table, plus the six
-    production state combinations of §2.3."""
-    head = ObjectId()
-    prior = ObjectId()
-    return [
-        # §2.3 row 1 -- LIVE (119 on prod)
-        {'_id': head, 'project_name': 'live', 'delete': False, 'current': True,
-         'previous_versions': [{'linkid': str(prior)}], 'tarfile': ObjectId()},
-        # §2.3 row 2 -- SUPERSEDED referenced by a head (89 on prod)
-        {'_id': prior, 'project_name': 'superseded-referenced',
-         'delete': True, 'current': False, 'tarfile': ObjectId()},
-        # SUPERSEDED reachable but referenced by nothing (14 on prod)
-        {'_id': ObjectId(), 'project_name': 'superseded-orphan',
-         'delete': True, 'current': False, 'tarfile': ObjectId()},
-        # §2.3 row 3 -- delete=True with NO 'current' field (70 on prod)
-        {'_id': ObjectId(), 'project_name': 'no-current-field',
-         'delete': True, 'tarfile': ObjectId()},
-        # §2.3 row 4 -- delete=False, current=False (39 on prod)
-        {'_id': ObjectId(), 'project_name': 'detached-reachable',
-         'delete': False, 'current': False, 'tarfile': ObjectId()},
-        # §2.3 row 5 -- SOFT_DELETED (12 on prod)
-        {'_id': ObjectId(), 'project_name': 'soft-deleted',
-         'delete': True, 'current': True, 'tarfile': ObjectId()},
-        # §2.3 row 6 -- complete tombstone (2 on prod)
-        {'_id': ObjectId(), 'project_name': 'tombstone',
-         'delete': True, 'current': False,
-         'version_deleted_from_history': True, 'payload_purged': True,
-         'redirect_to_project': str(head)},
-        # D13 -- removed from history, payload never purged (0 on prod, latent)
-        {'_id': ObjectId(), 'project_name': 'partial-tombstone',
-         'delete': True, 'current': False,
-         'version_deleted_from_history': True, 'tarfile': ObjectId()},
-        # D5 -- a dangling previous_versions.linkid (2 prod / 6 dev)
-        {'_id': ObjectId(), 'project_name': 'dangling-history',
-         'delete': False, 'current': True,
-         'previous_versions': [{'linkid': str(ObjectId())}]},
-        # D6 -- live and also referenced as history (3 on dev, 0 on prod)
-        {'_id': ObjectId(), 'project_name': 'live-and-superseded',
-         'delete': False, 'current': True},
-        # D4 -- a detached document sharing a name with a live project
-        {'_id': ObjectId(), 'project_name': 'live',
-         'delete': True, 'tarfile': ObjectId()},
-        # No 'delete' field at all -- not a production state, but nothing in
-        # the schema forbids it and every query has to have an answer for it.
-        {'_id': ObjectId(), 'project_name': 'no-delete-field', 'current': True},
-    ]
+    """The awkward-state catalogue, as plain documents.
+
+    Built by ``tests/awkward_states.py`` rather than written out here.  There
+    used to be a second copy of this table in this file, which is precisely the
+    defect the rest of this module is about: a list maintained in two places
+    drifts, and the copy nobody is looking at is the one that goes stale.  One
+    catalogue, two consumers -- the query comparisons below, and the validator
+    tests that seed the same shapes into a real collection.
+    """
+    return documents_with_plain_ids(build_all())
 
 
 @pytest.fixture

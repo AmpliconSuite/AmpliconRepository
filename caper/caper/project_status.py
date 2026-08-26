@@ -26,8 +26,8 @@ the same rule in three forms, and a test proves all three agree:
 
 No schema change comes with this module.  It reads the fields that exist today
 (``delete``, ``current``, ``version_deleted_from_history``, ``payload_purged``)
-and reports what they mean.  Phase 1 of the spec adds a stored ``status``; the
-validator will then assert stored == ``classify(doc)``.
+and reports what they mean.  When a stored ``status`` field is added, it gets
+added here and a validator asserts stored == ``classify(doc)``.
 
 
 The three traps
@@ -61,14 +61,14 @@ whether the application can still serve it.  Today those disagree for a real
 population: the 39 documents that are ``delete=False, current=False`` are
 ``DETACHED`` — the schema cannot say whether they are drafts, abandoned
 uploads or unlinked predecessors — and they are reachable by URL all the same.
-Spec §4's table describes the target model, where ``DETACHED`` will mean
-"reachable by nothing".  Getting there is a migration, not a classification,
-and it is deliberately not part of this phase.  Never infer one axis from the
+The intended end state is one where ``DETACHED`` means "reachable by
+nothing".  Getting there is a migration, not a classification, and it is
+deliberately not part of this change.  Never infer one axis from the
 other; ask the function you actually mean.
 """
 
 # ---------------------------------------------------------------------------
-# The five statuses (spec §4)
+# The five statuses
 # ---------------------------------------------------------------------------
 
 LIVE = 'LIVE'
@@ -91,9 +91,10 @@ DETACHED = 'DETACHED'
 schema.  109 of 345 production documents are in this state -- 70 that are
 ``delete=True`` with no ``current`` field, and 39 that are ``delete=False,
 current=False``.  It is a named state rather than "everything else" so that
-population is countable and reviewable instead of invisible (spec §4).
+population is countable and reviewable instead of invisible.
 
-Deciding the fate of those documents is explicitly out of scope (spec §12)."""
+Deciding the fate of those documents is a human call, and nothing here makes
+it."""
 
 ALL_STATUSES = (LIVE, SUPERSEDED, SOFT_DELETED, TOMBSTONE, DETACHED)
 
@@ -113,8 +114,8 @@ _STATUS_FLAGS = {
 }
 
 # What makes a document a tombstone.  Both markers are required, matching the
-# spec §4 definition ("version removed from history, payload purged") and the
-# protection rule already in cleanup_orphaned_projects.py.
+# definition of a tombstone -- version removed from history, payload purged --
+# and the protection rule already in cleanup_orphaned_projects.py.
 #
 # 'redirect_to_project' is deliberately NOT required: transitions T7 and T8
 # produce a tombstone with nowhere to redirect to, and demanding the field
@@ -122,7 +123,7 @@ _STATUS_FLAGS = {
 #
 # A document carrying 'version_deleted_from_history' WITHOUT 'payload_purged'
 # is the partial state left by delete_project_version()'s sole-version path
-# (views.py:3012, spec D13): removed from history but still holding its whole
+# (views.py:3012): removed from history but still holding its whole
 # GridFS payload, and still resolvable.  It is not a tombstone, and treating it
 # as one would invite a payload deletion that has already happened.  It falls
 # through to the flag rules below -- SUPERSEDED, which retains everything --
@@ -155,8 +156,8 @@ def classify(doc):
     Pure and document-local: it reads no other document and issues no query, so
     it says nothing about whether *doc* is referenced as another project's
     history.  In the target model ``SUPERSEDED`` is defined by chain membership;
-    until the lineage pointers of Phase 1 exist there is nothing on the document
-    to read, so the flags are the whole story.  ``STATUS_QUERIES`` encodes the
+    until lineage pointers exist there is nothing on the document to read, so
+    the flags are the whole story.  ``STATUS_QUERIES`` encodes the
     same rule, and a test asserts the two agree over every document in the
     database.
     """
@@ -250,12 +251,13 @@ PARTIAL_TOMBSTONE_QUERY = {
 }
 """Documents removed from history whose payload was never purged -- the state
 ``delete_project_version()`` leaves when it deletes the sole version of a
-project (``views.py:3012``, spec D13).  Its log line says "project fully
+project (``views.py:3012``).  Its log line says "project fully
 removed"; the document stays resolvable through ``utils.py:722`` and its whole
 GridFS payload is still stored and still billed.
 
 0 documents on prod, so the path is latent rather than damaging.  Exported so
-it stays countable -- spec T8 makes fixing it a Phase 2 requirement."""
+it stays countable.  Fixing it means routing every deletion path through one
+tombstone-creation routine, which is a change to write paths."""
 
 
 def status_query(status, *extra, **fields):
@@ -296,7 +298,7 @@ def status_flags(status):
 
     For ``$set`` payloads and for the document literals that create a project,
     so that a status change is written from the same table it is read from.
-    Phase 1 adds a stored ``status`` field; it gets added here, once.
+    A stored ``status`` field, when there is one, gets added here -- once.
 
     ``DETACHED`` is not writable.  It is a description of documents whose
     meaning was lost, not a state anything should deliberately create.
@@ -308,7 +310,7 @@ def status_flags(status):
     if status == DETACHED:
         raise ValueError(
             "DETACHED is a diagnosis, not a state to write. A document becomes "
-            "DETACHED by losing the flags that gave it meaning; see spec D3.")
+            "DETACHED by losing the flags that gave it meaning.")
     raise ValueError(f"Unknown project status: {status!r}")
 
 

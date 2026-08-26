@@ -170,7 +170,7 @@ def main():
     # to the delete=False/current=False population rather than widening to all
     # 109 ambiguous documents: the other 70 are delete=True with no 'current'
     # field, which is equally DETACHED but is reachable by neither resolver
-    # step.  Spec D2/D3 and §12.
+    # step.
     old_versions = [project for project in all_projects
                     if classify(project) == DETACHED and is_reachable_by_url(project)]
     

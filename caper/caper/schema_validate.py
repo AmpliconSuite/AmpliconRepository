@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # This module is both imported (caper.schema_validate, by views_admin and the
 # tests) and run directly as a script, so the resolver import has to work under
 # both.  It is not optional: the "skip deleted projects" test below is a status
-# predicate, and Phase 0's whole point is that there is one copy of it.
+# predicate, and the whole point of project_status is that there is one copy.
 try:
     from .project_status import DELETE_FLAG_QUERY, matches
 except ImportError:  # executed as a standalone script

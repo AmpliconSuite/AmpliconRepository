@@ -26,7 +26,9 @@ from .project_status import (
     NOT_DELETED_QUERY,
     PRIOR_VERSION_QUERY,
     DELETE_FLAG_QUERY,
+    STATUS_QUERIES,
     LIVE,
+    TOMBSTONE,
     combine,
     status_query,
 )
@@ -927,11 +929,11 @@ def _deleted_version_entries_for_project(project):
     projection_fields = ['date'] + VERSION_HISTORY_FIELDS + DELETED_VERSION_HISTORY_FIELDS
     try:
         cursor = collection_handle.find(
-            {
-                'version_deleted_from_history': True,
-                'payload_purged': True,
-                'redirect_to_project': {'$in': project_ids},
-            },
+            # Was a hand-written copy of STATUS_QUERIES[TOMBSTONE].  The grep
+            # guard only looks for 'delete' and 'current' literals, so it walked
+            # past this one; validate_project_lineage.py's I18 found it.
+            combine(STATUS_QUERIES[TOMBSTONE],
+                    redirect_to_project={'$in': project_ids}),
             {field: 1 for field in projection_fields},
         )
         entries = [_deleted_version_history_entry(doc) for doc in cursor]
