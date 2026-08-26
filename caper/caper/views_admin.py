@@ -39,6 +39,16 @@ from .utils import (
     get_project_version_chain, normalize_visibility_field, is_project_private,
 )
 from .background_tasks import get_background_task_status
+from .project_status import (
+    DETACHED,
+    LIVE,
+    SOFT_DELETED,
+    STATUS_QUERIES,
+    classify,
+    is_reachable_by_url,
+    status_flags,
+    status_query,
+)
 
 from .extra_metadata import *
 
@@ -279,11 +289,8 @@ def admin_featured_projects(request):
         collection_handle_primary.update_one(query, new_val)
 
     # Handle both legacy boolean False and new string 'public'
-    public_projects = list(collection_handle_primary.find({
-        'private': {'$in': [False, 'public']},
-        'delete': False,
-        'current': True
-    }))
+    public_projects = list(collection_handle_primary.find(
+        status_query(LIVE, private={'$in': [False, 'public']})))
     for proj in public_projects:
         prepare_project_linkid(proj)
 
@@ -410,7 +417,7 @@ def admin_stats(request):
     users = User.objects.all()
 
     # Get all projects
-    all_projects = list(collection_handle.find({'current': True, 'delete': False}))
+    all_projects = list(collection_handle.find(STATUS_QUERIES[LIVE]))
 
     # Create a dictionary to store user stats
     user_stats = {}
@@ -547,7 +554,8 @@ def site_stats_regenerate(request):
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def project_stats_download(request):
     # Get public and private project data
-    public_projects = list(collection_handle.find({'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}))
+    public_projects = list(collection_handle.find(
+        status_query(LIVE, private={'$in': [False, 'public']})))
     for project in public_projects:
         if not 'project_downloads' in project:
             project['project_downloads_sum'] = 0
@@ -752,7 +760,11 @@ def admin_delete_project(request):
             # remove the delete flag, this project goes back
             project = get_one_deleted_project(project_id)
             query = {'_id': ObjectId(project_id)}
-            new_val = {"$set": {'delete': False}}
+            # Clears the delete flag and nothing else, which is what makes
+            # this the reverse of a soft delete: the document keeps whatever
+            # 'current' it had.  Only SOFT_DELETED documents are listed below,
+            # so in practice that lands on LIVE.
+            new_val = {"$set": {'delete': status_flags(LIVE)['delete']}}
             collection_handle.update_one(query, new_val)
             error_message = f"Project {project_name} restored."
 
@@ -770,7 +782,7 @@ def admin_delete_project(request):
 
             error_message = admin_permanent_delete_project(project_id, project, project_name)
 
-    deleted_projects = list(collection_handle.find({'delete': True, 'current': True}))
+    deleted_projects = list(collection_handle.find(STATUS_QUERIES[SOFT_DELETED]))
     for proj in deleted_projects:
         prepare_project_linkid(proj)
         try:
@@ -829,8 +841,10 @@ def data_qc(request):
         username = request.user.username
         useremail = request.user.email
 
-        # private_projects = get_projects_close_cursor({'private' : True, "$or": [{"project_members": username}, {"project_members": useremail}]  , 'delete': False})
-        private_projects = list(collection_handle.find({'private': {'$in': [True, 'private', 'hidden_public']}, "$or": [{"project_members": username}, {"project_members": useremail}], 'delete': False, 'current': True}))
+        private_projects = list(collection_handle.find(status_query(
+            LIVE,
+            private={'$in': [True, 'private', 'hidden_public']},
+            **{"$or": [{"project_members": username}, {"project_members": useremail}]})))
         for proj in private_projects:
             prepare_project_linkid(proj)
             proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
@@ -840,8 +854,8 @@ def data_qc(request):
     public_proj_count = 0
     public_sample_count = 0
 
-    # public_projects = get_projects_close_cursor({'private' : False, 'delete': False})
-    public_projects = list(collection_handle.find({'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}))
+    public_projects = list(collection_handle.find(
+        status_query(LIVE, private={'$in': [False, 'public']})))
     for proj in public_projects:
         prepare_project_linkid(proj)
         proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
@@ -856,11 +870,14 @@ def data_qc(request):
     orphaned_projects = []
     
     for project in all_projects:
-        delete_val = project.get('delete', None)
-        current_val = project.get('current', None)
-        
-        # Must have delete=False and current=False
-        if delete_val == False and current_val == False:
+        # DETACHED is the status for a document whose meaning the schema cannot
+        # determine, and is_reachable_by_url() narrows that to the ones the
+        # application will still serve -- which is the pair this page was
+        # hand-testing as delete=False AND current=False.  Same population on
+        # prod, where every document carries a 'delete' field; the difference
+        # is only a DETACHED document with no 'delete' field at all, which the
+        # old test would have missed and this one reports.
+        if classify(project) == DETACHED and is_reachable_by_url(project):
             project_id = str(project.get('_id', 'NO_ID'))
             
             # Check if this project is truly orphaned:
@@ -926,7 +943,9 @@ def make_project_current(request, project_id):
             # Update the project to set current=True
             result = collection_handle.update_one(
                 {'_id': ObjectId(project_id)},
-                {'$set': {'current': True}}
+                # Half of the flag pair on purpose: this admin repair marks a
+                # document as the head of its chain without touching 'delete'.
+                {'$set': {'current': status_flags(LIVE)['current']}}
             )
             
             if result.modified_count > 0:
@@ -1069,7 +1088,7 @@ def admin_project_files_report(request):
     logger.info(f"Searching for files matching pattern: {file_pattern}")
     
     # Get all projects (public and private)
-    all_projects = list(collection_handle.find({'current': True, 'delete': False}))
+    all_projects = list(collection_handle.find(STATUS_QUERIES[LIVE]))
     
     # Initialize S3 client if S3 downloads are enabled
     s3_client = None
@@ -1213,7 +1232,7 @@ def _get_audit_log_context(request):
     """
     Build the audit log context dict shared by admin_project_files_report and admin_audit_log.
     """
-    all_projects = list(collection_handle.find({'current': True, 'delete': False}))
+    all_projects = list(collection_handle.find(STATUS_QUERIES[LIVE]))
     for proj in all_projects:
         prepare_project_linkid(proj)
         proj['id_str'] = str(proj['_id'])

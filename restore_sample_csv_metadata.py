@@ -55,6 +55,7 @@ if _standalone:
 
 from bson import ObjectId
 from caper.utils import collection_handle
+from caper.project_status import LIVE, STATUS_QUERIES
 
 logging.basicConfig(
     level=logging.INFO,
@@ -161,14 +162,14 @@ def restore_csv_metadata(dry_run=False):
     logger.info("=" * 72)
 
     # --- Phase 1: find all affected (current, not deleted, no CSV metadata) ---
-    total_current = collection_handle.count_documents({'current': True, 'delete': False})
+    total_current = collection_handle.count_documents(STATUS_QUERIES[LIVE])
     logger.info(f"Total current non-deleted projects: {total_current}")
 
     affected_projects = []
     skipped_no_prev = 0
 
     for proj in collection_handle.find(
-        {'current': True, 'delete': False},
+        STATUS_QUERIES[LIVE],
         {'_id': 1, 'project_name': 1, 'runs': 1, 'previous_versions': 1}
     ):
         if _has_csv_metadata(proj):

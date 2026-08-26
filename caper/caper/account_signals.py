@@ -15,6 +15,8 @@ from django.contrib.auth import get_user_model
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
+from .project_status import HEAD_VERSION_QUERY, combine
+
 
 logger = logging.getLogger(__name__)
 
@@ -118,8 +120,11 @@ def purge_account_references(
 
     projects_updated = 0
     for field in ('project_members', 'subscribers'):
+        # HEAD_VERSION_QUERY rather than STATUS_QUERIES[LIVE]: membership is
+        # scrubbed from soft-deleted projects too, since an admin can restore
+        # one.  It misses the 70 documents with no 'current' field.
         result = projects_collection.update_many(
-            {'current': True, field: {'$in': identifiers}},
+            combine(HEAD_VERSION_QUERY, **{field: {'$in': identifiers}}),
             {'$pull': {field: {'$in': identifiers}}},
         )
         projects_updated += getattr(result, 'modified_count', 0) or 0

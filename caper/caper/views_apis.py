@@ -26,6 +26,8 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework import status
 
+from .project_status import LIVE, classify, status_query
+
 from threading import Thread
 
 from .serializers import FileSerializer
@@ -184,7 +186,15 @@ class ProjectFileAddView(APIView):
         # If project is not current, get the latest version.  check that the user is still a member of the latest version
         # but compare the project key to the original project version submitted.  This allows a user to run several
         # additions of samples without going back and forth to get the updated uuid and key after each one
-        if not project.get('current', True) or project.get('delete', False):
+        # Equivalent to the flag test this replaced -- `not project.get('current',
+        # True) or project.get('delete', False)` -- for every document that can
+        # reach this line.  get_one_project() resolves through queries that all
+        # name both flags explicitly (NOT_DELETED_QUERY, PRIOR_VERSION_QUERY), so
+        # a document with a missing flag cannot arrive here and the defaults in
+        # those .get() calls were never exercised.  Stating it as "not LIVE" also
+        # sends tombstones down the redirect path, which is what step 4/5 of the
+        # resolver already does for them.
+        if classify(project) != LIVE:
             # get the latest
             latest_proj = get_latest_project_version(project)
             original_project = project
@@ -557,7 +567,7 @@ class ProjectListView(APIView):
         name_filter = request.query_params.get('name', '').strip()
         name_q = {'$regex': name_filter, '$options': 'i'} if name_filter else None
 
-        public_q = {'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}
+        public_q = status_query(LIVE, private={'$in': [False, 'public']})
         if name_q:
             public_q['project_name'] = name_q
         # Same projection as the detail/download views: _project_to_dict() reads
@@ -568,12 +578,11 @@ class ProjectListView(APIView):
         projects = list(collection_handle.find(public_q, _PROJECT_METADATA_PROJECTION))
 
         if user is not None:
-            private_q = {
-                'private': {'$in': [True, 'private', 'hidden_public']},
-                '$or': [{'project_members': user.username}, {'project_members': user.email}],
-                'delete': False,
-                'current': True,
-            }
+            private_q = status_query(
+                LIVE,
+                private={'$in': [True, 'private', 'hidden_public']},
+                **{'$or': [{'project_members': user.username},
+                           {'project_members': user.email}]})
             if name_q:
                 private_q['project_name'] = name_q
             seen = {str(p['_id']) for p in projects}

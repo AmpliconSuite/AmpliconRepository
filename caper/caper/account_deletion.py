@@ -34,6 +34,8 @@ from collections import namedtuple
 from django.conf import settings
 from django.contrib.auth import get_user_model
 
+from .project_status import HEAD_VERSION_QUERY, combine
+
 
 logger = logging.getLogger(__name__)
 
@@ -107,10 +109,11 @@ def plan_account_deletion(username, email, *, projects_collection=None):
         return []
 
     collection = _projects_collection(projects_collection)
-    projects = list(collection.find({
-        'current': True,
-        'project_members': {'$in': identifiers},
-    }))
+    # HEAD_VERSION_QUERY, not STATUS_QUERIES[LIVE]: a soft-deleted project is
+    # still recoverable from the admin page, so its membership has to be
+    # disposed of too.
+    projects = list(collection.find(combine(
+        HEAD_VERSION_QUERY, project_members={'$in': identifiers})))
 
     plan = []
     for project in projects:

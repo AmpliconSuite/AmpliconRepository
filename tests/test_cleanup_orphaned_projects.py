@@ -1,5 +1,6 @@
 from bson import ObjectId
 
+from caper.project_status import matches
 from cleanup_orphaned_projects import (
     collect_needs_review_ids,
     collect_protected_ids,
@@ -10,29 +11,27 @@ from cleanup_orphaned_projects import (
 
 
 class FakeCollection:
+    """An in-memory stand-in that evaluates queries with project_status.matches().
+
+    It used to carry its own two-line matcher, which was a third copy of query
+    semantics in a repo whose defining bug is a predicate maintained twice.
+    matches() is the same evaluator the application uses, and
+    tests/test_project_status.py checks it against a real MongoDB.
+    """
+
     def __init__(self, docs):
         self.docs = docs
 
     def find(self, query, projection):
         for doc in self.docs:
-            if all(self._matches(doc, key, value) for key, value in query.items()):
-                yield {
-                    key: doc[key]
-                    for key in projection
-                    if key in doc
-                }
+            if matches(doc, query):
+                yield {key: doc[key] for key in projection if key in doc}
 
     def find_one(self, query, projection=None):
         for doc in self.docs:
-            if all(self._matches(doc, key, value) for key, value in query.items()):
+            if matches(doc, query):
                 return doc
         return None
-
-    @staticmethod
-    def _matches(doc, key, value):
-        if isinstance(value, dict) and '$exists' in value:
-            return (key in doc) == value['$exists']
-        return doc.get(key) == value
 
 
 class FakeGridFS:
