@@ -890,20 +890,35 @@ history that re-aggregation has been hiding.
 
 ### D15 · Version deletion purges GridFS but leaves the S3 tarball
 
-`delete_project_version()` calls `delete_gridfs_payload_for_project()` and says
-nothing about S3. The same is true of re-aggregation: the new version gets a new
-`_id`, so a new key, and the previous version's object at
-`{prefix}{old_id}/{old_id}.tar.gz` is left behind with nothing naming it.
+**An earlier draft of this section was wrong and the correction matters.** It
+said re-aggregation strands the previous version's S3 object. It does not. A
+superseded version keeps its document, `get_one_project()` resolves it, and
+`project_download()` keys off *that version's* own `_id` — so
+`{prefix}{old_id}/{old_id}.tar.gz` is what backs downloading an old version.
+**Downloading previous versions is a feature, and those objects are what serve
+it.** Any sweep that treats "not the head of a chain" as "unreferenced" breaks
+it.
 
-Permanent delete does remove it (`views_admin.py:654`). Soft delete correctly
-does not. Those two are the only paths that consider S3 at all, which makes this
-the same shape as D7 — a payload-removal rule implemented in some of the places
-that remove payload.
+The leak is narrower than that, and in two places:
+
+`delete_project_version()` calls `delete_gridfs_payload_for_project()` and says
+nothing about S3, so a version *deleted from history* leaves its object behind.
+
+`admin_permanent_delete_project()` deletes one key —
+`{prefix}{project_id}/{project_id}.tar.gz` (`views_admin.py:650`) — and does not
+walk the chain, though it is deleting the whole project. Permanently deleting a
+project with N versions therefore leaves N-1 objects with no document of any
+status naming them.
+
+Soft delete correctly leaves S3 alone. Those are the only paths that consider S3
+at all, which makes this the same shape as D7 — a payload-removal rule
+implemented in some of the places that remove payload.
 
 The object is a cache: `project_download()` materialises it from GridFS on the
-first download that finds it missing, and no lifecycle rule expires it. So the
-leak is per re-aggregation of any project that has ever been downloaded, at full
-project size.
+first download that finds it missing, and no lifecycle rule expires it. Measured
+on prod 2026-08-27, **all 286 distinct tarfile ids named by a document are
+present in `fs.files` — none missing** — so every one of these objects is
+regenerable and S3 holds no sole copy of anything.
 
 Measured 2026-08-27: of 199.6 GiB in `amprepo-private`, **38.9 GiB across 211
 objects carries a project-id prefix that no document in either database still
