@@ -49,6 +49,8 @@ Requirements:
 """
 
 import argparse
+import datetime
+import json
 import os
 import sys
 
@@ -101,6 +103,29 @@ def connect(expected_db, expected_host):
 
 
 # ---------------------------------------------------------------------------
+# Undoing it without restoring the cluster
+# ---------------------------------------------------------------------------
+
+def record(rollback, doc_id, operator, fields):
+    """Append the inverse of one write, as a line of JSON.
+
+    The cluster's own backups are not a practical undo for this. Prod and dev
+    share one DocumentDB cluster and a restore builds a *new* cluster rather
+    than rewinding this one, so undoing a 70-field write that way means
+    rewinding dev too and repointing both connection strings.
+
+    The inverse of each write here is exact and tiny -- put the field back the
+    way it was, on that one _id -- so it is written down as it happens.
+    Replaying the file is a for-loop; it is a record, not a tool.
+    """
+    if rollback is None:
+        return
+    rollback.write(json.dumps({
+        '_id': str(doc_id), 'op': operator, 'fields': fields}, default=str) + '\n')
+    rollback.flush()   # a run that dies partway still leaves an undo for what it did
+
+
+# ---------------------------------------------------------------------------
 # Pass 1 -- the missing 'current' flag
 # ---------------------------------------------------------------------------
 
@@ -133,7 +158,7 @@ def plan_current(projects):
     return plan
 
 
-def apply_current(projects, plan, execute):
+def apply_current(projects, plan, execute, rollback=None):
     written = skipped = 0
     for doc, target in plan:
         value = status_flags(target)['current']
@@ -141,6 +166,7 @@ def apply_current(projects, plan, execute):
             doc['_id'], (doc.get('project_name') or '?')[:40], target, value))
         if not execute:
             continue
+        record(rollback, doc['_id'], '$unset', {'current': ''})
         # The precondition repeats the absence that made this document
         # eligible.  If anything wrote 'current' since the plan was built, this
         # matches nothing and the document is left alone.
@@ -186,7 +212,7 @@ def plan_lineage(projects):
     return plan
 
 
-def apply_lineage(projects, plan, execute):
+def apply_lineage(projects, plan, execute, rollback=None):
     written = skipped = 0
     for doc, rewritten in plan:
         print('  %s  %-40s' % (doc['_id'], (doc.get('project_name') or '?')[:40]))
@@ -196,6 +222,8 @@ def apply_lineage(projects, plan, execute):
                 print('      now  %r' % (new,))
         if not execute:
             continue
+        record(rollback, doc['_id'],
+               '$set', {'previous_versions': doc['previous_versions']})
         # Preconditioned on the array being byte-for-byte what was read.
         result = projects.update_one(
             {'_id': doc['_id'], 'previous_versions': doc['previous_versions']},
@@ -238,11 +266,29 @@ def main():
                         help='Actually write. Without it the script only reports.')
     parser.add_argument('--only', choices=['current', 'lineage'],
                         help='Run one pass instead of both.')
+    parser.add_argument('--rollback-file',
+                        help='Where to record the inverse of each write. '
+                             'Defaults to a timestamped file in the working '
+                             'directory. Only written under --execute.')
     args = parser.parse_args()
 
     projects = connect(args.expect_db, args.expect_host)
     print('mode: %s\n' % ('EXECUTE -- writes documents' if args.execute
                           else 'REPORT -- nothing is written (pass --execute)'))
+
+    rollback = None
+    if args.execute:
+        path = args.rollback_file or 'backfill-rollback-%s-%s.jsonl' % (
+            args.expect_db, datetime.datetime.now().strftime('%Y%m%dT%H%M%S'))
+        # Opened before the first write, and exclusively: an existing file is a
+        # previous run's undo, and truncating it would destroy the only cheap
+        # way back from that run.
+        try:
+            rollback = open(path, 'x')
+        except FileExistsError:
+            sys.exit('%s exists -- it is another run\'s undo record. '
+                     'Pass --rollback-file with a new name.' % path)
+        print('recording the undo for every write to %s\n' % path)
 
     totals = {'written': 0, 'skipped': 0}
 
@@ -259,7 +305,7 @@ def main():
                 by_status[target] = by_status.get(target, 0) + 1
             print('  %d document(s): %s\n' % (
                 len(plan), ', '.join('%d %s' % (n, s) for s, n in sorted(by_status.items()))))
-            written, skipped = apply_current(projects, plan, args.execute)
+            written, skipped = apply_current(projects, plan, args.execute, rollback)
             totals['written'] += written
             totals['skipped'] += skipped
         print('')
@@ -273,14 +319,17 @@ def main():
             print('  nothing to do')
         else:
             print('  %d document(s)\n' % len(plan))
-            written, skipped = apply_lineage(projects, plan, args.execute)
+            written, skipped = apply_lineage(projects, plan, args.execute, rollback)
             totals['written'] += written
             totals['skipped'] += skipped
             check_targets_exist(projects, plan)
         print('')
 
     if args.execute:
+        name = rollback.name
+        rollback.close()
         print('%d document(s) written, %d skipped' % (totals['written'], totals['skipped']))
+        print('undo record: %s (%d line(s))' % (name, sum(1 for _ in open(name))))
         # A skip means a document changed between the plan and the write, which
         # is not an error but is not a completed backfill either.
         return 1 if totals['skipped'] else 0

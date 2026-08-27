@@ -227,3 +227,28 @@ def test_lineage_rewrite_is_idempotent(projects):
     apply_lineage(projects, plan_lineage(projects), execute=True)
 
     assert plan_lineage(projects) == []
+
+
+# ---------------------------------------------------------------------------
+# The undo record
+# ---------------------------------------------------------------------------
+
+def test_replaying_the_undo_record_restores_every_document(projects, tmp_path):
+    seed(projects)
+    before = {doc['_id']: doc for doc in projects.find({})}
+
+    path = tmp_path / 'undo.jsonl'
+    with open(path, 'x') as rollback:
+        apply_current(projects, plan_current(projects), execute=True, rollback=rollback)
+        apply_lineage(projects, plan_lineage(projects), execute=True, rollback=rollback)
+
+    assert projects.find_one({'_id': ORPHAN})['current'] is True, 'nothing was written'
+
+    # Replaying is a for-loop over the file, which is the claim the record
+    # makes: no tool is needed to get back, only the file.
+    for line in open(path):
+        undo = json.loads(line)
+        projects.update_one({'_id': ObjectId(undo['_id'])},
+                            {undo['op']: undo['fields']})
+
+    assert {doc['_id']: doc for doc in projects.find({})} == before
