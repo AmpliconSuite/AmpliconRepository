@@ -359,15 +359,38 @@ def test_reaggregation_does_not_double_count_stats(
         request_factory, test_user, mongo_collection):
     """
     Issue #538: when a project is reaggregated, site-statistics counters must
-    not be incremented a second time.  After create + reaggregate the count
-    must be baseline + 1, not baseline + 2.
+    not be incremented a second time.
+
+    Checked as "the running total agrees with a recount", not as a remembered
+    baseline plus one.  The stored counters are a running total that add and
+    delete adjust one project at a time, and every test here adds to it while
+    none subtracts -- _cleanup_project() removes the document straight out of
+    MongoDB.  So its absolute value is drift (measured locally 2026-08-27: 935
+    private against 2 live private projects, and a public count of -29), and
+    the delta across an operation only holds still if nothing else writes
+    during it.  Aggregation runs on a background thread, so something else
+    sometimes does, and the old baseline+1 assertion failed in both directions.
+
+    Recounting is the property that was actually meant: double counting is the
+    running total drifting above what the projects themselves add up to.
     """
     from caper.views import create_project, edit_project_page
-    from caper.site_stats import get_latest_site_statistics
+    from caper.site_stats import get_latest_site_statistics, regenerate_site_statistics
 
-    # Snapshot private-project count before this test adds anything
-    stats_before = get_latest_site_statistics() or {}
-    private_before = stats_before.get('all_private_proj_count', 0)
+    def running_total():
+        """The incrementally maintained count -- what the site displays."""
+        return (get_latest_site_statistics() or {}).get('all_private_proj_count', 0)
+
+    def recount():
+        """Count the live private projects from scratch, and store that.
+
+        Storing it is what makes each phase below independent: the running
+        total starts every phase on the truth, so a failure names the phase
+        that broke rather than the first one after any earlier drift.
+        """
+        return regenerate_site_statistics()['all_private_proj_count']
+
+    private_before = recount()
 
     req, handles = _build_create_request(
         request_factory, test_user, 'StatsTest_NoDouble',
@@ -387,12 +410,15 @@ def test_reaggregation_does_not_double_count_stats(
         assert doc and not doc.get('aggregation_failed'), \
             f"Initial aggregation failed: {doc.get('error_message') if doc else 'timeout'}"
 
-        # Stats must have increased by exactly 1 after the create
-        stats_after_create = get_latest_site_statistics() or {}
-        private_after_create = stats_after_create.get('all_private_proj_count', 0)
-        assert private_after_create == private_before + 1, \
-            f"Expected private count = baseline+1 after create, " \
-            f"got baseline={private_before}, after={private_after_create}"
+        # The create added exactly one project, and the running total says so.
+        after_create = running_total()
+        counted_after_create = recount()
+        assert counted_after_create == private_before + 1, \
+            f"Create should add one live private project, " \
+            f"counted {private_before} before and {counted_after_create} after"
+        assert after_create == counted_after_create, \
+            f"After create the running total is {after_create} but there are " \
+            f"{counted_after_create} live private projects"
 
         # Reaggregate
         edit_req, edit_handles = _build_edit_request(
@@ -420,12 +446,18 @@ def test_reaggregation_does_not_double_count_stats(
             f"Reaggregation failed: {new_doc.get('error_message', '(none)')}"
         )
 
-        # After reaggregation: still exactly baseline + 1, NOT baseline + 2
-        stats_after_reag = get_latest_site_statistics() or {}
-        private_after_reag = stats_after_reag.get('all_private_proj_count', 0)
-        assert private_after_reag == private_before + 1, \
-            f"After reaggregation, private project count must be baseline+1, " \
-            f"got baseline={private_before}, after={private_after_reag} (Issue #538)"
+        # Reaggregation replaces one version with another, so it adds no live
+        # project: the running total must not have moved off the recount.
+        after_reag = running_total()
+        counted_after_reag = recount()
+        assert counted_after_reag == counted_after_create, \
+            f"Reaggregation should leave one live private project where there " \
+            f"was one, counted {counted_after_create} before and " \
+            f"{counted_after_reag} after"
+        assert after_reag == counted_after_reag, \
+            f"After reaggregation the running total is {after_reag} but there " \
+            f"are {counted_after_reag} live private projects: the new version " \
+            f"was counted without the old one being taken off (Issue #538)"
 
     finally:
         for pid in created_ids:
