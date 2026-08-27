@@ -867,8 +867,26 @@ added to it. **This is the same hand-maintained-list defect as the GridFS keys
 which fields are *chain-level* (carried, or better, stored once on the chain
 document per §6.2) and which are *version-level* (never carried). Add a test that
 fails when a project document grows a field belonging to neither set, so the
-next addition cannot silently fall through. Adjudicate the six fields above with
-a human before changing behaviour; this spec does not assume the answer.
+next addition cannot silently fall through.
+
+**Adjudicated 2026-08-27.** The six were measured against prod before the
+decision: 45 multi-version chains, 43 of which hold `project_downloads` on more
+than one version, and PCAWG's live version reporting 30 of the chain's 1,430
+project downloads and 2,898 of its 114,310 sample downloads.
+
+| Field | Level | Rationale |
+| --- | --- | --- |
+| `project_downloads` | **chain** | Displayed total is the sum across the chain. Per-version dicts stay on their versions — the detail is kept, it is simply not what the site shows. |
+| `sample_downloads` | **chain** | Same. |
+| `alias` / `alias_name` | **chain** | A URL identity. It names the project, not an aggregation run. `alias` is the form field and `alias_name` the stored one; the two spellings are a separate cleanup. |
+| `sample_name_remap_enabled` | **version** | Re-derived from the upload form at each re-aggregation; it describes how *that* version's samples were ingested. |
+| `owner` | **neither** | Placeholder scaffolding: set at insert, `$unset` when the real project replaces it. It must not exist on a finished project, which is what `clear_stale_uploads.py` uses to find crashed uploads. |
+| `original_project_name` | **neither** | Same. |
+
+Chain-level here means *displayed as the chain's value*, not that the per-version
+data is discarded. Nothing in the adjudication requires a migration: the old
+documents still hold their entries, so summing across the chain recovers the
+history that re-aggregation has been hiding.
 
 ### D13 · The sole-version deletion path is a fifth, divergent code path
 
