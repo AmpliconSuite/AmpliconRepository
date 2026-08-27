@@ -34,6 +34,10 @@ from .project_status import (
     iter_previous_versions,
     status_query,
 )
+from .project_version_cleanup import (
+    GRIDFS_DELETE_BATCH,
+    delete_gridfs_file_in_batches,
+)
 
 # def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED
 #                   ):
@@ -193,43 +197,19 @@ fs_handle = gridfs.GridFS(db_handle)
 gridfs_files_handle = get_collection_handle(db_handle, 'fs.files')
 gridfs_chunks_handle = get_collection_handle(db_handle, 'fs.chunks')
 
-GRIDFS_DELETE_BATCH = 200
-"""Chunks removed per delete command by ``delete_gridfs_file()``.
-
-At the 255 KiB default chunk size this is about 50 MiB of deletes per command,
-which leaves a wide margin under the 120 s socket timeout."""
-
-
 def delete_gridfs_file(file_id, batch_size=GRIDFS_DELETE_BATCH):
-    """Delete one GridFS file, removing its chunks a batch at a time.
+    """Delete one GridFS file from this site's database, in bounded batches.
 
-    ``gridfs.GridFS.delete()`` removes every chunk in a single ``delete_many``.
-    For a multi-gigabyte tarfile that one command runs past the driver's 120 s
-    socket timeout, so the driver raises ``NetworkTimeout`` while the server
-    goes on deleting: the caller is told the delete failed for work that in
-    fact succeeded, and gives up before removing the project document.
-    Measured on dev 2026-08-27, a 2.25 GiB tarfile is 9,270 chunks, and the
-    largest project on the admin delete page timed out this way.
-
-    Deleting in batches keeps every command well under the timeout and makes
-    the progress durable: a batch that fails leaves only the chunks it never
-    reached, so calling again resumes instead of starting over.
+    The site's binding of delete_gridfs_file_in_batches(); the reasoning for
+    batching lives there.  Never call ``fs_handle.delete()`` on anything a
+    project references -- a tarfile is large enough to exceed the driver's
+    socket timeout, and the caller is then told a delete failed that the server
+    in fact completed.
 
     Returns the number of chunks removed.
     """
-    oid = file_id if isinstance(file_id, ObjectId) else ObjectId(str(file_id))
-
-    # The file document goes first, the same order gridfs itself uses, so a
-    # partly deleted file can never be opened and read as though it were whole.
-    gridfs_files_handle.delete_one({'_id': oid})
-
-    removed = 0
-    while True:
-        batch = [c['_id'] for c in
-                 gridfs_chunks_handle.find({'files_id': oid}, {'_id': 1}).limit(batch_size)]
-        if not batch:
-            return removed
-        removed += gridfs_chunks_handle.delete_many({'_id': {'$in': batch}}).deleted_count
+    return delete_gridfs_file_in_batches(gridfs_files_handle, gridfs_chunks_handle,
+                                         file_id, batch_size)
 
 
 def get_project_version_chain(search_term):

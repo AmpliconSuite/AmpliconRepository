@@ -118,6 +118,25 @@ def test_deleting_a_file_that_is_already_gone_is_not_an_error(gridfs_file):
     assert delete_gridfs_file(file_id) == 0
 
 
+def test_the_version_delete_path_deletes_a_multi_chunk_file(gridfs_file):
+    """
+    The admin page is not the only caller that deletes a project tarfile:
+    deleting one version of a project purges that version's whole payload,
+    tarfile included, so it faces exactly the same timeout.  Wired end to end
+    here rather than asserted against the source, because the wiring is the
+    only thing that keeps the two paths from diverging again.
+    """
+    from bson import ObjectId
+    from caper.project_version_cleanup import delete_gridfs_payload_for_project
+    from caper.utils import delete_gridfs_file
+
+    file_id = gridfs_file(chunks=8)
+    project = {'_id': ObjectId(), 'tarfile': file_id}
+
+    assert delete_gridfs_payload_for_project(delete_gridfs_file, project) == 1
+    assert _counts(gridfs_file, file_id) == (0, 0)
+
+
 def test_the_file_document_goes_before_its_chunks(gridfs_file, monkeypatch):
     """
     A half-deleted file must not be readable as a whole one, so the document

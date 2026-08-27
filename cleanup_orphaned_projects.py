@@ -47,7 +47,7 @@ Usage:
 Requirements:
     - Environment variables set via  source caper/config.sh
     - Run from the caper/caper/ directory (where manage.py lives)
-    - pymongo, gridfs, bson installed
+    - pymongo, bson installed
     - boto3 installed for S3 cleanup (optional – skipped if absent)
 """
 
@@ -60,14 +60,17 @@ import argparse
 
 from bson import ObjectId
 from pymongo import MongoClient
-import gridfs
 
 # The canonical GridFS key list lives with the application so the upload path
 # and every delete path share one definition.  Importing it here — rather than
 # keeping a second hand-written copy, which is what this script used to do —
 # is the only way the two cannot drift.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
-from caper.project_version_cleanup import GRIDFS_FILE_KEYS, iter_gridfs_file_ids
+from caper.project_version_cleanup import (
+    GRIDFS_FILE_KEYS,
+    delete_gridfs_file_in_batches,
+    iter_gridfs_file_ids,
+)
 # Same reason for project_status: every protection rule below used to be a
 # hand-written copy of a query in caper/utils.py, and the copy is what drifted.
 from caper.project_status import (
@@ -306,7 +309,7 @@ def delete_s3_prefix(s3_client, bucket, prefix, dry_run=False):
     return deleted
 
 
-def delete_gridfs_files_for_project(fs_handle, project, dry_run=False):
+def delete_gridfs_files_for_project(delete_file, project, dry_run=False):
     """
     Delete every GridFS file the *project* document names — the tarfile, the
     per-sample feature files, and the directory-shaped payloads.
@@ -317,6 +320,11 @@ def delete_gridfs_files_for_project(fs_handle, project, dry_run=False):
     'Run metadata JSON' (120,726 live values on prod) and
     'Reconstruction directory' (33,758) — every cleanup silently left those
     files behind, which is one of the ways the orphan population grew.
+
+    `delete_file` deletes one file id, and is the application's batched
+    deleter for the same reason: the projects this script collects are the
+    ones with the largest payloads, and `gridfs.GridFS.delete()` on a
+    multi-gigabyte tarfile exceeds the driver's socket timeout.
 
     Returns the count deleted, or the count that would be deleted.
     """
@@ -336,10 +344,13 @@ def delete_gridfs_files_for_project(fs_handle, project, dry_run=False):
     deleted = 0
     for file_id in file_ids:
         try:
-            fs_handle.delete(file_id)
+            delete_file(file_id)
             deleted += 1
         except Exception as e:
-            logger.debug(f"  Could not delete GridFS {file_id}: {e}")
+            # Warning, not debug: nothing references this file any more, so no
+            # later run will collect it.  A failure here is bytes billed
+            # forever, and the id is the only way back to them.
+            logger.warning(f"  Could not delete GridFS {file_id}: {e}")
     return deleted
 
 
@@ -429,7 +440,13 @@ def main():
     # ─── Connect ─────────────────────────────────────────────────────
     db_handle, mongo_client = get_db_handle(db_name, db_uri)
     collection = db_handle['projects']
-    fs = gridfs.GridFS(db_handle)
+
+    # This script opens its own connection, so it binds the application's
+    # batched deleter to its own collections rather than reaching for
+    # GridFS.delete(), which removes every chunk in one command.
+    def delete_file(file_id):
+        return delete_gridfs_file_in_batches(db_handle['fs.files'],
+                                             db_handle['fs.chunks'], file_id)
 
     s3_client = None
     if use_s3:
@@ -525,7 +542,7 @@ def main():
                 continue
 
             # 2a. GridFS
-            g = delete_gridfs_files_for_project(fs, project,
+            g = delete_gridfs_files_for_project(delete_file, project,
                                                 dry_run=args.dry_run)
             total_gridfs += g
             if g:

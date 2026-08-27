@@ -88,7 +88,7 @@ def test_delete_gridfs_files_for_project_handles_current_underscore_keys():
         },
     }
 
-    assert delete_gridfs_files_for_project(fs, project) == 3
+    assert delete_gridfs_files_for_project(fs.delete, project) == 3
     assert fs.deleted == [str(tar_id), str(png_id), str(graph_id)]
 
 
@@ -196,7 +196,7 @@ def test_gridfs_deletion_uses_the_canonical_key_list():
         }]},
     }
 
-    assert delete_gridfs_files_for_project(fs, project) == 5
+    assert delete_gridfs_files_for_project(fs.delete, project) == 5
     for missed in (run_meta_id, recon_id, cycles_id):
         assert str(missed) in fs.deleted
 

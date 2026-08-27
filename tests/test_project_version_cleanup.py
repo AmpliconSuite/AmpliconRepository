@@ -51,7 +51,7 @@ def test_delete_gridfs_payload_for_project_deduplicates_files():
         'runs': {'sample1': [{'AA_directory': tar_id}]},
     }
 
-    assert delete_gridfs_payload_for_project(fs, project) == 1
+    assert delete_gridfs_payload_for_project(fs.delete, project) == 1
     assert fs.deleted == [str(tar_id)]
 
 
@@ -65,11 +65,38 @@ def test_delete_gridfs_payload_for_project_skips_protected_shared_files():
     }
 
     assert delete_gridfs_payload_for_project(
-        fs,
+        fs.delete,
         project,
         protected_file_ids={shared_id},
     ) == 1
     assert fs.deleted == [str(old_only_id)]
+
+
+def test_a_file_that_will_not_delete_is_logged_and_the_rest_still_go(caplog):
+    """
+    A delete that fails here cannot raise -- the caller is partway through
+    promoting a version, and abandoning that leaves the chain inconsistent.
+    But it used to pass silently, which is how bytes stopped being countable:
+    nothing references the file, so no other path will ever collect it.  The
+    log line naming the id is the only way back to it.
+    """
+    stubborn, fine = ObjectId(), ObjectId()
+
+    def delete_file(file_id):
+        if file_id == stubborn:
+            raise RuntimeError('socket timed out')
+
+    project = {
+        '_id': ObjectId(),
+        'tarfile': stubborn,
+        'runs': {'sample1': [{'AA_directory': fine}]},
+    }
+
+    with caplog.at_level('WARNING'):
+        assert delete_gridfs_payload_for_project(delete_file, project) == 1
+
+    assert str(stubborn) in caplog.text
+    assert str(fine) not in caplog.text
 
 
 def test_build_deleted_version_tombstone_preserves_uuid_and_redirects_to_latest():
@@ -280,7 +307,9 @@ def test_delete_old_project_version_creates_redirect_tombstone_without_promotabl
     fs = FakeGridFS()
     monkeypatch.setattr(utils, 'collection_handle', collection)
     monkeypatch.setattr(views, 'collection_handle', collection)
-    monkeypatch.setattr(views, 'fs_handle', fs)
+    # The view deletes through the batched helper, not the GridFS handle,
+    # so that a multi-gigabyte tarfile cannot exceed the socket timeout.
+    monkeypatch.setattr(views, 'delete_gridfs_file', fs.delete)
 
     request = request_factory.post(f'/project/{latest_id}/delete_version/{old_id}')
     request.user = test_user
@@ -343,7 +372,9 @@ def test_delete_current_version_retargets_existing_tombstones_to_promoted_versio
     fs = FakeGridFS()
     monkeypatch.setattr(utils, 'collection_handle', collection)
     monkeypatch.setattr(views, 'collection_handle', collection)
-    monkeypatch.setattr(views, 'fs_handle', fs)
+    # The view deletes through the batched helper, not the GridFS handle,
+    # so that a multi-gigabyte tarfile cannot exceed the socket timeout.
+    monkeypatch.setattr(views, 'delete_gridfs_file', fs.delete)
     monkeypatch.setattr(views, 'delete_project_from_site_statistics', lambda *args, **kwargs: None)
 
     request = request_factory.post(f'/project/{latest_id}/delete_version/{latest_id}')
@@ -633,7 +664,7 @@ def test_discard_unrecorded_gridfs_files_deletes_only_object_ids():
     good_a, good_b = ObjectId(), ObjectId()
 
     deleted = discard_unrecorded_gridfs_files(
-        fs, [good_a, 'Not Provided', None, good_b, str(ObjectId())]
+        fs.delete, [good_a, 'Not Provided', None, good_b, str(ObjectId())]
     )
 
     assert deleted == 2
@@ -652,14 +683,14 @@ def test_discard_unrecorded_gridfs_files_never_masks_the_original_error():
             raise RuntimeError('gridfs is unreachable')
 
     fs = ExplodingGridFS()
-    assert discard_unrecorded_gridfs_files(fs, [ObjectId(), ObjectId()]) == 0
+    assert discard_unrecorded_gridfs_files(fs.delete, [ObjectId(), ObjectId()]) == 0
     assert fs.attempts == 2
 
 
 def test_discard_unrecorded_gridfs_files_tolerates_empty_input():
     fs = FakeGridFS()
-    assert discard_unrecorded_gridfs_files(fs, []) == 0
-    assert discard_unrecorded_gridfs_files(fs, None) == 0
+    assert discard_unrecorded_gridfs_files(fs.delete, []) == 0
+    assert discard_unrecorded_gridfs_files(fs.delete, None) == 0
     assert fs.deleted == []
 
 
@@ -683,5 +714,5 @@ def test_ingestion_discards_files_it_cannot_record():
     # later failure would delete files the project legitimately references.
     record_at = source.index('collection_handle.update_one(query, new_val)')
     reset_at = source.index('uploaded_file_ids = []', record_at)
-    discard_at = source.index('discard_unrecorded_gridfs_files(fs_handle, stranded)')
+    discard_at = source.index('discard_unrecorded_gridfs_files(delete_gridfs_file, stranded)')
     assert record_at < reset_at < discard_at

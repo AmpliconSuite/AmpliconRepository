@@ -78,6 +78,7 @@ from .utils import (
     get_all_alias, get_projects_close_cursor, create_user_list,
     preprocess_sample_data, validate_project, replace_underscore_keys,
     get_latest_project_version, flatten, classify_ac_version,
+    delete_gridfs_file,
     AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
 from .tar_safety import safe_extract_member, safe_extractall
@@ -2986,7 +2987,7 @@ def delete_project_version(request, project_name, version_id):
             }
             promoted_file_ids = set(iter_gridfs_file_ids(promoted_project))
             deleted_gridfs_count = delete_gridfs_payload_for_project(
-                fs_handle,
+                delete_gridfs_file,
                 latest_project,
                 protected_file_ids=promoted_file_ids,
             )
@@ -3070,7 +3071,7 @@ def delete_project_version(request, project_name, version_id):
 
         latest_file_ids = set(iter_gridfs_file_ids(latest_project))
         deleted_gridfs_count = delete_gridfs_payload_for_project(
-            fs_handle,
+            delete_gridfs_file,
             old_version,
             protected_file_ids=latest_file_ids,
         )
@@ -4178,7 +4179,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             # "Not Provided".  A missing artifact left no trace at
                             # all, so nobody could tell a file had been dropped.
                             if isinstance(id_var, ObjectId):
-                                discard_unrecorded_gridfs_files(fs_handle, [id_var])
+                                discard_unrecorded_gridfs_files(delete_gridfs_file, [id_var])
                                 id_var = "Not Provided"
                             logging.warning(
                                 f"GridFS upload failed for {k!r} in sample {sample!r} "
@@ -4247,7 +4248,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         uploaded_file_ids.append(id_var)
                     except Exception as upload_error:
                         if isinstance(id_var, ObjectId):
-                            discard_unrecorded_gridfs_files(fs_handle, [id_var])
+                            discard_unrecorded_gridfs_files(delete_gridfs_file, [id_var])
                         id_var = 'Not Provided'
                         logging.warning(
                             f"GridFS upload failed for {directory_key!r} in sample "
@@ -4314,7 +4315,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         # existing orphan population came from.
         stranded = locals().get('uploaded_file_ids') or []
         if stranded:
-            discarded = discard_unrecorded_gridfs_files(fs_handle, stranded)
+            discarded = discard_unrecorded_gridfs_files(delete_gridfs_file, stranded)
             logging.error(
                 f"Discarded {discarded} of {len(stranded)} GridFS files written "
                 f"before this failure; they were never recorded in project "
