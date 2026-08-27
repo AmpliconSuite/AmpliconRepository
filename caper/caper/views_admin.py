@@ -742,12 +742,82 @@ def admin_delete_user(request):
                    'error_message': error_message})
 
 
+def permanently_delete_with_history(project_id, project, project_name):
+    """
+    Permanently delete a soft-deleted project along with the older versions its
+    history names, and return a message describing what happened.
+
+    A history entry whose target does not resolve is skipped and reported
+    rather than raising.  get_one_deleted_project() returns None both for a
+    reference to a document that is no longer in the collection and for one
+    that is not flagged deleted; dereferencing that None used to raise
+    TypeError before anything was deleted, which made a project with a single
+    dangling reference impossible to delete from this page at all.
+    """
+    unresolved = []
+    prev_ver_list, _msg = previous_versions(project)
+    for entry in prev_ver_list or []:
+        linkid = entry.get('linkid')
+        older = get_one_deleted_project(linkid) if linkid else None
+        if older is None:
+            logging.warning(
+                f"History entry {linkid!r} of project {project_id} names a version "
+                f"that is gone or is not flagged deleted; skipping it.")
+            unresolved.append(linkid)
+            continue
+        admin_permanent_delete_project(linkid, older, older['project_name'])
+
+    message = admin_permanent_delete_project(project_id, project, project_name)
+
+    if unresolved:
+        plural = 'y' if len(unresolved) == 1 else 'ies'
+        message = (f"{message} Skipped {len(unresolved)} history entr{plural} naming a "
+                   f"version that no longer exists: {', '.join(str(u) for u in unresolved)}.")
+    return message
+
+
+def delete_selected_projects(project_ids):
+    """
+    Permanently delete each project in *project_ids*, and return a message.
+
+    One project failing does not abandon the rest: a batch is only useful if a
+    single bad document costs one row rather than the whole selection, and the
+    caller cannot tell in advance which documents carry a defect.
+    """
+    deleted = 0
+    problems = []
+    for project_id in project_ids:
+        project = get_one_deleted_project(project_id)
+        if project is None:
+            problems.append(f"{project_id} (not found, or no longer flagged deleted)")
+            continue
+        name = project.get('project_name', project_id)
+        try:
+            permanently_delete_with_history(project_id, project, name)
+            deleted += 1
+        except Exception:
+            logging.exception(f"Permanent delete failed for project {project_id} ({name}).")
+            problems.append(name)
+
+    message = f"Permanently deleted {deleted} of {len(project_ids)} selected project(s)."
+    if problems:
+        # 'Problem' is the word the page's script looks for to colour the
+        # banner as a warning rather than a success.
+        message = f"{message} Problem deleting: {'; '.join(problems)}."
+    return message
+
+
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_delete_project(request):
     if not request.user.is_staff:
         return redirect('/accounts/logout')
     error_message = ""
-    if request.method == "POST":
+    if request.method == "POST" and request.POST.get('action') == 'delete-selected':
+        # Read straight from POST: DeletedProjectForm describes a single
+        # project, and this action carries a list instead.
+        error_message = delete_selected_projects(request.POST.getlist('project_ids'))
+
+    elif request.method == "POST":
         form = DeletedProjectForm(request.POST)
         form_dict = form_to_dict(form)
         project_name = form_dict['project_name']
@@ -770,17 +840,9 @@ def admin_delete_project(request):
 
         elif deleteit and (action == 'delete'):
 
+            ## deletes the project and all previous versions its history names.
             project = get_one_deleted_project(project_id)
-            prev_ver_list, msg = previous_versions(project)
-            ## find all previous versions of the project we are trying to delete.
-            ## If this is an older version, do not delete
-
-            if prev_ver_list:
-                for proj in prev_ver_list:
-                    p = get_one_deleted_project(proj['linkid'])
-                    admin_permanent_delete_project(proj['linkid'], p, p['project_name'])
-
-            error_message = admin_permanent_delete_project(project_id, project, project_name)
+            error_message = permanently_delete_with_history(project_id, project, project_name)
 
     deleted_projects = list(collection_handle.find(STATUS_QUERIES[SOFT_DELETED]))
     for proj in deleted_projects:

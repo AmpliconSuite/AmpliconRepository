@@ -237,6 +237,21 @@ DELETE_FLAG_QUERY = {'delete': _STATUS_FLAGS[SOFT_DELETED]['delete']}
 ``SUPERSEDED`` and ``TOMBSTONE`` together, plus the 70 ``DETACHED`` documents
 with no ``current`` field."""
 
+MISSING_CURRENT_QUERY = dict(DELETE_FLAG_QUERY, current={'$exists': False})
+"""``{'delete': True, 'current': {'$exists': False}}`` -- the documents that
+carry the ``delete`` half of the pair and have never had the other half.
+
+The shape the delete path leaves on a project whose document predates commit
+``951eb25`` (2024-04-10), which introduced the ``current`` flag: 70 on prod, 51
+on dev when measured on 2026-08-27.  It is not a dead era -- one was deleted in
+2025 -- because it is what deleting an old project still produces today.
+
+``{'current': False}`` does not match a document with no ``current`` field, so
+these are ``DETACHED``: invisible to ``STATUS_QUERIES[SOFT_DELETED]`` and
+therefore to the admin restore page, and missed by ``HEAD_VERSION_QUERY``.
+Used by ``backfill_project_status.py`` to find them; nothing in the application
+should need it, and its population should only ever shrink."""
+
 HEAD_VERSION_QUERY = {'current': _STATUS_FLAGS[LIVE]['current']}
 """``{'current': True}`` -- the head of a chain regardless of delete state, so
 ``LIVE`` and ``SOFT_DELETED`` together.

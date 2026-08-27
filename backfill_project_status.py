@@ -61,10 +61,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cap
 
 from caper.project_status import (            # noqa: E402
     CURRENT_ENCODING,
+    MISSING_CURRENT_QUERY,
     SOFT_DELETED,
     SUPERSEDED,
     TOMBSTONE,
     classify,
+    combine,
     iter_lineage_references,
     iter_previous_versions,
     status_flags,
@@ -129,11 +131,6 @@ def record(rollback, doc_id, operator, fields):
 # Pass 1 -- the missing 'current' flag
 # ---------------------------------------------------------------------------
 
-# What the delete path leaves on a project created before April 2024: the
-# 'delete' half of the pair written, the 'current' half never present.
-MISSING_CURRENT_QUERY = {'delete': True, 'current': {'$exists': False}}
-
-
 def plan_current(projects):
     """(doc, target_status) for every document missing its 'current' flag."""
     referenced = set()
@@ -167,11 +164,11 @@ def apply_current(projects, plan, execute, rollback=None):
         if not execute:
             continue
         record(rollback, doc['_id'], '$unset', {'current': ''})
-        # The precondition repeats the absence that made this document
-        # eligible.  If anything wrote 'current' since the plan was built, this
-        # matches nothing and the document is left alone.
+        # The precondition is the same query that selected the document.  If
+        # anything wrote 'current' since the plan was built, this matches
+        # nothing and the document is left alone.
         result = projects.update_one(
-            {'_id': doc['_id'], 'current': {'$exists': False}, 'delete': True},
+            combine(MISSING_CURRENT_QUERY, _id=doc['_id']),
             {'$set': {'current': value}})
         if result.modified_count:
             written += 1

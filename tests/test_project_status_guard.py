@@ -152,6 +152,23 @@ ALLOWED = {
     (os.path.join('caper', 'caper', 'views_admin.py'),
      "if action == 'delete':"):
         "string comparison on a form action named 'delete'",
+    ('backfill_project_status.py',
+     "{'project_name': 1, 'delete': 1, 'current': 1,"):
+        "projection listing fields to fetch, not a filter.  The filter itself "
+        "is MISSING_CURRENT_QUERY, named in project_status.py",
+
+    # -- writing the flag that was never there ---------------------------
+    # The backfill exists to give the documents with no 'current' field the
+    # one they should have had, so it necessarily names that key.  It does not
+    # decide the value: that comes from status_flags(target), and which target
+    # applies is decided by classify() and the lineage reader.
+    ('backfill_project_status.py',
+     "{'$set': {'current': value}})"):
+        "the backfill's write; the value comes from status_flags(target)",
+    ('backfill_project_status.py',
+     "record(rollback, doc['_id'], '$unset', {'current': ''})"):
+        "the undo record for that write -- removes the field again, restoring "
+        "the absence, so it encodes no belief about what the flag should be",
 
     # -- deliberate half-writes of the flag pair -------------------------
     # These set one flag and leave the other alone, which is what moves a

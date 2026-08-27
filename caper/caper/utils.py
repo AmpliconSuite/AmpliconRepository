@@ -794,7 +794,12 @@ def get_one_deleted_project(project_name_or_uuid):
         project = collection_handle.find_one(
             combine(NOT_DELETED_QUERY, project_name=project_name_or_uuid))
         logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
-        prepare_project_linkid(project)
+        # Only when the backstop found something: the line below used to run
+        # unconditionally, so a lookup that found nothing raised TypeError out
+        # of this function instead of returning None.  Callers check for None
+        # -- the lines just below do -- and never saw one.
+        if project is not None:
+            prepare_project_linkid(project)
 
     if project is None:
         logging.error(f"Project is None for {project_name_or_uuid}")

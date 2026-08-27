@@ -49,16 +49,89 @@ function undelete_project(event, project_id, project_name) {
   }
 
 
+  // The selection lives in the DataTable, not in the DOM: rows on other pages
+  // are detached, so their checkboxes are neither clickable nor submitted with
+  // the form.  Every read below goes through the DataTable API so that
+  // 'select all' and the count cover the whole filtered set, and the ids are
+  // written into hidden inputs at submit time.
+  var deletedProjectsTable = null;
+
+  function selected_project_rows() {
+        return deletedProjectsTable
+            .rows({ search: 'applied' })
+            .nodes()
+            .to$()
+            .find('input.row-select:checked');
+  }
+
+  function refresh_selection_count() {
+        var count = selected_project_rows().length;
+        var button = document.getElementById("delete_selected_button");
+        button.disabled = (count === 0);
+        button.value = count ? "Delete " + count + " selected" : "Delete selected";
+  }
+
+  function delete_selected_projects() {
+        var selected = selected_project_rows();
+        if (selected.length === 0) {
+            return;
+        }
+        var goahead = confirm(
+            "Really PERMANENTLY delete " + selected.length + " selected project(s), " +
+            "along with every older version they contain? This cannot be undone.");
+        if (!goahead) {
+            return;
+        }
+
+        var form = document.getElementById("form__bulk_submit");
+        $(form).find("input[name='project_ids']").remove();
+        selected.each(function () {
+            var field = document.createElement("input");
+            field.type = "hidden";
+            field.name = "project_ids";
+            field.value = this.value;
+            form.appendChild(field);
+        });
+        form.submit();
+  }
+
+
     $(document).ready(function () {
         $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
             $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
         });
-     
-        $('table.table').DataTable({
+
+        deletedProjectsTable = $('table.table').DataTable({
             language: {
                     searchPlaceholder: "Search deleted projects"
-                    }
+                    },
+            // The two checkbox columns and the button column hold no text to
+            // sort or search on.
+            columnDefs: [{ orderable: false, searchable: false, targets: [0, 1, -1] }]
         });
+
+        $('#select_all').on('change', function () {
+            deletedProjectsTable
+                .rows({ search: 'applied' })
+                .nodes()
+                .to$()
+                .find('input.row-select')
+                .prop('checked', this.checked);
+            refresh_selection_count();
+        });
+
+        // Delegated so it still fires for rows drawn on a later page.
+        $('table.table tbody').on('change', 'input.row-select', function () {
+            if (!this.checked) {
+                document.getElementById("select_all").checked = false;
+            }
+            refresh_selection_count();
+        });
+
+        // Narrowing the search hides rows without unchecking them, so the count
+        // has to be recomputed whenever the filtered set changes.
+        deletedProjectsTable.on('search.dt', refresh_selection_count);
+        refresh_selection_count();
 
 
     message_to_user = "{{ error_message }}";
@@ -112,6 +185,10 @@ function undelete_project(event, project_id, project_name) {
                 <p>To restore (un-delete) a project, uncheck the 'Deleted' checkbox in the first column.</p>
                 <p>Clicking the 'delete' button in the last column below will <b>permanently delete</b> a project.  These projects are flagged as deleted in the DB already but this will
             actually delete them and delete their files on the file system and in S3. This cannot be undone. </p>
+                <p>To delete several at once, tick them in the 'Select' column and use
+            <b>Delete selected</b>. The header checkbox selects every row matching the current
+            search, including rows on other pages. A project that cannot be deleted is
+            reported and the rest of the selection still goes through.</p>
 
             </div>
         </div>
@@ -130,7 +207,17 @@ function undelete_project(event, project_id, project_name) {
 
                   </form>
 
+                 <form id="form__bulk_submit" action="/admin-delete-project/" method="post">
+                       {% csrf_token %}
+                     <input type="hidden" name="action" value="delete-selected" />
+                     <!-- one hidden project_ids input per selected row is added on submit -->
+                  </form>
 
+            </div>
+
+            <div style="padding-top: 20px">
+                <input id="delete_selected_button" type="button" class="btn btn-danger"
+                       onclick="delete_selected_projects()" value="Delete selected" disabled />
             </div>
 
 
@@ -166,6 +253,7 @@ function undelete_project(event, project_id, project_name) {
                     <table id='projectTable0' class="table" style="padding-top: 20px; width:100%">
                         <thead>
                             <tr>
+                                <th>Select<br><input type="checkbox" id="select_all" title="Select every row matching the current search"></th>
                                 <th>Deleted</th>
                                 <th>Creator</th>
                                 <th>Deleted by</th>
@@ -180,6 +268,7 @@ function undelete_project(event, project_id, project_name) {
                         <tbody>
                             {% for project in deleted_projects %}
                             <tr>
+                                <td> <input type="checkbox" class="row-select" value="{{ project.linkid }}"></td>
                                 <td> <input type = "checkbox" checked onchange="undelete_project(event, '{{ project.linkid }}', '{{ project.project_name }}', false)">
                                    </td>
                                 <td>{{ project.creator }}</td>
