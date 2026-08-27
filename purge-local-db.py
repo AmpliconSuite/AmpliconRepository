@@ -20,14 +20,16 @@ from collections import defaultdict
 import os
 import shutil
 
-import gridfs
 from bson import ObjectId
 from pymongo import MongoClient
 
 from cleanup_orphaned_projects import collect_protected_ids
 
 # cleanup_orphaned_projects puts caper/ on sys.path, so these imports resolve.
-from caper.project_version_cleanup import GRIDFS_FILE_KEYS
+from caper.project_version_cleanup import (
+    GRIDFS_FILE_KEYS,
+    delete_gridfs_file_in_batches,
+)
 from caper.project_status import (
     HEAD_VERSION_QUERY,
     LIVE,
@@ -203,10 +205,16 @@ def smart_purge_gridfs(db_handle, execute=False, limit=None, scope='reachable', 
         print("DRY RUN: pass --execute to delete these GridFS files.")
         return count, total_bytes
 
-    fs_handle = gridfs.GridFS(db_handle)
+    # Batched rather than GridFS.delete(), which removes every chunk of a file in
+    # one command and runs past the driver's socket timeout on a multi-gigabyte
+    # tarfile.  The files listed above are the unreferenced ones, so this loop
+    # walks exactly the abandoned uploads -- the largest objects in the database.
+    files_collection = db_handle['fs.files']
+    chunks_collection = db_handle['fs.chunks']
     deleted = 0
     for grid_file in unreferenced:
-        fs_handle.delete(grid_file['_id'])
+        delete_gridfs_file_in_batches(files_collection, chunks_collection,
+                                      grid_file['_id'])
         deleted += 1
         if deleted % 1000 == 0:
             print(f"Deleted {deleted}/{count} GridFS files...")
