@@ -239,6 +239,157 @@ def apply_lineage(projects, plan, execute, rollback=None):
 
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Pass 3 -- lineage pointers
+# ---------------------------------------------------------------------------
+
+POINTER_FIELDS = ('version_chain_id', 'previous_version_id', 'next_version_id',
+                  'version_ordinal', 'is_latest')
+
+MISSING_POINTERS_QUERY = {'version_chain_id': {'$exists': False}}
+
+
+def build_chains(projects):
+    """Group every document into the chain it belongs to.
+
+    Connected components over previous_versions[], and over nothing else.  Not
+    over project_name: two projects can share a name, one project can be
+    renamed, and inferring lineage from a name is how a rename becomes a merge.
+    """
+    docs = {}
+    ancestors = {}
+    named_by = {}
+    # version_chain_id is projected because plan_pointers() skips documents
+    # that already have it. Leaving it out makes the pass plan every document
+    # on every run: the writes are preconditioned so nothing is clobbered, but
+    # the plan is wrong and --limit spends its budget on documents already done.
+    #
+    # 'delete' and 'current' are deliberately not read here. Lineage is a
+    # question about references, not about status, and this pass writes the same
+    # pointers whatever a document's status is -- a superseded version and a
+    # tombstone both occupy their ordinal.
+    for doc in projects.find({}, {'project_name': 1, 'previous_versions': 1,
+                                  'version_chain_id': 1}):
+        doc_id = str(doc['_id'])
+        docs[doc_id] = doc
+        ancestors[doc_id] = [str(entry['linkid'])
+                             for entry, _encoding in iter_previous_versions(doc)]
+
+    parent = {}
+
+    def find(key):
+        parent.setdefault(key, key)
+        while parent[key] != key:
+            parent[key] = parent[parent[key]]
+            key = parent[key]
+        return key
+
+    for doc_id in docs:
+        find(doc_id)
+        for linkid in ancestors[doc_id]:
+            if linkid in docs:
+                named_by.setdefault(linkid, []).append(doc_id)
+                a, b = find(doc_id), find(linkid)
+                if a != b:
+                    parent[a] = b
+
+    chains = {}
+    for doc_id in docs:
+        chains.setdefault(find(doc_id), []).append(doc_id)
+    return docs, ancestors, named_by, chains
+
+
+def order_chain(members, docs, ancestors, named_by):
+    """The chain's members oldest-first, or a reason it cannot be ordered.
+
+    The order is read off the head's own previous_versions[], because that is
+    the order the application wrote: each new version is created with the old
+    list plus the version it replaces.  No date is consulted -- dates are
+    missing on some documents and tied on others, and the list is authoritative
+    where it exists.
+
+    Returns (ordered, None) or (None, reason).
+    """
+    heads = [m for m in members if not named_by.get(m)]
+    if len(heads) != 1:
+        return None, ('%d documents in this chain are named by nothing, so it '
+                      'has %d possible heads' % (len(heads), len(heads)))
+
+    head = heads[0]
+    listed = [m for m in ancestors[head] if m in docs]
+    missing = set(members) - set(listed) - {head}
+    if missing:
+        return None, ("the head lists %d of the chain's %d other members; %s "
+                      "reached it through a longer path"
+                      % (len(listed), len(members) - 1, ', '.join(sorted(missing))))
+    if len(set(listed)) != len(listed):
+        return None, 'the head lists the same version more than once'
+
+    return listed + [head], None
+
+
+def plan_pointers(projects):
+    """(doc, fields) for every document that can be given lineage pointers.
+
+    Also returns the chains it refused, each with the reason, because a chain
+    this cannot order is a finding about the data rather than a gap in the
+    backfill.
+    """
+    docs, ancestors, named_by, chains = build_chains(projects)
+
+    plan, refused = [], []
+    for members in chains.values():
+        ordered, reason = order_chain(members, docs, ancestors, named_by)
+        if ordered is None:
+            refused.append((members, reason))
+            continue
+
+        # The oldest version's id names the chain: derivable from the data
+        # rather than minted, so a re-run computes the same value, and stable
+        # because a new version is appended at the other end.
+        chain_id = ObjectId(ordered[0])
+
+        for ordinal, doc_id in enumerate(ordered, start=1):
+            doc = docs[doc_id]
+            if 'version_chain_id' in doc:
+                continue
+            plan.append((doc, {
+                'version_chain_id': chain_id,
+                'previous_version_id': (ObjectId(ordered[ordinal - 2])
+                                        if ordinal > 1 else None),
+                'next_version_id': (ObjectId(ordered[ordinal])
+                                    if ordinal < len(ordered) else None),
+                'version_ordinal': ordinal,
+                'is_latest': ordinal == len(ordered),
+            }))
+
+    plan.sort(key=lambda entry: (entry[1]['version_chain_id'],
+                                 entry[1]['version_ordinal']))
+    return plan, refused
+
+
+def apply_pointers(projects, plan, execute, rollback=None):
+    written = skipped = 0
+    for doc, fields in plan:
+        print('  %s  %-38s  chain %s  ordinal %d%s' % (
+            doc['_id'], (doc.get('project_name') or '?')[:38],
+            fields['version_chain_id'], fields['version_ordinal'],
+            '  is_latest' if fields['is_latest'] else ''))
+        if not execute:
+            continue
+        record(rollback, doc['_id'], '$unset',
+               {field: '' for field in POINTER_FIELDS})
+        result = projects.update_one(
+            combine(MISSING_POINTERS_QUERY, _id=doc['_id']),
+            {'$set': fields})
+        if result.modified_count:
+            written += 1
+        else:
+            skipped += 1
+            print('      SKIPPED -- changed since the plan was built')
+    return written, skipped
+
+
 def take(plan, limit):
     """The first *limit* entries of a plan, saying how many are held back.
 
@@ -281,8 +432,8 @@ def main():
                         help='Abort unless the host is this kind.')
     parser.add_argument('--execute', action='store_true',
                         help='Actually write. Without it the script only reports.')
-    parser.add_argument('--only', choices=['current', 'lineage'],
-                        help='Run one pass instead of both.')
+    parser.add_argument('--only', choices=['current', 'lineage', 'pointers'],
+                        help='Run one pass instead of all three.')
     parser.add_argument('--limit', type=int, metavar='N',
                         help='Act on only the first N documents of each pass, '
                              'in _id order. The report still counts them all, '
@@ -349,6 +500,30 @@ def main():
             totals['written'] += written
             totals['skipped'] += skipped
             check_targets_exist(projects, plan)
+        print('')
+
+    if args.only in (None, 'pointers'):
+        print('=' * 78)
+        print('pointers -- lineage read off previous_versions[] and written down')
+        print('=' * 78)
+        plan, refused = plan_pointers(projects)
+        if refused:
+            print('  %d chain(s) left alone -- the data does not order them:\n'
+                  % len(refused))
+            for members, reason in refused:
+                print('      %s' % reason)
+                for member in sorted(members):
+                    print('        %s' % member)
+                print('')
+        if not plan:
+            print('  nothing to do')
+        else:
+            print('  %d document(s) in %d chain(s)\n' % (
+                len(plan), len({fields['version_chain_id'] for _doc, fields in plan})))
+            plan = take(plan, args.limit)
+            written, skipped = apply_pointers(projects, plan, args.execute, rollback)
+            totals['written'] += written
+            totals['skipped'] += skipped
         print('')
 
     if args.execute:

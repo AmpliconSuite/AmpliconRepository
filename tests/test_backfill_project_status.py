@@ -21,8 +21,10 @@ from caper.project_status import DETACHED, SOFT_DELETED, SUPERSEDED, classify
 from backfill_project_status import (
     apply_current,
     apply_lineage,
+    apply_pointers,
     plan_current,
     plan_lineage,
+    plan_pointers,
     take,
 )
 
@@ -296,3 +298,167 @@ def test_take_without_a_limit_is_the_whole_plan(projects):
     # 0 means zero documents, not "no limit". Someone typing --limit 0 to make
     # a run do nothing must not get all 70 instead.
     assert take(plan, 0) == []
+
+
+# ---------------------------------------------------------------------------
+# Pass 3 -- lineage pointers
+# ---------------------------------------------------------------------------
+
+def test_pointers_are_read_off_the_heads_list(projects):
+    """Ordinals, neighbours and is_latest all come from one place.
+
+    The head's previous_versions[] is the order the application wrote -- each
+    new version is created with the old list plus the version it replaces -- so
+    no date is consulted. Dates are missing on some documents and tied on
+    others; the list is not.
+    """
+    v1, v2, head = ObjectId(), ObjectId(), ObjectId()
+    projects.insert_many([
+        {'_id': v1, 'project_name': 'v1', 'delete': True, 'current': False},
+        {'_id': v2, 'project_name': 'v2', 'delete': True, 'current': False,
+         'previous_versions': [{'linkid': str(v1)}]},
+        {'_id': head, 'project_name': 'head', 'delete': False, 'current': True,
+         'previous_versions': [{'linkid': str(v1)}, {'linkid': str(v2)}]},
+    ])
+
+    plan, refused = plan_pointers(projects)
+    assert refused == []
+    apply_pointers(projects, plan, execute=True)
+
+    ordered = [get(projects, oid) for oid in (v1, v2, head)]
+    assert [d['version_ordinal'] for d in ordered] == [1, 2, 3]
+    assert [d['is_latest'] for d in ordered] == [False, False, True]
+    assert [d['previous_version_id'] for d in ordered] == [None, v1, v2]
+    assert [d['next_version_id'] for d in ordered] == [v2, head, None]
+
+    # The oldest version names the chain: derivable, so a re-run computes the
+    # same value, and stable, because new versions are appended at the far end.
+    assert {d['version_chain_id'] for d in ordered} == {v1}
+
+
+def test_a_document_with_no_lineage_is_its_own_chain(projects):
+    alone = ObjectId()
+    projects.insert_one({'_id': alone, 'project_name': 'alone',
+                         'delete': False, 'current': True})
+
+    plan, refused = plan_pointers(projects)
+    apply_pointers(projects, plan, execute=True)
+
+    doc = get(projects, alone)
+    assert doc['version_chain_id'] == alone
+    assert doc['version_ordinal'] == 1
+    assert doc['is_latest'] is True
+    assert doc['previous_version_id'] is None
+    assert doc['next_version_id'] is None
+    assert refused == []
+
+
+def test_a_chain_with_two_possible_heads_is_refused_whole(projects):
+    """Two documents nobody names is a fork, and a fork is a finding.
+
+    Dev has four of these. Guessing which branch is the real history would
+    write a lineage nobody can check afterwards, so the whole chain is left
+    alone -- not just the ambiguous part, because the ordinals of the members
+    below the fork depend on which branch wins.
+    """
+    shared, branch_a, branch_b = ObjectId(), ObjectId(), ObjectId()
+    projects.insert_many([
+        {'_id': shared, 'project_name': 'shared ancestor',
+         'delete': True, 'current': False},
+        {'_id': branch_a, 'project_name': 'branch a', 'delete': False,
+         'current': True, 'previous_versions': [{'linkid': str(shared)}]},
+        {'_id': branch_b, 'project_name': 'branch b', 'delete': False,
+         'current': True, 'previous_versions': [{'linkid': str(shared)}]},
+    ])
+
+    plan, refused = plan_pointers(projects)
+
+    assert plan == []
+    assert len(refused) == 1
+    members, reason = refused[0]
+    assert set(members) == {str(shared), str(branch_a), str(branch_b)}
+    assert '2 possible heads' in reason
+
+    apply_pointers(projects, plan, execute=True)
+    for oid in (shared, branch_a, branch_b):
+        assert 'version_chain_id' not in get(projects, oid)
+
+
+def test_a_chain_the_head_does_not_fully_list_is_refused(projects):
+    """Reached through a longer path than the head's own list.
+
+    The members are connected, so they are one chain, but the head's list is
+    not a complete ordering of it and nothing else in the data is either.
+    """
+    v1, v2, head = ObjectId(), ObjectId(), ObjectId()
+    projects.insert_many([
+        {'_id': v1, 'project_name': 'v1', 'delete': True, 'current': False},
+        {'_id': v2, 'project_name': 'v2', 'delete': True, 'current': False,
+         'previous_versions': [{'linkid': str(v1)}]},
+        # Names v2 but not v1, so v1 is in the chain by way of v2 alone.
+        {'_id': head, 'project_name': 'head', 'delete': False, 'current': True,
+         'previous_versions': [{'linkid': str(v2)}]},
+    ])
+
+    plan, refused = plan_pointers(projects)
+
+    assert plan == []
+    assert len(refused) == 1
+    assert 'longer path' in refused[0][1]
+
+
+def test_pointers_are_idempotent(projects):
+    seed(projects)
+    plan, _refused = plan_pointers(projects)
+    apply_pointers(projects, plan, execute=True)
+
+    again, _refused = plan_pointers(projects)
+    assert again == [], 'the pointer pass is not idempotent'
+
+
+def test_exactly_one_is_latest_per_chain(projects):
+    """Invariant I3, asserted over whatever the seed population produces."""
+    seed(projects)
+    plan, _refused = plan_pointers(projects)
+    apply_pointers(projects, plan, execute=True)
+
+    heads = {}
+    for doc in projects.find({'version_chain_id': {'$exists': True}}):
+        heads.setdefault(doc['version_chain_id'], []).append(doc['is_latest'])
+    assert heads, 'nothing was written'
+    for chain_id, flags in heads.items():
+        assert flags.count(True) == 1, 'chain %s has %d heads' % (
+            chain_id, flags.count(True))
+
+
+def test_ordinals_are_contiguous_from_one_within_a_chain(projects):
+    """Invariant I4."""
+    seed(projects)
+    plan, _refused = plan_pointers(projects)
+    apply_pointers(projects, plan, execute=True)
+
+    chains = {}
+    for doc in projects.find({'version_chain_id': {'$exists': True}}):
+        chains.setdefault(doc['version_chain_id'], []).append(doc['version_ordinal'])
+    for chain_id, ordinals in chains.items():
+        assert sorted(ordinals) == list(range(1, len(ordinals) + 1)), \
+            'chain %s has ordinals %s' % (chain_id, sorted(ordinals))
+
+
+def test_the_pointer_undo_record_removes_every_field_it_wrote(projects):
+    seed(projects)
+    plan, _refused = plan_pointers(projects)
+    before = {str(doc['_id']): get(projects, doc['_id']) for doc, _f in plan}
+
+    import io
+    undo = io.StringIO()
+    apply_pointers(projects, plan, execute=True, rollback=undo)
+
+    for line in undo.getvalue().splitlines():
+        entry = json.loads(line)
+        assert entry['op'] == '$unset'
+        projects.update_one({'_id': ObjectId(entry['_id'])},
+                            {'$unset': entry['fields']})
+
+    for doc_id, original in before.items():
+        assert get(projects, ObjectId(doc_id)) == original
