@@ -23,6 +23,7 @@ from backfill_project_status import (
     apply_lineage,
     plan_current,
     plan_lineage,
+    take,
 )
 
 
@@ -252,3 +253,46 @@ def test_replaying_the_undo_record_restores_every_document(projects, tmp_path):
                             {undo['op']: undo['fields']})
 
     assert {doc['_id']: doc for doc in projects.find({})} == before
+
+
+# ---------------------------------------------------------------------------
+# --limit, which is how this runs against prod: a few documents, checked, then
+# the rest
+# ---------------------------------------------------------------------------
+
+def test_a_limited_run_covers_the_rest_on_the_next_run_with_no_overlap(projects):
+    """The property that makes staging safe.
+
+    Splitting a backfill into a small first batch is only worth doing if the
+    second run resumes exactly where the first stopped.  It does, but not
+    because anything remembers: a document that has been written no longer
+    matches the query that selects it, so the plan itself is what shrinks.
+    The sort is what stops the two runs from picking documents in different
+    orders and leaving one behind.
+    """
+    seed(projects)
+    everything = [doc['_id'] for doc, _target in plan_current(projects)]
+    assert len(everything) > 1, 'need at least two eligible documents to split'
+
+    first = take(plan_current(projects), 1)
+    assert [doc['_id'] for doc, _target in first] == everything[:1]
+    apply_current(projects, first, execute=True)
+
+    rest = plan_current(projects)
+    assert [doc['_id'] for doc, _target in rest] == everything[1:], \
+        'the second run must pick up exactly what the first left'
+
+    apply_current(projects, rest, execute=True)
+    assert plan_current(projects) == []
+
+
+def test_take_without_a_limit_is_the_whole_plan(projects):
+    seed(projects)
+    plan = plan_current(projects)
+
+    assert take(plan, None) == plan
+    assert take(plan, len(plan) + 5) == plan
+
+    # 0 means zero documents, not "no limit". Someone typing --limit 0 to make
+    # a run do nothing must not get all 70 instead.
+    assert take(plan, 0) == []

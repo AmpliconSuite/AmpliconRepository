@@ -152,6 +152,9 @@ def plan_current(projects):
         # Anything else was the head of its own chain when it was deleted.
         target = SUPERSEDED if str(doc['_id']) in referenced else SOFT_DELETED
         plan.append((doc, target))
+    # Sorted so that --limit takes the same documents every time: a first run of
+    # three and a later run of the rest must not overlap or leave a gap.
+    plan.sort(key=lambda entry: entry[0]['_id'])
     return plan
 
 
@@ -206,6 +209,7 @@ def plan_lineage(projects):
         # same shape, so the rewrite is what the reader was going to build
         # anyway -- written down instead of recomputed on every page load.
         plan.append((doc, [entry for entry, _encoding in entries]))
+    plan.sort(key=lambda entry: entry[0]['_id'])
     return plan
 
 
@@ -235,6 +239,22 @@ def apply_lineage(projects, plan, execute, rollback=None):
 
 # ---------------------------------------------------------------------------
 
+def take(plan, limit):
+    """The first *limit* entries of a plan, saying how many are held back.
+
+    Printed rather than silent because the exit status of a limited run looks
+    exactly like the exit status of a complete one, and "70 document(s)"
+    followed by three lines of output is otherwise easy to read as a failure.
+    """
+    # `limit is None`, not `not limit`: 0 has to mean zero documents. Someone
+    # typing --limit 0 to make a run do nothing must not get all 70 instead.
+    if limit is None or limit >= len(plan):
+        return plan
+    print('  --limit %d: acting on the first %d, leaving %d for a later run\n'
+          % (limit, limit, len(plan) - limit))
+    return plan[:limit]
+
+
 def check_targets_exist(projects, plan):
     """Warn where a rewritten lineage entry names a document that is not there.
 
@@ -263,6 +283,13 @@ def main():
                         help='Actually write. Without it the script only reports.')
     parser.add_argument('--only', choices=['current', 'lineage'],
                         help='Run one pass instead of both.')
+    parser.add_argument('--limit', type=int, metavar='N',
+                        help='Act on only the first N documents of each pass, '
+                             'in _id order. The report still counts them all, '
+                             'so the line above the list says how many were '
+                             'left. Running again with a larger N (or none) '
+                             'picks up where this stopped, because a document '
+                             'already written no longer appears in the plan.')
     parser.add_argument('--rollback-file',
                         help='Where to record the inverse of each write. '
                              'Defaults to a timestamped file in the working '
@@ -302,6 +329,7 @@ def main():
                 by_status[target] = by_status.get(target, 0) + 1
             print('  %d document(s): %s\n' % (
                 len(plan), ', '.join('%d %s' % (n, s) for s, n in sorted(by_status.items()))))
+            plan = take(plan, args.limit)
             written, skipped = apply_current(projects, plan, args.execute, rollback)
             totals['written'] += written
             totals['skipped'] += skipped
@@ -316,6 +344,7 @@ def main():
             print('  nothing to do')
         else:
             print('  %d document(s)\n' % len(plan))
+            plan = take(plan, args.limit)
             written, skipped = apply_lineage(projects, plan, args.execute, rollback)
             totals['written'] += written
             totals['skipped'] += skipped
