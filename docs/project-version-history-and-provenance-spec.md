@@ -888,6 +888,35 @@ data is discarded. Nothing in the adjudication requires a migration: the old
 documents still hold their entries, so summing across the chain recovers the
 history that re-aggregation has been hiding.
 
+### D15 · Version deletion purges GridFS but leaves the S3 tarball
+
+`delete_project_version()` calls `delete_gridfs_payload_for_project()` and says
+nothing about S3. The same is true of re-aggregation: the new version gets a new
+`_id`, so a new key, and the previous version's object at
+`{prefix}{old_id}/{old_id}.tar.gz` is left behind with nothing naming it.
+
+Permanent delete does remove it (`views_admin.py:654`). Soft delete correctly
+does not. Those two are the only paths that consider S3 at all, which makes this
+the same shape as D7 — a payload-removal rule implemented in some of the places
+that remove payload.
+
+The object is a cache: `project_download()` materialises it from GridFS on the
+first download that finds it missing, and no lifecycle rule expires it. So the
+leak is per re-aggregation of any project that has ever been downloaded, at full
+project size.
+
+Measured 2026-08-27: of 199.6 GiB in `amprepo-private`, **38.9 GiB across 211
+objects carries a project-id prefix that no document in either database still
+has** — before counting the 26.7 GiB under the `jens/` and `ted/` deployment
+prefixes. The egress paths and this table are written up in the infrastructure
+roadmap, §2.3a.
+
+**Requirement:** whatever routine removes a version's payload removes both
+stores, and the per-file orphan report of §6.4 covers S3 keys as well as
+`fs.files` rows. Deleting the existing 38.9 GiB stays out of scope (§12) — it
+needs the status resolver to tell a stranded cache entry from one whose project
+is soft-deleted and restorable.
+
 ### D13 · The sole-version deletion path is a fifth, divergent code path
 
 `delete_project_version()` Case 3 (`views.py:3012`) handles "no previous
