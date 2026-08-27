@@ -100,6 +100,45 @@ def test_an_older_version_that_resolves_is_deleted_with_its_parent(projects, del
     assert str(project_id) in deletions
 
 
+def test_the_project_is_deleted_once_not_twice(projects, deletions):
+    """
+    The walk used to read previous_versions(), the function that builds the
+    history table on the project page.  That list always ends with an entry for
+    the version being viewed, so every delete ran the whole teardown against
+    the project itself twice -- once from inside the history loop, once at the
+    end.  Wasted work while it succeeded, and while it failed it failed in the
+    loop, where the exception abandons the rest of a batch.
+    """
+    from caper.views_admin import permanently_delete_with_history
+
+    project_id = projects('-solo')
+    project = projects.collection.find_one({'_id': project_id})
+
+    permanently_delete_with_history(project_id, project, project['project_name'])
+
+    assert deletions.count(str(project_id)) == 1
+
+
+def test_deleting_an_older_version_does_not_reach_its_head(projects, deletions):
+    """
+    Asked for a project that is not the head of its chain, previous_versions()
+    returns the *head's* history with the head appended -- so the walk would
+    delete the head and every sibling, none of which were selected.  The stored
+    previous_versions field names ancestors only, which is what the walk wants.
+    """
+    from caper.views_admin import permanently_delete_with_history
+
+    older_id = projects('-older')
+    head_id = projects('-head', previous_versions=[
+        {'date': '2024-09-27', 'linkid': str(older_id)}])
+    older = projects.collection.find_one({'_id': older_id})
+
+    permanently_delete_with_history(older_id, older, older['project_name'])
+
+    assert str(head_id) not in deletions
+    assert projects.collection.find_one({'_id': head_id}) is not None
+
+
 def test_a_history_entry_pointing_at_a_live_project_is_skipped(projects, deletions):
     """
     get_one_deleted_project() matches only {'delete': True}, so a reference to
@@ -169,6 +208,51 @@ def test_a_selected_id_that_no_longer_resolves_is_reported(projects, deletions):
     assert deletions == []
     assert 'Permanently deleted 0 of 1' in message
     assert live_id in message
+
+
+def test_the_batch_stops_before_gunicorn_kills_it(projects, monkeypatch):
+    """
+    A worker killed at 900 seconds takes the report with it, so the operator
+    cannot tell which of the selection was deleted.  Stopping early keeps the
+    report, and costs nothing: each project is finished before the next starts.
+    """
+    from caper import views_admin
+
+    ids = [str(projects(f'-{n}')) for n in range(4)]
+    deleted = []
+    ticks = {'n': 0}
+
+    def slow(project_id, project, project_name):
+        deleted.append(str(project_id))
+        return ''
+
+    def clock():
+        ticks['n'] += 1
+        return ticks['n']
+
+    monkeypatch.setattr(views_admin, 'admin_permanent_delete_project', slow)
+    monkeypatch.setattr(views_admin.time, 'monotonic', clock)
+
+    message = views_admin.delete_selected_projects(ids, time_budget=1)
+
+    assert len(deleted) < len(ids), 'the budget did not stop the batch'
+    assert 'not attempted' in message
+    assert 'Permanently deleted' in message
+
+
+def test_the_first_project_is_always_attempted(projects, monkeypatch):
+    """An exhausted budget must not turn a one-project selection into a no-op."""
+    from caper import views_admin
+
+    project_id = str(projects('-solo'))
+    deleted = []
+    monkeypatch.setattr(views_admin, 'admin_permanent_delete_project',
+                        lambda pid, p, n: deleted.append(str(pid)))
+
+    message = views_admin.delete_selected_projects([project_id], time_budget=0)
+
+    assert deleted == [project_id]
+    assert 'not attempted' not in message
 
 
 def test_an_empty_selection_deletes_nothing(projects, deletions):

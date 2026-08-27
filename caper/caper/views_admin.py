@@ -9,6 +9,7 @@ import csv
 import subprocess
 import shutil
 import datetime
+import time
 from pathlib import Path
 
 from django.http import HttpResponse
@@ -33,8 +34,9 @@ from .account_deletion import RELEASE, plan_account_deletion, summarize
 from .forms import FeaturedProjectForm, DeletedProjectForm, SendEmailForm
 from .utils import (
     collection_handle, collection_handle_primary, fs_handle, audit_log_handle,
+    delete_gridfs_file,
     get_one_project, get_one_deleted_project, prepare_project_linkid,
-    check_if_db_field_exists, get_date_short, previous_versions,
+    check_if_db_field_exists, get_date_short,
     form_to_dict, get_date, db_handle_primary, format_visibility_for_display,
     get_project_version_chain, normalize_visibility_field, is_project_private,
 )
@@ -46,6 +48,7 @@ from .project_status import (
     STATUS_QUERIES,
     classify,
     is_reachable_by_url,
+    iter_previous_versions,
     status_flags,
     status_query,
 )
@@ -615,7 +618,7 @@ def admin_permanent_delete_project(project_id, project, project_name):
                     file_id = feature.get(k)
                     if file_id and file_id != 'Not Provided':
                         try:
-                            fs_handle.delete(ObjectId(file_id))
+                            delete_gridfs_file(file_id)
                         except Exception:
                             logging.debug(f"Could not delete GridFS file {file_id} ({k}) for sample {sample_name}")
     except Exception:
@@ -625,7 +628,9 @@ def admin_permanent_delete_project(project_id, project, project_name):
     # delete project tar and files from mongo and local disk
     #    - assume all feature and sample files are in this dir
     try:
-        fs_handle.delete(ObjectId(project['tarfile']))
+        # Batched, so a multi-gigabyte tarfile cannot exceed the driver's socket
+        # timeout and report a failure for a delete the server actually ran.
+        delete_gridfs_file(project['tarfile'])
     except KeyError:
         logging.exception(f'Problem deleting project tar file from mongo. {project["project_name"]}')
         error_message = error_message + " Problem deleting project tar file from mongo."
@@ -753,10 +758,18 @@ def permanently_delete_with_history(project_id, project, project_name):
     that is not flagged deleted; dereferencing that None used to raise
     TypeError before anything was deleted, which made a project with a single
     dangling reference impossible to delete from this page at all.
+
+    The history walked here is the project's own ``previous_versions`` field,
+    read through the resolver.  This used to call previous_versions(), which
+    builds the table the project page renders: that list always ends with an
+    entry for the version being viewed, and when the project is not the head of
+    its chain it describes the *head's* history instead, head included.  So the
+    loop deleted this project's payload once inside it and again below, and for
+    an older version would have reached across the chain to versions nobody
+    selected.  The stored field names ancestors and nothing else.
     """
     unresolved = []
-    prev_ver_list, _msg = previous_versions(project)
-    for entry in prev_ver_list or []:
+    for entry, _encoding in iter_previous_versions(project):
         linkid = entry.get('linkid')
         older = get_one_deleted_project(linkid) if linkid else None
         if older is None:
@@ -776,7 +789,20 @@ def permanently_delete_with_history(project_id, project, project_name):
     return message
 
 
-def delete_selected_projects(project_ids):
+BULK_DELETE_TIME_BUDGET = 600
+"""Seconds after which delete_selected_projects() stops starting new projects.
+
+gunicorn kills a worker at 900 seconds (gunicorn_config.py), and a selection
+large enough to reach that would take the report down with it: the deletes that
+had already run would be invisible, leaving the operator to work out by hand
+which rows are gone.  Stopping at 600 leaves room for the project already in
+flight to finish and for the page to render.  Nothing is lost by stopping --
+each project is deleted completely before the next one starts -- so selecting
+what remains and submitting again continues from here.
+"""
+
+
+def delete_selected_projects(project_ids, time_budget=BULK_DELETE_TIME_BUDGET):
     """
     Permanently delete each project in *project_ids*, and return a message.
 
@@ -784,9 +810,17 @@ def delete_selected_projects(project_ids):
     single bad document costs one row rather than the whole selection, and the
     caller cannot tell in advance which documents carry a defect.
     """
+    started = time.monotonic()
     deleted = 0
     problems = []
-    for project_id in project_ids:
+    unattempted = 0
+    for index, project_id in enumerate(project_ids):
+        # Checked before the work, never before the first project: a single
+        # project always gets its attempt, however long the batch may run.
+        if index and time.monotonic() - started > time_budget:
+            unattempted = len(project_ids) - index
+            break
+
         project = get_one_deleted_project(project_id)
         if project is None:
             problems.append(f"{project_id} (not found, or no longer flagged deleted)")
@@ -804,6 +838,10 @@ def delete_selected_projects(project_ids):
         # 'Problem' is the word the page's script looks for to colour the
         # banner as a warning rather than a success.
         message = f"{message} Problem deleting: {'; '.join(problems)}."
+    if unattempted:
+        message = (f"{message} Stopped after {int(time.monotonic() - started)} seconds with "
+                   f"{unattempted} project(s) not attempted; select them and submit again "
+                   f"to continue.")
     return message
 
 
