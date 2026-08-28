@@ -139,6 +139,32 @@ def test_no_page_raises_for_any_project_status(
         mongo_collection.insert_one(tombstone)
         tombstone_id = tombstone['_id']
 
+        def _wait_until_visible(target, flags):
+            """Block until the handle the views read reflects *flags*.
+
+            The views read through collection_handle, which is
+            SECONDARY_PREFERRED, and on DocumentDB a read after a write usually
+            returns the value from before it. Rendering immediately after
+            setting the flags therefore renders the *previous* status, and the
+            first dev run of this matrix mislabelled every flag-based row by
+            exactly one -- SOFT_DELETED's row showed SUPERSEDED's result and
+            DETACHED's showed SOFT_DELETED's. A matrix with the wrong labels is
+            worse than no matrix.
+
+            Polls rather than sleeps a fixed amount, so it costs nothing on a
+            single-node MongoDB where the write is visible at once.
+            """
+            import time
+            wanted = {k: v for k, v in flags.items() if k in ('delete', 'current')}
+            deadline = time.time() + 30
+            while time.time() < deadline:
+                seen = mongo_collection.find_one({'_id': ObjectId(target)},
+                                                 {'delete': 1, 'current': 1})
+                if seen and all(seen.get(k) == v for k, v in wanted.items()):
+                    return True
+                time.sleep(0.5)
+            return False
+
         cases = [(name, project_id, flags) for name, flags in FLAGS_BY_STATUS.items()]
         cases.append((TOMBSTONE, str(tombstone_id), None))
 
@@ -149,6 +175,10 @@ def test_no_page_raises_for_any_project_status(
             if flags is not None:
                 mongo_collection.update_one({'_id': ObjectId(target)},
                                             {'$set': flags})
+                assert _wait_until_visible(target, flags), (
+                    f'{status}: the flags never became visible to the handle '
+                    f'the views read, so every row below this one would be '
+                    f'labelled with the wrong status')
             for label, view in views:
                 outcome, detail = _render(view, request_factory, test_user,
                                           target, sample_name)
