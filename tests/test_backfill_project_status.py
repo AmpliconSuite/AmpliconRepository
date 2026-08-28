@@ -17,14 +17,17 @@ import pytest
 from bson import ObjectId
 from pymongo import MongoClient
 
-from caper.project_status import DETACHED, SOFT_DELETED, SUPERSEDED, classify
+from caper.project_status import (
+    DETACHED, LIVE as LIVE_LABEL, SOFT_DELETED, SUPERSEDED, classify)
 from backfill_project_status import (
     apply_current,
     apply_lineage,
     apply_pointers,
+    apply_status,
     plan_current,
     plan_lineage,
     plan_pointers,
+    plan_status,
     take,
 )
 
@@ -462,3 +465,71 @@ def test_the_pointer_undo_record_removes_every_field_it_wrote(projects):
 
     for doc_id, original in before.items():
         assert get(projects, ObjectId(doc_id)) == original
+
+
+# ---------------------------------------------------------------------------
+# Pass 4 -- the stored status field
+# ---------------------------------------------------------------------------
+
+def test_status_is_written_from_classify(projects):
+    seed(projects)
+    plan = plan_status(projects)
+    apply_status(projects, plan, execute=True)
+
+    for doc in projects.find({}):
+        assert doc['status'] == classify(doc)
+
+
+def test_status_is_not_rewritten_without_refresh(projects):
+    """The default pass fills absences only.
+
+    Overwriting a stored value is a different risk class from filling a gap, so
+    it takes a flag -- and without one, a re-run finds nothing to do.
+    """
+    seed(projects)
+    apply_status(projects, plan_status(projects), execute=True)
+    stale = ObjectId()
+    projects.insert_one({'_id': stale, 'project_name': 'stale',
+                         'delete': False, 'current': True, 'status': 'SUPERSEDED'})
+
+    assert [doc['_id'] for doc, _s, _c in plan_status(projects)] == [stale] or \
+        plan_status(projects) == []
+    # The stale document is not in the default plan; only genuinely absent ones.
+    assert all(stored is None for _doc, stored, _c in plan_status(projects))
+    assert get(projects, stale)['status'] == 'SUPERSEDED'
+
+
+def test_refresh_corrects_a_status_that_went_stale(projects):
+    """The window this exists to close.
+
+    A deployment running code from before status_after() writes 'delete' on a
+    soft delete and leaves 'status' behind. The backfill must be able to repair
+    a disagreement it can itself create by running ahead of the deploy.
+    """
+    stale = ObjectId()
+    projects.insert_one({'_id': stale, 'project_name': 'went stale',
+                         'delete': True, 'current': True, 'status': LIVE_LABEL})
+
+    plan = plan_status(projects, refresh=True)
+    assert [(doc['_id'], stored, computed) for doc, stored, computed in plan] == \
+        [(stale, LIVE_LABEL, SOFT_DELETED)]
+
+    apply_status(projects, plan, execute=True)
+    assert get(projects, stale)['status'] == SOFT_DELETED
+
+
+def test_the_refresh_undo_puts_the_stale_value_back(projects):
+    """The inverse of a correction is the value that was there, not an unset."""
+    import io
+    stale = ObjectId()
+    projects.insert_one({'_id': stale, 'project_name': 'went stale',
+                         'delete': True, 'current': True, 'status': LIVE_LABEL})
+
+    undo = io.StringIO()
+    apply_status(projects, plan_status(projects, refresh=True),
+                 execute=True, rollback=undo)
+
+    entry = json.loads(undo.getvalue().strip())
+    assert entry == {'_id': str(stale), 'op': '$set', 'fields': {'status': LIVE_LABEL}}
+    projects.update_one({'_id': stale}, {'$set': entry['fields']})
+    assert get(projects, stale)['status'] == LIVE_LABEL

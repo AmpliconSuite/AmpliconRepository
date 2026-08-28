@@ -397,32 +397,56 @@ def apply_pointers(projects, plan, execute, rollback=None):
 MISSING_STATUS_QUERY = {'status': {'$exists': False}}
 
 
-def plan_status(projects):
-    """(doc, status) for every document with no stored 'status'.
+def plan_status(projects, refresh=False):
+    """(doc, stored, computed) for documents whose 'status' needs writing.
 
     Run last on purpose. classify() reads the flags, so this pass must see the
     values the 'current' pass wrote rather than the absences it replaced --
     otherwise 70 documents on prod would be stored as DETACHED, which is what
     they were before the backfill and not what they are after it.
+
+    With *refresh*, documents whose stored status disagrees with classify() are
+    included too.  That case is not hypothetical and it is not a data fault: a
+    deployment running code from before status_after() existed writes 'delete'
+    on a soft delete and leaves 'status' behind, so the field goes stale on the
+    first deletion after the backfill and before the deploy.  Recomputing is
+    safe while nothing reads the field -- the flags remain authoritative until
+    Phase 2 -- and refusing to fix it would mean the backfill can create a
+    disagreement it cannot repair.
     """
     plan = []
-    for doc in projects.find(MISSING_STATUS_QUERY):
-        plan.append((doc, classify(doc)))
+    for doc in projects.find({}):
+        computed = classify(doc)
+        stored = doc.get('status')
+        if stored is None:
+            plan.append((doc, None, computed))
+        elif refresh and stored != computed:
+            plan.append((doc, stored, computed))
     plan.sort(key=lambda entry: entry[0]['_id'])
     return plan
 
 
 def apply_status(projects, plan, execute, rollback=None):
     written = skipped = 0
-    for doc, status in plan:
+    for doc, stored, computed in plan:
         print('  %s  %-40s  %s' % (
-            doc['_id'], (doc.get('project_name') or '?')[:40], status))
+            doc['_id'], (doc.get('project_name') or '?')[:40],
+            computed if stored is None else '%s -> %s' % (stored, computed)))
         if not execute:
             continue
-        record(rollback, doc['_id'], '$unset', {'status': ''})
+        # The undo restores exactly what was there, which for a first write is
+        # the absence of the field and for a refresh is the stale value. Both
+        # are recorded rather than assumed, so replaying the file is the same
+        # loop either way.
+        if stored is None:
+            record(rollback, doc['_id'], '$unset', {'status': ''})
+            precondition = MISSING_STATUS_QUERY
+        else:
+            record(rollback, doc['_id'], '$set', {'status': stored})
+            precondition = {'status': stored}
         result = projects.update_one(
-            combine(MISSING_STATUS_QUERY, _id=doc['_id']),
-            {'$set': {'status': status}})
+            combine(precondition, _id=doc['_id']),
+            {'$set': {'status': computed}})
         if result.modified_count:
             written += 1
         else:
@@ -483,6 +507,11 @@ def main():
                              'left. Running again with a larger N (or none) '
                              'picks up where this stopped, because a document '
                              'already written no longer appears in the plan.')
+    parser.add_argument('--refresh-status', action='store_true',
+                        help="Also rewrite a stored 'status' that disagrees "
+                             "with classify(). Needed where the backfill has "
+                             "run but the code that maintains the field has "
+                             "not been deployed yet.")
     parser.add_argument('--rollback-file',
                         help='Where to record the inverse of each write. '
                              'Defaults to a timestamped file in the working '
@@ -572,13 +601,13 @@ def main():
         print('=' * 78)
         print("status -- what classify() says, written down so a query can use it")
         print('=' * 78)
-        plan = plan_status(projects)
+        plan = plan_status(projects, refresh=args.refresh_status)
         if not plan:
             print('  nothing to do')
         else:
             by_status = {}
-            for _doc, status in plan:
-                by_status[status] = by_status.get(status, 0) + 1
+            for _doc, _stored, computed in plan:
+                by_status[computed] = by_status.get(computed, 0) + 1
             print('  %d document(s): %s\n' % (
                 len(plan), ', '.join('%d %s' % (n, s)
                                      for s, n in sorted(by_status.items()))))
