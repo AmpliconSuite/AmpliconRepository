@@ -87,6 +87,7 @@ from .project_status import (
     LIVE,
     NOT_DELETED_QUERY,
     SOFT_DELETED,
+    STATUS_FLAG_FIELDS,
     STATUS_QUERIES,
     SUPERSEDED,
     TOMBSTONE,
@@ -2872,6 +2873,33 @@ def log_project_audit_event(user, project_uuid, project_name, is_new_version,
         logging.error(f"Failed to write audit log for project {project_uuid}: {e}")
 
 
+def current_flags(project):
+    """*project*'s status flags, read from the primary.
+
+    status_after() computes the status a half-write will produce from the flags
+    already on the document, so it is only ever as right as the document it is
+    handed.  Every read in these two views goes through collection_handle,
+    which is SECONDARY_PREFERRED -- and on DocumentDB a read issued straight
+    after a write usually returns the value from before it: 34 of 40 in a tight
+    loop against caper-dev, measured 2026-08-28, each one exactly one write
+    behind.
+
+    That is not a theoretical window.  A project edit calls project_update()
+    and then project_delete() back to back, so the second one recomputes the
+    status from a document the first one has already changed.  Re-aggregating
+    twice on dev on 2026-08-28 produced one version stored as 'SOFT_DELETED'
+    while its flags said SUPERSEDED, and one that came out right -- the same
+    code, decided by replica lag.
+
+    The flags are two booleans, so re-reading them is cheap, and it is only the
+    status computation that needs them: permission checks and payload reads
+    stay on the secondary where they belong.
+    """
+    fresh = collection_handle_primary.find_one(
+        {'_id': project['_id']}, {field: 1 for field in STATUS_FLAG_FIELDS})
+    return {**project, **fresh} if fresh else project
+
+
 def project_delete(request, project_name):
     project = get_one_project(project_name)
     deleter = get_current_user(request)
@@ -2890,7 +2918,7 @@ def project_delete(request, project_name):
         # because a half-write's result depends on the 'current' already there:
         # LIVE becomes SOFT_DELETED, SUPERSEDED stays SUPERSEDED.
         new_val = { "$set": {'delete': status_flags(SOFT_DELETED)['delete'],
-                             'status': status_after(project, delete=True),
+                             'status': status_after(current_flags(project), delete=True),
                              'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
         delete_project_from_site_statistics(project, visibility)
@@ -3201,7 +3229,7 @@ def project_update(request, project_name):
         # here completes the move from SOFT_DELETED to SUPERSEDED -- the old
         # head of the chain, still reachable by URL (utils.py:722).
         new_val = { "$set": {'current': status_flags(SUPERSEDED)['current'],
-                             'status': status_after(project, current=False),
+                             'status': status_after(current_flags(project), current=False),
                              'update_date': get_date()} }
         collection_handle.update_one(query, new_val)
 

@@ -540,6 +540,46 @@ def _check_i16(snap):
     return findings
 
 
+def _check_i20(snap):
+    """No chain is headed by a TOMBSTONE while a non-TOMBSTONE member survives.
+
+    I16 deliberately allows a tombstone head, because that is what an emptied
+    project is: every version deleted, the last one still holding the position
+    a restore lands in.  What it cannot allow is a tombstone holding the head
+    while a version that was never deleted sits beside it -- that is a project
+    whose current version is one the user deleted, and whose surviving version
+    is unreachable as the head.
+
+    This exists because the data said so before any rule did.  Deleting the
+    head of a three-version chain on dev, 2026-08-28, promoted the tombstone
+    left by the previous deletion instead of the one surviving version:
+    plan_deletion() asked is_tombstone() of documents fetched under a
+    projection that dropped both markers, so every tombstone read as a
+    survivor.  Every invariant then in place passed over the result -- exactly
+    one head, ordinals contiguous, pointers mutual, payloads purged.  The shape
+    was wrong and nothing was looking for it.
+    """
+    snap.require('version_chain_id', 'is_latest')
+    findings = []
+    for chain_id, members in sorted(snap.chains().items(), key=lambda kv: str(kv[0])):
+        heads = [doc for doc in members if doc.get('is_latest') is True]
+        if len(heads) != 1:
+            continue                      # I3 and I16 own that
+        head = heads[0]
+        if snap.status[head['_id']] != TOMBSTONE:
+            continue
+        survivors = [doc for doc in members
+                     if snap.status[doc['_id']] != TOMBSTONE]
+        if survivors:
+            findings.append(Finding(
+                'I20', head['_id'], snap.name(head['_id']),
+                f'chain {chain_id} is headed by a TOMBSTONE while '
+                f'{len(survivors)} version(s) survive it, the newest being '
+                f'{survivors[-1]["_id"]} (ordinal '
+                f'{survivors[-1].get("version_ordinal")})'))
+    return findings
+
+
 def _check_i9(snap):
     """The derived chain view's source_digest matches the documents it came from.
 
@@ -900,6 +940,8 @@ INVARIANTS = (
                      'deletion path calls it', check=_check_i18),
     Invariant('I19', 'Every lineage reference is stored in the encoding the '
                      'application reads', check=_check_i19),
+    Invariant('I20', 'No chain is headed by a TOMBSTONE while a surviving '
+                     'version sits beside it', check=_check_i20),
 )
 
 

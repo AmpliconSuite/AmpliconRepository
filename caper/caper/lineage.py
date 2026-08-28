@@ -38,14 +38,31 @@ from collections import namedtuple
 
 from bson import ObjectId
 
-from .project_status import is_tombstone
+from .project_status import TOMBSTONE_MARKER_FIELDS, is_tombstone
 
-# The pointer fields themselves, and nothing else. A project document averages
-# 690 KB on production; a caller that only needs to know which member is the
-# head must not pay for the payload of every member to find out.
+# The pointer fields, plus every field the functions below ask a question of. A
+# project document averages 690 KB on production; a caller that only needs to
+# know which member is the head must not pay for the payload of every member to
+# find out.
+#
+# The tombstone markers are here because plan_deletion() asks is_tombstone() of
+# these documents, and a predicate is only as good as the fields it was given.
+# Projected away, both markers read as absent, every tombstone looks like a
+# surviving version, and deleting a head promotes one that was itself deleted --
+# measured on dev on 2026-08-28, where deleting the head of a three-version
+# chain promoted the tombstone left by the previous deletion instead of the one
+# surviving version.
+#
+# The tests missed it for a reason worth keeping: they deleted heads, and they
+# deleted middles, but never a head from a chain that already held a tombstone,
+# which is the only shape where the two differ. A transition tested from a
+# clean chain is a transition tested once.
+#
+# So: a field this module reads belongs in this projection.
 POINTER_PROJECTION = {field: 1 for field in
                       ('version_chain_id', 'version_ordinal', 'is_latest',
-                       'previous_version_id', 'next_version_id', 'linkid')}
+                       'previous_version_id', 'next_version_id', 'linkid')
+                      + TOMBSTONE_MARKER_FIELDS}
 
 
 def has_pointers(doc):

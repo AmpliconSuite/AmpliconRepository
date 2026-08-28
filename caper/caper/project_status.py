@@ -141,6 +141,14 @@ _TOMBSTONE_MARKERS = {'version_deleted_from_history': True, 'payload_purged': Tr
 # every one of them at once.
 TOMBSTONE_MARKER_FIELDS = tuple(_TOMBSTONE_MARKERS)
 
+# The two flag fields, for callers that need to name them without asserting a
+# value -- a projection that fetches them so classify() has something to read,
+# for one.  Derived from _STATUS_FLAGS for the same reason as above, and it
+# keeps 'delete'/'current' from being spelled by hand outside this module,
+# which is what the grep guard in tests/test_project_status_guard.py enforces.
+STATUS_FLAG_FIELDS = tuple(dict.fromkeys(
+    field for flags in _STATUS_FLAGS.values() for field in flags))
+
 
 def _flag_matches(doc, field, expected):
     """Mirror MongoDB equality for the boolean flags, including absence.

@@ -609,3 +609,172 @@ def test_the_tombstone_routine_takes_no_successor_for_a_terminal_delete():
     # there is no surviving version to inherit them from.
     assert tombstone['private'] == 'public'
     assert tombstone['project_members'] == ['someone']
+
+
+# ---------------------------------------------------------------------------
+# The status a half-write computes has to come from the document as it is now
+# ---------------------------------------------------------------------------
+
+class OneWriteBehind:
+    """A collection whose reads lag, the way a DocumentDB secondary does.
+
+    find_one() serves the value from before the most recent write.  This is not
+    an exotic failure mode to simulate: reads through collection_handle are
+    SECONDARY_PREFERRED, and against caper-dev on 2026-08-28 a read issued
+    straight after a write returned the previous value 34 times out of 40.
+    """
+
+    def __init__(self, document):
+        self.committed = dict(document)
+        self.pending = dict(document)
+
+    def find_one(self, query, projection=None):
+        served = dict(self.committed)
+        self.committed = dict(self.pending)     # catches up, one read late
+        if projection:
+            return {key: served[key] for key in projection if key in served}
+        return served
+
+    def update_one(self, query, update):
+        self.pending.update(update.get('$set', {}))
+
+
+def test_a_half_write_reads_its_flags_from_the_primary(monkeypatch):
+    """project_delete() must not compute status from a stale replica.
+
+    An edit calls project_update() and then project_delete(). The first clears
+    'current'; the second sets 'delete' and recomputes the status from what it
+    reads. Reading a replica that is one write behind, it sees current=True and
+    writes SOFT_DELETED onto a document whose flags now say SUPERSEDED -- which
+    is exactly what one of two re-aggregations produced on dev on 2026-08-28,
+    the same code decided by replica lag.
+    """
+    project_id = ObjectId()
+    # As project_update() has just left it: superseded, not soft-deleted.
+    primary = OneWriteBehind({'_id': project_id, 'delete': False, 'current': False})
+    monkeypatch.setattr(views, 'collection_handle_primary', primary)
+
+    # What the view was handed: the pre-update read, one write out of date.
+    stale = {'_id': project_id, 'delete': False, 'current': True}
+
+    assert views.status_after(stale, delete=True) == 'SOFT_DELETED', \
+        'the stale document is what produces the wrong answer'
+    assert views.status_after(views.current_flags(stale), delete=True) == SUPERSEDED, \
+        'reading the flags from the primary produces the right one'
+
+
+def test_reading_the_flags_keeps_the_rest_of_the_document(monkeypatch):
+    """Only the two flags come from the primary; the caller's document stands.
+
+    The view still needs the fields it already read -- members, visibility,
+    name -- and re-fetching the whole document to get two booleans would cost
+    a full project read on every delete.
+    """
+    project_id = ObjectId()
+    monkeypatch.setattr(views, 'collection_handle_primary',
+                        OneWriteBehind({'_id': project_id, 'delete': True,
+                                        'current': False}))
+    project = {'_id': project_id, 'delete': False, 'current': True,
+               'project_name': 'p', 'project_members': ['someone']}
+
+    flags = views.current_flags(project)
+    assert flags['project_members'] == ['someone']
+    assert flags['project_name'] == 'p'
+    assert (flags['delete'], flags['current']) == (True, False)
+
+
+def test_an_unreadable_primary_falls_back_to_the_document_in_hand(monkeypatch):
+    """A missing row must not crash the delete.
+
+    find_one() returning None means the document is gone from under us. There
+    is nothing better to compute from than what the caller already read, and
+    raising here would turn a stale status into a failed request.
+    """
+    class Missing:
+        def find_one(self, query, projection=None):
+            return None
+
+    monkeypatch.setattr(views, 'collection_handle_primary', Missing())
+    project = {'_id': ObjectId(), 'delete': False, 'current': True}
+    assert views.current_flags(project) == project
+
+
+# ---------------------------------------------------------------------------
+# Deleting from a chain that already holds a tombstone
+# ---------------------------------------------------------------------------
+#
+# Every transition test above starts from a clean chain, and on a clean chain
+# "the highest surviving ordinal" and "the highest ordinal" are the same
+# document. They stop being the same the moment one version has already been
+# deleted, which is the ordinary case after any project has been tidied once.
+# Deleting the head then promoted the tombstone on dev, 2026-08-28.
+
+def test_promotion_skips_a_tombstone_and_takes_the_live_version(tombstone_marks):
+    """Ordinal 2 is deleted, then ordinal 3. Ordinal 1 is what survives."""
+    members = linked(3)
+    members[1].update(tombstone_marks)
+    plan = lineage.plan_deletion(members, members[2]['_id'])
+    assert plan.promoted_id == members[0]['_id'], \
+        'a deleted version cannot be promoted back into being the current one'
+    assert plan.chain_emptied is False
+
+
+def test_promotion_reads_the_markers_through_the_projection(tombstone_marks):
+    """The predicate has to survive the projection the caller actually uses.
+
+    plan_deletion() is handed whatever chain_members() fetched, and
+    chain_members() fetches POINTER_PROJECTION. If a field is_tombstone() reads
+    is not in that projection, every tombstone reads as a survivor -- and the
+    planner is perfectly correct in isolation while being wrong in the only
+    place it is called from.
+    """
+    members = linked(3)
+    members[1].update(tombstone_marks)
+    collection = FakeHistoryCollection(members)
+
+    projected = list(collection.find({'version_chain_id': members[0]['_id']},
+                                     lineage.POINTER_PROJECTION))
+    plan = lineage.plan_deletion(projected, members[2]['_id'])
+    assert plan.promoted_id == members[0]['_id'], \
+        'POINTER_PROJECTION dropped a field is_tombstone() needs'
+
+
+def test_deleting_the_head_of_an_all_tombstone_chain_empties_it(tombstone_marks):
+    """Nothing survives, so nothing is promoted and the chain is emptied."""
+    members = linked(3)
+    members[0].update(tombstone_marks)
+    members[1].update(tombstone_marks)
+    plan = lineage.plan_deletion(members, members[2]['_id'])
+    assert plan.promoted_id is None
+    assert plan.victim_keeps_head is True
+    assert plan.chain_emptied is True
+
+
+def test_deleting_a_middle_version_beside_a_tombstone_promotes_nothing(tombstone_marks):
+    """A non-head deletion never promotes, tombstones in the chain or not."""
+    members = linked(3)
+    members[0].update(tombstone_marks)
+    plan = lineage.plan_deletion(members, members[1]['_id'])
+    assert plan.promoted_id is None
+    assert plan.victim_keeps_head is False
+    assert plan.chain_emptied is False
+
+
+def test_every_field_the_planner_reads_is_in_the_projection(tombstone_marks):
+    """The general form, so the next field added does not repeat this.
+
+    Runs the planner over a chain projected down to POINTER_PROJECTION and over
+    the same chain in full, and requires the same answer. A field the planner
+    starts reading without adding it here makes the two disagree.
+    """
+    members = linked(4)
+    members[1].update(tombstone_marks)
+    members[2].update(tombstone_marks)
+    collection = FakeHistoryCollection(members)
+    projected = list(collection.find({'version_chain_id': members[0]['_id']},
+                                     lineage.POINTER_PROJECTION))
+
+    for victim in members:
+        assert (lineage.plan_deletion(projected, victim['_id'])
+                == lineage.plan_deletion(members, victim['_id'])), \
+            f'the projection changes the plan for {victim["version_ordinal"]}'

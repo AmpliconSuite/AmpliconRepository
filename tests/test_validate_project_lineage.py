@@ -18,7 +18,7 @@ from bson import ObjectId
 from caper.project_status import TOMBSTONE
 from validate_project_lineage import (
     INVARIANTS, Snapshot, Unavailable, _check_i1, _check_i2, _check_i3,
-    _check_i4, _check_i5, _check_i11, _check_i15, _check_i16,
+    _check_i4, _check_i5, _check_i11, _check_i15, _check_i16, _check_i20,
 )
 
 
@@ -83,7 +83,8 @@ HEALTHY = chain({}, {}, {}) + chain({})
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize('check', [_check_i1, _check_i2, _check_i3, _check_i4,
-                                   _check_i5, _check_i11, _check_i15, _check_i16])
+                                   _check_i5, _check_i11, _check_i15, _check_i16,
+                                   _check_i20])
 def test_healthy_population_has_no_findings(check):
     assert check(snapshot(HEALTHY)) == []
 
@@ -103,7 +104,7 @@ def test_checkers_are_unavailable_when_the_backfill_has_not_run():
                'current': True, 'previous_versions': []}]
     snap = snapshot(legacy)
     for check in (_check_i1, _check_i2, _check_i3, _check_i4, _check_i5,
-                  _check_i11, _check_i15, _check_i16):
+                  _check_i11, _check_i15, _check_i16, _check_i20):
         with pytest.raises(Unavailable):
             check(snap)
 
@@ -332,3 +333,43 @@ def test_i16_accepts_a_tombstone_head():
         doc.update({'version_deleted_from_history': True, 'payload_purged': True,
                     'status': TOMBSTONE})
     assert _check_i16(snapshot(documents)) == []
+
+
+def test_i20_reports_a_tombstone_head_beside_a_survivor():
+    """The shape the promotion bug produced, which nothing else caught.
+
+    Deleting the head promoted a tombstone instead of the surviving version.
+    I3, I4, I5, I8 and I16 all pass over the result -- one head, contiguous
+    ordinals, mutual pointers, purged payloads. Only the relationship between
+    the head's status and its siblings' says anything is wrong.
+    """
+    documents = chain({}, {}, {})
+    marks = {'version_deleted_from_history': True, 'payload_purged': True,
+             'status': TOMBSTONE, 'delete': True, 'current': False}
+    documents[1].update(marks, is_latest=True)      # the promoted tombstone
+    documents[2].update(marks, is_latest=False)     # the deleted head
+    findings = _check_i20(snapshot(documents))
+    assert len(findings) == 1
+    assert str(documents[0]['_id']) in findings[0].detail
+    assert '1 version(s) survive' in findings[0].detail
+
+
+def test_i20_accepts_an_emptied_chain():
+    """Every member a tombstone is an emptied project, which T6 requires.
+
+    I16 says the same thing from the other side; this must not contradict it.
+    """
+    documents = chain({}, {})
+    for doc in documents:
+        doc.update({'version_deleted_from_history': True, 'payload_purged': True,
+                    'status': TOMBSTONE})
+    assert _check_i20(snapshot(documents)) == []
+
+
+def test_i20_accepts_a_live_head_over_tombstoned_ancestors():
+    """The ordinary result of deleting an old version, which must stay silent."""
+    documents = chain({}, {}, {})
+    documents[1].update({'version_deleted_from_history': True,
+                         'payload_purged': True, 'status': TOMBSTONE,
+                         'delete': True, 'current': False})
+    assert _check_i20(snapshot(documents)) == []
