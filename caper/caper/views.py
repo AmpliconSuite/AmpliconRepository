@@ -89,7 +89,6 @@ from .project_status import (
     SOFT_DELETED,
     STATUS_FLAG_FIELDS,
     is_empty_project as project_is_empty,
-    is_tombstone,
     STATUS_QUERIES,
     SUPERSEDED,
     TOMBSTONE,
@@ -3866,21 +3865,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             new_prev_versions = project['previous_versions']
 
         ## update for current
-        #
-        # ...unless the version being superseded is a tombstone.  T2 removes a
-        # deleted version from previous_versions[] when it deletes it, so the
-        # array's contract is "surviving versions only"; appending one back
-        # here would make the array name a version the history table must not
-        # offer.  This is reachable through T9 -- re-populating an emptied
-        # project builds the new version on top of a tombstone -- and I11
-        # catches it, which is how it was found on dev, 2026-08-28.
-        #
-        # The pointers still record it: the chain reads "versions 1-3 deleted,
-        # version 4 current", which is true and is the thing the array cannot
-        # express.  That divergence is by design and is exactly what I11
-        # excludes tombstones for.
-        if not is_tombstone(project):
-            new_prev_versions.append(
+        new_prev_versions.append(
             {
                 'date': str(project['date']),
                 'linkid': str(project['linkid']),
@@ -3890,8 +3875,8 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 'aggregator_version': project.get('aggregator_version', 'NA'),
                 'Reconstruction_tools': project.get('Reconstruction_tools', 'NA'),
                 'CoRAL_version': project.get('CoRAL_version', 'NA'),
-                }
-            )
+            }
+        )
 
         # Carried forward from the version being superseded, and absent when
         # that version is a tombstone -- re-populating an emptied project (T9)

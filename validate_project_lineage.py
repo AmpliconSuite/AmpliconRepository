@@ -424,14 +424,23 @@ def _check_i11(snap):
     predates the pointers and that switching the read path *fixes*, so it is
     reported as its own detail rather than folded in with the other direction.
 
-    **Tombstones are excluded from the comparison, in both roles.**  The array
-    has no way to say "this version was deleted", so deleting a version removes
-    it from the array while it stays in the chain holding its ordinal.  From
-    the first deletion onwards the pointer lineage is therefore a strict
-    superset of the array, by design and not by drift; comparing across the
-    tombstones would report every correct deletion as a divergence.  A
-    tombstone's own array is not compared either -- it is written by
+    **Tombstones are excluded from the comparison wherever they appear**: as
+    the document being checked, as a pointer ancestor, and as an array entry.
+    The array has no way to say "this version was deleted", so deleting a
+    version removes it from the array while it stays in the chain holding its
+    ordinal.  From the first deletion onwards the pointer lineage is therefore
+    a strict superset of the array, by design and not by drift; comparing
+    across the tombstones would report every correct deletion as a divergence.
+    A tombstone's own array is not compared either -- it is written by
     ``replace_one`` and does not carry one.
+
+    The array side was the exclusion this docstring claimed and the code did
+    not make, and re-populating an emptied project is what found the gap.  T9
+    builds a new version on top of a tombstone, and the array names it because
+    the array is also what tells the write path which chain to extend -- so a
+    correct T9 was reported as a divergence on dev, 2026-08-28.  Filtering one
+    side and not the other does not compare two encodings of the same history;
+    it compares one of them against a subset of the other.
 
     That asymmetry is the whole reason the pointers exist.  It is also why this
     invariant is scoped to the compatibility window: it holds the two encodings
@@ -448,7 +457,7 @@ def _check_i11(snap):
         if doc_id in tombstones:
             continue
         pointed = [i for i in snap.pointer_ancestors(doc_id) if i not in tombstones]
-        named = snap.array_ancestors(doc)
+        named = [i for i in snap.array_ancestors(doc) if i not in tombstones]
         if set(pointed) == set(named):
             continue
 

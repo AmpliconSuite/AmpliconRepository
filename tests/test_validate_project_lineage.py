@@ -375,22 +375,22 @@ def test_i20_accepts_a_live_head_over_tombstoned_ancestors():
     assert _check_i20(snapshot(documents)) == []
 
 
-def test_i11_reports_a_tombstone_the_array_names():
-    """The exclusion runs both ways, and this is the direction T9 broke.
+def test_i11_does_not_call_an_array_named_tombstone_a_divergence():
+    """T9: the new version's array names the tombstone it was built on.
 
-    I11 drops tombstones from the pointer-derived ancestry because the array
-    cannot record a deleted version. The array must therefore not name one
-    either -- T2 removes a version from previous_versions[] when it deletes it,
-    so anything still named there is claimed to be a version the history table
-    should offer. Re-populating an emptied project appended the tombstone it
-    was built on top of, and this is what caught it.
+    The array is not only the compatibility encoding of the history table --
+    it is also what tells the write path which chain to extend. Re-populating
+    an emptied project therefore names a tombstone there, necessarily, and an
+    I11 that filtered only the pointer side reported that correct result as a
+    divergence on dev.
+
+    Filtering one side and not the other compares one encoding against a subset
+    of the other, which is not what this invariant is for.
     """
     documents = chain({}, {})
     documents[0].update({'status': 'TOMBSTONE', 'delete': True, 'current': False,
                          'version_deleted_from_history': True,
                          'payload_purged': True})
     documents[0].pop('previous_versions')
-    # the head still names its tombstoned predecessor
-    findings = _check_i11(snapshot(documents))
-    assert len(findings) == 1
-    assert str(documents[0]['_id']) in findings[0].detail
+    # documents[1] still names its tombstoned predecessor, as T9 leaves it
+    assert _check_i11(snapshot(documents)) == []

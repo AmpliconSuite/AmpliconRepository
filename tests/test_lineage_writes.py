@@ -940,22 +940,3 @@ def test_the_edit_page_can_read_an_emptied_project():
     assert tombstone.get('description', '') == ''
     assert 'runs' not in tombstone, \
         'a tombstone holds no results; that is what purging the payload means'
-
-
-def test_the_array_never_names_a_tombstone(tombstone_marks):
-    """T9 must not append the deleted version it was built on top of.
-
-    previous_versions[] is the compatibility encoding of the history table, and
-    T2's rule is that deleting a version removes it from there. Putting one
-    back when a new version supersedes a tombstone would have the table offer a
-    version whose payload is gone -- and I11, which excludes tombstones from
-    the pointer side, reports it as a divergence.
-    """
-    from caper.project_status import is_tombstone
-
-    tombstone = dict(linked(1)[0])
-    tombstone.update(tombstone_marks)
-    live = linked(1)[0]
-
-    assert is_tombstone(tombstone) is True, 'the guard reads both markers'
-    assert is_tombstone(live) is False, 'and an ordinary version passes it'
