@@ -88,6 +88,7 @@ from .project_status import (
     NOT_DELETED_QUERY,
     SOFT_DELETED,
     STATUS_FLAG_FIELDS,
+    is_empty_project as project_is_empty,
     STATUS_QUERIES,
     SUPERSEDED,
     TOMBSTONE,
@@ -878,7 +879,7 @@ def project_page(request, project_name, message=''):
         return render(request, "pages/loading.html", {"project_name":project_name})
 
     # Check if this is an empty project
-    is_empty_project = ('EMPTY?' in project and project['EMPTY?'] == True) or (not project.get('runs')) or (len(project.get('runs', {})) == 0)
+    is_empty_project = project_is_empty(project)
 
     # Handle access control based on visibility
     visibility = normalize_visibility_field(project.get('private', 'private'))
@@ -3494,7 +3495,9 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
 
         logging.info(f"project name: {project_name}  change to {new_project_name}")
         # Create a deep copy to avoid holding reference to original
-        current_runs = dict(project['runs'])
+        # .get, because editing an emptied project's metadata reaches here and
+        # a tombstone carries no runs.
+        current_runs = dict(project.get('runs') or {})
 
         if runs != 0:
             current_runs.update(runs)
@@ -3875,8 +3878,14 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             }
         )
 
-        views = project['views']
-        downloads = project['downloads']
+        # Carried forward from the version being superseded, and absent when
+        # that version is a tombstone -- re-populating an emptied project (T9)
+        # builds the new version on top of one. Zero is what the counters mean
+        # there: the payload they counted views and downloads of is gone, and
+        # _create_project's own default for a project with no predecessor is
+        # the same [0, 0].
+        views = project.get('views', 0)
+        downloads = project.get('downloads', 0)
         # Preserve subscribers from the old project version
         old_subscribers = project.get('subscribers', [])
         # Remove any new project members from the subscribers list
@@ -4134,7 +4143,7 @@ def edit_project_page(request, project_name):
                         break  # All features in a list have the same sample name
         sample_names = sorted(sample_names)
 
-        is_empty_project = 'EMPTY?' in project and project['EMPTY?'] == True
+        is_empty_project = project_is_empty(project)
         prev_versions, prev_ver_msg = previous_versions(project)
         if prev_ver_msg:
             messages.error(request, "Redirected to latest version, editing of old versions not allowed. ")
@@ -4156,7 +4165,7 @@ def edit_project_page(request, project_name):
         CoRALVersion=project.get('CoRAL_version', 'NA')
 
         form = UpdateForm(initial={"project_name": project['project_name'],
-                                   "description": project['description'],
+                                   "description": project.get('description', ''),
                                    # The form's visibility field is a ChoiceField over the
                                    # three strings.  A legacy boolean here matches no choice
                                    # and renders the dropdown with nothing selected.

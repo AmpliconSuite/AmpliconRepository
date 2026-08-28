@@ -898,3 +898,45 @@ def test_project_runs_is_the_only_reader_of_the_field():
         assert spelling not in body, (
             f'{spelling} is spelled outside project_runs(); route it through '
             f'the helper so a document without the field reaches one place')
+
+
+def test_one_emptiness_predicate_and_both_pages_use_it():
+    """project_page and edit_project_page must not disagree about empty.
+
+    They did: one asked for the 'EMPTY?' flag or absent runs, the other only
+    for the flag. A tombstone has neither, so the project page short-circuited
+    into the empty branch while the edit page carried on and read a field the
+    document does not carry.
+    """
+    from caper.project_status import is_empty_project
+
+    tombstone = {'_id': ObjectId(), 'project_name': 'p',
+                 'delete': True, 'current': False,
+                 'version_deleted_from_history': True, 'payload_purged': True}
+    assert is_empty_project(tombstone) is True
+    assert is_empty_project({'runs': {}}) is True
+    assert is_empty_project({'EMPTY?': True, 'runs': {'s': [{}]}}) is True
+    assert is_empty_project({'runs': {'s': [{}]}}) is False
+
+
+def test_the_edit_page_can_read_an_emptied_project():
+    """Every field the edit form initialises must survive a tombstone.
+
+    Opening the edit page of an emptied project is an ordinary thing to do --
+    it is how T9 starts -- and it 500'd on project['description'].
+    """
+    from caper.project_version_cleanup import build_deleted_version_tombstone
+
+    live = {'_id': ObjectId(), 'project_name': 'p', 'private': 'private',
+            'project_members': ['someone'], 'date': '2026-08-01T00:00:00.000000',
+            'description': 'gone now', 'runs': {'s': [{}]}}
+    tombstone = build_deleted_version_tombstone(live, None, 'someone',
+                                                '2026-08-28T00:00:00.000000')
+
+    # What UpdateForm(initial=...) reads out of the document.
+    assert tombstone['project_name'] == 'p'
+    assert tombstone['project_members'] == ['someone']
+    assert tombstone['private'] == 'private'
+    assert tombstone.get('description', '') == ''
+    assert 'runs' not in tombstone, \
+        'a tombstone holds no results; that is what purging the payload means'

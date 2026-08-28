@@ -169,6 +169,25 @@ def is_tombstone(doc):
     return _matches_flags(doc, _TOMBSTONE_MARKERS)
 
 
+def is_empty_project(doc):
+    """True when *doc* has no sample results to show.
+
+    Document-level emptiness, which is not the chain-level EMPTY of T6: a
+    project is EMPTY when every member of its chain is a tombstone, and this
+    says only that *this* version has nothing to render.  The two coincide on
+    the version a visitor lands on after the last one is deleted, which is how
+    an emptied project gets an empty page instead of a broken one.
+
+    One function because it was two.  project_page() asked for the 'EMPTY?'
+    flag *or* absent runs; edit_project_page() asked only for the flag.  A
+    tombstone has no runs and no flag, so the first said empty and the second
+    said not-empty and then read a field the document does not carry -- the
+    same predicate spelled twice, disagreeing on the state that terminal
+    deletion had just made reachable.
+    """
+    return bool(doc.get('EMPTY?')) or not doc.get('runs')
+
+
 def classify(doc):
     """Return the status of a loaded project document.
 
