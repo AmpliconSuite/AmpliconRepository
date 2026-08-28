@@ -269,6 +269,15 @@ def test_the_validator_finds_exactly_the_declared_violations(seeded):
     to tell which from the output.  Run against a database whose defects were
     written down in advance, both directions are checkable: a missed violation
     fails, and so does a healthy document being flagged.
+
+    I1 is excluded, and the reason is not that it is inconvenient.  Every other
+    invariant is a property of a document's *shape*, which is what each fixture
+    models.  I1 is a property of a whole database having been backfilled, and
+    these fixtures are seeded raw into whatever database is at hand -- so I1
+    fires on all 22 of them wherever the backfill has not run, and on none of
+    them where it has.  Its finding would say something true about the database
+    and nothing at all about the fixture, which is the opposite of what this
+    test is for.  Coverage for I1 is in test_validate_project_lineage.py.
     """
     plan, database = seeded
     snapshot = validator.Snapshot(database['projects'], database['fs.files'])
@@ -276,9 +285,18 @@ def test_the_validator_finds_exactly_the_declared_violations(seeded):
     fixture_ids = set(plan.expected)
     found = set()
     for invariant in validator.INVARIANTS:
-        if invariant.check is None:
+        if invariant.check is None or invariant.ident == 'I1':
             continue
-        for finding in invariant.check(snapshot):
+        try:
+            findings = invariant.check(snapshot)
+        except validator.Unavailable:
+            # A checker whose fields are on none of these fixtures reports
+            # nothing, which is what Unavailable means. If the catalogue
+            # declares a violation for it anyway, the `missed` assertion below
+            # fails and names it -- so an invariant that goes quiet because the
+            # fixtures stopped carrying its fields cannot pass unnoticed.
+            continue
+        for finding in findings:
             if finding.doc_id in fixture_ids:
                 found.add((finding.invariant, finding.doc_id))
 

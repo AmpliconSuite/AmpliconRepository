@@ -2,20 +2,27 @@
 """
 What has to be true about project version history, checked against a database.
 
-Nineteen invariants.  Seven of them can be evaluated against the schema as it
-stands; the other twelve are about fields that do not exist yet -- a stored
-``status``, ``version_chain_id``, ``version_ordinal``, ``is_latest``, and the
-``previous_version_id`` / ``next_version_id`` pointers that would replace the
-denormalised ``previous_versions[]`` array.  This script declares all nineteen
-and reports each as ok, FAIL or SKIP with the reason.
+Nineteen invariants, each reported as ok, FAIL or SKIP with the reason.
 
 Declaring the ones that cannot run is the point.  A validator that quietly
-implements the six checkable invariants and prints "all checks passed" is the
-same mistake as the cleanup script that protected three of the four states it
-needed to: a confident statement about a list, made by something that only knew
-part of the list.  Here every gap names the field it is waiting for, so
-coverage grows visibly as those fields land instead of being something a reader
-has to reconstruct.
+implements the checkable invariants and prints "all checks passed" is the same
+mistake as the cleanup script that protected three of the four states it needed
+to: a confident statement about a list, made by something that only knew part
+of the list.  Here every gap names what it is waiting for, so coverage grows
+visibly as those things land instead of being something a reader has to
+reconstruct.
+
+**Which invariants can run is decided by the database, not by this docstring.**
+An earlier version of this file carried the split as prose -- "seven can be
+evaluated, the other twelve are about fields that do not exist yet" -- and as a
+``needs='...which nothing writes yet'`` string on each unimplemented invariant.
+Both went stale the moment the backfill ran.  On 2026-08-27 all 311 production
+documents carried ``status``, ``version_chain_id``, ``version_ordinal``,
+``is_latest`` and both pointers, and this file still reported eight invariants
+as not checkable because a field "does not exist yet".  That is this codebase's
+recurring defect exactly -- a fact maintained in two places -- committed by the
+tool built to catch it.  So a checker that needs a field now asks the snapshot
+whether the field is there, and says which documents lack it if only some do.
 
 Nothing here writes.  There is no ``--execute`` because there is nothing to
 execute -- every finding is something for a person to decide about.
@@ -42,7 +49,12 @@ import os
 import sys
 from collections import defaultdict
 
-_REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+# VALIDATOR_REPO_ROOT lets this run from outside the checkout -- copied into a
+# container's /tmp to measure a database, without a stray file appearing in the
+# server's working tree.  I18's error message already told people to set it; it
+# was not read, which is the same defect as the skip reasons below.
+_REPO_ROOT = os.environ.get('VALIDATOR_REPO_ROOT') or \
+    os.path.dirname(os.path.abspath(__file__))
 if os.path.join(_REPO_ROOT, 'caper') not in sys.path:
     sys.path.insert(0, os.path.join(_REPO_ROOT, 'caper'))
 
@@ -105,9 +117,10 @@ class Snapshot:
     238 MB on prod -- in memory to read a few booleans.
     """
 
-    def __init__(self, collection, fs_files, skip_gridfs=False):
+    def __init__(self, collection, fs_files, skip_gridfs=False, chain_view=None):
         self.collection = collection
         self.fs_files = fs_files
+        self.chain_view = chain_view
 
         self.documents = list(collection.find({}, {field: 0 for field in _HEAVY_FIELDS}))
         self.by_id = {doc['_id']: doc for doc in self.documents}
@@ -139,9 +152,86 @@ class Snapshot:
                 if ids:
                     self.gridfs_ids[doc['_id']] = ids
 
+    def present(self, field):
+        """How many documents carry *field* at all, absent or null aside.
+
+        Key presence, not truthiness: ``previous_version_id: None`` is the
+        correct value on the first version of every chain, and ``is_latest:
+        False`` on every version but one.  A checker asking "has the backfill
+        run here" must not read either of those as a no.
+        """
+        return sum(1 for doc in self.documents if field in doc)
+
+    def require(self, *fields):
+        """Raise Unavailable if *none* of *fields* is on any document.
+
+        The two failure modes are different and only one of them is a gap. A
+        field on no document at all means the backfill has not run against this
+        database, and a checker that reported "ok" over that would be asserting
+        something about zero documents.  A field on some documents and not
+        others is a finding -- a half-finished backfill is worse than an
+        unstarted one -- so it runs, and the checker reports the absences.
+        """
+        counts = {field: self.present(field) for field in fields}
+        if any(counts.values()):
+            return
+        raise Unavailable(
+            f'{", ".join(fields)} -- on none of the {len(self.documents)} '
+            f'documents in this database. Run backfill_project_status.py here.')
+
     def name(self, doc_id):
         doc = self.by_id.get(doc_id) or {}
         return doc.get('project_name')
+
+    def chains(self):
+        """version_chain_id -> its member documents, ordered by version_ordinal.
+
+        Documents with no chain id are left out; I1 owns their absence.  The
+        sort key tolerates a missing ordinal so I4 can report a chain that I3
+        and I16 have already grouped, rather than raising here.
+        """
+        grouped = defaultdict(list)
+        for doc in self.documents:
+            chain_id = doc.get('version_chain_id')
+            if chain_id is not None:
+                grouped[chain_id].append(doc)
+        for members in grouped.values():
+            members.sort(key=lambda doc: (doc.get('version_ordinal') is None,
+                                          doc.get('version_ordinal') or 0,
+                                          str(doc['_id'])))
+        return grouped
+
+    def pointer_ancestors(self, doc_id):
+        """The ids before *doc_id* in its chain, oldest last, by pointer walk.
+
+        Stops on a cycle or a dangling pointer rather than looping: both are
+        I5's findings, and a checker that hangs reports nothing at all.
+        """
+        seen, walk = [], self.by_id[doc_id].get('previous_version_id')
+        while walk is not None and walk not in seen:
+            seen.append(walk)
+            doc = self.by_id.get(walk)
+            if doc is None:
+                break
+            walk = doc.get('previous_version_id')
+        return seen
+
+    def array_ancestors(self, doc):
+        """The ids named by this document's previous_versions[], as ObjectIds.
+
+        References that do not resolve are dropped: a dangling entry is I6's
+        finding and a legacy-encoded one is I19's, and reporting either here
+        again would make one defect look like three.
+        """
+        resolved = []
+        for linkid, _encoding in iter_lineage_references(doc):
+            try:
+                target = ObjectId(linkid)
+            except Exception:
+                continue
+            if target in self.by_id:
+                resolved.append(target)
+        return resolved
 
     def ids_with_status(self, *statuses):
         return {doc_id for doc_id, status in self.status.items() if status in statuses}
@@ -158,8 +248,314 @@ class Snapshot:
 
 
 # ---------------------------------------------------------------------------
-# The checks that can run against today's schema
+# The checks
+#
+# Each one that needs a field calls snap.require() first, so "cannot check
+# this" is a measurement of the database in front of it rather than a sentence
+# somebody wrote once.
 # ---------------------------------------------------------------------------
+
+_I1_FIELDS = ('status', 'current', 'delete', 'version_chain_id',
+              'version_ordinal', 'is_latest')
+
+
+def _check_i1(snap):
+    """Every project document carries all six status and lineage fields.
+
+    Absence is the whole point.  The head flag was absent on 70 production
+    documents, and every reader that defaulted it to False read all 70 as "not
+    the head" -- the field's absence was load-bearing, and no query could say
+    so.  This is the invariant that stops that from coming back by a different
+    field name.
+    """
+    snap.require('status', 'version_chain_id', 'version_ordinal', 'is_latest')
+    findings = []
+    for doc in snap.documents:
+        missing = [field for field in _I1_FIELDS if field not in doc]
+        if missing:
+            findings.append(Finding(
+                'I1', doc['_id'], doc.get('project_name'),
+                f'absent: {", ".join(missing)}'))
+    return findings
+
+
+def _check_i2(snap):
+    """The stored status equals the one classify() computes from the document.
+
+    The single most valuable check here.  Both incidents in the spec were a
+    reader deciding a document's state from flags, by a rule that had drifted
+    from the rule the writer used.  Storing the status does not fix that on its
+    own -- it adds a second copy, which is this codebase's recurring defect --
+    and this is what makes the second copy safe: the two may never disagree
+    silently.
+
+    Documents with no stored status at all are I1's finding, counted here in
+    one line rather than repeated per document.
+    """
+    snap.require('status')
+    findings, unstored = [], 0
+    for doc in snap.documents:
+        stored = doc.get('status')
+        if stored is None:
+            unstored += 1
+            continue
+        computed = snap.status[doc['_id']]
+        if stored != computed:
+            findings.append(Finding(
+                'I2', doc['_id'], doc.get('project_name'),
+                f'stored status {stored!r}, but classify() says {computed}'))
+    if unstored:
+        findings.append(Finding(
+            'I2', None, None,
+            f'{unstored} document(s) store no status, so there was nothing to '
+            f'compare; I1 lists them'))
+    return findings
+
+
+def _check_i3(snap):
+    """Exactly one is_latest=True document per version_chain_id.
+
+    Two heads means two documents claim to be the current version of one
+    project, and whichever the resolver reaches first wins.  No head means the
+    project has no current version and every URL for it resolves to a past one.
+    """
+    snap.require('version_chain_id', 'is_latest')
+    findings = []
+    for chain_id, members in sorted(snap.chains().items(), key=lambda kv: str(kv[0])):
+        heads = [doc['_id'] for doc in members if doc.get('is_latest') is True]
+        if len(heads) == 1:
+            continue
+        findings.append(Finding(
+            'I3', members[0]['_id'], members[0].get('project_name'),
+            f'chain {chain_id} has {len(heads)} is_latest members across '
+            f'{len(members)} version(s)'
+            + (f': {", ".join(str(h) for h in heads[:4])}' if heads else '')))
+    return findings
+
+
+def _check_i4(snap):
+    """version_ordinal is unique and contiguous from 1 within each chain.
+
+    A gap or a tie means the chain cannot be put in order, and "the previous
+    version" stops having an answer.  Checked as a set against
+    ``range(1, n+1)`` rather than by sorting and comparing neighbours, so a
+    duplicate and a gap are both caught by the same comparison.
+    """
+    snap.require('version_chain_id', 'version_ordinal')
+    findings = []
+    for chain_id, members in sorted(snap.chains().items(), key=lambda kv: str(kv[0])):
+        ordinals = [doc.get('version_ordinal') for doc in members]
+        expected = list(range(1, len(members) + 1))
+        if sorted(o for o in ordinals if isinstance(o, int)) == expected \
+                and len(ordinals) == len(expected) \
+                and all(isinstance(o, int) for o in ordinals):
+            continue
+        findings.append(Finding(
+            'I4', members[0]['_id'], members[0].get('project_name'),
+            f'chain {chain_id} has ordinals {ordinals}, expected '
+            f'{expected} in some order'))
+    return findings
+
+
+def _check_i5(snap):
+    """previous_version_id and next_version_id are mutual inverses.
+
+    Also that ``is_latest`` agrees with ``next_version_id is None``, which is
+    the schema's definition of the flag rather than a separate fact.  Keeping
+    the two together is deliberate: a flag that can disagree with the pointer it
+    is derived from is the same two-copies defect as a status that can disagree
+    with classify(), and the fix is the same -- one check that they never do.
+    """
+    snap.require('previous_version_id', 'next_version_id')
+    findings = []
+    for doc in snap.documents:
+        doc_id = doc['_id']
+        name = doc.get('project_name')
+
+        nxt = doc.get('next_version_id')
+        if nxt is not None:
+            target = snap.by_id.get(nxt)
+            if target is None:
+                findings.append(Finding('I5', doc_id, name,
+                                        f'next_version_id {nxt} is not in the collection'))
+            elif target.get('previous_version_id') != doc_id:
+                findings.append(Finding(
+                    'I5', doc_id, name,
+                    f'next_version_id {nxt}, but that document\'s '
+                    f'previous_version_id is {target.get("previous_version_id")}'))
+
+        prev = doc.get('previous_version_id')
+        if prev is not None:
+            target = snap.by_id.get(prev)
+            if target is None:
+                findings.append(Finding('I5', doc_id, name,
+                                        f'previous_version_id {prev} is not in the collection'))
+            elif target.get('next_version_id') != doc_id:
+                findings.append(Finding(
+                    'I5', doc_id, name,
+                    f'previous_version_id {prev}, but that document\'s '
+                    f'next_version_id is {target.get("next_version_id")}'))
+
+        if 'is_latest' in doc and doc.get('is_latest') is not (nxt is None):
+            findings.append(Finding(
+                'I5', doc_id, name,
+                f'is_latest={doc.get("is_latest")!r} but next_version_id='
+                f'{nxt!r}; the flag is defined as "no next version"'))
+    return findings
+
+
+def _check_i11(snap):
+    """The denormalised previous_versions[] agrees with the pointer lineage.
+
+    The invariant Phase 2 rests on.  Read paths move onto the pointers while
+    the array is still written, and this is the only thing standing between
+    "the pointers are a faithful index of the array" and "the site now renders
+    a history nobody has compared to the one it rendered yesterday".
+
+    Both directions are reported, because they fail for different reasons.  An
+    entry the pointers do not place before the document means the array claims
+    an ancestor the chain does not have.  An ancestor the array does not name
+    means the history table has been rendering short -- which is a defect that
+    predates the pointers and that switching the read path *fixes*, so it is
+    reported as its own detail rather than folded in with the other direction.
+    """
+    snap.require('previous_version_id', 'version_chain_id')
+    findings = []
+    for doc in snap.documents:
+        doc_id = doc['_id']
+        if 'previous_version_id' not in doc:
+            continue                      # I1 owns the absence
+        pointed = snap.pointer_ancestors(doc_id)
+        named = snap.array_ancestors(doc)
+        if set(pointed) == set(named):
+            continue
+
+        name = doc.get('project_name')
+        extra = [i for i in named if i not in set(pointed)]
+        absent = [i for i in pointed if i not in set(named)]
+        if extra:
+            findings.append(Finding(
+                'I11', doc_id, name,
+                f'previous_versions[] names {len(extra)} document(s) the '
+                f'pointers do not place before it: '
+                f'{", ".join(str(i) for i in extra[:4])}'))
+        if absent:
+            how = ('previous_versions[] is absent entirely'
+                   if 'previous_versions' not in doc else
+                   f'previous_versions[] names {len(named)}')
+            findings.append(Finding(
+                'I11', doc_id, name,
+                f'pointers place {len(pointed)} document(s) before it but '
+                f'{how}; missing: {", ".join(str(i) for i in absent[:4])}'))
+    return findings
+
+
+def _EMPTY_chains(snap):
+    """The chain ids every one of whose members is a TOMBSTONE.
+
+    Derived here and nowhere else, which is I15's actual content.
+    """
+    return {chain_id for chain_id, members in snap.chains().items()
+            if members and all(snap.status[doc['_id']] == TOMBSTONE
+                               for doc in members)}
+
+
+# Anything that would amount to storing chain emptiness rather than deriving it.
+_STORED_EMPTINESS_KEYS = ('chain_empty', 'is_empty', 'empty_chain')
+
+
+def _check_i15(snap):
+    """A chain is EMPTY iff every member is a TOMBSTONE -- and it is never stored.
+
+    "Never stored" is the checkable half, and it is the half that matters: an
+    emptiness flag on a document is a second opinion about a thing that already
+    has an answer, and it goes stale the first time a version is restored.  The
+    derivation itself has nothing to disagree with yet -- when the derived
+    ``project_version_chains`` view lands in Phase 2 it will, and I9 is where
+    that comparison belongs.
+
+    The derived population is printed by --report so it is countable rather
+    than merely asserted.
+    """
+    snap.require('version_chain_id')
+    findings = []
+    for doc in snap.documents:
+        stored = [key for key in _STORED_EMPTINESS_KEYS if key in doc]
+        if doc.get('status') == 'EMPTY':
+            stored.append("status='EMPTY'")
+        if stored:
+            findings.append(Finding(
+                'I15', doc['_id'], doc.get('project_name'),
+                f'stores chain emptiness rather than deriving it: '
+                f'{", ".join(stored)}'))
+    return findings
+
+
+def _check_i16(snap):
+    """Every chain has exactly one is_latest member -- empty chains included.
+
+    I3 says this for all chains, and where I3 passes this passes; it is
+    separate because of the population it names.  A chain with no LIVE member
+    is the one a future "tidy up the dead projects" pass would be tempted to
+    leave headless, and T6 in the spec turns on the opposite: a project whose
+    versions have all been deleted is an empty project, not an absent one, and
+    it still has a current version to render, restore into and redirect to.
+
+    is_latest is position and status is state.  A head that is a TOMBSTONE is
+    correct, not a violation, and nothing here should be tempted to repair it.
+    """
+    snap.require('version_chain_id', 'is_latest')
+    findings = []
+    for chain_id, members in sorted(snap.chains().items(), key=lambda kv: str(kv[0])):
+        if any(snap.status[doc['_id']] == LIVE for doc in members):
+            continue                      # I3's population, checked there
+        heads = [doc for doc in members if doc.get('is_latest') is True]
+        if len(heads) != 1:
+            findings.append(Finding(
+                'I16', members[0]['_id'], members[0].get('project_name'),
+                f'chain {chain_id} has no LIVE member and {len(heads)} '
+                f'is_latest member(s) across {len(members)} version(s)'))
+    return findings
+
+
+def _check_i9(snap):
+    """The derived chain view's source_digest matches the documents it came from.
+
+    Unavailable until something writes the view.  Measured, not assumed: the
+    collection is counted rather than declared missing, so the day the rebuild
+    command lands this stops skipping on its own and says what it now needs.
+    """
+    if snap.chain_view is None or snap.chain_view.count_documents({}) == 0:
+        raise Unavailable(
+            'a derived project_version_chains collection. There are 0 chain '
+            'documents in this database, so there is no second copy to compare '
+            'the documents against yet.')
+    raise Unavailable(
+        f'a digest function. {snap.chain_view.count_documents({})} chain '
+        f'document(s) exist here, so this invariant is now live and its checker '
+        f'has to be written -- see the rebuild command.')
+
+
+def _check_i13(snap):
+    """Every fs.files row naming a document is still referenced by that document.
+
+    The reverse of I12, and the check that turns "is this file orphaned?" from
+    a full scan of every project document into a lookup.  Needs the backlink
+    Phase 2b writes; counted here rather than asserted absent.
+    """
+    if snap.gridfs_skipped:
+        raise Unavailable('a run without --skip-gridfs')
+    with_backlink = snap.fs_files.count_documents(
+        {'metadata.project_id': {'$exists': True}})
+    if with_backlink == 0:
+        raise Unavailable(
+            'metadata.project_id on fs.files rows. 0 of '
+            f'{snap.fs_files.count_documents({})} files carry one, so no file '
+            'can name the document it belongs to.')
+    raise Unavailable(
+        f'a checker. {with_backlink} fs.files row(s) now carry '
+        f'metadata.project_id, so this invariant is live and unimplemented.')
+
 
 def _check_i6(snap):
     """Every lineage reference resolves to a document that exists.
@@ -434,22 +830,19 @@ class Invariant:
         self.partial = partial
 
 
-_PHASE_1_FIELDS = 'status, version_chain_id, version_ordinal, is_latest'
 _POINTERS = 'previous_version_id / next_version_id'
 
 INVARIANTS = (
     Invariant('I1', 'Every project document has status, current, delete, '
                     'version_chain_id, version_ordinal, is_latest -- all present',
-              needs=_PHASE_1_FIELDS),
+              check=_check_i1),
     Invariant('I2', 'Stored status equals classify(doc) recomputed from the document',
-              needs='a stored status field, which nothing writes yet. '
-                    'classify() and STATUS_QUERIES agreeing is its precursor, '
-                    'not this'),
+              check=_check_i2),
     Invariant('I3', 'Exactly one is_latest=True document per version_chain_id',
-              needs='version_chain_id, is_latest'),
+              check=_check_i3),
     Invariant('I4', 'version_ordinal is unique and contiguous from 1 within a chain',
-              needs='version_chain_id, version_ordinal'),
-    Invariant('I5', f'{_POINTERS} are mutual inverses', needs=_POINTERS),
+              check=_check_i4),
+    Invariant('I5', f'{_POINTERS} are mutual inverses', check=_check_i5),
     Invariant('I6', 'Every lineage reference resolves to an existing document',
               check=_check_i6),
     Invariant('I7', 'No document is both LIVE and referenced as another chain\'s '
@@ -457,25 +850,27 @@ INVARIANTS = (
     Invariant('I8', 'payload purged implies TOMBSTONE and no GridFS ids remain',
               check=_check_i8),
     Invariant('I9', 'Chain document source_digest matches its members',
-              needs='a derived project_version_chains collection, which does '
-                    'not exist'),
+              check=_check_i9),
     Invariant('I10', 'get_one_project() resolves every LIVE and every SUPERSEDED '
                      'document by _id', check=_check_i10),
     Invariant('I11', 'previous_versions[] matches the lineage derived from pointers',
-              needs=_POINTERS),
+              check=_check_i11),
     Invariant('I12', 'Every GridFS id named by a retained document exists in fs.files',
               check=_check_i12),
     Invariant('I13', 'Every fs.files row naming an existing document is still '
                      'referenced by it',
-              needs='metadata on each fs.files row, which nothing writes'),
+              check=_check_i13),
     Invariant('I14', 'No TOMBSTONE has GridFS ids left, and no fs.files row points '
                      'at one', check=_check_i14,
               partial='the document half only; "no fs.files row points at one" '
                       'needs metadata on each fs.files row, which nothing writes'),
     Invariant('I15', 'A chain is EMPTY iff every member is a TOMBSTONE',
-              needs='version_chain_id'),
+              check=_check_i15,
+              partial='the "never stored" half only; the derivation has nothing '
+                      'to be compared against until the derived '
+                      'project_version_chains view lands, and I9 owns that'),
     Invariant('I16', 'Every chain has exactly one is_latest member',
-              needs='version_chain_id, is_latest'),
+              check=_check_i16),
     Invariant('I17', 'Every chain-level field survives the emptying of a chain',
               needs='a decision about which project-level fields belong to a '
                     'chain and which to a version; six are still unclassified'),
@@ -556,6 +951,21 @@ def _report(snap, out):
     for finding in conflicts:
         out(f'  {finding.line()}')
 
+    chains = snap.chains()
+    if chains:
+        empty = _EMPTY_chains(snap)
+        sizes = defaultdict(int)
+        for members in chains.values():
+            sizes[len(members)] += 1
+        out('')
+        out(f'Chains: {len(chains)} over {sum(len(m) for m in chains.values())} '
+            f'documents')
+        for size in sorted(sizes):
+            out(f'  {size:>3} version(s): {sizes[size]:>4} chain(s)')
+        out(f'  EMPTY (every member a TOMBSTONE): {len(empty)}')
+        out('  EMPTY is derived here and stored nowhere. A chain with no live')
+        out('  version is still a project, and still has a head to restore into.')
+
     out('')
     out('Census by status:')
     counts = defaultdict(int)
@@ -626,7 +1036,8 @@ def main(argv=None):
 
     out(f'target: {label}')
     snap = Snapshot(database['projects'], database['fs.files'],
-                    skip_gridfs=args.skip_gridfs)
+                    skip_gridfs=args.skip_gridfs,
+                    chain_view=database['project_version_chains'])
     out(f'{len(snap.documents)} documents, '
         f'{sum(len(v) for v in snap.gridfs_ids.values())} GridFS references')
     if args.skip_gridfs:
