@@ -77,8 +77,22 @@ def test_removing_every_sample_says_what_it_does(
         assert doc and not doc.get('aggregation_failed'), \
             f"create failed: {doc.get('error_message') if doc else 'timed out'}"
 
-        samples = sorted(doc.get('runs') or {})
-        assert samples, 'the fixture project has no samples to remove'
+        # The identifier the edit form posts, which is the feature rows'
+        # 'Sample_name' and NOT the runs dict's key. They differ -- the key is
+        # positional ('sample_1'), the name is the sample's own ('GBM39') --
+        # and remove_samples_from_runs() matches on the name. Sending the key
+        # instead produces a new version identical to the old one, silently:
+        # the aggregator finds no sample by that name, excludes nothing, and
+        # nothing reports that the removal did not happen. Measured on dev,
+        # 2026-08-28, by making exactly that mistake here.
+        samples = sorted({
+            features[0]['Sample_name']
+            for features in (doc.get('runs') or {}).values()
+            if features and features[0].get('Sample_name')
+        })
+        assert samples, 'the fixture project has no named samples to remove'
+        print(f'\nremoving {samples} '
+              f'(runs keys are {sorted(doc.get("runs") or {})})')
 
         edit_response = edit_project_page(
             _edit_removing(request_factory, test_user, original,
