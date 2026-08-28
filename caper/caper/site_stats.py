@@ -64,9 +64,16 @@ def count_ecdna_positive_samples(project):
     Counted per project and stored, rather than worked out on read: answering
     it from the projects themselves means loading every project's runs, which
     is exactly what the statistics document exists to avoid.
+
+    A document with no 'runs' counts zero rather than raising.  Its caller two
+    functions down already reads the field as ``project.get('runs', {})``, and
+    a tombstone -- which carries no runs at all -- reaches both: deleting a
+    version subtracts its contribution, and re-populating an emptied project
+    deletes a tombstone on the way to creating the new version.  That raised
+    KeyError on dev, 2026-08-28, and took the whole upload down with it.
     """
     positive = 0
-    for features in project['runs'].values():
+    for features in (project.get('runs') or {}).values():
         if any(feature.get('Classification') == 'ecDNA' for feature in features):
             positive += 1
     return positive

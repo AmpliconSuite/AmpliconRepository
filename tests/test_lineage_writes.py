@@ -66,8 +66,8 @@ def linked(count, **head_extra):
 
 def test_a_project_with_no_history_becomes_a_chain_of_one():
     new_id = ObjectId()
-    fields, predecessor = lineage.plan_new_version([], new_id)
-    assert predecessor is None
+    fields, updates = lineage.plan_new_version([], new_id)
+    assert updates == {}
     assert fields == {'version_chain_id': new_id, 'previous_version_id': None,
                       'next_version_id': None, 'version_ordinal': 1,
                       'is_latest': True}
@@ -87,14 +87,15 @@ def test_the_chain_is_named_by_its_oldest_member_so_a_rebuild_agrees():
 def test_a_new_version_is_appended_after_the_highest_ordinal():
     members = linked(3)
     new_id = ObjectId()
-    fields, (predecessor_id, predecessor_fields) = \
-        lineage.plan_new_version(members, new_id)
+    fields, updates = lineage.plan_new_version(members, new_id)
 
     assert fields['version_ordinal'] == 4
     assert fields['previous_version_id'] == members[-1]['_id']
     assert fields['is_latest'] is True
-    assert predecessor_id == members[-1]['_id']
-    assert predecessor_fields == {'next_version_id': new_id, 'is_latest': False}
+    # On an undeleted chain the predecessor and the outgoing head are the same
+    # document, so both fields land in one update.
+    assert updates == {members[-1]['_id']: {'next_version_id': new_id,
+                                            'is_latest': False}}
 
 
 def test_ordinals_count_from_the_high_water_mark_not_the_member_count():
@@ -119,8 +120,8 @@ def test_the_predecessor_may_be_a_tombstone(tombstone_marks):
     """
     members = linked(1)
     members[0].update(tombstone_marks)
-    fields, (predecessor_id, _) = lineage.plan_new_version(members, ObjectId())
-    assert predecessor_id == members[0]['_id']
+    fields, updates = lineage.plan_new_version(members, ObjectId())
+    assert list(updates) == [members[0]['_id']]
     assert fields['version_ordinal'] == 2
 
 
@@ -778,3 +779,73 @@ def test_every_field_the_planner_reads_is_in_the_projection(tombstone_marks):
         assert (lineage.plan_deletion(projected, victim['_id'])
                 == lineage.plan_deletion(members, victim['_id'])), \
             f'the projection changes the plan for {victim["version_ordinal"]}'
+
+
+# ---------------------------------------------------------------------------
+# T9 after a promotion: the predecessor and the outgoing head are not the same
+# ---------------------------------------------------------------------------
+
+def test_a_new_version_after_a_promotion_takes_the_flag_from_the_real_head(
+        tombstone_marks):
+    """Ordinal 3 ends the chain; ordinal 1 holds is_latest. Both must move.
+
+    This is the chain left by deleting the head of a three-version project:
+    ordinal 3 is a tombstone that still terminates the pointer list, and
+    ordinal 1 was promoted into the head. Appending to it has to attach after
+    ordinal 3 and take the flag off ordinal 1 -- clearing it on ordinal 3, which
+    never had it, leaves two heads.
+    """
+    members = linked(3)
+    members[2].update(tombstone_marks, is_latest=False)
+    members[0]['is_latest'] = True                     # promoted
+    new_id = ObjectId()
+
+    fields, updates = lineage.plan_new_version(members, new_id)
+
+    assert fields['previous_version_id'] == members[2]['_id'], \
+        'the new version comes after the highest ordinal, tombstone or not'
+    assert fields['version_ordinal'] == 4
+    assert updates[members[2]['_id']] == {'next_version_id': new_id}
+    assert updates[members[0]['_id']] == {'is_latest': False}, \
+        'the promoted version is the one that gives up the head'
+
+
+def test_appending_to_an_emptied_chain_leaves_exactly_one_head(tombstone_marks):
+    """T9 proper: every member deleted, then a new upload.
+
+    The emptied chain's head is whichever version was current when the last
+    deletion landed -- ordinal 1 here, because a head deletion promoted it
+    before it was itself deleted. Applying the plan must leave the new version
+    as the only is_latest member, which is what I3 and I16 require.
+    """
+    members = linked(3)
+    for member in members:
+        member.update(tombstone_marks)
+    members[2]['is_latest'] = False
+    members[0]['is_latest'] = True
+    new_id = ObjectId()
+
+    collection = FakeHistoryCollection(members + [{'_id': new_id}])
+    lineage.link_new_version(collection, new_id,
+                             [{'linkid': str(members[0]['_id'])}])
+
+    after = list(collection.find({'version_chain_id': members[0]['_id']}, None))
+    heads = [doc for doc in after if doc.get('is_latest') is True]
+    assert [str(doc['_id']) for doc in heads] == [str(new_id)], \
+        f'expected only the new version to be the head, got {len(heads)}'
+
+
+def test_appending_to_a_headless_chain_still_produces_one_head():
+    """No member flagged is_latest at all -- head() falls back to the highest.
+
+    A chain in that state is already an I3 finding, but appending to it must
+    not make a second one, and must not raise.
+    """
+    members = linked(2)
+    for member in members:
+        member['is_latest'] = False
+    new_id = ObjectId()
+
+    fields, updates = lineage.plan_new_version(members, new_id)
+    assert fields['is_latest'] is True
+    assert updates[members[-1]['_id']]['is_latest'] is False

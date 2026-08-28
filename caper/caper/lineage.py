@@ -259,21 +259,37 @@ def next_ordinal(members):
 
 
 def plan_new_version(members, new_id):
-    """Transition T1: (fields for the new head, (predecessor id, its fields)).
+    """Transition T1: (fields for the new version, {id: fields} for the rest).
 
     *members* is the chain being extended, oldest first, or ``[]`` for a
-    project that has no history yet.  The predecessor is the highest-ordinal
-    member -- never the last element of ``previous_versions[]``, which nothing
-    orders, and never the newest date, which production has ties on.
+    project that has no history yet.
 
-    The predecessor may be a TOMBSTONE.  That is transition T9, re-populating an
-    emptied project, and it needs no special case: a deleted version is a
-    legitimate ``previous_version_id``, and the history then reads "version 1
-    deleted, version 2 current", which is both true and unrepresentable in the
-    array encoding.
+    Two different members are involved, and the whole of this function is the
+    difference between them:
+
+      * The **predecessor** is the highest-ordinal member -- never the last
+        element of ``previous_versions[]``, which nothing orders, and never the
+        newest date, which production has ties on.  It gets ``next_version_id``,
+        because that is structure: the new version comes after it in the chain.
+        It may be a TOMBSTONE, and needs no special case -- a deleted version is
+        a legitimate ``previous_version_id``, and the history then reads
+        "version 1 deleted, version 2 current", which is both true and
+        unrepresentable in the array encoding.
+
+      * The **outgoing head** is whichever member currently holds ``is_latest``.
+        It gives the flag up, because that is position.
+
+    On a chain nobody has deleted from, those are the same document and the
+    distinction never shows.  They come apart after a promotion: deleting the
+    head promotes the highest *surviving* ordinal, so the head can be ordinal 1
+    while ordinal 3 is a tombstone that still holds the end of the chain.
+    Clearing ``is_latest`` on the predecessor alone then leaves the old head
+    still flagged and the chain with two of them -- which is what re-populating
+    an emptied project did on dev, 2026-08-28, and what I3 and I16 exist to
+    catch.
     """
     if not members:
-        return new_chain_fields(new_id), None
+        return new_chain_fields(new_id), {}
 
     predecessor = members[-1]
     chain_id = predecessor.get('version_chain_id')
@@ -284,8 +300,13 @@ def plan_new_version(members, new_id):
         'version_ordinal': next_ordinal(members),
         'is_latest': True,
     }
-    return new_fields, (predecessor['_id'],
-                        {'next_version_id': new_id, 'is_latest': False})
+
+    updates = {predecessor['_id']: {'next_version_id': new_id}}
+    outgoing = head(members)
+    if outgoing is not None:
+        updates.setdefault(outgoing['_id'], {})['is_latest'] = False
+    updates.setdefault(predecessor['_id'], {})
+    return new_fields, updates
 
 
 def predecessor_chain(collection, previous_versions):
@@ -360,11 +381,10 @@ def link_new_version(collection, new_id, previous_versions=None):
     if members is None:
         return {}
 
-    new_fields, predecessor = plan_new_version(members, new_id)
-    if predecessor is not None:
-        predecessor_id, predecessor_fields = predecessor
-        collection.update_one({'_id': predecessor_id},
-                              {'$set': predecessor_fields})
+    new_fields, updates = plan_new_version(members, new_id)
+    for member_id, fields in updates.items():
+        if fields:
+            collection.update_one({'_id': member_id}, {'$set': fields})
     collection.update_one({'_id': new_id}, {'$set': new_fields})
     logging.info('lineage: %s is ordinal %d of chain %s', new_id,
                  new_fields['version_ordinal'], new_fields['version_chain_id'])
