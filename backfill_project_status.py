@@ -2,8 +2,10 @@
 """
 backfill_project_status.py
 
-Two one-time corrections to the projects collection, both of which repair
-documents the application can no longer read correctly.
+One-time corrections to the projects collection, each of which repairs
+documents the application can no longer read correctly.  Five passes, run in
+order: current, lineage, pointers, status, visibility.  The two that started
+this file:
 
   current   A project deleted before the 'current' flag existed has
             delete=True and no 'current' field at all.  The soft-delete path
@@ -70,6 +72,10 @@ from caper.project_status import (            # noqa: E402
     iter_lineage_references,
     iter_previous_versions,
     status_flags,
+)
+from caper.visibility import (               # noqa: E402
+    VISIBILITY_VALUES,
+    normalize_visibility_field,
 )
 
 
@@ -455,6 +461,64 @@ def apply_status(projects, plan, execute, rollback=None):
     return written, skipped
 
 
+# ---------------------------------------------------------------------------
+# Pass 5 -- the legacy boolean visibility
+# ---------------------------------------------------------------------------
+
+LEGACY_VISIBILITY_QUERY = {'private': {'$type': 'bool'}}
+
+
+def plan_visibility(projects):
+    """(doc, stored, canonical) for documents whose 'private' is a boolean.
+
+    'private' holds one of three visibility strings.  A handful of documents
+    predate that and hold a boolean; on prod, measured 2026-08-27, exactly one
+    does (True).  This is a schema irregularity and **not** an exposure: every
+    query in the application matches with $in across both encodings, so the
+    document is already treated as private everywhere it is read.
+
+    What it does break is anything that compares the value rather than querying
+    it -- the edit form's visibility dropdown renders with nothing selected for
+    a boolean, because a ChoiceField over the three strings matches no boolean.
+
+    Only booleans are rewritten.  A string outside the three legal values is
+    reported and left alone: coercing it would hide corrupt data, which is the
+    same call schema_validate._normalize_legacy_visibility makes.
+    """
+    plan = []
+    unknown = []
+    for doc in projects.find({}):
+        stored = doc.get('private')
+        if isinstance(stored, bool):
+            plan.append((doc, stored, normalize_visibility_field(stored)))
+        elif stored is not None and stored not in VISIBILITY_VALUES:
+            unknown.append((doc, stored))
+    plan.sort(key=lambda entry: entry[0]['_id'])
+    return plan, unknown
+
+
+def apply_visibility(projects, plan, execute, rollback=None):
+    written = skipped = 0
+    for doc, stored, canonical in plan:
+        print('  %s  %-40s  %r -> %r' % (
+            doc['_id'], (doc.get('project_name') or '?')[:40], stored, canonical))
+        if not execute:
+            continue
+        record(rollback, doc['_id'], '$set', {'private': stored})
+        # Preconditioned on the boolean still being there, so a document whose
+        # visibility was edited between the report and the write is skipped
+        # rather than reverted to whatever the plan computed.
+        result = projects.update_one(
+            combine({'private': stored}, _id=doc['_id']),
+            {'$set': {'private': canonical}})
+        if result.modified_count:
+            written += 1
+        else:
+            skipped += 1
+            print('      SKIPPED -- changed since the plan was built')
+    return written, skipped
+
+
 def take(plan, limit):
     """The first *limit* entries of a plan, saying how many are held back.
 
@@ -498,8 +562,9 @@ def main():
     parser.add_argument('--execute', action='store_true',
                         help='Actually write. Without it the script only reports.')
     parser.add_argument('--only',
-                        choices=['current', 'lineage', 'pointers', 'status'],
-                        help='Run one pass instead of all four.')
+                        choices=['current', 'lineage', 'pointers', 'status',
+                                 'visibility'],
+                        help='Run one pass instead of all five.')
     parser.add_argument('--limit', type=int, metavar='N',
                         help='Act on only the first N documents of each pass, '
                              'in _id order. The report still counts them all, '
@@ -613,6 +678,24 @@ def main():
                                      for s, n in sorted(by_status.items()))))
             plan = take(plan, args.limit)
             written, skipped = apply_status(projects, plan, args.execute, rollback)
+            totals['written'] += written
+            totals['skipped'] += skipped
+        print('')
+
+    if args.only in (None, 'visibility'):
+        print('=' * 78)
+        print("visibility -- the legacy boolean 'private', written as a string")
+        print('=' * 78)
+        plan, unknown = plan_visibility(projects)
+        for doc, stored in unknown:
+            print('  %s  %-40s  UNKNOWN VALUE %r -- left alone' % (
+                doc['_id'], (doc.get('project_name') or '?')[:40], stored))
+        if not plan:
+            print('  nothing to do')
+        else:
+            print('  %d document(s) with a boolean visibility\n' % len(plan))
+            plan = take(plan, args.limit)
+            written, skipped = apply_visibility(projects, plan, args.execute, rollback)
             totals['written'] += written
             totals['skipped'] += skipped
         print('')
