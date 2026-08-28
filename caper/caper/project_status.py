@@ -169,6 +169,23 @@ def is_tombstone(doc):
     return _matches_flags(doc, _TOMBSTONE_MARKERS)
 
 
+def project_runs(doc):
+    """*doc*'s per-sample results, ``{}`` when it has none.
+
+    A tombstone has no ``runs`` key at all -- purging the payload is what that
+    means -- and terminal deletion now produces them, so every reader of this
+    field can be handed one.  Before 2026-08-28 the readers disagreed about
+    whether it was optional: some used ``.get('runs', {})`` and some subscripted
+    it, and the ones that subscripted it raised KeyError the first time an
+    emptied project reached them.  That included validate_project(), which runs
+    on every project page load *before* the empty-project branch, so an emptied
+    project's page 500'd rather than rendering empty.
+
+    One accessor, so the next state that lacks the field reaches one place.
+    """
+    return doc.get('runs') or {}
+
+
 def is_empty_project(doc):
     """True when *doc* has no sample results to show.
 

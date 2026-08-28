@@ -1,6 +1,6 @@
 import datetime
 
-from .project_status import LIVE, status_query
+from .project_status import LIVE, project_runs, status_query
 from .publications import publication_url, count_unique_publications
 from .utils import get_collection_handle, collection_handle, db_handle_primary, replace_space_to_underscore, preprocess_sample_data, get_one_sample, sample_data_from_feature_list, is_project_private, is_project_public, normalize_visibility_field, VISIBILITY_QUERY_VALUES
 
@@ -56,25 +56,6 @@ BUCKET_STAT_DEFAULTS = {
 # never disagree.
 UNIQUE_PUBLICATION_SUFFIX = 'unique_publication_count'
 PUBLICATION_PROJECT_SUFFIX = 'projects_with_publication'
-
-
-def project_runs(project):
-    """*project*'s per-sample results, ``{}`` when it has none.
-
-    Every function in this module reads this field, and before 2026-08-28 they
-    disagreed about whether it was optional: two used ``project.get('runs',
-    {})`` and four used ``project['runs']``.  A tombstone carries no runs at
-    all, and it reaches all six -- deleting a version subtracts its
-    contribution from the statistics, and re-populating an emptied project
-    soft-deletes a tombstone on the way to creating the new version.  Both
-    raised KeyError on dev and took the whole upload down with them.
-
-    The path was unreachable until terminal deletion started producing
-    documents with no runs, which is why six readers could disagree for as long
-    as they did.  One reader now, so the next state that lacks the field
-    reaches one place instead of six.
-    """
-    return project.get('runs') or {}
 
 
 def count_ecdna_positive_samples(project):

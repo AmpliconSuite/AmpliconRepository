@@ -1042,3 +1042,43 @@ def test_a_chain_emptied_oldest_first_leaves_the_head_at_the_top():
     assert updates[members[2]['_id']] == {'next_version_id': new_id,
                                           'is_latest': False}, \
         'one document, both fields -- not two updates that race'
+
+
+def test_validate_project_does_not_raise_on_an_emptied_project():
+    """The crash that made an emptied project's page a 500.
+
+    validate_project() runs at the top of project_page(), *before* the
+    is_empty_project branch that was supposed to handle this. It subscripted
+    project['runs'], and a tombstone has no such key -- purging the payload is
+    what that means. So every check that the empty branch was correct was
+    checking code the request never reached.
+
+    Worth stating plainly because the earlier verification of this was wrong in
+    a specific way: it evaluated the branch condition against the document and
+    concluded the page rendered, instead of rendering the page.
+    """
+    from caper.utils import validate_project
+    from caper.project_version_cleanup import build_deleted_version_tombstone
+
+    live = {'_id': ObjectId(), 'project_name': 'p', 'private': 'private',
+            'project_members': ['someone'], 'date': '2026-08-01T00:00:00.000000',
+            'runs': {'sample_1': [{'Sample_name': 'GBM39'}]}}
+    tombstone = build_deleted_version_tombstone(live, None, 'someone',
+                                                '2026-08-28T00:00:00.000000')
+    assert 'runs' not in tombstone
+
+    # The assertion is that this returns at all.
+    validate_project(tombstone, str(tombstone['_id']))
+
+
+def test_project_runs_is_one_accessor_shared_by_its_readers():
+    """site_stats and utils must not grow a second spelling between them."""
+    from caper.project_status import project_runs
+    from caper import site_stats
+
+    assert site_stats.project_runs is project_runs, \
+        'site_stats defined its own again; import the canonical one'
+    assert project_runs({}) == {}
+    assert project_runs({'runs': None}) == {}
+    assert project_runs({'runs': {}}) == {}
+    assert project_runs({'runs': {'s': [1]}}) == {'s': [1]}

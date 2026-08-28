@@ -28,6 +28,7 @@ from .project_status import (
     DELETE_FLAG_QUERY,
     STATUS_QUERIES,
     STATUS_FLAG_FIELDS,
+    project_runs,
     LIVE,
     TOMBSTONE,
     combine,
@@ -1420,21 +1421,27 @@ def validate_project(project, project_name):
         return None
 
     ## check for 1 and numeric Sample_name values
+    #
+    # project_runs() rather than a subscript: this runs on every project page
+    # load, before the empty-project branch, and an emptied project carries no
+    # 'runs' at all.  Subscripting it turned "every version of this project was
+    # deleted" into a 500 -- measured on dev, 2026-08-28.
     update = False
     runs = None
-    for sample in project['runs'].keys():
-        for feature in project['runs'][sample]:
+    existing_runs = project_runs(project)
+    for sample in existing_runs.keys():
+        for feature in existing_runs[sample]:
             # Check for spaces in keys (original check)
             for key in feature.keys():
                 if ' ' in key:
-                    runs = replace_underscore_keys(project['runs'])
+                    runs = replace_underscore_keys(existing_runs)
                     update = True
                     break
             
             # Check for numeric Sample_name values
             if not update and 'Sample_name' in feature:
                 if isinstance(feature['Sample_name'], (int, float)):
-                    runs = replace_underscore_keys(project['runs'])
+                    runs = replace_underscore_keys(existing_runs)
                     update = True
                     break
             
