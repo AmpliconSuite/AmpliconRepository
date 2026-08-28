@@ -1831,6 +1831,10 @@ def sample_page(request, project_name, sample_name):
     t1 = time.time()
     project, sample_data, prev_sample, next_sample = get_one_sample(project_name, sample_name)
     logging.info(f"[PERF] get_one_sample took {time.time() - t1:.3f}s")
+    # Same as edit_project_page: the resolver returning nothing is a 404, not
+    # a crash. A sample URL under a soft-deleted project reached here.
+    if project is None:
+        raise Http404("Project not found")
     project_linkid = project['_id']
     
     # Handle access control based on visibility
@@ -3972,6 +3976,11 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
 def edit_project_page(request, project_name):
     if request.method == "GET":
         project = get_one_project(project_name)
+        # None means the resolver would not serve this project to anyone --
+        # a soft-deleted one, most often. project_page() raises Http404 here;
+        # this dereferenced it and turned the same URL into a 500.
+        if project is None:
+            raise Http404("Project not found")
         is_admin = getattr(request.user, 'is_staff', False)
         visibility = normalize_visibility_field(project.get('private', 'private'))
         if not (is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility))):
