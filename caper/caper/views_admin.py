@@ -49,6 +49,7 @@ from .project_status import (
     STATUS_QUERIES,
     classify,
     is_reachable_by_url,
+    is_tombstone,
     iter_previous_versions,
     status_after,
     status_flags,
@@ -750,6 +751,30 @@ def admin_delete_user(request):
                    'error_message': error_message})
 
 
+def _tombstoned_ancestors(project):
+    """(id, document) for each tombstoned version before *project* in its chain.
+
+    Empty for an unpointered document, and empty for a chain that has never had
+    a version deleted -- which is every chain that predates the pointer writes.
+    """
+    members = lineage.chain_members(collection_handle, project,
+                                    lineage.POINTER_PROJECTION)
+    if members is None:
+        return []
+
+    named = {str(entry.get('linkid'))
+             for entry, _encoding in iter_previous_versions(project)}
+    found = []
+    for member in lineage.ancestors(members, project):
+        member_id = str(member['_id'])
+        if member_id in named:
+            continue                      # the loop above already has it
+        document = get_one_deleted_project(member_id)
+        if document is not None and is_tombstone(document):
+            found.append((member_id, document))
+    return found
+
+
 def permanently_delete_with_history(project_id, project, project_name):
     """
     Permanently delete a soft-deleted project along with the older versions its
@@ -770,6 +795,14 @@ def permanently_delete_with_history(project_id, project, project_name):
     loop deleted this project's payload once inside it and again below, and for
     an older version would have reached across the chain to versions nobody
     selected.  The stored field names ancestors and nothing else.
+
+    Tombstoned ancestors are added from the chain, because the array cannot
+    name them: deleting a version removes it from every ``previous_versions[]``
+    while it stays in the chain holding its ordinal.  Left behind, such a
+    document would outlive the project it belonged to as a tombstone
+    redirecting at an id that no longer exists.  Only ancestors are taken --
+    strictly lower ordinal -- so this still never reaches forward across the
+    chain to versions nobody selected.
     """
     unresolved = []
     for entry, _encoding in iter_previous_versions(project):
@@ -782,6 +815,10 @@ def permanently_delete_with_history(project_id, project, project_name):
             unresolved.append(linkid)
             continue
         admin_permanent_delete_project(linkid, older, older['project_name'])
+
+    for tombstone_id, tombstone in _tombstoned_ancestors(project):
+        admin_permanent_delete_project(tombstone_id, tombstone,
+                                       tombstone.get('project_name'))
 
     message = admin_permanent_delete_project(project_id, project, project_name)
 

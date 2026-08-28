@@ -1,36 +1,44 @@
-"""Reading a project's version chain from the lineage pointers.
+"""A project's version chain: reading it from the lineage pointers, and writing
+them when a version is created, deleted or promoted.
 
 ``project_status`` says what one document *is*.  This says which documents
-belong together, and in what order.  It is the read half of the lineage model:
-every query that used to ask ``{'previous_versions.linkid': <id>}`` -- a scan of
-an array on every document in the collection -- becomes an equality match on
-``version_chain_id``.
+belong together, and in what order.  Every query that used to ask
+``{'previous_versions.linkid': <id>}`` -- a scan of an array on every document
+in the collection -- becomes an equality match on ``version_chain_id``.
 
 Django-free and handle-free on purpose.  The collection is passed in, so the
 standalone scripts, the validator and the differential harness read a chain the
 same way the site does, and the tests can hand it a dictionary.
 
-**The array is still authoritative until the write paths move.**  Every reader
-here falls back to nothing rather than guessing: a document with no
-``version_chain_id`` -- 26 of them on dev, in the six chains the backfill
-refused to order -- makes ``chain_members()`` return ``None``, and the caller
-uses the ``previous_versions[]`` path it used before.  A document without
-pointers must never render an empty history; it renders the old one.
+**Both encodings are still written.**  Every reader here falls back to nothing
+rather than guessing: a document with no ``version_chain_id`` -- 26 of them on
+dev, in the six chains the backfill refused to order -- makes
+``chain_members()`` return ``None``, and the caller uses the
+``previous_versions[]`` path it used before.  A document without pointers must
+never render an empty history; it renders the old one.  The write half keeps
+that property by refusing to half-pointer a chain: a new version whose
+predecessor has no pointers is left without them too, so the pair falls back
+together (see ``predecessor_chain``).
 
-Tombstones are the exception worth knowing about, and it is measured rather
-than assumed.  A deleted non-head version is removed from the head's
-``previous_versions[]`` and given a ``redirect_to_project``, so connected
-components over that array cannot see it: on production, 2026-08-27, both
-TOMBSTONE documents sit in single-member chains of their own and redirect
-across a chain boundary into the chain they were deleted from.  The chain
-pointers therefore do not yet reach them, and reading history from pointers
-alone would drop two deleted versions from two projects' history pages.  So
-callers keep the separate ``redirect_to_project`` lookup they already had.
-Attaching tombstones to their chains is a data change, and data changes are the
-write half of this phase.
+Tombstones written *before* this module existed are not in their chains, and
+that is measured rather than assumed.  A deleted non-head version was removed
+from the head's ``previous_versions[]`` and given a ``redirect_to_project``, so
+connected components over that array could not see it: on production,
+2026-08-27, both TOMBSTONE documents sit in single-member chains of their own
+and redirect across a chain boundary into the chain they were deleted from.
+Reading history from pointers alone would drop two deleted versions from two
+projects' history pages, so callers keep the separate ``redirect_to_project``
+lookup they already had.  Deletions written from here keep the tombstone in its
+chain with its ordinal intact; retrofitting the two older ones is a data change
+and a separate decision.
 """
 
+import logging
+from collections import namedtuple
+
 from bson import ObjectId
+
+from .project_status import is_tombstone
 
 # The pointer fields themselves, and nothing else. A project document averages
 # 690 KB on production; a caller that only needs to know which member is the
@@ -171,3 +179,267 @@ def resolve_id(value):
         return ObjectId(str(value))
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Writing
+#
+# One rule governs everything below, and it is the one the spec's worked
+# transitions turn on:
+#
+#     Pointers are structure.  is_latest is position.  status is state.
+#
+# A deletion therefore never rewrites previous_version_id or next_version_id and
+# never renumbers an ordinal.  The deleted version stays a node of the chain
+# whose payload is gone -- that is what keeps /project/<id> resolving, and what
+# lets a history table say "version 2 deleted, version 3 current" instead of
+# silently rendering two versions where there were three.  Only is_latest moves,
+# and it moves backwards along a chain that did not change.
+#
+# Two consequences, both deliberate, both of which the validator had to be
+# corrected for:
+#
+#   * After a head deletion the promoted version has is_latest=True *and* a
+#     next_version_id (pointing at the tombstone that used to follow it).  So
+#     is_latest is not derivable from next_version_id, and any check coupling
+#     them is wrong.  I3 and I16 are what enforce exactly-one-head.
+#   * previous_versions[] does not record deleted versions, so once a chain
+#     contains a tombstone the array is a strict subset of the pointer lineage.
+#     I11 compares the two across the compatibility window and must exclude
+#     tombstones, or every deletion would look like a divergence.
+# ---------------------------------------------------------------------------
+
+POINTER_FIELDS = ('version_chain_id', 'previous_version_id', 'next_version_id',
+                  'version_ordinal', 'is_latest')
+
+
+def new_chain_fields(new_id):
+    """Pointers for the first version of a project: a chain of one.
+
+    The chain is named by its oldest member's id rather than by a minted one,
+    so the value is derivable from the data and a rebuild computes the same
+    thing.  It is stable because versions are appended at the other end.
+    """
+    return {'version_chain_id': new_id,
+            'previous_version_id': None,
+            'next_version_id': None,
+            'version_ordinal': 1,
+            'is_latest': True}
+
+
+def next_ordinal(members):
+    """One past the highest ordinal in *members*.
+
+    Ordinals are never reused and never renumbered, so this counts from the
+    high-water mark rather than from ``len(members)``: a chain that has had a
+    version deleted still has that version in it, holding its ordinal.
+    """
+    ordinals = [doc.get('version_ordinal') for doc in members]
+    highest = max((o for o in ordinals
+                   if isinstance(o, int) and not isinstance(o, bool)),
+                  default=len(members))
+    return highest + 1
+
+
+def plan_new_version(members, new_id):
+    """Transition T1: (fields for the new head, (predecessor id, its fields)).
+
+    *members* is the chain being extended, oldest first, or ``[]`` for a
+    project that has no history yet.  The predecessor is the highest-ordinal
+    member -- never the last element of ``previous_versions[]``, which nothing
+    orders, and never the newest date, which production has ties on.
+
+    The predecessor may be a TOMBSTONE.  That is transition T9, re-populating an
+    emptied project, and it needs no special case: a deleted version is a
+    legitimate ``previous_version_id``, and the history then reads "version 1
+    deleted, version 2 current", which is both true and unrepresentable in the
+    array encoding.
+    """
+    if not members:
+        return new_chain_fields(new_id), None
+
+    predecessor = members[-1]
+    chain_id = predecessor.get('version_chain_id')
+    new_fields = {
+        'version_chain_id': chain_id,
+        'previous_version_id': predecessor['_id'],
+        'next_version_id': None,
+        'version_ordinal': next_ordinal(members),
+        'is_latest': True,
+    }
+    return new_fields, (predecessor['_id'],
+                        {'next_version_id': new_id, 'is_latest': False})
+
+
+def predecessor_chain(collection, previous_versions):
+    """The chain a new version extends: ``[]``, a member list, or ``None``.
+
+    Three outcomes, and the third is the one that matters:
+
+    ``[]``      nothing to extend -- a brand new project, which gets a chain of
+                one.
+    a list      the members of the chain to append to, oldest first.
+    ``None``    *refuse*.  The references resolve to documents that carry no
+                pointers, or to more than one chain.  Writing pointers on the
+                new version alone would strand its predecessors: the new
+                document would read its history from a chain of one and render
+                a project with no history, while the array it inherited names
+                every version it has.  Leaving it unpointered keeps the pair on
+                the array path together, and ``backfill_project_status.py`` is
+                what gives such a chain pointers.
+
+    Measured 2026-08-27: 0 documents on prod are unpointered, 26 on dev, so on
+    production this refusal is unreachable and on dev it is the six chains the
+    backfill declined to order.
+    """
+    # Imported here rather than at module scope: project_status imports nothing
+    # from this module and must keep it that way, but the decoder for the two
+    # previous_versions[] encodings lives there and must not be copied.
+    from .project_status import iter_lineage_references
+
+    references = [linkid for linkid, _encoding
+                  in iter_lineage_references({'previous_versions':
+                                              previous_versions or []})]
+    if not references:
+        return []
+
+    ids = [oid for oid in (resolve_id(ref) for ref in references) if oid is not None]
+    if not ids:
+        return None
+
+    candidates = list(collection.find({'_id': {'$in': ids}}, POINTER_PROJECTION))
+    chains = {doc.get('version_chain_id') for doc in candidates
+              if doc.get('version_chain_id') is not None}
+    if not chains:
+        logging.info(
+            'lineage: %d predecessor(s) carry no version_chain_id, so the new '
+            'version is left unpointered and reads its history from '
+            'previous_versions[]', len(references))
+        return None
+    if len(chains) > 1:
+        logging.warning(
+            'lineage: previous_versions[] names %d different chains (%s); '
+            'refusing to guess which one the new version extends',
+            len(chains), ', '.join(sorted(str(c) for c in chains)))
+        return None
+
+    chain_id = chains.pop()
+    members = list(collection.find({'version_chain_id': chain_id},
+                                   POINTER_PROJECTION))
+    members.sort(key=_ordinal)
+    return members
+
+
+def link_new_version(collection, new_id, previous_versions=None):
+    """Transition T1/T9: give a just-written document its place in the chain.
+
+    Returns the pointer fields written on *new_id*, or ``{}`` when the chain
+    was refused.  The predecessor is demoted before the new version is
+    promoted, so the window between the two writes has no head rather than two
+    -- ``head()`` falls back to the highest ordinal, which is the new version
+    only once it is in the chain at all.
+    """
+    members = predecessor_chain(collection, previous_versions)
+    if members is None:
+        return {}
+
+    new_fields, predecessor = plan_new_version(members, new_id)
+    if predecessor is not None:
+        predecessor_id, predecessor_fields = predecessor
+        collection.update_one({'_id': predecessor_id},
+                              {'$set': predecessor_fields})
+    collection.update_one({'_id': new_id}, {'$set': new_fields})
+    logging.info('lineage: %s is ordinal %d of chain %s', new_id,
+                 new_fields['version_ordinal'], new_fields['version_chain_id'])
+    return new_fields
+
+
+def unlink_new_version(collection, new_id):
+    """Undo ``link_new_version``: the predecessor becomes the head again.
+
+    For the rollback path, where aggregation failed and the old version is
+    being restored.  Without this the failed document keeps ``is_latest`` and
+    the chain has two heads -- or one head that is a project the user was told
+    had failed.
+    """
+    doc = collection.find_one({'_id': new_id}, POINTER_PROJECTION)
+    if not has_pointers(doc):
+        return {}
+
+    collection.update_one({'_id': new_id},
+                          {'$unset': {field: '' for field in POINTER_FIELDS}})
+    predecessor_id = doc.get('previous_version_id')
+    if predecessor_id is not None:
+        collection.update_one(
+            {'_id': predecessor_id},
+            {'$set': {'next_version_id': None, 'is_latest': True}})
+    return {'unlinked': new_id, 'restored_head': predecessor_id}
+
+
+DeletionPlan = namedtuple(
+    'DeletionPlan', 'victim_id promoted_id victim_keeps_head chain_emptied')
+"""What a version deletion does to the chain's pointers.
+
+``promoted_id`` is the member that becomes the head, or ``None`` when the
+victim was not the head (T2) or when nothing survives to promote (T7, T8).
+``victim_keeps_head`` is what ``is_latest`` the tombstone is written with:
+True only in the terminal case, where the chain is emptied and the deleted
+version is still its position-in-time -- an empty project has a current
+version to render and restore into, it just has no payload behind it.
+"""
+
+
+def plan_deletion(members, victim_id):
+    """Transitions T2, T3, T7 and T8, which differ only in what survives.
+
+    Returns ``None`` when there are no pointers to plan against, which is the
+    caller's signal to keep doing what it did before.
+
+    Promotion targets the highest ``version_ordinal`` among members that are
+    neither the victim nor already tombstones.  The code this replaces took
+    ``previous_versions[-1]``: nothing orders that array, and production
+    contains same-day version pairs where a date sort would tie as well.
+    """
+    if not members:
+        return None
+    victim_id = resolve_id(victim_id)
+    victim = next((doc for doc in members if doc.get('_id') == victim_id), None)
+    if victim is None:
+        return None
+
+    # Sorted here rather than trusted from the caller: this function's whole
+    # job is to stop promotion depending on the order a list happened to
+    # arrive in, and it would be a poor place to start depending on one.
+    members = sorted(members, key=_ordinal)
+    survivors = [doc for doc in members
+                 if doc.get('_id') != victim_id and not is_tombstone(doc)]
+    chain_emptied = not survivors
+
+    if not is_head(victim, members):
+        # T2: the head is untouched, the neighbours are untouched, and the
+        # victim keeps the ordinal it has always had.
+        return DeletionPlan(victim_id, None, False, chain_emptied)
+
+    if survivors:
+        # T3: is_latest moves backwards along a chain that does not change.
+        return DeletionPlan(victim_id, survivors[-1]['_id'], False, False)
+
+    # T7 / T8: nothing to promote and nowhere to redirect. The chain is EMPTY --
+    # a derived property of its members, never a stored one.
+    return DeletionPlan(victim_id, None, True, True)
+
+
+def pointer_fields(doc, is_latest=None):
+    """*doc*'s pointer fields, for a rewrite that must not lose them.
+
+    A tombstone is written with ``replace_one``, so every field it should keep
+    has to be named.  Before this existed the replacement dropped all five, and
+    a deleted version fell out of its chain -- which is exactly why the two
+    tombstones on production are in chains of their own.
+    """
+    if not has_pointers(doc):
+        return {}
+    fields = {field: doc.get(field) for field in POINTER_FIELDS}
+    if is_latest is not None:
+        fields['is_latest'] = is_latest
+    return fields

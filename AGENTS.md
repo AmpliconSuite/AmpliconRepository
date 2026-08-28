@@ -179,7 +179,12 @@ source caper/config.sh
 (cd caper && python manage.py shell < ../check_project_flags_django.py)
 ```
 
-To recover a deleted version tombstone into a project's `previous_versions`, use `recover_deleted_version.py`; it is dry-run by default and writes only with `--apply`.
+To restore a version that was deleted from a project's history, use
+`recover_deleted_version.py`; it is dry-run by default and writes only with
+`--apply`. It **refuses** a version whose `payload_purged` flag is set: deletion
+purges the GridFS payload, so clearing the markers would leave a version that
+resolves by URL and has no data behind it. Such a version is already visible in
+the history table, marked as deleted.
 
 ### Do NOT commit
 - `caper/caper.sqlite3`

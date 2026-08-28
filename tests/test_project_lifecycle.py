@@ -273,6 +273,23 @@ def test_replace_project_file_version_history(
         assert len(prev) > 0, \
             "Reaggregated project should have a previous_versions entry"
 
+        # ...and both encodings must agree, which is what invariant I11 says.
+        # This is the only place the pointers are exercised against a real
+        # MongoDB through the whole create-then-reaggregate path; the unit
+        # tests build chains by hand and cannot catch a write that never ran.
+        old_doc = mongo_collection.find_one({'_id': ObjectId(project_id)})
+        assert edited_doc.get('version_chain_id') == old_doc.get('version_chain_id'), \
+            "The new version did not join its predecessor's chain"
+        assert edited_doc['version_chain_id'] == ObjectId(project_id), \
+            "The chain is named by its oldest member, so a rebuild agrees"
+        assert edited_doc['version_ordinal'] == old_doc['version_ordinal'] + 1
+        assert edited_doc['previous_version_id'] == old_doc['_id']
+        assert edited_doc['is_latest'] is True
+
+        # The predecessor was demoted, and the two pointers are inverses.
+        assert old_doc['is_latest'] is False
+        assert old_doc['next_version_id'] == edited_doc['_id']
+
     finally:
         for pid in created_ids:
             _cleanup_project(mongo_collection, pid)

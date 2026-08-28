@@ -216,11 +216,55 @@ def test_i5_reports_a_broken_inverse():
     assert 'next_version_id' in details
 
 
-def test_i5_reports_is_latest_disagreeing_with_the_pointer():
+def test_i5_does_not_require_is_latest_to_agree_with_the_pointer():
+    """A promoted head keeps a next_version_id, and that is correct.
+
+    The shape after the head version of a two-version chain is deleted: the
+    tombstone stays in the chain holding its ordinal, its predecessor is
+    promoted, and the predecessor therefore has is_latest=True *and* a
+    next_version_id pointing at the version it outlived.
+
+    I5 used to call that a violation, on the reasoning that the flag is derived
+    from the pointer. It is not: pointers are structure, is_latest is position.
+    Exactly one head per chain is I3's and I16's job, and they still say so.
+    """
     documents = chain({}, {})
-    documents[0]['is_latest'] = True         # but it has a next_version_id
-    findings = [f for f in _check_i5(snapshot(documents)) if 'is_latest' in f.detail]
+    documents[0]['is_latest'] = True         # promoted, still points at [1]
+    documents[1]['is_latest'] = False        # the deleted head
+    assert _check_i5(snapshot(documents)) == []
+
+
+def test_i11_does_not_call_a_deleted_version_a_divergence():
+    """The array cannot say "this version was deleted".
+
+    Deleting the middle version of a three-version chain removes it from the
+    head's previous_versions[] while it stays in the chain holding its ordinal.
+    From the first deletion onwards the pointer lineage is a strict superset of
+    the array -- by design, which is the entire reason the pointers exist. An
+    I11 that compared across tombstones would report every correct deletion as
+    drift, and the first person to see that would switch the check off.
+    """
+    documents = chain({}, {}, {})
+    documents[1].update({'status': 'TOMBSTONE', 'delete': True, 'current': False,
+                         'version_deleted_from_history': True,
+                         'payload_purged': True})
+    documents[1].pop('previous_versions')          # replace_one drops it
+    documents[2]['previous_versions'] = [{'linkid': str(documents[0]['_id'])}]
+
+    assert _check_i11(snapshot(documents)) == []
+
+
+def test_i11_still_reports_a_surviving_version_the_array_does_not_name():
+    """The exclusion is for tombstones, not for anything missing.
+
+    A live ancestor absent from the array is a history table rendering short,
+    and that is exactly what I11 is for.
+    """
+    documents = chain({}, {}, {})
+    documents[2]['previous_versions'] = [{'linkid': str(documents[1]['_id'])}]
+    findings = _check_i11(snapshot(documents))
     assert len(findings) == 1
+    assert str(documents[0]['_id']) in findings[0].detail
 
 
 def test_i11_reports_an_array_entry_the_pointers_do_not_place_before_it():

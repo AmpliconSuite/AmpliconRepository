@@ -207,28 +207,59 @@ def discard_unrecorded_gridfs_files(delete_file, file_ids):
     return deleted
 
 
-def build_deleted_version_tombstone(old_project, latest_project, deleter, delete_date):
+def build_deleted_version_tombstone(old_project, latest_project, deleter,
+                                    delete_date, is_latest=None):
+    """The one tombstone-creation routine.  Every deletion path calls it.
+
+    That is invariant I18, and it is stated as an invariant because the fifth
+    path -- deleting a project's only version -- used to spell the marker by
+    hand and produced a different document: no GridFS purge, no
+    ``payload_purged``, no ``redirect_to_project``, and a log line reading
+    "project fully removed" over a document that was still resolvable with its
+    whole payload still billed.
+
+    ``latest_project`` is None for the terminal deletions (spec transitions T7
+    and T8), where every other version is already a tombstone.  There is then
+    nowhere to redirect to and no surviving version to inherit membership and
+    visibility from, so those come from the deleted document itself and
+    ``redirect_to_project`` is absent.  ``classify()`` does not require it --
+    a tombstone with no redirect resolves to the empty-project shell rather
+    than forwarding, which is the difference between a project whose versions
+    are all deleted and a project that is gone.
+
+    ``is_latest`` overrides the flag carried over from *old_project*: the
+    caller has a chain in front of it and this function does not.  The pointer
+    fields are carried over precisely because this is a ``replace_one`` --
+    dropping them is how the two tombstones on production ended up in chains of
+    their own, invisible to every pointer read.
+    """
     # Imported here, not at module scope: utils imports this module, so the
     # dependency only runs in one direction.  Copying the four-line normalizer
     # in here instead would be one more place the visibility encoding is
     # decided, which is the failure this whole file is written against.
     from .utils import normalize_visibility_field
+    from .lineage import pointer_fields
+
+    inherit_from = latest_project if latest_project is not None else old_project
 
     tombstone = {
         '_id': old_project['_id'],
-        'project_name': old_project.get('project_name', latest_project.get('project_name')),
+        'project_name': old_project.get('project_name', inherit_from.get('project_name')),
         'alias_name': old_project.get('alias_name'),
         'date': old_project.get('date'),
         # The flags that make classify() call this a TOMBSTONE, written from
         # the same table that reads them back.
         **status_flags(TOMBSTONE),
-        'redirect_to_project': str(latest_project['_id']),
         'delete_user': deleter,
         'delete_date': delete_date,
         'private': normalize_visibility_field(
-            latest_project.get('private', old_project.get('private', 'private'))),
-        'project_members': latest_project.get('project_members', old_project.get('project_members', [])),
+            inherit_from.get('private', old_project.get('private', 'private'))),
+        'project_members': inherit_from.get(
+            'project_members', old_project.get('project_members', [])),
+        **pointer_fields(old_project, is_latest=is_latest),
     }
+    if latest_project is not None:
+        tombstone['redirect_to_project'] = str(latest_project['_id'])
     for field in VERSION_HISTORY_FIELDS:
         tombstone[field] = old_project.get(field, 'NA')
     return tombstone

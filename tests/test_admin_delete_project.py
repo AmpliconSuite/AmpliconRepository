@@ -36,7 +36,7 @@ def projects(request):
         collection_handle_primary.delete_many({'project_name': {'$regex': f'^{marker}'}})
     request.addfinalizer(_cleanup)
 
-    def make(suffix='', *, previous_versions=None, delete=True):
+    def make(suffix='', *, previous_versions=None, delete=True, **extra):
         doc = {
             'project_name': f'{marker}{suffix}',
             'description': '', 'private': True, 'project_members': [],
@@ -44,6 +44,7 @@ def projects(request):
         }
         if previous_versions is not None:
             doc['previous_versions'] = previous_versions
+        doc.update(extra)
         return collection_handle_primary.insert_one(doc).inserted_id
 
     make.marker = marker
@@ -137,6 +138,78 @@ def test_deleting_an_older_version_does_not_reach_its_head(projects, deletions):
 
     assert str(head_id) not in deletions
     assert projects.collection.find_one({'_id': head_id}) is not None
+
+
+def test_a_tombstoned_ancestor_goes_with_the_project(projects, deletions):
+    """The array cannot name a deleted version, but the chain can.
+
+    Deleting a version removes it from every previous_versions[] while it stays
+    in the chain holding its ordinal. Left behind by a permanent delete it
+    would outlive the project it belonged to, as a tombstone redirecting at an
+    id that no longer exists.
+    """
+    from bson import ObjectId
+    from caper.views_admin import permanently_delete_with_history
+
+    chain_id = ObjectId()
+    tombstone_id = projects('-deleted-v1', version_chain_id=chain_id,
+                            version_ordinal=1, is_latest=False, current=False,
+                            version_deleted_from_history=True,
+                            payload_purged=True)
+    head_id = projects('-head', previous_versions=[],
+                       version_chain_id=chain_id, version_ordinal=2,
+                       is_latest=True)
+    head = projects.collection.find_one({'_id': head_id})
+
+    permanently_delete_with_history(head_id, head, head['project_name'])
+
+    assert str(tombstone_id) in deletions
+    assert str(head_id) in deletions
+
+
+def test_the_chain_walk_still_does_not_reach_forward(projects, deletions):
+    """Ancestors only -- strictly lower ordinal.
+
+    Selecting an older version must not delete the head, which is the hazard
+    the array-based walk was narrowed to avoid in the first place.
+    """
+    from bson import ObjectId
+    from caper.views_admin import permanently_delete_with_history
+
+    chain_id = ObjectId()
+    older_id = projects('-older', version_chain_id=chain_id,
+                        version_ordinal=1, is_latest=False, current=False)
+    head_id = projects('-head', version_chain_id=chain_id,
+                       version_ordinal=2, is_latest=True,
+                       version_deleted_from_history=True, payload_purged=True)
+    older = projects.collection.find_one({'_id': older_id})
+
+    permanently_delete_with_history(older_id, older, older['project_name'])
+
+    assert str(head_id) not in deletions
+    assert projects.collection.find_one({'_id': head_id}) is not None
+
+
+def test_a_surviving_ancestor_is_not_swept_up_by_the_chain_walk(projects, deletions):
+    """Only tombstones are added from the chain.
+
+    A superseded ancestor the array does not name is a divergence the validator
+    reports under I11; quietly deleting it here would destroy the evidence.
+    """
+    from bson import ObjectId
+    from caper.views_admin import permanently_delete_with_history
+
+    chain_id = ObjectId()
+    older_id = projects('-older', version_chain_id=chain_id,
+                        version_ordinal=1, is_latest=False, current=False)
+    head_id = projects('-head', previous_versions=[],
+                       version_chain_id=chain_id, version_ordinal=2,
+                       is_latest=True)
+    head = projects.collection.find_one({'_id': head_id})
+
+    permanently_delete_with_history(head_id, head, head['project_name'])
+
+    assert str(older_id) not in deletions
 
 
 def test_a_history_entry_pointing_at_a_live_project_is_skipped(projects, deletions):

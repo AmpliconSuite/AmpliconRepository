@@ -360,11 +360,21 @@ def _check_i4(snap):
 def _check_i5(snap):
     """previous_version_id and next_version_id are mutual inverses.
 
-    Also that ``is_latest`` agrees with ``next_version_id is None``, which is
-    the schema's definition of the flag rather than a separate fact.  Keeping
-    the two together is deliberate: a flag that can disagree with the pointer it
+    This used to also require ``is_latest`` to agree with ``next_version_id is
+    None``, on the reasoning that a flag which can disagree with the pointer it
     is derived from is the same two-copies defect as a status that can disagree
-    with classify(), and the fix is the same -- one check that they never do.
+    with classify().  That reasoning was wrong, and the write paths are what
+    made it obvious: **is_latest is not derived from the pointers.**
+
+    When the head version is deleted, the version before it is promoted.  The
+    deleted version stays in the chain as a tombstone -- it keeps its ordinal
+    and its neighbours keep pointing at it, because it is a node whose payload
+    is gone rather than a node that is gone.  So the promoted head is
+    is_latest=True *and* has a next_version_id.  Requiring the two to agree
+    would have made every correct head deletion a violation.
+
+    Pointers are structure, is_latest is position, status is state.  Exactly
+    one head per chain is I3 and I16, and that is where it belongs.
     """
     snap.require('previous_version_id', 'next_version_id')
     findings = []
@@ -396,11 +406,6 @@ def _check_i5(snap):
                     f'previous_version_id {prev}, but that document\'s '
                     f'next_version_id is {target.get("next_version_id")}'))
 
-        if 'is_latest' in doc and doc.get('is_latest') is not (nxt is None):
-            findings.append(Finding(
-                'I5', doc_id, name,
-                f'is_latest={doc.get("is_latest")!r} but next_version_id='
-                f'{nxt!r}; the flag is defined as "no next version"'))
     return findings
 
 
@@ -418,14 +423,31 @@ def _check_i11(snap):
     means the history table has been rendering short -- which is a defect that
     predates the pointers and that switching the read path *fixes*, so it is
     reported as its own detail rather than folded in with the other direction.
+
+    **Tombstones are excluded from the comparison, in both roles.**  The array
+    has no way to say "this version was deleted", so deleting a version removes
+    it from the array while it stays in the chain holding its ordinal.  From
+    the first deletion onwards the pointer lineage is therefore a strict
+    superset of the array, by design and not by drift; comparing across the
+    tombstones would report every correct deletion as a divergence.  A
+    tombstone's own array is not compared either -- it is written by
+    ``replace_one`` and does not carry one.
+
+    That asymmetry is the whole reason the pointers exist.  It is also why this
+    invariant is scoped to the compatibility window: it holds the two encodings
+    together where they can still be compared, which is over the versions that
+    are still there.
     """
     snap.require('previous_version_id', 'version_chain_id')
     findings = []
+    tombstones = snap.ids_with_status(TOMBSTONE)
     for doc in snap.documents:
         doc_id = doc['_id']
         if 'previous_version_id' not in doc:
             continue                      # I1 owns the absence
-        pointed = snap.pointer_ancestors(doc_id)
+        if doc_id in tombstones:
+            continue
+        pointed = [i for i in snap.pointer_ancestors(doc_id) if i not in tombstones]
         named = snap.array_ancestors(doc)
         if set(pointed) == set(named):
             continue

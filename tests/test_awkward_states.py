@@ -117,17 +117,18 @@ def test_the_catalogue_covers_the_states_that_occur_for_real():
 # Layer 2 -- the source-level invariant, no database
 # ---------------------------------------------------------------------------
 
-# The one place outside project_version_cleanup.py that still writes a tombstone
-# marker by hand.  delete_project_version()'s sole-version path sets
-# 'version_deleted_from_history' without purging the payload and without going
-# through build_deleted_version_tombstone, so the document keeps its whole
-# GridFS payload while the log line says the project was fully removed. Fixing
-# it means changing a write path, which this change deliberately does not do --
-# but it is pinned, so a *second* one cannot appear without this test failing.
-KNOWN_HAND_WRITTEN_TOMBSTONES = {
-    (os.path.join('caper', 'caper', 'views.py'),
-     "'version_deleted_from_history': True,"),
-}
+# Empty, and it should stay empty.  It held one entry: the sole-version
+# deletion path in views.py, which set 'version_deleted_from_history' by hand
+# without purging the payload and without going through
+# build_deleted_version_tombstone, so the document kept its whole GridFS
+# payload while the log line said the project was fully removed.  That path now
+# calls the one routine like every other deletion does.
+#
+# An entry here is a hand-written tombstone somebody has decided to live with.
+# Adding one should take an argument, which is why the test fails in both
+# directions: a new one appearing, and a listed one being fixed without the
+# list being updated.
+KNOWN_HAND_WRITTEN_TOMBSTONES = set()
 
 
 def test_the_only_hand_written_tombstone_is_the_known_one():

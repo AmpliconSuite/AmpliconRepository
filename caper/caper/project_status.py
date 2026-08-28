@@ -122,13 +122,24 @@ _STATUS_FLAGS = {
 # would misclassify those the moment they exist.
 #
 # A document carrying 'version_deleted_from_history' WITHOUT 'payload_purged'
-# is the partial state left by delete_project_version()'s sole-version path
-# (views.py:3012): removed from history but still holding its whole
-# GridFS payload, and still resolvable.  It is not a tombstone, and treating it
-# as one would invite a payload deletion that has already happened.  It falls
-# through to the flag rules below -- SUPERSEDED, which retains everything --
-# and PARTIAL_TOMBSTONE_QUERY exists to count it.  0 documents on prod.
+# is a partial state: removed from history but still holding its whole GridFS
+# payload, and still resolvable.  It is not a tombstone, and treating it as one
+# would invite a payload deletion that has already happened.  It falls through
+# to the flag rules below -- SUPERSEDED, which retains everything -- and
+# PARTIAL_TOMBSTONE_QUERY exists to count it.  0 documents on prod, measured
+# 2026-08-27.
+#
+# The one code path that used to produce it -- deleting a project's only
+# version -- now writes a complete tombstone through
+# build_deleted_version_tombstone() like every other deletion.  The query stays:
+# documents outlive the code that wrote them, and hand-repair is still a thing
+# that happens.
 _TOMBSTONE_MARKERS = {'version_deleted_from_history': True, 'payload_purged': True}
+
+# For callers that need to clear or project the markers rather than test them.
+# Named from the same dict the predicate reads, so a third marker would reach
+# every one of them at once.
+TOMBSTONE_MARKER_FIELDS = tuple(_TOMBSTONE_MARKERS)
 
 
 def _flag_matches(doc, field, expected):

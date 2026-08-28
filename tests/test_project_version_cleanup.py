@@ -214,6 +214,8 @@ class FakeHistoryCollection:
         if doc is not None:
             for key, value in update.get('$set', {}).items():
                 doc[key] = value
+            for key in update.get('$unset', {}):
+                doc.pop(key, None)
 
     def update_many(self, query, update):
         modified_count = 0

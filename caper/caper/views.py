@@ -95,6 +95,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
+from . import lineage
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
@@ -2920,14 +2921,25 @@ def _previous_version_linkid(previous_version):
 def delete_project_version(request, project_name, version_id):
     """
     Delete a specific version from the project history.
-    
+
     Cases:
-    1. Deleting an old (non-current) version: remove it from the current project's
-       previous_versions array and soft-delete the old version document.
-    2. Deleting the current version when previous versions exist: promote the most recent
-       previous version to become the new current version.
-    3. Deleting the current version with no previous versions: soft-delete the entire
-       project and redirect to the profile page.
+    1. Deleting an old (non-current) version: it becomes a tombstone in place.
+       Its neighbours in the chain do not change and its ordinal is not
+       renumbered -- a deleted version is a node whose payload is gone, not a
+       node that is gone.
+    2. Deleting the current version when a version survives to take its place:
+       that version is promoted. The promoted version is the highest surviving
+       ordinal, not the last element of previous_versions[] -- nothing orders
+       that array, and production has same-day version pairs where a date sort
+       would tie as well.
+    3. Deleting the last surviving version: it becomes a tombstone that keeps
+       is_latest and redirects nowhere. The chain is then empty -- every member
+       a tombstone -- which is a property of the project, not a state of any
+       document, and it is derived rather than stored.
+
+    All three write the tombstone through one routine
+    (build_deleted_version_tombstone) and all three purge the GridFS payload.
+    Case 3 used to do neither.
     """
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -2954,16 +2966,54 @@ def delete_project_version(request, project_name, version_id):
     # this version's data is going away; any graph cached from it is dead weight
     invalidate_project_coamp_graphs(version_id)
 
+    # The chain, and what deleting this version does to it. None when the
+    # documents carry no pointers -- 26 such documents on dev, 0 on prod,
+    # measured 2026-08-27 -- and then the array decides, exactly as before.
+    chain_members = lineage.chain_members(collection_handle, latest_project,
+                                          lineage.POINTER_PROJECTION)
+    plan = lineage.plan_deletion(chain_members, version_id)
+
     if deleting_current:
         prev_versions_list = latest_project.get('previous_versions', [])
 
-        if prev_versions_list:
-            # Case 2: Promote the most recent previous version to current
-            most_recent_prev = prev_versions_list[-1]
-            prev_linkid = most_recent_prev['linkid']
+        if plan is not None:
+            promoted_id = plan.promoted_id
+        elif prev_versions_list:
+            promoted_id = lineage.resolve_id(
+                _previous_version_linkid(prev_versions_list[-1]))
+            if promoted_id is None:
+                # An unpointered document whose array holds only the
+                # pre-April-2024 encoding, where the whole entry was
+                # serialised into the linkid.  Falling through would take the
+                # terminal branch and purge a payload this project's history
+                # says has a predecessor -- which is the opposite of what the
+                # caller asked for.  Stop instead, and let the backfill give
+                # this chain pointers.
+                logging.error(
+                    f"Refusing to delete {current_linkid}: it has "
+                    f"{len(prev_versions_list)} previous version(s) but none "
+                    f"of them names a usable id, and the document has no "
+                    f"lineage pointers to read instead.")
+                return JsonResponse(
+                    {"error": "This project's version history cannot be read, "
+                              "so the version was not deleted. Please contact "
+                              "an administrator."},
+                    status=409)
+        else:
+            promoted_id = None
 
-            # Build the new previous_versions for the promoted version (exclude itself)
-            new_prev_versions = [pv for pv in prev_versions_list if pv['linkid'] != prev_linkid]
+        if promoted_id is not None:
+            # Case 2: promote the highest surviving ordinal to current
+            prev_linkid = str(promoted_id)
+
+            # Build the new previous_versions for the promoted version (exclude itself).
+            # _previous_version_linkid() rather than pv['linkid'] because the
+            # pre-April-2024 entries are JSON strings, not dicts, and a bare
+            # subscript raises on them.
+            new_prev_versions = [
+                pv for pv in prev_versions_list
+                if str(_previous_version_linkid(pv)) != prev_linkid
+            ]
 
             # Copy forward important metadata from the current version
             metadata_to_copy = {}
@@ -2975,10 +3025,18 @@ def delete_project_version(request, project_name, version_id):
             # Promote the previous version to the live head of the chain.
             # (The reverse operation is called "Un-delete" only because
             # 'delete' means "not the live document" -- see project_status.)
+            #
+            # is_latest moves backwards along a chain whose pointers do not
+            # change, so the promoted version ends up flagged is_latest while
+            # still carrying a next_version_id -- pointing at the tombstone it
+            # has just outlived. That is the intended shape: position and
+            # structure are different questions.
             update_fields = {
                 **status_flags(LIVE),
                 'previous_versions': new_prev_versions,
             }
+            if plan is not None:
+                update_fields['is_latest'] = True
             update_fields.update(metadata_to_copy)
 
             collection_handle.update_one(
@@ -3001,6 +3059,7 @@ def delete_project_version(request, project_name, version_id):
                 promoted_project,
                 deleter,
                 get_date(),
+                is_latest=False if plan is not None else None,
             )
             collection_handle.replace_one(
                 {'_id': ObjectId(current_linkid)},
@@ -3028,42 +3087,63 @@ def delete_project_version(request, project_name, version_id):
                 "redirect": f"/project/{prev_linkid}"
             })
         else:
-            # Case 3: No previous versions - delete the entire project
-            # NOTE: this is the one deletion path that does NOT
-            # purge the GridFS payload, set 'payload_purged' or set
-            # 'redirect_to_project'.  The document it leaves therefore
-            # classifies as SUPERSEDED, not TOMBSTONE -- it stays resolvable
-            # through utils.py:722 with its whole payload still stored, while
-            # the log line below says "project fully removed".  0 documents are
-            # in this state on prod.  The behaviour is left exactly as it is;
-            # fixing it means routing every deletion path through one
-            # tombstone-creation routine.
-            collection_handle.update_one(
+            # Case 3: nothing survives to be promoted.  The project becomes an
+            # empty chain: its last version is a tombstone that keeps
+            # is_latest, because an empty project still has a current version
+            # to render and to restore into -- it just has no payload behind
+            # it.  There is nowhere to redirect, so the tombstone carries no
+            # redirect_to_project and /project/<id> resolves to the deleted
+            # version rather than forwarding.
+            #
+            # This path used to write the marker by hand and skip everything
+            # else: no GridFS purge, no payload_purged, no redirect. The
+            # document it left classified as SUPERSEDED and stayed resolvable
+            # with its entire payload still stored and still billed, while the
+            # log line said "project fully removed".
+            deleted_gridfs_count = delete_gridfs_payload_for_project(
+                delete_gridfs_file,
+                latest_project,
+            )
+            tombstone = build_deleted_version_tombstone(
+                latest_project,
+                None,
+                deleter,
+                get_date(),
+                is_latest=True if plan is not None else None,
+            )
+            collection_handle.replace_one(
                 {'_id': ObjectId(current_linkid)},
-                {'$set': {
-                    **status_flags(SUPERSEDED),
-                    'delete_user': deleter,
-                    'delete_date': get_date(),
-                    'version_deleted_from_history': True,
-                }}
+                tombstone,
+                upsert=True,
             )
 
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
             delete_project_from_site_statistics(latest_project, vis)
 
-            logging.info(f"Deleted sole version {current_linkid}, project fully removed")
+            logging.info(
+                f"Deleted last surviving version {current_linkid}; purged "
+                f"{deleted_gridfs_count} GridFS files. The project is now an "
+                f"empty chain."
+            )
 
             return JsonResponse({
                 "success": True,
                 "redirect": "/accounts/profile/"
             })
     else:
-        # Case 1: Deleting an old (non-current) version
+        # Case 1: deleting an old (non-current) version. Its neighbours in the
+        # chain do not change and it keeps its ordinal: renumbering would break
+        # every downstream version's position and invalidate every audit event
+        # that names the old one.
         old_version = collection_handle.find_one({'_id': ObjectId(version_id)})
         if old_version is None:
             return JsonResponse({"error": "Version not found"}, status=404)
 
-        # Remove from the current project's previous_versions array
+        # Remove from the current project's previous_versions array. The array
+        # has no way to say "this version was deleted", so a deleted version
+        # leaves it entirely -- which is why the pointer lineage is a superset
+        # of the array from the first deletion onwards, and why I11 compares
+        # the two across surviving versions only.
         new_prev_versions = [
             pv for pv in latest_project.get('previous_versions', [])
             if str(_previous_version_linkid(pv)) != version_id
@@ -3085,6 +3165,7 @@ def delete_project_version(request, project_name, version_id):
             latest_project,
             deleter,
             get_date(),
+            is_latest=plan.victim_keeps_head if plan is not None else None,
         )
         collection_handle.replace_one(
             {'_id': ObjectId(version_id)},
@@ -4577,6 +4658,17 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
 
     def _do_rollback(failed_placeholder_id, old_project_id, error_msg):
         """Restore *old_project_id* and mark the failed placeholder so project_page redirects."""
+        # 0. Take the failed version back out of the chain, before restoring
+        #    the old one -- otherwise the chain briefly has two is_latest
+        #    members, and if the second write fails it keeps them.  A no-op
+        #    unless _create_project got far enough to link it.
+        try:
+            lineage.unlink_new_version(collection_handle,
+                                       ObjectId(failed_placeholder_id))
+        except Exception as unlink_err:
+            logging.error(f"Failed to unlink failed version "
+                          f"{failed_placeholder_id} from its chain: {unlink_err}")
+
         # 1. Restore old project to current, non-deleted state
         try:
             collection_handle.update_one(
@@ -5078,6 +5170,15 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         add_project_to_site_statistics(project, normalize_visibility_field(project['private']))
         project_id = new_id.inserted_id
 
+        # Put the document in its chain: a new project is a chain of one, an
+        # edit appends to the chain its predecessors are already in. The
+        # predecessor is read out of the chain rather than off the end of
+        # previous_versions[], so it does not matter that nothing orders that
+        # array. Done here rather than in create_project_helper() because the
+        # _id is minted by the insert.
+        lineage.link_new_version(collection_handle, project_id,
+                                 project.get('previous_versions'))
+
         # move the project location to a new name using the UUID to prevent name collisions
         new_project_data_path = f"tmp/{project_id}"
         os.rename(project_data_path, new_project_data_path)
@@ -5111,10 +5212,17 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
                  'owner': ''
              }}
         )
+        # The placeholder was inserted as LIVE before aggregation started, but
+        # without pointers: until the real document lands there is nothing to
+        # append to a chain, and a failed aggregation must not leave a chain
+        # with a head the user was told had failed. _do_rollback() undoes this.
+        lineage.link_new_version(collection_handle, project_id,
+                                 project.get('previous_versions'))
+
         if oldFeatured:
             project['featured'] = True
             collection_handle.update_one({'_id': project_id}, {"$set": {'featured': True}})
-        
+
         add_project_to_site_statistics(project, normalize_visibility_field(project['private']))
 
     file_location = f'{project_data_path}/{request_file.name}'
