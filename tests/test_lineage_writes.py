@@ -849,3 +849,52 @@ def test_appending_to_a_headless_chain_still_produces_one_head():
     fields, updates = lineage.plan_new_version(members, new_id)
     assert fields['is_latest'] is True
     assert updates[members[-1]['_id']]['is_latest'] is False
+
+
+# ---------------------------------------------------------------------------
+# Statistics readers must tolerate a document with no runs
+# ---------------------------------------------------------------------------
+
+def test_site_statistics_read_a_tombstone_without_raising():
+    """A tombstone carries no 'runs', and every deletion path hands it to these.
+
+    Six functions in site_stats read the field; before this they disagreed
+    about whether it was optional, and the two that did not check took down the
+    whole upload with KeyError the first time an emptied project was
+    re-populated. The path was unreachable until terminal deletion started
+    producing documents with no runs, so the disagreement survived a long time.
+    """
+    from caper import site_stats
+
+    tombstone = {'_id': ObjectId(), 'project_name': 'p', 'private': 'private',
+                 'delete': True, 'current': False,
+                 'version_deleted_from_history': True, 'payload_purged': True}
+
+    assert site_stats.project_runs(tombstone) == {}
+    assert site_stats.count_ecdna_positive_samples(tombstone) == 0
+    # The amplicon counter always emits its 'otherfscna' roll-up, so an empty
+    # project is {'otherfscna': 0} rather than {} -- zero either way.
+    class_keys, amplicon_counts = site_stats.get_project_amplicon_counts(tombstone)
+    assert class_keys == set()
+    assert not any(amplicon_counts.values())
+    assert site_stats.get_project_tissue_of_origin_counts(tombstone) == {}
+    assert site_stats.get_project_cancer_type_counts(tombstone) == {}
+
+
+def test_project_runs_is_the_only_reader_of_the_field():
+    """Nothing in site_stats may reach for 'runs' directly again.
+
+    The grep guard for this module, in the same spirit as the one that keeps
+    'delete'/'current' literals out of query sites. Six readers that disagreed
+    is what made the KeyError possible; one reader is the fix, and this is what
+    keeps it one.
+    """
+    import inspect
+    from caper import site_stats
+
+    source = inspect.getsource(site_stats)
+    body = source.split('def count_ecdna_positive_samples', 1)[1]
+    for spelling in ("['runs']", '["runs"]', "get('runs'", 'get("runs"'):
+        assert spelling not in body, (
+            f'{spelling} is spelled outside project_runs(); route it through '
+            f'the helper so a document without the field reaches one place')

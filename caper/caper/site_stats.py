@@ -58,22 +58,34 @@ UNIQUE_PUBLICATION_SUFFIX = 'unique_publication_count'
 PUBLICATION_PROJECT_SUFFIX = 'projects_with_publication'
 
 
+def project_runs(project):
+    """*project*'s per-sample results, ``{}`` when it has none.
+
+    Every function in this module reads this field, and before 2026-08-28 they
+    disagreed about whether it was optional: two used ``project.get('runs',
+    {})`` and four used ``project['runs']``.  A tombstone carries no runs at
+    all, and it reaches all six -- deleting a version subtracts its
+    contribution from the statistics, and re-populating an emptied project
+    soft-deletes a tombstone on the way to creating the new version.  Both
+    raised KeyError on dev and took the whole upload down with them.
+
+    The path was unreachable until terminal deletion started producing
+    documents with no runs, which is why six readers could disagree for as long
+    as they did.  One reader now, so the next state that lacks the field
+    reaches one place instead of six.
+    """
+    return project.get('runs') or {}
+
+
 def count_ecdna_positive_samples(project):
     """Number of samples in a project carrying at least one ecDNA amplicon.
 
     Counted per project and stored, rather than worked out on read: answering
     it from the projects themselves means loading every project's runs, which
     is exactly what the statistics document exists to avoid.
-
-    A document with no 'runs' counts zero rather than raising.  Its caller two
-    functions down already reads the field as ``project.get('runs', {})``, and
-    a tombstone -- which carries no runs at all -- reaches both: deleting a
-    version subtracts its contribution, and re-populating an emptied project
-    deletes a tombstone on the way to creating the new version.  That raised
-    KeyError on dev, 2026-08-28, and took the whole upload down with it.
     """
     positive = 0
-    for features in (project.get('runs') or {}).values():
+    for features in project_runs(project).values():
         if any(feature.get('Classification') == 'ecDNA' for feature in features):
             positive += 1
     return positive
@@ -178,10 +190,10 @@ def _sum_projects_into_bucket(projects, prefix):
         sum_tissue_of_origin_counts(get_project_tissue_of_origin_counts(proj), tissue_counts)
         sum_tissue_of_origin_counts(get_project_cancer_type_counts(proj), cancer_type_counts)
         proj_count += 1
-        sample_count += len(proj['runs'])
+        sample_count += len(project_runs(proj))
         if is_coral_project(proj):
             coral_project_count += 1
-            coral_sample_count += len(proj['runs'])
+            coral_sample_count += len(project_runs(proj))
         ecdna_positive_sample_count += count_ecdna_positive_samples(proj)
         link = publication_url(proj.get('publication_link', ''))
         if link:
@@ -270,7 +282,7 @@ def _apply_project_to_site_statistics(project, visibility, sign):
     """Add (sign=1) or remove (sign=-1) one project's contribution to its visibility bucket."""
     prefix = BUCKET_PREFIXES[normalize_visibility_field(visibility)]
     updated_stats = _carry_forward_buckets(get_latest_site_statistics())
-    sample_count = len(project.get('runs', {}))
+    sample_count = len(project_runs(project))
 
     updated_stats[f'{prefix}_proj_count'] += sign
     updated_stats[f'{prefix}_sample_count'] += sign * sample_count
@@ -362,7 +374,7 @@ def get_project_amplicon_counts(project):
     project_linkid = project['_id']
     amplicon_counts = dict()
     class_keys = set()
-    runs = project['runs']
+    runs = project_runs(project)
     for sample_num in runs.keys():
         features = runs[sample_num]
         for feat in features:
@@ -413,7 +425,7 @@ def get_project_tissue_of_origin_counts(project):
         dict: Dictionary with tissue_of_origin as keys and counts as values
     """
     tissue_counts = dict()
-    runs = project['runs']
+    runs = project_runs(project)
     
     for sample_num in runs.keys():
         sample_data = runs[sample_num]
@@ -451,7 +463,7 @@ def get_project_cancer_type_counts(project):
         dict: Dictionary with Cancer_type as keys and counts as values
     """
     cancer_type_counts = dict()
-    runs = project['runs']
+    runs = project_runs(project)
 
     for sample_num in runs.keys():
         sample_data = runs[sample_num]
