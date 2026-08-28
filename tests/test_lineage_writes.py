@@ -487,6 +487,77 @@ def test_an_unpointered_project_still_deletes_the_way_it_always_did(
     assert classify(collection.docs[str(members[1]['_id'])]) == TOMBSTONE
 
 
+def test_an_emptied_project_still_resolves_by_url(
+        monkeypatch, request_factory, test_user):
+    """Deleting every version leaves an empty project, not an absent one.
+
+    The tombstone has no redirect_to_project -- there is nowhere to forward to
+    -- so get_one_project() has to return the tombstone itself rather than
+    None. If it returned None the URL would 404 and the project would be gone
+    in the only sense a visitor can observe, which is exactly the distinction
+    the terminal deletion is written to preserve.
+    """
+    members = chain_project(1, test_user.username)
+    _response, collection, _fs = run_delete(
+        monkeypatch, request_factory, test_user, members, members[0]['_id'])
+
+    resolved = utils.get_one_project(str(members[0]['_id']))
+
+    assert resolved is not None, 'the emptied project 404s'
+    assert resolved['_id'] == members[0]['_id']
+    assert classify(resolved) == TOMBSTONE
+
+
+def test_an_emptied_project_reads_as_empty_rather_than_as_broken(
+        monkeypatch, request_factory, test_user):
+    """The project page's own emptiness test, applied to what deletion leaves.
+
+    A tombstone carries no 'runs', which is what makes is_empty_project true
+    and what routes the page around the metadata and charting work rather than
+    into it with nothing to work on.
+    """
+    members = chain_project(1, test_user.username)
+    _response, collection, _fs = run_delete(
+        monkeypatch, request_factory, test_user, members, members[0]['_id'])
+    tombstone = collection.docs[str(members[0]['_id'])]
+
+    # The expression from project_page(), applied to the document it would get.
+    is_empty_project = (
+        ('EMPTY?' in tombstone and tombstone['EMPTY?'] is True)
+        or (not tombstone.get('runs'))
+        or (len(tombstone.get('runs', {})) == 0))
+    assert is_empty_project
+
+    # Nothing on the document sends the page down another branch first.
+    assert 'FINISHED?' not in tombstone
+    assert tombstone.get('aggregation_failed') is None
+    assert 'redirect_to_project' not in tombstone
+
+
+def test_the_emptied_projects_history_says_the_version_was_deleted(
+        monkeypatch, request_factory, test_user):
+    """One row, marked deleted, and nothing offered for promotion.
+
+    The history table is the only thing left that says what happened to this
+    project, so it has to say it.
+    """
+    members = chain_project(1, test_user.username)
+    _response, collection, _fs = run_delete(
+        monkeypatch, request_factory, test_user, members, members[0]['_id'])
+    tombstone = collection.docs[str(members[0]['_id'])]
+
+    entries, msg = utils.previous_versions(tombstone)
+
+    assert msg is None, 'there is no newer version to point at'
+    assert [e['linkid'] for e in entries] == [str(members[0]['_id'])]
+    assert entries[0]['version_deleted_from_history'] is True
+
+    # project_page builds the promote control from the rows that are not
+    # deleted, and there are none.
+    active = [e for e in entries if not e.get('version_deleted_from_history')]
+    assert active == []
+
+
 def test_an_unreadable_history_stops_the_delete_rather_than_purging(
         monkeypatch, request_factory, test_user):
     """The one case where refusing is the safe answer.
