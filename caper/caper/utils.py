@@ -30,10 +30,12 @@ from .project_status import (
     LIVE,
     TOMBSTONE,
     combine,
+    is_tombstone,
     iter_lineage_references,
     iter_previous_versions,
     status_query,
 )
+from . import lineage
 from .project_version_cleanup import (
     GRIDFS_DELETE_BATCH,
     delete_gridfs_file_in_batches,
@@ -706,6 +708,26 @@ def resolve_redirect_tombstone(project, projection=None):
         if redirected is not None:
             prepare_project_linkid(redirected)
             return redirected
+        # The tombstone points at whichever version was current when it was
+        # deleted, and that version may itself have been superseded since. Ask
+        # its chain for the head; fall back to the array scan for a target the
+        # backfill has not reached.
+        target = collection_handle.find_one(
+            {'_id': ObjectId(str(redirect_to))}, lineage.POINTER_PROJECTION)
+        current = (lineage.latest_version(collection_handle, target,
+                                          lineage.POINTER_PROJECTION)
+                   if target is not None else None)
+        if current is not None:
+            # status_query(LIVE) and not a bare _id lookup: the old array scan
+            # asked only for a live head, and a tombstone whose whole chain has
+            # since been soft-deleted must keep resolving to nothing rather
+            # than redirecting a visitor into a deleted project.
+            redirected = collection_handle.find_one(
+                status_query(LIVE, _id=current['_id']), projection)
+            if redirected is not None:
+                prepare_project_linkid(redirected)
+                return redirected
+
         redirected = collection_handle.find_one(
             status_query(LIVE, **{'previous_versions.linkid': str(redirect_to)}),
             projection)
@@ -955,8 +977,19 @@ def _version_history_linkids(project):
     return list(dict.fromkeys(linkids))
 
 
-def _deleted_version_entries_for_project(project):
-    project_ids = _version_history_linkids(project)
+def _deleted_version_entries_for_project(project, members=None):
+    """Tombstones redirecting into this project's history.
+
+    *members*, when given, is the chain read from the pointers, and its ids are
+    what a tombstone redirects to: a deleted version points at whichever member
+    was the head when it was deleted, which is not always the head now, so
+    asking only about the current document would miss it. The array path passes
+    nothing and keeps using the ids the array names.
+    """
+    if members is not None:
+        project_ids = list(dict.fromkeys(str(member['_id']) for member in members))
+    else:
+        project_ids = _version_history_linkids(project)
     if not project_ids:
         return []
     projection_fields = ['date'] + VERSION_HISTORY_FIELDS + DELETED_VERSION_HISTORY_FIELDS
@@ -1059,7 +1092,81 @@ def _backfill_version_info_from_db(entries):
             entry.setdefault(field, 'NA')
 
 
+# Everything a history row is built from. Projected because a project document
+# averages 690 KB on production and a chain can hold eight of them; the history
+# table needs a few dozen bytes from each.
+#
+# 'delete' and 'current' are deliberately absent: whether a member is a
+# tombstone is answered by is_tombstone(), which reads the two markers already
+# listed here, so the flags never have to be loaded or interpreted at all.
+HISTORY_PROJECTION = {
+    field: 1 for field in
+    ['date', 'linkid', 'project_name', 'version_chain_id', 'version_ordinal',
+     'is_latest'] + VERSION_HISTORY_FIELDS + DELETED_VERSION_HISTORY_FIELDS
+}
+
+
+def _history_entry_for_member(member):
+    """One history row, read from the version's own document.
+
+    The pointer path's replacement for _backfill_version_info_from_db(): that
+    exists because an array entry carries a copy of the version fields and the
+    copy is often absent or 'NA', so the reader has to go and fetch the document
+    anyway -- one extra query per history table, and 'NA' in the column whenever
+    it failed. A chain member *is* the document, so there is nothing to
+    reconcile and nothing to fetch.
+    """
+    if is_tombstone(member):
+        return _deleted_version_history_entry(member)
+    return _current_version_history_entry(member)
+
+
+def _previous_versions_from_pointers(project):
+    """(entries, msg) built from the lineage pointers, or None if unpointered.
+
+    Returning None rather than an empty list is the whole safety property: a
+    document the backfill never reached falls back to the array it has always
+    had, instead of rendering a project with no history.
+    """
+    members = lineage.chain_members(collection_handle, project, HISTORY_PROJECTION)
+    if members is None:
+        return None
+
+    entries = [_history_entry_for_member(member) for member in members]
+
+    # Deleted versions are still reached by redirect_to_project. They are not
+    # chain members: both tombstones on production sit in single-member chains
+    # of their own and redirect across a chain boundary into the chain they were
+    # deleted from, so the pointers cannot see them. Measured 2026-08-27.
+    entries = _merge_deleted_version_entries(
+        entries, _deleted_version_entries_for_project(project, members))
+    entries = _sort_history_entries_newest_first(entries)
+
+    msg = None
+    if not lineage.is_head(project, members):
+        current = lineage.head(members)
+        if current is not None:
+            msg = (f"Viewing an older version of the project. "
+                   f"View latest version <a href='/project/{str(current['_id'])}'>here</a>")
+    return entries, msg
+
+
 def previous_versions(project):
+    """The project's version history, newest first, and a message or None.
+
+    Reads the lineage pointers, and falls back to the denormalised
+    previous_versions[] array for any document the backfill has not reached.
+    Both paths are kept during the compatibility window and invariant I11 holds
+    them in agreement; compare_version_history.py diffs them over a whole
+    database.
+    """
+    from_pointers = _previous_versions_from_pointers(project)
+    if from_pointers is not None:
+        return from_pointers
+    return _previous_versions_from_array(project)
+
+
+def _previous_versions_from_array(project):
     """
     Gets a list of previous versions via UUID.
     Version fields (ASP_version, AA_version, AC_version, aggregator_version) are
@@ -1125,17 +1232,33 @@ def form_to_dict(form):
 
 
 def get_latest_project_version(project):
+    """The head of this project's chain, or *project* itself if it is the head.
 
-    doc = collection_handle.find_one(
-        combine(HEAD_VERSION_QUERY,
-                **{'previous_versions.linkid': str(project['_id'])}),
-    )
+    Reads the pointers, and falls back to the reverse array scan for documents
+    the backfill has not reached. The pointer read is also the only one of the
+    two that can see a reference stored in the pre-April 2024 encoding: the
+    array query matches on previous_versions.linkid, and a legacy entry has no
+    linkid to match, so those documents used to report themselves as the latest
+    version of their own chain.
+    """
+    # Two queries rather than one, and deliberately: the chain is read with a
+    # projection so an eight-version chain does not pull eight ~690 KB
+    # documents into memory to find out which _id is the head.
+    current = lineage.latest_version(collection_handle, project,
+                                     lineage.POINTER_PROJECTION)
+    if current is not None and current.get('_id') != project.get('_id'):
+        current = collection_handle.find_one({'_id': current['_id']})
+    elif current is None:
+        current = collection_handle.find_one(
+            combine(HEAD_VERSION_QUERY,
+                    **{'previous_versions.linkid': str(project['_id'])}),
+        )
 
-    if doc is None:
+    if current is None or current.get('_id') == project.get('_id'):
         return project
-    else:
-        prepare_project_linkid(doc)
-        return doc
+
+    prepare_project_linkid(current)
+    return current
 
 def get_one_project_sans_runs(project_name_or_uuid, projection=None):
     """

@@ -54,6 +54,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
+from . import lineage
 
 from .extra_metadata import *
 
@@ -983,16 +984,29 @@ def data_qc(request):
         if classify(project) == DETACHED and is_reachable_by_url(project):
             project_id = str(project.get('_id', 'NO_ID'))
             
-            # Check if this project is truly orphaned:
-            # 1. It should not have any entries in its own previous_versions array
-            has_previous = len(project.get('previous_versions', [])) > 0
-            
-            # 2. It should not be referenced in any other project's previous_versions
-            is_referenced = collection_handle.count_documents({
-                'previous_versions.linkid': project_id
-            }) > 0
-            
-            if not has_previous and not is_referenced:
+            # Orphaned means "alone in its chain": no ancestors, and nothing
+            # names it as one. With pointers that is the size of the chain, one
+            # indexed equality match.
+            #
+            # The array form below is kept for documents the backfill has not
+            # reached, and it is the weaker test of the two. Its reverse lookup
+            # matches on previous_versions.linkid, so a reference stored in the
+            # pre-April 2024 encoding -- a JSON string, with no linkid key --
+            # matches nothing, and a document that is genuinely part of a chain
+            # gets reported here as an orphan. That is the same blind spot as
+            # check_project_flags.py:195.
+            members = lineage.chain_members(collection_handle, project,
+                                            lineage.POINTER_PROJECTION)
+            if members is not None:
+                alone = len(members) == 1
+            else:
+                has_previous = len(project.get('previous_versions', [])) > 0
+                is_referenced = collection_handle.count_documents({
+                    'previous_versions.linkid': project_id
+                }) > 0
+                alone = not has_previous and not is_referenced
+
+            if alone:
                 # No other versions found - this is orphaned!
                 prepare_project_linkid(project)
                 project['visibility_display'] = format_visibility_for_display(project.get('private', True))
