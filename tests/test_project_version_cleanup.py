@@ -1,5 +1,6 @@
 from bson import ObjectId
 
+from caper.project_status import matches
 from caper.project_version_cleanup import (
     DIRECTORY_FILE_KEYS,
     FEATURE_FILE_KEYS,
@@ -227,27 +228,16 @@ class FakeHistoryCollection:
 
     @classmethod
     def _matches_query(cls, doc, query):
-        for key, expected in query.items():
-            if isinstance(expected, dict) and '$in' in expected:
-                if doc.get(key) not in expected['$in']:
-                    return False
-                continue
-            if isinstance(expected, dict) and '$exists' in expected:
-                if (key in doc) != expected['$exists']:
-                    return False
-                continue
-            if key == 'previous_versions.linkid':
-                values = [
-                    str(pv.get('linkid'))
-                    for pv in doc.get('previous_versions', [])
-                    if isinstance(pv, dict) and pv.get('linkid')
-                ]
-                if str(expected) not in values:
-                    return False
-                continue
-            if doc.get(key) != expected:
-                return False
-        return True
+        """Delegates to the application's own evaluator.
+
+        This used to be a hand-written matcher with its own ideas about $in,
+        $exists and previous_versions.linkid -- a third opinion on what a query
+        means, in a repo whose defining bug is a predicate maintained twice.
+        project_status.matches() is checked against a real MongoDB in
+        tests/test_project_status.py, so this fake now agrees with the database
+        by construction rather than by coincidence.
+        """
+        return matches(doc, query)
 
 
 def test_delete_old_project_version_creates_redirect_tombstone_without_promotable_history(

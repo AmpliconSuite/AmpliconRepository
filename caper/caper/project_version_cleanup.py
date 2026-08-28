@@ -1,5 +1,7 @@
 from bson import ObjectId
 
+from .project_status import STATUS_QUERIES, TOMBSTONE, combine, status_flags
+
 
 # Per-feature keys that hold a GridFS file id, in the order ingestion writes
 # them.  This is the single source of truth: views.py iterates this list when
@@ -134,10 +136,9 @@ def build_deleted_version_tombstone(old_project, latest_project, deleter, delete
         'project_name': old_project.get('project_name', latest_project.get('project_name')),
         'alias_name': old_project.get('alias_name'),
         'date': old_project.get('date'),
-        'current': False,
-        'delete': True,
-        'version_deleted_from_history': True,
-        'payload_purged': True,
+        # The flags that make classify() call this a TOMBSTONE, written from
+        # the same table that reads them back.
+        **status_flags(TOMBSTONE),
         'redirect_to_project': str(latest_project['_id']),
         'delete_user': deleter,
         'delete_date': delete_date,
@@ -159,11 +160,8 @@ def retarget_deleted_version_tombstones(collection, old_latest_id, new_latest_id
     redirect target advanced to the new current version.
     """
     result = collection.update_many(
-        {
-            'version_deleted_from_history': True,
-            'payload_purged': True,
-            'redirect_to_project': str(old_latest_id),
-        },
+        combine(STATUS_QUERIES[TOMBSTONE],
+                redirect_to_project=str(old_latest_id)),
         {'$set': {'redirect_to_project': str(new_latest_id)}},
     )
     return getattr(result, 'modified_count', 0)

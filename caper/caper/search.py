@@ -1,6 +1,7 @@
 import re
 from pymongo import MongoClient
 from .utils import *
+from .project_status import LIVE, status_query
 
 
 # ---------------------------------------------------------------------------
@@ -265,12 +266,10 @@ def perform_search(genequery=None,
     if user.is_authenticated:
         username = user.username
         useremail = user.email
-        query_obj = {
-            'private': {'$in': [True, 'private', 'hidden_public']},
-            "$or": [{"project_members": username}, {"project_members": useremail}],
-            'delete': False,
-            'current': True
-        }
+        query_obj = status_query(
+            LIVE,
+            private={'$in': [True, 'private', 'hidden_public']},
+            **{"$or": [{"project_members": username}, {"project_members": useremail}]})
 
         _apply_project_name_query(query_obj, name_query)
 
@@ -278,7 +277,7 @@ def perform_search(genequery=None,
     else:
         private_projects = []
 
-    public_query = {'private': {'$in': [False, 'public']}, 'delete': False, 'current': True}
+    public_query = status_query(LIVE, private={'$in': [False, 'public']})
 
     _apply_project_name_query(public_query, name_query)
 

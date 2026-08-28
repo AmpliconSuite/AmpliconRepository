@@ -27,6 +27,7 @@ if __name__ == '__main__':
     django.setup()
 
 from caper.utils import collection_handle, normalize_visibility_field
+from caper.project_status import NOT_DELETED_QUERY
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ def migrate_project_visibility():
     
     try:
         # Count total projects
-        total_projects = collection_handle.count_documents({'delete': False})
+        total_projects = collection_handle.count_documents(NOT_DELETED_QUERY)
         logger.info(f"Total projects to check: {total_projects}")
         
         # Counters for tracking migration

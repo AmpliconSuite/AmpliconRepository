@@ -18,6 +18,23 @@ from django.forms.models import model_to_dict
 import datetime
 import tarfile
 
+# One authority for what a project document is.  Every query below that used to
+# spell out 'delete'/'current' by hand now names the predicate it means, so the
+# resolver and the tools that must agree with it read from the same table.
+from .project_status import (
+    HEAD_VERSION_QUERY,
+    NOT_DELETED_QUERY,
+    PRIOR_VERSION_QUERY,
+    DELETE_FLAG_QUERY,
+    STATUS_QUERIES,
+    LIVE,
+    TOMBSTONE,
+    combine,
+    iter_lineage_references,
+    iter_previous_versions,
+    status_query,
+)
+
 # def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED
 #                   ):
 #     client = MongoClient(host, read_preference=read_preference
@@ -187,20 +204,20 @@ def get_project_version_chain(search_term):
     project = None
     try:
         project = collection_handle_primary.find_one(
-            {'_id': ObjectId(search_term), 'delete': False}
+            combine(NOT_DELETED_QUERY, _id=ObjectId(search_term))
         )
     except Exception:
         pass
 
     if project is None:
         project = collection_handle_primary.find_one(
-            {'alias_name': search_term, 'delete': False}
+            combine(NOT_DELETED_QUERY, alias_name=search_term)
         )
     if project is None:
         # case-insensitive name search, pick the most recent current one
         project = collection_handle_primary.find_one(
-            {'project_name': {'$regex': f'^{re.escape(search_term)}$', '$options': 'i'},
-             'delete': False, 'current': True}
+            status_query(LIVE, project_name={'$regex': f'^{re.escape(search_term)}$',
+                                             '$options': 'i'})
         )
     if project is None:
         # fall back to any project (including old versions / deleted) with that name
@@ -590,7 +607,7 @@ def initialize_ecDNA_context(project):
             logging.exception("Full traceback:")
 
     # Update the project in the database
-    query = {'_id': project['_id'], 'delete': False}
+    query = combine(NOT_DELETED_QUERY, _id=project['_id'])
     new_values = {"$set": {'ecDNA_context': ecDNA_context}}
     collection_handle.update_one(query, new_values)
 
@@ -660,18 +677,14 @@ def resolve_redirect_tombstone(project, projection=None):
     if not redirect_to:
         return None
     try:
-        redirected = collection_handle.find_one({
-            '_id': ObjectId(str(redirect_to)),
-            'delete': False,
-        }, projection)
+        redirected = collection_handle.find_one(
+            combine(NOT_DELETED_QUERY, _id=ObjectId(str(redirect_to))), projection)
         if redirected is not None:
             prepare_project_linkid(redirected)
             return redirected
-        redirected = collection_handle.find_one({
-            'current': True,
-            'delete': False,
-            'previous_versions.linkid': str(redirect_to),
-        }, projection)
+        redirected = collection_handle.find_one(
+            status_query(LIVE, **{'previous_versions.linkid': str(redirect_to)}),
+            projection)
         if redirected is not None:
             prepare_project_linkid(redirected)
             return redirected
@@ -689,7 +702,8 @@ def get_one_project(project_name_or_uuid):
     """
     
     try:
-        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': False})[0]
+        project = collection_handle.find(
+            combine(NOT_DELETED_QUERY, _id=ObjectId(project_name_or_uuid)))[0]
         prepare_project_linkid(project)
         return project
 
@@ -700,15 +714,17 @@ def get_one_project(project_name_or_uuid):
     if project is None:
         ## first try finding the alias name
         try:
-            project = collection_handle.find({'alias_name' : project_name_or_uuid, 'delete':False})[0]
+            project = collection_handle.find(
+                combine(NOT_DELETED_QUERY, alias_name=project_name_or_uuid))[0]
             prepare_project_linkid(project)
             return project
         except:
             project = None
-            
+
         ## then find project via project name
         try:
-            project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+            project = collection_handle.find_one(
+                combine(NOT_DELETED_QUERY, project_name=project_name_or_uuid))
             if project is not None:
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
                 prepare_project_linkid(project)
@@ -717,10 +733,14 @@ def get_one_project(project_name_or_uuid):
             project = None
 
 
-    ## Maybe we are looking for an updated project: look for it by checking for the "current = False" flag
+    ## Maybe we are looking for a superseded version: PRIOR_VERSION_QUERY is the
+    ## fallback every cleanup tool has missed.  It matches SUPERSEDED documents
+    ## and the TOMBSTONE documents that redirect -- deliberately both, since
+    ## excluding tombstones here is what breaks deleted-version redirects.
     if project is None:
         try:
-            project = collection_handle.find_one({'_id': ObjectId(project_name_or_uuid), 'current': False, 'delete': True})
+            project = collection_handle.find_one(
+                combine(PRIOR_VERSION_QUERY, _id=ObjectId(project_name_or_uuid)))
             if project is not None:
                 redirected = resolve_redirect_tombstone(project)
                 if redirected is not None:
@@ -734,7 +754,8 @@ def get_one_project(project_name_or_uuid):
 
     if project is None:
         try:
-            project = collection_handle.find_one({'project_name': project_name_or_uuid, 'current': False, 'delete': True})
+            project = collection_handle.find_one(
+                combine(PRIOR_VERSION_QUERY, project_name=project_name_or_uuid))
             if project is not None:
                 redirected = resolve_redirect_tombstone(project)
                 if redirected is not None:
@@ -759,9 +780,8 @@ def get_one_deleted_project(project_name_or_uuid):
     try:
 
         # old cursor
-        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
-        # project = get_projects_close_cursor({'_id': ObjectId(project_name_or_uuid), 'delete': True})[0]
-
+        project = collection_handle.find(
+            combine(DELETE_FLAG_QUERY, _id=ObjectId(project_name_or_uuid)))[0]
 
         prepare_project_linkid(project)
         return project
@@ -771,7 +791,8 @@ def get_one_deleted_project(project_name_or_uuid):
 
     # backstop using the name the old way
     if project is None:
-        project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False})
+        project = collection_handle.find_one(
+            combine(NOT_DELETED_QUERY, project_name=project_name_or_uuid))
         logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
         prepare_project_linkid(project)
 
@@ -853,14 +874,18 @@ DELETED_VERSION_HISTORY_FIELDS = [
 ]
 
 
-def _coerce_previous_version_entry(entry):
-    if isinstance(entry, dict):
-        coerced = entry.copy()
-    else:
-        coerced = {'linkid': str(entry)}
-    if coerced.get('linkid') is not None:
-        coerced['linkid'] = str(coerced['linkid'])
-    return coerced
+def _previous_version_entries(project):
+    """The history entries stored on *project*, in one readable shape.
+
+    Was a per-entry coercion here that turned anything non-dict into
+    ``{'linkid': str(entry)}``.  For the five documents written before the
+    April 2024 serialisation change that produced a linkid holding the entry's
+    entire JSON text, which the template rendered as a link to
+    ``/project/[{"date": ...}]`` and which matched no query.  Decoding lives in
+    project_status.iter_previous_versions() so the site and the validator read
+    the field the same way.
+    """
+    return [entry for entry, _encoding in iter_previous_versions(project)]
 
 
 def _current_version_history_entry(project):
@@ -893,13 +918,11 @@ def _version_history_linkids(project):
     project_id = project.get('_id', project.get('linkid'))
     if project_id:
         linkids.append(str(project_id))
-    for entry in project.get('previous_versions', []):
-        if isinstance(entry, dict):
-            linkid = entry.get('linkid')
-        else:
-            linkid = entry
-        if linkid:
-            linkids.append(str(linkid))
+    # Third copy of "read previous_versions[]" that this module used to carry.
+    # They disagreed about the pre-April 2024 encoding, which is how five
+    # documents ended up with a history table nothing could follow.
+    for linkid, _encoding in iter_lineage_references(project):
+        linkids.append(linkid)
     return list(dict.fromkeys(linkids))
 
 
@@ -910,11 +933,11 @@ def _deleted_version_entries_for_project(project):
     projection_fields = ['date'] + VERSION_HISTORY_FIELDS + DELETED_VERSION_HISTORY_FIELDS
     try:
         cursor = collection_handle.find(
-            {
-                'version_deleted_from_history': True,
-                'payload_purged': True,
-                'redirect_to_project': {'$in': project_ids},
-            },
+            # Was a hand-written copy of STATUS_QUERIES[TOMBSTONE].  The grep
+            # guard only looks for 'delete' and 'current' literals, so it walked
+            # past this one; validate_project_lineage.py's I18 found it.
+            combine(STATUS_QUERIES[TOMBSTONE],
+                    redirect_to_project={'$in': project_ids}),
             {field: 1 for field in projection_fields},
         )
         entries = [_deleted_version_history_entry(doc) for doc in cursor]
@@ -970,9 +993,23 @@ def _backfill_version_info_from_db(entries):
             if linkid:
                 linkid_to_entry[str(linkid)] = entry
 
-        if linkid_to_entry:
+        # One unreadable linkid used to take the whole batch down with it: the
+        # comprehension below raised on the first bad id, the except swallowed
+        # it, and every *other* entry in the same history table silently went
+        # unbackfilled and rendered as NA.  Skip the ones that cannot be looked
+        # up rather than the ones that can.
+        object_ids = []
+        for lid in list(linkid_to_entry):
             try:
-                object_ids = [ObjectId(lid) for lid in linkid_to_entry]
+                object_ids.append(ObjectId(lid))
+            except Exception:
+                logging.warning(
+                    "previous_versions entry has an unusable linkid %r; "
+                    "leaving its version columns as NA", lid[:80])
+                linkid_to_entry.pop(lid)
+
+        if object_ids:
+            try:
                 proj_docs = collection_handle.find(
                     {'_id': {'$in': object_ids}},
                     {field: 1 for field in VERSION_HISTORY_FIELDS}
@@ -1009,7 +1046,8 @@ def previous_versions(project):
         'aggregator_version', 'Reconstruction_tools', 'CoRAL_version',
     ]
     cursor = collection_handle.find(
-        {'current': True, 'previous_versions.linkid': str(project['_id'])},
+        combine(HEAD_VERSION_QUERY,
+                **{'previous_versions.linkid': str(project['_id'])}),
         {field: 1 for field in fields}
     ).sort('date', -1)
     data = list(cursor)
@@ -1020,10 +1058,7 @@ def previous_versions(project):
 
     if len(data) == 1:
         # Viewing an older version — data[0] is the current/latest project document
-        res = [
-            _coerce_previous_version_entry(entry)
-            for entry in data[0].get('previous_versions', [])
-        ]
+        res = _previous_version_entries(data[0])
         # Populate version fields from the actual old project documents
         _backfill_version_info_from_db(res)
         res = _merge_deleted_version_entries(res, _deleted_version_entries_for_project(data[0]))
@@ -1035,10 +1070,7 @@ def previous_versions(project):
     else:
         # Viewing the current version — build history from this project's previous_versions list
         if "previous_versions" in project:
-            res = [
-                _coerce_previous_version_entry(entry)
-                for entry in project.get('previous_versions', [])
-            ]
+            res = _previous_version_entries(project)
             # Populate version fields from the actual old project documents
             _backfill_version_info_from_db(res)
         res = _merge_deleted_version_entries(res, _deleted_version_entries_for_project(project))
@@ -1066,7 +1098,8 @@ def form_to_dict(form):
 def get_latest_project_version(project):
 
     doc = collection_handle.find_one(
-        {'current': True, 'previous_versions.linkid': str(project['_id'])},
+        combine(HEAD_VERSION_QUERY,
+                **{'previous_versions.linkid': str(project['_id'])}),
     )
 
     if doc is None:
@@ -1097,7 +1130,8 @@ def get_one_project_sans_runs(project_name_or_uuid, projection=None):
         projection = {'runs': 0}
 
     try:
-        project = collection_handle.find({'_id': ObjectId(project_name_or_uuid), 'delete': False}, projection)[0]
+        project = collection_handle.find(
+            combine(NOT_DELETED_QUERY, _id=ObjectId(project_name_or_uuid)), projection)[0]
         prepare_project_linkid(project)
         return project
 
@@ -1108,15 +1142,17 @@ def get_one_project_sans_runs(project_name_or_uuid, projection=None):
     if project is None:
         ## first try finding the alias name
         try:
-            project = collection_handle.find({'alias_name': project_name_or_uuid, 'delete': False}, projection)[0]
+            project = collection_handle.find(
+                combine(NOT_DELETED_QUERY, alias_name=project_name_or_uuid), projection)[0]
             prepare_project_linkid(project)
             return project
         except:
             project = None
-            
+
         ## then find project via project name
         try:
-            project = collection_handle.find_one({'project_name': project_name_or_uuid, 'delete': False}, projection)
+            project = collection_handle.find_one(
+                combine(NOT_DELETED_QUERY, project_name=project_name_or_uuid), projection)
             if project is not None:
                 logging.warning(f"Could not lookup project {project_name_or_uuid}, had to use project name!")
                 prepare_project_linkid(project)
@@ -1125,10 +1161,11 @@ def get_one_project_sans_runs(project_name_or_uuid, projection=None):
             project = None
 
 
-    ## Maybe we are looking for an updated project: look for it by checking for the "current = False" flag
+    ## Maybe we are looking for a superseded version -- see get_one_project().
     if project is None:
         try:
-            project = collection_handle.find_one({'_id': ObjectId(project_name_or_uuid), 'current': False, 'delete': True}, projection)
+            project = collection_handle.find_one(
+                combine(PRIOR_VERSION_QUERY, _id=ObjectId(project_name_or_uuid)), projection)
             if project is not None:
                 redirected = resolve_redirect_tombstone(project, projection)
                 if redirected is not None:
@@ -1142,7 +1179,8 @@ def get_one_project_sans_runs(project_name_or_uuid, projection=None):
 
     if project is None:
         try:
-            project = collection_handle.find_one({'project_name': project_name_or_uuid, 'current': False, 'delete': True}, projection)
+            project = collection_handle.find_one(
+                combine(PRIOR_VERSION_QUERY, project_name=project_name_or_uuid), projection)
             if project is not None:
                 redirected = resolve_redirect_tombstone(project, projection)
                 if redirected is not None:
@@ -1228,8 +1266,7 @@ def validate_project(project, project_name):
         new_values = {"$set": {
             'runs': runs
         }}
-        query = {'_id': project['_id'],
-                    'delete': False}
+        query = combine(NOT_DELETED_QUERY, _id=project['_id'])
         collection_handle.update_one(query, new_values)
 
     return get_one_project(project_name)

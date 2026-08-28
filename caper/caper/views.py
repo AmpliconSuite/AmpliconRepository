@@ -81,6 +81,18 @@ from .utils import (
     AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
 from .tar_safety import safe_extract_member, safe_extractall
+from .project_status import (
+    DELETE_FLAG_QUERY,
+    LIVE,
+    NOT_DELETED_QUERY,
+    SOFT_DELETED,
+    STATUS_QUERIES,
+    SUPERSEDED,
+    TOMBSTONE,
+    combine,
+    status_flags,
+    status_query,
+)
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
@@ -246,16 +258,14 @@ def change_database_dates(request):
         return redirect('/accounts/logout')
 
     logging.debug('Starting to update timestamps...')
-    projects = list(collection_handle.find({'delete': False}))
-    # projects = get_projects_close_cursor({'delete': False})
+    projects = list(collection_handle.find(NOT_DELETED_QUERY))
 
     for project in projects:
         recently_updated = change_to_standard_date(project['date'])
         date_created = change_to_standard_date(project['date_created'])
         new_values = {"$set" : {'date' : recently_updated,
                                 'date_created' : date_created}}
-        query = {'_id' : project['_id'],
-                    'delete': False}
+        query = combine(NOT_DELETED_QUERY, _id=project['_id'])
         collection_handle.update_one(query, new_values)
 
         # if "previous_versions" in project:
@@ -283,13 +293,13 @@ def update_sample_counts(request):
         return redirect('/accounts/logout')
 
     logging.debug('Starting to update sample count for each project...')
-    projects = get_projects_close_cursor({'delete': False})
+    projects = get_projects_close_cursor(NOT_DELETED_QUERY)
 
     for project in projects:
         # Update current project sample count
         sample_count = len(project['runs'])
         new_values = {"$set": {'sample_count': sample_count}}
-        query = {'_id': project['_id'], 'delete': False}
+        query = combine(NOT_DELETED_QUERY, _id=project['_id'])
         collection_handle.update_one(query, new_values)
 
 
@@ -299,8 +309,6 @@ def update_sample_counts(request):
 
 
 def index(request):
-    # Base query for non-deleted projects
-    base_query = {'delete': False, 'current': True}
     # Exclude large fields that aren't needed for the index page
     projection = {
         'runs': 0,
@@ -314,10 +322,7 @@ def index(request):
 
     # Get public projects (including featured) in one query
     # Handle both legacy boolean False and new string 'public'
-    public_query = {
-        **base_query,
-        'private': {'$in': [False, 'public']}
-    }
+    public_query = status_query(LIVE, private={'$in': [False, 'public']})
     public_projects = list(collection_handle.find(public_query, projection))
 
     # Partition public_projects into featured and non-featured in a single pass
@@ -342,14 +347,14 @@ def index(request):
     # Handle private projects for authenticated users
     if request.user.is_authenticated:
         # Include both legacy boolean True and new string 'private' and 'hidden_public'
-        private_query = {
-            **base_query,
-            'private': {'$in': [True, 'private', 'hidden_public']},
-            '$or': [
+        private_query = status_query(
+            LIVE,
+            private={'$in': [True, 'private', 'hidden_public']},
+            **{'$or': [
                 {'project_members': request.user.username},
                 {'project_members': request.user.email}
-            ]
-        }
+            ]}
+        )
         private_projects = list(collection_handle.find(private_query, projection))
 
         for proj in private_projects:
@@ -420,8 +425,9 @@ def profile(request, message_to_user=None):
     # prevent an absent/null email from matching on anything
     if not useremail:
         useremail = username
-    projects = list(collection_handle.find({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False, 'current': True}))
-    # projects = get_projects_close_cursor({"$or": [{"project_members": username}, {"project_members": useremail}] , 'delete': False})
+    projects = list(collection_handle.find(status_query(
+        LIVE,
+        **{"$or": [{"project_members": username}, {"project_members": useremail}]})))
 
     for proj in projects:
         prepare_project_linkid(proj)
@@ -759,12 +765,8 @@ def _is_deleted_version_tombstone_id(project_name_or_uuid):
         if not ObjectId.is_valid(str(project_name_or_uuid)):
             return False
         return collection_handle.find_one(
-            {
-                '_id': ObjectId(str(project_name_or_uuid)),
-                'delete': True,
-                'version_deleted_from_history': True,
-                'payload_purged': True,
-            },
+            combine(DELETE_FLAG_QUERY, STATUS_QUERIES[TOMBSTONE],
+                    _id=ObjectId(str(project_name_or_uuid))),
             {'_id': 1},
         ) is not None
     except Exception:
@@ -972,7 +974,7 @@ def project_page(request, project_name, message=''):
                                 'reference_genome' : reference_genome,
                                 'aggregate_df' : aggregate_save_fp,
                                 'metadata_stored': 'Yes'}}
-        query = {'_id' : project['_id'], 'delete': False}
+        query = combine(NOT_DELETED_QUERY, _id=project['_id'])
 
         logging.debug('Inserting Now')
         collection_handle.update_one(query, new_values)
@@ -2616,16 +2618,19 @@ def gene_search_page(request):
     if request.user.is_authenticated:
         username = request.user.username
         useremail = request.user.email
-        query_obj = {'private': {'$in': [True, 'private', 'hidden_public']}, "$or": [{"project_members": username}, {"project_members": useremail}],
-                     'Oncogenes': gen_query, 'delete': False, 'current': True}
+        query_obj = status_query(
+            LIVE,
+            private={'$in': [True, 'private', 'hidden_public']},
+            Oncogenes=gen_query,
+            **{"$or": [{"project_members": username}, {"project_members": useremail}]})
 
         private_projects = list(collection_handle.find(query_obj))
         # private_projects = get_projects_close_cursor(query_obj)
     else:
         private_projects = []
 
-    public_projects = list(collection_handle.find({'private': {'$in': [False, 'public']}, 'Oncogenes': gen_query, 'delete': False, 'current': True}))
-    # public_projects = get_projects_close_cursor({'private' : False, 'Oncogenes' : gen_query, 'delete': False})
+    public_projects = list(collection_handle.find(status_query(
+        LIVE, private={'$in': [False, 'public']}, Oncogenes=gen_query)))
 
     for proj in private_projects:
         prepare_project_linkid(proj)
@@ -2873,7 +2878,13 @@ def project_delete(request, project_name):
     if check_project_exists(project_name) and allowed:
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
-        new_val = { "$set": {'delete' : True, 'delete_user': deleter, 'delete_date': get_date()} }
+        # Half of the flag pair: this sets 'delete' and leaves 'current'
+        # alone, so a LIVE project becomes SOFT_DELETED (delete=True,
+        # current=True) and stays recoverable from the admin page.  Writing
+        # the pair in full would also stamp current=True on the SUPERSEDED and
+        # DETACHED documents get_one_project() can return here.
+        new_val = { "$set": {'delete': status_flags(SOFT_DELETED)['delete'],
+                             'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
         delete_project_from_site_statistics(project, visibility)
 
@@ -2955,10 +2966,11 @@ def delete_project_version(request, project_name, version_id):
                 if field in latest_project:
                     metadata_to_copy[field] = latest_project[field]
 
-            # Un-delete and make the previous version current
+            # Promote the previous version to the live head of the chain.
+            # (The reverse operation is called "Un-delete" only because
+            # 'delete' means "not the live document" -- see project_status.)
             update_fields = {
-                'current': True,
-                'delete': False,
+                **status_flags(LIVE),
                 'previous_versions': new_prev_versions,
             }
             update_fields.update(metadata_to_copy)
@@ -3011,11 +3023,19 @@ def delete_project_version(request, project_name, version_id):
             })
         else:
             # Case 3: No previous versions - delete the entire project
+            # NOTE: this is the one deletion path that does NOT
+            # purge the GridFS payload, set 'payload_purged' or set
+            # 'redirect_to_project'.  The document it leaves therefore
+            # classifies as SUPERSEDED, not TOMBSTONE -- it stays resolvable
+            # through utils.py:722 with its whole payload still stored, while
+            # the log line below says "project fully removed".  0 documents are
+            # in this state on prod.  The behaviour is left exactly as it is;
+            # fixing it means routing every deletion path through one
+            # tombstone-creation routine.
             collection_handle.update_one(
                 {'_id': ObjectId(current_linkid)},
                 {'$set': {
-                    'delete': True,
-                    'current': False,
+                    **status_flags(SUPERSEDED),
                     'delete_user': deleter,
                     'delete_date': get_date(),
                     'version_deleted_from_history': True,
@@ -3090,7 +3110,11 @@ def project_update(request, project_name):
     if check_project_exists(project_name) and allowed:
         query = {'_id': project['_id']}
         ## 2 new fields: current, and update_date, $set will add a new field with the specified value.
-        new_val = { "$set": {'current' : False, 'update_date': get_date()} }
+        # The other half.  project_delete() ran first, so clearing 'current'
+        # here completes the move from SOFT_DELETED to SUPERSEDED -- the old
+        # head of the chain, still reachable by URL (utils.py:722).
+        new_val = { "$set": {'current': status_flags(SUPERSEDED)['current'],
+                             'update_date': get_date()} }
         collection_handle.update_one(query, new_val)
 
         return redirect('profile')
@@ -3773,8 +3797,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 'private': normalize_visibility_field(form_dict.get('private', 'private')),
                 'sample_count': 0,
                 'runs': {},  # Empty dictionary, not list
-                'delete': False,  # Project is not deleted
-                'current': True,  # Ensure project is marked as current version
+                **status_flags(LIVE),  # the new version becomes the chain head
                 # Seed project_members with the owner so the profile page query finds this
                 # placeholder immediately and access-control lets the owner view/delete it
                 # even if aggregation fails before _process_and_aggregate_files can update it.
@@ -3830,7 +3853,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             try:
                 collection_handle.update_one(
                     {'_id': ObjectId(project_name)},
-                    {'$set': {'current': True, 'delete': False},
+                    {'$set': status_flags(LIVE),
                      '$unset': {'delete_user': '', 'delete_date': ''}}
                 )
             except Exception as rb_err:
@@ -4457,13 +4480,12 @@ def create_empty_project(request):
             'date_created': current_date,
             'date': current_date,
             'private': 'private',  # Empty projects can only be private
-            'delete': False,
             'project_members': project_members,
             'runs': {},  # Empty run dictionary
             'Oncogenes': [],
             'Classification': [],
             'linkid': ObjectId(),  # Generate a new linkid
-            'current': True,
+            **status_flags(LIVE),
             'empty': True,  # Flag to identify empty projects
             'FINISHED?': True,  # Mark as finished since there's no extraction needed
             'EMPTY?': True, # Mark as empty
@@ -4538,7 +4560,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
             collection_handle.update_one(
                 {'_id': ObjectId(old_project_id)},
                 {
-                    '$set': {'current': True, 'delete': False},
+                    '$set': status_flags(LIVE),
                     '$unset': {'delete_user': '', 'delete_date': ''}
                 }
             )
@@ -4547,6 +4569,18 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
             logging.error(f"Failed to rollback old project {old_project_id}: {rb_err}")
 
         # 2. Mark the failed placeholder (current: False so it doesn't appear on profile)
+        #
+        # This is the one write in the codebase with no status to name, and it
+        # is not an oversight in the routing -- it is the defect itself.  The
+        # placeholder was inserted with status_flags(LIVE), so clearing
+        # 'current' while leaving 'delete' False produces delete=False,
+        # current=False: DETACHED by classify(), and still reachable by URL.
+        # That is exactly the 39-document delete=False/current=False
+        # population, and this is
+        # the most plausible way they were made.  status_flags() deliberately
+        # refuses to write DETACHED, so the literal stays until the state has
+        # a name -- deciding what a failed placeholder should be is a separate
+        # question, and this change alters no behaviour.
         try:
             collection_handle.update_one(
                 {'_id': ObjectId(failed_placeholder_id)},
@@ -4932,8 +4966,7 @@ def create_project(request):
             'private': normalize_visibility_field(form_dict.get('private', 'private')),
             'sample_count': 0,
             'runs': {},  # Empty dictionary, not list
-            'delete': False,  # Project is not deleted
-            'current': True,  # Ensure project is marked as current version
+            **status_flags(LIVE),  # live head of a new chain
             # Seed project_members with the owner so the profile page query finds this
             # placeholder immediately and access-control lets the owner view/delete it
             # even if aggregation fails before _process_and_aggregate_files can update it.
@@ -5259,8 +5292,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['date_created'] = get_date()
     project['date'] = get_date()
     project['private'] = normalize_visibility_field(form_dict['private'])
-    project['delete'] = False
-    project['current'] = True
+    project.update(status_flags(LIVE))  # the new document is the chain head
     project['previous_versions'] = previous_versions
     project['update_date'] = get_date()
     user_list = create_user_list(form_dict['project_members'], current_user)
@@ -5502,11 +5534,11 @@ def coamplification_graph(request):
         useremail = username
 
     # Get all projects user has access to
-    all_projects = get_projects_close_cursor({"$or": [
+    all_projects = get_projects_close_cursor(combine(NOT_DELETED_QUERY, **{"$or": [
         {"project_members": username},
         {"project_members": useremail},
         {"private": {"$in": [False, "public", "hidden_public"]}}
-    ], 'delete': False})
+    ]}))
 
     # Filter out mm10, Unknown, and Multiple reference genome projects
     # AND add reference_class

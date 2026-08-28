@@ -68,6 +68,19 @@ import gridfs
 # is the only way the two cannot drift.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
 from caper.project_version_cleanup import GRIDFS_FILE_KEYS, iter_gridfs_file_ids
+# Same reason for project_status: every protection rule below used to be a
+# hand-written copy of a query in caper/utils.py, and the copy is what drifted.
+from caper.project_status import (
+    DELETE_FLAG_QUERY,
+    LIVE,
+    NOT_DELETED_QUERY,
+    PRIOR_VERSION_QUERY,
+    SOFT_DELETED,
+    STATUS_QUERIES,
+    TOMBSTONE,
+    combine,
+    resolver_queries,
+)
 
 # Optional: boto3 for S3 cleanup
 try:
@@ -183,26 +196,25 @@ def collect_protected_ids(collection):
     projection = {'_id': 1, 'previous_versions': 1}
 
     # ── (a) Anything not soft-deleted ────────────────────────────────
-    for doc in collection.find({'delete': False}, projection):
+    for doc in collection.find(NOT_DELETED_QUERY, projection):
         protect(doc)
 
     # ── (b) Soft-deleted, still on the admin page ────────────────────
-    for doc in collection.find({'delete': True, 'current': True}, projection):
+    for doc in collection.find(STATUS_QUERIES[SOFT_DELETED], projection):
         protect(doc)
 
     # ── (c) Superseded versions — STILL RESOLVABLE BY URL ────────────
     # get_one_project() falls back to this exact query by _id and by
     # project_name.  Old links to superseded versions resolve today; deleting
     # these documents breaks them and destroys the payload behind them.
-    for doc in collection.find({'delete': True, 'current': False}, projection):
+    for doc in collection.find(PRIOR_VERSION_QUERY, projection):
         protect(doc)
 
     # ── (e) Deleted-version redirect tombstones ──────────────────────
     # These keep old UUIDs resolvable after their heavy GridFS payload has
     # been purged and should not be removed as orphan project documents.
     for doc in collection.find(
-        {'version_deleted_from_history': True, 'payload_purged': True,
-         'redirect_to_project': {'$exists': True}},
+        combine(STATUS_QUERIES[TOMBSTONE], redirect_to_project={'$exists': True}),
         {'_id': 1},
     ):
         protected.add(str(doc['_id']))
@@ -219,22 +231,7 @@ def is_resolvable_by_url(collection, project_id, project_name=None):
     in bulk for speed; this exists to be asked again immediately before a
     delete, so the two have to disagree before anything reachable is lost.
     """
-    try:
-        oid = ObjectId(project_id)
-    except Exception:
-        oid = None
-
-    queries = []
-    if oid is not None:
-        queries.append({'_id': oid, 'delete': False})                       # :692
-        queries.append({'_id': oid, 'current': False, 'delete': True})      # :722
-    if project_name:
-        queries.append({'alias_name': project_name, 'delete': False})       # :703
-        queries.append({'project_name': project_name, 'delete': False})     # :711
-        queries.append({'project_name': project_name,
-                        'current': False, 'delete': True})                  # :736
-
-    for query in queries:
+    for _resolver_line, query in resolver_queries(project_id, project_name):
         try:
             hit = collection.find_one(query, {'_id': 1})
         except Exception:
@@ -263,7 +260,7 @@ def collect_needs_review_ids(collection):
     return {
         str(doc['_id'])
         for doc in collection.find(
-            {'delete': True, 'current': {'$exists': False}}, {'_id': 1})
+            combine(DELETE_FLAG_QUERY, current={'$exists': False}), {'_id': 1})
     }
 
 
@@ -483,8 +480,8 @@ def main():
     logger.info(f"  Orphaned projects to clean up        : {len(orphaned_ids)}")
 
     # Show breakdown of protected projects
-    active_count = collection.count_documents({'current': True, 'delete': False})
-    soft_del_count = collection.count_documents({'delete': True, 'current': True})
+    active_count = collection.count_documents(STATUS_QUERIES[LIVE])
+    soft_del_count = collection.count_documents(STATUS_QUERIES[SOFT_DELETED])
     logger.info(f"  Breakdown of protected projects:")
     logger.info(f"    Active (current=True, delete=False)       : {active_count}")
     logger.info(f"    Soft-deleted (delete=True, current=True)  : {soft_del_count}")
