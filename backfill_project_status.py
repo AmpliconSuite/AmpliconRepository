@@ -390,6 +390,47 @@ def apply_pointers(projects, plan, execute, rollback=None):
     return written, skipped
 
 
+# ---------------------------------------------------------------------------
+# Pass 4 -- the stored status field
+# ---------------------------------------------------------------------------
+
+MISSING_STATUS_QUERY = {'status': {'$exists': False}}
+
+
+def plan_status(projects):
+    """(doc, status) for every document with no stored 'status'.
+
+    Run last on purpose. classify() reads the flags, so this pass must see the
+    values the 'current' pass wrote rather than the absences it replaced --
+    otherwise 70 documents on prod would be stored as DETACHED, which is what
+    they were before the backfill and not what they are after it.
+    """
+    plan = []
+    for doc in projects.find(MISSING_STATUS_QUERY):
+        plan.append((doc, classify(doc)))
+    plan.sort(key=lambda entry: entry[0]['_id'])
+    return plan
+
+
+def apply_status(projects, plan, execute, rollback=None):
+    written = skipped = 0
+    for doc, status in plan:
+        print('  %s  %-40s  %s' % (
+            doc['_id'], (doc.get('project_name') or '?')[:40], status))
+        if not execute:
+            continue
+        record(rollback, doc['_id'], '$unset', {'status': ''})
+        result = projects.update_one(
+            combine(MISSING_STATUS_QUERY, _id=doc['_id']),
+            {'$set': {'status': status}})
+        if result.modified_count:
+            written += 1
+        else:
+            skipped += 1
+            print('      SKIPPED -- changed since the plan was built')
+    return written, skipped
+
+
 def take(plan, limit):
     """The first *limit* entries of a plan, saying how many are held back.
 
@@ -432,8 +473,9 @@ def main():
                         help='Abort unless the host is this kind.')
     parser.add_argument('--execute', action='store_true',
                         help='Actually write. Without it the script only reports.')
-    parser.add_argument('--only', choices=['current', 'lineage', 'pointers'],
-                        help='Run one pass instead of all three.')
+    parser.add_argument('--only',
+                        choices=['current', 'lineage', 'pointers', 'status'],
+                        help='Run one pass instead of all four.')
     parser.add_argument('--limit', type=int, metavar='N',
                         help='Act on only the first N documents of each pass, '
                              'in _id order. The report still counts them all, '
@@ -522,6 +564,26 @@ def main():
                 len(plan), len({fields['version_chain_id'] for _doc, fields in plan})))
             plan = take(plan, args.limit)
             written, skipped = apply_pointers(projects, plan, args.execute, rollback)
+            totals['written'] += written
+            totals['skipped'] += skipped
+        print('')
+
+    if args.only in (None, 'status'):
+        print('=' * 78)
+        print("status -- what classify() says, written down so a query can use it")
+        print('=' * 78)
+        plan = plan_status(projects)
+        if not plan:
+            print('  nothing to do')
+        else:
+            by_status = {}
+            for _doc, status in plan:
+                by_status[status] = by_status.get(status, 0) + 1
+            print('  %d document(s): %s\n' % (
+                len(plan), ', '.join('%d %s' % (n, s)
+                                     for s, n in sorted(by_status.items()))))
+            plan = take(plan, args.limit)
+            written, skipped = apply_status(projects, plan, args.execute, rollback)
             totals['written'] += written
             totals['skipped'] += skipped
         print('')

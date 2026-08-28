@@ -319,14 +319,33 @@ def status_flags(status):
     meaning was lost, not a state anything should deliberately create.
     """
     if status == TOMBSTONE:
-        return dict(_STATUS_FLAGS[SUPERSEDED], **_TOMBSTONE_MARKERS)
+        return dict(_STATUS_FLAGS[SUPERSEDED], status=TOMBSTONE, **_TOMBSTONE_MARKERS)
     if status in _STATUS_FLAGS:
-        return dict(_STATUS_FLAGS[status])
+        return dict(_STATUS_FLAGS[status], status=status)
     if status == DETACHED:
         raise ValueError(
             "DETACHED is a diagnosis, not a state to write. A document becomes "
             "DETACHED by losing the flags that gave it meaning.")
     raise ValueError(f"Unknown project status: {status!r}")
+
+
+def status_after(doc, **changes):
+    """The status *doc* would have once *changes* are applied to it.
+
+    For the write sites that set half the flag pair on purpose -- a soft delete
+    sets 'delete' and leaves 'current' alone, a restore clears 'delete' and
+    leaves 'current' alone -- where the resulting status depends on the value
+    already on the document and so cannot come from status_flags() alone.
+
+    Without this, the stored 'status' field goes stale the first time anyone
+    deletes a project, and a stored field that lies is worse than an absent
+    one: every reader that trusts it is now wrong, and the validator's I2 turns
+    from an invariant into a permanent finding.
+
+        >>> new_val = {'$set': {'delete': True,
+        ...                     'status': status_after(project, delete=True)}}
+    """
+    return classify({**doc, **changes})
 
 
 # ---------------------------------------------------------------------------

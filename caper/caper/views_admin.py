@@ -49,6 +49,7 @@ from .project_status import (
     classify,
     is_reachable_by_url,
     iter_previous_versions,
+    status_after,
     status_flags,
     status_query,
 )
@@ -872,7 +873,8 @@ def admin_delete_project(request):
             # this the reverse of a soft delete: the document keeps whatever
             # 'current' it had.  Only SOFT_DELETED documents are listed below,
             # so in practice that lands on LIVE.
-            new_val = {"$set": {'delete': status_flags(LIVE)['delete']}}
+            new_val = {"$set": {'delete': status_flags(LIVE)['delete'],
+                                'status': status_after(project, delete=False)}}
             collection_handle.update_one(query, new_val)
             error_message = f"Project {project_name} restored."
 
@@ -1045,7 +1047,10 @@ def make_project_current(request, project_id):
                 {'_id': ObjectId(project_id)},
                 # Half of the flag pair on purpose: this admin repair marks a
                 # document as the head of its chain without touching 'delete'.
-                {'$set': {'current': status_flags(LIVE)['current']}}
+                # The resulting status therefore depends on the 'delete' already
+                # stored, which is what status_after() reads.
+                {'$set': {'current': status_flags(LIVE)['current'],
+                          'status': status_after(project, current=True)}}
             )
             
             if result.modified_count > 0:

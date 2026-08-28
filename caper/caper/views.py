@@ -91,6 +91,7 @@ from .project_status import (
     SUPERSEDED,
     TOMBSTONE,
     combine,
+    status_after,
     status_flags,
     status_query,
 )
@@ -2884,7 +2885,11 @@ def project_delete(request, project_name):
         # current=True) and stays recoverable from the admin page.  Writing
         # the pair in full would also stamp current=True on the SUPERSEDED and
         # DETACHED documents get_one_project() can return here.
+        # 'status' comes from status_after() rather than from the constant,
+        # because a half-write's result depends on the 'current' already there:
+        # LIVE becomes SOFT_DELETED, SUPERSEDED stays SUPERSEDED.
         new_val = { "$set": {'delete': status_flags(SOFT_DELETED)['delete'],
+                             'status': status_after(project, delete=True),
                              'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
         delete_project_from_site_statistics(project, visibility)
@@ -3115,6 +3120,7 @@ def project_update(request, project_name):
         # here completes the move from SOFT_DELETED to SUPERSEDED -- the old
         # head of the chain, still reachable by URL (utils.py:722).
         new_val = { "$set": {'current': status_flags(SUPERSEDED)['current'],
+                             'status': status_after(project, current=False),
                              'update_date': get_date()} }
         collection_handle.update_one(query, new_val)
 

@@ -58,6 +58,7 @@ from caper.project_status import (
     is_reachable_by_url,
     matches,
     resolver_queries,
+    status_after,
     status_flags,
     status_query,
 )
@@ -769,3 +770,56 @@ def test_the_resolver_reaches_every_state_the_application_serves(spec_fixture_co
         assert hit is not None, (
             f"{doc.get('project_name')} ({classify(doc)}) is served by the "
             f"application but no resolver step reaches it")
+
+
+# ---------------------------------------------------------------------------
+# The stored status field
+# ---------------------------------------------------------------------------
+
+def test_status_flags_carries_the_status_it_writes():
+    """Every full-write site gets the stored field for free.
+
+    status_flags() is spread into the document literals that create projects
+    and into the $set payloads that change status, so putting 'status' in the
+    table means those sites write it without being edited -- and cannot forget
+    to when a new one is added.
+    """
+    for status in (LIVE, SUPERSEDED, SOFT_DELETED, TOMBSTONE):
+        flags = status_flags(status)
+        assert flags['status'] == status
+        assert classify(flags) == status, \
+            'the stored status disagrees with what the flags classify as'
+
+
+def test_status_after_resolves_a_half_write():
+    """The four sites that set one flag on purpose.
+
+    The resulting status depends on the value already on the document, so it
+    cannot come from a constant. A soft delete of a LIVE project gives
+    SOFT_DELETED; the same write on a SUPERSEDED document leaves it SUPERSEDED.
+    """
+    live = {'delete': False, 'current': True}
+    superseded = {'delete': True, 'current': False}
+
+    assert status_after(live, delete=True) == SOFT_DELETED
+    assert status_after(superseded, delete=True) == SUPERSEDED
+
+    # Restore is the reverse, and lands back on LIVE only from SOFT_DELETED.
+    assert status_after({'delete': True, 'current': True}, delete=False) == LIVE
+    assert status_after(superseded, delete=False) == DETACHED
+
+    # Clearing 'current' completes a soft delete into a superseded version.
+    assert status_after({'delete': True, 'current': True}, current=False) == SUPERSEDED
+
+
+def test_status_after_does_not_mutate_the_document():
+    doc = {'delete': False, 'current': True}
+    status_after(doc, delete=True)
+    assert doc == {'delete': False, 'current': True}
+
+
+def test_status_after_respects_the_tombstone_markers():
+    """Markers decide a tombstone whatever the flags say, and a half-write
+    must not talk it back out of being one."""
+    tombstone = dict(status_flags(TOMBSTONE))
+    assert status_after(tombstone, delete=False) == TOMBSTONE

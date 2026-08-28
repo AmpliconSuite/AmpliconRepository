@@ -176,11 +176,12 @@ ALLOWED = {
     # status_flags(), so there is no second copy of it; only the key is spelled
     # out, because writing half a pair is the point and no status names that.
     (os.path.join('caper', 'caper', 'views_admin.py'),
-     "new_val = {\"$set\": {'delete': status_flags(LIVE)['delete']}}"):
-        "admin un-delete clears 'delete' only",
+     "new_val = {\"$set\": {'delete': status_flags(LIVE)['delete'],"):
+        "admin un-delete clears 'delete' only; the resulting status comes from "
+        "status_after(), which reads the 'current' already stored",
     (os.path.join('caper', 'caper', 'views_admin.py'),
-     "{'$set': {'current': status_flags(LIVE)['current']}}"):
-        "admin repair sets 'current' only",
+     "{'$set': {'current': status_flags(LIVE)['current'],"):
+        "admin repair sets 'current' only; status from status_after()",
     (os.path.join('caper', 'caper', 'views.py'),
      "new_val = { \"$set\": {'delete': status_flags(SOFT_DELETED)['delete'],"):
         "project_delete() sets 'delete' only: LIVE -> SOFT_DELETED",
