@@ -18,7 +18,8 @@ import pytest
 from bson import ObjectId
 
 from caper import lineage, utils, views
-from caper.project_status import classify, TOMBSTONE, SUPERSEDED, LIVE
+from caper.project_status import (classify, status_after, TOMBSTONE,
+                                  SUPERSEDED, LIVE)
 from caper.project_version_cleanup import (
     build_deleted_version_tombstone,
     iter_gridfs_file_ids,
@@ -653,14 +654,14 @@ def test_a_half_write_reads_its_flags_from_the_primary(monkeypatch):
     project_id = ObjectId()
     # As project_update() has just left it: superseded, not soft-deleted.
     primary = OneWriteBehind({'_id': project_id, 'delete': False, 'current': False})
-    monkeypatch.setattr(views, 'collection_handle_primary', primary)
+    monkeypatch.setattr(utils, 'collection_handle_primary', primary)
 
     # What the view was handed: the pre-update read, one write out of date.
     stale = {'_id': project_id, 'delete': False, 'current': True}
 
-    assert views.status_after(stale, delete=True) == 'SOFT_DELETED', \
+    assert status_after(stale, delete=True) == 'SOFT_DELETED', \
         'the stale document is what produces the wrong answer'
-    assert views.status_after(views.current_flags(stale), delete=True) == SUPERSEDED, \
+    assert status_after(utils.current_flags(stale), delete=True) == SUPERSEDED, \
         'reading the flags from the primary produces the right one'
 
 
@@ -672,13 +673,13 @@ def test_reading_the_flags_keeps_the_rest_of_the_document(monkeypatch):
     a full project read on every delete.
     """
     project_id = ObjectId()
-    monkeypatch.setattr(views, 'collection_handle_primary',
+    monkeypatch.setattr(utils, 'collection_handle_primary',
                         OneWriteBehind({'_id': project_id, 'delete': True,
                                         'current': False}))
     project = {'_id': project_id, 'delete': False, 'current': True,
                'project_name': 'p', 'project_members': ['someone']}
 
-    flags = views.current_flags(project)
+    flags = utils.current_flags(project)
     assert flags['project_members'] == ['someone']
     assert flags['project_name'] == 'p'
     assert (flags['delete'], flags['current']) == (True, False)
@@ -695,9 +696,9 @@ def test_an_unreadable_primary_falls_back_to_the_document_in_hand(monkeypatch):
         def find_one(self, query, projection=None):
             return None
 
-    monkeypatch.setattr(views, 'collection_handle_primary', Missing())
+    monkeypatch.setattr(utils, 'collection_handle_primary', Missing())
     project = {'_id': ObjectId(), 'delete': False, 'current': True}
-    assert views.current_flags(project) == project
+    assert utils.current_flags(project) == project
 
 
 # ---------------------------------------------------------------------------
@@ -940,3 +941,104 @@ def test_the_edit_page_can_read_an_emptied_project():
     assert tombstone.get('description', '') == ''
     assert 'runs' not in tombstone, \
         'a tombstone holds no results; that is what purging the payload means'
+
+
+# ---------------------------------------------------------------------------
+# T9 over every shape an emptied chain can be in
+# ---------------------------------------------------------------------------
+#
+# The head of an emptied chain can sit at any ordinal, and which one depends
+# on the order the versions were deleted in. T3 promotes the highest surviving
+# ordinal, so each head deletion walks the flag backwards; T7/T8 then leaves it
+# wherever the last survivor happened to be. A three-version project emptied
+# newest-first ends with the head on ordinal 1; emptied oldest-first it ends on
+# ordinal 3; emptied middle-first, on 3 as well but by a different route.
+#
+# So "the end of the chain" and "the current version" can be any two members,
+# and appending has to attach after the first and take the flag off the second.
+# These enumerate that rather than sampling it.
+
+@pytest.mark.parametrize('length', [1, 2, 3, 4, 5])
+def test_appending_to_an_emptied_chain_from_every_head_position(
+        length, tombstone_marks):
+    for head_ordinal in range(1, length + 1):
+        members = linked(length)
+        for member in members:
+            member.update(tombstone_marks)
+            member['is_latest'] = False
+        members[head_ordinal - 1]['is_latest'] = True
+        new_id = ObjectId()
+
+        fields, updates = lineage.plan_new_version(members, new_id)
+
+        assert fields['version_ordinal'] == length + 1, (
+            f'length {length}, head at {head_ordinal}: ordinals must continue '
+            f'from the high-water mark')
+        assert fields['previous_version_id'] == members[-1]['_id'], (
+            f'length {length}, head at {head_ordinal}: the new version '
+            f'attaches after the highest ordinal, wherever the head is')
+        assert fields['is_latest'] is True
+        assert updates[members[-1]['_id']].get('next_version_id') == new_id
+        assert updates[members[head_ordinal - 1]['_id']]['is_latest'] is False, (
+            f'length {length}, head at {head_ordinal}: the flag has to come '
+            f'off the member that actually holds it')
+        # Nobody else is touched, and nobody else loses a flag they never had.
+        for index, member in enumerate(members, start=1):
+            if index not in (head_ordinal, length):
+                assert member['_id'] not in updates or not updates[member['_id']]
+
+
+@pytest.mark.parametrize('length', [1, 2, 3, 4])
+def test_the_emptied_chain_has_one_head_however_it_was_emptied(
+        length, tombstone_marks):
+    """The same enumeration, applied rather than planned.
+
+    plan_new_version() returning the right map and link_new_version() writing
+    it are different claims; this one is the claim I3 and I16 actually check.
+    """
+    for head_ordinal in range(1, length + 1):
+        members = linked(length)
+        for member in members:
+            member.update(tombstone_marks)
+            member['is_latest'] = False
+        members[head_ordinal - 1]['is_latest'] = True
+        new_id = ObjectId()
+
+        collection = FakeHistoryCollection(members + [{'_id': new_id}])
+        lineage.link_new_version(collection, new_id,
+                                 [{'linkid': str(members[head_ordinal - 1]['_id'])}])
+
+        after = list(collection.find({'version_chain_id': members[0]['_id']}, None))
+        heads = [doc for doc in after if doc.get('is_latest') is True]
+        assert [str(doc['_id']) for doc in heads] == [str(new_id)], (
+            f'length {length}, head at {head_ordinal}: expected only the new '
+            f'version to be the head, got {len(heads)}')
+        ordinals = sorted(doc.get('version_ordinal') for doc in after)
+        assert ordinals == list(range(1, length + 2)), (
+            f'length {length}, head at {head_ordinal}: ordinals stopped being '
+            f'contiguous, which is I4')
+
+
+def test_a_chain_emptied_oldest_first_leaves_the_head_at_the_top():
+    """The shape the other enumeration would miss if it only built one route.
+
+    Delete ordinal 1 (a non-head deletion, so nothing is promoted), then 2,
+    then 3 -- the last of which is the head deletion with no survivor, so
+    ordinal 3 keeps the flag. The highest ordinal *is* the head here, which is
+    the case where the two documents coincide and a wrong implementation still
+    looks right.
+    """
+    members = linked(3)
+    marks = {'delete': True, 'current': False,
+             'version_deleted_from_history': True, 'payload_purged': True}
+    for member in members:
+        member.update(marks)
+    # ordinal 3 was the head when it was deleted, and terminal deletion keeps it
+    members[2]['is_latest'] = True
+    new_id = ObjectId()
+
+    fields, updates = lineage.plan_new_version(members, new_id)
+    assert fields['previous_version_id'] == members[2]['_id']
+    assert updates[members[2]['_id']] == {'next_version_id': new_id,
+                                          'is_latest': False}, \
+        'one document, both fields -- not two updates that race'

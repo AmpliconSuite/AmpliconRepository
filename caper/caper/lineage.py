@@ -305,7 +305,6 @@ def plan_new_version(members, new_id):
     outgoing = head(members)
     if outgoing is not None:
         updates.setdefault(outgoing['_id'], {})['is_latest'] = False
-    updates.setdefault(predecessor['_id'], {})
     return new_fields, updates
 
 

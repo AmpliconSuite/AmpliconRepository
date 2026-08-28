@@ -33,8 +33,8 @@ from bson.objectid import ObjectId
 from .account_deletion import RELEASE, plan_account_deletion, summarize
 from .forms import FeaturedProjectForm, DeletedProjectForm, SendEmailForm
 from .utils import (
-    collection_handle, collection_handle_primary, fs_handle, audit_log_handle,
-    delete_gridfs_file,
+    collection_handle, collection_handle_primary, current_flags, fs_handle,
+    audit_log_handle, delete_gridfs_file,
     get_one_project, get_one_deleted_project, prepare_project_linkid,
     check_if_db_field_exists, get_date_short,
     form_to_dict, get_date, db_handle_primary, format_visibility_for_display,
@@ -913,7 +913,8 @@ def admin_delete_project(request):
             # 'current' it had.  Only SOFT_DELETED documents are listed below,
             # so in practice that lands on LIVE.
             new_val = {"$set": {'delete': status_flags(LIVE)['delete'],
-                                'status': status_after(project, delete=False)}}
+                                'status': status_after(current_flags(project),
+                                                       delete=False)}}
             collection_handle.update_one(query, new_val)
             error_message = f"Project {project_name} restored."
 
@@ -1102,7 +1103,8 @@ def make_project_current(request, project_id):
                 # The resulting status therefore depends on the 'delete' already
                 # stored, which is what status_after() reads.
                 {'$set': {'current': status_flags(LIVE)['current'],
-                          'status': status_after(project, current=True)}}
+                          'status': status_after(current_flags(project),
+                                                 current=True)}}
             )
             
             if result.modified_count > 0:

@@ -27,6 +27,7 @@ from .project_status import (
     PRIOR_VERSION_QUERY,
     DELETE_FLAG_QUERY,
     STATUS_QUERIES,
+    STATUS_FLAG_FIELDS,
     LIVE,
     TOMBSTONE,
     combine,
@@ -737,6 +738,33 @@ def resolve_redirect_tombstone(project, projection=None):
     except Exception:
         logging.error(f"Could not resolve redirect tombstone {project.get('_id')} to {redirect_to}")
     return None
+
+
+def current_flags(project):
+    """*project*'s status flags, read from the primary.
+
+    status_after() computes the status a half-write will produce from the flags
+    already on the document, so it is only ever as right as the document it is
+    handed.  Every read in these two views goes through collection_handle,
+    which is SECONDARY_PREFERRED -- and on DocumentDB a read issued straight
+    after a write usually returns the value from before it: 34 of 40 in a tight
+    loop against caper-dev, measured 2026-08-28, each one exactly one write
+    behind.
+
+    That is not a theoretical window.  A project edit calls project_update()
+    and then project_delete() back to back, so the second one recomputes the
+    status from a document the first one has already changed.  Re-aggregating
+    twice on dev on 2026-08-28 produced one version stored as 'SOFT_DELETED'
+    while its flags said SUPERSEDED, and one that came out right -- the same
+    code, decided by replica lag.
+
+    The flags are two booleans, so re-reading them is cheap, and it is only the
+    status computation that needs them: permission checks and payload reads
+    stay on the secondary where they belong.
+    """
+    fresh = collection_handle_primary.find_one(
+        {'_id': project['_id']}, {field: 1 for field in STATUS_FLAG_FIELDS})
+    return {**project, **fresh} if fresh else project
 
 
 def get_one_project(project_name_or_uuid):
