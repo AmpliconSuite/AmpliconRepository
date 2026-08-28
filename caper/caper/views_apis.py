@@ -35,7 +35,7 @@ from .forms import RunForm
 from .utils import (
     collection_handle, get_one_project, get_one_project_sans_runs, form_to_dict,
     get_latest_project_version, normalize_visibility_field, is_project_private,
-    fs_handle,
+    fs_handle, PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES,
 )
 from .project_version_cleanup import retarget_deleted_version_tombstones
 from .extra_metadata import *
@@ -567,7 +567,7 @@ class ProjectListView(APIView):
         name_filter = request.query_params.get('name', '').strip()
         name_q = {'$regex': name_filter, '$options': 'i'} if name_filter else None
 
-        public_q = status_query(LIVE, private={'$in': [False, 'public']})
+        public_q = status_query(LIVE, private={'$in': PUBLIC_QUERY_VALUES})
         if name_q:
             public_q['project_name'] = name_q
         # Same projection as the detail/download views: _project_to_dict() reads
@@ -580,7 +580,7 @@ class ProjectListView(APIView):
         if user is not None:
             private_q = status_query(
                 LIVE,
-                private={'$in': [True, 'private', 'hidden_public']},
+                private={'$in': RESTRICTED_QUERY_VALUES},
                 **{'$or': [{'project_members': user.username},
                            {'project_members': user.email}]})
             if name_q:

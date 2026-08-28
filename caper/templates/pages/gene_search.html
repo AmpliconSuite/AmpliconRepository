@@ -936,9 +936,6 @@
                 formData.append('samples', sample);
             });
 
-            // Add flag for private samples
-            formData.append('is_private', isPrivate ? '1' : '0');
-
             // Add emailResults flag if sample count > 100
             if (shouldEmailResults) {
                 formData.append('emailResults', 'true');

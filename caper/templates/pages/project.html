@@ -196,7 +196,6 @@
                         filteredSamples.forEach(function(sample) {
                             formData.append('samples', sample);
                         });
-                        formData.append('is_private', {% if project.private %}'1'{% else %}'0'{% endif %});
                         formData.append('emailResults', 'true');
                         
                         // Submit via AJAX instead of form submission
@@ -392,13 +391,6 @@
                     'value': sample
                 }));
             });
-
-            // Add flag for private samples
-            form.append($('<input>', {
-                'type': 'hidden',
-                'name': 'is_private',
-                'value': {% if project.private %}'1'{% else %}'0'{% endif %}
-            }));
 
             // Add emailResults flag if sample count > 100
             if (shouldEmailResults) {

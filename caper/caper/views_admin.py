@@ -39,6 +39,7 @@ from .utils import (
     check_if_db_field_exists, get_date_short,
     form_to_dict, get_date, db_handle_primary, format_visibility_for_display,
     get_project_version_chain, normalize_visibility_field, is_project_private,
+    PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES,
 )
 from .background_tasks import get_background_task_status
 from .project_status import (
@@ -294,7 +295,7 @@ def admin_featured_projects(request):
 
     # Handle both legacy boolean False and new string 'public'
     public_projects = list(collection_handle_primary.find(
-        status_query(LIVE, private={'$in': [False, 'public']})))
+        status_query(LIVE, private={'$in': PUBLIC_QUERY_VALUES})))
     for proj in public_projects:
         prepare_project_linkid(proj)
 
@@ -559,7 +560,7 @@ def site_stats_regenerate(request):
 def project_stats_download(request):
     # Get public and private project data
     public_projects = list(collection_handle.find(
-        status_query(LIVE, private={'$in': [False, 'public']})))
+        status_query(LIVE, private={'$in': PUBLIC_QUERY_VALUES})))
     for project in public_projects:
         if not 'project_downloads' in project:
             project['project_downloads_sum'] = 0
@@ -945,7 +946,7 @@ def data_qc(request):
 
         private_projects = list(collection_handle.find(status_query(
             LIVE,
-            private={'$in': [True, 'private', 'hidden_public']},
+            private={'$in': RESTRICTED_QUERY_VALUES},
             **{"$or": [{"project_members": username}, {"project_members": useremail}]})))
         for proj in private_projects:
             prepare_project_linkid(proj)
@@ -957,7 +958,7 @@ def data_qc(request):
     public_sample_count = 0
 
     public_projects = list(collection_handle.find(
-        status_query(LIVE, private={'$in': [False, 'public']})))
+        status_query(LIVE, private={'$in': PUBLIC_QUERY_VALUES})))
     for proj in public_projects:
         prepare_project_linkid(proj)
         proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
@@ -1212,13 +1213,18 @@ def admin_project_files_report(request):
     for project in all_projects:
         project_id = str(project['_id'])
         project_name = project.get('project_name', 'Unknown')
-        is_private = project.get('private', True)
-        
+        # `project.get('private', True)` was truthy for every value the field
+        # actually holds, including 'public', so this report badged every
+        # project Private.  Resolve it to the visibility string and let the
+        # template read the label rather than re-deciding what counts as public.
+        visibility = normalize_visibility_field(project.get('private', 'private'))
+
         # Initialize report data for this project
         report = {
             'project_id': project_id,
             'project_name': project_name,
-            'is_private': is_private,
+            'is_private': is_project_private(visibility),
+            'visibility_display': format_visibility_for_display(visibility),
             'has_local_tar': False,
             'has_s3_tar': False,
             'local_ecDNA_files': [],
@@ -1341,6 +1347,10 @@ def _get_audit_log_context(request):
     for proj in all_projects:
         prepare_project_linkid(proj)
         proj['id_str'] = str(proj['_id'])
+        # Resolved here so the template does not have to spell out its own
+        # "what counts as public" test against the raw field.
+        proj['visibility_display'] = format_visibility_for_display(
+            proj.get('private', 'private'))
 
     # Sort projects by name for easy browsing
     all_projects.sort(key=lambda p: (p.get('project_name') or '').lower())

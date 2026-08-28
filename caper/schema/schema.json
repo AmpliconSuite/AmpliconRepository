@@ -216,6 +216,18 @@
         "downloads": {
             "type": "integer"
         },
+        "project_downloads": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "integer"
+            }
+        },
+        "sample_downloads": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "integer"
+            }
+        },
         "alias_name": {
             "type": ["string", "null"]
         },

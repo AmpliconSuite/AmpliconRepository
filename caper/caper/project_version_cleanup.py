@@ -208,6 +208,12 @@ def discard_unrecorded_gridfs_files(delete_file, file_ids):
 
 
 def build_deleted_version_tombstone(old_project, latest_project, deleter, delete_date):
+    # Imported here, not at module scope: utils imports this module, so the
+    # dependency only runs in one direction.  Copying the four-line normalizer
+    # in here instead would be one more place the visibility encoding is
+    # decided, which is the failure this whole file is written against.
+    from .utils import normalize_visibility_field
+
     tombstone = {
         '_id': old_project['_id'],
         'project_name': old_project.get('project_name', latest_project.get('project_name')),
@@ -219,7 +225,8 @@ def build_deleted_version_tombstone(old_project, latest_project, deleter, delete
         'redirect_to_project': str(latest_project['_id']),
         'delete_user': deleter,
         'delete_date': delete_date,
-        'private': latest_project.get('private', old_project.get('private', 'private')),
+        'private': normalize_visibility_field(
+            latest_project.get('private', old_project.get('private', 'private'))),
         'project_members': latest_project.get('project_members', old_project.get('project_members', [])),
     }
     for field in VERSION_HISTORY_FIELDS:

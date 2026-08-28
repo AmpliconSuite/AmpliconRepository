@@ -32,7 +32,7 @@ from rest_framework.response import Response
 from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
 from .site_stats import get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
 from .user_preferences import notify_subscribers_of_project_update
-from .utils import normalize_visibility_field, is_project_private, is_project_public, is_project_hidden_public, format_visibility_for_display
+from .utils import normalize_visibility_field, is_project_private, is_project_public, is_project_hidden_public, format_visibility_for_display, PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES
 
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
@@ -324,7 +324,7 @@ def index(request):
 
     # Get public projects (including featured) in one query
     # Handle both legacy boolean False and new string 'public'
-    public_query = status_query(LIVE, private={'$in': [False, 'public']})
+    public_query = status_query(LIVE, private={'$in': PUBLIC_QUERY_VALUES})
     public_projects = list(collection_handle.find(public_query, projection))
 
     # Partition public_projects into featured and non-featured in a single pass
@@ -351,7 +351,7 @@ def index(request):
         # Include both legacy boolean True and new string 'private' and 'hidden_public'
         private_query = status_query(
             LIVE,
-            private={'$in': [True, 'private', 'hidden_public']},
+            private={'$in': RESTRICTED_QUERY_VALUES},
             **{'$or': [
                 {'project_members': request.user.username},
                 {'project_members': request.user.email}
@@ -2622,7 +2622,7 @@ def gene_search_page(request):
         useremail = request.user.email
         query_obj = status_query(
             LIVE,
-            private={'$in': [True, 'private', 'hidden_public']},
+            private={'$in': RESTRICTED_QUERY_VALUES},
             Oncogenes=gen_query,
             **{"$or": [{"project_members": username}, {"project_members": useremail}]})
 
@@ -2632,7 +2632,7 @@ def gene_search_page(request):
         private_projects = []
 
     public_projects = list(collection_handle.find(status_query(
-        LIVE, private={'$in': [False, 'public']}, Oncogenes=gen_query)))
+        LIVE, private={'$in': PUBLIC_QUERY_VALUES}, Oncogenes=gen_query)))
 
     for proj in private_projects:
         prepare_project_linkid(proj)
@@ -3931,7 +3931,13 @@ def edit_project_page(request, project_name):
         
         # Build project member list. Avoid auto-adding admins editing public projects when they are not members.
         is_member = is_user_a_project_member(project, request)
-        is_public = not project.get('private', True)
+        # `not project['private']` was false for every project on the site: the
+        # field holds the strings 'private'/'public'/'hidden_public', and every
+        # one of them is truthy.  Staff editing a public project they were not a
+        # member of were silently added to project_members, which is the exact
+        # thing this guard exists to prevent.
+        is_public = is_project_public(
+            normalize_visibility_field(project.get('private', 'private')))
         add_self = True
         if getattr(request.user, 'is_staff', False) and is_public and not is_member:
             add_self = False
@@ -3940,8 +3946,10 @@ def edit_project_page(request, project_name):
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
         old_membership = project['project_members']
-        old_privacy = project['private']
-        new_privacy = form_dict['private']
+        # Normalized at the source rather than at each of the two places these
+        # are consumed, so a third consumer cannot be added without one.
+        old_privacy = normalize_visibility_field(project['private'])
+        new_privacy = normalize_visibility_field(form_dict['private'])
 
         try:
             notify_users_of_project_membership_change(request.user, old_membership, new_membership, project['project_name'], project['_id'])
@@ -4040,7 +4048,10 @@ def edit_project_page(request, project_name):
 
         form = UpdateForm(initial={"project_name": project['project_name'],
                                    "description": project['description'],
-                                   "private":project['private'],
+                                   # The form's visibility field is a ChoiceField over the
+                                   # three strings.  A legacy boolean here matches no choice
+                                   # and renders the dropdown with nothing selected.
+                                   "private": normalize_visibility_field(project['private']),
                                    "project_members": memberString,
                                    "publication_link": publication_link,
                                    "AA_version": AAVersion,
@@ -4497,7 +4508,11 @@ def create_empty_project(request):
             'FINISHED?': True,  # Mark as finished since there's no extraction needed
             'EMPTY?': True, # Mark as empty
             'sample_count': 0,
-            'metadata_stored': True  # Prevent reprocessing attempts
+            # 'Yes', not True: schema.json declares this field a string and the
+            # other writer (the metadata regeneration pass) spells it 'Yes'.
+            # Only presence is ever tested, so the two encodings were harmless,
+            # but two writers disagreeing is how the value checks go wrong later.
+            'metadata_stored': 'Yes'  # Prevent reprocessing attempts
         }
         if publication_link:
             project['publication_link'] = publication_link

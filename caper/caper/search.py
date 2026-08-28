@@ -268,7 +268,7 @@ def perform_search(genequery=None,
         useremail = user.email
         query_obj = status_query(
             LIVE,
-            private={'$in': [True, 'private', 'hidden_public']},
+            private={'$in': RESTRICTED_QUERY_VALUES},
             **{"$or": [{"project_members": username}, {"project_members": useremail}]})
 
         _apply_project_name_query(query_obj, name_query)
@@ -277,7 +277,7 @@ def perform_search(genequery=None,
     else:
         private_projects = []
 
-    public_query = status_query(LIVE, private={'$in': [False, 'public']})
+    public_query = status_query(LIVE, private={'$in': PUBLIC_QUERY_VALUES})
 
     _apply_project_name_query(public_query, name_query)
 

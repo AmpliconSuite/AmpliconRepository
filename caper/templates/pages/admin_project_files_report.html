@@ -303,9 +303,9 @@
                             <td>{{ report.project_id }}</td>
                             <td>
                                 {% if report.is_private %}
-                                    <span class="badge badge-warning">Private</span>
+                                    <span class="badge badge-warning">{{ report.visibility_display }}</span>
                                 {% else %}
-                                    <span class="badge badge-success">Public</span>
+                                    <span class="badge badge-success">{{ report.visibility_display }}</span>
                                 {% endif %}
                             </td>
                             <td>
@@ -420,10 +420,10 @@
                         onclick="window.location='?project_id={{ proj.id_str }}'">
                         <td>{{ proj.project_name|default:"—" }}</td>
                         <td>
-                            {% if proj.private == False or proj.private == 'public' %}
-                                <span class="badge badge-success">Public</span>
+                            {% if proj.visibility_display == 'Public' %}
+                                <span class="badge badge-success">{{ proj.visibility_display }}</span>
                             {% else %}
-                                <span class="badge badge-secondary">Private</span>
+                                <span class="badge badge-secondary">{{ proj.visibility_display }}</span>
                             {% endif %}
                         </td>
                         <td class="uuid-cell">{{ proj.project_name_unique|default:proj.id_str }}</td>

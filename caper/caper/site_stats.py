@@ -2,7 +2,7 @@ import datetime
 
 from .project_status import LIVE, status_query
 from .publications import publication_url, count_unique_publications
-from .utils import get_collection_handle, collection_handle, db_handle_primary, replace_space_to_underscore, preprocess_sample_data, get_one_sample, sample_data_from_feature_list, is_project_private, is_project_public, normalize_visibility_field
+from .utils import get_collection_handle, collection_handle, db_handle_primary, replace_space_to_underscore, preprocess_sample_data, get_one_sample, sample_data_from_feature_list, is_project_private, is_project_public, normalize_visibility_field, VISIBILITY_QUERY_VALUES
 
 site_statistics_handle = get_collection_handle(db_handle_primary, 'site_statistics')
 
@@ -28,12 +28,9 @@ BUCKET_PREFIXES = {
 }
 
 # Values the 'private' field can hold for each bucket, including the legacy booleans that
-# predate the string visibilities.
-BUCKET_QUERY_VALUES = {
-    'public': [False, 'public'],
-    'private': [True, 'private'],
-    'hidden_public': ['hidden_public'],
-}
+# predate the string visibilities. Defined in utils so the query sites and the statistics
+# buckets cannot end up matching different sets of values.
+BUCKET_QUERY_VALUES = VISIBILITY_QUERY_VALUES
 
 BUCKET_STAT_DEFAULTS = {
     'proj_count': 0,
