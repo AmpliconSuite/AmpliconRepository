@@ -359,6 +359,15 @@
                         {% endfor %}
                       </div>
                       
+                      <div class="alert alert-warning mt-3" id="remove_all_warning" style="display: none;" role="alert">
+                        <strong>This removes every sample in the project.</strong>
+                        The new version will contain no sample data and nothing to download.
+                        The project itself stays &mdash; its name, description, members and
+                        history are kept, and you can upload samples to it again later.
+                        The version you have now keeps its data and stays in the
+                        <em>Project History</em> table.
+                      </div>
+
                       <div class="mt-3">
                         <p class="text-muted"><small>Note: Removing samples creates a new version of the project. The version
                         you have now is not overwritten &mdash; it stays listed in the <em>Project History</em> table on the
@@ -799,6 +808,25 @@
      //xhr.send(fd);
     }
     
+    // True when the boxes ticked cover every sample the project has. There is
+    // always at least one checkbox when this block renders, but the guard keeps
+    // "none of none" from counting as "all of them".
+    function removingEverySample() {
+        const boxes = Array.from(document.querySelectorAll('.sample-checkbox'));
+        return boxes.length > 0 && boxes.every(cb => cb.checked);
+    }
+
+    // Warn as soon as the selection covers everything, rather than only at
+    // submit: this is the one removal that leaves the project with no data.
+    // Its own function because two callers need it and only one of them can
+    // safely run the whole of updateInputs().
+    function syncRemoveAllWarning() {
+        const warning = document.getElementById('remove_all_warning');
+        if (warning) {
+            warning.style.display = removingEverySample() ? 'block' : 'none';
+        }
+    }
+
      function updateInputs() {
         fileInput = document.getElementById('fileuploadfield');
         metadataInput = document.getElementById('metadataFileInput');
@@ -806,7 +834,9 @@
         const samplesSelected = Array.from(sampleCheckboxes).some(cb => cb.checked);
         const filesSelected = fileInput && fileInput.files.length > 0;
         const metadataSelected = metadataInput && metadataInput.files.length > 0;
-    
+
+        syncRemoveAllWarning();
+
         if (samplesSelected) {
             setDisabledWithMessage(fileInput, true, 'Disabled while deleting samples.', 'fileuploadfield-disabled-msg');
             setDisabledWithMessage(metadataInput, true, 'Disabled while deleting samples.', 'metadataFileInput-disabled-msg');
@@ -921,6 +951,10 @@
         if (modeBlocks) {
             document.querySelectorAll('.sample-checkbox').forEach(cb => { cb.checked = false; });
             setCheckboxesDisabled(true, 'Not available when replacing or re-aggregating the project.');
+            // The boxes were just cleared, so a warning raised by an earlier
+            // selection no longer describes anything. updateInputs() would undo
+            // the disabling above, so only the warning is resynced here.
+            syncRemoveAllWarning();
         } else {
             updateInputs();
         }
@@ -1005,6 +1039,23 @@
             if ((filesSelected || metadataSelected) && samplesSelected) {
                 e.preventDefault();
                 alert('While uploading files, you cannot select samples to delete. Please unselect either the files or the samples to delete.');
+            }
+
+            // Last gate before the project loses all of its sample data. Placed
+            // after the checks above so it cannot fire on a submission that is
+            // about to be rejected for another reason and never happens.
+            if (!e.defaultPrevented && removingEverySample()) {
+                const ok = confirm(
+                    'This removes every sample in the project.\n\n' +
+                    'The new version will have no sample data and nothing to ' +
+                    'download. The project keeps its name, description, members ' +
+                    'and history, and you can upload samples to it again later. ' +
+                    'The version you have now keeps its data and stays in the ' +
+                    'Project History table.\n\n' +
+                    'Remove all samples?');
+                if (!ok) {
+                    e.preventDefault();
+                }
             }
         });
     }

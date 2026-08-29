@@ -90,6 +90,7 @@ from .project_status import (
     NOT_DELETED_QUERY,
     SOFT_DELETED,
     is_empty_project as project_is_empty,
+    project_runs,
     STATUS_QUERIES,
     SUPERSEDED,
     TOMBSTONE,
@@ -3651,10 +3652,21 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
                 logging.error(traceback.format_exc())
                 # Continue without name map - it's optional
         
+        # Removing every sample leaves nothing to aggregate, so there is nothing
+        # to fetch the old archive for either. Decided here, while file_fps still
+        # holds only what the user uploaded -- the old archive is appended to it
+        # below, after which "did they upload anything?" can no longer be asked.
+        empty_edit = removes_every_sample(old_project_data, samples_to_remove,
+                                          file_fps)
+
         # Download old project file if not replacing the entire project
         download_path = os.path.join(project_data_path, 'download.tar.gz')
-        
-        if replace_project and not samples_to_remove:
+
+        if empty_edit:
+            logging.info(f"Project {placeholder_project_id}: edit removes every "
+                         f"sample ({samples_to_remove}); skipping the old-archive "
+                         f"download, there is nothing to aggregate it with")
+        elif replace_project and not samples_to_remove:
             logging.info("Skipping old project download - replacing entire project")
         else:
             # The old archive always goes in whole.  Removing samples is the
@@ -3708,6 +3720,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             rollback_project_id=rollback_project_id,
             old_extra_metadata=old_extra_metadata,
             exclude_samples=samples_to_remove,
+            empty_edit=empty_edit,
         )
 
         # Clean up temporary files (downloaded old project and name map) after aggregation
@@ -4647,7 +4660,121 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None, exclude_samples=None):
+def removes_every_sample(old_project, samples_to_remove, new_files):
+    """Would this edit leave the project with no samples at all?
+
+    True only when the edit removes every sample the project has and adds none
+    back.  The names compared are ``Sample_name`` from the feature rows, which
+    is what the edit form posts -- *not* the ``runs`` keys, which are positional
+    (``sample_1``) and never match.
+    """
+    if not samples_to_remove or new_files:
+        return False
+    remaining = set()
+    for features in project_runs(old_project).values():
+        for feature in features or []:
+            name = feature.get('Sample_name')
+            if name:
+                remaining.add(name)
+    if not remaining:
+        return False           # nothing to remove; not this case
+    return remaining.issubset(set(samples_to_remove))
+
+
+def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
+                            previous_views, old_subscribers, oldFeatured,
+                            audit_event_type):
+    """Write the new version of a project whose samples were all removed.
+
+    The aggregator cannot help here: given every sample excluded it aborts with
+    "there is nothing left to aggregate", which is correct on its own terms --
+    it has no empty result table to emit. But an empty project is a legitimate
+    state in the version model, and removing every sample is something users are
+    allowed to do, so the site makes the version itself.
+
+    No aggregator, no payload: no archive is built, nothing goes to GridFS or
+    S3, and the document's ``tarfile`` is None. Downloads of it 404, which is
+    what a version with nothing in it should do. A later upload appends the next
+    ordinal to the same chain and the project has samples again.
+
+    Everything except the payload goes through the same builder the aggregated
+    path uses, so the two cannot drift apart.
+
+    Returns True on success; False leaves the caller to mark the placeholder
+    failed exactly as an aggregation failure would be.
+    """
+    from django.http import QueryDict
+
+    post = QueryDict('', mutable=True)
+    post.update(form_data)
+    form = UpdateForm(post)
+    if not form.is_valid():
+        logging.error(f"Form validation failed for empty version {temp_proj_id}: "
+                      f"{form.errors}")
+        return False
+
+    project_id = ObjectId(temp_proj_id)
+    project = {}
+    # Resolved through get_current_user() on a stand-in request, the same way
+    # the aggregated path does it, so 'creator' cannot come out different here.
+    creator = get_current_user(type('obj', (object,), {'user': user})())
+    build_project_document(
+        project, form, form_to_dict(form), creator, {}, None,
+        previous_versions or [], previous_views or [0, 0], old_subscribers)
+
+    # Nothing is extracted afterwards, so the version is complete as written.
+    # The aggregated path leaves this False for extract_project_files to flip.
+    project['FINISHED?'] = True
+    # Both, and in this order, because add_project_to_site_statistics() reads
+    # _id off the dict it is handed rather than from the database.
+    project['_id'] = project_id
+    project['linkid'] = str(project_id)
+
+    collection_handle.update_one(
+        {'_id': project_id},
+        {"$set": {key: value for key, value in project.items() if key != '_id'},
+         "$unset": {'aggregation_in_progress': '',
+                    'original_project_name': '',
+                    'owner': ''}})
+
+    # Same ordering as the aggregated path: the document is complete before it
+    # is put in the chain, so nothing can observe a head that is still a
+    # placeholder.
+    lineage.link_new_version(collection_handle, project_id,
+                             project.get('previous_versions'))
+
+    if oldFeatured:
+        project['featured'] = True
+        collection_handle.update_one({'_id': project_id},
+                                     {"$set": {'featured': True}})
+
+    add_project_to_site_statistics(
+        project, normalize_visibility_field(project['private']))
+
+    if audit_event_type is not None:
+        try:
+            log_project_audit_event(
+                user=user,
+                project_uuid=str(project_id),
+                project_name=form_data.get('project_name', ''),
+                is_new_version=True,
+                aa_version=form_data.get('AA_version', 'NA'),
+                ac_version=form_data.get('AC_version', 'NA'),
+                asp_version=form_data.get('ASP_version', 'NA'),
+                s3_uri=None,                 # there is no payload to point at
+                event_type=audit_event_type,
+                sample_count=0,
+            )
+        except Exception as audit_exc:
+            logging.error(f"Failed to write audit log for empty version "
+                          f"{temp_proj_id}: {audit_exc}")
+
+    logging.info(f"Project {temp_proj_id}: every sample removed; wrote an empty "
+                 f"version with no payload")
+    return True
+
+
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None, exclude_samples=None, empty_edit=False):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
@@ -4731,6 +4858,30 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
 
     try:
         logging.info(f"_process_and_aggregate_files - start")
+
+        # An edit that removed every sample. The aggregator cannot produce an
+        # empty result and aborts if asked to, so the site writes the version
+        # itself. Placed inside this try, after _do_rollback is defined, so a
+        # failure here unwinds exactly the way an aggregation failure does --
+        # the old version is already marked superseded by the time we get here.
+        if empty_edit:
+            if not _finalize_empty_version(
+                    form_data, user, temp_proj_id, previous_versions,
+                    previous_views, old_subscribers, oldFeatured,
+                    audit_event_type):
+                _err_msg = ('Form validation failed. Please check your project '
+                            'information.')
+                if rollback_project_id:
+                    _do_rollback(temp_proj_id, rollback_project_id, _err_msg)
+                else:
+                    collection_handle.update_one(
+                        {'_id': ObjectId(temp_proj_id)},
+                        {"$set": {'FINISHED?': True,
+                                  'aggregation_failed': True,
+                                  'error_message': _err_msg}})
+            if os.path.exists(temp_directory):
+                shutil.rmtree(temp_directory, ignore_errors=True)
+            return
 
         print(AmpliconSuiteAggregator.__file__)
         print(f"AmpliconSuiteAggregator version: {AmpliconSuiteAggregator.__version__}")
@@ -5436,6 +5587,23 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
         runs = samples_to_dict(run_json)
 
     print('creating project now')
+    build_project_document(project, form, form_dict, user, runs, project_tar_id,
+                           previous_versions, previous_views, old_subscribers)
+    return project, tmp_id
+
+
+def build_project_document(project, form, form_dict, user, runs, project_tar_id,
+                           previous_versions, previous_views, old_subscribers):
+    """Fill in every field of a project document that does not come from the
+    payload -- name, description, visibility, members, versions, counters.
+
+    Split out of create_project_helper() so that a version with no samples can
+    be written by the same code as a version with samples. An empty version
+    passes runs={} and project_tar_id=None; nothing else about the document
+    differs, and nothing here reads the archive. Keeping it one function is the
+    point: two writers of the same document shape is how most of the divergence
+    in this area started.
+    """
     current_user = user
     project['creator'] = current_user
     project['project_name'] = form_dict['project_name']
@@ -5454,7 +5622,10 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['Oncogenes'] = get_project_oncogenes(runs)
     project['Classification'] = get_project_classifications(runs)
     project['FINISHED?'] = False
-    project['EMPTY?'] = False
+    # Version-level emptiness, derived from what this version actually holds.
+    # Not the chain-level EMPTY of the spec's model -- that one is every member
+    # being a tombstone, stays derived, and is a different question.
+    project['EMPTY?'] = not runs
     project['views'] = previous_views[0]
     project['downloads'] = previous_views[1]
     project['alias_name'] = form_dict['alias']
@@ -5488,7 +5659,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     #substutiting ASP_version for AS-P_version
     get_tool_versions(project, runs)
 
-    return project, tmp_id
+    return project
 
 
 def get_tool_versions(project, runs):
