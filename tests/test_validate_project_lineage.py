@@ -19,6 +19,7 @@ from caper.project_status import TOMBSTONE
 from validate_project_lineage import (
     INVARIANTS, Snapshot, Unavailable, _check_i1, _check_i2, _check_i3,
     _check_i4, _check_i5, _check_i11, _check_i15, _check_i16, _check_i20,
+    _check_i21,
 )
 
 
@@ -394,3 +395,72 @@ def test_i11_does_not_call_an_array_named_tombstone_a_divergence():
     documents[0].pop('previous_versions')
     # documents[1] still names its tombstoned predecessor, as T9 leaves it
     assert _check_i11(snapshot(documents)) == []
+
+
+# ---------------------------------------------------------------------------
+# I21 -- no GridFS file is named by more than one document
+#
+# The rule, not the loading: Snapshot builds gridfs_ids by streaming the heavy
+# field out of the collection, and a fake that reproduced that would be testing
+# pymongo. What matters here is what the checker concludes from the map.
+# ---------------------------------------------------------------------------
+
+def _with_gridfs(documents, gridfs_ids):
+    snap = snapshot(documents)
+    snap.gridfs_skipped = False
+    snap.gridfs_ids = gridfs_ids
+    return snap
+
+
+def test_i21_passes_when_every_file_has_one_owner():
+    first, second = ObjectId(), ObjectId()
+    documents = chain({'_id': first}) + chain({'_id': second})
+
+    findings = _check_i21(_with_gridfs(documents, {
+        first: [ObjectId(), ObjectId()],
+        second: [ObjectId()],
+    }))
+
+    assert findings == []
+
+
+def test_i21_reports_a_file_two_documents_name():
+    """The case every deletion path would get wrong."""
+    first, second = ObjectId(), ObjectId()
+    shared = ObjectId()
+    documents = chain({'_id': first}) + chain({'_id': second})
+
+    findings = _check_i21(_with_gridfs(documents, {
+        first: [shared, ObjectId()],
+        second: [shared],
+    }))
+
+    assert len(findings) == 1
+    assert str(shared) in findings[0].detail
+    assert 'named by 2 documents' in findings[0].detail
+
+
+def test_i21_does_not_fire_when_one_document_names_a_file_twice():
+    """Two slots of one document pointing at one file is not sharing.
+
+    A document can name the same file from more than one key -- the same plot
+    reached as a feature file and through a directory slot. Counting that as
+    two owners would make this fire on the ordinary case and train everyone to
+    ignore it.
+    """
+    only = ObjectId()
+    twice = ObjectId()
+
+    findings = _check_i21(_with_gridfs(chain({'_id': only}),
+                                       {only: [twice, twice, ObjectId()]}))
+
+    assert findings == []
+
+
+def test_i21_says_nothing_when_gridfs_was_not_read():
+    """--skip-gridfs means unmeasured, which is not the same as clean."""
+    only = ObjectId()
+    snap = snapshot(chain({'_id': only}))
+
+    assert snap.gridfs_skipped is True
+    assert _check_i21(snap) == []

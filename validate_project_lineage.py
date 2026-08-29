@@ -676,7 +676,7 @@ def _check_i13(snap):
             f'{snap.fs_files.count_documents({})} files carry one, so no file '
             'can name the document it belongs to.')
 
-    from caper.gridfs_backlinks import METADATA_FIELD, PROJECT_ID, iter_backlinks
+    from caper.gridfs_backlinks import METADATA_FIELD, PROJECT_ID
 
     findings = []
     # Backlinks that name a document which does not exist. The reverse
@@ -848,6 +848,47 @@ def _check_i10(snap):
     return findings
 
 
+def _check_i21(snap):
+    """No GridFS file is named by more than one document.
+
+    Deletion assumes this. ``delete_gridfs_payload_for_project()`` deletes every
+    file the project it is given names, and the permanent-delete path walks the
+    document's runs and deletes each id it finds; neither asks whether anything
+    else is using the file. That is correct only while nothing is shared, and
+    nothing is: measured 2026-08-29, the distinct id count exactly equalled the
+    (document, file) pair count on both databases -- 942,279 on prod, 602,577 on
+    dev.
+
+    So the safety of every deletion path rests on a measured fact rather than on
+    a rule, and a measured fact needs something watching it. If sharing ever
+    appears -- a deduplicating upload, a version that reuses its predecessor's
+    files instead of re-storing them -- deleting one owner silently takes the
+    file out from under the others, and this is what says so first.
+
+    Ids are deduplicated per document before counting owners: one document
+    naming the same file from two slots is not sharing, and counting it as such
+    would make this fire on the ordinary case.
+    """
+    if snap.gridfs_skipped:
+        return []
+    owners = {}
+    for doc_id, file_ids in snap.gridfs_ids.items():
+        for file_id in {ObjectId(str(f)) for f in file_ids}:
+            owners.setdefault(file_id, []).append(doc_id)
+
+    findings = []
+    for file_id, doc_ids in sorted(owners.items(), key=lambda kv: str(kv[0])):
+        if len(doc_ids) < 2:
+            continue
+        named = ", ".join(f'{snap.name(d) or d}' for d in doc_ids[:4])
+        findings.append(Finding(
+            'I21', doc_ids[0], snap.name(doc_ids[0]),
+            f'GridFS file {file_id} is named by {len(doc_ids)} documents '
+            f'({named}); every deletion path assumes exactly one, so deleting '
+            f'any one of them takes the file from the others'))
+    return findings
+
+
 def _check_i12(snap):
     """Every GridFS id named by a retained document exists in fs.files."""
     if snap.gridfs_skipped:
@@ -873,10 +914,9 @@ def _check_i14(snap):
     """No TOMBSTONE document has any GridFS id remaining.
 
     Half of I14.  The other half -- that no ``fs.files`` row points at a
-    tombstone -- needs a ``metadata.project_id`` on each ``fs.files`` row, which
-    Until then a stranded file cannot be traced back to the document it came
-    nothing writes today.  Until then a stranded file cannot be traced back to
-    the document it came from at all.
+    tombstone -- reads the backlink rather than the document, and I13 reports
+    it: a tombstone still holding labelled files is a deletion that did not
+    finish.
     """
     if snap.gridfs_skipped:
         return []
@@ -1015,7 +1055,7 @@ INVARIANTS = (
     Invariant('I14', 'No TOMBSTONE has GridFS ids left, and no fs.files row points '
                      'at one', check=_check_i14,
               partial='the document half only; "no fs.files row points at one" '
-                      'needs metadata on each fs.files row, which nothing writes'),
+                      'is reported by I13, which reads the backlink'),
     Invariant('I15', 'A chain is EMPTY iff every member is a TOMBSTONE',
               check=_check_i15,
               partial='the "never stored" half, now covering the chain view as '
@@ -1035,6 +1075,8 @@ INVARIANTS = (
                      'application reads', check=_check_i19),
     Invariant('I20', 'No chain is headed by a TOMBSTONE while a surviving '
                      'version sits beside it', check=_check_i20),
+    Invariant('I21', 'No GridFS file is named by more than one document',
+              check=_check_i21),
 )
 
 
