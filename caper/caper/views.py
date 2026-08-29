@@ -91,7 +91,9 @@ from .project_status import (
     SOFT_DELETED,
     is_empty_project as project_is_empty,
     project_runs,
+    STATUS_FLAG_FIELDS,
     STATUS_QUERIES,
+    TOMBSTONE_MARKER_FIELDS,
     SUPERSEDED,
     TOMBSTONE,
     combine,
@@ -4835,20 +4837,34 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         # is not an oversight in the routing -- it is the defect itself.  The
         # placeholder was inserted with status_flags(LIVE), so clearing
         # 'current' while leaving 'delete' False produces delete=False,
-        # current=False: DETACHED by classify(), and still reachable by URL.
-        # That is exactly the 39-document delete=False/current=False
-        # population, and this is
-        # the most plausible way they were made.  status_flags() deliberately
-        # refuses to write DETACHED, so the literal stays until the state has
-        # a name -- deciding what a failed placeholder should be is a separate
-        # question, and this change alters no behaviour.
+        # current=False: DETACHED by classify(), and still reachable by URL --
+        # which it has to stay, because project_page() reads rollback_project_id
+        # off this document to send the user back to the restored version.
+        #
+        # The status is recorded rather than left behind. status_flags() refuses
+        # to write DETACHED because it builds transitions *into* a status, and
+        # nothing should deliberately move a document into "meaning lost". This
+        # is the other job: recording what a document has *become*, which is what
+        # status_after() is for and what backfill_project_status.py already does.
+        # Leaving it unwritten kept the 'LIVE' from the placeholder insert, so
+        # every failed edit stored a status that lied and I2 counted it.
+        #
+        # What a failed placeholder *should* be is still open, and deliberately
+        # not decided here. Measured 2026-08-29: 0 on prod, 2 on caper-dev. A
+        # hazard at that size, not an incident, and a new status would change
+        # read paths on a population that does not exist in production.
         try:
+            current_doc = collection_handle_primary.find_one(
+                {'_id': ObjectId(failed_placeholder_id)},
+                {field: 1 for field in STATUS_FLAG_FIELDS + TOMBSTONE_MARKER_FIELDS}
+            ) or {}
             collection_handle.update_one(
                 {'_id': ObjectId(failed_placeholder_id)},
                 {"$set": {
                     'FINISHED?': True,
                     'aggregation_failed': True,
                     'current': False,
+                    'status': status_after(current_doc, current=False),
                     'error_message': error_msg,
                     'rollback_project_id': str(old_project_id),
                 }}
