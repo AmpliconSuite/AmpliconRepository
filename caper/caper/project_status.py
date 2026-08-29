@@ -122,13 +122,32 @@ _STATUS_FLAGS = {
 # would misclassify those the moment they exist.
 #
 # A document carrying 'version_deleted_from_history' WITHOUT 'payload_purged'
-# is the partial state left by delete_project_version()'s sole-version path
-# (views.py:3012): removed from history but still holding its whole
-# GridFS payload, and still resolvable.  It is not a tombstone, and treating it
-# as one would invite a payload deletion that has already happened.  It falls
-# through to the flag rules below -- SUPERSEDED, which retains everything --
-# and PARTIAL_TOMBSTONE_QUERY exists to count it.  0 documents on prod.
+# is a partial state: removed from history but still holding its whole GridFS
+# payload, and still resolvable.  It is not a tombstone, and treating it as one
+# would invite a payload deletion that has already happened.  It falls through
+# to the flag rules below -- SUPERSEDED, which retains everything -- and
+# PARTIAL_TOMBSTONE_QUERY exists to count it.  0 documents on prod, measured
+# 2026-08-27.
+#
+# The one code path that used to produce it -- deleting a project's only
+# version -- now writes a complete tombstone through
+# build_deleted_version_tombstone() like every other deletion.  The query stays:
+# documents outlive the code that wrote them, and hand-repair is still a thing
+# that happens.
 _TOMBSTONE_MARKERS = {'version_deleted_from_history': True, 'payload_purged': True}
+
+# For callers that need to clear or project the markers rather than test them.
+# Named from the same dict the predicate reads, so a third marker would reach
+# every one of them at once.
+TOMBSTONE_MARKER_FIELDS = tuple(_TOMBSTONE_MARKERS)
+
+# The two flag fields, for callers that need to name them without asserting a
+# value -- a projection that fetches them so classify() has something to read,
+# for one.  Derived from _STATUS_FLAGS for the same reason as above, and it
+# keeps 'delete'/'current' from being spelled by hand outside this module,
+# which is what the grep guard in tests/test_project_status_guard.py enforces.
+STATUS_FLAG_FIELDS = tuple(dict.fromkeys(
+    field for flags in _STATUS_FLAGS.values() for field in flags))
 
 
 def _flag_matches(doc, field, expected):
@@ -148,6 +167,42 @@ def _matches_flags(doc, flags):
 def is_tombstone(doc):
     """True when *doc* carries both tombstone markers.  See _TOMBSTONE_MARKERS."""
     return _matches_flags(doc, _TOMBSTONE_MARKERS)
+
+
+def project_runs(doc):
+    """*doc*'s per-sample results, ``{}`` when it has none.
+
+    A tombstone has no ``runs`` key at all -- purging the payload is what that
+    means -- and terminal deletion now produces them, so every reader of this
+    field can be handed one.  Before 2026-08-28 the readers disagreed about
+    whether it was optional: some used ``.get('runs', {})`` and some subscripted
+    it, and the ones that subscripted it raised KeyError the first time an
+    emptied project reached them.  That included validate_project(), which runs
+    on every project page load *before* the empty-project branch, so an emptied
+    project's page 500'd rather than rendering empty.
+
+    One accessor, so the next state that lacks the field reaches one place.
+    """
+    return doc.get('runs') or {}
+
+
+def is_empty_project(doc):
+    """True when *doc* has no sample results to show.
+
+    Document-level emptiness, which is not the chain-level EMPTY of T6: a
+    project is EMPTY when every member of its chain is a tombstone, and this
+    says only that *this* version has nothing to render.  The two coincide on
+    the version a visitor lands on after the last one is deleted, which is how
+    an emptied project gets an empty page instead of a broken one.
+
+    One function because it was two.  project_page() asked for the 'EMPTY?'
+    flag *or* absent runs; edit_project_page() asked only for the flag.  A
+    tombstone has no runs and no flag, so the first said empty and the second
+    said not-empty and then read a field the document does not carry -- the
+    same predicate spelled twice, disagreeing on the state that terminal
+    deletion had just made reachable.
+    """
+    return bool(doc.get('EMPTY?')) or not doc.get('runs')
 
 
 def classify(doc):

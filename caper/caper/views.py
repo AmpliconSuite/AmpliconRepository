@@ -47,6 +47,7 @@ from .views_admin import (
     fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report, make_project_current,
     admin_audit_log,
     admin_audit_log_validate,
+    admin_file_ownership,
 )
 
 # Import API views from separate module
@@ -70,7 +71,8 @@ from .download_gate import (
 
 # Import utils functions
 from .utils import (
-    collection_handle, collection_handle_primary, fs_handle, audit_log_handle,
+    collection_handle, collection_handle_primary, current_flags, fs_handle,
+    audit_log_handle,
     get_one_project, get_one_sample, get_one_sample_rows, get_one_deleted_project,
     prepare_project_linkid, check_if_db_field_exists,
     get_date, get_date_short, previous_versions, form_to_dict,
@@ -82,12 +84,18 @@ from .utils import (
     AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
 from .tar_safety import safe_extract_member, safe_extractall
+from .aggregation_failure import aggregation_error_message
+from .gridfs_backlinks import put_with_backlink
 from .project_status import (
     DELETE_FLAG_QUERY,
     LIVE,
     NOT_DELETED_QUERY,
     SOFT_DELETED,
+    is_empty_project as project_is_empty,
+    project_runs,
+    STATUS_FLAG_FIELDS,
     STATUS_QUERIES,
+    TOMBSTONE_MARKER_FIELDS,
     SUPERSEDED,
     TOMBSTONE,
     combine,
@@ -95,6 +103,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
+from . import lineage
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
@@ -876,7 +885,7 @@ def project_page(request, project_name, message=''):
         return render(request, "pages/loading.html", {"project_name":project_name})
 
     # Check if this is an empty project
-    is_empty_project = ('EMPTY?' in project and project['EMPTY?'] == True) or (not project.get('runs')) or (len(project.get('runs', {})) == 0)
+    is_empty_project = project_is_empty(project)
 
     # Handle access control based on visibility
     visibility = normalize_visibility_field(project.get('private', 'private'))
@@ -1828,6 +1837,10 @@ def sample_page(request, project_name, sample_name):
     t1 = time.time()
     project, sample_data, prev_sample, next_sample = get_one_sample(project_name, sample_name)
     logging.info(f"[PERF] get_one_sample took {time.time() - t1:.3f}s")
+    # Same as edit_project_page: the resolver returning nothing is a 404, not
+    # a crash. A sample URL under a soft-deleted project reached here.
+    if project is None:
+        raise Http404("Project not found")
     project_linkid = project['_id']
     
     # Handle access control based on visibility
@@ -2889,7 +2902,7 @@ def project_delete(request, project_name):
         # because a half-write's result depends on the 'current' already there:
         # LIVE becomes SOFT_DELETED, SUPERSEDED stays SUPERSEDED.
         new_val = { "$set": {'delete': status_flags(SOFT_DELETED)['delete'],
-                             'status': status_after(project, delete=True),
+                             'status': status_after(current_flags(project), delete=True),
                              'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
         delete_project_from_site_statistics(project, visibility)
@@ -2920,14 +2933,25 @@ def _previous_version_linkid(previous_version):
 def delete_project_version(request, project_name, version_id):
     """
     Delete a specific version from the project history.
-    
+
     Cases:
-    1. Deleting an old (non-current) version: remove it from the current project's
-       previous_versions array and soft-delete the old version document.
-    2. Deleting the current version when previous versions exist: promote the most recent
-       previous version to become the new current version.
-    3. Deleting the current version with no previous versions: soft-delete the entire
-       project and redirect to the profile page.
+    1. Deleting an old (non-current) version: it becomes a tombstone in place.
+       Its neighbours in the chain do not change and its ordinal is not
+       renumbered -- a deleted version is a node whose payload is gone, not a
+       node that is gone.
+    2. Deleting the current version when a version survives to take its place:
+       that version is promoted. The promoted version is the highest surviving
+       ordinal, not the last element of previous_versions[] -- nothing orders
+       that array, and production has same-day version pairs where a date sort
+       would tie as well.
+    3. Deleting the last surviving version: it becomes a tombstone that keeps
+       is_latest and redirects nowhere. The chain is then empty -- every member
+       a tombstone -- which is a property of the project, not a state of any
+       document, and it is derived rather than stored.
+
+    All three write the tombstone through one routine
+    (build_deleted_version_tombstone) and all three purge the GridFS payload.
+    Case 3 used to do neither.
     """
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -2954,16 +2978,54 @@ def delete_project_version(request, project_name, version_id):
     # this version's data is going away; any graph cached from it is dead weight
     invalidate_project_coamp_graphs(version_id)
 
+    # The chain, and what deleting this version does to it. None when the
+    # documents carry no pointers -- 26 such documents on dev, 0 on prod,
+    # measured 2026-08-27 -- and then the array decides, exactly as before.
+    chain_members = lineage.chain_members(collection_handle, latest_project,
+                                          lineage.POINTER_PROJECTION)
+    plan = lineage.plan_deletion(chain_members, version_id)
+
     if deleting_current:
         prev_versions_list = latest_project.get('previous_versions', [])
 
-        if prev_versions_list:
-            # Case 2: Promote the most recent previous version to current
-            most_recent_prev = prev_versions_list[-1]
-            prev_linkid = most_recent_prev['linkid']
+        if plan is not None:
+            promoted_id = plan.promoted_id
+        elif prev_versions_list:
+            promoted_id = lineage.resolve_id(
+                _previous_version_linkid(prev_versions_list[-1]))
+            if promoted_id is None:
+                # An unpointered document whose array holds only the
+                # pre-April-2024 encoding, where the whole entry was
+                # serialised into the linkid.  Falling through would take the
+                # terminal branch and purge a payload this project's history
+                # says has a predecessor -- which is the opposite of what the
+                # caller asked for.  Stop instead, and let the backfill give
+                # this chain pointers.
+                logging.error(
+                    f"Refusing to delete {current_linkid}: it has "
+                    f"{len(prev_versions_list)} previous version(s) but none "
+                    f"of them names a usable id, and the document has no "
+                    f"lineage pointers to read instead.")
+                return JsonResponse(
+                    {"error": "This project's version history cannot be read, "
+                              "so the version was not deleted. Please contact "
+                              "an administrator."},
+                    status=409)
+        else:
+            promoted_id = None
 
-            # Build the new previous_versions for the promoted version (exclude itself)
-            new_prev_versions = [pv for pv in prev_versions_list if pv['linkid'] != prev_linkid]
+        if promoted_id is not None:
+            # Case 2: promote the highest surviving ordinal to current
+            prev_linkid = str(promoted_id)
+
+            # Build the new previous_versions for the promoted version (exclude itself).
+            # _previous_version_linkid() rather than pv['linkid'] because the
+            # pre-April-2024 entries are JSON strings, not dicts, and a bare
+            # subscript raises on them.
+            new_prev_versions = [
+                pv for pv in prev_versions_list
+                if str(_previous_version_linkid(pv)) != prev_linkid
+            ]
 
             # Copy forward important metadata from the current version
             metadata_to_copy = {}
@@ -2975,10 +3037,18 @@ def delete_project_version(request, project_name, version_id):
             # Promote the previous version to the live head of the chain.
             # (The reverse operation is called "Un-delete" only because
             # 'delete' means "not the live document" -- see project_status.)
+            #
+            # is_latest moves backwards along a chain whose pointers do not
+            # change, so the promoted version ends up flagged is_latest while
+            # still carrying a next_version_id -- pointing at the tombstone it
+            # has just outlived. That is the intended shape: position and
+            # structure are different questions.
             update_fields = {
                 **status_flags(LIVE),
                 'previous_versions': new_prev_versions,
             }
+            if plan is not None:
+                update_fields['is_latest'] = True
             update_fields.update(metadata_to_copy)
 
             collection_handle.update_one(
@@ -3001,6 +3071,7 @@ def delete_project_version(request, project_name, version_id):
                 promoted_project,
                 deleter,
                 get_date(),
+                is_latest=False if plan is not None else None,
             )
             collection_handle.replace_one(
                 {'_id': ObjectId(current_linkid)},
@@ -3028,42 +3099,63 @@ def delete_project_version(request, project_name, version_id):
                 "redirect": f"/project/{prev_linkid}"
             })
         else:
-            # Case 3: No previous versions - delete the entire project
-            # NOTE: this is the one deletion path that does NOT
-            # purge the GridFS payload, set 'payload_purged' or set
-            # 'redirect_to_project'.  The document it leaves therefore
-            # classifies as SUPERSEDED, not TOMBSTONE -- it stays resolvable
-            # through utils.py:722 with its whole payload still stored, while
-            # the log line below says "project fully removed".  0 documents are
-            # in this state on prod.  The behaviour is left exactly as it is;
-            # fixing it means routing every deletion path through one
-            # tombstone-creation routine.
-            collection_handle.update_one(
+            # Case 3: nothing survives to be promoted.  The project becomes an
+            # empty chain: its last version is a tombstone that keeps
+            # is_latest, because an empty project still has a current version
+            # to render and to restore into -- it just has no payload behind
+            # it.  There is nowhere to redirect, so the tombstone carries no
+            # redirect_to_project and /project/<id> resolves to the deleted
+            # version rather than forwarding.
+            #
+            # This path used to write the marker by hand and skip everything
+            # else: no GridFS purge, no payload_purged, no redirect. The
+            # document it left classified as SUPERSEDED and stayed resolvable
+            # with its entire payload still stored and still billed, while the
+            # log line said "project fully removed".
+            deleted_gridfs_count = delete_gridfs_payload_for_project(
+                delete_gridfs_file,
+                latest_project,
+            )
+            tombstone = build_deleted_version_tombstone(
+                latest_project,
+                None,
+                deleter,
+                get_date(),
+                is_latest=True if plan is not None else None,
+            )
+            collection_handle.replace_one(
                 {'_id': ObjectId(current_linkid)},
-                {'$set': {
-                    **status_flags(SUPERSEDED),
-                    'delete_user': deleter,
-                    'delete_date': get_date(),
-                    'version_deleted_from_history': True,
-                }}
+                tombstone,
+                upsert=True,
             )
 
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
             delete_project_from_site_statistics(latest_project, vis)
 
-            logging.info(f"Deleted sole version {current_linkid}, project fully removed")
+            logging.info(
+                f"Deleted last surviving version {current_linkid}; purged "
+                f"{deleted_gridfs_count} GridFS files. The project is now an "
+                f"empty chain."
+            )
 
             return JsonResponse({
                 "success": True,
                 "redirect": "/accounts/profile/"
             })
     else:
-        # Case 1: Deleting an old (non-current) version
+        # Case 1: deleting an old (non-current) version. Its neighbours in the
+        # chain do not change and it keeps its ordinal: renumbering would break
+        # every downstream version's position and invalidate every audit event
+        # that names the old one.
         old_version = collection_handle.find_one({'_id': ObjectId(version_id)})
         if old_version is None:
             return JsonResponse({"error": "Version not found"}, status=404)
 
-        # Remove from the current project's previous_versions array
+        # Remove from the current project's previous_versions array. The array
+        # has no way to say "this version was deleted", so a deleted version
+        # leaves it entirely -- which is why the pointer lineage is a superset
+        # of the array from the first deletion onwards, and why I11 compares
+        # the two across surviving versions only.
         new_prev_versions = [
             pv for pv in latest_project.get('previous_versions', [])
             if str(_previous_version_linkid(pv)) != version_id
@@ -3085,6 +3177,7 @@ def delete_project_version(request, project_name, version_id):
             latest_project,
             deleter,
             get_date(),
+            is_latest=plan.victim_keeps_head if plan is not None else None,
         )
         collection_handle.replace_one(
             {'_id': ObjectId(version_id)},
@@ -3120,7 +3213,7 @@ def project_update(request, project_name):
         # here completes the move from SOFT_DELETED to SUPERSEDED -- the old
         # head of the chain, still reachable by URL (utils.py:722).
         new_val = { "$set": {'current': status_flags(SUPERSEDED)['current'],
-                             'status': status_after(project, current=False),
+                             'status': status_after(current_flags(project), current=False),
                              'update_date': get_date()} }
         collection_handle.update_one(query, new_val)
 
@@ -3385,7 +3478,9 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
 
         logging.info(f"project name: {project_name}  change to {new_project_name}")
         # Create a deep copy to avoid holding reference to original
-        current_runs = dict(project['runs'])
+        # .get, because editing an emptied project's metadata reaches here and
+        # a tombstone carries no runs.
+        current_runs = dict(project.get('runs') or {})
 
         if runs != 0:
             current_runs.update(runs)
@@ -3561,10 +3656,21 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
                 logging.error(traceback.format_exc())
                 # Continue without name map - it's optional
         
+        # Removing every sample leaves nothing to aggregate, so there is nothing
+        # to fetch the old archive for either. Decided here, while file_fps still
+        # holds only what the user uploaded -- the old archive is appended to it
+        # below, after which "did they upload anything?" can no longer be asked.
+        empty_edit = removes_every_sample(old_project_data, samples_to_remove,
+                                          file_fps)
+
         # Download old project file if not replacing the entire project
         download_path = os.path.join(project_data_path, 'download.tar.gz')
-        
-        if replace_project and not samples_to_remove:
+
+        if empty_edit:
+            logging.info(f"Project {placeholder_project_id}: edit removes every "
+                         f"sample ({samples_to_remove}); skipping the old-archive "
+                         f"download, there is nothing to aggregate it with")
+        elif replace_project and not samples_to_remove:
             logging.info("Skipping old project download - replacing entire project")
         else:
             # The old archive always goes in whole.  Removing samples is the
@@ -3618,6 +3724,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             rollback_project_id=rollback_project_id,
             old_extra_metadata=old_extra_metadata,
             exclude_samples=samples_to_remove,
+            empty_edit=empty_edit,
         )
 
         # Clean up temporary files (downloaded old project and name map) after aggregation
@@ -3766,8 +3873,14 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             }
         )
 
-        views = project['views']
-        downloads = project['downloads']
+        # Carried forward from the version being superseded, and absent when
+        # that version is a tombstone -- re-populating an emptied project (T9)
+        # builds the new version on top of one. Zero is what the counters mean
+        # there: the payload they counted views and downloads of is gone, and
+        # _create_project's own default for a project with no predecessor is
+        # the same [0, 0].
+        views = project.get('views', 0)
+        downloads = project.get('downloads', 0)
         # Preserve subscribers from the old project version
         old_subscribers = project.get('subscribers', [])
         # Remove any new project members from the subscribers list
@@ -3881,6 +3994,11 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
 def edit_project_page(request, project_name):
     if request.method == "GET":
         project = get_one_project(project_name)
+        # None means the resolver would not serve this project to anyone --
+        # a soft-deleted one, most often. project_page() raises Http404 here;
+        # this dereferenced it and turned the same URL into a 500.
+        if project is None:
+            raise Http404("Project not found")
         is_admin = getattr(request.user, 'is_staff', False)
         visibility = normalize_visibility_field(project.get('private', 'private'))
         if not (is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility))):
@@ -4025,7 +4143,7 @@ def edit_project_page(request, project_name):
                         break  # All features in a list have the same sample name
         sample_names = sorted(sample_names)
 
-        is_empty_project = 'EMPTY?' in project and project['EMPTY?'] == True
+        is_empty_project = project_is_empty(project)
         prev_versions, prev_ver_msg = previous_versions(project)
         if prev_ver_msg:
             messages.error(request, "Redirected to latest version, editing of old versions not allowed. ")
@@ -4047,7 +4165,7 @@ def edit_project_page(request, project_name):
         CoRALVersion=project.get('CoRAL_version', 'NA')
 
         form = UpdateForm(initial={"project_name": project['project_name'],
-                                   "description": project['description'],
+                                   "description": project.get('description', ''),
                                    # The form's visibility field is a ChoiceField over the
                                    # three strings.  A legacy boolean here matches no choice
                                    # and renders the dropdown with nothing selected.
@@ -4187,7 +4305,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         try:
                             path_var = feature[k]
                             with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
-                                id_var = fs_handle.put(file_var)
+                                id_var = put_with_backlink(
+                                    fs_handle, file_var, project_id=project_id,
+                                    sample_name=sample, feature_key=k)
                             uploaded_file_ids.append(id_var)
                             # Explicitly delete the file data reference
                             del path_var
@@ -4258,10 +4378,15 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             with tarfile.open(fileobj=buf, mode='w:gz') as tar:
                                 tar.add(full_path, arcname=dir_name)
                             buf.seek(0)
-                            id_var = fs_handle.put(buf, filename=archive_name)
+                            id_var = put_with_backlink(
+                                fs_handle, buf, filename=archive_name,
+                                project_id=project_id, sample_name=sample,
+                                feature_key=directory_key)
                         else:
                             with open(full_path, 'rb') as file_var:
-                                id_var = fs_handle.put(file_var)
+                                id_var = put_with_backlink(
+                                    fs_handle, file_var, project_id=project_id,
+                                    sample_name=sample, feature_key=directory_key)
                         uploaded_file_ids.append(id_var)
                     except Exception as upload_error:
                         if isinstance(id_var, ObjectId):
@@ -4546,7 +4671,121 @@ def create_empty_project(request):
     return render(request, "pages/create_project.html", {'all_alias': get_all_alias()})
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None, exclude_samples=None):
+def removes_every_sample(old_project, samples_to_remove, new_files):
+    """Would this edit leave the project with no samples at all?
+
+    True only when the edit removes every sample the project has and adds none
+    back.  The names compared are ``Sample_name`` from the feature rows, which
+    is what the edit form posts -- *not* the ``runs`` keys, which are positional
+    (``sample_1``) and never match.
+    """
+    if not samples_to_remove or new_files:
+        return False
+    remaining = set()
+    for features in project_runs(old_project).values():
+        for feature in features or []:
+            name = feature.get('Sample_name')
+            if name:
+                remaining.add(name)
+    if not remaining:
+        return False           # nothing to remove; not this case
+    return remaining.issubset(set(samples_to_remove))
+
+
+def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
+                            previous_views, old_subscribers, oldFeatured,
+                            audit_event_type):
+    """Write the new version of a project whose samples were all removed.
+
+    The aggregator cannot help here: given every sample excluded it aborts with
+    "there is nothing left to aggregate", which is correct on its own terms --
+    it has no empty result table to emit. But an empty project is a legitimate
+    state in the version model, and removing every sample is something users are
+    allowed to do, so the site makes the version itself.
+
+    No aggregator, no payload: no archive is built, nothing goes to GridFS or
+    S3, and the document's ``tarfile`` is None. Downloads of it 404, which is
+    what a version with nothing in it should do. A later upload appends the next
+    ordinal to the same chain and the project has samples again.
+
+    Everything except the payload goes through the same builder the aggregated
+    path uses, so the two cannot drift apart.
+
+    Returns True on success; False leaves the caller to mark the placeholder
+    failed exactly as an aggregation failure would be.
+    """
+    from django.http import QueryDict
+
+    post = QueryDict('', mutable=True)
+    post.update(form_data)
+    form = UpdateForm(post)
+    if not form.is_valid():
+        logging.error(f"Form validation failed for empty version {temp_proj_id}: "
+                      f"{form.errors}")
+        return False
+
+    project_id = ObjectId(temp_proj_id)
+    project = {}
+    # Resolved through get_current_user() on a stand-in request, the same way
+    # the aggregated path does it, so 'creator' cannot come out different here.
+    creator = get_current_user(type('obj', (object,), {'user': user})())
+    build_project_document(
+        project, form, form_to_dict(form), creator, {}, None,
+        previous_versions or [], previous_views or [0, 0], old_subscribers)
+
+    # Nothing is extracted afterwards, so the version is complete as written.
+    # The aggregated path leaves this False for extract_project_files to flip.
+    project['FINISHED?'] = True
+    # Both, and in this order, because add_project_to_site_statistics() reads
+    # _id off the dict it is handed rather than from the database.
+    project['_id'] = project_id
+    project['linkid'] = str(project_id)
+
+    collection_handle.update_one(
+        {'_id': project_id},
+        {"$set": {key: value for key, value in project.items() if key != '_id'},
+         "$unset": {'aggregation_in_progress': '',
+                    'original_project_name': '',
+                    'owner': ''}})
+
+    # Same ordering as the aggregated path: the document is complete before it
+    # is put in the chain, so nothing can observe a head that is still a
+    # placeholder.
+    lineage.link_new_version(collection_handle, project_id,
+                             project.get('previous_versions'))
+
+    if oldFeatured:
+        project['featured'] = True
+        collection_handle.update_one({'_id': project_id},
+                                     {"$set": {'featured': True}})
+
+    add_project_to_site_statistics(
+        project, normalize_visibility_field(project['private']))
+
+    if audit_event_type is not None:
+        try:
+            log_project_audit_event(
+                user=user,
+                project_uuid=str(project_id),
+                project_name=form_data.get('project_name', ''),
+                is_new_version=True,
+                aa_version=form_data.get('AA_version', 'NA'),
+                ac_version=form_data.get('AC_version', 'NA'),
+                asp_version=form_data.get('ASP_version', 'NA'),
+                s3_uri=None,                 # there is no payload to point at
+                event_type=audit_event_type,
+                sample_count=0,
+            )
+        except Exception as audit_exc:
+            logging.error(f"Failed to write audit log for empty version "
+                          f"{temp_proj_id}: {audit_exc}")
+
+    logging.info(f"Project {temp_proj_id}: every sample removed; wrote an empty "
+                 f"version with no payload")
+    return True
+
+
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None, exclude_samples=None, empty_edit=False):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
@@ -4577,6 +4816,17 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
 
     def _do_rollback(failed_placeholder_id, old_project_id, error_msg):
         """Restore *old_project_id* and mark the failed placeholder so project_page redirects."""
+        # 0. Take the failed version back out of the chain, before restoring
+        #    the old one -- otherwise the chain briefly has two is_latest
+        #    members, and if the second write fails it keeps them.  A no-op
+        #    unless _create_project got far enough to link it.
+        try:
+            lineage.unlink_new_version(collection_handle,
+                                       ObjectId(failed_placeholder_id))
+        except Exception as unlink_err:
+            logging.error(f"Failed to unlink failed version "
+                          f"{failed_placeholder_id} from its chain: {unlink_err}")
+
         # 1. Restore old project to current, non-deleted state
         try:
             collection_handle.update_one(
@@ -4596,20 +4846,34 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         # is not an oversight in the routing -- it is the defect itself.  The
         # placeholder was inserted with status_flags(LIVE), so clearing
         # 'current' while leaving 'delete' False produces delete=False,
-        # current=False: DETACHED by classify(), and still reachable by URL.
-        # That is exactly the 39-document delete=False/current=False
-        # population, and this is
-        # the most plausible way they were made.  status_flags() deliberately
-        # refuses to write DETACHED, so the literal stays until the state has
-        # a name -- deciding what a failed placeholder should be is a separate
-        # question, and this change alters no behaviour.
+        # current=False: DETACHED by classify(), and still reachable by URL --
+        # which it has to stay, because project_page() reads rollback_project_id
+        # off this document to send the user back to the restored version.
+        #
+        # The status is recorded rather than left behind. status_flags() refuses
+        # to write DETACHED because it builds transitions *into* a status, and
+        # nothing should deliberately move a document into "meaning lost". This
+        # is the other job: recording what a document has *become*, which is what
+        # status_after() is for and what backfill_project_status.py already does.
+        # Leaving it unwritten kept the 'LIVE' from the placeholder insert, so
+        # every failed edit stored a status that lied and I2 counted it.
+        #
+        # What a failed placeholder *should* be is still open, and deliberately
+        # not decided here. Measured 2026-08-29: 0 on prod, 2 on caper-dev. A
+        # hazard at that size, not an incident, and a new status would change
+        # read paths on a population that does not exist in production.
         try:
+            current_doc = collection_handle_primary.find_one(
+                {'_id': ObjectId(failed_placeholder_id)},
+                {field: 1 for field in STATUS_FLAG_FIELDS + TOMBSTONE_MARKER_FIELDS}
+            ) or {}
             collection_handle.update_one(
                 {'_id': ObjectId(failed_placeholder_id)},
                 {"$set": {
                     'FINISHED?': True,
                     'aggregation_failed': True,
                     'current': False,
+                    'status': status_after(current_doc, current=False),
                     'error_message': error_msg,
                     'rollback_project_id': str(old_project_id),
                 }}
@@ -4619,6 +4883,30 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
 
     try:
         logging.info(f"_process_and_aggregate_files - start")
+
+        # An edit that removed every sample. The aggregator cannot produce an
+        # empty result and aborts if asked to, so the site writes the version
+        # itself. Placed inside this try, after _do_rollback is defined, so a
+        # failure here unwinds exactly the way an aggregation failure does --
+        # the old version is already marked superseded by the time we get here.
+        if empty_edit:
+            if not _finalize_empty_version(
+                    form_data, user, temp_proj_id, previous_versions,
+                    previous_views, old_subscribers, oldFeatured,
+                    audit_event_type):
+                _err_msg = ('Form validation failed. Please check your project '
+                            'information.')
+                if rollback_project_id:
+                    _do_rollback(temp_proj_id, rollback_project_id, _err_msg)
+                else:
+                    collection_handle.update_one(
+                        {'_id': ObjectId(temp_proj_id)},
+                        {"$set": {'FINISHED?': True,
+                                  'aggregation_failed': True,
+                                  'error_message': _err_msg}})
+            if os.path.exists(temp_directory):
+                shutil.rmtree(temp_directory, ignore_errors=True)
+            return
 
         print(AmpliconSuiteAggregator.__file__)
         print(f"AmpliconSuiteAggregator version: {AmpliconSuiteAggregator.__version__}")
@@ -4857,7 +5145,10 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         logging.error(f"Error in background aggregation for project {temp_proj_id}: {str(e)}")
         logging.error(traceback.format_exc())
 
-        _err_msg = f'An error occurred during aggregation: {str(e)}'
+        # str(e) is '1' for the SystemExit the aggregator raises when it aborts,
+        # which told the user the exit status and threw away the sentence saying
+        # what was wrong with their input.
+        _err_msg = aggregation_error_message(e)
         if rollback_project_id:
             try:
                 _do_rollback(temp_proj_id, rollback_project_id, _err_msg)
@@ -5078,6 +5369,15 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         add_project_to_site_statistics(project, normalize_visibility_field(project['private']))
         project_id = new_id.inserted_id
 
+        # Put the document in its chain: a new project is a chain of one, an
+        # edit appends to the chain its predecessors are already in. The
+        # predecessor is read out of the chain rather than off the end of
+        # previous_versions[], so it does not matter that nothing orders that
+        # array. Done here rather than in create_project_helper() because the
+        # _id is minted by the insert.
+        lineage.link_new_version(collection_handle, project_id,
+                                 project.get('previous_versions'))
+
         # move the project location to a new name using the UUID to prevent name collisions
         new_project_data_path = f"tmp/{project_id}"
         os.rename(project_data_path, new_project_data_path)
@@ -5111,10 +5411,17 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
                  'owner': ''
              }}
         )
+        # The placeholder was inserted as LIVE before aggregation started, but
+        # without pointers: until the real document lands there is nothing to
+        # append to a chain, and a failed aggregation must not leave a chain
+        # with a head the user was told had failed. _do_rollback() undoes this.
+        lineage.link_new_version(collection_handle, project_id,
+                                 project.get('previous_versions'))
+
         if oldFeatured:
             project['featured'] = True
             collection_handle.update_one({'_id': project_id}, {"$set": {'featured': True}})
-        
+
         add_project_to_site_statistics(project, normalize_visibility_field(project['private']))
 
     file_location = f'{project_data_path}/{request_file.name}'
@@ -5287,7 +5594,14 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
 
 
     with open(file_location, "rb") as tar_file:
-        project_tar_id = fs_handle.put(tar_file)
+        # tmp_id is the real project id on the placeholder path (an edit, and
+        # every create that goes through _process_and_aggregate_files); on a
+        # direct create it is still a uuid, which as_object_id() rejects, so the
+        # row is stored unlabelled and the backfill completes it from the
+        # document. Writing the intended id when it is known is what makes a
+        # crashed ingestion leave a file that says what it was for.
+        project_tar_id = put_with_backlink(
+            fs_handle, tar_file, project_id=tmp_id, feature_key='tarfile')
 
 
     #get run.json
@@ -5305,6 +5619,23 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
         runs = samples_to_dict(run_json)
 
     print('creating project now')
+    build_project_document(project, form, form_dict, user, runs, project_tar_id,
+                           previous_versions, previous_views, old_subscribers)
+    return project, tmp_id
+
+
+def build_project_document(project, form, form_dict, user, runs, project_tar_id,
+                           previous_versions, previous_views, old_subscribers):
+    """Fill in every field of a project document that does not come from the
+    payload -- name, description, visibility, members, versions, counters.
+
+    Split out of create_project_helper() so that a version with no samples can
+    be written by the same code as a version with samples. An empty version
+    passes runs={} and project_tar_id=None; nothing else about the document
+    differs, and nothing here reads the archive. Keeping it one function is the
+    point: two writers of the same document shape is how most of the divergence
+    in this area started.
+    """
     current_user = user
     project['creator'] = current_user
     project['project_name'] = form_dict['project_name']
@@ -5323,7 +5654,10 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     project['Oncogenes'] = get_project_oncogenes(runs)
     project['Classification'] = get_project_classifications(runs)
     project['FINISHED?'] = False
-    project['EMPTY?'] = False
+    # Version-level emptiness, derived from what this version actually holds.
+    # Not the chain-level EMPTY of the spec's model -- that one is every member
+    # being a tombstone, stays derived, and is a different question.
+    project['EMPTY?'] = not runs
     project['views'] = previous_views[0]
     project['downloads'] = previous_views[1]
     project['alias_name'] = form_dict['alias']
@@ -5357,7 +5691,7 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
     #substutiting ASP_version for AS-P_version
     get_tool_versions(project, runs)
 
-    return project, tmp_id
+    return project
 
 
 def get_tool_versions(project, runs):

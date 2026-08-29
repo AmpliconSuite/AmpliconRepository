@@ -1,6 +1,6 @@
 import datetime
 
-from .project_status import LIVE, status_query
+from .project_status import LIVE, project_runs, status_query
 from .publications import publication_url, count_unique_publications
 from .utils import get_collection_handle, collection_handle, db_handle_primary, replace_space_to_underscore, preprocess_sample_data, get_one_sample, sample_data_from_feature_list, is_project_private, is_project_public, normalize_visibility_field, VISIBILITY_QUERY_VALUES
 
@@ -66,7 +66,7 @@ def count_ecdna_positive_samples(project):
     is exactly what the statistics document exists to avoid.
     """
     positive = 0
-    for features in project['runs'].values():
+    for features in project_runs(project).values():
         if any(feature.get('Classification') == 'ecDNA' for feature in features):
             positive += 1
     return positive
@@ -171,10 +171,10 @@ def _sum_projects_into_bucket(projects, prefix):
         sum_tissue_of_origin_counts(get_project_tissue_of_origin_counts(proj), tissue_counts)
         sum_tissue_of_origin_counts(get_project_cancer_type_counts(proj), cancer_type_counts)
         proj_count += 1
-        sample_count += len(proj['runs'])
+        sample_count += len(project_runs(proj))
         if is_coral_project(proj):
             coral_project_count += 1
-            coral_sample_count += len(proj['runs'])
+            coral_sample_count += len(project_runs(proj))
         ecdna_positive_sample_count += count_ecdna_positive_samples(proj)
         link = publication_url(proj.get('publication_link', ''))
         if link:
@@ -263,7 +263,7 @@ def _apply_project_to_site_statistics(project, visibility, sign):
     """Add (sign=1) or remove (sign=-1) one project's contribution to its visibility bucket."""
     prefix = BUCKET_PREFIXES[normalize_visibility_field(visibility)]
     updated_stats = _carry_forward_buckets(get_latest_site_statistics())
-    sample_count = len(project.get('runs', {}))
+    sample_count = len(project_runs(project))
 
     updated_stats[f'{prefix}_proj_count'] += sign
     updated_stats[f'{prefix}_sample_count'] += sign * sample_count
@@ -355,7 +355,7 @@ def get_project_amplicon_counts(project):
     project_linkid = project['_id']
     amplicon_counts = dict()
     class_keys = set()
-    runs = project['runs']
+    runs = project_runs(project)
     for sample_num in runs.keys():
         features = runs[sample_num]
         for feat in features:
@@ -406,7 +406,7 @@ def get_project_tissue_of_origin_counts(project):
         dict: Dictionary with tissue_of_origin as keys and counts as values
     """
     tissue_counts = dict()
-    runs = project['runs']
+    runs = project_runs(project)
     
     for sample_num in runs.keys():
         sample_data = runs[sample_num]
@@ -444,7 +444,7 @@ def get_project_cancer_type_counts(project):
         dict: Dictionary with Cancer_type as keys and counts as values
     """
     cancer_type_counts = dict()
-    runs = project['runs']
+    runs = project_runs(project)
 
     for sample_num in runs.keys():
         sample_data = runs[sample_num]

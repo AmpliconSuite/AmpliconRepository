@@ -26,7 +26,8 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework import status
 
-from .project_status import LIVE, classify, status_query
+from .project_status import LIVE, classify, iter_previous_versions, status_query
+from . import lineage
 
 from threading import Thread
 
@@ -478,8 +479,48 @@ _PROJECT_METADATA_PROJECTION = {
 }
 
 
-def _project_to_dict(project):
-    """Serialize a MongoDB project document to a JSON-safe dict, omitting internal fields."""
+# What a history row exposes to an API client, and the fields needed to build
+# one from a chain member.
+_PREV_VERSION_PROJECTION = {field: 1 for field in
+                            ['date', 'linkid', 'version_chain_id',
+                             'version_ordinal', 'is_latest']
+                            + sorted(_SAFE_PREV_VERSION_KEYS)}
+
+
+def _previous_versions_payload(project, members):
+    """The `previous_versions` field of the API response.
+
+    From the chain when the pointers reach it, from the stored array otherwise.
+    The array is read through iter_previous_versions() rather than directly: a
+    raw `pv.items()` over it raises AttributeError on an entry in the pre-April
+    2024 encoding, which is a JSON *string*, not a dict. No such entry is on
+    production or dev today -- I19 is green on both, 2026-08-27 -- so this is a
+    latent 500 rather than a live one, and it costs nothing to close.
+    """
+    if members:
+        ancestors = lineage.ancestors(members, project)
+        return [{key: value for key, value in _history_row(member).items()
+                 if key in _SAFE_PREV_VERSION_KEYS}
+                for member in ancestors]
+    return [{key: value for key, value in entry.items()
+             if key in _SAFE_PREV_VERSION_KEYS}
+            for entry, _encoding in iter_previous_versions(project)]
+
+
+def _history_row(member):
+    row = {key: member.get(key, '') for key in _SAFE_PREV_VERSION_KEYS}
+    row['date'] = str(member.get('date', ''))
+    row['linkid'] = str(member.get('linkid') or member.get('_id', ''))
+    return row
+
+
+def _project_to_dict(project, members=None):
+    """Serialize a MongoDB project document to a JSON-safe dict, omitting internal fields.
+
+    *members* is this project's chain, oldest first, when the caller has already
+    read it. The list endpoint reads every chain on the page in one query and
+    passes them in; asking per row would be a query per project.
+    """
     linkid = str(project.get('linkid') or project.get('_id', ''))
     return {
         'id':                 linkid,
@@ -499,10 +540,7 @@ def _project_to_dict(project):
         'CoRAL_version':      project.get('CoRAL_version', ''),
         'oncogenes':          project.get('Oncogenes', []),
         'classifications':    project.get('Classifications', []),
-        'previous_versions': [
-            {k: v for k, v in pv.items() if k in _SAFE_PREV_VERSION_KEYS}
-            for pv in project.get('previous_versions', [])
-        ],
+        'previous_versions': _previous_versions_payload(project, members),
     }
 
 
@@ -594,7 +632,12 @@ class ProjectListView(APIView):
             if 'linkid' not in p:
                 p['linkid'] = str(p['_id'])
 
-        return Response([_project_to_dict(p) for p in projects])
+        # One query for every chain on the page, not one per project.
+        chains = lineage.chains_for(collection_handle, projects,
+                                    _PREV_VERSION_PROJECTION)
+        return Response([
+            _project_to_dict(p, chains.get(p.get('version_chain_id')))
+            for p in projects])
 
 
 # ── GET /api/v1/projects/<project_id>/ ──────────────────────────────────────
@@ -627,7 +670,9 @@ class ProjectDetailView(APIView):
 
         if 'linkid' not in project:
             project['linkid'] = str(project['_id'])
-        return Response(_project_to_dict(project))
+        members = lineage.chain_members(collection_handle, project,
+                                        _PREV_VERSION_PROJECTION)
+        return Response(_project_to_dict(project, members))
 
 
 # ── GET /api/v1/projects/<project_id>/samples/ ───────────────────────────────

@@ -33,11 +33,11 @@ from bson.objectid import ObjectId
 from .account_deletion import RELEASE, plan_account_deletion, summarize
 from .forms import FeaturedProjectForm, DeletedProjectForm, SendEmailForm
 from .utils import (
-    collection_handle, collection_handle_primary, fs_handle, audit_log_handle,
-    delete_gridfs_file,
+    collection_handle, collection_handle_primary, current_flags, fs_handle,
+    audit_log_handle, delete_gridfs_file,
     get_one_project, get_one_deleted_project, prepare_project_linkid,
     check_if_db_field_exists, get_date_short,
-    form_to_dict, get_date, db_handle_primary, format_visibility_for_display,
+    form_to_dict, get_date, db_handle, db_handle_primary, format_visibility_for_display,
     get_project_version_chain, normalize_visibility_field, is_project_private,
     PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES,
 )
@@ -49,11 +49,13 @@ from .project_status import (
     STATUS_QUERIES,
     classify,
     is_reachable_by_url,
+    is_tombstone,
     iter_previous_versions,
     status_after,
     status_flags,
     status_query,
 )
+from . import lineage
 
 from .extra_metadata import *
 
@@ -749,6 +751,30 @@ def admin_delete_user(request):
                    'error_message': error_message})
 
 
+def _tombstoned_ancestors(project):
+    """(id, document) for each tombstoned version before *project* in its chain.
+
+    Empty for an unpointered document, and empty for a chain that has never had
+    a version deleted -- which is every chain that predates the pointer writes.
+    """
+    members = lineage.chain_members(collection_handle, project,
+                                    lineage.POINTER_PROJECTION)
+    if members is None:
+        return []
+
+    named = {str(entry.get('linkid'))
+             for entry, _encoding in iter_previous_versions(project)}
+    found = []
+    for member in lineage.ancestors(members, project):
+        member_id = str(member['_id'])
+        if member_id in named:
+            continue                      # the loop above already has it
+        document = get_one_deleted_project(member_id)
+        if document is not None and is_tombstone(document):
+            found.append((member_id, document))
+    return found
+
+
 def permanently_delete_with_history(project_id, project, project_name):
     """
     Permanently delete a soft-deleted project along with the older versions its
@@ -769,6 +795,14 @@ def permanently_delete_with_history(project_id, project, project_name):
     loop deleted this project's payload once inside it and again below, and for
     an older version would have reached across the chain to versions nobody
     selected.  The stored field names ancestors and nothing else.
+
+    Tombstoned ancestors are added from the chain, because the array cannot
+    name them: deleting a version removes it from every ``previous_versions[]``
+    while it stays in the chain holding its ordinal.  Left behind, such a
+    document would outlive the project it belonged to as a tombstone
+    redirecting at an id that no longer exists.  Only ancestors are taken --
+    strictly lower ordinal -- so this still never reaches forward across the
+    chain to versions nobody selected.
     """
     unresolved = []
     for entry, _encoding in iter_previous_versions(project):
@@ -781,6 +815,10 @@ def permanently_delete_with_history(project_id, project, project_name):
             unresolved.append(linkid)
             continue
         admin_permanent_delete_project(linkid, older, older['project_name'])
+
+    for tombstone_id, tombstone in _tombstoned_ancestors(project):
+        admin_permanent_delete_project(tombstone_id, tombstone,
+                                       tombstone.get('project_name'))
 
     message = admin_permanent_delete_project(project_id, project, project_name)
 
@@ -875,7 +913,8 @@ def admin_delete_project(request):
             # 'current' it had.  Only SOFT_DELETED documents are listed below,
             # so in practice that lands on LIVE.
             new_val = {"$set": {'delete': status_flags(LIVE)['delete'],
-                                'status': status_after(project, delete=False)}}
+                                'status': status_after(current_flags(project),
+                                                       delete=False)}}
             collection_handle.update_one(query, new_val)
             error_message = f"Project {project_name} restored."
 
@@ -983,16 +1022,29 @@ def data_qc(request):
         if classify(project) == DETACHED and is_reachable_by_url(project):
             project_id = str(project.get('_id', 'NO_ID'))
             
-            # Check if this project is truly orphaned:
-            # 1. It should not have any entries in its own previous_versions array
-            has_previous = len(project.get('previous_versions', [])) > 0
-            
-            # 2. It should not be referenced in any other project's previous_versions
-            is_referenced = collection_handle.count_documents({
-                'previous_versions.linkid': project_id
-            }) > 0
-            
-            if not has_previous and not is_referenced:
+            # Orphaned means "alone in its chain": no ancestors, and nothing
+            # names it as one. With pointers that is the size of the chain, one
+            # indexed equality match.
+            #
+            # The array form below is kept for documents the backfill has not
+            # reached, and it is the weaker test of the two. Its reverse lookup
+            # matches on previous_versions.linkid, so a reference stored in the
+            # pre-April 2024 encoding -- a JSON string, with no linkid key --
+            # matches nothing, and a document that is genuinely part of a chain
+            # gets reported here as an orphan. That is the same blind spot as
+            # check_project_flags.py:195.
+            members = lineage.chain_members(collection_handle, project,
+                                            lineage.POINTER_PROJECTION)
+            if members is not None:
+                alone = len(members) == 1
+            else:
+                has_previous = len(project.get('previous_versions', [])) > 0
+                is_referenced = collection_handle.count_documents({
+                    'previous_versions.linkid': project_id
+                }) > 0
+                alone = not has_previous and not is_referenced
+
+            if alone:
                 # No other versions found - this is orphaned!
                 prepare_project_linkid(project)
                 project['visibility_display'] = format_visibility_for_display(project.get('private', True))
@@ -1051,7 +1103,8 @@ def make_project_current(request, project_id):
                 # The resulting status therefore depends on the 'delete' already
                 # stored, which is what status_after() reads.
                 {'$set': {'current': status_flags(LIVE)['current'],
-                          'status': status_after(project, current=True)}}
+                          'status': status_after(current_flags(project),
+                                                 current=True)}}
             )
             
             if result.modified_count > 0:
@@ -1522,3 +1575,155 @@ def admin_audit_log_validate(request):
     except Exception as e:
         logging.error(f"admin_audit_log_validate error for project_id '{project_id}': {e}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# ---------------------------------------------------------------------------
+# GridFS ownership
+# ---------------------------------------------------------------------------
+
+OWNERSHIP_REPORTS = 'gridfs_ownership_reports'
+
+#: Projects kept in a stored snapshot. The whole list is a few hundred rows
+#: today, but a snapshot that grows without bound is a document that one day
+#: cannot be written back.
+OWNERSHIP_PROJECT_ROWS = 200
+
+
+def _ownership_reports():
+    return db_handle_primary[OWNERSHIP_REPORTS]
+
+
+#: A survey still claiming to be running after this long has lost its worker.
+OWNERSHIP_SURVEY_ABANDONED_AFTER = datetime.timedelta(hours=1)
+
+
+def mark_abandoned_surveys(snapshots, now=None):
+    """Rewrite the state of surveys whose worker went away.
+
+    The worker records 'failed' when the survey raises, but nothing records
+    anything when the process disappears underneath it -- a restart, a kill,
+    a deploy. The row keeps saying 'running', which disables the Run button for
+    good. Age is the only evidence left of the difference, so age is what this
+    reads. Mutates the dicts in place; the stored documents are not touched,
+    because the fact being corrected is about this moment, not about them.
+    """
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    cutoff = now - OWNERSHIP_SURVEY_ABANDONED_AFTER
+    for snapshot in snapshots:
+        started = snapshot.get('started_at')
+        if snapshot.get('state') != 'running' or not started:
+            continue
+        # DocumentDB hands back naive UTC; a caller passing an aware value is
+        # left as it is.
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=datetime.timezone.utc)
+        if started < cutoff:
+            snapshot['state'] = 'abandoned'
+    return snapshots
+
+
+def _run_ownership_survey(report_id, started_by):
+    """Walk the documents and store one snapshot. Runs in a worker thread.
+
+    Read-only against both collections: the survey counts, and this records
+    what it counted. Nothing here deletes a file or edits a project.
+    """
+    from .gridfs_ownership import survey
+
+    reports = _ownership_reports()
+    try:
+        result = survey(db_handle['projects'], db_handle['fs.files'])
+        result['per_project'] = result['per_project'][:OWNERSHIP_PROJECT_ROWS]
+        result['state'] = 'done'
+        result['started_by'] = started_by
+        reports.update_one({'_id': report_id}, {'$set': result})
+    except Exception as exc:
+        logging.exception('GridFS ownership survey failed')
+        reports.update_one({'_id': report_id},
+                           {'$set': {'state': 'failed',
+                                     'error': f'{type(exc).__name__}: {exc}'}})
+
+
+def admin_file_ownership(request):
+    """Report which project owns each GridFS file, and how much is residue.
+
+    A report, and only a report. There is no control on this page that deletes
+    anything, deliberately: the two production incidents behind this work were
+    both a count like this one being believed and acted on. What the page is
+    for is deciding whether a deletion is worth investigating, not performing
+    it.
+    """
+    from .background_tasks import _thread_executor
+    from .gridfs_ownership import (
+        ORDER, RESIDUE_DOCUMENT_GONE, RESIDUE_UNLABELLED, RESIDUE_UNREFERENCED,
+        human,
+    )
+
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    reports = _ownership_reports()
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'run':
+            report_id = ObjectId()
+            reports.insert_one({'_id': report_id, 'state': 'running',
+                                'started_at': datetime.datetime.now(
+                                    datetime.timezone.utc),
+                                'started_by': str(request.user)})
+            _thread_executor.submit(_run_ownership_survey, report_id,
+                                    str(request.user),
+                                    task_label='gridfs_ownership_survey')
+        elif action == 'remove_snapshot':
+            # Not spelled 'delete': that literal is reserved for the status
+            # flag field, and the guard in tests/test_project_status_guard.py
+            # cannot tell a form action from a flag. The name is better here
+            # anyway -- what it removes is a measurement, not data.
+            snapshot_id = request.POST.get('report_id')
+            if snapshot_id:
+                reports.delete_one({'_id': ObjectId(snapshot_id)})
+        return redirect('/admin-file-ownership/')
+
+    snapshots = list(reports.find().sort('started_at', -1).limit(25))
+    for snapshot in snapshots:
+        snapshot['id_str'] = str(snapshot['_id'])
+
+    mark_abandoned_surveys(snapshots)
+
+    wanted = request.GET.get('snapshot')
+    latest = None
+    if wanted:
+        latest = next((s for s in snapshots if s['id_str'] == wanted), None)
+    if latest is None:
+        latest = next((s for s in snapshots if s.get('state') == 'done'), None)
+    running = any(s.get('state') == 'running' for s in snapshots)
+
+    rows = []
+    if latest:
+        total = latest.get('total_files') or 0
+        for label in ORDER:
+            count = (latest.get('counts') or {}).get(label, 0)
+            rows.append({
+                'label': label,
+                'count': count,
+                'share': (count / total * 100) if total else 0,
+                'size': human((latest.get('bytes') or {}).get(label, 0)),
+                'owned': label.startswith('owned'),
+                'unlabelled': label == RESIDUE_UNLABELLED,
+            })
+
+    return render(request, 'pages/admin_file_ownership.html', {
+        'user': request.user,
+        'SITE_TITLE': settings.SITE_TITLE,
+        'snapshots': snapshots,
+        'latest': latest,
+        'running': running,
+        'rows': rows,
+        'residue_size': human(latest.get('residue_bytes', 0)) if latest else '',
+        'total_size': human(latest.get('total_bytes', 0)) if latest else '',
+        'unlabelled_label': RESIDUE_UNLABELLED,
+        'gone_label': RESIDUE_DOCUMENT_GONE,
+        'unreferenced_label': RESIDUE_UNREFERENCED,
+        **_get_audit_log_context(request),
+    })

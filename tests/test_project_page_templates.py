@@ -350,3 +350,51 @@ def test_project_sample_table_refits_horizontal_scroller_after_reveal():
     width_reset = "$('#myTable1').css('width', '100%');"
     assert width_reset in source
     assert source.index(width_reset) < source.index("table.columns.adjust();")
+
+
+def test_removing_every_sample_warns_before_it_happens():
+    """Removing every sample empties the project, so it is not a silent edit.
+
+    Jens asked for the warning on 2026-08-29, when the behaviour changed from
+    "fails aggregation" to "produces an empty project": now that it succeeds,
+    the user has to be told what succeeding means.
+
+    Asserted against the template source rather than a browser, because the
+    warning is client-side and browser testing is Jens's to run. What this
+    pins is that the pieces exist and are wired to each other.
+    """
+    source = (TEMPLATE_DIR / "edit_project.html").read_text()
+
+    # The inline banner, hidden until it applies.
+    assert 'id="remove_all_warning"' in source
+    assert "This removes every sample in the project." in source
+    # It must say what survives, not only what is lost -- the project is kept.
+    assert "you can upload samples to it again later" in source
+
+    # One predicate, used by both the banner and the submit gate, so the two
+    # cannot disagree about what "every sample" means.
+    assert "function removingEverySample()" in source
+    assert "boxes.length > 0 && boxes.every(cb => cb.checked)" in source
+
+    # Shown as soon as the selection covers everything...
+    assert "function syncRemoveAllWarning()" in source
+    assert "syncRemoveAllWarning();" in source
+    # ...and confirmed again at submit, but never on a submission that another
+    # check has already rejected.
+    assert "if (!e.defaultPrevented && removingEverySample())" in source
+    assert "Remove all samples?" in source
+
+
+def test_the_remove_all_warning_is_resynced_when_the_boxes_are_cleared():
+    """Choosing replace/re-aggregate unchecks every box.
+
+    That branch cannot call updateInputs() -- it would re-enable the checkboxes
+    it just disabled -- so it has to resync the warning on its own, or a warning
+    raised by an earlier selection is left on screen describing nothing.
+    """
+    source = (TEMPLATE_DIR / "edit_project.html").read_text()
+
+    branch = source.split(
+        "setCheckboxesDisabled(true, 'Not available when replacing or "
+        "re-aggregating the project.');")[1].split('} else {')[0]
+    assert 'syncRemoveAllWarning();' in branch
