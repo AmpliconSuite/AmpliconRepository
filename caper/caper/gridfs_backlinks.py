@@ -24,6 +24,20 @@ ingestion that dies after storing a file but before updating the document
 currently leaves an anonymous file, and with this it leaves one that says what
 it was for.
 
+**One owner is what the data has, not a rule this imposes.** No file is named by
+two documents today -- on 2026-08-29 the distinct id count exactly equalled the
+(document, file) pair count on both databases -- so ``project_id`` is a scalar.
+Should a file ever have several owners, the query ``{'metadata.project_id': X}``
+already matches an array containing X, so nothing that reads a backlink has to
+change; the writer becomes ``$addToSet``. What would be a real piece of work is
+deletion, which today deletes every file a project names and would then have to
+delete only the ones nothing else names. That work is the same size whatever
+shape this field is, so it is not a reason to complicate the field now.
+
+The rule that keeps that future open is the one above: **a backlink is
+provenance, never authority.** Nothing may delete a file because its metadata
+says so.
+
 What is known at ``put()`` time varies by call site, and this writes what is
 known rather than blocking on what is not. A file uploaded before its project
 document exists carries the *intended* project id; the backfill completes and

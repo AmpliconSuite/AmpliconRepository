@@ -110,6 +110,7 @@ urlpatterns += [
     path('admin-delete-user/', views.admin_delete_user, name='admin_delete_user'),
     path('admin-prepare-shutdown/', views.admin_prepare_shutdown, name='admin_prepare_shutdown'),
     path('admin-project-files-report/', views.admin_project_files_report, name='admin_project_files_report'),
+    path('admin-file-ownership/', views.admin_file_ownership, name='admin_file_ownership'),
     path('admin-audit-log/', views.admin_audit_log, name='admin_audit_log'),
     path('admin-audit-log/validate/', views.admin_audit_log_validate, name='admin_audit_log_validate'),
 

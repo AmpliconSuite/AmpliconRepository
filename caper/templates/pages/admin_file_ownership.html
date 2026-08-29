@@ -1,0 +1,208 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+
+{% block meta_title %} File Ownership
+{% endblock %}
+
+{% block main %}
+<div class="row">
+  <div class="col-md-11">
+    <h1 style="padding-top: 50px">GridFS File Ownership</h1>
+    <p class="text-muted">
+      Every stored file, and which project still owns it. A file is kept because
+      a retained project document names it, so this walks the documents and
+      accounts for every row in <code>fs.files</code> &mdash; the same answer
+      before and after the backlink migration.
+    </p>
+    <div class="alert alert-secondary">
+      <strong>This page only counts.</strong> Nothing here deletes a file, and a
+      number on it is not on its own a reason to delete one. Both storage
+      incidents this report exists to prevent were a count like this one being
+      believed: 84 of 345 projects called orphaned when 77 still held their
+      payload, and 80,170 live files made to look like garbage.
+    </div>
+
+    <form method="POST" style="display:inline">
+      {% csrf_token %}
+      <button type="submit" name="action" value="run" class="btn btn-primary"
+              {% if running %}disabled{% endif %}>
+        {% if running %}Survey running&hellip;{% else %}Run survey{% endif %}
+      </button>
+    </form>
+    {% if running %}
+      <span class="text-muted" style="margin-left:10px">
+        Walking every project document. Reload this page in a minute.
+      </span>
+    {% endif %}
+
+    {% if latest %}
+      {% if latest.state == 'failed' %}
+        <div class="alert alert-danger" style="margin-top:20px">
+          The last survey failed: {{ latest.error }}
+        </div>
+      {% endif %}
+
+      <h3 style="margin-top:35px">
+        Snapshot of {{ latest.measured_at|default:latest.started_at }}
+      </h3>
+      <p>
+        {{ latest.documents }} project document(s).
+        <strong>{{ latest.total_files }}</strong> file(s) in GridFS,
+        {{ total_size }} in total.
+      </p>
+
+      <table class="table table-sm" style="max-width:820px">
+        <thead>
+          <tr>
+            <th>Bucket</th>
+            <th class="text-right">Files</th>
+            <th class="text-right">Share</th>
+            <th class="text-right">Size</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>
+                <code>{{ row.label }}</code>
+                {% if row.owned %}
+                  <span class="badge badge-success">keep</span>
+                {% endif %}
+              </td>
+              <td class="text-right">{{ row.count }}</td>
+              <td class="text-right">{{ row.share|floatformat:1 }}%</td>
+              <td class="text-right">{{ row.size }}</td>
+            </tr>
+          {% endfor %}
+          <tr>
+            <th>residue, all causes</th>
+            <th class="text-right">{{ latest.residue }}</th>
+            <th class="text-right"></th>
+            <th class="text-right">{{ residue_size }}</th>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4 style="margin-top:30px">Backlinks</h4>
+      <p>
+        {{ latest.labelled_rows }} of {{ latest.total_files }} row(s) carry a
+        backlink to the project that stored them.
+        {% if latest.labelled_rows == 0 %}
+          None have been written here yet, so the whole residue sits in
+          <code>{{ unlabelled_label }}</code>. That is the question not yet
+          asked, <em>not</em> a count of orphans: running the backfill splits it
+          into <code>{{ gone_label }}</code> and
+          <code>{{ unreferenced_label }}</code>.
+        {% else %}
+          Of the owned rows, {{ latest.backlink_agrees }} agree with the
+          document, {{ latest.backlink_disagrees }} name a different one, and
+          {{ latest.backlink_missing }} carry none. A disagreement means the
+          backlink is wrong, never the document.
+        {% endif %}
+      </p>
+
+      {% if latest.shared_rows %}
+        <p>
+          {{ latest.shared_rows }} row(s) are named by more than one document.
+          A backlink records one owner, so each such row is counted once here,
+          under whichever owner makes it undeletable.
+        </p>
+      {% endif %}
+
+      {% if latest.named_absent %}
+        <p>
+          {{ latest.named_absent }} id(s) named by a project document have no
+          file behind them &mdash; documents pointing at storage that is already
+          gone, which is a property of those documents rather than of GridFS.
+        </p>
+      {% endif %}
+
+      {% if latest.tombstones_holding %}
+        <h4 style="margin-top:30px">Deletions that did not finish</h4>
+        <p>
+          These projects are tombstones: the version was removed from history
+          and the payload was supposed to have been purged with it. Each one
+          still holding files is a bug worth chasing.
+        </p>
+        <table class="table table-sm" style="max-width:820px">
+          <thead>
+            <tr><th>Project</th><th class="text-right">Files</th></tr>
+          </thead>
+          <tbody>
+            {% for row in latest.tombstones_holding %}
+              <tr>
+                <td>{{ row.project_name|default:row.project_id }}</td>
+                <td class="text-right">{{ row.present }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      <h4 style="margin-top:30px">Largest projects</h4>
+      <table class="table table-sm" style="max-width:820px">
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th class="text-right">Files</th>
+            <th class="text-right">Named</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in latest.per_project|slice:":40" %}
+            <tr>
+              <td>
+                {{ row.project_name|default:row.project_id }}
+                {% if row.tombstone %}
+                  <span class="badge badge-warning">tombstone</span>
+                {% endif %}
+              </td>
+              <td class="text-right">{{ row.present }}</td>
+              <td class="text-right">{{ row.named }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p style="margin-top:25px" class="text-muted">
+        No survey has been run yet.
+      </p>
+    {% endif %}
+
+    {% if snapshots %}
+      <h4 style="margin-top:35px">Earlier snapshots</h4>
+      <table class="table table-sm" style="max-width:820px">
+        <tbody>
+          {% for snapshot in snapshots %}
+            <tr>
+              <td>
+                <a href="?snapshot={{ snapshot.id_str }}">
+                  {{ snapshot.measured_at|default:snapshot.started_at }}
+                </a>
+                {% if snapshot.state != 'done' %}
+                  <span class="badge badge-secondary">{{ snapshot.state }}</span>
+                {% endif %}
+              </td>
+              <td>{{ snapshot.started_by }}</td>
+              <td class="text-right">{{ snapshot.total_files }}</td>
+              <td class="text-right">
+                <form method="POST" style="display:inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="report_id" value="{{ snapshot.id_str }}">
+                  <button type="submit" name="action" value="remove_snapshot"
+                          class="btn btn-sm btn-outline-secondary">Remove</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="text-muted">
+        Removing a snapshot removes this record of a measurement. It does not
+        touch a single file.
+      </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

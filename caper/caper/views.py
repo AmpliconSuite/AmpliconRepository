@@ -47,6 +47,7 @@ from .views_admin import (
     fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report, make_project_current,
     admin_audit_log,
     admin_audit_log_validate,
+    admin_file_ownership,
 )
 
 # Import API views from separate module

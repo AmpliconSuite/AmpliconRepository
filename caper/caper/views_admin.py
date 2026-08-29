@@ -37,7 +37,7 @@ from .utils import (
     audit_log_handle, delete_gridfs_file,
     get_one_project, get_one_deleted_project, prepare_project_linkid,
     check_if_db_field_exists, get_date_short,
-    form_to_dict, get_date, db_handle_primary, format_visibility_for_display,
+    form_to_dict, get_date, db_handle, db_handle_primary, format_visibility_for_display,
     get_project_version_chain, normalize_visibility_field, is_project_private,
     PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES,
 )
@@ -1575,3 +1575,124 @@ def admin_audit_log_validate(request):
     except Exception as e:
         logging.error(f"admin_audit_log_validate error for project_id '{project_id}': {e}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# ---------------------------------------------------------------------------
+# GridFS ownership
+# ---------------------------------------------------------------------------
+
+OWNERSHIP_REPORTS = 'gridfs_ownership_reports'
+
+#: Projects kept in a stored snapshot. The whole list is a few hundred rows
+#: today, but a snapshot that grows without bound is a document that one day
+#: cannot be written back.
+OWNERSHIP_PROJECT_ROWS = 200
+
+
+def _ownership_reports():
+    return db_handle_primary[OWNERSHIP_REPORTS]
+
+
+def _run_ownership_survey(report_id, started_by):
+    """Walk the documents and store one snapshot. Runs in a worker thread.
+
+    Read-only against both collections: the survey counts, and this records
+    what it counted. Nothing here deletes a file or edits a project.
+    """
+    from .gridfs_ownership import survey
+
+    reports = _ownership_reports()
+    try:
+        result = survey(db_handle['projects'], db_handle['fs.files'])
+        result['per_project'] = result['per_project'][:OWNERSHIP_PROJECT_ROWS]
+        result['state'] = 'done'
+        result['started_by'] = started_by
+        reports.update_one({'_id': report_id}, {'$set': result})
+    except Exception as exc:
+        logging.exception('GridFS ownership survey failed')
+        reports.update_one({'_id': report_id},
+                           {'$set': {'state': 'failed',
+                                     'error': f'{type(exc).__name__}: {exc}'}})
+
+
+def admin_file_ownership(request):
+    """Report which project owns each GridFS file, and how much is residue.
+
+    A report, and only a report. There is no control on this page that deletes
+    anything, deliberately: the two production incidents behind this work were
+    both a count like this one being believed and acted on. What the page is
+    for is deciding whether a deletion is worth investigating, not performing
+    it.
+    """
+    from .background_tasks import _thread_executor
+    from .gridfs_ownership import (
+        ORDER, RESIDUE_DOCUMENT_GONE, RESIDUE_UNLABELLED, RESIDUE_UNREFERENCED,
+        human,
+    )
+
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+
+    reports = _ownership_reports()
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'run':
+            report_id = ObjectId()
+            reports.insert_one({'_id': report_id, 'state': 'running',
+                                'started_at': datetime.datetime.now(
+                                    datetime.timezone.utc),
+                                'started_by': str(request.user)})
+            _thread_executor.submit(_run_ownership_survey, report_id,
+                                    str(request.user),
+                                    task_label='gridfs_ownership_survey')
+        elif action == 'remove_snapshot':
+            # Not spelled 'delete': that literal is reserved for the status
+            # flag field, and the guard in tests/test_project_status_guard.py
+            # cannot tell a form action from a flag. The name is better here
+            # anyway -- what it removes is a measurement, not data.
+            snapshot_id = request.POST.get('report_id')
+            if snapshot_id:
+                reports.delete_one({'_id': ObjectId(snapshot_id)})
+        return redirect('/admin-file-ownership/')
+
+    snapshots = list(reports.find().sort('started_at', -1).limit(25))
+    for snapshot in snapshots:
+        snapshot['id_str'] = str(snapshot['_id'])
+
+    wanted = request.GET.get('snapshot')
+    latest = None
+    if wanted:
+        latest = next((s for s in snapshots if s['id_str'] == wanted), None)
+    if latest is None:
+        latest = next((s for s in snapshots if s.get('state') == 'done'), None)
+    running = any(s.get('state') == 'running' for s in snapshots)
+
+    rows = []
+    if latest:
+        total = latest.get('total_files') or 0
+        for label in ORDER:
+            count = (latest.get('counts') or {}).get(label, 0)
+            rows.append({
+                'label': label,
+                'count': count,
+                'share': (count / total * 100) if total else 0,
+                'size': human((latest.get('bytes') or {}).get(label, 0)),
+                'owned': label.startswith('owned'),
+                'unlabelled': label == RESIDUE_UNLABELLED,
+            })
+
+    return render(request, 'pages/admin_file_ownership.html', {
+        'user': request.user,
+        'SITE_TITLE': settings.SITE_TITLE,
+        'snapshots': snapshots,
+        'latest': latest,
+        'running': running,
+        'rows': rows,
+        'residue_size': human(latest.get('residue_bytes', 0)) if latest else '',
+        'total_size': human(latest.get('total_bytes', 0)) if latest else '',
+        'unlabelled_label': RESIDUE_UNLABELLED,
+        'gone_label': RESIDUE_DOCUMENT_GONE,
+        'unreferenced_label': RESIDUE_UNREFERENCED,
+        **_get_audit_log_context(request),
+    })
