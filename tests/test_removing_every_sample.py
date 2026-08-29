@@ -129,6 +129,19 @@ def test_removing_every_sample_says_what_it_does(
             'the samples were not removed at all, which is the one outcome ' \
             'that silently does nothing'
 
+        # Whichever of the three outcomes this is, the user has to be told
+        # something they can act on. The aggregator refuses this edit with a
+        # sentence saying why; until 2026-08-28 the site replaced that sentence
+        # with str(SystemExit(1)), so the project's error_message was the single
+        # character '1'.
+        if outcome == 'aggregation_failed':
+            stored = str(result.get('error_message') or '')
+            assert stored.rstrip('. ') != 'An error occurred during aggregation: 1', \
+                'the failure message is the exit status again'
+            assert 'excluded' in stored, (
+                f'the aggregator explained why it refused and the site did not '
+                f'pass it on; stored message was {stored!r}')
+
     finally:
         for project_id in created:
             _cleanup_project(mongo_collection, project_id)

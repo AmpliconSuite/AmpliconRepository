@@ -83,6 +83,7 @@ from .utils import (
     AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
 from .tar_safety import safe_extract_member, safe_extractall
+from .aggregation_failure import aggregation_error_message
 from .project_status import (
     DELETE_FLAG_QUERY,
     LIVE,
@@ -4968,7 +4969,10 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         logging.error(f"Error in background aggregation for project {temp_proj_id}: {str(e)}")
         logging.error(traceback.format_exc())
 
-        _err_msg = f'An error occurred during aggregation: {str(e)}'
+        # str(e) is '1' for the SystemExit the aggregator raises when it aborts,
+        # which told the user the exit status and threw away the sentence saying
+        # what was wrong with their input.
+        _err_msg = aggregation_error_message(e)
         if rollback_project_id:
             try:
                 _do_rollback(temp_proj_id, rollback_project_id, _err_msg)
