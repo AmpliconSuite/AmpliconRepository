@@ -123,3 +123,35 @@ def test_the_page_says_an_unlabelled_row_is_not_an_orphan():
 ])
 def test_the_page_carries_the_warning_that_the_numbers_are_evidence(phrase):
     assert phrase in TEMPLATE.read_text()
+
+
+def test_a_survey_whose_worker_died_stops_blocking_the_button():
+    """A 'running' row with no thread behind it must not disable Run forever.
+
+    The worker writes 'failed' when the survey raises, but nothing writes it
+    when the process goes away underneath -- a restart, a kill, a deploy. Age
+    is the only evidence left, so age is what the page reads.
+    """
+    import datetime
+
+    from caper.views_admin import (OWNERSHIP_SURVEY_ABANDONED_AFTER,
+                                   mark_abandoned_surveys)
+
+    now = datetime.datetime(2026, 8, 29, 12, 0, tzinfo=datetime.timezone.utc)
+    old = now - OWNERSHIP_SURVEY_ABANDONED_AFTER - datetime.timedelta(minutes=1)
+    snapshots = [
+        {'state': 'running', 'started_at': now - datetime.timedelta(minutes=2)},
+        {'state': 'running', 'started_at': old},
+        {'state': 'running', 'started_at': old.replace(tzinfo=None)},
+        {'state': 'done', 'started_at': old},
+    ]
+
+    mark_abandoned_surveys(snapshots, now=now)
+
+    assert [row['state'] for row in snapshots] == [
+        'running', 'abandoned', 'abandoned', 'done']
+
+
+def test_an_abandoned_survey_is_shown_as_such():
+    """The state reaches the reader; it is not just corrected in memory."""
+    assert '{{ snapshot.state }}' in TEMPLATE.read_text()

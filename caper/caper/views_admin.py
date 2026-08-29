@@ -1593,6 +1593,35 @@ def _ownership_reports():
     return db_handle_primary[OWNERSHIP_REPORTS]
 
 
+#: A survey still claiming to be running after this long has lost its worker.
+OWNERSHIP_SURVEY_ABANDONED_AFTER = datetime.timedelta(hours=1)
+
+
+def mark_abandoned_surveys(snapshots, now=None):
+    """Rewrite the state of surveys whose worker went away.
+
+    The worker records 'failed' when the survey raises, but nothing records
+    anything when the process disappears underneath it -- a restart, a kill,
+    a deploy. The row keeps saying 'running', which disables the Run button for
+    good. Age is the only evidence left of the difference, so age is what this
+    reads. Mutates the dicts in place; the stored documents are not touched,
+    because the fact being corrected is about this moment, not about them.
+    """
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    cutoff = now - OWNERSHIP_SURVEY_ABANDONED_AFTER
+    for snapshot in snapshots:
+        started = snapshot.get('started_at')
+        if snapshot.get('state') != 'running' or not started:
+            continue
+        # DocumentDB hands back naive UTC; a caller passing an aware value is
+        # left as it is.
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=datetime.timezone.utc)
+        if started < cutoff:
+            snapshot['state'] = 'abandoned'
+    return snapshots
+
+
 def _run_ownership_survey(report_id, started_by):
     """Walk the documents and store one snapshot. Runs in a worker thread.
 
@@ -1659,6 +1688,8 @@ def admin_file_ownership(request):
     snapshots = list(reports.find().sort('started_at', -1).limit(25))
     for snapshot in snapshots:
         snapshot['id_str'] = str(snapshot['_id'])
+
+    mark_abandoned_surveys(snapshots)
 
     wanted = request.GET.get('snapshot')
     latest = None
