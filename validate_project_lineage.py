@@ -519,6 +519,20 @@ def _check_i15(snap):
                 'I15', doc['_id'], doc.get('project_name'),
                 f'stores chain emptiness rather than deriving it: '
                 f'{", ".join(stored)}'))
+
+    # The chain view is the obvious place for someone to cache this, and it is
+    # the one place where it would look reasonable -- the chain is exactly the
+    # scope the property belongs to. It still must not be stored: the view is
+    # rebuilt from documents, so a cached emptiness would be correct only until
+    # a version was restored between rebuilds.
+    if snap.chain_view is not None:
+        for doc in snap.chain_view.find({}, {key: 1 for key in _STORED_EMPTINESS_KEYS}):
+            stored = [key for key in _STORED_EMPTINESS_KEYS if key in doc]
+            if stored:
+                findings.append(Finding(
+                    'I15', doc['_id'], None,
+                    f'the chain view stores emptiness rather than deriving it '
+                    f'from its members: {", ".join(stored)}'))
     return findings
 
 
@@ -601,10 +615,48 @@ def _check_i9(snap):
             'a derived project_version_chains collection. There are 0 chain '
             'documents in this database, so there is no second copy to compare '
             'the documents against yet.')
-    raise Unavailable(
-        f'a digest function. {snap.chain_view.count_documents({})} chain '
-        f'document(s) exist here, so this invariant is now live and its checker '
-        f'has to be written -- see the rebuild command.')
+
+    from caper.version_chains import head_of, order_members, source_digest
+
+    findings = []
+    chains = snap.chains()
+    stored = {doc['_id']: doc for doc in snap.chain_view.find(
+        {}, {'source_digest': 1, 'head_project_id': 1})}
+
+    for chain_id, members in sorted(chains.items(), key=lambda kv: str(kv[0])):
+        view = stored.get(chain_id)
+        if view is None:
+            findings.append(Finding(
+                'I9', chain_id, snap.name(members[0]['_id']) if members else None,
+                f'chain {chain_id} has {len(members)} member document(s) but no '
+                f'chain document; the view has not been rebuilt since it was '
+                f'created'))
+            continue
+        expected = source_digest(members)
+        if view.get('source_digest') != expected:
+            findings.append(Finding(
+                'I9', chain_id, snap.name(members[0]['_id']) if members else None,
+                f'chain {chain_id} digest {str(view.get("source_digest"))[:12]}… '
+                f'but the documents digest {expected[:12]}… -- the view is stale '
+                f'and the documents win; rebuild it'))
+            continue
+        # The digest covers (id, ordinal, status). The head is the one derived
+        # field it does not cover, and it is the field feature code reads most,
+        # so it is compared directly rather than trusted.
+        head = head_of(order_members(members))
+        expected_head = head['_id'] if head is not None else None
+        if view.get('head_project_id') != expected_head:
+            findings.append(Finding(
+                'I9', chain_id, snap.name(members[0]['_id']) if members else None,
+                f'chain {chain_id} names head {view.get("head_project_id")} but '
+                f'the documents say {expected_head}'))
+
+    for chain_id in sorted(set(stored) - set(chains), key=str):
+        findings.append(Finding(
+            'I9', chain_id, None,
+            f'chain document {chain_id} has no member documents left; the view '
+            f'outlived the chain it describes'))
+    return findings
 
 
 def _check_i13(snap):
@@ -937,9 +989,12 @@ INVARIANTS = (
                       'needs metadata on each fs.files row, which nothing writes'),
     Invariant('I15', 'A chain is EMPTY iff every member is a TOMBSTONE',
               check=_check_i15,
-              partial='the "never stored" half only; the derivation has nothing '
-                      'to be compared against until the derived '
-                      'project_version_chains view lands, and I9 owns that'),
+              partial='the "never stored" half, now covering the chain view as '
+                      'well as the documents. The derived half has nothing to '
+                      'compare against by design -- the view deliberately does '
+                      'not store emptiness, so there is no second opinion to '
+                      'disagree with; that the view matches its members at all '
+                      'is I9'),
     Invariant('I16', 'Every chain has exactly one is_latest member',
               check=_check_i16),
     Invariant('I17', 'Every chain-level field survives the emptying of a chain',
