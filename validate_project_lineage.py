@@ -1067,8 +1067,15 @@ INVARIANTS = (
     Invariant('I16', 'Every chain has exactly one is_latest member',
               check=_check_i16),
     Invariant('I17', 'Every chain-level field survives the emptying of a chain',
-              needs='a decision about which project-level fields belong to a '
-                    'chain and which to a version; six are still unclassified'),
+              needs='code that declares the split. The decision was taken on '
+                    '2026-08-27: project_downloads, sample_downloads and the '
+                    'alias pair are chain-level, sample_name_remap_enabled is '
+                    'version-level, and owner and original_project_name belong '
+                    'to neither -- they are upload scaffolding that a finished '
+                    'project must not carry. Nothing declares that in code yet; '
+                    'promotion still copies a hand-written list of 9 fields '
+                    '(views.py, delete_project_version), so there is no set for '
+                    'this check to read'),
     Invariant('I18', 'Exactly one tombstone-creation routine exists and every '
                      'deletion path calls it', check=_check_i18),
     Invariant('I19', 'Every lineage reference is stored in the encoding the '
