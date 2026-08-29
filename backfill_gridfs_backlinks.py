@@ -46,14 +46,24 @@ DEFAULT_CHECKPOINT = 'gridfs-backlink-checkpoint.json'
 
 
 def connect(db_name, expect_host):
+    """The database, read from the **primary**.
+
+    The connection string sets ``readPreference=secondaryPreferred``, which is
+    right for the site and wrong for a migration: every read this script makes
+    is about work it just did. A staged run on dev wrote 856 rows and then
+    counted 855, measured 2026-08-29 -- the row was on the primary the whole
+    time, and the verification number was the thing that was wrong. A resumed
+    run reading a stale secondary would go further and redo writes it had
+    already made.
+    """
     uri = os.environ['DB_URI_SECRET']
     is_local = 'localhost' in uri or '127.0.0.1' in uri
     if expect_host == 'local' and not is_local:
         sys.exit('--expect-host local, but the URI does not name localhost')
     if expect_host == 'docdb' and is_local:
         sys.exit('--expect-host docdb, but the URI names localhost')
-    from pymongo import MongoClient
-    return MongoClient(uri)[db_name]
+    from pymongo import MongoClient, ReadPreference
+    return MongoClient(uri, read_preference=ReadPreference.PRIMARY)[db_name]
 
 
 def ensure_index(fs_files):
@@ -204,7 +214,8 @@ def main(argv=None):
     print(f'target: {db_name} ({args.expect_host})')
 
     if args.rollback:
-        return rollback(fs_files, args.rollback, args.batch, args.execute)
+        return rollback(fs_files, args.rollback, args.batch,
+                        args.execute)
 
     undo = open(args.undo, 'a') if args.execute else None
     if args.execute:
@@ -276,9 +287,9 @@ def main(argv=None):
         print(f'  named but absent from fs.files: {missing}   '
               f'(that is I12\'s finding, not this script\'s to fix)')
 
-    total = fs_files.estimated_document_count()
-    labelled = fs_files.count_documents({f'{METADATA_FIELD}.{PROJECT_ID}':
-                                         {'$exists': True}})
+    total = fs_files.count_documents({})
+    labelled = fs_files.count_documents(
+        {f'{METADATA_FIELD}.{PROJECT_ID}': {'$exists': True}})
     print(f'\nfs.files: {labelled} of {total} row(s) carry a backlink')
 
     if not args.execute:
