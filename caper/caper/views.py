@@ -84,6 +84,7 @@ from .utils import (
 )
 from .tar_safety import safe_extract_member, safe_extractall
 from .aggregation_failure import aggregation_error_message
+from .gridfs_backlinks import put_with_backlink
 from .project_status import (
     DELETE_FLAG_QUERY,
     LIVE,
@@ -4303,7 +4304,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         try:
                             path_var = feature[k]
                             with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
-                                id_var = fs_handle.put(file_var)
+                                id_var = put_with_backlink(
+                                    fs_handle, file_var, project_id=project_id,
+                                    sample_name=sample, feature_key=k)
                             uploaded_file_ids.append(id_var)
                             # Explicitly delete the file data reference
                             del path_var
@@ -4374,10 +4377,15 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             with tarfile.open(fileobj=buf, mode='w:gz') as tar:
                                 tar.add(full_path, arcname=dir_name)
                             buf.seek(0)
-                            id_var = fs_handle.put(buf, filename=archive_name)
+                            id_var = put_with_backlink(
+                                fs_handle, buf, filename=archive_name,
+                                project_id=project_id, sample_name=sample,
+                                feature_key=directory_key)
                         else:
                             with open(full_path, 'rb') as file_var:
-                                id_var = fs_handle.put(file_var)
+                                id_var = put_with_backlink(
+                                    fs_handle, file_var, project_id=project_id,
+                                    sample_name=sample, feature_key=directory_key)
                         uploaded_file_ids.append(id_var)
                     except Exception as upload_error:
                         if isinstance(id_var, ObjectId):
@@ -5585,7 +5593,14 @@ def create_project_helper(form, user, request_file, save = True, tmp_id = uuid.u
 
 
     with open(file_location, "rb") as tar_file:
-        project_tar_id = fs_handle.put(tar_file)
+        # tmp_id is the real project id on the placeholder path (an edit, and
+        # every create that goes through _process_and_aggregate_files); on a
+        # direct create it is still a uuid, which as_object_id() rejects, so the
+        # row is stored unlabelled and the backfill completes it from the
+        # document. Writing the intended id when it is known is what makes a
+        # crashed ingestion leave a file that says what it was for.
+        project_tar_id = put_with_backlink(
+            fs_handle, tar_file, project_id=tmp_id, feature_key='tarfile')
 
 
     #get run.json

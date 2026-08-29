@@ -675,9 +675,38 @@ def _check_i13(snap):
             'metadata.project_id on fs.files rows. 0 of '
             f'{snap.fs_files.count_documents({})} files carry one, so no file '
             'can name the document it belongs to.')
-    raise Unavailable(
-        f'a checker. {with_backlink} fs.files row(s) now carry '
-        f'metadata.project_id, so this invariant is live and unimplemented.')
+
+    from caper.gridfs_backlinks import METADATA_FIELD, PROJECT_ID, iter_backlinks
+
+    findings = []
+    # Backlinks that name a document which does not exist. The reverse
+    # direction -- a document naming a file with no row -- is I12's.
+    known = {doc['_id'] for doc in snap.documents}
+    for project_id in snap.fs_files.distinct(f'{METADATA_FIELD}.{PROJECT_ID}'):
+        if project_id in known:
+            continue
+        count = snap.fs_files.count_documents(
+            {f'{METADATA_FIELD}.{PROJECT_ID}': project_id})
+        findings.append(Finding(
+            'I13', project_id, None,
+            f'{count} fs.files row(s) name project {project_id}, which has no '
+            f'document; residue of a purge or permanent delete'))
+
+    # A file whose document exists but no longer names it. Not automatically a
+    # defect -- it is the residue a version edit leaves, and the report grades
+    # it -- so only the tombstone case is reported here, where the payload was
+    # supposed to have been purged and was not.
+    for doc in snap.documents:
+        if snap.status[doc['_id']] != TOMBSTONE:
+            continue
+        held = snap.fs_files.count_documents(
+            {f'{METADATA_FIELD}.{PROJECT_ID}': doc['_id']})
+        if held:
+            findings.append(Finding(
+                'I13', doc['_id'], snap.name(doc['_id']),
+                f'TOMBSTONE still holding {held} labelled file(s); its payload '
+                f'was supposed to have been purged'))
+    return findings
 
 
 def _check_i6(snap):
