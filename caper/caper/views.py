@@ -2853,6 +2853,31 @@ AUDIT_EVENT_EDIT_NEW_VERSION = 'edit_new_version'
 AUDIT_EVENT_EDIT_NO_VERSION = 'edit_no_version'
 
 
+def _audit_chain_id(project_uuid):
+    """The chain a project belongs to, as a string, for stamping on an event.
+
+    Resolved here rather than passed in by the eight callers, most of which do
+    not hold the document: the placeholder-upload paths have only an id, and
+    one caller passes ``linkid`` where the others pass ``_id``. Both spellings
+    are tried, which is what the audit-log reader already does.
+
+    Returns ``None`` when the project has no chain yet -- a placeholder written
+    before ``link_new_version()`` runs is the ordinary case, and a missing
+    chain id on such an event is accurate rather than a failure.
+    """
+    try:
+        doc = collection_handle.find_one(
+            {'$or': [{'_id': lineage.resolve_id(project_uuid)},
+                     {'linkid': str(project_uuid)}]},
+            {'version_chain_id': 1})
+        chain_id = (doc or {}).get('version_chain_id')
+        return str(chain_id) if chain_id is not None else None
+    except Exception:
+        logging.exception('Could not resolve chain id for audit event on %s',
+                          project_uuid)
+        return None
+
+
 def log_project_audit_event(user, project_uuid, project_name, is_new_version,
                              aa_version, ac_version, asp_version, s3_uri,
                              event_type=None, sample_count=None):
@@ -2899,6 +2924,11 @@ def log_project_audit_event(user, project_uuid, project_name, is_new_version,
             's3_uri': s3_uri,
             's3_file_size_bytes': s3_file_size_bytes,
             'sample_count': sample_count,
+            # Ties the event to a lineage rather than to one document, so it
+            # survives that document being deleted. Every event written before
+            # 2026-08-30 lacks it; backfill_audit_chain_ids.py adds it to the
+            # ones whose project still exists.
+            'version_chain_id': _audit_chain_id(project_uuid),
         }
         audit_log_handle.insert_one(audit_entry)
         # The submitter stays in the audit entry above -- that record is the point

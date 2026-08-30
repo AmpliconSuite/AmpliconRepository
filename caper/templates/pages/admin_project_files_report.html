@@ -168,6 +168,7 @@
     .badge-event-restore      { background-color: #6f42c1; color: #fff; }
     .badge-event-permanent    { background-color: #7f1d1d; color: #fff; }
     .badge-event-unfinished   { background-color: #fd7e14; color: #fff; }
+    .badge-event-reconstructed { background-color: #6c757d; color: #fff; }
     .uuid-cell  { font-family: monospace; font-size: 0.82em; word-break: break-all; }
     .s3-uri-cell{ font-family: monospace; font-size: 0.78em; word-break: break-all; max-width: 260px; }
     .version-chain-box { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;
@@ -566,6 +567,12 @@
                                         <span class="badge badge-event-edit-new">New Version</span>
                                     {% else %}
                                         <span class="badge badge-event-edit-no">Edit</span>
+                                    {% endif %}
+                                    {% if entry.backfilled %}
+                                        {# Reconstructed from the project document's own date and
+                                           creator, not observed when it happened. #}
+                                        <span class="badge badge-event-reconstructed"
+                                              title="Reconstructed from the project's date and creator; not recorded at the time">reconstructed</span>
                                     {% endif %}
                                     {% if entry.event_type in deletion_events and not entry.completed %}
                                         {# Recorded before the mutation and never confirmed: the
