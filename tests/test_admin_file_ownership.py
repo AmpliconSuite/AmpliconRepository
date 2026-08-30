@@ -155,3 +155,57 @@ def test_a_survey_whose_worker_died_stops_blocking_the_button():
 def test_an_abandoned_survey_is_shown_as_such():
     """The state reaches the reader; it is not just corrected in memory."""
     assert '{{ snapshot.state }}' in TEMPLATE.read_text()
+
+
+def test_the_page_does_not_build_the_audit_table(request_factory, admin_user,
+                                                 monkeypatch):
+    """The cost this page used to carry, and the reason it is a test.
+
+    ``_get_audit_log_context()`` fetches every live project document and then
+    runs two queries and an S3 ``head_object`` per project. This page displays
+    none of what it returns. Measured on prod from the gunicorn access log on
+    2026-08-29, the two views that called it were the site's two slowest URLs:
+    this one averaged 91s over 13 requests against 3.5s for the next admin
+    page. Spreading that context into the template dict is one line, which is
+    how it got here; this test is what makes removing it stick.
+    """
+    from caper import views_admin
+
+    def _refuse(request):
+        raise AssertionError(
+            'admin_file_ownership built the audit-log context; it renders none '
+            'of those keys and the query behind them reads every live project')
+
+    monkeypatch.setattr(views_admin, '_get_audit_log_context', _refuse)
+
+    assert _get(request_factory, admin_user).status_code == 200
+
+
+def test_the_audit_table_query_leaves_the_payload_fields_behind():
+    """The projection is the fix for the page that *does* need this context."""
+    from caper.views_admin import _AUDIT_PROJECT_FIELDS
+
+    for heavy in ('runs', 'sample_data', 'aggregate_df', 'features_list'):
+        assert heavy not in _AUDIT_PROJECT_FIELDS, (
+            f'{heavy!r} is the bulk of a project document and the audit table '
+            f'does not display it')
+    assert _AUDIT_PROJECT_FIELDS['project_name'] == 1
+    assert _AUDIT_PROJECT_FIELDS['sample_count'] == 1
+
+
+def test_an_unfetched_sample_count_reads_as_missing_not_zero():
+    """A projected-away ``runs`` must not become a confident zero."""
+    from caper.views_admin import _run_audit_checks
+
+    entry = {'sample_count': 12, 'AA_version': '1.0'}
+
+    projected = _run_audit_checks({'AA_version': '1.0'}, entry)
+    count = next(c for c in projected['checks'] if c['field'] == 'Sample Count')
+    assert count['missing'] is True
+    assert count['live_value'] == '—'
+
+    loaded = _run_audit_checks({'AA_version': '1.0', 'runs': {'a': 1, 'b': 2}},
+                               entry)
+    count = next(c for c in loaded['checks'] if c['field'] == 'Sample Count')
+    assert count['live_value'] == '2'
+    assert count['missing'] is False

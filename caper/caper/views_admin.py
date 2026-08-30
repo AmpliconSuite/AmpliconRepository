@@ -223,7 +223,13 @@ def _run_audit_checks(project, latest_entry):
 
     s3_uri = latest_entry.get('s3_uri')
     live_s3_size = _get_s3_file_size_bytes_admin(s3_uri) if s3_uri else None
-    live_sample_count = project.get('sample_count') or len(project.get('runs', {}))
+    # 'runs' is only counted when it was actually loaded. Callers that project
+    # it away get None here, which _make_check renders as missing -- the honest
+    # answer. Falling through to len({}) would report a confident 0 for a
+    # project whose samples simply were not fetched.
+    live_sample_count = project.get('sample_count')
+    if live_sample_count is None and 'runs' in project:
+        live_sample_count = len(project['runs'] or {})
 
     checks = [
         _make_check('AA Version',          latest_entry.get('AA_version'),          project.get('AA_version')),
@@ -1392,11 +1398,29 @@ def admin_project_files_report(request):
     })
 
 
+#: The only project fields the audit table renders or compares.
+#
+# Without a projection this query pulls every live project document whole --
+# `runs`, `sample_data` and `aggregate_df` included -- to display six values per
+# row. Measured on prod 2026-08-29 from the gunicorn access log, the two pages
+# that call this helper were the two slowest URLs on the site by an order of
+# magnitude: /admin-project-files-report/ averaged 157s and
+# /admin-file-ownership/ 91s, against 3.5s for the next admin page.
+#
+# `project_name_unique` is read by the template and is not written by the
+# upload path; it is listed so that a document which does have it keeps it.
+_AUDIT_PROJECT_FIELDS = {
+    '_id': 1, 'project_name': 1, 'project_name_unique': 1, 'private': 1,
+    'AA_version': 1, 'AC_version': 1, 'ASP_version': 1, 'sample_count': 1,
+}
+
+
 def _get_audit_log_context(request):
     """
     Build the audit log context dict shared by admin_project_files_report and admin_audit_log.
     """
-    all_projects = list(collection_handle.find(STATUS_QUERIES[LIVE]))
+    all_projects = list(collection_handle.find(STATUS_QUERIES[LIVE],
+                                               _AUDIT_PROJECT_FIELDS))
     for proj in all_projects:
         prepare_project_linkid(proj)
         proj['id_str'] = str(proj['_id'])
@@ -1725,5 +1749,4 @@ def admin_file_ownership(request):
         'unlabelled_label': RESIDUE_UNLABELLED,
         'gone_label': RESIDUE_DOCUMENT_GONE,
         'unreferenced_label': RESIDUE_UNREFERENCED,
-        **_get_audit_log_context(request),
     })
