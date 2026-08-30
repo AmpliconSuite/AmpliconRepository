@@ -1444,7 +1444,20 @@ _AUDIT_PROJECT_FIELDS = {
 #
 # $nin also matches documents with no event_type at all, which is what the
 # oldest entries look like -- they predate the constants.
-_PAYLOAD_DESCRIBING_ENTRY = {'event_type': {'$nin': list(provenance.DELETION_EVENTS)}}
+#
+# A backfilled event is excluded for the same reason and it is the same defect:
+# it was reconstructed from the project document's date and creator, so it has
+# no s3_uri and no recorded file size, and letting one be the latest entry makes
+# the size check read as missing. Measured on prod 2026-08-30, the hour the
+# backfill ran: it took the projects with a payload-describing entry from 116 to
+# 311, and every one of the 195 it added carried no s3_uri, so all 195 rows
+# downgraded to "Partial". Those events exist to fill the history table, which
+# is where a reconstructed creation belongs; they are not a record of a payload
+# and must not be compared to one. A project with no real entry should say so.
+_PAYLOAD_DESCRIBING_ENTRY = {
+    'event_type': {'$nin': list(provenance.DELETION_EVENTS)},
+    'backfilled': {'$ne': True},
+}
 
 
 def _latest_payload_entry(matched_uuids):
