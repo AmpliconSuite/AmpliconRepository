@@ -23,8 +23,17 @@ evidence and never authority. Do not build a check that assumes an event exists
 for every mutation; the absence of an event is weaker evidence than the
 presence of one.
 
-**No backfill.** Deletions before this shipped are not recoverable and are not
-invented. A fabricated event is worse than a gap, because a gap is honest.
+**Deletions are not backfilled.** A deletion that happened before this shipped
+left nothing behind to reconstruct it from: who ran it, which path ran, and what
+the project looked like beforehand are all gone. A fabricated event is worse
+than a gap, because a gap is honest.
+
+Creations are a different case and *are* backfilled, by
+``backfill_create_events.py``: a project document still carries the date it was
+written and the person who ran the aggregation, so the event is read off the
+document rather than invented. Those events are flagged ``backfilled`` and the
+admin history badges them as reconstructed -- which is the line between the two
+cases. Reconstruct only what the data still says, and say that you did.
 """
 
 import datetime
