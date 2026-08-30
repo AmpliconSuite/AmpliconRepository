@@ -2,6 +2,7 @@ import logging
 
 from bson import ObjectId
 
+from .download_totals import DATED_COUNTERS
 from .project_status import STATUS_QUERIES, TOMBSTONE, combine, status_flags
 
 
@@ -262,6 +263,19 @@ def build_deleted_version_tombstone(old_project, latest_project, deleter,
         tombstone['redirect_to_project'] = str(latest_project['_id'])
     for field in VERSION_HISTORY_FIELDS:
         tombstone[field] = old_project.get(field, 'NA')
+
+    # The downloads this version served happened, and deleting the version does
+    # not unhappen them. Because a tombstone is written with replace_one, a
+    # counter left off this dict is destroyed rather than merely hidden -- and
+    # a project's displayed history would shrink every time an old version was
+    # tidied away. Measured on prod 2026-08-29: exactly one of the tombstones
+    # there still carried a nonzero counter, so every earlier deletion did
+    # throw its share away. Only the dated counters are carried: `views` and
+    # `downloads` are cumulative and already copied onto the promoted version,
+    # so keeping them here as well would double-count. See download_totals.
+    for field in DATED_COUNTERS:
+        if old_project.get(field):
+            tombstone[field] = old_project[field]
     return tombstone
 
 

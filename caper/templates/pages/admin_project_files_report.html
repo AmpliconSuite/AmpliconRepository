@@ -164,6 +164,10 @@
     .badge-event-create       { background-color: #28a745; color: #fff; }
     .badge-event-edit-new     { background-color: #17a2b8; color: #fff; }
     .badge-event-edit-no      { background-color: #6c757d; color: #fff; }
+    .badge-event-delete       { background-color: #dc3545; color: #fff; }
+    .badge-event-restore      { background-color: #6f42c1; color: #fff; }
+    .badge-event-permanent    { background-color: #7f1d1d; color: #fff; }
+    .badge-event-unfinished   { background-color: #fd7e14; color: #fff; }
     .uuid-cell  { font-family: monospace; font-size: 0.82em; word-break: break-all; }
     .s3-uri-cell{ font-family: monospace; font-size: 0.78em; word-break: break-all; max-width: 260px; }
     .version-chain-box { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;
@@ -540,10 +544,28 @@
                                         <span class="badge badge-event-edit-new">Edit (new ver.)</span>
                                     {% elif entry.event_type == 'edit_no_version' %}
                                         <span class="badge badge-event-edit-no">Edit (no ver.)</span>
+                                    {% elif entry.event_type == 'delete_project' %}
+                                        <span class="badge badge-event-delete">Deleted</span>
+                                    {% elif entry.event_type == 'restore_project' %}
+                                        <span class="badge badge-event-restore">Restored</span>
+                                    {% elif entry.event_type == 'delete_version' %}
+                                        <span class="badge badge-event-delete">Version deleted</span>
+                                    {% elif entry.event_type == 'promote_version' %}
+                                        <span class="badge badge-event-restore">Promoted</span>
+                                    {% elif entry.event_type == 'permanent_delete' %}
+                                        <span class="badge badge-event-permanent">Permanently deleted</span>
+                                    {% elif entry.event_type == 'purge_payload' %}
+                                        <span class="badge badge-event-delete">Payload purged</span>
                                     {% elif entry.new_version %}
                                         <span class="badge badge-event-edit-new">New Version</span>
                                     {% else %}
                                         <span class="badge badge-event-edit-no">Edit</span>
+                                    {% endif %}
+                                    {% if entry.event_type in deletion_events and not entry.completed %}
+                                        {# Recorded before the mutation and never confirmed: the
+                                           operation started and did not finish. Worth seeing. #}
+                                        <span class="badge badge-event-unfinished"
+                                              title="Recorded before the change; never confirmed as completed">unfinished</span>
                                     {% endif %}
                                 </td>
                                 <td>{{ entry.user_email|default:"N/A" }}</td>

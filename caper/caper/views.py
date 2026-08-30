@@ -103,7 +103,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
-from . import lineage
+from . import lineage, provenance
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
@@ -2901,10 +2901,16 @@ def project_delete(request, project_name):
         # 'status' comes from status_after() rather than from the constant,
         # because a half-write's result depends on the 'current' already there:
         # LIVE becomes SOFT_DELETED, SUPERSEDED stays SUPERSEDED.
+        intended_status = status_after(current_flags(project), delete=True)
+        event_id = provenance.record(
+            audit_log_handle, provenance.DELETE_PROJECT, request.user, project,
+            intended={'status': intended_status},
+            by_admin=bool(is_admin and not is_user_a_project_member(project, request)))
         new_val = { "$set": {'delete': status_flags(SOFT_DELETED)['delete'],
-                             'status': status_after(current_flags(project), delete=True),
+                             'status': intended_status,
                              'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
+        provenance.confirm(audit_log_handle, event_id)
         delete_project_from_site_statistics(project, visibility)
 
         # No Neo4j graph invalidation here on purpose. This is a reversible soft
@@ -2985,6 +2991,21 @@ def delete_project_version(request, project_name, version_id):
                                           lineage.POINTER_PROJECTION)
     plan = lineage.plan_deletion(chain_members, version_id)
 
+    # Recorded here rather than at each branch below: this is the last point
+    # where every deletion shape still shares a code path, and the record has
+    # to exist before the first write whichever shape it turns out to be. The
+    # victim document is fetched for the snapshot because latest_project is the
+    # head, which for an old-version delete is a different document.
+    victim = collection_handle.find_one({'_id': ObjectId(version_id)}) or latest_project
+    delete_event = provenance.record(
+        audit_log_handle, provenance.DELETE_VERSION, request.user, victim,
+        intended={'status': TOMBSTONE,
+                  'deleting_current': deleting_current,
+                  'promoting': str(plan.promoted_id) if plan is not None
+                               and plan.promoted_id is not None else None},
+        chain_size=len(chain_members) if chain_members else 1,
+        head_project_id=str(latest_project.get('_id')))
+
     if deleting_current:
         prev_versions_list = latest_project.get('previous_versions', [])
 
@@ -3027,7 +3048,16 @@ def delete_project_version(request, project_name, version_id):
                 if str(_previous_version_linkid(pv)) != prev_linkid
             ]
 
-            # Copy forward important metadata from the current version
+            # Copy forward important metadata from the current version.
+            #
+            # The dated download counters are deliberately not in this list.
+            # They belong to the project, but they are kept where they were
+            # earned and summed across the chain for display (download_totals),
+            # because the version being deleted keeps its own share on its
+            # tombstone. Copying them here as well would count those downloads
+            # twice. 'views' and 'downloads' are the opposite case: they are
+            # cumulative, they are carried forward at reaggregation too, and
+            # the tombstone does not keep them.
             metadata_to_copy = {}
             for field in ['project_members', 'subscribers', 'views', 'downloads',
                           'alias_name', 'publication_link', 'private', 'privateKey', 'featured']:
@@ -3051,10 +3081,23 @@ def delete_project_version(request, project_name, version_id):
                 update_fields['is_latest'] = True
             update_fields.update(metadata_to_copy)
 
+            # A separate event from the delete: promotion is the half that
+            # changes which document the project's URL resolves to, and the
+            # 2026-08 chain repairs needed to know which version had been
+            # promoted, not merely that something had been deleted.
+            promoted_before = collection_handle.find_one({'_id': ObjectId(prev_linkid)})
+            promote_event = provenance.record(
+                audit_log_handle, provenance.PROMOTE_VERSION, request.user,
+                promoted_before,
+                intended={'status': LIVE, 'is_latest': True},
+                replacing_project_id=str(latest_project.get('_id')),
+                fields_copied=sorted(metadata_to_copy))
+
             collection_handle.update_one(
                 {'_id': ObjectId(prev_linkid)},
                 {'$set': update_fields}
             )
+            provenance.confirm(audit_log_handle, promote_event)
 
             promoted_project = collection_handle.find_one({'_id': ObjectId(prev_linkid)}) or {
                 '_id': ObjectId(prev_linkid),
@@ -3087,6 +3130,12 @@ def delete_project_version(request, project_name, version_id):
             # Update site statistics
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
             delete_project_from_site_statistics(latest_project, vis)
+
+            provenance.confirm(audit_log_handle, delete_event,
+                               outcome='promoted',
+                               promoted_project_id=str(prev_linkid),
+                               gridfs_files_purged=deleted_gridfs_count,
+                               tombstones_retargeted=retarget_count)
 
             logging.info(
                 f"Deleted current version {current_linkid}, promoted {prev_linkid} "
@@ -3131,6 +3180,10 @@ def delete_project_version(request, project_name, version_id):
 
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
             delete_project_from_site_statistics(latest_project, vis)
+
+            provenance.confirm(audit_log_handle, delete_event,
+                               outcome='chain_emptied',
+                               gridfs_files_purged=deleted_gridfs_count)
 
             logging.info(
                 f"Deleted last surviving version {current_linkid}; purged "
@@ -3184,6 +3237,10 @@ def delete_project_version(request, project_name, version_id):
             tombstone,
             upsert=True,
         )
+
+        provenance.confirm(audit_log_handle, delete_event,
+                           outcome='tombstoned_in_place',
+                           gridfs_files_purged=deleted_gridfs_count)
 
         logging.info(
             f"Deleted old version {version_id} from history of project "

@@ -55,7 +55,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
-from . import lineage
+from . import download_totals, lineage, provenance
 
 from .extra_metadata import *
 
@@ -497,25 +497,22 @@ def admin_stats(request):
                     new_val = {"$set": {'sample_downloads': sample_download_data}}
                     collection_handle.update_one(query, new_val)
 
-    # Calculate stats
+    # Calculate stats.
+    #
+    # The counters are summed over the whole version chain, not read off the
+    # current version. Downloads are attributed to whichever document served
+    # them, and reaggregation starts the new version's tally empty, so the
+    # current version holds only its own share -- 8% of the project's dated
+    # download history on prod, measured 2026-08-29. The rest was on the older
+    # versions the whole time.
+    chain_counts = download_totals.chain_totals_for(collection_handle,
+                                                    public_projects)
     for project in public_projects:
         project['sample_metadata_available'] = has_sample_metadata(project)
-        if 'project_downloads' in project:
-            # Process download stats
-            pass
-        else:
-            project['project_downloads'] = {}
-
-        if 'sample_downloads' in project:
-            # Process sample download stats - sum the values from the dictionary
-            if isinstance(project['sample_downloads'], dict):
-                project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
-            else:
-                # Handle legacy integer format
-                project['sample_downloads_sum'] = project['sample_downloads']
-        else:
-            project['sample_downloads'] = {}
-            project['sample_downloads_sum'] = 0
+        totals = chain_counts[str(project['_id'])]
+        project['project_downloads'] = totals['project_downloads']
+        project['sample_downloads'] = totals['sample_downloads']
+        project['sample_downloads_sum'] = sum(totals['sample_downloads'].values())
 
     repo_stats = get_latest_site_statistics()
 
@@ -569,16 +566,23 @@ def project_stats_download(request):
     # Get public and private project data
     public_projects = list(collection_handle.find(
         status_query(LIVE, private={'$in': PUBLIC_QUERY_VALUES})))
+    # Summed over the version chain: this CSV is what the weekly report reads,
+    # and its "all time" columns are built from these two dicts. Reading them
+    # off the current version made "all time" mean "since the last
+    # reaggregation" -- 8% of the real figure on prod, measured 2026-08-29.
+    #
+    # download_totals.as_dated also removes a crash that was waiting here: 12
+    # project documents on prod still store project_downloads as a bare int,
+    # and .values() on an int raises. None is public today, which is the only
+    # reason this endpoint has not failed.
+    chain_counts = download_totals.chain_totals_for(collection_handle,
+                                                    public_projects)
     for project in public_projects:
-        if not 'project_downloads' in project:
-            project['project_downloads_sum'] = 0
-        else:
-            project['project_downloads_sum'] = sum(project['project_downloads'].values())
-
-        if not 'sample_downloads' in project:
-            project['sample_downloads_sum'] = 0
-        else:
-            project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
+        totals = chain_counts[str(project['_id'])]
+        project['project_downloads'] = totals['project_downloads']
+        project['sample_downloads'] = totals['sample_downloads']
+        project['project_downloads_sum'] = sum(totals['project_downloads'].values())
+        project['sample_downloads_sum'] = sum(totals['sample_downloads'].values())
 
     for proj in public_projects:
         prepare_project_linkid(proj)
@@ -918,17 +922,30 @@ def admin_delete_project(request):
             # this the reverse of a soft delete: the document keeps whatever
             # 'current' it had.  Only SOFT_DELETED documents are listed below,
             # so in practice that lands on LIVE.
+            intended_status = status_after(current_flags(project), delete=False)
+            restore_event = provenance.record(
+                audit_log_handle, provenance.RESTORE_PROJECT, request.user,
+                project, intended={'status': intended_status})
             new_val = {"$set": {'delete': status_flags(LIVE)['delete'],
-                                'status': status_after(current_flags(project),
-                                                       delete=False)}}
+                                'status': intended_status}}
             collection_handle.update_one(query, new_val)
+            provenance.confirm(audit_log_handle, restore_event)
             error_message = f"Project {project_name} restored."
 
         elif deleteit and (action == 'delete'):
 
             ## deletes the project and all previous versions its history names.
             project = get_one_deleted_project(project_id)
+            # The only irreversible path in the application, and the one whose
+            # absence from the log was felt most in August 2026: afterwards
+            # there is no document left to ask what happened to it.
+            purge_event = provenance.record(
+                audit_log_handle, provenance.PERMANENT_DELETE, request.user,
+                project, intended={'status': None, 'documents_removed': True})
             error_message = permanently_delete_with_history(project_id, project, project_name)
+            provenance.confirm(audit_log_handle, purge_event,
+                               outcome='failed' if error_message else 'removed',
+                               error_message=error_message or None)
 
     deleted_projects = list(collection_handle.find(STATUS_QUERIES[SOFT_DELETED]))
     for proj in deleted_projects:
@@ -1527,6 +1544,11 @@ def _get_audit_log_context(request):
         'matched_uuids': matched_uuids,
         'entries': entries,
         'total_entries': total_entries,
+        # So the template can mark a deletion event that was recorded before
+        # its mutation and never confirmed -- an operation that started and did
+        # not finish. Only these types are written that way; an unconfirmed
+        # create or edit means nothing, because those are logged afterwards.
+        'deletion_events': list(provenance.DELETION_EVENTS),
         'audit_error_message': error_message,
     }
 
