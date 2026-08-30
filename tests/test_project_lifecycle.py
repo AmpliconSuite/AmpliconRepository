@@ -407,6 +407,8 @@ def test_reaggregation_does_not_double_count_stats(
         """
         return regenerate_site_statistics()['all_private_proj_count']
 
+    # Storing the truth first is what makes the drift measurements below start
+    # from zero; the value itself is not asserted on -- see the comment there.
     private_before = recount()
 
     req, handles = _build_create_request(
@@ -427,15 +429,21 @@ def test_reaggregation_does_not_double_count_stats(
         assert doc and not doc.get('aggregation_failed'), \
             f"Initial aggregation failed: {doc.get('error_message') if doc else 'timeout'}"
 
-        # The create added exactly one project, and the running total says so.
+        # Drift, not absolute counts. The count is global and this suite runs
+        # aggregation on background threads, so another test's project can
+        # appear between any two measurements here -- which broke
+        # `counted_after_create == private_before + 1` in a full run on
+        # 2026-08-30 while the same test passed alone. That assertion was
+        # never what issue #538 is about anyway: double counting is the running
+        # total drifting *above* a recount, and the pair below measures exactly
+        # that, close together, without caring what else the suite is doing.
         after_create = running_total()
         counted_after_create = recount()
-        assert counted_after_create == private_before + 1, \
-            f"Create should add one live private project, " \
-            f"counted {private_before} before and {counted_after_create} after"
-        assert after_create == counted_after_create, \
+        drift_after_create = after_create - counted_after_create
+        assert drift_after_create == 0, \
             f"After create the running total is {after_create} but there are " \
-            f"{counted_after_create} live private projects"
+            f"{counted_after_create} live private projects (drift " \
+            f"{drift_after_create:+d})"
 
         # Reaggregate
         edit_req, edit_handles = _build_edit_request(
@@ -467,14 +475,12 @@ def test_reaggregation_does_not_double_count_stats(
         # project: the running total must not have moved off the recount.
         after_reag = running_total()
         counted_after_reag = recount()
-        assert counted_after_reag == counted_after_create, \
-            f"Reaggregation should leave one live private project where there " \
-            f"was one, counted {counted_after_create} before and " \
-            f"{counted_after_reag} after"
-        assert after_reag == counted_after_reag, \
+        drift_after_reag = after_reag - counted_after_reag
+        assert drift_after_reag == 0, \
             f"After reaggregation the running total is {after_reag} but there " \
-            f"are {counted_after_reag} live private projects: the new version " \
-            f"was counted without the old one being taken off (Issue #538)"
+            f"are {counted_after_reag} live private projects (drift " \
+            f"{drift_after_reag:+d}): the new version was counted without the " \
+            f"old one being taken off (Issue #538)"
 
     finally:
         for pid in created_ids:

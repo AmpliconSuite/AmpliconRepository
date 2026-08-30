@@ -1432,6 +1432,38 @@ _AUDIT_PROJECT_FIELDS = {
 }
 
 
+#: Selects the newest audit entry that describes a stored payload.
+#
+# `_run_audit_checks` compares an entry's AA/AC/ASP versions, sample count and
+# S3 size against the live document. A deletion event carries none of those --
+# it records a lifecycle change, not a payload -- so letting one be the "latest
+# entry" makes every field read as missing and downgrades a healthy project to
+# "Partial". That is what happened on dev on 2026-08-30: a promote_version
+# event was the only entry for a project, and the page reported Partial for a
+# project with nothing wrong with it.
+#
+# $nin also matches documents with no event_type at all, which is what the
+# oldest entries look like -- they predate the constants.
+_PAYLOAD_DESCRIBING_ENTRY = {'event_type': {'$nin': list(provenance.DELETION_EVENTS)}}
+
+
+def _latest_payload_entry(matched_uuids):
+    """The newest entry that can meaningfully be compared to a live document."""
+    if not matched_uuids:
+        return None
+    return audit_log_handle.find_one(
+        {'project_uuid': {'$in': matched_uuids}, **_PAYLOAD_DESCRIBING_ENTRY},
+        sort=[('timestamp', -1)])
+
+
+def _latest_entry_of_any_kind(matched_uuids):
+    """The newest entry of any type, for "when did this last change?"."""
+    if not matched_uuids:
+        return None
+    return audit_log_handle.find_one({'project_uuid': {'$in': matched_uuids}},
+                                     sort=[('timestamp', -1)])
+
+
 def _get_audit_log_context(request):
     """
     Build the audit log context dict shared by admin_project_files_report and admin_audit_log.
@@ -1454,25 +1486,31 @@ def _get_audit_log_context(request):
         search_term = proj.get('project_name') or proj['id_str']
         try:
             matched_uuids, _ = get_project_version_chain(search_term)
-            latest_entry = None
-            if matched_uuids:
-                latest_entry = audit_log_handle.find_one(
-                    {'project_uuid': {'$in': matched_uuids}},
-                    sort=[('timestamp', -1)]
-                )
+
+            # Two different questions, which used to share one answer.
+            # "When did this project last change?" is about every event,
+            # deletions included -- a deletion is a change, and hiding it in
+            # this column would be a worse answer than the one it replaced.
+            # "Does the log agree with the document?" can only be asked of an
+            # entry that describes a payload.
+            latest_entry = _latest_payload_entry(matched_uuids)
+            latest_any = _latest_entry_of_any_kind(matched_uuids)
+
             if latest_entry:
                 result = _run_audit_checks(proj, latest_entry)
                 proj['validation_status'] = result['status']  # 'pass' | 'mismatch' | 'missing_data'
-                ts = latest_entry.get('timestamp')
-                proj['latest_audit_timestamp'] = ts
-                if isinstance(ts, datetime.datetime):
-                    proj['latest_audit_timestamp_display'] = ts.strftime('%Y-%m-%d %H:%M:%S UTC')
-                else:
-                    proj['latest_audit_timestamp_display'] = str(ts) if ts else '—'
             else:
-                proj['validation_status'] = 'no_log'
-                proj['latest_audit_timestamp'] = None
-                proj['latest_audit_timestamp_display'] = '—'
+                # A project whose only events are deletions is not unaudited;
+                # it is audited and has nothing to compare. Those are different
+                # states and the template distinguishes them.
+                proj['validation_status'] = 'lifecycle_only' if latest_any else 'no_log'
+
+            ts = latest_any.get('timestamp') if latest_any else None
+            proj['latest_audit_timestamp'] = ts
+            if isinstance(ts, datetime.datetime):
+                proj['latest_audit_timestamp_display'] = ts.strftime('%Y-%m-%d %H:%M:%S UTC')
+            else:
+                proj['latest_audit_timestamp_display'] = str(ts) if ts else '—'
         except Exception as e:
             logging.warning(f"Could not compute validation status for {proj['id_str']}: {e}")
             proj['validation_status'] = 'error'
@@ -1594,12 +1632,7 @@ def admin_audit_log_validate(request):
         search_term = project.get('project_name') or project_id
         matched_uuids, _ = get_project_version_chain(search_term)
 
-        latest_entry = None
-        if matched_uuids:
-            latest_entry = audit_log_handle.find_one(
-                {'project_uuid': {'$in': matched_uuids}},
-                sort=[('timestamp', -1)]
-            )
+        latest_entry = _latest_payload_entry(matched_uuids)
 
         if latest_entry is None:
             return JsonResponse({'error': 'No audit log entries found for this project'}, status=404)

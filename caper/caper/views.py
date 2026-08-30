@@ -5382,6 +5382,32 @@ def create_project(request):
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
+def _resolved_tool_versions(project, fallback):
+    """The tool versions as stored on the finished document, not as typed.
+
+    The upload form's version fields default to the placeholder 'NA', and most
+    submitters leave them there; get_tool_versions() then fills the document in
+    from what was actually detected inside the uploaded data. Logging the form
+    value recorded the placeholder, so the admin audit table compared 'NA'
+    against a real version and called it a mismatch -- 12 of the 70 live
+    documents on dev on 2026-08-30, every one of that shape and not one a
+    genuine disagreement between two real values.
+
+    The document wins where it has a value; *fallback* (what the user typed) is
+    used only when it does not, which is the case on the failure paths where no
+    aggregation ever ran.
+    """
+    def pick(key):
+        stored = (project or {}).get(key)
+        stored = str(stored).strip() if stored is not None else ''
+        if stored and stored.upper() != 'NA':
+            return stored
+        return fallback.get(key.lower().replace('_version', '') + '_version',
+                            fallback.get(key, 'NA'))
+
+    return pick('AA_version'), pick('AC_version'), pick('ASP_version')
+
+
 def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, audit_params=None, oldFeatured=False, remap_name_to_alias=False):
     """
     Creates or updates a project.
@@ -5512,14 +5538,18 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
                     )
                 except Exception:
                     _sample_count = 0
+                    _proj = None
+                # Same reason the sample count is fetched here rather than
+                # passed in: the document is only complete at this point.
+                _aa, _ac, _asp = _resolved_tool_versions(_proj, _ap)
                 log_project_audit_event(
                     user=_ap['user'],
                     project_uuid=str(_pid),
                     project_name=_ap.get('project_name', ''),
                     is_new_version=True,
-                    aa_version=_ap.get('aa_version', 'NA'),
-                    ac_version=_ap.get('ac_version', 'NA'),
-                    asp_version=_ap.get('asp_version', 'NA'),
+                    aa_version=_aa,
+                    ac_version=_ac,
+                    asp_version=_asp,
                     s3_uri=s3_uri,
                     event_type=_ap.get('event_type'),
                     sample_count=_sample_count,
@@ -5543,14 +5573,16 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
             )
         except Exception:
             _sample_count = 0
+            _proj = None
+        _aa, _ac, _asp = _resolved_tool_versions(_proj, audit_params)
         log_project_audit_event(
             user=audit_params['user'],
             project_uuid=str(project_id),
             project_name=audit_params.get('project_name', ''),
             is_new_version=True,
-            aa_version=audit_params.get('aa_version', 'NA'),
-            ac_version=audit_params.get('ac_version', 'NA'),
-            asp_version=audit_params.get('asp_version', 'NA'),
+            aa_version=_aa,
+            ac_version=_ac,
+            asp_version=_asp,
             s3_uri=None,
             event_type=audit_params.get('event_type'),
             sample_count=_sample_count,

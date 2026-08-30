@@ -220,3 +220,93 @@ def test_every_deletion_event_has_a_badge_in_the_admin_template():
     for event in provenance.DELETION_EVENTS:
         assert f"entry.event_type == '{event}'" in template, (
             f'{event!r} has no badge; it would render as a generic Edit')
+
+
+# --- deletion events are not payload descriptions -------------------------
+
+def test_a_deletion_event_is_not_used_to_validate_a_live_project():
+    """Found on dev 2026-08-30, by Jens, on the first real deletion.
+
+    ``_run_audit_checks`` compares an entry's AA/AC/ASP versions, sample count
+    and S3 size against the live document. A deletion event carries none of
+    those, so when one became the newest entry for a project the page reported
+    every field missing and downgraded a perfectly healthy project to
+    "Partial". The events were right; the query that chose them was wrong.
+    """
+    from caper.views_admin import _PAYLOAD_DESCRIBING_ENTRY
+
+    excluded = _PAYLOAD_DESCRIBING_ENTRY['event_type']['$nin']
+    for event in provenance.DELETION_EVENTS:
+        assert event in excluded, (
+            f'{event!r} could still be picked as the entry to validate against')
+
+
+def test_the_filter_still_admits_the_entries_that_predate_event_types():
+    """$nin matches a document with no event_type, which the oldest entries are.
+
+    Encoded as a test because the alternative spelling -- an $in over the three
+    known content types -- looks equivalent and would silently drop every
+    legacy entry, of which prod had 121 on 2026-08-29.
+    """
+    from caper.views_admin import _PAYLOAD_DESCRIBING_ENTRY
+
+    assert '$nin' in _PAYLOAD_DESCRIBING_ENTRY['event_type']
+    assert '$in' not in _PAYLOAD_DESCRIBING_ENTRY['event_type']
+
+
+def test_a_project_with_only_lifecycle_events_is_distinguished_from_unaudited():
+    """Two different states that both used to render as a warning.
+
+    "We logged your deletion and there is no payload entry to compare" is not
+    "we have no record of this project". The first is correct and expected
+    after a version delete; the second means the log is missing.
+    """
+    from pathlib import Path
+
+    template = (Path(__file__).parents[1] / 'caper' / 'templates' / 'pages' /
+                'admin_project_files_report.html').read_text()
+
+    assert "proj.validation_status == 'lifecycle_only'" in template
+    assert "proj.validation_status == 'no_log'" in template
+
+
+# --- what the audit log records about tool versions -----------------------
+
+def test_the_log_records_detected_versions_not_the_form_placeholder():
+    """Measured on dev 2026-08-30: 12 of 70 live documents showed Mismatch.
+
+    Every one had the same shape -- log='NA' against a real live version, and
+    not one was a genuine disagreement between two real values. The upload
+    form's version fields default to 'NA' and most submitters leave them there;
+    get_tool_versions() fills the document in afterwards from what was actually
+    detected in the uploaded data. Logging the form value recorded the
+    placeholder and the admin table called the difference a mismatch.
+    """
+    from caper.views import _resolved_tool_versions
+
+    typed = {'aa_version': 'NA', 'ac_version': 'NA', 'asp_version': 'NA'}
+    detected = {'AA_version': '1.3.r5', 'AC_version': '0.4.16',
+                'ASP_version': '0.1477.1'}
+
+    assert _resolved_tool_versions(detected, typed) == ('1.3.r5', '0.4.16',
+                                                        '0.1477.1')
+
+
+def test_a_version_the_user_typed_is_kept_when_nothing_was_detected():
+    """The failure paths never run an aggregation, so the form is all there is."""
+    from caper.views import _resolved_tool_versions
+
+    typed = {'aa_version': '1.2.3', 'ac_version': 'NA', 'asp_version': 'NA'}
+
+    assert _resolved_tool_versions({}, typed) == ('1.2.3', 'NA', 'NA')
+    assert _resolved_tool_versions(None, typed) == ('1.2.3', 'NA', 'NA')
+
+
+def test_a_stored_placeholder_does_not_beat_a_typed_value():
+    """'NA' on the document is absence, not a value, whatever its case."""
+    from caper.views import _resolved_tool_versions
+
+    typed = {'aa_version': '1.2.3', 'ac_version': 'NA', 'asp_version': 'NA'}
+    stored = {'AA_version': 'na', 'AC_version': '  ', 'ASP_version': None}
+
+    assert _resolved_tool_versions(stored, typed) == ('1.2.3', 'NA', 'NA')
