@@ -73,12 +73,20 @@ class FakeCollection:
     def count_documents(self, query):
         return len(self.find(query))
 
-    def update_one(self, query, update):
+    def update_one(self, query, update, upsert=False):
         for doc in self.docs:
             if self._match(doc, query):
-                doc.update(update['$set'])
-                return type('R', (), {'modified_count': 1})()
-        return type('R', (), {'modified_count': 0})()
+                doc.update(update.get('$set', {}))
+                return type('R', (), {'modified_count': 1,
+                                      'upserted_id': None})()
+        if upsert:
+            doc = dict(update.get('$setOnInsert', {}))
+            doc.update(update.get('$set', {}))
+            doc.setdefault('_id', ObjectId())
+            self.docs.append(doc)
+            return type('R', (), {'modified_count': 0,
+                                  'upserted_id': doc['_id']})()
+        return type('R', (), {'modified_count': 0, 'upserted_id': None})()
 
     def insert_many(self, entries):
         ids = []
@@ -321,3 +329,23 @@ def test_a_lookup_failure_does_not_break_the_audit_write(monkeypatch):
 
     monkeypatch.setattr(views, 'collection_handle', Exploding())
     assert views._audit_chain_id(str(ObjectId())) is None
+
+
+def test_a_duplicate_backfilled_event_cannot_be_created(target):
+    """Plan-level idempotence is not the only guard: the write refuses too.
+
+    The plan is built from a read, and until 2026-08-30 that read came from a
+    replica -- a stale plan would have re-inserted every event. An insert has no
+    filter that can refuse; an upsert keyed on the project does.
+    """
+    _database, audit, projects = target
+    backfill_create.main(ARGS + ['--execute'])
+    after_first = len(audit.docs)
+
+    # Force a stale plan: the same work list, replayed as if nothing existed.
+    entries, _ = backfill_create.plan(FakeCollection([]), projects)
+    for entry in entries:
+        audit.update_one({'project_uuid': entry['project_uuid'],
+                          'backfilled': True},
+                         {'$setOnInsert': entry}, upsert=True)
+    assert len(audit.docs) == after_first

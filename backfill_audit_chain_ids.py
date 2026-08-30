@@ -25,6 +25,7 @@ import os
 import sys
 
 from pymongo import MongoClient
+from pymongo.read_preferences import ReadPreference
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
 
@@ -34,13 +35,24 @@ AUDIT = 'project_audit_log'
 
 
 def connect(db_name, expect_host):
+    """The database, pinned to the primary.
+
+    The cluster URI carries ``readPreference=secondaryPreferred``, which is
+    right for a web app and wrong for a migration: a plan built from a replica
+    can be stale, and an insert has no filter to protect it the way an update
+    does. Measured on dev 2026-08-30 -- the verification re-plan run seconds
+    after a 181-event insert still reported all 181 as missing, because it read
+    a replica that had not caught up. Reading the primary makes the plan and the
+    verification say what is actually there.
+    """
     uri = os.environ['DB_URI_SECRET']
     is_local = 'localhost' in uri or '127.0.0.1' in uri
     if expect_host == 'local' and not is_local:
         sys.exit('--expect-host local, but the URI does not name localhost')
     if expect_host == 'docdb' and is_local:
         sys.exit('--expect-host docdb, but the URI names localhost')
-    return MongoClient(uri)[db_name]
+    return MongoClient(uri).get_database(
+        db_name, read_preference=ReadPreference.PRIMARY)
 
 
 def chain_index(projects):

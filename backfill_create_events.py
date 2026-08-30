@@ -45,6 +45,7 @@ import os
 import sys
 
 from pymongo import MongoClient
+from pymongo.read_preferences import ReadPreference
 
 AUDIT = 'project_audit_log'
 
@@ -63,13 +64,24 @@ PROJECTION = {'_id': 1, 'project_name': 1, 'date': 1, 'creator': 1,
 
 
 def connect(db_name, expect_host):
+    """The database, pinned to the primary.
+
+    The cluster URI carries ``readPreference=secondaryPreferred``, which is
+    right for a web app and wrong for a migration: a plan built from a replica
+    can be stale, and an insert has no filter to protect it the way an update
+    does. Measured on dev 2026-08-30 -- the verification re-plan run seconds
+    after a 181-event insert still reported all 181 as missing, because it read
+    a replica that had not caught up. Reading the primary makes the plan and the
+    verification say what is actually there.
+    """
     uri = os.environ['DB_URI_SECRET']
     is_local = 'localhost' in uri or '127.0.0.1' in uri
     if expect_host == 'local' and not is_local:
         sys.exit('--expect-host local, but the URI does not name localhost')
     if expect_host == 'docdb' and is_local:
         sys.exit('--expect-host docdb, but the URI names localhost')
-    return MongoClient(uri)[db_name]
+    return MongoClient(uri).get_database(
+        db_name, read_preference=ReadPreference.PRIMARY)
 
 
 def parse_date(value):
@@ -193,8 +205,22 @@ def main(argv=None):
         print('\nnothing to do.')
         return 0
 
-    inserted = audit.insert_many(work).inserted_ids
+    # Upsert rather than insert, keyed on "the backfilled creation event for
+    # this project". Plan-level idempotence already stops a second run finding
+    # anything; this makes a duplicate impossible rather than merely unlikely,
+    # which matters because an insert -- unlike an update -- has no filter that
+    # can refuse a plan built a moment ago from data that has since moved.
+    inserted = []
+    for entry in work:
+        result = audit.update_one(
+            {'project_uuid': entry['project_uuid'], 'backfilled': True},
+            {'$setOnInsert': entry}, upsert=True)
+        if result.upserted_id is not None:
+            inserted.append(result.upserted_id)
     print(f'\n{len(inserted)} event(s) inserted.')
+    if len(inserted) < len(work):
+        print(f'  ({len(work) - len(inserted)} already had a backfilled '
+              'event and were left alone)')
 
     if args.undo_file:
         # Written after the insert because the inverse of an insert is the id
