@@ -55,7 +55,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
-from . import download_totals, lineage, provenance
+from . import download_totals, lineage, ownership_survey, provenance
 
 from .extra_metadata import *
 
@@ -1660,67 +1660,16 @@ def admin_audit_log_validate(request):
 # GridFS ownership
 # ---------------------------------------------------------------------------
 
-OWNERSHIP_REPORTS = 'gridfs_ownership_reports'
-
-#: Projects kept in a stored snapshot. The whole list is a few hundred rows
-#: today, but a snapshot that grows without bound is a document that one day
-#: cannot be written back.
-OWNERSHIP_PROJECT_ROWS = 200
+#: Re-exported so the page, its tests and the command all name one thing. The
+#: survey itself does not run here -- see caper/ownership_survey.py for why.
+OWNERSHIP_REPORTS = ownership_survey.REPORTS_COLLECTION
+OWNERSHIP_PROJECT_ROWS = ownership_survey.PROJECT_ROWS
+OWNERSHIP_SURVEY_ABANDONED_AFTER = ownership_survey.ABANDONED_AFTER
+mark_abandoned_surveys = ownership_survey.mark_abandoned_surveys
 
 
 def _ownership_reports():
     return db_handle_primary[OWNERSHIP_REPORTS]
-
-
-#: A survey still claiming to be running after this long has lost its worker.
-OWNERSHIP_SURVEY_ABANDONED_AFTER = datetime.timedelta(hours=1)
-
-
-def mark_abandoned_surveys(snapshots, now=None):
-    """Rewrite the state of surveys whose worker went away.
-
-    The worker records 'failed' when the survey raises, but nothing records
-    anything when the process disappears underneath it -- a restart, a kill,
-    a deploy. The row keeps saying 'running', which disables the Run button for
-    good. Age is the only evidence left of the difference, so age is what this
-    reads. Mutates the dicts in place; the stored documents are not touched,
-    because the fact being corrected is about this moment, not about them.
-    """
-    now = now or datetime.datetime.now(datetime.timezone.utc)
-    cutoff = now - OWNERSHIP_SURVEY_ABANDONED_AFTER
-    for snapshot in snapshots:
-        started = snapshot.get('started_at')
-        if snapshot.get('state') != 'running' or not started:
-            continue
-        # DocumentDB hands back naive UTC; a caller passing an aware value is
-        # left as it is.
-        if started.tzinfo is None:
-            started = started.replace(tzinfo=datetime.timezone.utc)
-        if started < cutoff:
-            snapshot['state'] = 'abandoned'
-    return snapshots
-
-
-def _run_ownership_survey(report_id, started_by):
-    """Walk the documents and store one snapshot. Runs in a worker thread.
-
-    Read-only against both collections: the survey counts, and this records
-    what it counted. Nothing here deletes a file or edits a project.
-    """
-    from .gridfs_ownership import survey
-
-    reports = _ownership_reports()
-    try:
-        result = survey(db_handle['projects'], db_handle['fs.files'])
-        result['per_project'] = result['per_project'][:OWNERSHIP_PROJECT_ROWS]
-        result['state'] = 'done'
-        result['started_by'] = started_by
-        reports.update_one({'_id': report_id}, {'$set': result})
-    except Exception as exc:
-        logging.exception('GridFS ownership survey failed')
-        reports.update_one({'_id': report_id},
-                           {'$set': {'state': 'failed',
-                                     'error': f'{type(exc).__name__}: {exc}'}})
 
 
 def admin_file_ownership(request):
@@ -1732,7 +1681,6 @@ def admin_file_ownership(request):
     for is deciding whether a deletion is worth investigating, not performing
     it.
     """
-    from .background_tasks import _thread_executor
     from .gridfs_ownership import (
         ORDER, RESIDUE_DOCUMENT_GONE, RESIDUE_UNLABELLED, RESIDUE_UNREFERENCED,
         human,
@@ -1746,14 +1694,19 @@ def admin_file_ownership(request):
     if request.method == 'POST':
         action = request.POST.get('action')
         if action == 'run':
-            report_id = ObjectId()
-            reports.insert_one({'_id': report_id, 'state': 'running',
-                                'started_at': datetime.datetime.now(
-                                    datetime.timezone.utc),
-                                'started_by': str(request.user)})
-            _thread_executor.submit(_run_ownership_survey, report_id,
-                                    str(request.user),
-                                    task_label='gridfs_ownership_survey')
+            # Started, not run. The walk takes minutes against prod, and this
+            # process has a request to finish and eight siblings serving
+            # traffic. spawn() returns as soon as the child is running; the row
+            # inserted here is what the page shows until the child fills it in.
+            notify = getattr(request.user, 'email', '') or None
+            report_id = ownership_survey.open_report(
+                reports, str(request.user), notify)
+            if ownership_survey.spawn(report_id, str(request.user),
+                                      notify) is None:
+                reports.update_one(
+                    {'_id': report_id},
+                    {'$set': {'state': 'failed',
+                              'error': 'the survey process would not start'}})
         elif action == 'remove_snapshot':
             # Not spelled 'delete': that literal is reserved for the status
             # flag field, and the guard in tests/test_project_status_guard.py
@@ -1776,7 +1729,9 @@ def admin_file_ownership(request):
         latest = next((s for s in snapshots if s['id_str'] == wanted), None)
     if latest is None:
         latest = next((s for s in snapshots if s.get('state') == 'done'), None)
-    running = any(s.get('state') == 'running' for s in snapshots)
+    running_snapshot = next((s for s in snapshots
+                             if s.get('state') == 'running'), None)
+    running = running_snapshot is not None
 
     rows = []
     if latest:
@@ -1798,6 +1753,7 @@ def admin_file_ownership(request):
         'snapshots': snapshots,
         'latest': latest,
         'running': running,
+        'running_progress': running_snapshot,
         'rows': rows,
         'residue_size': human(latest.get('residue_bytes', 0)) if latest else '',
         'total_size': human(latest.get('total_bytes', 0)) if latest else '',

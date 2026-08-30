@@ -44,31 +44,102 @@ def test_a_staff_user_sees_the_page(request_factory, admin_user):
     assert response.status_code == 200
 
 
-def test_running_a_survey_records_a_snapshot(request_factory, admin_user):
-    """The button starts the walk and the page shows what it found."""
+def test_the_command_measures_and_stores_a_snapshot():
+    """The management command is the survey's only runner; this runs it.
+
+    Called through ``call_command`` rather than by importing the function it
+    wraps, because the wiring -- argument names, the report row it fills in,
+    the collections it picks -- is the part that a refactor breaks silently.
+    """
+    from django.core.management import call_command
+
     from caper.views_admin import _ownership_reports
 
     reports = _ownership_reports()
     before = set(reports.distinct('_id'))
+    call_command('ownership_survey')
 
+    new_ids = set(reports.distinct('_id')) - before
+    assert len(new_ids) == 1
+    report_id = new_ids.pop()
+    try:
+        snapshot = reports.find_one({'_id': report_id})
+        assert snapshot['state'] == 'done', snapshot.get('error')
+        assert snapshot['total_files'] == (snapshot['owned'] +
+                                           snapshot['residue'])
+    finally:
+        reports.delete_one({'_id': report_id})
+
+
+def test_the_button_starts_the_survey_outside_this_process(request_factory,
+                                                           admin_user,
+                                                           monkeypatch):
+    """The walk is minutes long; a gunicorn worker has traffic to serve.
+
+    What the button must do is start a process and return. If it ever goes back
+    to doing the work inline, this test fails on the survey never being
+    spawned -- and ``gridfs_ownership.survey`` raising proves the request
+    thread did not run it.
+    """
+    from caper import gridfs_ownership, ownership_survey
+    from caper.views_admin import _ownership_reports
+
+    started = []
+    monkeypatch.setattr(ownership_survey, 'spawn',
+                        lambda report_id, *a, **k: started.append(
+                            (report_id, a, k)) or ['manage.py'])
+    monkeypatch.setattr(gridfs_ownership, 'survey', _must_not_run)
+
+    reports = _ownership_reports()
+    before = set(reports.distinct('_id'))
     response = _post(request_factory, admin_user, {'action': 'run'})
     assert response.status_code == 302
 
     new_ids = set(reports.distinct('_id')) - before
     assert len(new_ids) == 1
     report_id = new_ids.pop()
-
     try:
-        deadline = time.time() + 120
-        state = None
-        while time.time() < deadline:
-            snapshot = reports.find_one({'_id': report_id}) or {}
-            state = snapshot.get('state')
-            if state in ('done', 'failed'):
-                break
-            time.sleep(1)
-        assert state == 'done', f'survey ended {state!r}: {snapshot.get("error")}'
-        assert snapshot['total_files'] == (snapshot['owned'] + snapshot['residue'])
+        assert [call[0] for call in started] == [report_id]
+        row = reports.find_one({'_id': report_id})
+        assert row['state'] == 'running'
+        assert row['started_by'] == str(admin_user)
+    finally:
+        reports.delete_one({'_id': report_id})
+
+
+def _must_not_run(*_args, **_kwargs):
+    raise AssertionError('the survey ran inside the request')
+
+
+def test_the_command_line_the_button_builds_is_runnable():
+    """The child is a real command, spelled the way manage.py accepts it."""
+    from django.core.management import get_commands
+
+    from caper import ownership_survey
+
+    assert ownership_survey.COMMAND in get_commands()
+    assert ownership_survey.MANAGE_PY.is_file()
+
+
+def test_a_failed_spawn_does_not_leave_the_button_disabled_forever(
+        request_factory, admin_user, monkeypatch):
+    """A row stuck on 'running' disables Run, and only age would clear it.
+
+    ``spawn`` returns None when the process would not start, which is knowable
+    immediately -- so the row says failed now rather than in an hour.
+    """
+    from caper import ownership_survey
+    from caper.views_admin import _ownership_reports
+
+    monkeypatch.setattr(ownership_survey, 'spawn', lambda *a, **k: None)
+
+    reports = _ownership_reports()
+    before = set(reports.distinct('_id'))
+    _post(request_factory, admin_user, {'action': 'run'})
+
+    report_id = (set(reports.distinct('_id')) - before).pop()
+    try:
+        assert reports.find_one({'_id': report_id})['state'] == 'failed'
     finally:
         reports.delete_one({'_id': report_id})
 
