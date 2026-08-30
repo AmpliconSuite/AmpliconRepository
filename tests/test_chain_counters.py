@@ -313,3 +313,24 @@ def test_a_chain_with_no_clear_head_is_left_alone():
     ])
 
     assert module.plan(collection)[0] == []
+
+
+def test_the_reconciliation_refuses_to_run_twice():
+    """After it has run, an old version's count is a real view, not residue.
+
+    Found on the first dev run: 73 documents zeroed, and the immediate re-plan
+    found one more -- a live page view that had landed while it worked. A
+    second run would have deleted it. The guard is a marker, and the refusal is
+    the default.
+    """
+    from pathlib import Path
+
+    source = (Path(__file__).parents[1] /
+              'zero_carried_forward_views.py').read_text()
+
+    assert 'views_carry_forward_reconciled' in source
+    assert "'--i-know'" in source
+    # The marker is only consulted on the writing path, and refusing is what
+    # happens without the override.
+    assert 'refusing: this database was already reconciled' in source
+    assert 'if marker and not args.i_know' in source
