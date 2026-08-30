@@ -103,7 +103,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
-from . import lineage, provenance
+from . import download_totals, lineage, project_fields, provenance
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
@@ -1031,7 +1031,14 @@ def project_page(request, project_name, message=''):
             message = project["warning"]
 
     ## download & view statistics
-    views, downloads = session_visit(request, project)
+    views = session_visit(request, project)
+    # The project's downloads, not this version's. Every version keeps its own
+    # count starting at zero, so the project's number is the sum over the chain
+    # -- including the tombstones of versions that were deleted, whose
+    # downloads still happened. On prod 2026-08-30 the head of a multi-version
+    # chain held 5,218 of the 7,466 downloads its chain had served.
+    downloads = download_totals.total(
+        download_totals.chain_totals(collection_handle, project)['project_downloads'])
 
     # DEBUG: Get delete and current flag values
     debug_delete_flag = project.get('delete', 'NOT SET')
@@ -1604,23 +1611,39 @@ def project_metadata_download(request, project_name):
 
 
 def update_project_download_count(project, project_name):
-    if check_if_db_field_exists(project, 'project_downloads'):
-        project_download_data = project['project_downloads']
-        if isinstance(project_download_data, int):
-            temp_data = project_download_data
-            project_download_data = dict()
-            project_download_data[get_date_short()] = temp_data
-        elif get_date_short() in project_download_data:
-            project_download_data[get_date_short()] += 1
-        else:
-            project_download_data[get_date_short()] = 1
-    else:
-        project_download_data = dict()
-        project_download_data[get_date_short()] = 1
+    """Record one download against the version that served it.
+
+    Two records, and they are not duplicates: the per-date dict says which
+    version and which day, the int is that version's running total. Both are
+    per version and both start at zero on a new version, which is what lets the
+    project's number be a sum across the chain rather than a reconciliation.
+
+    Written with $inc rather than by reading the dict, adding one and writing it
+    back. The read-modify-write this replaces lost a download whenever two
+    arrived for the same project between the read and the write -- and the
+    downloads that matter most are the ones that arrive in bursts.
+    """
     query = {'_id': ObjectId(project_name)}
-    new_val = {"$set": {'project_downloads': project_download_data}}
-    collection_handle.update_one(query, new_val)
-    collection_handle.update_one(query, {'$inc': {'downloads': 1}})
+    today = get_date_short()
+
+    stored = project.get('project_downloads')
+    if stored is not None and not isinstance(stored, dict):
+        # Pre-dating the per-date form: a bare int, whose date is unknown. It
+        # is moved under today's key rather than discarded, and $inc takes over
+        # from the next download onwards.
+        collection_handle.update_one(
+            query, {'$set': {'project_downloads': {today: as_download_count(stored) + 1}}})
+    else:
+        collection_handle.update_one(query, {'$inc': {f'project_downloads.{today}': 1}})
+
+    increment_download(project)
+
+
+def as_download_count(value):
+    """A stored counter as an int; anything else counts as no downloads."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return int(value)
 
 
 def convert_runs_to_csv(runs):
@@ -3048,21 +3071,17 @@ def delete_project_version(request, project_name, version_id):
                 if str(_previous_version_linkid(pv)) != prev_linkid
             ]
 
-            # Copy forward important metadata from the current version.
-            #
-            # The dated download counters are deliberately not in this list.
-            # They belong to the project, but they are kept where they were
-            # earned and summed across the chain for display (download_totals),
-            # because the version being deleted keeps its own share on its
-            # tombstone. Copying them here as well would count those downloads
-            # twice. 'views' and 'downloads' are the opposite case: they are
-            # cumulative, they are carried forward at reaggregation too, and
-            # the tombstone does not keep them.
-            metadata_to_copy = {}
-            for field in ['project_members', 'subscribers', 'views', 'downloads',
-                          'alias_name', 'publication_link', 'private', 'privateKey', 'featured']:
-                if field in latest_project:
-                    metadata_to_copy[field] = latest_project[field]
+            # Carry the project's own fields onto the version taking its
+            # place. The set is read from project_fields, not written out here:
+            # a literal list is a second place to remember, and the one time it
+            # was not remembered is why project_downloads went missing from
+            # every promotion for as long as the feature existed. Which fields
+            # belong to the project, and which two are deliberately left where
+            # they were earned, are stated there next to the measurements that
+            # settled them.
+            metadata_to_copy = {field: latest_project[field]
+                                for field in project_fields.CARRIED_ON_PROMOTION
+                                if field in latest_project}
 
             # Promote the previous version to the live head of the chain.
             # (The reverse operation is called "Un-delete" only because

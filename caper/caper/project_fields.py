@@ -5,14 +5,16 @@ aggregation run, its samples, its tool versions -- and the *project* that owns
 the version, with its name, its members, its visibility and its counters. When
 a version is deleted and an older one promoted in its place,
 ``delete_project_version()`` has to decide which of the two the promoted
-document inherits. Today it decides by a hand-written list of nine field names
-written once and never extended; ``downloads`` is on it and ``project_downloads``
-is not, which is the whole defect in miniature.
+document inherits. It used to decide by a hand-written list of nine field names
+written once and never extended; ``downloads`` was on it and
+``project_downloads`` was not, which was the whole defect in miniature.
 
-This module is the declaration that list should have been. It does not change
-what promotion copies -- nothing reads these sets yet. What it does is make
-"which level is this field?" a question with a written answer, so the next
-field to appear cannot fall through in silence.
+This module is the declaration that list should have been, and since
+2026-08-30 promotion reads it: ``delete_project_version()`` carries
+``CARRIED_ON_PROMOTION`` rather than a literal list, so a field added to
+``CHAIN_LEVEL`` is carried without anyone remembering to edit a second place,
+and a field that should not be carried has to say so here, in writing, next to
+the reason.
 
 **The test that decides the level** is not taste and not the field's name: a
 field is chain-level exactly when it must survive the deletion of every version.
@@ -154,6 +156,29 @@ TRANSIENT = frozenset({
     'original_project_name',
     'aggregation_in_progress',
 })
+
+#: Chain-level, and deliberately left on the version that earned each entry.
+#:
+#: These are the download counters, and they show why "belongs to the project"
+#: and "is copied onto the promoted version" are two questions and not one.
+#: Each version's count is its own, starts at zero, and is never carried
+#: forward; a deleted version keeps its share on its tombstone; and the
+#: project's number is the sum across the chain, taken when a page is read
+#: (``download_totals``). Copying one onto a promoted head as well would report
+#: the same downloads twice.
+#:
+#: ``views`` is **not** here, and that is a statement about today rather than a
+#: judgement about where it belongs. There has never been a per-date record of
+#: views, only the cumulative int, and reaggregation seeds a new version's from
+#: its predecessor -- so the values overlap by an unknown amount and cannot be
+#: summed. It stays carried-on-promotion and read off the head, which is what
+#: the site has always shown. Giving views the same treatment as downloads
+#: means starting a per-version count now and accepting that history cannot be
+#: reconstructed; that is a decision, not a refactor.
+KEPT_WHERE_EARNED = frozenset({'project_downloads', 'sample_downloads',
+                               'downloads'})
+
+CARRIED_ON_PROMOTION = CHAIN_LEVEL - KEPT_WHERE_EARNED
 
 ALL_LEVELS = {
     'chain': CHAIN_LEVEL,
