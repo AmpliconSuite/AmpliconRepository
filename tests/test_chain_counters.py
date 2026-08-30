@@ -351,3 +351,94 @@ def test_the_page_says_total_because_that_is_what_it_now_shows():
 
     assert 'Total downloads:' in template
     assert 'Total views:' in template
+
+
+# --- repairing what promotion dropped ------------------------------------
+
+def _repair_module():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).parents[1] / 'repair_head_chain_fields.py'
+    spec = importlib.util.spec_from_file_location('rhcf', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_field_missing_from_the_head_is_restored_from_the_newest_holder():
+    """Several versions can hold it with different values; the newest wins.
+
+    That is what the project last meant. Taking the oldest, or the first the
+    cursor happens to return, restores a value the project moved on from.
+    """
+    module = _repair_module()
+    collection = FakeProjects([
+        _version(_id='v1', version_ordinal=1, is_latest=False,
+                 publication_link='old'),
+        _version(_id='v2', version_ordinal=2, is_latest=False,
+                 publication_link='new'),
+        _version(_id='v3', version_ordinal=3, is_latest=True),
+    ])
+
+    repairs = module.plan(collection)
+
+    assert [(r[0], r[2], r[3], r[4]) for r in repairs] == [
+        ('v3', 'publication_link', 'new', 2)]
+
+
+def test_a_head_that_already_has_the_field_is_left_alone():
+    """A different value is a disagreement, not a gap, and not this script's."""
+    module = _repair_module()
+    collection = FakeProjects([
+        _version(_id='v1', version_ordinal=1, is_latest=False, featured=True),
+        _version(_id='v2', version_ordinal=2, is_latest=True, featured=False),
+    ])
+
+    assert module.plan(collection) == []
+
+
+def test_an_unfeatured_project_is_not_re_featured():
+    """The admin control writes featured=False, so the field stays present.
+
+    That is what makes absence unambiguous: it can only be inheritance, never
+    a deliberate choice. If unfeaturing had unset the field instead, this
+    script could not tell the two apart and should not exist.
+    """
+    from pathlib import Path
+
+    admin = (Path(__file__).parents[1] / 'caper' / 'caper' /
+             'views_admin.py').read_text()
+
+    assert '{"$set": {\'featured\': featured}}' in admin
+
+
+def test_a_chain_with_no_clear_head_is_skipped():
+    module = _repair_module()
+    collection = FakeProjects([
+        _version(_id='v1', version_ordinal=1, is_latest=True, featured=True),
+        _version(_id='v2', version_ordinal=2, is_latest=True),
+    ])
+
+    assert module.plan(collection) == []
+
+
+def test_a_single_version_chain_has_nothing_to_restore_from():
+    module = _repair_module()
+    collection = FakeProjects([_version(_id='v1', is_latest=True)])
+
+    assert module.plan(collection) == []
+
+
+def test_only_declared_chain_level_fields_are_restored():
+    """Copying a version-level field onto the head would be a lie about it."""
+    module = _repair_module()
+    collection = FakeProjects([
+        _version(_id='v1', version_ordinal=1, is_latest=False,
+                 sample_count=99, AA_version='1.2.3', featured=True),
+        _version(_id='v2', version_ordinal=2, is_latest=True),
+    ])
+
+    restored = {r[2] for r in module.plan(collection)}
+
+    assert restored == {'featured'}
