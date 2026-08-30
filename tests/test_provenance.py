@@ -310,3 +310,35 @@ def test_a_stored_placeholder_does_not_beat_a_typed_value():
     stored = {'AA_version': 'na', 'AC_version': '  ', 'ASP_version': None}
 
     assert _resolved_tool_versions(stored, typed) == ('1.2.3', 'NA', 'NA')
+
+
+def test_a_reconstructed_creation_is_not_validated_against_a_payload():
+    """The same defect as the deletion-event one, found the same way.
+
+    A backfilled event was reconstructed from the project document's date and
+    creator, so it has no s3_uri and no recorded file size. Letting one be the
+    newest entry makes the size check read as missing and downgrades the row to
+    "Partial". Measured on prod 2026-08-30, within the hour the backfill ran:
+    projects with a payload-describing entry went 116 -> 311, and all 195 added
+    carried no s3_uri, so every one of those rows downgraded.
+
+    A reconstructed creation belongs in the history table. It is not a record of
+    a payload and must not be compared to one.
+    """
+    from caper.views_admin import _PAYLOAD_DESCRIBING_ENTRY
+
+    assert _PAYLOAD_DESCRIBING_ENTRY.get('backfilled') == {'$ne': True}
+
+
+def test_the_backfilled_guard_still_admits_events_that_lack_the_field():
+    """Every event written before the backfill has no `backfilled` key at all.
+
+    `$ne: True` matches a document missing the field; `False` would not, and
+    would drop all 121 of prod's pre-existing entries -- the same trap as the
+    $in/$nin one above.
+    """
+    from caper.views_admin import _PAYLOAD_DESCRIBING_ENTRY
+
+    guard = _PAYLOAD_DESCRIBING_ENTRY['backfilled']
+    assert '$ne' in guard, 'must match entries with no `backfilled` field'
+    assert guard != {'$eq': False}
