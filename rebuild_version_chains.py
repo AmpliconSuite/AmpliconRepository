@@ -91,7 +91,7 @@ def rebuild(chain_view, chain_id, members):
 
 
 def ensure_indexes(chain_view):
-    """The one index §6.3 names for this collection: document -> chain."""
+    """The one index this collection needs: find a chain by its head document."""
     chain_view.create_index([('head_project_id', ASCENDING)],
                             name='idx_chain_head_project')
 

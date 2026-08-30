@@ -546,8 +546,8 @@ def _came_from_a_person(request):
     Search results count too.  Measured on the prod access log 2026-08-07:
     12,023 sample-page requests arrived with a `https://www.google.com/` referer,
     i.e. readers who found a sample through search and landed on it directly.
-    They are exactly the visitors §4f is meant to protect, and they carry no
-    same-origin referer.  A crawler could forge this, but forging it only moves
+    They are exactly the visitors this exemption is meant to protect -- readers
+    arriving from a search engine -- and they carry no same-origin referer.  A crawler could forge this, but forging it only moves
     it from the tight cap to the general one, which still bounds it -- a cheap
     trade for not shedding search arrivals during an attack.
 

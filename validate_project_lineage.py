@@ -66,6 +66,7 @@ from caper.project_status import (                                 # noqa: E402
     is_reachable_by_url, iter_lineage_references,
 )
 from caper.project_version_cleanup import iter_gridfs_file_ids     # noqa: E402
+from caper import project_fields                                   # noqa: E402
 
 # Fields big enough to matter: a project document averages 690 KB on production
 # and almost all of that is these three.  The invariants below need none of them
@@ -993,6 +994,43 @@ def i18_hand_written_tombstones():
     return found
 
 
+def _check_i17(snap):
+    """A chain-level field on an older version is on the head as well.
+
+    A chain-level field is one that belongs to the project rather than to any
+    one of its versions, so the head -- the document the project is read
+    through -- has to carry it. When promotion drops one, the field is not
+    corrupted and no other invariant notices: the older version still holds the
+    value, the shape of the chain is untouched, and the project simply starts
+    reporting less than it did. That is what happened to project_downloads on
+    every promotion for as long as the feature existed.
+
+    The two counters promotion deliberately leaves where they were earned are
+    excluded, because for those the older version holding a value the head does
+    not is the intended arrangement rather than a loss.
+
+    A field absent from the whole chain is not a finding; it was never set.
+    """
+    snap.require('version_chain_id', 'is_latest')
+    findings = []
+    for chain_id, members in sorted(snap.chains().items(), key=lambda kv: str(kv[0])):
+        heads = [doc for doc in members if doc.get('is_latest') is True]
+        if len(heads) != 1 or len(members) == 1:
+            continue                      # I3 and I16 own the head count
+        head = heads[0]
+        others = [doc for doc in members if doc['_id'] != head['_id']]
+        for field in sorted(project_fields.CARRIED_ON_PROMOTION):
+            if field in head:
+                continue
+            holders = [doc for doc in others if field in doc]
+            if holders:
+                findings.append(Finding(
+                    'I17', head['_id'], snap.name(head['_id']),
+                    f'chain-level {field!r} is on {len(holders)} of the '
+                    f'{len(members)} versions but not on the head'))
+    return findings
+
+
 def _check_i18(snap):
     """Exactly one routine creates tombstones.
 
@@ -1067,15 +1105,11 @@ INVARIANTS = (
     Invariant('I16', 'Every chain has exactly one is_latest member',
               check=_check_i16),
     Invariant('I17', 'Every chain-level field survives the emptying of a chain',
-              needs='code that declares the split. The decision was taken on '
-                    '2026-08-27: project_downloads, sample_downloads and the '
-                    'alias pair are chain-level, sample_name_remap_enabled is '
-                    'version-level, and owner and original_project_name belong '
-                    'to neither -- they are upload scaffolding that a finished '
-                    'project must not carry. Nothing declares that in code yet; '
-                    'promotion still copies a hand-written list of 9 fields '
-                    '(views.py, delete_project_version), so there is no set for '
-                    'this check to read'),
+              check=_check_i17,
+              partial='the data half. That promotion reads the declared set '
+                      'rather than a literal list is a property of the source, '
+                      'not of any database, and is held by a test '
+                      '(tests/test_project_fields.py) rather than here'),
     Invariant('I18', 'Exactly one tombstone-creation routine exists and every '
                      'deletion path calls it', check=_check_i18),
     Invariant('I19', 'Every lineage reference is stored in the encoding the '

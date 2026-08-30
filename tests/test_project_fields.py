@@ -11,8 +11,8 @@ import re
 import pytest
 
 from caper.project_fields import (
-    ALL_LEVELS, CHAIN_LEVEL, DECLARED, LINEAGE, TRANSIENT, VERSION_LEVEL,
-    level_of, unclassified_fields,
+    ALL_LEVELS, CARRIED_ON_PROMOTION, CHAIN_LEVEL, DECLARED, KEPT_WHERE_EARNED,
+    LINEAGE, TRANSIENT, VERSION_LEVEL, level_of, unclassified_fields,
 )
 
 VIEWS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -45,18 +45,13 @@ MEASURED_2026_08_29 = frozenset({
 })
 
 
-def _promotion_copy_list():
-    """The field names ``delete_project_version()`` copies onto the promotion.
-
-    Read out of the source rather than duplicated here, so that adding a name
-    to that list without classifying it fails this file instead of shipping.
-    """
+def _promotion_source():
+    """The statement in ``delete_project_version()`` that builds the copy set."""
     with open(VIEWS) as handle:
         source = handle.read()
-    match = re.search(r'metadata_to_copy = \{\}\s*\n\s*for field in \[(.*?)\]:',
-                      source, re.S)
-    assert match, 'could not find the promotion copy list in views.py'
-    return frozenset(re.findall(r"'([^']+)'", match.group(1)))
+    match = re.search(r'metadata_to_copy = (.*?)\n\n', source, re.S)
+    assert match, 'could not find the promotion copy set in views.py'
+    return match.group(1)
 
 
 def test_the_levels_are_disjoint():
@@ -82,14 +77,79 @@ def test_nothing_is_declared_that_was_never_seen():
         'Either the census is stale and should be re-run, or the name is wrong.')
 
 
-def test_promotion_only_copies_chain_level_fields():
-    copied = _promotion_copy_list()
-    assert copied, 'the promotion copy list parsed as empty'
-    misfiled = {name: level_of(name) for name in copied
+def test_promotion_reads_the_declared_set_rather_than_a_literal_list():
+    """The list in views.py is the thing that went wrong; there must not be one.
+
+    ``project_downloads`` was missing from every promotion for as long as the
+    feature existed, because the fields to carry were written out by hand in
+    ``delete_project_version()`` and nobody edited that list when the field was
+    added. Classifying the field correctly does not stop that recurring; only
+    removing the second place to remember does.
+    """
+    statement = _promotion_source()
+
+    assert 'project_fields.CARRIED_ON_PROMOTION' in statement, statement
+    assert "'" not in statement and '"' not in statement, (
+        f'promotion is naming fields by hand again: {statement}')
+
+
+def test_everything_promotion_carries_is_chain_level():
+    misfiled = {name: level_of(name) for name in CARRIED_ON_PROMOTION
                 if level_of(name) != 'chain'}
-    assert not misfiled, (
-        f'delete_project_version() copies these forward, but they are not '
-        f'declared chain-level: {misfiled}')
+    assert not misfiled, misfiled
+
+
+def test_the_download_counters_are_kept_where_they_were_earned():
+    """Chain-level and carried-on-promotion are not the same set, on purpose.
+
+    A chain-level field must survive the emptying of a chain. It does not
+    follow that it must live on the head. Each of these is per version, starts
+    at zero, and is never carried forward, so the project's number is the sum
+    across the chain -- and a version that is deleted keeps its share on its
+    tombstone, which is why the total does not shrink. Copying one onto the
+    promoted head as well would report the same downloads twice.
+    """
+    assert KEPT_WHERE_EARNED == {'project_downloads', 'sample_downloads',
+                                 'downloads'}
+    assert KEPT_WHERE_EARNED < CHAIN_LEVEL
+    assert CARRIED_ON_PROMOTION | KEPT_WHERE_EARNED == CHAIN_LEVEL
+    assert CARRIED_ON_PROMOTION.isdisjoint(KEPT_WHERE_EARNED)
+
+
+def test_views_is_still_carried_and_the_declaration_says_why():
+    """The counter that has not been fixed, named as such rather than left out.
+
+    There has never been a per-date record of views, and reaggregation seeds a
+    new version's count from its predecessor, so the values overlap by an
+    unknown amount and cannot be summed. Until a per-version count is started,
+    views is read off the head and carried on promotion -- which is what the
+    site has always done.
+    """
+    assert 'views' in CARRIED_ON_PROMOTION
+    assert 'views' not in KEPT_WHERE_EARNED
+    assert level_of('views') == 'chain'
+
+
+def test_what_the_old_hand_written_list_got_wrong_in_both_directions():
+    """The nine names promotion used to copy, against what it copies now.
+
+    Kept as an explicit list because it is the before-and-after of this change,
+    and because a set difference that quietly became empty would look like a
+    passing test. It got the question wrong in both directions: two fields that
+    belong to the project were missing, and one that is per version was being
+    copied.
+    """
+    old_hand_written_list = {
+        'project_members', 'subscribers', 'views', 'downloads', 'alias_name',
+        'publication_link', 'private', 'privateKey', 'featured',
+    }
+
+    # Chain-level and forgotten: deleting a renamed version used to revert the
+    # project's name.
+    assert CARRIED_ON_PROMOTION - old_hand_written_list == {'project_name',
+                                                            'alias'}
+    # Per version and copied anyway, which is what made the total unsummable.
+    assert old_hand_written_list - CARRIED_ON_PROMOTION == {'downloads'}
 
 
 def test_the_2026_08_27_adjudication_is_what_is_encoded():

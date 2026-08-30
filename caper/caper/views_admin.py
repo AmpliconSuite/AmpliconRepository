@@ -55,7 +55,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
-from . import lineage
+from . import download_totals, lineage, ownership_survey, provenance
 
 from .extra_metadata import *
 
@@ -223,7 +223,13 @@ def _run_audit_checks(project, latest_entry):
 
     s3_uri = latest_entry.get('s3_uri')
     live_s3_size = _get_s3_file_size_bytes_admin(s3_uri) if s3_uri else None
-    live_sample_count = project.get('sample_count') or len(project.get('runs', {}))
+    # 'runs' is only counted when it was actually loaded. Callers that project
+    # it away get None here, which _make_check renders as missing -- the honest
+    # answer. Falling through to len({}) would report a confident 0 for a
+    # project whose samples simply were not fetched.
+    live_sample_count = project.get('sample_count')
+    if live_sample_count is None and 'runs' in project:
+        live_sample_count = len(project['runs'] or {})
 
     checks = [
         _make_check('AA Version',          latest_entry.get('AA_version'),          project.get('AA_version')),
@@ -491,25 +497,22 @@ def admin_stats(request):
                     new_val = {"$set": {'sample_downloads': sample_download_data}}
                     collection_handle.update_one(query, new_val)
 
-    # Calculate stats
+    # Calculate stats.
+    #
+    # The counters are summed over the whole version chain, not read off the
+    # current version. Downloads are attributed to whichever document served
+    # them, and reaggregation starts the new version's tally empty, so the
+    # current version holds only its own share -- 8% of the project's dated
+    # download history on prod, measured 2026-08-29. The rest was on the older
+    # versions the whole time.
+    chain_counts = download_totals.chain_totals_for(collection_handle,
+                                                    public_projects)
     for project in public_projects:
         project['sample_metadata_available'] = has_sample_metadata(project)
-        if 'project_downloads' in project:
-            # Process download stats
-            pass
-        else:
-            project['project_downloads'] = {}
-
-        if 'sample_downloads' in project:
-            # Process sample download stats - sum the values from the dictionary
-            if isinstance(project['sample_downloads'], dict):
-                project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
-            else:
-                # Handle legacy integer format
-                project['sample_downloads_sum'] = project['sample_downloads']
-        else:
-            project['sample_downloads'] = {}
-            project['sample_downloads_sum'] = 0
+        totals = chain_counts[str(project['_id'])]
+        project['project_downloads'] = totals['project_downloads']
+        project['sample_downloads'] = totals['sample_downloads']
+        project['sample_downloads_sum'] = sum(totals['sample_downloads'].values())
 
     repo_stats = get_latest_site_statistics()
 
@@ -563,16 +566,23 @@ def project_stats_download(request):
     # Get public and private project data
     public_projects = list(collection_handle.find(
         status_query(LIVE, private={'$in': PUBLIC_QUERY_VALUES})))
+    # Summed over the version chain: this CSV is what the weekly report reads,
+    # and its "all time" columns are built from these two dicts. Reading them
+    # off the current version made "all time" mean "since the last
+    # reaggregation" -- 8% of the real figure on prod, measured 2026-08-29.
+    #
+    # download_totals.as_dated also removes a crash that was waiting here: 12
+    # project documents on prod still store project_downloads as a bare int,
+    # and .values() on an int raises. None is public today, which is the only
+    # reason this endpoint has not failed.
+    chain_counts = download_totals.chain_totals_for(collection_handle,
+                                                    public_projects)
     for project in public_projects:
-        if not 'project_downloads' in project:
-            project['project_downloads_sum'] = 0
-        else:
-            project['project_downloads_sum'] = sum(project['project_downloads'].values())
-
-        if not 'sample_downloads' in project:
-            project['sample_downloads_sum'] = 0
-        else:
-            project['sample_downloads_sum'] = sum(project['sample_downloads'].values())
+        totals = chain_counts[str(project['_id'])]
+        project['project_downloads'] = totals['project_downloads']
+        project['sample_downloads'] = totals['sample_downloads']
+        project['project_downloads_sum'] = sum(totals['project_downloads'].values())
+        project['sample_downloads_sum'] = sum(totals['sample_downloads'].values())
 
     for proj in public_projects:
         prepare_project_linkid(proj)
@@ -912,17 +922,30 @@ def admin_delete_project(request):
             # this the reverse of a soft delete: the document keeps whatever
             # 'current' it had.  Only SOFT_DELETED documents are listed below,
             # so in practice that lands on LIVE.
+            intended_status = status_after(current_flags(project), delete=False)
+            restore_event = provenance.record(
+                audit_log_handle, provenance.RESTORE_PROJECT, request.user,
+                project, intended={'status': intended_status})
             new_val = {"$set": {'delete': status_flags(LIVE)['delete'],
-                                'status': status_after(current_flags(project),
-                                                       delete=False)}}
+                                'status': intended_status}}
             collection_handle.update_one(query, new_val)
+            provenance.confirm(audit_log_handle, restore_event)
             error_message = f"Project {project_name} restored."
 
         elif deleteit and (action == 'delete'):
 
             ## deletes the project and all previous versions its history names.
             project = get_one_deleted_project(project_id)
+            # The only irreversible path in the application, and the one whose
+            # absence from the log was felt most in August 2026: afterwards
+            # there is no document left to ask what happened to it.
+            purge_event = provenance.record(
+                audit_log_handle, provenance.PERMANENT_DELETE, request.user,
+                project, intended={'status': None, 'documents_removed': True})
             error_message = permanently_delete_with_history(project_id, project, project_name)
+            provenance.confirm(audit_log_handle, purge_event,
+                               outcome='failed' if error_message else 'removed',
+                               error_message=error_message or None)
 
     deleted_projects = list(collection_handle.find(STATUS_QUERIES[SOFT_DELETED]))
     for proj in deleted_projects:
@@ -1392,11 +1415,61 @@ def admin_project_files_report(request):
     })
 
 
+#: The only project fields the audit table renders or compares.
+#
+# Without a projection this query pulls every live project document whole --
+# `runs`, `sample_data` and `aggregate_df` included -- to display six values per
+# row. Measured on prod 2026-08-29 from the gunicorn access log, the two pages
+# that call this helper were the two slowest URLs on the site by an order of
+# magnitude: /admin-project-files-report/ averaged 157s and
+# /admin-file-ownership/ 91s, against 3.5s for the next admin page.
+#
+# `project_name_unique` is read by the template and is not written by the
+# upload path; it is listed so that a document which does have it keeps it.
+_AUDIT_PROJECT_FIELDS = {
+    '_id': 1, 'project_name': 1, 'project_name_unique': 1, 'private': 1,
+    'AA_version': 1, 'AC_version': 1, 'ASP_version': 1, 'sample_count': 1,
+}
+
+
+#: Selects the newest audit entry that describes a stored payload.
+#
+# `_run_audit_checks` compares an entry's AA/AC/ASP versions, sample count and
+# S3 size against the live document. A deletion event carries none of those --
+# it records a lifecycle change, not a payload -- so letting one be the "latest
+# entry" makes every field read as missing and downgrades a healthy project to
+# "Partial". That is what happened on dev on 2026-08-30: a promote_version
+# event was the only entry for a project, and the page reported Partial for a
+# project with nothing wrong with it.
+#
+# $nin also matches documents with no event_type at all, which is what the
+# oldest entries look like -- they predate the constants.
+_PAYLOAD_DESCRIBING_ENTRY = {'event_type': {'$nin': list(provenance.DELETION_EVENTS)}}
+
+
+def _latest_payload_entry(matched_uuids):
+    """The newest entry that can meaningfully be compared to a live document."""
+    if not matched_uuids:
+        return None
+    return audit_log_handle.find_one(
+        {'project_uuid': {'$in': matched_uuids}, **_PAYLOAD_DESCRIBING_ENTRY},
+        sort=[('timestamp', -1)])
+
+
+def _latest_entry_of_any_kind(matched_uuids):
+    """The newest entry of any type, for "when did this last change?"."""
+    if not matched_uuids:
+        return None
+    return audit_log_handle.find_one({'project_uuid': {'$in': matched_uuids}},
+                                     sort=[('timestamp', -1)])
+
+
 def _get_audit_log_context(request):
     """
     Build the audit log context dict shared by admin_project_files_report and admin_audit_log.
     """
-    all_projects = list(collection_handle.find(STATUS_QUERIES[LIVE]))
+    all_projects = list(collection_handle.find(STATUS_QUERIES[LIVE],
+                                               _AUDIT_PROJECT_FIELDS))
     for proj in all_projects:
         prepare_project_linkid(proj)
         proj['id_str'] = str(proj['_id'])
@@ -1413,25 +1486,31 @@ def _get_audit_log_context(request):
         search_term = proj.get('project_name') or proj['id_str']
         try:
             matched_uuids, _ = get_project_version_chain(search_term)
-            latest_entry = None
-            if matched_uuids:
-                latest_entry = audit_log_handle.find_one(
-                    {'project_uuid': {'$in': matched_uuids}},
-                    sort=[('timestamp', -1)]
-                )
+
+            # Two different questions, which used to share one answer.
+            # "When did this project last change?" is about every event,
+            # deletions included -- a deletion is a change, and hiding it in
+            # this column would be a worse answer than the one it replaced.
+            # "Does the log agree with the document?" can only be asked of an
+            # entry that describes a payload.
+            latest_entry = _latest_payload_entry(matched_uuids)
+            latest_any = _latest_entry_of_any_kind(matched_uuids)
+
             if latest_entry:
                 result = _run_audit_checks(proj, latest_entry)
                 proj['validation_status'] = result['status']  # 'pass' | 'mismatch' | 'missing_data'
-                ts = latest_entry.get('timestamp')
-                proj['latest_audit_timestamp'] = ts
-                if isinstance(ts, datetime.datetime):
-                    proj['latest_audit_timestamp_display'] = ts.strftime('%Y-%m-%d %H:%M:%S UTC')
-                else:
-                    proj['latest_audit_timestamp_display'] = str(ts) if ts else '—'
             else:
-                proj['validation_status'] = 'no_log'
-                proj['latest_audit_timestamp'] = None
-                proj['latest_audit_timestamp_display'] = '—'
+                # A project whose only events are deletions is not unaudited;
+                # it is audited and has nothing to compare. Those are different
+                # states and the template distinguishes them.
+                proj['validation_status'] = 'lifecycle_only' if latest_any else 'no_log'
+
+            ts = latest_any.get('timestamp') if latest_any else None
+            proj['latest_audit_timestamp'] = ts
+            if isinstance(ts, datetime.datetime):
+                proj['latest_audit_timestamp_display'] = ts.strftime('%Y-%m-%d %H:%M:%S UTC')
+            else:
+                proj['latest_audit_timestamp_display'] = str(ts) if ts else '—'
         except Exception as e:
             logging.warning(f"Could not compute validation status for {proj['id_str']}: {e}")
             proj['validation_status'] = 'error'
@@ -1503,6 +1582,11 @@ def _get_audit_log_context(request):
         'matched_uuids': matched_uuids,
         'entries': entries,
         'total_entries': total_entries,
+        # So the template can mark a deletion event that was recorded before
+        # its mutation and never confirmed -- an operation that started and did
+        # not finish. Only these types are written that way; an unconfirmed
+        # create or edit means nothing, because those are logged afterwards.
+        'deletion_events': list(provenance.DELETION_EVENTS),
         'audit_error_message': error_message,
     }
 
@@ -1548,12 +1632,7 @@ def admin_audit_log_validate(request):
         search_term = project.get('project_name') or project_id
         matched_uuids, _ = get_project_version_chain(search_term)
 
-        latest_entry = None
-        if matched_uuids:
-            latest_entry = audit_log_handle.find_one(
-                {'project_uuid': {'$in': matched_uuids}},
-                sort=[('timestamp', -1)]
-            )
+        latest_entry = _latest_payload_entry(matched_uuids)
 
         if latest_entry is None:
             return JsonResponse({'error': 'No audit log entries found for this project'}, status=404)
@@ -1581,67 +1660,16 @@ def admin_audit_log_validate(request):
 # GridFS ownership
 # ---------------------------------------------------------------------------
 
-OWNERSHIP_REPORTS = 'gridfs_ownership_reports'
-
-#: Projects kept in a stored snapshot. The whole list is a few hundred rows
-#: today, but a snapshot that grows without bound is a document that one day
-#: cannot be written back.
-OWNERSHIP_PROJECT_ROWS = 200
+#: Re-exported so the page, its tests and the command all name one thing. The
+#: survey itself does not run here -- see caper/ownership_survey.py for why.
+OWNERSHIP_REPORTS = ownership_survey.REPORTS_COLLECTION
+OWNERSHIP_PROJECT_ROWS = ownership_survey.PROJECT_ROWS
+OWNERSHIP_SURVEY_ABANDONED_AFTER = ownership_survey.ABANDONED_AFTER
+mark_abandoned_surveys = ownership_survey.mark_abandoned_surveys
 
 
 def _ownership_reports():
     return db_handle_primary[OWNERSHIP_REPORTS]
-
-
-#: A survey still claiming to be running after this long has lost its worker.
-OWNERSHIP_SURVEY_ABANDONED_AFTER = datetime.timedelta(hours=1)
-
-
-def mark_abandoned_surveys(snapshots, now=None):
-    """Rewrite the state of surveys whose worker went away.
-
-    The worker records 'failed' when the survey raises, but nothing records
-    anything when the process disappears underneath it -- a restart, a kill,
-    a deploy. The row keeps saying 'running', which disables the Run button for
-    good. Age is the only evidence left of the difference, so age is what this
-    reads. Mutates the dicts in place; the stored documents are not touched,
-    because the fact being corrected is about this moment, not about them.
-    """
-    now = now or datetime.datetime.now(datetime.timezone.utc)
-    cutoff = now - OWNERSHIP_SURVEY_ABANDONED_AFTER
-    for snapshot in snapshots:
-        started = snapshot.get('started_at')
-        if snapshot.get('state') != 'running' or not started:
-            continue
-        # DocumentDB hands back naive UTC; a caller passing an aware value is
-        # left as it is.
-        if started.tzinfo is None:
-            started = started.replace(tzinfo=datetime.timezone.utc)
-        if started < cutoff:
-            snapshot['state'] = 'abandoned'
-    return snapshots
-
-
-def _run_ownership_survey(report_id, started_by):
-    """Walk the documents and store one snapshot. Runs in a worker thread.
-
-    Read-only against both collections: the survey counts, and this records
-    what it counted. Nothing here deletes a file or edits a project.
-    """
-    from .gridfs_ownership import survey
-
-    reports = _ownership_reports()
-    try:
-        result = survey(db_handle['projects'], db_handle['fs.files'])
-        result['per_project'] = result['per_project'][:OWNERSHIP_PROJECT_ROWS]
-        result['state'] = 'done'
-        result['started_by'] = started_by
-        reports.update_one({'_id': report_id}, {'$set': result})
-    except Exception as exc:
-        logging.exception('GridFS ownership survey failed')
-        reports.update_one({'_id': report_id},
-                           {'$set': {'state': 'failed',
-                                     'error': f'{type(exc).__name__}: {exc}'}})
 
 
 def admin_file_ownership(request):
@@ -1653,7 +1681,6 @@ def admin_file_ownership(request):
     for is deciding whether a deletion is worth investigating, not performing
     it.
     """
-    from .background_tasks import _thread_executor
     from .gridfs_ownership import (
         ORDER, RESIDUE_DOCUMENT_GONE, RESIDUE_UNLABELLED, RESIDUE_UNREFERENCED,
         human,
@@ -1667,14 +1694,19 @@ def admin_file_ownership(request):
     if request.method == 'POST':
         action = request.POST.get('action')
         if action == 'run':
-            report_id = ObjectId()
-            reports.insert_one({'_id': report_id, 'state': 'running',
-                                'started_at': datetime.datetime.now(
-                                    datetime.timezone.utc),
-                                'started_by': str(request.user)})
-            _thread_executor.submit(_run_ownership_survey, report_id,
-                                    str(request.user),
-                                    task_label='gridfs_ownership_survey')
+            # Started, not run. The walk takes minutes against prod, and this
+            # process has a request to finish and eight siblings serving
+            # traffic. spawn() returns as soon as the child is running; the row
+            # inserted here is what the page shows until the child fills it in.
+            notify = getattr(request.user, 'email', '') or None
+            report_id = ownership_survey.open_report(
+                reports, str(request.user), notify)
+            if ownership_survey.spawn(report_id, str(request.user),
+                                      notify) is None:
+                reports.update_one(
+                    {'_id': report_id},
+                    {'$set': {'state': 'failed',
+                              'error': 'the survey process would not start'}})
         elif action == 'remove_snapshot':
             # Not spelled 'delete': that literal is reserved for the status
             # flag field, and the guard in tests/test_project_status_guard.py
@@ -1697,7 +1729,9 @@ def admin_file_ownership(request):
         latest = next((s for s in snapshots if s['id_str'] == wanted), None)
     if latest is None:
         latest = next((s for s in snapshots if s.get('state') == 'done'), None)
-    running = any(s.get('state') == 'running' for s in snapshots)
+    running_snapshot = next((s for s in snapshots
+                             if s.get('state') == 'running'), None)
+    running = running_snapshot is not None
 
     rows = []
     if latest:
@@ -1719,11 +1753,11 @@ def admin_file_ownership(request):
         'snapshots': snapshots,
         'latest': latest,
         'running': running,
+        'running_progress': running_snapshot,
         'rows': rows,
         'residue_size': human(latest.get('residue_bytes', 0)) if latest else '',
         'total_size': human(latest.get('total_bytes', 0)) if latest else '',
         'unlabelled_label': RESIDUE_UNLABELLED,
         'gone_label': RESIDUE_DOCUMENT_GONE,
         'unreferenced_label': RESIDUE_UNREFERENCED,
-        **_get_audit_log_context(request),
     })

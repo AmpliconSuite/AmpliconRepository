@@ -180,6 +180,22 @@ class CaperConfig(AppConfig):
                 logger.info("✓ Index 'idx_project_name_delete' ensured")
             except Exception as e:
                 logger.warning(f"Could not create index 'idx_project_name_delete': {str(e)}")
+
+            # The chain lookup. Every project page sums its chain's download
+            # counters, and without this that lookup is a full scan of the
+            # projects collection -- measured at a flat 280 ms per call on prod
+            # 2026-08-30, the same for a one-version chain as for an
+            # eight-version one, which is the signature of a scan rather than
+            # of the work being asked for.
+            try:
+                collection_handle.create_index(
+                    [('version_chain_id', 1), ('version_ordinal', 1)],
+                    name='idx_project_version_chain',
+                    background=True,
+                )
+                logger.info("✓ Index 'idx_project_version_chain' ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'idx_project_version_chain': {str(e)}")
                 
         except Exception as e:
             # Log but don't crash the application if index creation fails

@@ -103,7 +103,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
-from . import lineage
+from . import download_totals, lineage, project_fields, provenance
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
@@ -1031,7 +1031,19 @@ def project_page(request, project_name, message=''):
             message = project["warning"]
 
     ## download & view statistics
-    views, downloads = session_visit(request, project)
+    views = session_visit(request, project)
+    if views is not None:
+        # This version's own count is not the project's. Same rule as
+        # downloads: every version counts its own from zero, and the project is
+        # the sum over the chain.
+        views = download_totals.chain_sum(collection_handle, project, 'views')
+    # The project's downloads, not this version's. Every version keeps its own
+    # count starting at zero, so the project's number is the sum over the chain
+    # -- including the tombstones of versions that were deleted, whose
+    # downloads still happened. On prod 2026-08-30 the head of a multi-version
+    # chain held 5,218 of the 7,466 downloads its chain had served.
+    downloads = download_totals.total(
+        download_totals.chain_totals(collection_handle, project)['project_downloads'])
 
     # DEBUG: Get delete and current flag values
     debug_delete_flag = project.get('delete', 'NOT SET')
@@ -1604,23 +1616,39 @@ def project_metadata_download(request, project_name):
 
 
 def update_project_download_count(project, project_name):
-    if check_if_db_field_exists(project, 'project_downloads'):
-        project_download_data = project['project_downloads']
-        if isinstance(project_download_data, int):
-            temp_data = project_download_data
-            project_download_data = dict()
-            project_download_data[get_date_short()] = temp_data
-        elif get_date_short() in project_download_data:
-            project_download_data[get_date_short()] += 1
-        else:
-            project_download_data[get_date_short()] = 1
-    else:
-        project_download_data = dict()
-        project_download_data[get_date_short()] = 1
+    """Record one download against the version that served it.
+
+    Two records, and they are not duplicates: the per-date dict says which
+    version and which day, the int is that version's running total. Both are
+    per version and both start at zero on a new version, which is what lets the
+    project's number be a sum across the chain rather than a reconciliation.
+
+    Written with $inc rather than by reading the dict, adding one and writing it
+    back. The read-modify-write this replaces lost a download whenever two
+    arrived for the same project between the read and the write -- and the
+    downloads that matter most are the ones that arrive in bursts.
+    """
     query = {'_id': ObjectId(project_name)}
-    new_val = {"$set": {'project_downloads': project_download_data}}
-    collection_handle.update_one(query, new_val)
-    collection_handle.update_one(query, {'$inc': {'downloads': 1}})
+    today = get_date_short()
+
+    stored = project.get('project_downloads')
+    if stored is not None and not isinstance(stored, dict):
+        # Pre-dating the per-date form: a bare int, whose date is unknown. It
+        # is moved under today's key rather than discarded, and $inc takes over
+        # from the next download onwards.
+        collection_handle.update_one(
+            query, {'$set': {'project_downloads': {today: as_download_count(stored) + 1}}})
+    else:
+        collection_handle.update_one(query, {'$inc': {f'project_downloads.{today}': 1}})
+
+    increment_download(project)
+
+
+def as_download_count(value):
+    """A stored counter as an int; anything else counts as no downloads."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return int(value)
 
 
 def convert_runs_to_csv(runs):
@@ -2901,10 +2929,16 @@ def project_delete(request, project_name):
         # 'status' comes from status_after() rather than from the constant,
         # because a half-write's result depends on the 'current' already there:
         # LIVE becomes SOFT_DELETED, SUPERSEDED stays SUPERSEDED.
+        intended_status = status_after(current_flags(project), delete=True)
+        event_id = provenance.record(
+            audit_log_handle, provenance.DELETE_PROJECT, request.user, project,
+            intended={'status': intended_status},
+            by_admin=bool(is_admin and not is_user_a_project_member(project, request)))
         new_val = { "$set": {'delete': status_flags(SOFT_DELETED)['delete'],
-                             'status': status_after(current_flags(project), delete=True),
+                             'status': intended_status,
                              'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
+        provenance.confirm(audit_log_handle, event_id)
         delete_project_from_site_statistics(project, visibility)
 
         # No Neo4j graph invalidation here on purpose. This is a reversible soft
@@ -2985,6 +3019,21 @@ def delete_project_version(request, project_name, version_id):
                                           lineage.POINTER_PROJECTION)
     plan = lineage.plan_deletion(chain_members, version_id)
 
+    # Recorded here rather than at each branch below: this is the last point
+    # where every deletion shape still shares a code path, and the record has
+    # to exist before the first write whichever shape it turns out to be. The
+    # victim document is fetched for the snapshot because latest_project is the
+    # head, which for an old-version delete is a different document.
+    victim = collection_handle.find_one({'_id': ObjectId(version_id)}) or latest_project
+    delete_event = provenance.record(
+        audit_log_handle, provenance.DELETE_VERSION, request.user, victim,
+        intended={'status': TOMBSTONE,
+                  'deleting_current': deleting_current,
+                  'promoting': str(plan.promoted_id) if plan is not None
+                               and plan.promoted_id is not None else None},
+        chain_size=len(chain_members) if chain_members else 1,
+        head_project_id=str(latest_project.get('_id')))
+
     if deleting_current:
         prev_versions_list = latest_project.get('previous_versions', [])
 
@@ -3027,12 +3076,17 @@ def delete_project_version(request, project_name, version_id):
                 if str(_previous_version_linkid(pv)) != prev_linkid
             ]
 
-            # Copy forward important metadata from the current version
-            metadata_to_copy = {}
-            for field in ['project_members', 'subscribers', 'views', 'downloads',
-                          'alias_name', 'publication_link', 'private', 'privateKey', 'featured']:
-                if field in latest_project:
-                    metadata_to_copy[field] = latest_project[field]
+            # Carry the project's own fields onto the version taking its
+            # place. The set is read from project_fields, not written out here:
+            # a literal list is a second place to remember, and the one time it
+            # was not remembered is why project_downloads went missing from
+            # every promotion for as long as the feature existed. Which fields
+            # belong to the project, and which two are deliberately left where
+            # they were earned, are stated there next to the measurements that
+            # settled them.
+            metadata_to_copy = {field: latest_project[field]
+                                for field in project_fields.CARRIED_ON_PROMOTION
+                                if field in latest_project}
 
             # Promote the previous version to the live head of the chain.
             # (The reverse operation is called "Un-delete" only because
@@ -3051,10 +3105,23 @@ def delete_project_version(request, project_name, version_id):
                 update_fields['is_latest'] = True
             update_fields.update(metadata_to_copy)
 
+            # A separate event from the delete: promotion is the half that
+            # changes which document the project's URL resolves to, and the
+            # 2026-08 chain repairs needed to know which version had been
+            # promoted, not merely that something had been deleted.
+            promoted_before = collection_handle.find_one({'_id': ObjectId(prev_linkid)})
+            promote_event = provenance.record(
+                audit_log_handle, provenance.PROMOTE_VERSION, request.user,
+                promoted_before,
+                intended={'status': LIVE, 'is_latest': True},
+                replacing_project_id=str(latest_project.get('_id')),
+                fields_copied=sorted(metadata_to_copy))
+
             collection_handle.update_one(
                 {'_id': ObjectId(prev_linkid)},
                 {'$set': update_fields}
             )
+            provenance.confirm(audit_log_handle, promote_event)
 
             promoted_project = collection_handle.find_one({'_id': ObjectId(prev_linkid)}) or {
                 '_id': ObjectId(prev_linkid),
@@ -3087,6 +3154,12 @@ def delete_project_version(request, project_name, version_id):
             # Update site statistics
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
             delete_project_from_site_statistics(latest_project, vis)
+
+            provenance.confirm(audit_log_handle, delete_event,
+                               outcome='promoted',
+                               promoted_project_id=str(prev_linkid),
+                               gridfs_files_purged=deleted_gridfs_count,
+                               tombstones_retargeted=retarget_count)
 
             logging.info(
                 f"Deleted current version {current_linkid}, promoted {prev_linkid} "
@@ -3131,6 +3204,10 @@ def delete_project_version(request, project_name, version_id):
 
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
             delete_project_from_site_statistics(latest_project, vis)
+
+            provenance.confirm(audit_log_handle, delete_event,
+                               outcome='chain_emptied',
+                               gridfs_files_purged=deleted_gridfs_count)
 
             logging.info(
                 f"Deleted last surviving version {current_linkid}; purged "
@@ -3184,6 +3261,10 @@ def delete_project_version(request, project_name, version_id):
             tombstone,
             upsert=True,
         )
+
+        provenance.confirm(audit_log_handle, delete_event,
+                           outcome='tombstoned_in_place',
+                           gridfs_files_purged=deleted_gridfs_count)
 
         logging.info(
             f"Deleted old version {version_id} from history of project "
@@ -5325,6 +5406,32 @@ def create_project(request):
                                                          'all_alias' : json.dumps(get_all_alias())})
 
 
+def _resolved_tool_versions(project, fallback):
+    """The tool versions as stored on the finished document, not as typed.
+
+    The upload form's version fields default to the placeholder 'NA', and most
+    submitters leave them there; get_tool_versions() then fills the document in
+    from what was actually detected inside the uploaded data. Logging the form
+    value recorded the placeholder, so the admin audit table compared 'NA'
+    against a real version and called it a mismatch -- 12 of the 70 live
+    documents on dev on 2026-08-30, every one of that shape and not one a
+    genuine disagreement between two real values.
+
+    The document wins where it has a value; *fallback* (what the user typed) is
+    used only when it does not, which is the case on the failure paths where no
+    aggregation ever ran.
+    """
+    def pick(key):
+        stored = (project or {}).get(key)
+        stored = str(stored).strip() if stored is not None else ''
+        if stored and stored.upper() != 'NA':
+            return stored
+        return fallback.get(key.lower().replace('_version', '') + '_version',
+                            fallback.get(key, 'NA'))
+
+    return pick('AA_version'), pick('AC_version'), pick('ASP_version')
+
+
 def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, audit_params=None, oldFeatured=False, remap_name_to_alias=False):
     """
     Creates or updates a project.
@@ -5455,14 +5562,18 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
                     )
                 except Exception:
                     _sample_count = 0
+                    _proj = None
+                # Same reason the sample count is fetched here rather than
+                # passed in: the document is only complete at this point.
+                _aa, _ac, _asp = _resolved_tool_versions(_proj, _ap)
                 log_project_audit_event(
                     user=_ap['user'],
                     project_uuid=str(_pid),
                     project_name=_ap.get('project_name', ''),
                     is_new_version=True,
-                    aa_version=_ap.get('aa_version', 'NA'),
-                    ac_version=_ap.get('ac_version', 'NA'),
-                    asp_version=_ap.get('asp_version', 'NA'),
+                    aa_version=_aa,
+                    ac_version=_ac,
+                    asp_version=_asp,
                     s3_uri=s3_uri,
                     event_type=_ap.get('event_type'),
                     sample_count=_sample_count,
@@ -5486,14 +5597,16 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
             )
         except Exception:
             _sample_count = 0
+            _proj = None
+        _aa, _ac, _asp = _resolved_tool_versions(_proj, audit_params)
         log_project_audit_event(
             user=audit_params['user'],
             project_uuid=str(project_id),
             project_name=audit_params.get('project_name', ''),
             is_new_version=True,
-            aa_version=audit_params.get('aa_version', 'NA'),
-            ac_version=audit_params.get('ac_version', 'NA'),
-            asp_version=audit_params.get('asp_version', 'NA'),
+            aa_version=_aa,
+            ac_version=_ac,
+            asp_version=_asp,
             s3_uri=None,
             event_type=audit_params.get('event_type'),
             sample_count=_sample_count,
@@ -5658,8 +5771,14 @@ def build_project_document(project, form, form_dict, user, runs, project_tar_id,
     # Not the chain-level EMPTY of the spec's model -- that one is every member
     # being a tombstone, stays derived, and is a different question.
     project['EMPTY?'] = not runs
-    project['views'] = previous_views[0]
-    project['downloads'] = previous_views[1]
+    # A new version starts both counters at zero. Nothing is carried forward,
+    # which is the whole reason the project's number can be a sum: seeding a
+    # version from its predecessor makes the two overlap by an amount nobody
+    # records, and no later arithmetic recovers the split. The counts the older
+    # versions earned are not lost -- they stay on those versions, and the
+    # project's total is the sum across the chain.
+    project['views'] = 0
+    project['downloads'] = 0
     project['alias_name'] = form_dict['alias']
     project['sample_count'] = len(runs)
 

@@ -32,8 +32,14 @@
     </form>
     {% if running %}
       <span class="text-muted" style="margin-left:10px">
-        Walking every project document &mdash; on the production database
-        that is around six minutes. Reload this page to see it land.
+        Walking every project document in a separate process &mdash; on the
+        production database that is around six minutes.
+        {% if running_progress %}
+          {{ running_progress.documents_done }} document(s) so far.
+        {% endif %}
+        You do not have to wait here &mdash; this page shows the snapshot
+        whenever you come back{% if running_progress.notify %}, and it emails
+        {{ running_progress.notify }} when it lands{% endif %}.
       </span>
     {% endif %}
 

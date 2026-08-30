@@ -1082,3 +1082,137 @@ def test_project_runs_is_one_accessor_shared_by_its_readers():
     assert project_runs({'runs': None}) == {}
     assert project_runs({'runs': {}}) == {}
     assert project_runs({'runs': {'s': [1]}}) == {'s': [1]}
+
+
+# ---------------------------------------------------------------------------
+# Provenance: the deletion paths now say who acted, and whether they finished.
+# ---------------------------------------------------------------------------
+
+class RecordingAudit:
+    """Captures provenance events without a database."""
+
+    def __init__(self):
+        self.docs = {}
+        self._n = 0
+
+    def insert_one(self, doc):
+        self._n += 1
+        key = f'e{self._n}'
+        self.docs[key] = dict(doc)
+        return type('R', (), {'inserted_id': key})()
+
+    def update_one(self, query, update):
+        self.docs.setdefault(query['_id'], {}).update(update['$set'])
+
+    def events(self, event_type):
+        return [d for d in self.docs.values() if d.get('event_type') == event_type]
+
+
+def run_delete_with_audit(monkeypatch, request_factory, user, members, victim):
+    audit = RecordingAudit()
+    monkeypatch.setattr(views, 'audit_log_handle', audit)
+    response, collection, fs = run_delete(monkeypatch, request_factory, user,
+                                          members, victim)
+    return response, collection, fs, audit
+
+
+def test_deleting_a_version_records_who_did_it(
+        monkeypatch, request_factory, test_user):
+    """The gap this closes: a deleted version used to leave no trace of an actor."""
+    from caper import provenance
+
+    members = chain_project(3, test_user.username)
+    victim = members[1]
+
+    _response, _collection, _fs, audit = run_delete_with_audit(
+        monkeypatch, request_factory, test_user, members, victim['_id'])
+
+    deletes = audit.events(provenance.DELETE_VERSION)
+    assert len(deletes) == 1
+    event = deletes[0]
+    assert event['user_email'] in (test_user.email, test_user.username)
+    # The snapshot is of the version being deleted, not of the chain head.
+    assert event['before']['project_id'] == str(victim['_id'])
+    assert event['before']['version_ordinal'] == 2
+    assert event['completed'] is True
+    assert event['outcome'] == 'tombstoned_in_place'
+
+
+def test_deleting_the_head_records_the_promotion_separately(
+        monkeypatch, request_factory, test_user):
+    """Which version was promoted is the fact the 2026-08 chain repairs needed."""
+    from caper import provenance
+
+    members = chain_project(2, test_user.username)
+    head, survivor = members[1], members[0]
+
+    _response, _collection, _fs, audit = run_delete_with_audit(
+        monkeypatch, request_factory, test_user, members, head['_id'])
+
+    promotions = audit.events(provenance.PROMOTE_VERSION)
+    assert len(promotions) == 1
+    assert promotions[0]['before']['project_id'] == str(survivor['_id'])
+    assert promotions[0]['replacing_project_id'] == str(head['_id'])
+    assert promotions[0]['completed'] is True
+
+    deletes = audit.events(provenance.DELETE_VERSION)
+    assert deletes[0]['outcome'] == 'promoted'
+    assert deletes[0]['intended']['promoting'] == str(survivor['_id'])
+
+
+def test_the_event_exists_even_when_the_deletion_does_not_finish(
+        monkeypatch, request_factory, test_user):
+    """Recorded before the mutation, so a crash leaves the intent visible.
+
+    The failure is injected at the GridFS purge, which runs after the event is
+    written and before any confirm() -- the same shape as a worker dying
+    mid-delete.
+    """
+    from caper import provenance
+
+    members = chain_project(3, test_user.username)
+    victim = members[1]
+    audit = RecordingAudit()
+    collection = FakeHistoryCollection(members)
+
+    # Not the GridFS purge: that path deliberately swallows its own failures
+    # and carries on, so a file that will not delete does not abort a
+    # deletion. The tombstone write is where a failure really does propagate.
+    def explode(*_args, **_kwargs):
+        raise RuntimeError('worker died writing the tombstone')
+
+    monkeypatch.setattr(views, 'audit_log_handle', audit)
+    monkeypatch.setattr(utils, 'collection_handle', collection)
+    monkeypatch.setattr(views, 'collection_handle', collection)
+    monkeypatch.setattr(collection, 'replace_one', explode)
+
+    head_id = str(members[-1]['_id'])
+    request = request_factory.post(f'/project/{head_id}/delete_version/{victim["_id"]}')
+    request.user = test_user
+    with pytest.raises(RuntimeError):
+        views.delete_project_version(request, head_id, str(victim['_id']))
+
+    deletes = audit.events(provenance.DELETE_VERSION)
+    assert len(deletes) == 1, 'the intent was not recorded before the mutation'
+    assert deletes[0]['completed'] is False, (
+        'an interrupted deletion must not look like a completed one')
+
+
+def test_a_broken_audit_log_does_not_break_the_deletion(
+        monkeypatch, request_factory, test_user):
+    """Evidence must never be able to veto the event it describes."""
+    class BrokenAudit:
+        def insert_one(self, doc):
+            raise RuntimeError('audit collection unavailable')
+
+        def update_one(self, query, update):
+            raise RuntimeError('audit collection unavailable')
+
+    members = chain_project(3, test_user.username)
+    monkeypatch.setattr(views, 'audit_log_handle', BrokenAudit())
+
+    response, collection, _fs = run_delete(
+        monkeypatch, request_factory, test_user, members, members[1]['_id'])
+
+    assert response.status_code == 200
+    assert classify(collection.docs[str(members[1]['_id'])]) == TOMBSTONE
