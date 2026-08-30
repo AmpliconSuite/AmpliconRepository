@@ -334,3 +334,20 @@ def test_the_reconciliation_refuses_to_run_twice():
     # happens without the override.
     assert 'refusing: this database was already reconciled' in source
     assert 'if marker and not args.i_know' in source
+
+
+def test_the_page_says_total_because_that_is_what_it_now_shows():
+    """The number changed meaning, so the label had to change with it.
+
+    It used to be this version's count and now it is the project's, summed
+    across every version including the tombstones of deleted ones. A reader
+    comparing it against a per-version figure elsewhere needs the label to say
+    which one they are looking at.
+    """
+    from pathlib import Path
+
+    template = (Path(__file__).parents[1] / 'caper' / 'templates' / 'pages' /
+                'project.html').read_text()
+
+    assert 'Total downloads:' in template
+    assert 'Total views:' in template
