@@ -167,6 +167,14 @@ def main(argv=None):
             {'$set': {'views': 0}}).modified_count
     print(f'\n{written} document(s) zeroed.')
 
+    # Only a run that completed the whole plan has finished the job. A --limit
+    # run leaves residue behind, and marking it done would make finishing it
+    # require the override -- which is what happened on the prod staging run.
+    if args.limit is not None and len(work) < len(to_zero):
+        print('partial run: no completion marker written, so the rest can be '
+              'done without --i-know.')
+        return 0
+
     database[MIGRATIONS].update_one(
         {'_id': MARKER},
         {'$set': {'ran_at': datetime.datetime.now(datetime.timezone.utc),
