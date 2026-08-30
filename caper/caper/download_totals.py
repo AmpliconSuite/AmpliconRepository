@@ -19,14 +19,17 @@ document served the file, and reaggregation starts the new version's dict
 empty rather than carrying the old one forward. So 90% of the project's
 download history exists and is simply not added up. This module adds it up.
 
-**Why summing is correct here and would be wrong for ``views`` and
-``downloads``.** Those two are integers, and reaggregation *does* carry them
-forward (``views.py``, where a new version is created from an old one). A
-version's ``downloads`` therefore already contains its predecessors' -- adding
-them across a chain would count the same download once per version it has
-outlived. The per-date dicts are never carried forward, so each one holds
-exactly what its own version earned, and the sum is the total. Do not
-"harmonise" the two by summing all four.
+**What made summing correct here and not, until 2026-08-30, for ``views`` and
+``downloads``.** Those two are integers, and reaggregation used to carry them
+forward: a new version was seeded with its predecessor's total, so the two
+overlapped by an amount nobody recorded and adding them across a chain counted
+the same download once per version it had outlived. Summing ``downloads`` on
+prod that day would have reported 17,609 against the 7,466 actually served.
+
+The seeding stopped on 2026-08-30. Every version written from then on starts
+both counters at zero, which is what the per-date dicts had always done, and all
+four are now summed the same way. The rule that makes it work is one sentence:
+**nothing is ever carried forward**, so no count can appear in two places.
 
 The counts are keyed by ``YYYY-MM-DD`` and two versions can hold the same date:
 a version superseded at noon and its successor both serve downloads that day.
@@ -43,10 +46,14 @@ is that a version cannot have served a download before it existed. Across the
 key earlier than its own birth**. Every dated count was earned by the document
 holding it.
 
-``downloads`` fails that same test by construction -- 59 consecutive version
-pairs on prod have a non-decreasing value, and a new version is seeded with its
-predecessor's total -- which is the other half of why the two pairs are treated
-differently.
+``downloads`` used to fail that same test by construction, and the failure was
+visible from either end: a new version was seeded with its predecessor's total,
+and 24 of the 88 consecutive version pairs on prod nonetheless held a *smaller*
+number than the version before them. Both at once is only possible because an
+old version keeps serving downloads through old links long after a newer one
+exists -- which is exactly why no arithmetic over the carried-forward values
+could recover the truth, and why the seeding had to stop rather than be
+corrected.
 """
 
 from . import lineage
@@ -143,3 +150,32 @@ def chain_totals_for(collection, projects):
             for name in DATED_COUNTERS
         }
     return totals
+
+
+#: Plain integer counters, one per version, that are summed the same way the
+#: dated ones are. ``views`` joined them on 2026-08-30: until then a new
+#: version was seeded with its predecessor's count, so the two overlapped by an
+#: amount nobody recorded and summing them tripled the answer. Versions written
+#: from that date start at zero, and the numbers already on older versions are
+#: zeroed once by zero_carried_forward_views.py -- their contribution is
+#: already inside the head's carried-forward total, which stays where it is.
+INT_COUNTERS = ('views',)
+
+
+def chain_sum(collection, project, field):
+    """*field* added up over every version of *project*'s chain.
+
+    Tombstones included, for the same reason they are included in the dated
+    totals: a view of a version that was later deleted still happened.
+    """
+    members = lineage.chain_members(collection, project, {'_id': 1, field: 1})
+    if not members:
+        members = [project]
+    return sum(as_int(member.get(field)) for member in members)
+
+
+def as_int(value):
+    """A counter as an int. Booleans are not counts; anything else is zero."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return int(value)

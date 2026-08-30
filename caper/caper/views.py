@@ -1032,6 +1032,11 @@ def project_page(request, project_name, message=''):
 
     ## download & view statistics
     views = session_visit(request, project)
+    if views is not None:
+        # This version's own count is not the project's. Same rule as
+        # downloads: every version counts its own from zero, and the project is
+        # the sum over the chain.
+        views = download_totals.chain_sum(collection_handle, project, 'views')
     # The project's downloads, not this version's. Every version keeps its own
     # count starting at zero, so the project's number is the sum over the chain
     # -- including the tombstones of versions that were deleted, whose
@@ -5766,8 +5771,14 @@ def build_project_document(project, form, form_dict, user, runs, project_tar_id,
     # Not the chain-level EMPTY of the spec's model -- that one is every member
     # being a tombstone, stays derived, and is a different question.
     project['EMPTY?'] = not runs
-    project['views'] = previous_views[0]
-    project['downloads'] = previous_views[1]
+    # A new version starts both counters at zero. Nothing is carried forward,
+    # which is the whole reason the project's number can be a sum: seeding a
+    # version from its predecessor makes the two overlap by an amount nobody
+    # records, and no later arithmetic recovers the split. The counts the older
+    # versions earned are not lost -- they stay on those versions, and the
+    # project's total is the sum across the chain.
+    project['views'] = 0
+    project['downloads'] = 0
     project['alias_name'] = form_dict['alias']
     project['sample_count'] = len(runs)
 

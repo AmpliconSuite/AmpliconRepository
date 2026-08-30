@@ -30,10 +30,24 @@ class FakeProjects:
         self.updates = []
 
     def find(self, query, _projection=None):
-        chain = (query.get('version_chain_id') or {})
-        wanted = chain.get('$in', [chain]) if isinstance(chain, dict) else [chain]
+        """Enough query support for the two shapes the callers use.
+
+        ``{'version_chain_id': <id>}`` for one chain, and
+        ``{'version_chain_id': {'$ne': None}}`` for every document that names
+        one. Written out rather than assumed: a fake that silently matches
+        nothing makes a script that does nothing look correct.
+        """
+        chain = query.get('version_chain_id')
+        if isinstance(chain, dict):
+            if '$ne' in chain:
+                return [d for d in self.docs.values()
+                        if d.get('version_chain_id') != chain['$ne']]
+            if '$in' in chain:
+                return [d for d in self.docs.values()
+                        if d.get('version_chain_id') in chain['$in']]
+            raise AssertionError(f'unsupported query: {query}')
         return [d for d in self.docs.values()
-                if d.get('version_chain_id') in wanted]
+                if d.get('version_chain_id') == chain]
 
     def find_one(self, query, projection=None):
         return self.docs.get(query['_id'])
@@ -217,3 +231,85 @@ def test_the_page_reads_the_chain_and_not_the_head():
     source = (Path(__file__).parents[1] / 'caper' / 'caper' / 'views.py').read_text()
 
     assert 'download_totals.chain_totals(collection_handle, project)' in source
+
+
+# --- views joined the same rule on 2026-08-30 -----------------------------
+
+def test_a_new_version_starts_both_counters_at_zero():
+    """The seeding is what made the numbers unsummable, so it had to stop.
+
+    A version seeded from its predecessor overlaps it by an amount nobody
+    records. Reading the two values afterwards cannot recover the split -- the
+    old version goes on earning through old links -- so the fix is to stop
+    creating the overlap, not to correct for it.
+    """
+    from pathlib import Path
+
+    source = (Path(__file__).parents[1] / 'caper' / 'caper' / 'views.py').read_text()
+
+    assert "project['views'] = 0" in source
+    assert "project['downloads'] = 0" in source
+    assert "project['views'] = previous_views[0]" not in source
+
+
+def test_views_is_summed_over_the_chain_like_downloads():
+    collection = FakeProjects([
+        _version(_id='v1', version_ordinal=1, is_latest=False, views=40),
+        _version(_id='v2', version_ordinal=2, views=9),
+    ])
+
+    assert download_totals.chain_sum(collection, collection.docs['v2'],
+                                     'views') == 49
+
+
+def test_a_boolean_view_count_is_not_a_view():
+    """isinstance(True, int) is True in Python, so this needs saying."""
+    collection = FakeProjects([_version(views=True)])
+
+    assert download_totals.chain_sum(collection, collection.docs['v1'],
+                                     'views') == 0
+
+
+def test_the_reconciliation_leaves_the_head_alone():
+    """Zeroing the head would delete the only record of the carried history.
+
+    The older versions' counts are already inside the head's number. Zeroing
+    them makes the sum equal the head; zeroing the head as well would make it
+    zero.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).parents[1] / 'zero_carried_forward_views.py'
+    spec = importlib.util.spec_from_file_location('zcfv', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    collection = FakeProjects([
+        _version(_id='v1', version_ordinal=1, is_latest=False, views=40),
+        _version(_id='v2', version_ordinal=2, is_latest=True, views=100),
+    ])
+    to_zero, head_total, would_be_sum, touched = module.plan(collection)
+
+    assert [d['_id'] for d in to_zero] == ['v1']
+    assert head_total == 100
+    assert would_be_sum == 140      # what summing without this would report
+    assert touched == 1
+
+
+def test_a_chain_with_no_clear_head_is_left_alone():
+    """Guessing which member is the head is how the wrong counter gets zeroed."""
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).parents[1] / 'zero_carried_forward_views.py'
+    spec = importlib.util.spec_from_file_location('zcfv', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    collection = FakeProjects([
+        _version(_id='v1', version_ordinal=1, is_latest=True, views=40),
+        _version(_id='v2', version_ordinal=2, is_latest=True, views=100),
+    ])
+
+    assert module.plan(collection)[0] == []
