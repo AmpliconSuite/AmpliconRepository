@@ -484,15 +484,14 @@ def pytest_collection_modifyitems(config, items):
     knows what it is not doing. Deciding at collection time means no fixture
     runs at all, so the answer no longer depends on fixture ordering.
 
-    The dev container *does* have chromium installed, added 2026-08-31, and all
-    eleven browser tests pass there against its own server. But that install
-    lives in the container's writable layer: it survives ``docker restart``,
-    which is how dev is deployed, and is lost whenever the image is rebuilt.
-    Putting it in the Dockerfile would push the browser and eighteen apt
-    packages into the production image as well, for tests production never
-    runs, so it stays a manual step. This hook is what makes that acceptable --
-    when the install does evaporate the suite says SKIPPED with the command to
-    restore it, rather than ERROR.
+Chromium is installed by the Dockerfile as of 2026-08-31, in the production
+    image as well as dev, so the browsers should normally be there and this
+    hook's second branch should normally not fire. It stays because the first
+    branch always applies -- an ordinary run passes no ``--base-url`` and these
+    tests need a server -- and because a container predating that image change,
+    or a developer running outside one, is still a case the suite has to
+    describe rather than fall over on. Verified on dev the same day: all eleven
+    pass against the container's own server on 127.0.0.1:8000.
     """
     try:
         base_url = config.getoption('--base-url')
