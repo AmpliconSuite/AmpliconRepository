@@ -58,6 +58,28 @@ RUN /bin/bash -c "source /opt/venv/bin/activate && \
     pip install -r /src/requirements.txt"
 
 #############################################
+##      Browser for the Playwright tests   ##
+#############################################
+
+# requirements.txt installs pytest-playwright, which is the client library and
+# not a browser. Without an actual chromium build the eleven browser-marked
+# tests cannot run at all, and before this they came back as errors on any host
+# that had never had one installed by hand.
+#
+# --with-deps is doing real work here: the browser download alone leaves you
+# with a binary that will not start. Chromium needs eighteen shared libraries
+# that this image does not otherwise carry -- libnss3, libgbm1, libasound2 and
+# the rest -- and playwright installs them in the same step.
+#
+# This costs roughly 350 MB of image. It is carried in the production image as
+# well as dev, deliberately: the two are built from this one file, and a test
+# environment that differs between them is how you get a suite that passes in
+# the place nobody is worried about. Verified on dev 2026-08-31, all eleven
+# browser tests passing against the container's own server.
+RUN /bin/bash -c "source /opt/venv/bin/activate && \
+    playwright install --with-deps chromium"
+
+#############################################
 ##      Set-up working directory           ##
 #############################################
 

@@ -43,15 +43,36 @@ def _reset(middleware):
     middleware._crawler_cache.clear()
 
 
+def _live_foreign_pid():
+    """A pid that exists in this process's namespace and is not this process.
+
+    `os.getppid()` used to be it, and that is wrong inside a container: under
+    `docker exec` the parent lives outside the container's PID namespace and
+    `getppid()` returns **0**.  A slot owned by pid 0 is a slot owned by nobody,
+    so the shed path's dead-worker reaper reclaims every staged row before it
+    can refuse anything, and each of these tests sees a cheerful 200 where it
+    expects a 503.  That was 11 of the 60 failures on the dev server on
+    2026-08-31, and none of them reproduced on a laptop, where the parent is a
+    real visible shell.
+
+    PID 1 always exists and is never this process, in a container or out of one.
+    """
+    if os.getpid() != 1 and os.path.exists('/proc/1'):
+        return 1
+    parent = os.getppid()
+    if parent and os.path.exists(f'/proc/{parent}'):
+        return parent
+    raise RuntimeError('no live foreign pid available to own a staged slot')
+
+
 def _occupy(middleware, count, request_class, *, pid=None, age=0.0):
     """Stage `count` in-flight requests owned by some other (live) worker.
 
     The owner has to be a pid that really exists, or the shed path reaps the
     rows as belonging to a killed worker before rejecting anything -- which is
-    the behaviour test_slots_of_dead_workers_are_reclaimed... covers.  This
-    process's parent is the convenient live pid that is not this process.
+    the behaviour test_slots_of_dead_workers_are_reclaimed... covers.
     """
-    pid = os.getppid() if pid is None else pid
+    pid = _live_foreign_pid() if pid is None else pid
     now = time.time()
     filled = 0
     for i in range(middleware._SLOT_COUNT):

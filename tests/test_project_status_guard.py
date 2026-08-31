@@ -200,6 +200,20 @@ ALLOWED = {
 }
 
 
+def _tracked_root_scripts():
+    """Root-level ``.py`` files git knows about.
+
+    ``os.listdir`` here found whatever was lying in the checkout: on the dev
+    server that was a measurement script copied in that morning, and this guard
+    duly reported it. An untracked file at the repo root is somebody's scratch
+    copy, not the codebase.
+    """
+    from conftest import tracked_python_files
+
+    return [name for name in tracked_python_files(REPO_ROOT)
+            if os.sep not in name]
+
+
 def _scanned_files():
     """Application package (recursively) plus the root-level scripts."""
     package = os.path.join(REPO_ROOT, APPLICATION_PACKAGE)
@@ -209,9 +223,8 @@ def _scanned_files():
             if name.endswith('.py'):
                 yield os.path.relpath(os.path.join(dirpath, name), REPO_ROOT)
 
-    for name in sorted(os.listdir(REPO_ROOT)):
-        if name.endswith('.py'):
-            yield name
+    for name in _tracked_root_scripts():
+        yield name
 
 
 def _occurrences():

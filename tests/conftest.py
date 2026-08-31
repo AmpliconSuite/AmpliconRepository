@@ -400,3 +400,115 @@ def loaded_datasets(test_user):
 
     for pid in created_ids:
         _cleanup_project(collection, pid)
+
+
+# ---------------------------------------------------------------------------
+# Source-scanning guards: what counts as "the codebase"
+# ---------------------------------------------------------------------------
+
+def tracked_python_files(repo_root):
+    """Every ``.py`` file git knows about, relative to *repo_root*.
+
+    Several guards read the source tree looking for patterns that must not
+    appear -- raw reads of the visibility field, unlisted status literals, a
+    retired OAuth scope. Walking the directory finds whatever happens to be
+    sitting there, and what is sitting there differs per machine: on the dev
+    server on 2026-08-31 those guards were failing on `holding/settings.py` and
+    `caper/caper/view_old.py`, neither of which has ever been committed, plus a
+    measurement script somebody had copied in that morning. Three real guards
+    reporting three false faults, on files that are not part of the codebase.
+
+    Tracked files are the codebase. An untracked file is somebody's scratch
+    copy and is nobody's business but theirs -- and if it ever does become part
+    of the codebase, committing it is exactly the moment these guards should
+    start reading it.
+
+    Falls back to walking the tree when git is unavailable, because a guard
+    that silently checks nothing is worse than one that occasionally reads a
+    stray file.
+    """
+    import subprocess
+
+    try:
+        listed = subprocess.run(
+            ['git', '-C', str(repo_root), 'ls-files', '-z', '*.py'],
+            capture_output=True, check=True, timeout=30).stdout
+        names = [name for name in listed.decode().split('\0') if name]
+        if names:
+            return sorted(names)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    walked = []
+    for dirpath, dirnames, filenames in os.walk(repo_root):
+        dirnames[:] = [d for d in dirnames
+                       if d not in {'.git', '__pycache__', 'node_modules'}]
+        for name in filenames:
+            if name.endswith('.py'):
+                walked.append(os.path.relpath(
+                    os.path.join(dirpath, name), repo_root))
+    return sorted(walked)
+
+
+# ---------------------------------------------------------------------------
+# Browser tests: skip before anything tries to launch a browser
+# ---------------------------------------------------------------------------
+
+def _playwright_browser_available():
+    """Whether a chromium build is actually on disk.
+
+    Deliberately cheap and fail-open: it looks for the download rather than
+    starting playwright's driver to ask. If the layout is ever unfamiliar this
+    returns True and the test fails honestly, which is the right way round --
+    silently skipping a test that could have run is the worse error.
+    """
+    root = os.environ.get('PLAYWRIGHT_BROWSERS_PATH') or os.path.join(
+        os.path.expanduser('~'), '.cache', 'ms-playwright')
+    if not os.path.isdir(root):
+        return False
+    return any(name.startswith('chromium') for name in os.listdir(root))
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip ``browser``-marked tests when this machine cannot run them.
+
+    ``test_browser.py`` already had a module-scoped guard that skips when
+    ``--base-url`` is absent, but pytest-playwright's ``page`` fixture launches
+    chromium during setup, and fixture setup can run before that guard does. On
+    a machine with the browsers installed the launch succeeds and the guard then
+    skips, so nothing shows; on the dev server, where they are not installed,
+    eleven tests came back as ERROR rather than SKIPPED.
+
+    That distinction matters more than it looks. A suite reporting errors reads
+    as broken and gets ignored; a suite reporting skips reads as a suite that
+    knows what it is not doing. Deciding at collection time means no fixture
+    runs at all, so the answer no longer depends on fixture ordering.
+
+Chromium is installed by the Dockerfile as of 2026-08-31, in the production
+    image as well as dev, so the browsers should normally be there and this
+    hook's second branch should normally not fire. It stays because the first
+    branch always applies -- an ordinary run passes no ``--base-url`` and these
+    tests need a server -- and because a container predating that image change,
+    or a developer running outside one, is still a case the suite has to
+    describe rather than fall over on. Verified on dev the same day: all eleven
+    pass against the container's own server on 127.0.0.1:8000.
+    """
+    try:
+        base_url = config.getoption('--base-url')
+    except (ValueError, AttributeError):
+        base_url = None
+
+    if not base_url:
+        reason = ('browser tests need a running server: '
+                  'pytest -m browser --base-url http://localhost:8000')
+    elif not _playwright_browser_available():
+        reason = ('playwright browsers are not installed here: '
+                  'python -m playwright install --with-deps chromium '
+                  '(the browser alone is not enough; it needs system libs too)')
+    else:
+        return
+
+    skip = pytest.mark.skip(reason=reason)
+    for item in items:
+        if 'browser' in item.keywords:
+            item.add_marker(skip)

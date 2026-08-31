@@ -214,6 +214,14 @@ def seeded(mongo_collection):
     """
     database = mongo_collection.database
     plan = build_all()
+    # Purge before as well as after. A previous run that died between seeding
+    # and teardown leaves the catalogue in place, and every count assertion
+    # here is then wrong by exactly len(plan). That is not hypothetical: it is
+    # how `caper-dev` came to be holding 22 fixture documents on 2026-08-31,
+    # eight of them LIVE with no `runs` key, which crashed 35 search tests that
+    # have nothing to do with this file. Purge selects on the marker alone, so
+    # starting from a known state costs nothing and can reach nothing else.
+    purge(database)
     try:
         seed(database, plan)
         yield plan, database
@@ -325,16 +333,27 @@ def test_purge_removes_exactly_what_seed_wrote(mongo_collection):
     database = mongo_collection.database
     plan = build_all()
 
+    purge(database)
     before_documents = database['projects'].count_documents({})
     before_files = database['fs.files'].count_documents({})
 
-    seed(database, plan)
-    assert database['projects'].count_documents({}) == before_documents + len(plan)
+    # The cleanup goes in a finally even though the body ends with a purge:
+    # this test is the one that seeds without the `seeded` fixture, so an
+    # assertion failing between the seed and the purge below leaves the
+    # catalogue behind -- and it then makes *this* test fail on every
+    # subsequent run, because the count it starts from is already wrong. A
+    # test that strands the state that makes it fail can never recover on its
+    # own, and that is exactly what happened on the dev server.
+    try:
+        seed(database, plan)
+        assert database['projects'].count_documents({}) == before_documents + len(plan)
 
-    removed_documents, removed_files = purge(database)
-    assert removed_documents == len(plan)
-    assert database['projects'].count_documents({}) == before_documents
-    assert database['fs.files'].count_documents({}) == before_files, (
-        f'purge left {database["fs.files"].count_documents({}) - before_files} '
-        f'GridFS file(s) behind (it removed {removed_files})')
-    assert database['projects'].count_documents({MARKER: True}) == 0
+        removed_documents, removed_files = purge(database)
+        assert removed_documents == len(plan)
+        assert database['projects'].count_documents({}) == before_documents
+        assert database['fs.files'].count_documents({}) == before_files, (
+            f'purge left {database["fs.files"].count_documents({}) - before_files} '
+            f'GridFS file(s) behind (it removed {removed_files})')
+        assert database['projects'].count_documents({MARKER: True}) == 0
+    finally:
+        purge(database)
