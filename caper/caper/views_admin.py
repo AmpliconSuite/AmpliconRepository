@@ -1477,6 +1477,23 @@ def _latest_entry_of_any_kind(matched_uuids):
                                      sort=[('timestamp', -1)])
 
 
+def _has_observed_entry(matched_uuids):
+    """Whether anything was recorded when it happened, rather than rebuilt after.
+
+    Asked only of projects with no payload-describing entry, to tell two states
+    apart that otherwise share a badge. A project whose surviving entry is a
+    deletion *was* watched -- something recorded the event as it ran. A project
+    whose only entry is a reconstructed creation was not: that entry was read
+    off the project document after the fact, and carries no more than the
+    document already says.
+    """
+    if not matched_uuids:
+        return False
+    return audit_log_handle.find_one(
+        {'project_uuid': {'$in': matched_uuids},
+         'backfilled': {'$ne': True}}) is not None
+
+
 def _get_audit_log_context(request):
     """
     Build the audit log context dict shared by admin_project_files_report and admin_audit_log.
@@ -1512,11 +1529,25 @@ def _get_audit_log_context(request):
             if latest_entry:
                 result = _run_audit_checks(proj, latest_entry)
                 proj['validation_status'] = result['status']  # 'pass' | 'mismatch' | 'missing_data'
-            else:
+            elif latest_any is None:
+                proj['validation_status'] = 'no_log'
+            elif _has_observed_entry(matched_uuids):
                 # A project whose only events are deletions is not unaudited;
                 # it is audited and has nothing to compare. Those are different
                 # states and the template distinguishes them.
-                proj['validation_status'] = 'lifecycle_only' if latest_any else 'no_log'
+                proj['validation_status'] = 'lifecycle_only'
+            else:
+                # Only a reconstructed creation. Saying "lifecycle only" here
+                # would claim a deletion or promotion was recorded, and none
+                # was: the entry was rebuilt from the document after the fact.
+                # Measured on prod 2026-08-31, every one of the 61 projects
+                # wearing the "Lifecycle only" badge was this case and not one
+                # had a real lifecycle event, because the creation backfill had
+                # just given a reconstructed entry to every project that lacked
+                # one. Before the backfill they read "N/A", which was honest;
+                # this state is the accurate version of that -- there is a
+                # history to show, but nothing independently recorded in it.
+                proj['validation_status'] = 'reconstructed_only'
 
             ts = latest_any.get('timestamp') if latest_any else None
             proj['latest_audit_timestamp'] = ts
