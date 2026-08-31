@@ -448,3 +448,68 @@ def tracked_python_files(repo_root):
                 walked.append(os.path.relpath(
                     os.path.join(dirpath, name), repo_root))
     return sorted(walked)
+
+
+# ---------------------------------------------------------------------------
+# Browser tests: skip before anything tries to launch a browser
+# ---------------------------------------------------------------------------
+
+def _playwright_browser_available():
+    """Whether a chromium build is actually on disk.
+
+    Deliberately cheap and fail-open: it looks for the download rather than
+    starting playwright's driver to ask. If the layout is ever unfamiliar this
+    returns True and the test fails honestly, which is the right way round --
+    silently skipping a test that could have run is the worse error.
+    """
+    root = os.environ.get('PLAYWRIGHT_BROWSERS_PATH') or os.path.join(
+        os.path.expanduser('~'), '.cache', 'ms-playwright')
+    if not os.path.isdir(root):
+        return False
+    return any(name.startswith('chromium') for name in os.listdir(root))
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip ``browser``-marked tests when this machine cannot run them.
+
+    ``test_browser.py`` already had a module-scoped guard that skips when
+    ``--base-url`` is absent, but pytest-playwright's ``page`` fixture launches
+    chromium during setup, and fixture setup can run before that guard does. On
+    a machine with the browsers installed the launch succeeds and the guard then
+    skips, so nothing shows; on the dev server, where they are not installed,
+    eleven tests came back as ERROR rather than SKIPPED.
+
+    That distinction matters more than it looks. A suite reporting errors reads
+    as broken and gets ignored; a suite reporting skips reads as a suite that
+    knows what it is not doing. Deciding at collection time means no fixture
+    runs at all, so the answer no longer depends on fixture ordering.
+
+    The dev container *does* have chromium installed, added 2026-08-31, and all
+    eleven browser tests pass there against its own server. But that install
+    lives in the container's writable layer: it survives ``docker restart``,
+    which is how dev is deployed, and is lost whenever the image is rebuilt.
+    Putting it in the Dockerfile would push the browser and eighteen apt
+    packages into the production image as well, for tests production never
+    runs, so it stays a manual step. This hook is what makes that acceptable --
+    when the install does evaporate the suite says SKIPPED with the command to
+    restore it, rather than ERROR.
+    """
+    try:
+        base_url = config.getoption('--base-url')
+    except (ValueError, AttributeError):
+        base_url = None
+
+    if not base_url:
+        reason = ('browser tests need a running server: '
+                  'pytest -m browser --base-url http://localhost:8000')
+    elif not _playwright_browser_available():
+        reason = ('playwright browsers are not installed here: '
+                  'python -m playwright install --with-deps chromium '
+                  '(the browser alone is not enough; it needs system libs too)')
+    else:
+        return
+
+    skip = pytest.mark.skip(reason=reason)
+    for item in items:
+        if 'browser' in item.keywords:
+            item.add_marker(skip)
