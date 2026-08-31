@@ -183,19 +183,41 @@ def compress(src, dest):
 def latest_uploaded_hash(s3, bucket, prefix):
     """The content hash of the most recent backup already in the bucket.
 
-    Returns None when there is nothing there yet, or when the newest object
-    predates this script and so carries no hash metadata. Both cases mean "you
-    cannot skip", which is the safe direction.
+    Returns None whenever the answer cannot be established -- nothing uploaded
+    yet, the newest object predates this script and carries no hash metadata,
+    or it cannot be read at all. Every one of those means "you cannot skip",
+    which is the safe direction: an unnecessary upload of ~100 KB costs
+    nothing, and a skipped backup costs everything.
+
+    Two things this has to survive, both found by running it against the real
+    bucket rather than reasoning about it:
+
+    * **Zero-byte folder markers.** `s3://amprepo-backups/` has held
+      `prod/`, `prod/sqlite/` and two siblings since 2025-08-08. They list like
+      objects and are not backups.
+    * **HeadObject denied.** The first real run came back
+      `An error occurred (403) when calling the HeadObject operation` -- the
+      deployment's credentials can list and put but could not head that key.
+      That happened *after* the whole backup had been built, so a read-only
+      optimisation destroyed the write it was meant to accelerate. Change
+      detection is an optimisation and is now treated as one.
     """
     pages = s3.get_paginator('list_objects_v2').paginate(Bucket=bucket, Prefix=prefix)
     newest = None
     for page in pages:
         for obj in page.get('Contents', []):
+            if obj['Key'].endswith('/') or obj.get('Size', 0) == 0:
+                continue
             if newest is None or obj['LastModified'] > newest['LastModified']:
                 newest = obj
     if newest is None:
         return None
-    head = s3.head_object(Bucket=bucket, Key=newest['Key'])
+    try:
+        head = s3.head_object(Bucket=bucket, Key=newest['Key'])
+    except Exception as exc:
+        print('note: cannot read the previous backup\'s hash (%s: %s), so this '
+              'run cannot skip and will upload.' % (type(exc).__name__, exc))
+        return None
     return head.get('Metadata', {}).get(HASH_METADATA_KEY)
 
 

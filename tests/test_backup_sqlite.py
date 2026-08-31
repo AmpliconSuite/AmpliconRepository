@@ -200,3 +200,75 @@ def test_end_to_end_local_backup_is_restorable(tmp_path):
     assert conn.execute('SELECT COUNT(*) FROM auth_user').fetchone()[0] == 7
     assert conn.execute('SELECT COUNT(*) FROM django_session').fetchone()[0] == 0
     conn.close()
+
+
+class _FakeS3:
+    """Just enough S3 to exercise latest_uploaded_hash()."""
+
+    def __init__(self, contents, head=None, head_raises=None):
+        self._contents = contents
+        self._head = head or {}
+        self._raises = head_raises
+        self.headed = []
+
+    def get_paginator(self, _name):
+        contents = self._contents
+
+        class P:
+            def paginate(self, **kw):
+                return [{'Contents': contents}]
+        return P()
+
+    def head_object(self, Bucket, Key):
+        self.headed.append(Key)
+        if self._raises:
+            raise self._raises
+        return self._head
+
+
+@pytest.mark.integration
+def test_folder_markers_are_not_mistaken_for_backups():
+    """`s3://amprepo-backups/` has held zero-byte markers since 2025-08-08.
+
+    They list like objects. Heading one was what broke the first real run.
+    """
+    import datetime
+    s3 = _FakeS3([
+        {'Key': 'prod/sqlite/', 'Size': 0,
+         'LastModified': datetime.datetime(2026, 1, 1)},
+    ])
+    assert backup_sqlite.latest_uploaded_hash(s3, 'b', 'prod/sqlite/') is None
+    assert s3.headed == [], 'a folder marker must never be headed'
+
+
+@pytest.mark.integration
+def test_an_unreadable_previous_backup_means_upload_not_crash(capsys):
+    """Change detection is an optimisation; it must never destroy the backup.
+
+    The first real run built the whole thing and then died on a 403 from
+    HeadObject, which is the worst possible ordering.
+    """
+    import datetime
+
+    class Denied(Exception):
+        pass
+
+    s3 = _FakeS3(
+        [{'Key': 'prod/sqlite/caper-x.sqlite3.gz', 'Size': 100,
+          'LastModified': datetime.datetime(2026, 1, 1)}],
+        head_raises=Denied('403 Forbidden'))
+    assert backup_sqlite.latest_uploaded_hash(s3, 'b', 'prod/sqlite/') is None
+    assert 'cannot skip' in capsys.readouterr().out
+
+
+@pytest.mark.integration
+def test_a_matching_hash_is_reported_so_the_run_can_skip():
+    import datetime
+    s3 = _FakeS3(
+        [{'Key': 'prod/sqlite/caper-x.sqlite3.gz', 'Size': 100,
+          'LastModified': datetime.datetime(2026, 1, 1)},
+         {'Key': 'prod/sqlite/caper-y.sqlite3.gz', 'Size': 100,
+          'LastModified': datetime.datetime(2026, 6, 1)}],
+        head={'Metadata': {backup_sqlite.HASH_METADATA_KEY: 'abc123'}})
+    assert backup_sqlite.latest_uploaded_hash(s3, 'b', 'prod/sqlite/') == 'abc123'
+    assert s3.headed == ['prod/sqlite/caper-y.sqlite3.gz'], 'must head the newest'
