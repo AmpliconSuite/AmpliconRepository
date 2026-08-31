@@ -203,3 +203,58 @@ def test_the_read_preference_kwarg_does_not_override_the_uri():
         f'it defaults to {default!r}, which silently overrides the URI and '
         'makes the conftest read-preference pin a no-op'
     )
+
+
+# --- fixtures must not need privileges the application lacks ---------------
+
+def test_no_fixture_creates_its_own_database():
+    """A scratch *database* cannot exist on a least-privilege deployment.
+
+    Dev connects as `caper_app_dev`, whose role is scoped to `caper-dev`.
+    Measured 2026-08-31: that credential reads and writes `caper-dev` fine,
+    pings `admin` fine, and gets `Authorization failure` the moment it touches
+    a database of another name. Two fixtures created one per test and took 34
+    tests down with them.
+
+    This matters beyond the test suite: prod is still on the shared `fkim`
+    credential, and the cutover to `caper_app_prod` would hit exactly this.
+    A scratch collection inside the configured database needs no privilege the
+    application does not already have.
+    """
+    from pathlib import Path
+
+    offenders = []
+    for path in sorted((REPO_ROOT / 'tests').glob('test_*.py')):
+        if path.name == 'test_suite_environment.py':
+            continue
+        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+            code = line.split('#', 1)[0]
+            if 'drop_database' in code or 'client.drop_database' in code:
+                offenders.append(f'{path.name}:{lineno}: {line.strip()[:70]}')
+
+    assert not offenders, (
+        'these fixtures create and drop a whole database, which a '
+        'least-privilege user cannot do; use a uniquely-named collection '
+        'inside DB_NAME instead:\n  ' + '\n  '.join(offenders))
+
+
+def test_the_source_guards_read_tracked_files_only():
+    """An untracked file is somebody's scratch copy, not the codebase.
+
+    Three guards were failing on the dev server against `holding/settings.py`,
+    `caper/caper/view_old.py` and a measurement script left in the checkout --
+    none of them ever committed. A guard that reads whatever is lying around
+    reports faults that belong to no one and differ per machine.
+    """
+    from conftest import tracked_python_files
+
+    tracked = tracked_python_files(REPO_ROOT)
+
+    assert tracked, 'the helper found no files at all; the guards check nothing'
+    assert 'conftest.py' in tracked
+    assert any(name.startswith('caper/caper/') for name in tracked)
+    # The two files that actually caused this, named so the intent survives.
+    for stray in ('holding/settings.py', 'caper/caper/view_old.py'):
+        assert stray not in tracked, (
+            f'{stray} is tracked now; if that is deliberate the guards will '
+            'read it, which is the correct behaviour -- update this test')

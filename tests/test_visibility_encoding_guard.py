@@ -129,6 +129,20 @@ def _logical_lines(text):
     return lines
 
 
+def _tracked_root_scripts():
+    """Root-level ``.py`` files git knows about.
+
+    ``os.listdir`` here found whatever was lying in the checkout: on the dev
+    server that was a measurement script copied in that morning, and this guard
+    duly reported it. An untracked file at the repo root is somebody's scratch
+    copy, not the codebase.
+    """
+    from conftest import tracked_python_files
+
+    return [name for name in tracked_python_files(REPO_ROOT)
+            if os.sep not in name]
+
+
 def _python_sources():
     for directory, _dirs, filenames in os.walk(os.path.join(REPO_ROOT, APPLICATION_PACKAGE)):
         for filename in sorted(filenames):
@@ -137,7 +151,7 @@ def _python_sources():
             relative = os.path.relpath(os.path.join(directory, filename), REPO_ROOT)
             if relative != ENCODER:
                 yield relative
-    for filename in sorted(os.listdir(REPO_ROOT)):
+    for filename in _tracked_root_scripts():
         if filename.endswith('.py') and filename not in EXEMPT_FILES:
             yield filename
 

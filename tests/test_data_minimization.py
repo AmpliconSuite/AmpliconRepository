@@ -92,9 +92,12 @@ def test_no_globus_transfer_scope_in_any_active_code():
     comment stripped off. This file and the spec are excluded for the obvious
     reason that they have to spell the scope out to talk about it.
     """
+    from conftest import tracked_python_files
+
     offenders = []
-    for path in REPO_ROOT.rglob('*.py'):
-        if {'.git', 'site-packages', 'tests'} & set(path.parts):
+    for relative in tracked_python_files(REPO_ROOT):
+        path = REPO_ROOT / relative
+        if {'site-packages', 'tests'} & set(path.parts):
             continue
         for lineno, line in enumerate(path.read_text(errors='ignore').splitlines(), 1):
             code = line.split('#', 1)[0]

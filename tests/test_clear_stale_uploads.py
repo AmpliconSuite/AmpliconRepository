@@ -32,19 +32,36 @@ from clear_stale_uploads import (
 
 @pytest.fixture
 def projects():
+    """A scratch collection inside the configured database.
+
+    It used to be a scratch *database*, which cannot work against a
+    least-privilege deployment: dev connects as ``caper_app_dev``, whose role
+    is scoped to ``caper-dev``, so creating ``caper-stale-uploads-test-<hex>`` came back
+    ``Authorization failure`` and took nine tests in this file with it on
+    2026-08-31. The guard above did not catch it because ``admin.command
+    ('ping')`` asks whether the server is reachable, not whether the write
+    about to happen is allowed -- so the run failed loudly instead of skipping.
+
+    A uniquely-named collection in the database we are already entitled to use
+    needs no privilege the application does not have, which is the same choice
+    ``status_fixture_collection`` and the ownership-survey fixtures already
+    make. The name is unique per test, so parallel runs do not collide, and it
+    is dropped in a ``finally``.
+    """
     uri = os.getenv('DB_URI_SECRET')
-    if not uri:
-        pytest.skip('DB_URI_SECRET is not set')
+    db_name = os.getenv('DB_NAME')
+    if not uri or not db_name:
+        pytest.skip('DB_URI_SECRET and DB_NAME must both be set')
     client = MongoClient(uri, serverSelectionTimeoutMS=3000)
-    name = 'caper-stale-uploads-test-%s' % uuid.uuid4().hex[:8]
     try:
         client.admin.command('ping')
     except Exception as exc:
         pytest.skip('no MongoDB available: %s' % exc)
+    collection = client[db_name]['stale_uploads_test_%s' % uuid.uuid4().hex[:8]]
     try:
-        yield client[name]['projects']
+        yield collection
     finally:
-        client.drop_database(name)
+        collection.drop()
 
 
 def old_oid(days):

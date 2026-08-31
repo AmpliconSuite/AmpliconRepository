@@ -400,3 +400,51 @@ def loaded_datasets(test_user):
 
     for pid in created_ids:
         _cleanup_project(collection, pid)
+
+
+# ---------------------------------------------------------------------------
+# Source-scanning guards: what counts as "the codebase"
+# ---------------------------------------------------------------------------
+
+def tracked_python_files(repo_root):
+    """Every ``.py`` file git knows about, relative to *repo_root*.
+
+    Several guards read the source tree looking for patterns that must not
+    appear -- raw reads of the visibility field, unlisted status literals, a
+    retired OAuth scope. Walking the directory finds whatever happens to be
+    sitting there, and what is sitting there differs per machine: on the dev
+    server on 2026-08-31 those guards were failing on `holding/settings.py` and
+    `caper/caper/view_old.py`, neither of which has ever been committed, plus a
+    measurement script somebody had copied in that morning. Three real guards
+    reporting three false faults, on files that are not part of the codebase.
+
+    Tracked files are the codebase. An untracked file is somebody's scratch
+    copy and is nobody's business but theirs -- and if it ever does become part
+    of the codebase, committing it is exactly the moment these guards should
+    start reading it.
+
+    Falls back to walking the tree when git is unavailable, because a guard
+    that silently checks nothing is worse than one that occasionally reads a
+    stray file.
+    """
+    import subprocess
+
+    try:
+        listed = subprocess.run(
+            ['git', '-C', str(repo_root), 'ls-files', '-z', '*.py'],
+            capture_output=True, check=True, timeout=30).stdout
+        names = [name for name in listed.decode().split('\0') if name]
+        if names:
+            return sorted(names)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    walked = []
+    for dirpath, dirnames, filenames in os.walk(repo_root):
+        dirnames[:] = [d for d in dirnames
+                       if d not in {'.git', '__pycache__', 'node_modules'}]
+        for name in filenames:
+            if name.endswith('.py'):
+                walked.append(os.path.relpath(
+                    os.path.join(dirpath, name), repo_root))
+    return sorted(walked)
