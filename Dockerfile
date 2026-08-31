@@ -71,8 +71,11 @@ RUN /bin/bash -c "source /opt/venv/bin/activate && \
 # that this image does not otherwise carry -- libnss3, libgbm1, libasound2 and
 # the rest -- and playwright installs them in the same step.
 #
-# This costs roughly 350 MB of image. It is carried in the production image as
-# well as dev, deliberately: the two are built from this one file, and a test
+# Measured cost: the dev image went from 2.65 GB to 4.04 GB, so 1.39 GB rather
+# than the ~350 MB the browser download alone suggests -- the apt dependencies
+# and their package lists are most of the difference. It is carried in the
+# production image as well as dev, deliberately: the two are built from this
+# one file, and a test
 # environment that differs between them is how you get a suite that passes in
 # the place nobody is worried about. Verified on dev 2026-08-31, all eleven
 # browser tests passing against the container's own server.
