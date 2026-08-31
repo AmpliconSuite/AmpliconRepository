@@ -1,0 +1,38 @@
+# Build context exclusions.
+#
+# The Dockerfile copies exactly four things: requirements.txt, caper/,
+# run-manage-py.sh and gunicorn_config.py. Everything listed here sits outside
+# all four, so excluding it cannot change what ends up in the image -- it only
+# stops the daemon reading megabytes it will never use, and in one case stops
+# the build failing outright.
+#
+# That one case is neo4j/. The neo4j container bind-mounts a directory inside
+# this checkout and writes conf/ as uid 7474 mode 700, so `docker build .` on
+# the dev server died on `checking context: can't stat neo4j/conf` before it
+# ran a single instruction. Nothing in the image has ever come from there.
+
+neo4j/
+
+# Not copied, and the largest things in the tree: .git is the whole history and
+# test_data is ~130 MB of tarballs the test suite reads from the working
+# directory, never from the image.
+.git/
+test_data/
+
+# Runtime state that only exists on a deployed checkout.
+tmp/
+logs/
+backups/
+prod-writes/
+
+# Local scratch. `holding/` is an old copy of three application modules sitting
+# untracked on the dev server; nothing imports it.
+holding/
+.claude/
+
+# Python and editor droppings.
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
