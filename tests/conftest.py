@@ -423,26 +423,45 @@ def tracked_python_files(repo_root):
     of the codebase, committing it is exactly the moment these guards should
     start reading it.
 
-    Falls back to walking the tree when git is unavailable, because a guard
-    that silently checks nothing is worse than one that occasionally reads a
-    stray file.
+    ``-c safe.directory=*`` is needed and is safe here. The container runs as
+    root while the checkout is owned by uid 1000, so git refuses with "detected
+    dubious ownership" -- that protection exists to stop git executing config
+    and hooks out of somebody else's repository, and ``ls-files`` does neither.
+    Setting it inline keeps it to this one read-only command; the alternative,
+    which ``views_admin`` uses, is to mutate global git config at runtime, and
+    that lands in the container's writable layer where the next image rebuild
+    silently removes it. That is exactly how this surfaced: the guards passed
+    for weeks on a container where an admin page had once set it, and failed
+    the moment the image was rebuilt on 2026-08-31.
+
+    Falls back to walking the tree **only when there is no repository at all**,
+    which is the source-tarball case -- no git means no untracked files to be
+    confused by either. When a repository is present and git cannot read it,
+    this skips rather than walks. The first version fell back to walking
+    unconditionally and that was a bad failure mode: it fails open into exactly
+    the behaviour the helper exists to prevent, so a broken git turns three
+    guards into false accusations instead of an honest error.
     """
     import subprocess
 
-    try:
-        listed = subprocess.run(
-            ['git', '-C', str(repo_root), 'ls-files', '-z', '*.py'],
-            capture_output=True, check=True, timeout=30).stdout
-        names = [name for name in listed.decode().split('\0') if name]
-        if names:
-            return sorted(names)
-    except (OSError, subprocess.SubprocessError):
-        pass
+    repo_root = str(repo_root)
+    if os.path.isdir(os.path.join(repo_root, '.git')):
+        try:
+            listed = subprocess.run(
+                ['git', '-c', 'safe.directory=*', '-C', repo_root,
+                 'ls-files', '-z', '*.py'],
+                capture_output=True, check=True, timeout=30).stdout
+        except (OSError, subprocess.SubprocessError) as exc:
+            detail = getattr(exc, 'stderr', b'') or b''
+            pytest.skip('cannot enumerate tracked files, so this guard would '
+                        'report on whatever is lying in the checkout: '
+                        f'{detail.decode(errors="replace").strip()[:200] or exc}')
+        return sorted(name for name in listed.decode().split('\0') if name)
 
     walked = []
     for dirpath, dirnames, filenames in os.walk(repo_root):
         dirnames[:] = [d for d in dirnames
-                       if d not in {'.git', '__pycache__', 'node_modules'}]
+                       if d not in {'__pycache__', 'node_modules'}]
         for name in filenames:
             if name.endswith('.py'):
                 walked.append(os.path.relpath(
