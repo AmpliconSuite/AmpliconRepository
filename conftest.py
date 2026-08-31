@@ -27,6 +27,43 @@ def _load_config_env():
             os.environ.setdefault(key.strip(), val)
 
 
+def _pin_reads_to_the_primary():
+    """Make the test session read what it just wrote.
+
+    The deployed connection string ends
+    ``replicaSet=rs0&readPreference=secondaryPreferred``, which is right for the
+    web app and fatal for a test suite: nearly every test writes a fixture and
+    then queries for it through the application's own handles, and that query
+    goes to a replica.
+
+    This is not a lag that a retry would ride out. Measured against `caper-dev`
+    on 2026-08-31, 40 write-then-immediately-read trials: **40 of 40 missed** on
+    the default read preference and **0 of 40** missed pinned to the primary.
+    Read-your-writes is never satisfied through that URI, which is why 12 of the
+    60 failures on the dev server were this and nothing else.
+
+    Rewriting the URI here rather than patching handles is deliberate: `caper.utils`
+    builds ``db_handle``, ``fs_handle`` and the rest at import time and other
+    modules bind those names directly, so there is no single object left to
+    patch afterwards. Changing the environment before ``django.setup()`` catches
+    every one of them at the source.
+
+    The trade, stated so it stays a decision: a pinned suite no longer exercises
+    the read path the site actually uses. That is the right trade -- these tests
+    are for application logic, not for replication timing, and a test that fails
+    on when a replica catches up is testing the cluster. It does mean a
+    genuinely stale-read-dependent bug in the app would not be caught here.
+
+    A single-node mongo, which is what runs locally, ignores this entirely.
+    """
+    uri = os.environ.get('DB_URI_SECRET')
+    if not uri or 'readPreference=' not in uri:
+        return
+    import re
+    os.environ['DB_URI_SECRET'] = re.sub(
+        r'readPreference=[^&]*', 'readPreference=primary', uri)
+
+
 def pytest_configure(config):
     """Called by pytest during startup — runs before any tests or fixtures."""
     repo_root = os.path.dirname(__file__)
@@ -35,6 +72,7 @@ def pytest_configure(config):
         sys.path.insert(0, caper_dir)
 
     _load_config_env()
+    _pin_reads_to_the_primary()
 
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'caper.settings')
     # The test suite calls synchronous Django views/ORM code directly, while

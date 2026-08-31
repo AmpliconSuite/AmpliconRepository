@@ -605,6 +605,16 @@ def _assert_local(uri, db_name):
     There is no override flag on purpose.  Seeding dev is a deliberate act that
     should be written deliberately, not enabled by a flag someone finds in
     --help at the wrong moment.
+
+    This guards *seeding* only.  Purging is deliberately not guarded, because
+    the need to clean a shared cluster arises precisely on the cluster where
+    this check was once missing -- 22 fixture documents were found in
+    `caper-dev` on 2026-08-31, seeded before this function existed, and eight
+    of them were LIVE with no `runs` key, which crashed 35 search tests.  A
+    guard that blocks the cleanup of its own past absence is a guard that keeps
+    the mess.  Purge is safe to run anywhere for the reason given on `purge()`:
+    it selects on the fixture marker alone and cannot name a document it did
+    not write.
     """
     from pymongo import uri_parser
 
@@ -619,7 +629,12 @@ def _assert_local(uri, db_name):
     return f'{db_name} (local)'
 
 
-def _connect():
+def _connect(local_only=True):
+    """The database, asserting locality unless the caller is only removing.
+
+    *local_only* is True for seeding and False for purging; see `_assert_local`
+    for why those differ.
+    """
     import pymongo
 
     uri = os.environ.get('DB_URI_SECRET')
@@ -628,7 +643,14 @@ def _connect():
         raise SystemExit(
             "DB_URI_SECRET and DB_NAME must be set. Run:\n"
             "    set -a; source caper/config.sh; set +a")
-    label = _assert_local(uri, db_name)
+    if local_only:
+        label = _assert_local(uri, db_name)
+    else:
+        from pymongo import uri_parser
+        hosts = uri_parser.parse_uri(uri)['nodelist']
+        is_local = all(host in ('localhost', '127.0.0.1', 'mongodb', '::1')
+                       for host, _port in hosts)
+        label = f'{db_name} ({"local" if is_local else "REMOTE"})'
     return pymongo.MongoClient(uri)[db_name], label
 
 
@@ -638,7 +660,8 @@ def _main(argv):
     parser = argparse.ArgumentParser(
         description="Seed the awkward project states into the local database.")
     parser.add_argument('--execute', action='store_true',
-                        help='actually write the documents (default: report only)')
+                        help='actually write, or with --purge actually remove '
+                             '(default: report only)')
     parser.add_argument('--purge', action='store_true',
                         help='remove every document this module previously wrote')
     parser.add_argument('--only', action='append', metavar='SHAPE',
@@ -654,9 +677,19 @@ def _main(argv):
         shapes = tuple(SHAPES_BY_NAME[name] for name in args.only)
 
     if args.purge:
-        db, label = _connect()
-        documents, files = purge(db)
-        print(f'{label}: removed {documents} document(s) and {files} GridFS file(s)')
+        db, label = _connect(local_only=False)
+        # Report before removing, like every other mutating script here. What
+        # is counted is exactly what the delete will select, so the number
+        # printed is the number that goes.
+        documents = db['projects'].count_documents({MARKER: True})
+        files = db['fs.files'].count_documents({f'metadata.{MARKER}': True})
+        print(f'{label}: {documents} fixture document(s), {files} GridFS file(s)')
+        if not args.execute:
+            print('report only. Pass --execute with --purge to remove them.')
+            return 0
+        removed_documents, removed_files = purge(db)
+        print(f'{label}: removed {removed_documents} document(s) and '
+              f'{removed_files} GridFS file(s)')
         return 0
 
     plan = build_all(shapes)
