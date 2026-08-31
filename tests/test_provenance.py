@@ -342,3 +342,61 @@ def test_the_backfilled_guard_still_admits_events_that_lack_the_field():
     guard = _PAYLOAD_DESCRIBING_ENTRY['backfilled']
     assert '$ne' in guard, 'must match entries with no `backfilled` field'
     assert guard != {'$eq': False}
+
+
+# --- a reconstruction is not a lifecycle event ----------------------------
+
+def test_a_reconstructed_creation_does_not_claim_to_be_a_lifecycle_event():
+    """Measured on prod 2026-08-31: 61 of 103 rows, every one of them wrong.
+
+    Excluding backfilled entries from payload validation was right, but it left
+    them falling through to the "Lifecycle only" badge, whose tooltip says
+    deletions and promotions were logged. For every one of those 61 projects
+    nothing of the sort had been: the creation backfill had just given a
+    reconstructed entry to each project that had none, and that entry was the
+    only thing in its history. The page was reporting the opposite of the
+    truth -- claiming a watched lifecycle for the projects nothing had watched.
+    """
+    from pathlib import Path
+
+    template = (Path(__file__).parents[1] / 'caper' / 'templates' / 'pages' /
+                'admin_project_files_report.html').read_text()
+
+    assert "proj.validation_status == 'reconstructed_only'" in template, (
+        'a project whose only entry is a reconstruction has no badge of its '
+        'own and would claim its deletions were logged')
+
+
+def test_an_observed_entry_is_one_that_was_not_backfilled():
+    """The test that separates the two badges, at the query that decides.
+
+    ``$ne: True`` and not ``False``: every entry written before the backfill
+    shipped has no ``backfilled`` key at all, and ``False`` would match none of
+    them -- which would put every legitimately audited project into the
+    reconstructed bucket, the same defect pointing the other way.
+    """
+    import inspect
+
+    from caper.views_admin import _has_observed_entry
+
+    source = inspect.getsource(_has_observed_entry)
+    assert "'backfilled': {'$ne': True}" in source, (
+        'the observed-entry test must admit entries that predate the field')
+
+
+def test_the_four_unvalidatable_states_stay_distinct():
+    """no_log, reconstructed_only, lifecycle_only, and a validated status.
+
+    Collapsing any pair loses the distinction the badges exist to draw: no
+    record at all, a record rebuilt from the document, a real event with no
+    payload to compare, and something that could actually be checked.
+    """
+    from pathlib import Path
+
+    template = (Path(__file__).parents[1] / 'caper' / 'templates' / 'pages' /
+                'admin_project_files_report.html').read_text()
+
+    for status in ('no_log', 'reconstructed_only', 'lifecycle_only',
+                   'missing_data', 'mismatch', 'pass'):
+        assert f"proj.validation_status == '{status}'" in template, (
+            f'{status!r} renders as the generic dash')

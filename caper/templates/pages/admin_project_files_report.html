@@ -445,6 +445,12 @@
                                    compare, which is not the same as unaudited. #}
                                 <span class="badge badge-light text-muted"
                                       title="Lifecycle events only; no payload entry to compare against">Lifecycle only</span>
+                            {% elif proj.validation_status == 'reconstructed_only' %}
+                                {# The only entry is a creation rebuilt from the
+                                   project document, so it can say nothing the
+                                   document does not already say. #}
+                                <span class="badge badge-light text-muted"
+                                      title="Only a reconstructed creation; nothing was recorded at the time to compare against">Reconstructed only</span>
                             {% elif proj.validation_status == 'no_log' %}
                                 <span class="badge badge-light text-muted">N/A</span>
                             {% else %}
