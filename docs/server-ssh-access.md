@@ -163,7 +163,7 @@ redirections are interpreted locally.
 | Checkout | `/home/ubuntu/AmpliconRepository-dev` | `/home/ubuntu/AmpliconRepository-prod` |
 | Build checkout | — | `/home/ubuntu/ampRepo_for_docker_build/AmpliconRepository` |
 | Container | `amplicon-dev` | `amplicon-prod` |
-| Restart | `./stop-and-start-repo.sh` | `./stop-server.sh` then `./start-server.sh` |
+| Restart | `./stop-and-start-repo.sh` | `/home/ubuntu/stop-and-start-repo.sh` (or `./stop-server.sh` then `./start-server.sh`) |
 | Tracks | a branch | a release tag |
 
 The checkout is bind-mounted into the container, so a source-only change needs
@@ -171,6 +171,41 @@ only a restart. Rebuild the image only when `requirements.txt` or the `Dockerfil
 changed — and on prod, rebuild from the separate build checkout. See
 [the deployment section of the README](../README.md#deploy) for the full release
 procedure.
+
+## Prod restarts itself every morning
+
+**`12 7 * * * /home/ubuntu/stop-and-start-repo.sh`** is in `ubuntu`'s crontab on
+prod. The site goes down and comes back at **07:12 UTC every day**. Measured
+2026-08-31; it is not in any other document, and it was surprising to find.
+
+**Why it is there:** the web tier leaks memory, the leak was never found, and a
+daily restart is the mitigation that was reached for instead. It works, in the
+sense that the process image never gets old enough to matter. Related but not
+the same thing: containers were also given an 8 GiB cap and `unless-stopped` on
+2026-08-25 after an unbounded container took the host down.
+
+**Why it is worth removing eventually, and why not today:** a scheduled restart
+is a workaround holding a defect at arm's length, and it hides the very signal
+that would let anyone diagnose the defect — memory never gets to grow far
+enough to characterise. `memory_monitor.py` and `diagnose_memory.py` are in the
+repository, and `docs/gunicorn-worker-concurrency-todo.md` covers the adjacent
+worker-model question. None of that is scheduled work. Removing the restart
+before the leak is understood would trade a known, cheap, 07:12 blip for an
+unknown one at an unknown hour.
+
+**What to keep in mind while it exists:**
+
+- The two things below about background tasks apply to it, and nothing checks.
+  **An import or edit still running at 07:12 is lost**, because prod's restart
+  path does no task check — see the next section. That is a real hazard, not a
+  theoretical one, and it is the strongest argument for eventually replacing the
+  restart with a fix.
+- Anything living only in a container's writable layer survives a restart and is
+  lost on the next image rebuild, so a daily restart gives false confidence that
+  a hand-applied fix is permanent.
+- When reasoning about uptime, "the process has been up for N days" is never
+  true on prod. Check `docker inspect --format '{{.State.StartedAt}}'` rather
+  than assuming.
 
 ## Checking for background tasks before restarting
 
