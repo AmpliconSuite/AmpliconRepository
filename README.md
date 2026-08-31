@@ -638,6 +638,52 @@ tests/test_error_handling.py::test_project_page_nonexistent_id     PASSED
 tests/test_error_handling.py::test_download_nonexistent_project    PASSED
 ```
 
+## Running the tests on a deployed server
+
+The suite also runs inside the `amplicon-dev` (or `amplicon-prod`) container. That
+is the only way to exercise the code against DocumentDB rather than a local
+MongoDB, and it is what issue #582 was about. Three things differ from a laptop
+run.
+
+**1. The environment has to be sourced inside the exec.** `start-server.sh` passes
+an explicit `--env` list that omits several variables `settings.py` requires, so a
+plain `docker exec ... pytest` dies at import with `KeyError: 'RECAPTCHA_PRIVATE_KEY'`.
+Source `config.sh` in the same shell, and use the virtualenv interpreter — the
+container's system `python3` has no `pymongo`:
+
+```bash
+docker exec -w /srv amplicon-dev bash -c \
+  'set -a; source /srv/caper/config.sh; set +a; cd /srv && /opt/venv/bin/python -m pytest -m "not slow" -q'
+```
+
+**2. Reads are pinned to the primary, deliberately.** The deployed connection
+string ends `readPreference=secondaryPreferred`. A test that writes a fixture and
+immediately reads it back through the application's handles goes to a replica that
+does not have it yet — measured on dev, **40 of 40 write-then-read trials missed**,
+so this is not a lag a retry rides out. The root `conftest.py` rewrites the URI to
+`readPreference=primary` before `django.setup()`. The trade, stated so it stays a
+decision: the suite no longer exercises the replica read path the site itself uses.
+`get_db_handle()` must keep letting the connection string decide — if an explicit
+`read_preference` default is ever restored there, the rewrite silently becomes a
+no-op. `test_the_read_preference_kwarg_does_not_override_the_uri` is the tripwire.
+
+**3. Two opt-in flags.**
+
+| Flag | What it unlocks | Why it is off by default |
+|---|---|---|
+| `STATUS_CHECK_EXPECT_DB=<db name>` | The whole-database status cross-checks in `tests/test_project_status.py`, which reconcile every project document against the lifecycle-status queries | These read a real database. Against a remote one they skip rather than guess, because the dev server's database is *also* called `caper-dev` — a laptop with the local Docker MongoDB running would otherwise satisfy the check while measuring 24 documents that prove nothing. The flag names the database you meant, and it is asserted, not trusted. |
+| `--base-url http://localhost:8000` | The `browser` tests | They need a running server. Without it they report SKIPPED at collection time, with the command to run them. Chromium ships in the image as of 2026-08-31, so no `playwright install` step is needed on a current container. |
+
+A green run on the dev container looks like this — the skips are expected, and are
+the two rows above rather than anything broken:
+
+```
+1129 passed, 15 skipped, 45 deselected in 270.67s
+```
+
+The 45 deselected are `slow`; run those separately with `-m slow`, and expect
+tens of minutes since each one drives a full aggregation.
+
 ## Continuous Integration
 
 Pushes and pull requests to `main` automatically run the fast integration tests via

@@ -503,7 +503,7 @@ def pytest_collection_modifyitems(config, items):
     knows what it is not doing. Deciding at collection time means no fixture
     runs at all, so the answer no longer depends on fixture ordering.
 
-Chromium is installed by the Dockerfile as of 2026-08-31, in the production
+    Chromium is installed by the Dockerfile as of 2026-08-31, in the production
     image as well as dev, so the browsers should normally be there and this
     hook's second branch should normally not fire. It stays because the first
     branch always applies -- an ordinary run passes no ``--base-url`` and these
