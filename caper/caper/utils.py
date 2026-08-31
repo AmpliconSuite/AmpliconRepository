@@ -51,11 +51,33 @@ from .project_version_cleanup import (
 #     return db_handle, client
 
 
-def get_db_handle(db_name, host, read_preference=ReadPreference.SECONDARY_PREFERRED):
+def get_db_handle(db_name, host, read_preference=None):
+    """A database handle and its client.
+
+    *read_preference* defaults to None, meaning **let the connection string
+    decide**. It used to default to ``SECONDARY_PREFERRED``, which was passed to
+    ``MongoClient`` as an explicit keyword and therefore silently overrode
+    whatever the URI said. Deployed behaviour does not change: the prod and dev
+    URIs already end ``readPreference=secondaryPreferred``, so the value they
+    resolve to is the one the old default forced. A URI that names no
+    preference -- the local single-node mongo -- now resolves to pymongo's
+    default of primary, which is the only correct answer for one node anyway.
+
+    What this fixes is that the override could not be undone from outside.
+    Rewriting the URI had no effect, so the test suite could not ask for
+    read-your-writes, and on 2026-08-31 that cost a run on the dev server four
+    hours of misreading: `awkward_states.seed()` inserted its 22 documents
+    correctly and the `count_documents` that checked it came back off by
+    exactly 22, because the count went to a replica.
+
+    Callers wanting the primary regardless of the URI still say so explicitly,
+    which is what ``db_handle_primary`` below does.
+    """
     try:
         client = MongoClient(
             host,
-            read_preference=read_preference,
+            **({} if read_preference is None
+               else {'read_preference': read_preference}),
             maxPoolSize=50,
             minPoolSize=10,
             maxIdleTimeMS=300000,  # 5 minutes - keep connections alive during long operations

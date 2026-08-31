@@ -48,6 +48,15 @@ def _pin_reads_to_the_primary():
     patch afterwards. Changing the environment before ``django.setup()`` catches
     every one of them at the source.
 
+    This only works because ``get_db_handle`` was changed to let the connection
+    string decide. It used to pass ``SECONDARY_PREFERRED`` to ``MongoClient``
+    as an explicit keyword, which overrides the URI -- so this rewrite was
+    silently a no-op, and the first version of this fix cleared 17 of the 60
+    failures rather than the 12 it was aimed at plus the rest. If a future
+    change reintroduces an explicit default there, this function goes quiet
+    again; ``test_the_read_preference_kwarg_does_not_override_the_uri`` is the
+    tripwire for that.
+
     The trade, stated so it stays a decision: a pinned suite no longer exercises
     the read path the site actually uses. That is the right trade -- these tests
     are for application logic, not for replication timing, and a test that fails

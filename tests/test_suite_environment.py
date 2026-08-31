@@ -176,3 +176,30 @@ def test_the_purge_selects_on_the_marker_and_nothing_else():
         assert reckless not in source, (
             f'purge selects on {reckless!r}; it can now reach documents it did '
             'not create')
+
+
+def test_the_read_preference_kwarg_does_not_override_the_uri():
+    """The tripwire for the reason the first version of this fix did nothing.
+
+    ``get_db_handle`` used to default *read_preference* to SECONDARY_PREFERRED
+    and hand it to ``MongoClient`` as a keyword. A keyword beats the connection
+    string, so rewriting the URI in the root conftest changed nothing at all --
+    ``db_handle.client.read_preference`` still came back SecondaryPreferred
+    inside a test run on dev on 2026-08-31, measured directly.
+
+    Deployed behaviour is unaffected either way, because the prod and dev URIs
+    already name ``secondaryPreferred``. What matters is that the value stays
+    overridable from outside, which is the only reason the test session can ask
+    for read-your-writes.
+    """
+    import inspect
+
+    from caper.utils import get_db_handle
+
+    signature = inspect.signature(get_db_handle)
+    default = signature.parameters['read_preference'].default
+    assert default is None, (
+        'get_db_handle must default to None so the connection string governs; '
+        f'it defaults to {default!r}, which silently overrides the URI and '
+        'makes the conftest read-preference pin a no-op'
+    )
