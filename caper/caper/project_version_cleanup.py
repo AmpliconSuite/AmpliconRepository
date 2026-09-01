@@ -1,4 +1,6 @@
+import collections
 import logging
+import time
 
 from bson import ObjectId
 
@@ -150,14 +152,53 @@ def delete_gridfs_payload_for_project(delete_file, project, protected_file_ids=N
 
     Returns the number of files deleted.
     """
+    return delete_payload_within_deadline(
+        delete_file, project, protected_file_ids).deleted
+
+
+PayloadDeletion = collections.namedtuple('PayloadDeletion', 'deleted remaining')
+"""What one payload pass achieved: files removed, and file ids not reached."""
+
+
+def delete_payload_within_deadline(delete_file, project, protected_file_ids=None,
+                                   deadline=None, now=time.monotonic):
+    """``delete_gridfs_payload_for_project`` with a stopping time.
+
+    A project's payload can take longer to delete than the web request is
+    allowed to live.  Measured on prod 2026-09-01 over three deletes, a project
+    costs about ``96.4 * GiB + 0.035 * files`` seconds; gunicorn kills a sync
+    worker at 900 s.  The four largest soft-deleted projects that day were
+    predicted at 1,590-2,189 s, so no browser request could finish one.
+
+    Stopping partway is safe here because the deletion is ordered to be
+    resumable: ``delete_gridfs_file`` removes the ``fs.files`` row before its
+    chunks, and the caller removes the project document only after the payload
+    is gone.  A pass that stops early therefore leaves a project that still
+    names every file it has left, which is what makes a second pass a
+    continuation rather than a fresh guess.  Nothing is stranded, because
+    nothing that would name the remaining files has been removed.
+
+    *deadline* is a ``now()`` reading, not a duration.  It is checked before
+    each file and never before the first, so a pass always makes progress and
+    an already-expired deadline cannot turn the work into a no-op.
+
+    Returns ``PayloadDeletion(deleted, remaining)`` where *remaining* holds the
+    ids this pass did not reach.  An empty *remaining* means the payload is
+    fully gone; a failed delete is logged, counted as reached, and left out of
+    it, because retrying it is not what unblocks the project.
+    """
     deleted = 0
     seen = set()
+    remaining = []
     protected_file_ids = {str(file_id) for file_id in (protected_file_ids or set())}
     for file_id in iter_gridfs_file_ids(project):
         if file_id in seen:
             continue
         seen.add(file_id)
         if str(file_id) in protected_file_ids:
+            continue
+        if deadline is not None and deleted and now() >= deadline:
+            remaining.append(file_id)
             continue
         try:
             delete_file(file_id)
@@ -169,7 +210,14 @@ def delete_gridfs_payload_for_project(delete_file, project, protected_file_ids=N
                 f"{delete_error}. The file is now unreachable and will not be "
                 f"collected by any other path."
             )
-    return deleted
+    if remaining:
+        logging.warning(
+            f"Payload delete for project {project.get('_id')} stopped at its "
+            f"deadline with {deleted} file(s) removed and {len(remaining)} "
+            f"left; the project document was kept so the rest can be deleted "
+            f"by running it again."
+        )
+    return PayloadDeletion(deleted, remaining)
 
 
 def discard_unrecorded_gridfs_files(delete_file, file_ids):

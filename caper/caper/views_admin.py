@@ -6,9 +6,11 @@ This module contains all administrative functions that require staff privileges.
 import logging
 import os
 import csv
+import contextlib
 import subprocess
 import shutil
 import datetime
+import threading
 import time
 from pathlib import Path
 
@@ -41,7 +43,9 @@ from .utils import (
     get_project_version_chain, normalize_visibility_field, is_project_private,
     PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES,
 )
-from .project_version_cleanup import delete_gridfs_payload_for_project
+from .project_version_cleanup import (
+    delete_gridfs_payload_for_project, delete_payload_within_deadline,
+)
 from .background_tasks import get_background_task_status
 from .project_status import (
     DETACHED,
@@ -605,9 +609,65 @@ def project_stats_download(request):
     return response
 
 
+PARTIAL_DELETE_MARKER = 'is partly deleted:'
+"""How a caller recognises a delete that stopped at its deadline.
+
+The message is the only channel: admin_permanent_delete_project() returns a
+string, and several tests and the account-deletion path substitute callables
+with exactly its three positional parameters, so widening the return type or
+the signature would break them.  Asking the database instead would report every
+substituted callable as partial, since those delete nothing.
+"""
+
+REQUEST_DELETE_DEADLINE = 780
+"""Seconds of payload deleting one web request may spend, across all projects.
+
+gunicorn kills a sync worker at 900 s (gunicorn_config.py), and until this
+existed a single large project could not be deleted from the browser at all:
+measured on prod 2026-09-01, a delete costs about 96.4 s per GiB plus 0.035 s
+per file, which put the four biggest soft-deleted projects at 1,590-2,189 s
+each.  The worker died partway through, and because the payload loop had no
+notion of stopping, whatever it had reached was already gone.
+
+780 leaves 120 s for the response to render and for whatever the deletes were
+waiting on to unwind.  Nothing is lost by stopping: see
+delete_payload_within_deadline() for why a half-deleted payload is a resumable
+state rather than a leak.
+"""
+
+_delete_deadline = threading.local()
+"""Request-scoped, so it must not be a module global.
+
+A thread-local is right for the sync worker class this runs under -- one
+request per thread, no overlap -- and it keeps the deadline out of
+admin_permanent_delete_project()'s signature, which several callers and the
+account-deletion path pass positionally.
+"""
+
+
+@contextlib.contextmanager
+def delete_deadline(seconds, now=time.monotonic):
+    """Give every delete inside this block a shared stopping time."""
+    previous = getattr(_delete_deadline, 'value', None)
+    _delete_deadline.value = now() + seconds
+    try:
+        yield
+    finally:
+        _delete_deadline.value = previous
+
+
+def current_delete_deadline():
+    """The active deadline, or None when deleting outside a request."""
+    return getattr(_delete_deadline, 'value', None)
+
+
 def admin_permanent_delete_project(project_id, project, project_name):
     """
     This function permanently deletes a project from s3 and from the server.
+
+    Stops at the deadline set by delete_deadline() if one is active, keeping the
+    S3 object and the project document so the remaining payload stays reachable.
+    Outside a request there is no deadline and the whole payload goes.
     """
     error_message = ""
     query = {'_id': ObjectId(project_id)}
@@ -631,10 +691,24 @@ def admin_permanent_delete_project(project_id, project, project_name):
     # A second key list is the recurring defect in this repository and this is
     # what it costs; test_admin_delete_uses_the_canonical_key_list is the guard.
     try:
-        delete_gridfs_payload_for_project(delete_gridfs_file, project)
+        outcome = delete_payload_within_deadline(
+            delete_gridfs_file, project, deadline=current_delete_deadline())
     except Exception:
         logging.exception('Problem deleting project files from Mongo.')
         error_message = "Problem deleting project files from Mongo."
+    else:
+        if outcome.remaining:
+            # Stop here, before S3 and before the document.  Both are records
+            # that the project existed; removing either now would leave the
+            # remaining files named by nothing, which is the exact way the
+            # existing orphan population was created.  Keeping them makes the
+            # next attempt a continuation.
+            return (
+                f"Project {project_name} {PARTIAL_DELETE_MARKER} "
+                f"{outcome.deleted} file(s) removed, {len(outcome.remaining)} still "
+                f"to go. It is still listed as deleted -- select it and submit again "
+                f"to continue where this left off."
+            )
 
     try:
         if os.path.exists(f"../tmp/{project_id}/"):
@@ -850,27 +924,43 @@ def delete_selected_projects(project_ids, time_budget=BULK_DELETE_TIME_BUDGET):
     started = time.monotonic()
     deleted = 0
     problems = []
+    partial = []
     unattempted = 0
-    for index, project_id in enumerate(project_ids):
-        # Checked before the work, never before the first project: a single
-        # project always gets its attempt, however long the batch may run.
-        if index and time.monotonic() - started > time_budget:
-            unattempted = len(project_ids) - index
-            break
+    # One deadline for the whole request, not one per project: the 900 s
+    # gunicorn ceiling is per request, so a budget that only decides when to
+    # *start* work cannot enforce it.  Before this, a project begun at 599 s
+    # that ran 512 s reached 1,111 s and the worker was killed mid-delete.
+    with delete_deadline(REQUEST_DELETE_DEADLINE):
+        for index, project_id in enumerate(project_ids):
+            # Checked before the work, never before the first project: a single
+            # project always gets its attempt, however long the batch may run.
+            if index and time.monotonic() - started > time_budget:
+                unattempted = len(project_ids) - index
+                break
 
-        project = get_one_deleted_project(project_id)
-        if project is None:
-            problems.append(f"{project_id} (not found, or no longer flagged deleted)")
-            continue
-        name = project.get('project_name', project_id)
-        try:
-            permanently_delete_with_history(project_id, project, name)
+            project = get_one_deleted_project(project_id)
+            if project is None:
+                problems.append(f"{project_id} (not found, or no longer flagged deleted)")
+                continue
+            name = project.get('project_name', project_id)
+            try:
+                outcome = permanently_delete_with_history(project_id, project, name)
+            except Exception:
+                logging.exception(f"Permanent delete failed for project {project_id} ({name}).")
+                problems.append(name)
+                continue
+            if outcome and PARTIAL_DELETE_MARKER in str(outcome):
+                partial.append(name)
+                unattempted = len(project_ids) - index - 1
+                break
             deleted += 1
-        except Exception:
-            logging.exception(f"Permanent delete failed for project {project_id} ({name}).")
-            problems.append(name)
 
     message = f"Permanently deleted {deleted} of {len(project_ids)} selected project(s)."
+    if partial:
+        message = (f"{message} Ran out of time partway through "
+                   f"{', '.join(partial)}; it is still listed as deleted and keeps "
+                   f"the files it has left, so submitting it again continues from "
+                   f"where this stopped.")
     if problems:
         # 'Problem' is the word the page's script looks for to colour the
         # banner as a warning rather than a success.
@@ -929,7 +1019,11 @@ def admin_delete_project(request):
             purge_event = provenance.record(
                 audit_log_handle, provenance.PERMANENT_DELETE, request.user,
                 project, intended={'status': None, 'documents_removed': True})
-            error_message = permanently_delete_with_history(project_id, project, project_name)
+            # Same ceiling applies to a single delete: the four largest projects
+            # on prod each need more than the 900 s a worker gets.
+            with delete_deadline(REQUEST_DELETE_DEADLINE):
+                error_message = permanently_delete_with_history(
+                    project_id, project, project_name)
             provenance.confirm(audit_log_handle, purge_event,
                                outcome='failed' if error_message else 'removed',
                                error_message=error_message or None)
