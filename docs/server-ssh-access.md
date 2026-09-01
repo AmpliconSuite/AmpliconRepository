@@ -172,11 +172,26 @@ changed — and on prod, rebuild from the separate build checkout. See
 [the deployment section of the README](../README.md#deploy) for the full release
 procedure.
 
-## Prod restarts itself every morning
+## Both servers restart themselves every day
 
 **`12 7 * * * /home/ubuntu/stop-and-start-repo.sh`** is in `ubuntu`'s crontab on
 prod. The site goes down and comes back at **07:12 UTC every day**. Measured
 2026-08-31; it is not in any other document, and it was surprising to find.
+
+**Dev does the same at 00:15 UTC**, via `15 0 * * *` and its own copy of the
+same script. Measured 2026-09-01, and found the hard way: a 90-minute
+maintenance job launched on dev at 23:46 UTC was killed 29 minutes in, having
+deleted 17 of 70 documents. `docker inspect` showed `RestartCount=0` and
+`OOMKilled=false` with a fresh `StartedAt`, which is the signature of a
+deliberate `docker stop`/`docker start`, not a crash — the restart script stops
+the container, so nothing increments the restart counter.
+
+**The two windows are 7 hours apart, and neither host checks for running work.**
+Before starting anything on either box that will take more than a few minutes,
+check the clock against that host's window; if it does not fit, either wait or
+run the job so it survives — `docker exec -d` writing to a log inside the
+container is not enough on its own, because the restart stops the container and
+takes the process with it.
 
 **Why it is there:** the web tier leaks memory, the leak was never found, and a
 daily restart is the mitigation that was reached for instead. It works, in the
