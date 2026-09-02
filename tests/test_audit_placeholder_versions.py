@@ -135,3 +135,78 @@ def test_every_status_the_page_can_produce_is_offered_by_the_filter():
             f'{status} is no longer produced; drop it from AUDIT_STATUS_CHOICES')
         assert status in offered, (
             f'{status} can appear on a row but the filter does not offer it')
+
+
+# ---------------------------------------------------------------------------
+# Two records that both say "nothing" agree
+#
+# Reported from dev 2026-09-02: an empty project was badged "⚠️ Partial" for
+# having no payload on either side. Nothing about it is partial -- the log and
+# the document make the same statement, which is the same reason two NA
+# placeholders have always read as a match.
+# ---------------------------------------------------------------------------
+
+def test_an_empty_project_is_a_pass_not_partial():
+    """'GBM39 with metadata' on dev: 0 samples, no s3_uri, amber for it."""
+    project = {'sample_count': 0}
+    entry = {'sample_count': 0}          # no s3_uri, so no size on either side
+
+    result = _run_audit_checks(project, entry)
+
+    assert result['status'] == 'pass', [
+        (c['field'], c['log_value'], c['live_value'], c['missing'])
+        for c in result['checks']]
+
+
+def test_zero_equals_zero():
+    """A count of 0 is a recorded value, not an absent one."""
+    result = _run_audit_checks({'sample_count': 0}, {'sample_count': 0})
+
+    count = _check(result, 'Sample Count')
+    assert count['match'] and not count['missing']
+    assert count['log_value'] == '0' and count['live_value'] == '0'
+
+
+def test_zero_against_a_real_count_is_still_a_mismatch():
+    """The guard on the test above: 0 must not become a synonym for absent."""
+    result = _run_audit_checks({'sample_count': 7}, {'sample_count': 0})
+
+    assert result['status'] == 'mismatch'
+
+
+def test_a_placeholder_against_an_absent_field_agrees():
+    """'siavash test' on dev: log 'NA', document has no AA_version at all.
+
+    Both say no version was recorded. Reporting that as incomplete data sent a
+    reader looking for a fault that is not there.
+    """
+    result = _run_audit_checks({'sample_count': 4}, {'AA_version': 'NA',
+                                                     'sample_count': 4})
+
+    aa = _check(result, 'AA Version')
+    assert aa['match'] and not aa['missing'] and not aa['not_recorded']
+
+
+def test_a_recorded_value_against_an_absent_one_is_still_reported():
+    """Unchanged, and the reason 'both empty' is scoped to *both*.
+
+    The document losing a version the log holds is a real finding and must not
+    be swept up by the agreement rule.
+    """
+    result = _run_audit_checks({'sample_count': 4},
+                               {'AA_version': '1.3.r2', 'sample_count': 4})
+
+    aa = _check(result, 'AA Version')
+    assert not aa['match']
+    assert result['status'] in ('mismatch', 'missing_data')
+
+
+def test_the_filter_names_the_state_a_reader_sees():
+    """'Lifecycle only' named the mechanism; the badge has to name the meaning.
+
+    Both dev projects in this state carry `create` and `edit_new_version`
+    entries that the events table shows -- they are excluded only because the
+    backfill wrote them -- so "no payload entry" read as a contradiction.
+    """
+    labels = dict(AUDIT_STATUS_CHOICES)
+    assert labels['lifecycle_only'] == 'No payload logged'

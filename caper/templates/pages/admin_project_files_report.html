@@ -497,7 +497,7 @@
                                 <span class="badge badge-warning text-dark">⚠️ Partial</span>
                             {% elif proj.validation_status == 'lifecycle_only' %}
                                 <span class="badge badge-light text-muted"
-                                      title="Lifecycle events only; no payload entry to compare against">Lifecycle only</span>
+                                      title="Nothing recorded as it happened describes a payload, so there is nothing to compare. The create or edit entries in this project's history were reconstructed by the backfill afterwards; what was recorded live is a promotion or a deletion.">No payload logged</span>
                             {% elif proj.validation_status == 'reconstructed_only' %}
                                 <span class="badge badge-light text-muted"
                                       title="Only a reconstructed creation; nothing was recorded at the time to compare against">Reconstructed only</span>
