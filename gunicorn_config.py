@@ -80,3 +80,30 @@ worker_tmp_dir = "/dev/shm"
 reload = os.getenv("GUNICORN_RELOAD", "false").lower() == "true"
 reload_engine = "auto"
 
+
+
+def post_fork(server, worker):
+    """Restart any version payload purge that an interruption left unfinished.
+
+    Deleting a version writes its tombstone synchronously and removes the
+    GridFS payload afterwards, off the request thread; the ids not yet deleted
+    live on the tombstone until they are gone. Both servers also restart on a
+    timer and neither checks for running work, so a purge can be cut short by
+    an ordinary restart rather than a fault. This is where it is picked back up.
+
+    It runs here rather than in ``AppConfig.ready()`` because ``preload_app``
+    is True: ready() runs in the master, and a thread started there does not
+    survive the fork. Every worker calls this, and each pending purge is
+    claimed atomically so only one of them takes it.
+
+    Never allowed to stop a worker booting -- a site that will not start is a
+    far worse outcome than a purge that waits for the next restart.
+    """
+    try:
+        from caper.version_purge import resume_pending
+        resumed = resume_pending()
+        if resumed:
+            server.log.info(
+                "Resumed %d interrupted version payload purge(s)", resumed)
+    except Exception:
+        server.log.exception("Could not resume pending version payload purges")
