@@ -16,9 +16,12 @@ class _Files:
         self.rows = list(rows)
 
     def find(self, query, projection=None):
-        want = query.get('metadata.project_id')
+        # Mirrors the {'$in': [...]} the real query uses, so a fixture that
+        # stores the wrong type fails here rather than passing on a fake.
+        wanted = query.get('metadata.project_id')
+        wanted = wanted.get('$in') if isinstance(wanted, dict) else [wanted]
         for row in self.rows:
-            if (row.get('metadata') or {}).get('project_id') == want:
+            if (row.get('metadata') or {}).get('project_id') in wanted:
                 yield {'_id': row['_id']}
 
 
@@ -31,7 +34,9 @@ class _Projects:
 
 
 def _file(project_id):
-    return {'_id': ObjectId(), 'metadata': {'project_id': str(project_id)}}
+    # An ObjectId, because that is what build_metadata() stores. These fixtures
+    # held strings and every test passed while the real query matched nothing.
+    return {'_id': ObjectId(), 'metadata': {'project_id': ObjectId(str(project_id))}}
 
 
 def test_it_deletes_what_the_failed_upload_stored():

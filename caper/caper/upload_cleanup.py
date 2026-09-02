@@ -40,10 +40,8 @@ import logging
 
 from bson import ObjectId
 
+from .gridfs_backlinks import METADATA_FIELD, PROJECT_ID, as_object_id
 from .project_version_cleanup import iter_gridfs_file_ids
-
-METADATA_FIELD = 'metadata'
-PROJECT_ID = 'project_id'
 
 
 def _named_by(document):
@@ -76,8 +74,16 @@ def discard_failed_upload_payload(projects, files, delete_file, project_id,
             if document is not None:
                 keep |= _named_by(document)
 
+        # Both spellings. build_metadata() stores an ObjectId, and querying
+        # for the string matched nothing -- which unit tests with string
+        # fixtures could not see, and a drill against the real database found
+        # in one run. The names come from gridfs_backlinks rather than being
+        # written again here.
+        wanted = [value for value in
+                  (as_object_id(project_id), str(project_id))
+                  if value is not None]
         rows = list(files.find(
-            {'%s.%s' % (METADATA_FIELD, PROJECT_ID): str(project_id)},
+            {'%s.%s' % (METADATA_FIELD, PROJECT_ID): {'$in': wanted}},
             {'_id': 1}))
         for row in rows:
             file_id = row['_id']
