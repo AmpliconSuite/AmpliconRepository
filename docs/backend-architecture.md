@@ -398,6 +398,20 @@ rather than what to believe. Scope is the database or bucket named.
 | chains (multi-version) | 153 (45) | 88 (36) |
 | documents with no `version_chain_id` | 0 | 0 |
 
+**Lineage invariants — 2026-09-02, full run including the GridFS checks**
+
+`caper` (prod): 242 documents, 824,277 GridFS references, **21 invariants
+checked, 0 not checkable, 1 failing.** The failure is I9 — two chain-view
+documents whose `source_digest` no longer matches their members (Ventura SCLC
+mice, Human Cancer Models Initiative). The documents win by design and
+`rebuild_version_chains.py` is the fix. Nothing in the request paths reads the
+chain view yet, so a stale digest currently costs a second opinion and nothing
+else. Every GridFS invariant — I12, I13, I14, I21 — passes.
+
+`caper-dev`: also failing I7 (one chain, plus a lineage-exercise fixture) and
+I11 (two CCLE documents whose array names a version the pointers do not place
+before it). Both are dev fixture data.
+
 **GridFS — 2026-08-29 / 2026-09-02**
 
 - prod: 808,264 files, 237.6 GiB, **100% owned by a live document, zero residue
