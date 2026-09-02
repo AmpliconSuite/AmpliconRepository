@@ -137,6 +137,13 @@ ALLOWED = {
         "printed remediation advice",
 
     # -- projections and control flow, not filters -----------------------
+    ('backfill_project_status.py',
+     "'version_chain_id': 1, 'delete': 1,"):
+        "projection, not a filter: the chain builder reads status only to tell "
+        "a chain's head from a stranded intermediate",
+    ('backfill_project_status.py',
+     "'current': 1, 'status': 1, 'date': 1}):"):
+        "the rest of that projection",
     ('purge-local-db.py',
      "if scope == 'current':"):
         "string comparison on a --reference-scope argument named 'current'",
