@@ -28,6 +28,7 @@ import tempfile
 
 from django.conf import settings
 
+from . import url_manifest
 from .utils import db_handle, db_handle_primary
 
 
@@ -44,7 +45,8 @@ import dump_metadata  # noqa: E402
 
 SQLITE = 'sqlite'
 METADATA = 'metadata'
-KINDS = (SQLITE, METADATA)
+URLS = 'urls'
+KINDS = (SQLITE, METADATA, URLS)
 
 DOWNLOAD_RECORD_COLLECTION = 'admin_backup_downloads'
 
@@ -111,6 +113,11 @@ def sqlite_totals():
     return totals
 
 
+def url_totals():
+    """Counts for the page. Cheap: one pass over the project documents."""
+    return url_manifest.totals(url_manifest.rows(db_handle['projects']))
+
+
 def metadata_totals():
     """Document counts per dumped collection.
 
@@ -165,6 +172,21 @@ def build_sqlite(workdir):
     compressed = snapshot_path + '.gz'
     backup_sqlite.compress(snapshot_path, compressed)
     return compressed, digest
+
+
+def build_urls(workdir):
+    """Every project URL that resolves today, as CSV. Returns (path, rows).
+
+    Small, cheap, and the piece of the recovery plan that cannot be rebuilt
+    afterwards: re-uploading projects mints new ids, so without this every
+    published link resolves to nothing and there is no record of what it meant.
+    """
+    text = url_manifest.as_csv(db_handle['projects'])
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    path = os.path.join(workdir, 'project-urls-%s-%s.csv' % (db_handle.name, stamp))
+    with open(path, 'w', newline='') as handle:
+        handle.write(text)
+    return path, text.count('\n') - 1
 
 
 def build_metadata(workdir):

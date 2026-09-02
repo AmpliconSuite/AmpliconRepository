@@ -137,3 +137,31 @@ def test_compare_reports_both_directions():
 
 def test_compare_says_nothing_when_there_is_no_previous_download():
     assert admin_backups.compare(None, {'a': 1}) is None
+
+
+def test_the_url_manifest_downloads_as_csv(request_factory, admin_user,
+                                           no_downloads_recorded):
+    """The piece of the recovery plan that cannot be rebuilt afterwards."""
+    import csv
+    import io
+
+    request = _get(request_factory, admin_user, '/admin-backups/download/urls/')
+    response = views.admin_backup_download(request, 'urls')
+    assert response.status_code == 200
+
+    text = b''.join(response.streaming_content).decode()
+    response.close()
+    reader = csv.DictReader(io.StringIO(text))
+    rows = list(reader)
+
+    from caper import url_manifest
+    assert reader.fieldnames == list(url_manifest.COLUMNS)
+    assert rows, 'no URLs in the manifest'
+    # Every row has to be usable as a URL and name what it resolves to.
+    for row in rows:
+        assert row['url'] == '/project/%s' % row['identifier']
+        assert row['project_id']
+
+    recorded = admin_backups.last_download('urls')
+    assert recorded is not None
+    assert recorded['sha256'] == response['X-Content-SHA256']

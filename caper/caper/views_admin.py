@@ -613,10 +613,15 @@ def admin_backups(request):
          'Every collection except the GridFS payload: the whole catalogue of '
          'what exists, who owns it and what it is called. The payload itself '
          'stays behind and is covered by the cluster snapshots.'),
+        (backups.URLS, 'Project URL manifest',
+         'Every URL that resolves to a project today, and what it resolves to. '
+         'Rebuilding from re-uploaded projects mints new ids, so this is what '
+         'lets old links be re-pointed instead of simply breaking.'),
     ):
         try:
-            totals = (backups.sqlite_totals() if kind == backups.SQLITE
-                      else backups.metadata_totals())
+            totals = {backups.SQLITE: backups.sqlite_totals,
+                      backups.METADATA: backups.metadata_totals,
+                      backups.URLS: backups.url_totals}[kind]()
         except Exception:
             logging.exception('Could not read totals for the %s backup', kind)
             totals = {}
@@ -679,6 +684,10 @@ def admin_backup_download(request, kind):
         if kind == backups.SQLITE:
             path, digest = backups.build_sqlite(workdir)
             totals = backups.sqlite_totals()
+        elif kind == backups.URLS:
+            path, _count = backups.build_urls(workdir)
+            digest = backups.sha256_of(path)
+            totals = backups.url_totals()
         else:
             path, _manifest = backups.build_metadata(workdir)
             digest = backups.sha256_of(path)
