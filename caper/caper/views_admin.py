@@ -230,10 +230,16 @@ def _run_audit_checks(project, latest_entry):
     ``1.3.r2``    ``NA``        **mismatch.** The document lost a version the log
                                 holds, which is a real finding.
     ``1.3.r2``    ``1.3.r3``    compare them.
+    absent        absent        match. Neither side recorded anything, and they
+                                agree -- this is what an empty project looks
+                                like in every field.
+    ``NA``        absent        match. Same statement made two ways.
     ============  ============  ==================================================
 
     Only the version fields take placeholders. A sample count or a file size of
-    ``NA`` would be a different problem and is left to read as one.
+    ``NA`` would be a different problem and is left to read as one. A count of
+    ``0``, though, is a recorded value like any other: ``_str`` renders it
+    ``'0'``, so 0 against 0 compares and matches.
     """
     def _str(v):
         if v is None:
@@ -245,18 +251,37 @@ def _run_audit_checks(project, latest_entry):
         log_val  = _str(log_raw)
         live_val = _str(live_raw)
 
-        def placeholder(value):
-            return (versioned and value is not None
-                    and value.upper() in _VERSION_PLACEHOLDERS)
+        def empty(value):
+            """Nothing was recorded here.
+
+            An absent field and a version placeholder are the same statement
+            made two ways, so they are treated as one. The audit's job is to
+            compare records, and neither of these is a record.
+            """
+            return value is None or (versioned
+                                     and value.upper() in _VERSION_PLACEHOLDERS)
+
+        log_empty, live_empty = empty(log_val), empty(live_val)
+
+        # Both sides say nothing was recorded, and they agree. This is the same
+        # case as two NA placeholders, which has always read as a match, and it
+        # is what an empty project looks like in every field: no payload, so no
+        # tar.gz size on either side. Calling that "Partial" reported a project
+        # with nothing wrong with it as incomplete -- measured on dev
+        # 2026-09-02, 'GBM39 with metadata' (0 samples, no s3_uri) was amber
+        # solely because '—' did not equal '—'.
+        both_empty = log_empty and live_empty
 
         # The log holds a placeholder while the document holds a real value:
         # there is no recorded claim on the log side, so there is nothing this
         # comparison can find. Both placeholders is a different case -- they
         # agree, and demoting agreement to a warning would turn a page full of
         # green into a page full of yellow for no new information.
-        not_recorded = placeholder(log_val) and live_val is not None and not placeholder(live_val)
+        not_recorded = log_empty and not live_empty
 
-        if not_recorded:
+        if both_empty:
+            match = True
+        elif not_recorded:
             match = False
         elif numeric and log_val is not None and live_val is not None:
             try:
@@ -274,7 +299,8 @@ def _run_audit_checks(project, latest_entry):
             'log_value':  log_val  if log_val  is not None else '—',
             'live_value': live_val if live_val is not None else '—',
             'match':      match,
-            'missing':    log_val is None or live_val is None or not_recorded,
+            'missing':    not both_empty and (log_val is None or live_val is None
+                                              or not_recorded),
             'not_recorded': not_recorded,
         }
 
@@ -1937,7 +1963,7 @@ AUDIT_STATUS_CHOICES = (
     ('missing_data',       '⚠️ Partial'),
     ('not_recorded',       '➖ Not recorded'),
     ('pass',               '✅ Pass'),
-    ('lifecycle_only',     'Lifecycle only'),
+    ('lifecycle_only',     'No payload logged'),
     ('reconstructed_only', 'Reconstructed only'),
     ('no_log',             'No log'),
     ('error',              'Error'),
