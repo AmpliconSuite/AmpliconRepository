@@ -24,7 +24,7 @@ import argparse
 import os
 import sys
 
-from pymongo import ASCENDING, MongoClient
+from pymongo import ASCENDING, MongoClient, ReadPreference
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
 
@@ -44,13 +44,23 @@ PROJECTION = {field: 1 for field in (
 
 
 def connect(db_name, expect_host):
+    """Open the database, pinned to PRIMARY.
+
+    The cluster's URI asks for ``secondaryPreferred``, so an unpinned client
+    builds its plan from a replica. That is fatal for this command in a way it
+    is not for a reporting one: the digest it writes is derived from whatever
+    the documents said when it read them, so a lagging replica produces a view
+    that is confidently wrong and reports success. The case that matters is
+    exactly the one this exists for -- a document edited by hand moments before
+    the rebuild.
+    """
     uri = os.environ['DB_URI_SECRET']
     is_local = 'localhost' in uri or '127.0.0.1' in uri
     if expect_host == 'local' and not is_local:
         sys.exit('--expect-host local, but the URI does not name localhost')
     if expect_host == 'docdb' and is_local:
         sys.exit('--expect-host docdb, but the URI names localhost')
-    return MongoClient(uri)[db_name]
+    return MongoClient(uri, read_preference=ReadPreference.PRIMARY)[db_name]
 
 
 def plan(projects, chain_view):

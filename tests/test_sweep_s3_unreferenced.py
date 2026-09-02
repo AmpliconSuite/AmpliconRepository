@@ -103,3 +103,26 @@ def test_ids_file_ignores_anything_that_is_not_an_object_id(tmp_path):
     ids, per_file = sweep.load_ids([str(p)])
     assert ids == {'63e550ad8e4821057769102a', '63e550ad8e4821057769102b'}
     assert per_file[str(p)] == 2
+
+
+def test_key_prefix_restricts_the_tranche_to_one_writers_namespace():
+    """A laptop prefix is the one namespace an id set can be authoritative for.
+
+    The shared root is written by prod, dev and any laptop, so no id set covers
+    it; a prefix is written by exactly one machine, so that machine's ids do.
+    What this must never do is widen the tranche past the prefixes it was given
+    -- reaching the root is the failure that matters.
+    """
+    import sweep_s3_unreferenced as sweep
+
+    root_key = 'c' * 24 + '/z.tar.gz'
+    candidates = [({'Key': 'jens/dev1' + 'a' * 24 + '/x.tar.gz', 'Size': 1}, None),
+                  ({'Key': 'ted/dev/' + 'b' * 24 + '/y.tar.gz', 'Size': 1}, None),
+                  ({'Key': root_key, 'Size': 1}, None)]
+
+    kept = sweep.restrict_to_prefixes(candidates, ['jens/dev1', 'ted/dev/'])
+
+    assert len(kept) == 2
+    assert root_key not in [o['Key'] for o, _ in kept], \
+        'a prefix-scoped sweep must not reach the shared root'
+    assert sweep.restrict_to_prefixes(candidates, ['nothing/']) == []

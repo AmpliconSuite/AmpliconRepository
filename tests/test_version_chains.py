@@ -11,6 +11,7 @@ intent, which is what test_only_the_rebuild_command_writes_the_view does.
 import pathlib
 import re
 
+import pymongo
 import pytest
 from bson.objectid import ObjectId
 
@@ -194,3 +195,22 @@ def test_the_rebuild_command_preserves_the_authoritative_fields():
         assert field not in setter, \
             f'{field} is authoritative on the chain document; a rebuild must ' \
             f'not overwrite it'
+
+
+def test_the_rebuild_command_reads_its_plan_from_the_primary(monkeypatch):
+    """A rebuild that plans off a replica writes a confidently wrong view.
+
+    The cluster URI asks for secondaryPreferred, so an unpinned client reads
+    whatever the replica has. For a reporting command that is a stale number;
+    for this one it is a digest derived from documents that have since changed,
+    stored as though it were current. The case that matters is the one the
+    command exists for -- a document edited by hand shortly beforehand.
+    """
+    import rebuild_version_chains as rebuild
+
+    monkeypatch.setenv('DB_URI_SECRET', 'mongodb://cluster.example:27017/'
+                                        '?readPreference=secondaryPreferred')
+    database = rebuild.connect('caper', 'docdb')
+
+    assert database.read_preference == pymongo.ReadPreference.PRIMARY, \
+        'the rebuild must plan from the primary, not from a replica'

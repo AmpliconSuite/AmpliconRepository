@@ -127,6 +127,17 @@ def load_ids(paths):
     return ids, per_file
 
 
+def restrict_to_prefixes(candidates, prefixes):
+    """Keep only the candidates whose key starts with one of `prefixes`.
+
+    Narrowing only: a prefix-scoped sweep must never reach the shared root,
+    which is written by prod, dev and every laptop and which no id set is
+    authoritative for.
+    """
+    return [(o, i) for o, i in candidates
+            if any(o['Key'].startswith(prefix) for prefix in prefixes)]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -148,6 +159,13 @@ def main():
                     help='only keys of the form <id>/... -- skips developer '
                          'prefixes like jens/ and ted/, which is what keeps a '
                          'first sweep to one namespace and its result checkable')
+    ap.add_argument('--key-prefix', action='append', default=[],
+                    help='restrict the tranche to keys under this prefix; '
+                         'repeatable. The inverse of --bare-prefix-only, and '
+                         'the way to sweep one writer\'s namespace: a laptop '
+                         'prefix is written by exactly one machine, so that '
+                         'machine\'s id set is authoritative for it in a way '
+                         'no id set is authoritative for the shared root.')
     ap.add_argument('--execute', action='store_true')
     ap.add_argument('--limit', type=int, default=None)
     ap.add_argument('--undo-record', default=None)
@@ -209,6 +227,11 @@ def main():
                       if OBJECT_ID_RE.fullmatch(o['Key'].split('/')[0] or '')]
         print('\n  --bare-prefix-only: %d -> %d (developer prefixes left alone)'
               % (before, len(candidates)))
+    if args.key_prefix:
+        before = len(candidates)
+        candidates = restrict_to_prefixes(candidates, args.key_prefix)
+        print('\n  --key-prefix %s: %d -> %d'
+              % (', '.join(args.key_prefix), before, len(candidates)))
     if args.before:
         cutoff = datetime.datetime.strptime(args.before, '%Y-%m-%d').replace(
             tzinfo=datetime.timezone.utc)
