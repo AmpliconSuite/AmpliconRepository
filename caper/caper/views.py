@@ -443,6 +443,12 @@ def profile(request, message_to_user=None):
         LIVE,
         **{"$or": [{"project_members": username}, {"project_members": useremail}]})))
 
+    # One query for the whole page rather than one per row. Asking each
+    # project for its chain separately is the read amplification this codebase
+    # has already had to go and fix twice.
+    chains = lineage.chains_for(collection_handle, projects,
+                                lineage.POINTER_PROJECTION)
+
     for proj in projects:
         prepare_project_linkid(proj)
         test = get_extra_metadata_from_project(proj)
@@ -450,6 +456,17 @@ def profile(request, message_to_user=None):
         proj['sample_count'] = len(proj.get('runs', {}))
         # Format visibility for display
         proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
+        # How many versions this project's chain holds, the one on screen
+        # included, so a project uploaded once reads 1 rather than 0.
+        #
+        # Counted from the chain, which is what the history table on the
+        # project page is built from. A version that was deleted and now
+        # redirects sits in a chain of its own and so is not counted here,
+        # while the project page does list it -- two on production as of
+        # 2026-08-27. The number links through, so the page that can show the
+        # whole history is one click away rather than being summarised badly.
+        members = chains.get(proj.get('version_chain_id'))
+        proj['version_count'] = len(members) if members else None
 
     prefs = get_user_preferences(request.user)
     if (prefs.pop('welcomeMessage', None)):
