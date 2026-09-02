@@ -396,6 +396,25 @@ def test_previous_versions_includes_deleted_redirect_tombstones(monkeypatch):
     latest_id = ObjectId()
     active_old_id = ObjectId()
     deleted_old_id = ObjectId()
+    # The chain is read from the pointers, so the older version has to be a
+    # document rather than only an array entry. That is also the only shape
+    # production has: invariant I6 checks that every lineage reference resolves
+    # to a document, and both databases pass it.
+    active_old = {
+        '_id': active_old_id,
+        'linkid': active_old_id,
+        'project_name': 'history-display',
+        'date': '2026-05-01T00:00:00.000000',
+        'delete': True,
+        'current': False,
+        'version_chain_id': active_old_id,
+        'version_ordinal': 1,
+        'is_latest': False,
+        'AA_version': 'AA-active',
+        'AC_version': 'AC-active',
+        'ASP_version': 'ASP-active',
+        'aggregator_version': 'AGG-active',
+    }
     latest = {
         '_id': latest_id,
         'linkid': latest_id,
@@ -403,6 +422,9 @@ def test_previous_versions_includes_deleted_redirect_tombstones(monkeypatch):
         'date': '2026-07-01T00:00:00.000000',
         'delete': False,
         'current': True,
+        'version_chain_id': active_old_id,
+        'version_ordinal': 2,
+        'is_latest': True,
         'previous_versions': [{
             'date': '2026-05-01T00:00:00.000000',
             'linkid': str(active_old_id),
@@ -431,7 +453,7 @@ def test_previous_versions_includes_deleted_redirect_tombstones(monkeypatch):
         'ASP_version': 'ASP-deleted',
         'aggregator_version': 'AGG-deleted',
     }
-    collection = FakeHistoryCollection([latest, deleted_tombstone])
+    collection = FakeHistoryCollection([latest, active_old, deleted_tombstone])
     monkeypatch.setattr(utils, 'collection_handle', collection)
 
     history, msg = utils.previous_versions(latest)
@@ -461,6 +483,9 @@ def test_previous_versions_includes_tombstones_redirecting_to_prior_current(monk
         'date': '2026-07-01T00:00:00.000000',
         'delete': False,
         'current': True,
+        'version_chain_id': prior_current_id,
+        'version_ordinal': 2,
+        'is_latest': True,
         'previous_versions': [{
             'date': '2026-06-01T00:00:00.000000',
             'linkid': str(prior_current_id),
@@ -487,7 +512,25 @@ def test_previous_versions_includes_tombstones_redirecting_to_prior_current(monk
         'ASP_version': 'ASP-deleted',
         'aggregator_version': 'AGG-deleted',
     }
-    collection = FakeHistoryCollection([latest, stale_tombstone])
+    # The prior version is a document, not only an array entry: the chain is
+    # read from the pointers now, and invariant I6 says production has no
+    # lineage reference without a document behind it.
+    prior_current = {
+        '_id': prior_current_id,
+        'linkid': prior_current_id,
+        'project_name': 'history-display',
+        'date': '2026-06-01T00:00:00.000000',
+        'delete': True,
+        'current': False,
+        'version_chain_id': prior_current_id,
+        'version_ordinal': 1,
+        'is_latest': False,
+        'AA_version': 'AA-prior',
+        'AC_version': 'AC-prior',
+        'ASP_version': 'ASP-prior',
+        'aggregator_version': 'AGG-prior',
+    }
+    collection = FakeHistoryCollection([latest, prior_current, stale_tombstone])
     monkeypatch.setattr(utils, 'collection_handle', collection)
 
     history, msg = utils.previous_versions(latest)

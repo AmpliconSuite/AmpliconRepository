@@ -249,8 +249,18 @@ def test_a_chain_with_no_live_member_still_names_its_latest_version(monkeypatch)
     assert msg is not None and str(new_id) in msg
 
 
-def test_a_document_without_pointers_falls_back_to_the_array(monkeypatch):
-    """26 documents on dev are in this state and must not lose their history."""
+def test_a_document_without_pointers_now_renders_no_history(monkeypatch):
+    """The array fallback was removed on 2026-09-02.
+
+    It existed because documents were still arriving without pointers -- 26 on
+    dev when this test was first written. Both databases now have none: caper
+    240 of 240, caper-dev 164 of 164. Keeping the fallback past that point
+    would have meant a missing pointer could never be noticed, because the
+    page would look right.
+
+    So an unpointered document renders as a project with no history, loudly.
+    Invariant I1 is what finds them; this is what makes a reader notice.
+    """
     from test_project_version_cleanup import FakeHistoryCollection
     from caper import utils
 
@@ -259,24 +269,32 @@ def test_a_document_without_pointers_falls_back_to_the_array(monkeypatch):
     new = _project_doc(new_id, 'p', 2,
                        previous_versions=[{'linkid': str(old_id),
                                            'date': '2026-01-01T00:00:00.000000'}])
+    for doc in (old, new):
+        doc.pop('version_chain_id', None)
     monkeypatch.setattr(utils, 'collection_handle',
                         FakeHistoryCollection([old, new]))
 
-    entries, _msg = utils.previous_versions(new)
+    entries, msg = utils.previous_versions(new)
 
-    assert {e['linkid'] for e in entries} == {str(old_id), str(new_id)}
+    assert entries == []
+    assert msg is None
 
 
-def test_the_fallback_renders_history_rather_than_an_empty_table(monkeypatch):
-    """The failure this guards against is silent: an unpointered document
-    rendering a blank history instead of the one it has always had."""
+def test_the_removal_is_logged_loudly_enough_to_act_on(monkeypatch, caplog):
+    """A blank history has to be traceable to its cause from the log alone."""
     from test_project_version_cleanup import FakeHistoryCollection
     from caper import utils
+    import logging as _logging
 
-    old_id, new_id = ObjectId(), ObjectId()
-    new = _project_doc(new_id, 'p', 2,
-                       previous_versions=[{'linkid': str(old_id)}])
+    new_id = ObjectId()
+    new = _project_doc(new_id, 'p', 2, previous_versions=[{'linkid': str(ObjectId())}])
+    new.pop('version_chain_id', None)
     monkeypatch.setattr(utils, 'collection_handle', FakeHistoryCollection([new]))
 
-    entries, _msg = utils.previous_versions(new)
-    assert len(entries) == 2       # the head, plus the ancestor it names
+    with caplog.at_level(_logging.WARNING):
+        entries, _msg = utils.previous_versions(new)
+
+    assert entries == []
+    assert any(str(new_id) in record.getMessage()
+               and 'version_chain_id' in record.getMessage()
+               for record in caplog.records), caplog.text

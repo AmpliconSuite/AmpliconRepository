@@ -976,20 +976,6 @@ DELETED_VERSION_HISTORY_FIELDS = [
 ]
 
 
-def _previous_version_entries(project):
-    """The history entries stored on *project*, in one readable shape.
-
-    Was a per-entry coercion here that turned anything non-dict into
-    ``{'linkid': str(entry)}``.  For the five documents written before the
-    April 2024 serialisation change that produced a linkid holding the entry's
-    entire JSON text, which the template rendered as a link to
-    ``/project/[{"date": ...}]`` and which matched no query.  Decoding lives in
-    project_status.iter_previous_versions() so the site and the validator read
-    the field the same way.
-    """
-    return [entry for entry, _encoding in iter_previous_versions(project)]
-
-
 def _current_version_history_entry(project):
     entry = {
         'date': project.get('date', '1999-01-01T00:00:00.000000'),
@@ -1085,71 +1071,6 @@ def _sort_history_entries_newest_first(entries):
     return sorted(entries, key=lambda entry: entry.get('date') or '', reverse=True)
 
 
-def _backfill_version_info_from_db(entries):
-    """
-    For previous_versions entries that are missing version fields (or have 'NA'),
-    look up the actual old project documents by linkid and populate the real values.
-    Uses a single batch MongoDB query for efficiency.
-    """
-    # Identify entries that need a DB lookup
-    entries_needing_lookup = [
-        entry for entry in entries
-        if isinstance(entry, dict)
-        and any(not entry.get(f) or entry.get(f) == 'NA' for f in VERSION_HISTORY_FIELDS)
-    ]
-
-    if entries_needing_lookup:
-        # Build a map from linkid string -> entry for fast update
-        linkid_to_entry = {}
-        for entry in entries_needing_lookup:
-            linkid = entry.get('linkid')
-            if linkid:
-                linkid_to_entry[str(linkid)] = entry
-
-        # One unreadable linkid used to take the whole batch down with it: the
-        # comprehension below raised on the first bad id, the except swallowed
-        # it, and every *other* entry in the same history table silently went
-        # unbackfilled and rendered as NA.  Skip the ones that cannot be looked
-        # up rather than the ones that can.
-        object_ids = []
-        for lid in list(linkid_to_entry):
-            try:
-                object_ids.append(ObjectId(lid))
-            except Exception:
-                logging.warning(
-                    "previous_versions entry has an unusable linkid %r; "
-                    "leaving its version columns as NA", lid[:80])
-                linkid_to_entry.pop(lid)
-
-        if object_ids:
-            try:
-                proj_docs = collection_handle.find(
-                    {'_id': {'$in': object_ids}},
-                    {field: 1 for field in VERSION_HISTORY_FIELDS}
-                )
-                for doc in proj_docs:
-                    doc_id = str(doc['_id'])
-                    if doc_id in linkid_to_entry:
-                        entry = linkid_to_entry[doc_id]
-                        for field in VERSION_HISTORY_FIELDS:
-                            if not entry.get(field) or entry.get(field) == 'NA':
-                                entry[field] = doc.get(field, 'NA')
-            except Exception as e:
-                logging.error(f"Error backfilling version info from DB: {e}")
-
-    # Ensure every entry has all four version fields (default 'NA' for anything still absent)
-    for entry in entries:
-        for field in VERSION_HISTORY_FIELDS:
-            entry.setdefault(field, 'NA')
-
-
-# Everything a history row is built from. Projected because a project document
-# averages 690 KB on production and a chain can hold eight of them; the history
-# table needs a few dozen bytes from each.
-#
-# 'delete' and 'current' are deliberately absent: whether a member is a
-# tombstone is answered by is_tombstone(), which reads the two markers already
-# listed here, so the flags never have to be loaded or interpreted at all.
 HISTORY_PROJECTION = {
     field: 1 for field in
     ['date', 'linkid', 'project_name', 'version_chain_id', 'version_ordinal',
@@ -1205,67 +1126,37 @@ def _previous_versions_from_pointers(project):
 def previous_versions(project):
     """The project's version history, newest first, and a message or None.
 
-    Reads the lineage pointers, and falls back to the denormalised
-    previous_versions[] array for any document the backfill has not reached.
-    Both paths are kept during the compatibility window and invariant I11 holds
-    them in agreement; compare_version_history.py diffs them over a whole
-    database.
+    Read from the lineage pointers, and only from them.
+
+    The denormalised previous_versions[] array was read here as a fallback for
+    any document the backfill had not reached. That fallback was removed on
+    2026-09-02, once both databases held no such document: caper 240 of 240
+    with pointers, caper-dev 164 of 164. The array is still written, and still
+    read by the resolver and the audit log, both of which say why at their own
+    call sites.
+
+    A document that somehow arrives without pointers now renders as a project
+    with no history rather than falling back. That is the intended outcome: the
+    fallback made a missing pointer invisible, and invariant I1 is what reports
+    it instead.
     """
     from_pointers = _previous_versions_from_pointers(project)
     if from_pointers is not None:
         return from_pointers
-    return _previous_versions_from_array(project)
+    logging.warning(
+        'lineage: project %s has no version_chain_id, so its history cannot be '
+        'read. Run backfill_project_status.py; invariant I1 lists these.',
+        project.get('_id'))
+    return [], None
 
 
-def _previous_versions_from_array(project):
-    """
-    Gets a list of previous versions via UUID.
-    Version fields (ASP_version, AA_version, AC_version, aggregator_version) are
-    populated from the actual old project documents when not already present in the
-    stored previous_versions entries.
-    """
-    res = []
-    msg = None
-    logging.info(f"Getting previous versions for project {project['_id']}")
+# _previous_versions_from_array() was removed on 2026-09-02. It rendered a
+# project's history by scanning previous_versions[] -- forward for the
+# document's own entries, and in reverse with a
+# {'previous_versions.linkid': ...} query to find the head. Both are now
+# read from the lineage pointers, which every document in both databases
+# has: caper 240 of 240, caper-dev 164 of 164, measured that day.
 
-    fields = [
-        'date', 'previous_versions', 'AC_version', 'AA_version', 'ASP_version',
-        'aggregator_version', 'Reconstruction_tools', 'CoRAL_version',
-    ]
-    cursor = collection_handle.find(
-        combine(HEAD_VERSION_QUERY,
-                **{'previous_versions.linkid': str(project['_id'])}),
-        {field: 1 for field in fields}
-    ).sort('date', -1)
-    data = list(cursor)
-    try:
-        cursor.close()
-    except Exception:
-        pass
-
-    if len(data) == 1:
-        # Viewing an older version — data[0] is the current/latest project document
-        res = _previous_version_entries(data[0])
-        # Populate version fields from the actual old project documents
-        _backfill_version_info_from_db(res)
-        res = _merge_deleted_version_entries(res, _deleted_version_entries_for_project(data[0]))
-        res.append(_current_version_history_entry(data[0]))
-        res = _sort_history_entries_newest_first(res)
-        msg = (f"Viewing an older version of the project. "
-               f"View latest version <a href='/project/{str(data[0]['_id'])}'>here</a>")
-
-    else:
-        # Viewing the current version — build history from this project's previous_versions list
-        if "previous_versions" in project:
-            res = _previous_version_entries(project)
-            # Populate version fields from the actual old project documents
-            _backfill_version_info_from_db(res)
-        res = _merge_deleted_version_entries(res, _deleted_version_entries_for_project(project))
-        # Append the current version itself
-        res.append(_current_version_history_entry(project))
-        res = _sort_history_entries_newest_first(res)
-
-    return res, msg
 
 def form_to_dict(form):
     # print(form)
@@ -1300,10 +1191,12 @@ def get_latest_project_version(project):
     if current is not None and current.get('_id') != project.get('_id'):
         current = collection_handle.find_one({'_id': current['_id']})
     elif current is None:
-        current = collection_handle.find_one(
-            combine(HEAD_VERSION_QUERY,
-                    **{'previous_versions.linkid': str(project['_id'])}),
-        )
+        # No pointers, so no chain. Removed as a fallback on 2026-09-02: the
+        # reverse array scan could not see a pre-April 2024 reference anyway --
+        # it matches on previous_versions.linkid and a legacy entry has no
+        # linkid -- so it reported those documents as the latest version of
+        # their own chain, which is the bug it looked like it was preventing.
+        return project
 
     if current is None or current.get('_id') == project.get('_id'):
         return project
