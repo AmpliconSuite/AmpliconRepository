@@ -282,7 +282,7 @@ def build_chains(projects):
     # version and a tombstone both occupy their ordinal.
     for doc in projects.find({}, {'project_name': 1, 'previous_versions': 1,
                                   'version_chain_id': 1, 'delete': 1,
-                                  'current': 1, 'status': 1}):
+                                  'current': 1, 'status': 1, 'date': 1}):
         doc_id = str(doc['_id'])
         docs[doc_id] = doc
         ancestors[doc_id] = [str(entry['linkid'])
@@ -398,16 +398,31 @@ def order_chain(members, docs, ancestors, named_by):
 
     # An ancestor the head reaches but does not list itself: some intermediate
     # version named it and the head's own list dropped it. It is still part of
-    # this history and goes in front of everything the head does list, because
-    # the only thing known about it is that it is older than the version that
-    # named it. Ties are broken by date, then by id, so a re-run orders the
-    # same way and the ordinals are stable.
+    # this history and has to be given a position.
     unlisted = sorted(set(members) - set(listed) - {head},
                       key=lambda m: (str(docs[m].get('date') or ''), m))
-    if not listed and not unlisted:
-        return [head], None
+    if not unlisted:
+        return listed + [head], None
 
-    return unlisted + listed + [head], None
+    # Merged by date rather than pushed to the front, but only when the dates
+    # can carry it: every member has one, and the head's own list is already in
+    # date order, so date and the list agree wherever both have an opinion.
+    # Measured on caper-dev 2026-09-02, front-placement got this visibly wrong
+    # -- a 9 February version landed at ordinal 1, ahead of the 5 February one
+    # the head does list.
+    #
+    # Where the dates cannot carry it, the members go in front, because the only
+    # thing then known about them is that they are older than a version that
+    # named them.
+    def key(member):
+        return str(docs[member].get('date') or '')
+
+    dated = [key(m) for m in listed + [head]]
+    usable = all(key(m) for m in members) and dated == sorted(dated)
+    if not usable:
+        return unlisted + listed + [head], None
+
+    return sorted(listed + unlisted, key=lambda m: (key(m), m)) + [head], None
 
 
 def plan_pointers(projects):

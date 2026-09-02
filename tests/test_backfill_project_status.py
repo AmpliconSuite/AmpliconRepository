@@ -649,3 +649,34 @@ def test_two_live_candidates_are_still_refused(projects):
     assert plan == []
     assert len(refused) == 1
     assert '2 of them are LIVE' in refused[0][1]
+
+
+def test_a_stranded_intermediate_is_placed_by_date_not_at_the_front(projects):
+    """Front-placement got this visibly wrong on caper-dev.
+
+    The stranded version is newer than two of the versions the head does list,
+    so putting it at ordinal 1 states a history that did not happen. Merging by
+    date is only allowed when the dates can carry it -- every member has one and
+    the head's own list is already in date order, so the two agree wherever both
+    have an opinion.
+    """
+    old_a, old_b, stranded, head = ObjectId(), ObjectId(), ObjectId(), ObjectId()
+    projects.insert_many([
+        {'_id': old_a, 'project_name': 'p', 'delete': True, 'current': False,
+         'date': '2026-02-05'},
+        {'_id': old_b, 'project_name': 'p', 'delete': True, 'current': False,
+         'date': '2026-02-06', 'previous_versions': [{'linkid': str(old_a)}]},
+        {'_id': stranded, 'project_name': 'p', 'delete': True, 'current': False,
+         'date': '2026-02-09',
+         'previous_versions': [{'linkid': str(old_a)}, {'linkid': str(old_b)}]},
+        {'_id': head, 'project_name': 'p', 'delete': False, 'current': True,
+         'date': '2026-08-15',
+         'previous_versions': [{'linkid': str(old_a)}, {'linkid': str(old_b)}]},
+    ])
+
+    plan, refused = plan_pointers(projects)
+
+    assert refused == []
+    ordinals = {str(doc['_id']): fields['version_ordinal'] for doc, fields in plan}
+    assert ordinals == {str(old_a): 1, str(old_b): 2,
+                        str(stranded): 3, str(head): 4}
