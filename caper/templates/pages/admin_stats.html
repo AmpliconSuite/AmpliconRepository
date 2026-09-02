@@ -108,6 +108,105 @@
     </div>
 </div> -->
 
+<div class="row" style="margin-top:20px">
+  <div class="col-md-12">
+    <h4>Storage</h4>
+    {% if storage %}
+    <p class="text-muted" style="margin-bottom:12px">
+      {{ storage.bytes|filesizeformat }} across {{ storage.files }} GridFS files
+      and {{ storage.chunks }} chunks, in {{ storage.projects }} project documents.
+      Measured {{ storage.taken_at|date:"j M Y, H:i" }} UTC on
+      <code>{{ storage.database }}</code>. Every file is counted once, in exactly
+      one row below, so the rows sum to the total.
+    </p>
+
+    <div class="row">
+      <div class="col-md-7">
+        <table class="table table-sm table-striped">
+          <thead>
+            <tr>
+              <th>Held by</th>
+              <th class="text-right">Size</th>
+              <th class="text-right">Share</th>
+              <th class="text-right">Files</th>
+              <th class="text-right">Documents</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in storage_buckets %}
+            <tr{% if row.key == 'residue' and row.bytes %} class="table-warning"{% endif %}>
+              <td>{{ row.label }}</td>
+              <td class="text-right">{{ row.bytes|filesizeformat }}</td>
+              <td class="text-right">{{ row.share|floatformat:1 }}%</td>
+              <td class="text-right">{{ row.files }}</td>
+              <td class="text-right">{{ row.documents|default:"&mdash;" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>Total</th>
+              <th class="text-right">{{ storage.bytes|filesizeformat }}</th>
+              <th class="text-right">100.0%</th>
+              <th class="text-right">{{ storage.files }}</th>
+              <th class="text-right">{{ storage.projects }}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div class="col-md-5">
+        <table class="table table-sm table-striped">
+          <thead><tr><th>Visibility</th><th class="text-right">Size</th><th class="text-right">Files</th></tr></thead>
+          <tbody>
+            <tr><td>Publicly listed</td>
+                <td class="text-right">{{ storage.visibility.listed.bytes|filesizeformat }}</td>
+                <td class="text-right">{{ storage.visibility.listed.files }}</td></tr>
+            <tr><td>Restricted or hidden</td>
+                <td class="text-right">{{ storage.visibility.restricted.bytes|filesizeformat }}</td>
+                <td class="text-right">{{ storage.visibility.restricted.files }}</td></tr>
+            {% if storage.shared_bytes %}
+            <tr class="table-warning">
+                <td>Named by a second document</td>
+                <td class="text-right">{{ storage.shared_bytes|filesizeformat }}</td>
+                <td class="text-right">&mdash;</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+        <p class="text-muted" style="font-size:.85em">
+          A file is listed only if the document that owns it is. Hidden-public counts as restricted here, the same way access control treats it.
+        </p>
+      </div>
+    </div>
+
+    {% if storage_chart.rows|length > 1 %}
+    <h5 style="margin-top:10px">Total stored, by day</h5>
+    <svg viewBox="0 0 720 120" preserveAspectRatio="none"
+         style="width:100%;height:120px;background:#fbfbfc;border:1px solid #e3e6e8;border-radius:3px"
+         role="img" aria-label="Total bytes stored per day">
+      <path d="{{ storage_chart.area }}" fill="#3f7f9c" fill-opacity="0.16"/>
+      <polyline points="{{ storage_chart.points }}" fill="none"
+                stroke="#2b6f8f" stroke-width="2"/>
+    </svg>
+    <p class="text-muted" style="font-size:.85em">
+      {{ storage_chart.rows|length }} day(s), oldest on the left. The axis starts
+      at zero on purpose &mdash; a chart scaled to its own range turns a fraction
+      of a percent of drift into a cliff.
+    </p>
+    {% else %}
+    <p class="text-muted" style="font-size:.85em">
+      The chart appears once there are two days of snapshots.
+    </p>
+    {% endif %}
+
+    {% else %}
+    <p class="text-muted">
+      No storage snapshot yet. One is recorded daily by
+      <code>snapshot_storage.py</code>.
+    </p>
+    {% endif %}
+  </div>
+</div>
+
 <div class="row" style="margin-top: 20px;margin-bottom:10px">
     <div class="col-md-2">
         <h4 style=>Site Statistics</h4>

@@ -32,6 +32,7 @@ import boto3
 
 from bson.objectid import ObjectId
 
+from . import storage_stats
 from .account_deletion import RELEASE, plan_account_deletion, summarize
 from .forms import FeaturedProjectForm, DeletedProjectForm, SendEmailForm
 from .utils import (
@@ -521,12 +522,35 @@ def admin_stats(request):
 
     repo_stats = get_latest_site_statistics()
 
+    # Read, never measured here. The walk behind these numbers is seconds of
+    # work over hundreds of thousands of fs.files rows, so it runs once a day
+    # from cron and this page shows the newest snapshot and the trend.
+    storage = storage_stats.latest()
+    storage_history = storage_stats.history(days=90)
+    storage_buckets = []
+    if storage:
+        for key, label in storage_stats.BUCKETS:
+            bucket = storage.get('buckets', {}).get(key, {})
+            storage_buckets.append({
+                'key': key,
+                'label': label,
+                'files': bucket.get('files', 0),
+                'bytes': bucket.get('bytes', 0),
+                'documents': storage.get('documents', {}).get(key),
+                'share': (100.0 * bucket.get('bytes', 0) / storage['bytes']
+                          if storage.get('bytes') else 0),
+            })
+
     return render(request, 'pages/admin_stats.html', {
         'public_projects': public_projects,
         'private_projects': private_projects,
         'users': users,
         'user_stats': user_stats,
-        'site_stats': repo_stats
+        'site_stats': repo_stats,
+        'storage': storage,
+        'storage_buckets': storage_buckets,
+        'storage_chart': storage_stats.sparkline(storage_history),
+        'storage_history': storage_history,
     })
 
 
