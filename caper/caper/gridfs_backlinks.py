@@ -179,7 +179,18 @@ def classify_file(file_id, metadata, document, referenced_ids):
         return DOCUMENT_GONE
     if classify(document) == TOMBSTONE:
         return TOMBSTONE_PAYLOAD
-    if as_object_id(file_id) in {as_object_id(i) for i in (referenced_ids or ())}:
+    # Membership is asked once per fs.files row, against a set that can hold six
+    # figures of ids, so the normalising comprehension below cannot be the first
+    # thing tried: rebuilding it per row is quadratic in the collection, and a
+    # report over 931,262 prod rows against a 71,536-id document did not finish.
+    # `iter_backlinks` already yields ObjectIds, so the direct test answers
+    # almost every call in constant time; the slow path stays for callers that
+    # pass ids as strings.
+    referenced_ids = referenced_ids or ()
+    file_id = as_object_id(file_id)
+    if file_id in referenced_ids:
+        return LIVE_FILE
+    if any(as_object_id(i) == file_id for i in referenced_ids):
         return LIVE_FILE
     return UNREFERENCED_BY_ITS_DOCUMENT
 

@@ -343,3 +343,26 @@ def test_the_tarball_is_labelled_too():
     doc = _project_with_files()
     by_id = {fid: key for fid, _, key in iter_backlinks(doc)}
     assert by_id[doc['tarfile']] == 'tarfile'
+
+
+class _NoIteration(set):
+    """A set that refuses to be iterated, to prove the fast path is taken."""
+
+    def __iter__(self):
+        raise AssertionError('classify_file iterated an already-normalised set')
+
+
+def test_classify_file_does_not_rescan_a_normalised_set():
+    """Membership must be O(1) when the caller passed ObjectIds.
+
+    The test is about cost, not correctness, and cost is why it exists: the
+    normalising comprehension used to run once per fs.files row, which is
+    quadratic in the collection. A report over 931,262 prod rows against a
+    71,536-id document did not finish. Iteration here means that regression is
+    back.
+    """
+    doc_id, fid = ObjectId(), ObjectId()
+    doc = {'_id': doc_id, 'project_name': 'P'}
+
+    assert classify_file(fid, {PROJECT_ID: doc_id}, doc,
+                         _NoIteration({fid})) == LIVE_FILE
