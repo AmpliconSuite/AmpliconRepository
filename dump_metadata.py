@@ -92,6 +92,50 @@ def dump_collection(db, name, out_dir):
     return count, os.path.getsize(path), digest.hexdigest()
 
 
+def write_dump(db, out_dir, progress=None):
+    """Dump every non-payload collection into *out_dir* and write the manifest.
+
+    Shared by this script's main() and by the admin page that lets someone
+    download the same dump from a browser.  It is one function because the
+    manifest's shape is what verify() reads: a second place that wrote a
+    manifest would be a list maintained twice, and the first symptom would be a
+    downloaded backup that cannot be verified.
+
+    *progress* is called with (name, documents, bytes) after each collection.
+    Returns the manifest dict, already written to disk.
+    """
+    manifest = {
+        'database': db.name,
+        'taken': datetime.datetime.now(datetime.timezone.utc)
+                         .strftime('%Y%m%dT%H%M%SZ'),
+        'excluded': [PAYLOAD_COLLECTION],
+        'collections': {},
+    }
+    for name in collections_to_dump(db):
+        count, size, digest = dump_collection(db, name, out_dir)
+        manifest['collections'][name] = {'documents': count, 'bytes': size,
+                                         'sha256': digest}
+        if progress:
+            progress(name, count, size)
+
+    # Recorded but not dumped, so a reader of the manifest can see what the
+    # copy is missing rather than having to know.
+    try:
+        skipped = db.command({'collStats': PAYLOAD_COLLECTION})
+        manifest['excluded_stats'] = {
+            'collection': PAYLOAD_COLLECTION,
+            'documents': skipped.get('count'),
+            'size': skipped.get('size'),
+        }
+    except Exception:
+        manifest['excluded_stats'] = {'collection': PAYLOAD_COLLECTION,
+                                      'documents': None, 'size': None}
+
+    with open(os.path.join(out_dir, MANIFEST_NAME), 'w') as f:
+        json.dump(manifest, f, indent=2, sort_keys=True)
+    return manifest
+
+
 def verify(dump_dir):
     """Re-read a dump and check it against its own manifest.
 
@@ -188,31 +232,11 @@ def main():
     print('excluding: %s' % PAYLOAD_COLLECTION)
     print('into     : %s\n' % out_dir)
 
-    manifest = {'database': db.name, 'taken': stamp,
-                'excluded': [PAYLOAD_COLLECTION], 'collections': {}}
-    total_bytes = 0
-    for name in collections_to_dump(db):
-        count, size, digest = dump_collection(db, name, out_dir)
-        manifest['collections'][name] = {'documents': count, 'bytes': size,
-                                         'sha256': digest}
-        total_bytes += size
-        print('  %-26s %8d documents  %10d bytes' % (name, count, size))
-
-    # Recorded but not dumped, so a reader of the manifest can see what the
-    # copy is missing rather than having to know.
-    try:
-        skipped = db.command({'collStats': PAYLOAD_COLLECTION})
-        manifest['excluded_stats'] = {
-            'collection': PAYLOAD_COLLECTION,
-            'documents': skipped.get('count'),
-            'size': skipped.get('size'),
-        }
-    except Exception:
-        manifest['excluded_stats'] = {'collection': PAYLOAD_COLLECTION,
-                                      'documents': None, 'size': None}
-
-    with open(os.path.join(out_dir, MANIFEST_NAME), 'w') as f:
-        json.dump(manifest, f, indent=2, sort_keys=True)
+    manifest = write_dump(
+        db, out_dir,
+        progress=lambda name, count, size:
+            print('  %-26s %8d documents  %10d bytes' % (name, count, size)))
+    total_bytes = sum(entry['bytes'] for entry in manifest['collections'].values())
 
     print('\ntotal: %d bytes across %d collections'
           % (total_bytes, len(manifest['collections'])))

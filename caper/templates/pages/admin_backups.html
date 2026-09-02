@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+{% load mezzanine_tags %}
+
+{% block meta_title %}Download Backups{% endblock %}
+
+{% block main %}
+<div class="container" style="max-width:960px">
+
+  <h1 class="mt-4">Download Backups</h1>
+  <p class="text-muted" style="max-width:66ch">
+    Every other backup this site has &mdash; the DocumentDB cluster snapshots and the
+    nightly upload of the accounts database &mdash; lands in the same AWS account as the
+    data it protects. These two are small enough to keep somewhere else, which is the
+    only reason this page exists. Download them and put them somewhere that is not AWS.
+  </p>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-warning">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  {% for entry in entries %}
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4 class="card-title">{{ entry.title }}</h4>
+      <p class="card-text text-muted">{{ entry.note }}</p>
+
+      <table class="table table-sm" style="max-width:520px">
+        <tbody>
+          <tr>
+            <th style="width:12rem">Last downloaded</th>
+            <td>
+              {% if entry.last %}
+                {{ entry.last.downloaded_at|date:"j M Y, H:i" }} UTC
+                by <code>{{ entry.last.username }}</code>
+              {% else %}
+                <span class="text-danger"><strong>never</strong></span>
+              {% endif %}
+            </td>
+          </tr>
+          {% if entry.last %}
+          <tr>
+            <th>That copy</th>
+            <td>{{ entry.last.size_bytes|filesizeformat }} &middot;
+              <code style="font-size:.8em">{{ entry.last.sha256|slice:":16" }}&hellip;</code></td>
+          </tr>
+          {% endif %}
+          <tr>
+            <th>Changed since</th>
+            <td>
+              {% if not entry.last %}
+                &mdash;
+              {% elif entry.delta.added or entry.delta.removed %}
+                <span class="text-warning"><strong>yes</strong></span> &mdash;
+                {{ entry.delta.added }} added, {{ entry.delta.removed }} removed
+              {% else %}
+                no change in the counts
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th>Holds now</th>
+            <td>{{ entry.total_rows }} rows across {{ entry.totals|length }}
+              {% if entry.kind == 'sqlite' %}tables{% else %}collections{% endif %}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {% if entry.delta.changed %}
+      <details class="mb-3">
+        <summary class="text-muted" style="cursor:pointer">What changed</summary>
+        <table class="table table-sm mt-2" style="max-width:420px">
+          <tbody>
+          {% for name, delta in entry.delta.changed %}
+            <tr><td><code>{{ name }}</code></td>
+                <td class="text-right">{% if delta > 0 %}+{% endif %}{{ delta }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
+
+      <a class="btn btn-primary"
+         href="{% url 'admin_backup_download' entry.kind %}">Download</a>
+      {% if entry.kind == 'metadata' %}
+        <span class="text-muted ml-2" style="font-size:.9em">
+          Built on request &mdash; this takes a minute or two.</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <p class="text-muted" style="max-width:66ch; font-size:.9em">
+    <strong>What &ldquo;changed since&rdquo; means.</strong> Row and document counts are
+    compared against the totals recorded when the file was last downloaded. That catches
+    anything created or removed. It does <em>not</em> catch an edit that leaves the counts
+    equal, so treat &ldquo;no change in the counts&rdquo; as an absence of evidence rather
+    than a guarantee.
+  </p>
+
+</div>
+{% endblock %}

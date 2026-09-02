@@ -14,7 +14,7 @@ import threading
 import time
 from pathlib import Path
 
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
@@ -556,6 +556,130 @@ def user_stats_download(request):
         output = {k: dictionary.get(k, None) for k in keys}
         writer.writerow(output.values())
 
+    return response
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Backups an administrator can take off AWS
+# ─────────────────────────────────────────────────────────────────────
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_backups(request):
+    """The two copies that can leave AWS, and how stale each one is.
+
+    Every other backup this site has lands in the same AWS account as the data
+    it protects, so an account-level event takes all of them.  These two are
+    small enough to keep anywhere, which is the only reason the page exists.
+
+    The staleness figure is a comparison of row and document counts against the
+    totals recorded when the file was last downloaded.  That is deliberately
+    modest: it catches anything created or removed, and it does *not* catch an
+    edit that leaves the counts equal.  The page says so rather than implying a
+    guarantee it cannot make.
+    """
+    from . import admin_backups as backups
+
+    entries = []
+    for kind, title, note in (
+        (backups.SQLITE, 'Accounts database',
+         'User accounts, email and OAuth links, and the CMS pages. This is the '
+         'one piece of site data that is in no DocumentDB snapshot. Sessions '
+         'are dropped from the copy; the live file is never touched.'),
+        (backups.METADATA, 'Metadata dump',
+         'Every collection except the GridFS payload: the whole catalogue of '
+         'what exists, who owns it and what it is called. The payload itself '
+         'stays behind and is covered by the cluster snapshots.'),
+    ):
+        try:
+            totals = (backups.sqlite_totals() if kind == backups.SQLITE
+                      else backups.metadata_totals())
+        except Exception:
+            logging.exception('Could not read totals for the %s backup', kind)
+            totals = {}
+        previous = backups.last_download(kind)
+        entries.append({
+            'kind': kind,
+            'title': title,
+            'note': note,
+            'totals': sorted(totals.items()),
+            'total_rows': sum(totals.values()),
+            'last': previous,
+            'delta': backups.compare((previous or {}).get('totals'), totals),
+        })
+
+    return render(request, 'pages/admin_backups.html', {'entries': entries})
+
+
+class _TempDirFileResponse(FileResponse):
+    """A FileResponse that removes the directory it streamed from.
+
+    The build writes into a scratch directory that must not outlive the
+    response, and there is no later pass that would collect it: this is the
+    only code that knows the path.  Cleanup hangs off close() because that is
+    the one call the server makes whether the client read the whole body,
+    disconnected half way, or errored.
+    """
+
+    def __init__(self, *args, cleanup_dir=None, **kwargs):
+        self._cleanup_dir = cleanup_dir
+        super().__init__(*args, **kwargs)
+
+    def close(self):
+        try:
+            super().close()
+        finally:
+            if self._cleanup_dir and os.path.isdir(self._cleanup_dir):
+                try:
+                    shutil.rmtree(self._cleanup_dir)
+                except Exception:
+                    logging.exception('Could not remove backup scratch directory %s',
+                                      self._cleanup_dir)
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_backup_download(request, kind):
+    """Build one backup and stream it, recording that it was taken.
+
+    Built on demand rather than served from a stored copy, because a stored
+    copy is a third thing to keep fresh and the whole point of this page is
+    that the fresh copy ends up on the administrator's own disk.
+    """
+    from . import admin_backups as backups
+
+    if kind not in backups.KINDS:
+        messages.error(request, 'Unknown backup type.')
+        return redirect('admin_backups')
+
+    workdir = backups.workspace()
+    try:
+        if kind == backups.SQLITE:
+            path, digest = backups.build_sqlite(workdir)
+            totals = backups.sqlite_totals()
+        else:
+            path, _manifest = backups.build_metadata(workdir)
+            digest = backups.sha256_of(path)
+            totals = backups.metadata_totals()
+    except Exception:
+        logging.exception('Could not build the %s backup', kind)
+        shutil.rmtree(workdir, ignore_errors=True)
+        messages.error(request, 'The backup could not be built. The server log '
+                                'has the reason.')
+        return redirect('admin_backups')
+
+    size = os.path.getsize(path)
+    try:
+        backups.record_download(kind, request.user.username, totals, size, digest)
+    except Exception:
+        # A recorded download that did not happen is a mild annoyance; an
+        # unrecorded one that did is how a backup's age becomes unknowable.
+        # Neither is worth withholding the file the administrator asked for.
+        logging.exception('Could not record the %s backup download', kind)
+
+    response = _TempDirFileResponse(
+        open(path, 'rb'), as_attachment=True,
+        filename=os.path.basename(path), cleanup_dir=workdir)
+    response['Content-Length'] = size
+    response['X-Content-SHA256'] = digest
     return response
 
 

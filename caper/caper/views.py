@@ -48,6 +48,8 @@ from .views_admin import (
     admin_audit_log,
     admin_audit_log_validate,
     admin_file_ownership,
+    admin_backups,
+    admin_backup_download,
 )
 
 # Import API views from separate module

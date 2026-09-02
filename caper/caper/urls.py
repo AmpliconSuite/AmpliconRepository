@@ -111,6 +111,9 @@ urlpatterns += [
     path('admin-prepare-shutdown/', views.admin_prepare_shutdown, name='admin_prepare_shutdown'),
     path('admin-project-files-report/', views.admin_project_files_report, name='admin_project_files_report'),
     path('admin-file-ownership/', views.admin_file_ownership, name='admin_file_ownership'),
+    path('admin-backups/', views.admin_backups, name='admin_backups'),
+    path('admin-backups/download/<str:kind>/', views.admin_backup_download,
+         name='admin_backup_download'),
     path('admin-audit-log/', views.admin_audit_log, name='admin_audit_log'),
     path('admin-audit-log/validate/', views.admin_audit_log_validate, name='admin_audit_log_validate'),
 
