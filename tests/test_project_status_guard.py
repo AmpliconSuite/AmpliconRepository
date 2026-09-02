@@ -144,6 +144,13 @@ ALLOWED = {
     ('backfill_project_status.py',
      "'current': 1, 'status': 1, 'date': 1}):"):
         "the rest of that projection",
+    ('backfill_project_status.py',
+     "'date': 1, 'linkid': 1, 'delete': 1,"):
+        "projection: the history pass reads status only to recognise a "
+        "tombstone, which is surfaced to readers by a different path",
+    ('backfill_project_status.py',
+     "'current': 1, 'status': 1}):"):
+        "the rest of that projection",
     ('purge-local-db.py',
      "if scope == 'current':"):
         "string comparison on a --reference-scope argument named 'current'",

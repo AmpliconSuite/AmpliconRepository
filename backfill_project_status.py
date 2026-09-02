@@ -448,9 +448,14 @@ def plan_history(projects):
     dropping it here would destroy the evidence.
     """
     by_id, plan = {}, []
+    # 'delete' and 'current' come back so a tombstone can be recognised, not to
+    # select documents: a deleted version is surfaced to a reader by
+    # redirect_to_project, which utils.previous_versions() merges in
+    # separately, so listing it here as well would show it twice.
     for doc in projects.find({}, {'previous_versions': 1, 'version_chain_id': 1,
                                   'version_ordinal': 1, 'project_name': 1,
-                                  'date': 1, 'linkid': 1}):
+                                  'date': 1, 'linkid': 1, 'delete': 1,
+                                  'current': 1, 'status': 1}):
         by_id[doc['_id']] = doc
 
     chains = {}
@@ -466,7 +471,8 @@ def plan_history(projects):
             named = {str(entry['linkid'])
                      for entry, _encoding in iter_previous_versions(doc)
                      if entry.get('linkid')}
-            missing = [m for m in expected if str(m['_id']) not in named]
+            missing = [m for m in expected if str(m['_id']) not in named
+                       and classify(by_id[m['_id']]) != TOMBSTONE]
             if not missing:
                 continue
             entries = list(doc.get('previous_versions') or [])
@@ -504,7 +510,7 @@ def apply_history(projects, plan, execute, rollback=None):
     return written, skipped
 
 
-def plan_pointers(projects):
+def plan_pointers(projects, rewrite=False):
     """(doc, fields) for every document that can be given lineage pointers.
 
     Also returns the chains it refused, each with the reason, because a chain
@@ -527,7 +533,7 @@ def plan_pointers(projects):
 
         for ordinal, doc_id in enumerate(ordered, start=1):
             doc = docs[doc_id]
-            if 'version_chain_id' in doc:
+            if 'version_chain_id' in doc and not rewrite:
                 continue
             plan.append((doc, {
                 'version_chain_id': chain_id,
@@ -742,6 +748,10 @@ def main():
                              'left. Running again with a larger N (or none) '
                              'picks up where this stopped, because a document '
                              'already written no longer appears in the plan.')
+    parser.add_argument('--rewrite-pointers', action='store_true',
+                        help='also re-plan documents that already have '
+                             'pointers, so a chain written by an earlier and '
+                             'wronger ordering is corrected')
     parser.add_argument('--refresh-status', action='store_true',
                         help="Also rewrite a stored 'status' that disagrees "
                              "with classify(). Needed where the backfill has "
@@ -812,7 +822,7 @@ def main():
         print('=' * 78)
         print('pointers -- lineage read off previous_versions[] and written down')
         print('=' * 78)
-        plan, refused = plan_pointers(projects)
+        plan, refused = plan_pointers(projects, args.rewrite_pointers)
         if refused:
             print('  %d chain(s) left alone -- the data does not order them:\n'
                   % len(refused))
