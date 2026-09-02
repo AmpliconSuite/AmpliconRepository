@@ -26,7 +26,6 @@
                     type: 'custom-date'
                 },
                 {
-                    // Sort Versions by its number, not the anchor text.
                     targets: 2,
                     type: 'num'
                 }
@@ -102,7 +101,8 @@
                           <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                         </td>
                         <td>{{ project.sample_count }}</td>
-                        <td>
+                        {# data-order, because the cell holds an <a>: type:'num' reads the markup and gets NaN. #}
+                        <td data-order="{{ project.version_count|default:0 }}">
                             {% if project.version_count %}
                                 {% if project.version_count > 1 %}
                                     <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}#headingPrevVersions"

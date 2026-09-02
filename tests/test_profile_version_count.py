@@ -102,6 +102,19 @@ def test_the_sample_count_still_has_a_cell():
     assert '<td>{{ project.sample_count }}</td>' in markup
 
 
+def test_the_versions_column_sorts_on_a_number_not_on_its_markup():
+    """The cell holds an anchor, so DataTables would sort the HTML.
+
+    ``type: 'num'`` reads the cell's contents, and the contents are
+    ``<a href=...>3</a>`` -- NaN, and comparisons against NaN are all false, so
+    clicking the header did nothing. ``data-order`` gives DataTables the number
+    directly and sidesteps the markup entirely. A project with no lineage
+    pointers orders as 0, which is where "cannot be read" belongs among counts.
+    """
+    markup = _profile_template()
+    assert 'data-order="{{ project.version_count|default:0 }}"' in markup
+
+
 def test_the_date_column_index_followed_the_new_column():
     """Adding a column at index 2 moved Date from 3 to 4.
 
