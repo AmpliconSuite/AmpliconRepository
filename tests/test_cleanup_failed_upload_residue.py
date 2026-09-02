@@ -20,7 +20,7 @@ import pytest
 from bson.objectid import ObjectId
 
 from cleanup_failed_upload_residue import (
-    DELETABLE, RETAINED, candidates, label_for, load_documents, still_deletable,
+    DELETABLE, RETAINED, Ownership, candidates, still_deletable,
 )
 from caper.gridfs_backlinks import (
     DOCUMENT_GONE, LIVE_FILE, TOMBSTONE_PAYLOAD, UNLABELLED,
@@ -103,9 +103,9 @@ def _project(projects, file_ids, *, project_id=None, tombstone=False):
 
 def _survey(projects, fs_files, **kwargs):
     kwargs.setdefault('min_age_hours', 24)
-    documents = load_documents(projects)
-    rows, skipped, census, _ = candidates(fs_files, documents, **kwargs)
-    return documents, rows, skipped, census
+    ownership = Ownership(projects)
+    rows, skipped, census, _ = candidates(fs_files, ownership, **kwargs)
+    return ownership, rows, skipped, census
 
 
 def test_the_failed_upload_wreckage_is_deletable(scratch):
@@ -192,11 +192,11 @@ def test_an_upload_in_flight_is_protected_by_the_age_guard(scratch):
     in_flight = _file(fs_files, owner=project_id, age_days=0)
     old_wreckage = _file(fs_files, owner=project_id, age_days=10)
 
-    documents, rows, skipped, _ = _survey(projects, fs_files, min_age_hours=24)
+    ownership, rows, skipped, _ = _survey(projects, fs_files, min_age_hours=24)
 
     assert [row['_id'] for row, _ in rows] == [old_wreckage]
     assert skipped == 1
-    assert label_for(fs_files.find_one({'_id': in_flight}), documents) \
+    assert ownership.label(fs_files.find_one({'_id': in_flight})) \
         == UNREFERENCED_BY_ITS_DOCUMENT
 
 
@@ -207,14 +207,14 @@ def test_a_document_claiming_the_file_stops_the_delete(scratch):
     file_id = _file(fs_files, owner=project_id)
     _project(projects, [], project_id=project_id)
 
-    documents = load_documents(projects)
-    assert still_deletable(fs_files, documents, file_id)[0] is True
+    ownership = Ownership(projects)
+    assert still_deletable(fs_files, ownership, file_id)[0] is True
 
     projects.update_one({'_id': project_id},
                         {'$set': {'runs.sample_1': [{'AA directory': file_id}]}})
-    documents = load_documents(projects)                  # re-read, as main() does
+    ownership.refresh()                     # what main() does inside the loop
 
-    ok, why = still_deletable(fs_files, documents, file_id)
+    ok, why = still_deletable(fs_files, ownership, file_id)
     assert ok is False
     assert why == 'now classified %s' % LIVE_FILE
 
@@ -222,10 +222,10 @@ def test_a_document_claiming_the_file_stops_the_delete(scratch):
 def test_a_vanished_row_stops_the_delete(scratch):
     projects, fs_files = scratch
     file_id = _file(fs_files, owner=ObjectId())
-    documents = load_documents(projects)
+    ownership = Ownership(projects)
     fs_files.delete_one({'_id': file_id})
 
-    assert still_deletable(fs_files, documents, file_id) == (False, 'row is gone')
+    assert still_deletable(fs_files, ownership, file_id) == (False, 'row is gone')
 
 
 def test_the_underscore_spelling_still_protects_its_file(scratch):
@@ -343,3 +343,77 @@ def test_nothing_to_delete_is_not_an_error(scratch, tmp_path, monkeypatch):
     assert code == 0
     assert fs_files.count_documents({}) == 1
     assert not (tmp_path / 'undo.jsonl').exists()
+
+
+def test_a_file_another_document_names_is_never_deletable(scratch):
+    """The defect that made the first version of this script unsafe.
+
+    A file document A genuinely references, whose metadata points at B. Reading
+    the backlink and asking only B produces "unreferenced-by-its-document" and
+    deletes A's live payload. `gridfs_backlinks` forbids exactly this: "nothing
+    may decide to delete a file because its metadata says it is orphaned."
+
+    Demonstrated against the previous implementation on 2026-09-02, before it
+    had deleted anything.
+    """
+    projects, fs_files = scratch
+    a, b = ObjectId(), ObjectId()
+    misattributed = _file(fs_files, owner=b)   # the backlink lies
+    _project(projects, [misattributed], project_id=a)   # A actually names it
+    _project(projects, [], project_id=b)                # B names nothing
+
+    ownership, rows, _, census = _survey(projects, fs_files)
+
+    assert rows == [], 'a file another document names must never be a candidate'
+    assert ownership.label(fs_files.find_one({'_id': misattributed})) == LIVE_FILE
+    assert census[LIVE_FILE] == 1
+
+
+def test_the_second_ask_re_walks_the_documents(scratch, tmp_path, monkeypatch):
+    """A document claiming a file mid-run must stop its delete, end to end.
+
+    The previous version passed `still_deletable` the survey's frozen snapshot,
+    so the second ask could not see the one thing it exists to catch. Its test
+    passed only because the test re-walked by hand where main() did not.
+    """
+    import cleanup_failed_upload_residue as cleanup
+    projects, fs_files = scratch
+    project_id = ObjectId()
+    first = _file(fs_files, owner=project_id)
+    rescued = _file(fs_files, owner=project_id)
+    _project(projects, [], project_id=project_id)
+
+    monkeypatch.setattr(cleanup, 'REFRESH_EVERY', 1)
+
+    real_delete = cleanup.delete_gridfs_file_in_batches
+
+    def claim_then_delete(files, chunks, file_id):
+        # The moment the first file goes, the document claims the second.
+        projects.update_one({'_id': project_id},
+                            {'$set': {'runs.sample_1': [{'AA directory': rescued}]}})
+        return real_delete(files, chunks, file_id)
+
+    monkeypatch.setattr(cleanup, 'delete_gridfs_file_in_batches', claim_then_delete)
+
+    code = _patched_main(monkeypatch, projects, fs_files,
+                         ['--expect-db', projects.database.name, '--execute',
+                          '--undo-record', str(tmp_path / 'undo.jsonl')])
+
+    assert code == 0
+    surviving = {row['_id'] for row in fs_files.find({}, {'_id': 1})}
+    assert rescued in surviving, 'the claimed file must survive'
+    assert first not in surviving, 'the genuinely orphaned file should still go'
+
+
+def test_a_tombstone_claim_does_not_read_as_live(scratch):
+    """A live claim beats a tombstone claim; a tombstone-only file is reported."""
+    projects, fs_files = scratch
+    tomb = ObjectId()
+    held = _file(fs_files, owner=tomb)
+    _project(projects, [held], project_id=tomb, tombstone=True)
+
+    ownership, rows, _, census = _survey(projects, fs_files)
+
+    assert rows == []
+    assert ownership.label(fs_files.find_one({'_id': held})) == TOMBSTONE_PAYLOAD
+    assert census[TOMBSTONE_PAYLOAD] == 1

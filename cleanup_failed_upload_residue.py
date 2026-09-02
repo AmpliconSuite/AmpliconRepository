@@ -15,6 +15,20 @@ before failing, and the remaining 2,695 were orphaned on the spot -- 330 + 2,695
 being exactly the count the successful retry recorded. No deletion was involved.
 Deletes are not the orphan factory; interrupted uploads are.
 
+**Authority runs documents -> files, and the backlink never decides.**
+``gridfs_backlinks`` states the rule its own header sets: "nothing may decide to
+delete a file because its metadata says it is orphaned." The first version of
+this script broke exactly that -- it read the backlink, looked up the one
+document that backlink named, and deleted the file if *that* document did not
+reference it, never asking whether any other document did. A file whose metadata
+pointed at the wrong project was therefore deletable while its real owner still
+named it, which was demonstrated against this code on 2026-09-02 before it had
+deleted anything.
+
+So a file is a candidate only if **no document names it**, computed by walking
+every document through ``iter_backlinks``. The backlink is then used for the
+question it can answer -- *why* is this unreferenced -- and never for whether.
+
 **What is deleted, and what is not.** The label comes from
 ``gridfs_backlinks.classify_file``, the same pure predicate the orphan report
 uses -- not a second copy of the rule, which is the defect this codebase
@@ -38,8 +52,11 @@ duration of an ingestion its files are *correctly* labelled
 live upload. Do not lower it.
 
 **Ownership is asked twice**, as in the sweeper: once to build the list, then
-again per file immediately before its delete, because the document may have
-claimed the file in between.
+again per file immediately before its delete, because a document may have
+claimed the file in between. The second ask re-walks the documents rather than
+consulting the first walk's snapshot -- reusing the snapshot made the second ask
+incapable of noticing the very thing it exists to catch, which is how the first
+version of this file shipped.
 
 The undo record holds each row's id, length and metadata, so what went is
 auditable and identifiable. **The bytes are not recoverable from it** -- only a
@@ -96,20 +113,67 @@ def connect(expect_db):
     return db
 
 
-def load_documents(projects, progress=None):
-    """``{document_id: (document, referenced_ids)}`` for every project document.
+#: Files between refreshes of the ownership walk during a delete run. The walk
+#: is seconds on 240 documents, and --max-delete bounds a run to a few thousand
+#: files, so this is a handful of walks per run rather than hundreds.
+REFRESH_EVERY = 500
 
-    Held in memory deliberately: ``classify_file`` takes the document and the
-    ids it names rather than querying, so that it stays pure and testable, and
-    re-reading a document per file would be a query per row.
+
+class Ownership:
+    """Which files any document names, recomputed on demand.
+
+    This is the authority for retention. ``gridfs_backlinks``'s header states
+    the rule -- a file is retained because a retained document names it, and the
+    metadata is an index into that fact, never a substitute for it -- and this
+    class is what makes the rule enforceable here rather than merely quoted.
+
+    ``owned_live`` and ``owned_tombstone`` are kept apart so a file held only by
+    a tombstone can be reported as the unfinished deletion it is. A live claim
+    beats a tombstone claim, as in ``gridfs_ownership.survey``.
     """
-    documents = {}
-    for n, document in enumerate(projects.find({}), 1):
-        documents[document['_id']] = (
-            document, {file_id for file_id, _, _ in iter_backlinks(document)})
-        if progress and n % 25 == 0:
-            progress(n)
-    return documents
+
+    def __init__(self, projects, progress=None):
+        self._projects = projects
+        self._progress = progress
+        self.refresh()
+
+    def refresh(self):
+        from caper.project_status import TOMBSTONE, classify
+        documents, live, tombstone = {}, set(), set()
+        for n, document in enumerate(self._projects.find({}), 1):
+            names = {file_id for file_id, _, _ in iter_backlinks(document)}
+            documents[document['_id']] = (document, names)
+            if classify(document) == TOMBSTONE:
+                tombstone |= names
+            else:
+                live |= names
+            if self._progress and n % 25 == 0:
+                self._progress(n)
+        self.documents = documents
+        self.owned_live = live
+        self.owned_tombstone = tombstone
+
+    def label(self, row):
+        """Classify one ``fs.files`` row. Documents decide; the backlink explains.
+
+        The membership test against the *whole* owned set comes first and is the
+        entire safety property: only once no document anywhere names the file
+        does the backlink get consulted, and then only to say why.
+        """
+        file_id = row['_id']
+        if file_id in self.owned_live:
+            return LIVE_FILE
+        if file_id in self.owned_tombstone:
+            return TOMBSTONE_PAYLOAD
+
+        metadata = row.get(METADATA_FIELD)
+        named = (metadata or {}).get(PROJECT_ID)
+        document, referenced = None, frozenset()
+        if named is not None:
+            entry = self.documents.get(as_object_id(named)) or self.documents.get(named)
+            if entry is not None:
+                document, referenced = entry
+        return classify_file(file_id, metadata, document, referenced)
 
 
 def _uploaded_at(row):
@@ -124,19 +188,7 @@ def _uploaded_at(row):
     return row['_id'].generation_time
 
 
-def label_for(row, documents):
-    """Classify one ``fs.files`` row against the loaded documents."""
-    metadata = row.get(METADATA_FIELD)
-    named = (metadata or {}).get(PROJECT_ID)
-    document, referenced = None, set()
-    if named is not None:
-        entry = documents.get(as_object_id(named)) or documents.get(named)
-        if entry is not None:
-            document, referenced = entry
-    return classify_file(row['_id'], metadata, document, referenced)
-
-
-def candidates(fs_files, documents, *, min_age_hours):
+def candidates(fs_files, ownership, *, min_age_hours):
     """Rows safe to consider, plus the census of everything examined."""
     cutoff = (datetime.datetime.now(datetime.timezone.utc)
               - datetime.timedelta(hours=min_age_hours))
@@ -145,7 +197,7 @@ def candidates(fs_files, documents, *, min_age_hours):
     found, skipped_recent = [], 0
     projection = {'length': 1, 'filename': 1, 'uploadDate': 1, METADATA_FIELD: 1}
     for row in fs_files.find({}, projection):
-        label = label_for(row, documents)
+        label = ownership.label(row)
         census[label] += 1
         bytes_by_label[label] += row.get('length') or 0
         if label not in DELETABLE:
@@ -157,18 +209,17 @@ def candidates(fs_files, documents, *, min_age_hours):
     return found, skipped_recent, census, bytes_by_label
 
 
-def still_deletable(fs_files, documents, file_id):
+def still_deletable(fs_files, ownership, file_id):
     """Ask again for one file, immediately before deleting it.
 
-    Re-reads the row so that a document claiming the file between the survey and
-    now takes it back. *documents* is re-consulted rather than trusted from the
-    first pass for the same reason.
+    *ownership* must be as fresh as the caller can make it: the point of this
+    second ask is a document claiming the file since the survey, and a stale
+    walk cannot see that. The caller refreshes every ``REFRESH_EVERY`` files.
     """
-    row = fs_files.find_one({'_id': file_id},
-                            {METADATA_FIELD: 1, 'length': 1})
+    row = fs_files.find_one({'_id': file_id}, {METADATA_FIELD: 1, 'length': 1})
     if row is None:
         return False, 'row is gone'
-    label = label_for(row, documents)
+    label = ownership.label(row)
     if label not in DELETABLE:
         return False, 'now classified %s' % label
     return True, label
@@ -214,12 +265,12 @@ def main(argv=None):
     projects, fs_files = db['projects'], db['fs.files']
     print('target: %s   %s' % (db.name, 'EXECUTE' if args.execute else 'REPORT-ONLY'))
 
-    documents = load_documents(
-        projects, lambda n: print('  %d document(s) loaded' % n))
-    print('\n%d project document(s) loaded' % len(documents))
+    ownership = Ownership(projects, lambda n: print('  %d document(s) walked' % n))
+    print('\n%d project document(s); %d file(s) named by a live document'
+          % (len(ownership.documents), len(ownership.owned_live)))
 
     rows, skipped_recent, census, bytes_by_label = candidates(
-        fs_files, documents, min_age_hours=args.min_age_hours)
+        fs_files, ownership, min_age_hours=args.min_age_hours)
 
     print('\n%-32s %10s %12s' % ('label', 'files', 'bytes'))
     for label in DELETABLE + RETAINED:
@@ -270,9 +321,14 @@ def main(argv=None):
 
     deleted = deleted_bytes = kept = 0
     by_label = collections.Counter()
-    for row, label in rows:
+    for index, (row, label) in enumerate(rows):
         file_id = row['_id']
-        ok, why = still_deletable(fs_files, documents, file_id)
+        # Re-walk the documents periodically: the second ask exists to catch a
+        # document claiming the file since the survey, and the first walk's
+        # snapshot cannot see that however often it is consulted.
+        if index and index % REFRESH_EVERY == 0:
+            ownership.refresh()
+        ok, why = still_deletable(fs_files, ownership, file_id)
         if not ok:
             kept += 1
             print('  keeping %s: %s' % (file_id, why))
