@@ -68,19 +68,42 @@ def payload_ids_to_purge(victim, protected_file_ids=None):
     return wanted
 
 
-def _clear_pending(victim_id, file_ids):
-    """Take *file_ids* off the tombstone's pending list, and the claim with it."""
+#: How many files are deleted between updates to the pending list.  Small
+#: enough that the list is a live progress reading rather than an all-or-
+#: nothing flag, and that a resume picks up near where the last pass stopped
+#: instead of retrying every id.  At the ~9 files/s measured on dev this is an
+#: update every half minute or so, against a purge that runs for half an hour.
+PURGE_PROGRESS_BATCH = 250
+
+
+def _chunks(items, size):
+    for start in range(0, len(items), size):
+        yield items[start:start + size]
+
+
+def _pull_purged(victim_id, file_ids):
+    """Take the ids just deleted off the tombstone's pending list."""
     try:
         from .utils import collection_handle
         collection_handle.update_one(
             {'_id': ObjectId(str(victim_id))},
-            {'$pull': {PENDING_PAYLOAD_KEY: {'$in': list(file_ids)}},
-             '$unset': {PURGE_CLAIM_KEY: ''}})
+            {'$pull': {PENDING_PAYLOAD_KEY: {'$in': list(file_ids)}}})
     except Exception:
         logging.exception(
-            "Could not clear the pending payload list of %s; the purge itself "
-            "may have succeeded, and a later resume will retry the ids that "
-            "are already gone, which is harmless.", victim_id)
+            "Could not shorten the pending payload list of %s; the deletes "
+            "themselves may have succeeded, and a later resume will retry ids "
+            "that are already gone, which is harmless.", victim_id)
+
+
+def _release_claim(victim_id):
+    """Drop the claim once there is nothing left to purge."""
+    try:
+        from .utils import collection_handle
+        collection_handle.update_one(
+            {'_id': ObjectId(str(victim_id))},
+            {'$unset': {PURGE_CLAIM_KEY: ''}})
+    except Exception:
+        logging.exception("Could not release the purge claim on %s", victim_id)
 
 
 def _run(victim_id, file_ids, delete_event, outcome, confirm_extra):
@@ -92,19 +115,26 @@ def _run(victim_id, file_ids, delete_event, outcome, confirm_extra):
     """
     from .utils import delete_gridfs_file
 
-    result = delete_payload_file_ids(delete_gridfs_file, file_ids,
-                                     owner=victim_id)
-    _clear_pending(victim_id, file_ids)
+    file_ids = list(file_ids)
+    deleted = 0
+    # Batched so the pending list is a progress reading and not a flag. A purge
+    # of 15,733 files runs for about half an hour, and while it does the only
+    # honest answer to "how far has it got" should come from the document.
+    for batch in _chunks(file_ids, PURGE_PROGRESS_BATCH):
+        deleted += delete_payload_file_ids(delete_gridfs_file, batch,
+                                           owner=victim_id).deleted
+        _pull_purged(victim_id, batch)
+    _release_claim(victim_id)
     logging.info("Purged %d GridFS file(s) of deleted version %s",
-                 result.deleted, victim_id)
+                 deleted, victim_id)
 
     if delete_event is not None:
         from .utils import audit_log_handle
         provenance.confirm(audit_log_handle, delete_event,
                            outcome=outcome,
-                           gridfs_files_purged=result.deleted,
+                           gridfs_files_purged=deleted,
                            **(confirm_extra or {}))
-    return result.deleted
+    return deleted
 
 
 def start(victim_id, file_ids, delete_event=None, outcome=None, **confirm_extra):

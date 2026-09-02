@@ -119,9 +119,11 @@ def test_the_purge_deletes_clears_the_pending_list_and_confirms(purge_env):
     assert purge_env['deleted'] == ids
     assert purge_env['confirmed'] == [('event-1', {'outcome': 'tombstoned_in_place',
                                                    'gridfs_files_purged': 2})]
-    query, update = purge_env['collection'].updates[-1]
-    assert update['$pull'][PENDING_PAYLOAD_KEY]['$in'] == ids
-    assert PURGE_CLAIM_KEY in update['$unset']
+    pulled = [i for _q, u in purge_env['collection'].updates if '$pull' in u
+              for i in u['$pull'][PENDING_PAYLOAD_KEY]['$in']]
+    assert pulled == ids
+    assert any('$unset' in u and PURGE_CLAIM_KEY in u['$unset']
+               for _q, u in purge_env['collection'].updates)
 
 
 def test_a_version_with_no_payload_still_confirms_its_event(purge_env):
@@ -247,3 +249,32 @@ def test_a_worker_resumes_pending_purges_when_it_boots():
 
     assert 'def post_fork(' in source
     assert 'resume_pending' in source
+
+
+def test_the_pending_list_shrinks_as_the_purge_runs(purge_env, monkeypatch):
+    """A purge of 15,733 files runs for about half an hour.
+
+    While it does, "how far has it got" has to be answerable from the document.
+    Clearing the whole list only at the end made it a flag, not a reading -- and
+    made a resume retry every id rather than the ones still left.
+    """
+    monkeypatch.setattr(version_purge, 'PURGE_PROGRESS_BATCH', 2)
+    ids = [ObjectId() for _ in range(5)]
+
+    version_purge.start(str(ObjectId()), ids, None)
+
+    pulls = [u['$pull'][PENDING_PAYLOAD_KEY]['$in']
+             for _q, u in purge_env['collection'].updates if '$pull' in u]
+    assert [len(p) for p in pulls] == [2, 2, 1]
+    assert [i for p in pulls for i in p] == ids
+
+
+def test_the_claim_is_only_released_when_the_purge_is_done(purge_env, monkeypatch):
+    """Releasing it per batch would let a second worker take a running purge."""
+    monkeypatch.setattr(version_purge, 'PURGE_PROGRESS_BATCH', 2)
+
+    version_purge.start(str(ObjectId()), [ObjectId() for _ in range(5)], None)
+
+    updates = purge_env['collection'].updates
+    releases = [n for n, (_q, u) in enumerate(updates) if '$unset' in u]
+    assert releases == [len(updates) - 1]
