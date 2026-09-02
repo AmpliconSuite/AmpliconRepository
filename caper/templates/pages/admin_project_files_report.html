@@ -478,7 +478,10 @@
                                 <span class="badge badge-secondary">{{ proj.visibility_display }}</span>
                             {% endif %}
                         </td>
-                        <td class="uuid-cell">
+                        {# data-order/data-search keep the column sorting and filtering on the id, not on the anchor markup. #}
+                        <td class="uuid-cell"
+                            data-order="{{ proj.project_name_unique|default:proj.id_str }}"
+                            data-search="{{ proj.project_name_unique|default:proj.id_str }}">
                             <a href="{% url 'project_page' project_name=proj.linkid %}" target="_blank"
                                title="Open this project" onclick="event.stopPropagation();">{{ proj.project_name_unique|default:proj.id_str }}</a>
                         </td>
