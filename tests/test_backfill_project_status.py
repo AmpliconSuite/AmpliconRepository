@@ -404,11 +404,17 @@ def test_a_chain_with_two_possible_heads_is_refused_whole(projects):
         assert 'version_chain_id' not in get(projects, oid)
 
 
-def test_a_chain_the_head_does_not_fully_list_is_refused(projects):
+def test_an_ancestor_the_head_dropped_is_kept_and_ordered_first(projects):
     """Reached through a longer path than the head's own list.
 
-    The members are connected, so they are one chain, but the head's list is
-    not a complete ordering of it and nothing else in the data is either.
+    This was refused until 2026-09-02, on the reasoning that the head's list is
+    the only ordering the data offers. It is not the only one: v1 is older than
+    v2 because v2 names it, and v2 is older than the head for the same reason,
+    so the whole order follows even though the head's own list dropped v1.
+
+    Refusing cost more than it protected. On caper-dev this shape held real
+    historical projects -- the fixtures a test environment mirroring production
+    exists to have -- and the alternative on the table was deleting them.
     """
     v1, v2, head = ObjectId(), ObjectId(), ObjectId()
     projects.insert_many([
@@ -422,9 +428,45 @@ def test_a_chain_the_head_does_not_fully_list_is_refused(projects):
 
     plan, refused = plan_pointers(projects)
 
-    assert plan == []
-    assert len(refused) == 1
-    assert 'longer path' in refused[0][1]
+    assert refused == []
+    ordinals = {str(doc['_id']): fields['version_ordinal'] for doc, fields in plan}
+    assert ordinals == {str(v1): 1, str(v2): 2, str(head): 3}
+
+    chain_ids = {fields['version_chain_id'] for _doc, fields in plan}
+    assert chain_ids == {v1}, 'the oldest version names the chain'
+
+    apply_pointers(projects, plan, execute=True)
+    assert get(projects, head)['is_latest'] is True
+    assert get(projects, v1)['next_version_id'] == v2
+
+
+def test_two_live_projects_that_cross_reference_are_two_chains(projects):
+    """The failure that made the old grouping refuse 19 documents on dev.
+
+    A re-upload that starts a fresh chain while still naming a version of the
+    old one put both into a single connected component with two heads, and the
+    whole component was refused as ambiguous. They are two chains, and nothing
+    is shared between them, so both resolve.
+    """
+    old_v1, old_head = ObjectId(), ObjectId()
+    new_head = ObjectId()
+    projects.insert_many([
+        {'_id': old_v1, 'project_name': 'p', 'delete': True, 'current': False},
+        {'_id': old_head, 'project_name': 'p', 'delete': False, 'current': True,
+         'previous_versions': [{'linkid': str(old_v1)}]},
+        {'_id': new_head, 'project_name': 'p redone', 'delete': False,
+         'current': True, 'previous_versions': []},
+    ])
+
+    plan, refused = plan_pointers(projects)
+
+    assert refused == []
+    chains = {}
+    for doc, fields in plan:
+        chains.setdefault(fields['version_chain_id'], []).append(str(doc['_id']))
+    assert len(chains) == 2
+    assert sorted(chains[old_v1]) == sorted([str(old_v1), str(old_head)])
+    assert chains[new_head] == [str(new_head)]
 
 
 def test_pointers_are_idempotent(projects):

@@ -281,27 +281,68 @@ def build_chains(projects):
         ancestors[doc_id] = [str(entry['linkid'])
                              for entry, _encoding in iter_previous_versions(doc)]
 
-    parent = {}
-
-    def find(key):
-        parent.setdefault(key, key)
-        while parent[key] != key:
-            parent[key] = parent[parent[key]]
-            key = parent[key]
-        return key
-
     for doc_id in docs:
-        find(doc_id)
         for linkid in ancestors[doc_id]:
             if linkid in docs:
                 named_by.setdefault(linkid, []).append(doc_id)
-                a, b = find(doc_id), find(linkid)
-                if a != b:
-                    parent[a] = b
+
+    # A chain is what one head reaches, not what union-find merges.
+    #
+    # The earlier version grouped by connected component over previous_versions[]
+    # references. That is wrong whenever two live projects reference each other's
+    # history -- a re-upload that starts a fresh chain while still naming an old
+    # version merges two real chains into one component with two heads, and the
+    # ordering step then refuses it as ambiguous. Measured on caper-dev
+    # 2026-09-02: five components held 19 documents, and every one of them was
+    # two or more separable chains rather than one broken chain. Those documents
+    # are historical fixtures that a test environment mirroring production is
+    # supposed to have, so refusing them was the expensive answer.
+    #
+    # Reaching is transitive because a version that dropped an ancestor from its
+    # own list still reaches it through the version in between.
+    heads = [doc_id for doc_id in docs if not named_by.get(doc_id)]
+
+    def reaches(head):
+        seen, stack = set(), [head]
+        while stack:
+            node = stack.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            for linkid in ancestors.get(node, ()):
+                if linkid in docs and linkid not in seen:
+                    stack.append(linkid)
+        return seen
+
+    reached = {head: reaches(head) for head in heads}
+
+    # A document two heads both reach is a fork, and a fork is the one thing
+    # here that is genuinely ambiguous: nothing in the data says which branch is
+    # the real history, and the ordinals of everything below the fork depend on
+    # the answer. Those heads are merged back into a single group so that the
+    # ordering step sees more than one head and refuses the whole thing -- the
+    # members below the fork must not be given ordinals either.
+    groups = []
+    for head, members in reached.items():
+        merged = [head]
+        for other in list(groups):
+            if members & set().union(*(reached[h] for h in other)):
+                merged.extend(other)
+                groups.remove(other)
+        groups.append(merged)
 
     chains = {}
-    for doc_id in docs:
-        chains.setdefault(find(doc_id), []).append(doc_id)
+    for group in groups:
+        key = min(group)
+        chains[key] = sorted(set().union(*(reached[h] for h in group)))
+
+    # Anything no head reaches is in a reference cycle, so it has no head at
+    # all. Grouped together rather than dropped, so the ordering step refuses it
+    # out loud instead of it vanishing from both the plan and the report.
+    unreached = sorted(set(docs) - {m for members in chains.values() for m in members})
+    if unreached:
+        chains['cycle:%s' % unreached[0]] = unreached
+
     return docs, ancestors, named_by, chains
 
 
@@ -322,16 +363,22 @@ def order_chain(members, docs, ancestors, named_by):
                       'has %d possible heads' % (len(heads), len(heads)))
 
     head = heads[0]
-    listed = [m for m in ancestors[head] if m in docs]
-    missing = set(members) - set(listed) - {head}
-    if missing:
-        return None, ("the head lists %d of the chain's %d other members; %s "
-                      "reached it through a longer path"
-                      % (len(listed), len(members) - 1, ', '.join(sorted(missing))))
+    listed = [m for m in ancestors[head] if m in docs and m in set(members)]
     if len(set(listed)) != len(listed):
         return None, 'the head lists the same version more than once'
 
-    return listed + [head], None
+    # An ancestor the head reaches but does not list itself: some intermediate
+    # version named it and the head's own list dropped it. It is still part of
+    # this history and goes in front of everything the head does list, because
+    # the only thing known about it is that it is older than the version that
+    # named it. Ties are broken by date, then by id, so a re-run orders the
+    # same way and the ordinals are stable.
+    unlisted = sorted(set(members) - set(listed) - {head},
+                      key=lambda m: (str(docs[m].get('date') or ''), m))
+    if not listed and not unlisted:
+        return [head], None
+
+    return unlisted + listed + [head], None
 
 
 def plan_pointers(projects):
