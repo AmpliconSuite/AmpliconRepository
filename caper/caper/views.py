@@ -73,7 +73,7 @@ from .download_gate import (
 
 # Import utils functions
 from .utils import (
-    collection_handle, collection_handle_primary, current_flags, fs_handle,
+    collection_handle, collection_handle_primary, db_handle_primary, current_flags, fs_handle,
     audit_log_handle,
     get_one_project, get_one_sample, get_one_sample_rows, get_one_deleted_project,
     prepare_project_linkid, check_if_db_field_exists,
@@ -88,6 +88,7 @@ from .utils import (
 from .tar_safety import safe_extract_member, safe_extractall
 from .aggregation_failure import aggregation_error_message
 from .gridfs_backlinks import put_with_backlink
+from .upload_cleanup import discard_failed_upload_payload
 from .project_status import (
     DELETE_FLAG_QUERY,
     LIVE,
@@ -4898,6 +4899,19 @@ def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
     return True
 
 
+
+def _discard_failed_upload(temp_proj_id, rollback_project_id=None):
+    """Remove what this upload stored before it failed.
+
+    Called from every failure site in _process_and_aggregate_files. Only the
+    exception class of failure reaches here; a killed worker runs no failure
+    path, and the weekly sweep is the backstop for that.
+    """
+    return discard_failed_upload_payload(
+        collection_handle_primary, db_handle_primary['fs.files'],
+        delete_gridfs_file, temp_proj_id, rollback_project_id)
+
+
 def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None, exclude_samples=None, empty_edit=False):
     """
     Background thread function to process files and run aggregator.
@@ -4994,6 +5008,12 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         except Exception as upd_err:
             logging.error(f"Failed to update failed placeholder {failed_placeholder_id}: {upd_err}")
 
+        # Last, after the old version is safely back: remove what the failed
+        # version stored. The restored project is read fresh inside, so any
+        # file it still names is kept -- the rollback target must not lose
+        # payload to the cleanup of the version that replaced it.
+        _discard_failed_upload(failed_placeholder_id, old_project_id)
+
     try:
         logging.info(f"_process_and_aggregate_files - start")
 
@@ -5017,6 +5037,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                         {"$set": {'FINISHED?': True,
                                   'aggregation_failed': True,
                                   'error_message': _err_msg}})
+                    _discard_failed_upload(temp_proj_id)
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory, ignore_errors=True)
             return
@@ -5074,6 +5095,10 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                         'error_message': _err_msg,
                     }}
                 )
+                # Remove what this upload already stored. Only the exception
+                # class of failure reaches here: a killed worker runs no failure
+                # path at all, and the weekly sweep is the backstop for that.
+                _discard_failed_upload(temp_proj_id)
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
             logging.error(f"Aggregation failed for project {temp_proj_id}")
@@ -5141,6 +5166,10 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                         'error_message': _err_msg,
                     }}
                 )
+                # Remove what this upload already stored. Only the exception
+                # class of failure reaches here: a killed worker runs no failure
+                # path at all, and the weekly sweep is the backstop for that.
+                _discard_failed_upload(temp_proj_id)
             if os.path.exists(temp_directory):
                 shutil.rmtree(temp_directory)
             logging.error(f"Form validation failed for project {temp_proj_id}")
@@ -5214,6 +5243,10 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                         'error_message': _err_msg,
                     }}
                 )
+                # Remove what this upload already stored. Only the exception
+                # class of failure reaches here: a killed worker runs no failure
+                # path at all, and the weekly sweep is the backstop for that.
+                _discard_failed_upload(temp_proj_id)
             logging.error(f"Project creation failed for {temp_proj_id}")
             # _create_project did not reach the upload step so log here directly
             if audit_event_type is not None:
@@ -5278,6 +5311,10 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                         'error_message': _err_msg,
                     }}
                 )
+                # Remove what this upload already stored. Only the exception
+                # class of failure reaches here: a killed worker runs no failure
+                # path at all, and the weekly sweep is the backstop for that.
+                _discard_failed_upload(temp_proj_id)
             except:
                 pass
 
