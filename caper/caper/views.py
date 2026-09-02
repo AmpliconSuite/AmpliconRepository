@@ -111,7 +111,6 @@ from . import download_totals, lineage, project_fields, provenance
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
-    delete_gridfs_payload_for_project,
     discard_unrecorded_gridfs_files,
     iter_gridfs_file_ids,
     retarget_deleted_version_tombstones,
