@@ -1075,13 +1075,21 @@ what remains and submitting again continues from here.
 """
 
 
-def delete_selected_projects(project_ids, time_budget=BULK_DELETE_TIME_BUDGET):
+def delete_selected_projects(project_ids, time_budget=BULK_DELETE_TIME_BUDGET,
+                             user=None):
     """
     Permanently delete each project in *project_ids*, and return a message.
 
     One project failing does not abandon the rest: a batch is only useful if a
     single bad document costs one row rather than the whole selection, and the
     caller cannot tell in advance which documents carry a defect.
+
+    Every delete writes a provenance event before it happens, the same as the
+    single-project path. This path did not, and it is the path that does the
+    deleting: on prod, 71 projects were permanently deleted through it and the
+    audit log holds 5 permanent_delete events, all from the single-project
+    button. Measured 2026-09-02. Phase 3 exists because deletion used to write
+    nothing at all, and the bulk button was still in that state.
     """
     started = time.monotonic()
     deleted = 0
@@ -1105,16 +1113,30 @@ def delete_selected_projects(project_ids, time_budget=BULK_DELETE_TIME_BUDGET):
                 problems.append(f"{project_id} (not found, or no longer flagged deleted)")
                 continue
             name = project.get('project_name', project_id)
+            # Recorded before the work, so a delete that dies half way leaves a
+            # trace: afterwards there is no document left to ask what happened
+            # to it, which is the whole reason this event exists.
+            purge_event = provenance.record(
+                audit_log_handle, provenance.PERMANENT_DELETE, user, project,
+                intended={'status': None, 'documents_removed': True})
             try:
                 outcome = permanently_delete_with_history(project_id, project, name)
             except Exception:
                 logging.exception(f"Permanent delete failed for project {project_id} ({name}).")
+                provenance.confirm(audit_log_handle, purge_event,
+                                   outcome='failed',
+                                   error_message='exception during delete')
                 problems.append(name)
                 continue
             if outcome and PARTIAL_DELETE_MARKER in str(outcome):
+                provenance.confirm(audit_log_handle, purge_event,
+                                   outcome='failed', error_message=str(outcome))
                 partial.append(name)
                 unattempted = len(project_ids) - index - 1
                 break
+            provenance.confirm(audit_log_handle, purge_event,
+                               outcome='failed' if outcome else 'removed',
+                               error_message=str(outcome) if outcome else None)
             deleted += 1
 
     message = f"Permanently deleted {deleted} of {len(project_ids)} selected project(s)."
@@ -1142,7 +1164,8 @@ def admin_delete_project(request):
     if request.method == "POST" and request.POST.get('action') == 'delete-selected':
         # Read straight from POST: DeletedProjectForm describes a single
         # project, and this action carries a list instead.
-        error_message = delete_selected_projects(request.POST.getlist('project_ids'))
+        error_message = delete_selected_projects(
+            request.POST.getlist('project_ids'), user=request.user)
 
     elif request.method == "POST":
         form = DeletedProjectForm(request.POST)

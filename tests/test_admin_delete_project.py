@@ -381,3 +381,41 @@ def test_the_bulk_action_does_not_go_through_the_single_project_form(
 
     assert response.status_code == 200
     assert project_id in deletions
+
+
+def test_the_bulk_delete_writes_a_provenance_event(projects, deletions):
+    """The path that does the deleting was the one not recording it.
+
+    Measured on prod 2026-09-02: 71 projects had been permanently deleted and
+    the audit log held 5 permanent_delete events, all of them from the
+    single-project button. Phase 3 exists because deletion used to write
+    nothing at all; this button was still in that state, and afterwards there
+    is no document left to ask what happened.
+    """
+    from caper import provenance
+    from caper.utils import audit_log_handle
+    from caper.views_admin import delete_selected_projects
+
+    class _User:
+        username = 'bulk-delete-tester'
+        email = 'bulk@example.com'
+        is_staff = True
+
+    ids = [str(projects(f'-prov-{n}')) for n in range(2)]
+    before = audit_log_handle.count_documents(
+        {'event_type': provenance.PERMANENT_DELETE})
+
+    delete_selected_projects(ids, user=_User())
+
+    after = audit_log_handle.count_documents(
+        {'event_type': provenance.PERMANENT_DELETE})
+    assert after - before == 2, 'one event per project deleted'
+
+    for project_id in ids:
+        event = audit_log_handle.find_one(
+            {'event_type': provenance.PERMANENT_DELETE,
+             'project_uuid': project_id},
+            sort=[('_id', -1)])
+        assert event is not None, f'no event for {project_id}'
+        assert event.get('outcome') == 'removed'
+        assert event.get('user_email') == 'bulk@example.com'
