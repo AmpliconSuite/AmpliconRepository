@@ -592,3 +592,60 @@ def test_the_refresh_undo_puts_the_stale_value_back(projects):
     assert entry == {'_id': str(stale), 'op': '$set', 'fields': {'status': LIVE_LABEL}}
     projects.update_one({'_id': stale}, {'$set': entry['fields']})
     assert get(projects, stale)['status'] == LIVE_LABEL
+
+
+def test_a_stranded_intermediate_is_not_mistaken_for_a_second_head(projects):
+    """Named by nothing, but SUPERSEDED, so it cannot be the current version.
+
+    previous_versions[] is cumulative: every version lists every ancestor. A
+    later version whose list dropped an intermediate leaves that intermediate
+    named by nothing, which looks identical to a fork if the only test is
+    "named by nothing". classify() tells them apart, and it is the authority
+    the rest of the site already uses.
+
+    Measured 2026-09-02: neither database holds a real fork -- no two documents
+    share a previous_version_id and no chain has two is_latest, across caper
+    (240 documents) and caper-dev (169). Refusing this shape cost four dev
+    chains of historical projects and protected nothing.
+    """
+    v1, stranded, head = ObjectId(), ObjectId(), ObjectId()
+    projects.insert_many([
+        {'_id': v1, 'project_name': 'p', 'delete': True, 'current': False},
+        # An older version nothing lists any more. delete=True/current=False is
+        # how the site encodes a superseded version, not a deleted one.
+        {'_id': stranded, 'project_name': 'p', 'delete': True, 'current': False,
+         'previous_versions': [{'linkid': str(v1)}]},
+        # The current version, whose list skipped `stranded`.
+        {'_id': head, 'project_name': 'p', 'delete': False, 'current': True,
+         'previous_versions': [{'linkid': str(v1)}]},
+    ])
+
+    plan, refused = plan_pointers(projects)
+
+    assert refused == []
+    ordinals = {str(doc['_id']): fields['version_ordinal'] for doc, fields in plan}
+    assert ordinals[str(head)] == max(ordinals.values()), 'the LIVE version is the head'
+    assert set(ordinals) == {str(v1), str(stranded), str(head)}
+    assert sorted(ordinals.values()) == [1, 2, 3], 'ordinals stay contiguous'
+
+    apply_pointers(projects, plan, execute=True)
+    assert get(projects, head)['is_latest'] is True
+    assert get(projects, stranded).get('is_latest') is False
+
+
+def test_two_live_candidates_are_still_refused(projects):
+    """The guard that stays: nothing can say which history belongs to which."""
+    shared, live_a, live_b = ObjectId(), ObjectId(), ObjectId()
+    projects.insert_many([
+        {'_id': shared, 'project_name': 'shared', 'delete': True, 'current': False},
+        {'_id': live_a, 'project_name': 'a', 'delete': False, 'current': True,
+         'previous_versions': [{'linkid': str(shared)}]},
+        {'_id': live_b, 'project_name': 'b', 'delete': False, 'current': True,
+         'previous_versions': [{'linkid': str(shared)}]},
+    ])
+
+    plan, refused = plan_pointers(projects)
+
+    assert plan == []
+    assert len(refused) == 1
+    assert '2 of them are LIVE' in refused[0][1]

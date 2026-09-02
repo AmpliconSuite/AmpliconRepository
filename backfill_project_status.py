@@ -63,6 +63,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cap
 
 from caper.project_status import (            # noqa: E402
     CURRENT_ENCODING,
+    LIVE,
     MISSING_CURRENT_QUERY,
     SOFT_DELETED,
     SUPERSEDED,
@@ -270,12 +271,18 @@ def build_chains(projects):
     # on every run: the writes are preconditioned so nothing is clobbered, but
     # the plan is wrong and --limit spends its budget on documents already done.
     #
-    # 'delete' and 'current' are deliberately not read here. Lineage is a
-    # question about references, not about status, and this pass writes the same
-    # pointers whatever a document's status is -- a superseded version and a
-    # tombstone both occupy their ordinal.
+    # 'delete' and 'current' are read for one purpose only: telling the head of
+    # a chain from a stranded intermediate when more than one document is named
+    # by nothing. That is a question about which version is current, which is
+    # the one thing references cannot answer.
+    #
+    # They are still not consulted for ordering or for whether a document gets
+    # pointers at all -- lineage is a question about references, and this pass
+    # writes the same pointers whatever a document's status is: a superseded
+    # version and a tombstone both occupy their ordinal.
     for doc in projects.find({}, {'project_name': 1, 'previous_versions': 1,
-                                  'version_chain_id': 1}):
+                                  'version_chain_id': 1, 'delete': 1,
+                                  'current': 1, 'status': 1}):
         doc_id = str(doc['_id'])
         docs[doc_id] = doc
         ancestors[doc_id] = [str(entry['linkid'])
@@ -357,12 +364,34 @@ def order_chain(members, docs, ancestors, named_by):
 
     Returns (ordered, None) or (None, reason).
     """
-    heads = [m for m in members if not named_by.get(m)]
-    if len(heads) != 1:
-        return None, ('%d documents in this chain are named by nothing, so it '
-                      'has %d possible heads' % (len(heads), len(heads)))
-
-    head = heads[0]
+    candidates = [m for m in members if not named_by.get(m)]
+    if len(candidates) == 1:
+        head = candidates[0]
+    else:
+        # Being named by nothing is not enough to be the head. A version whose
+        # successors dropped it from their cumulative previous_versions[] is
+        # also named by nothing, and it is a stranded intermediate rather than
+        # the head of anything.
+        #
+        # classify() tells them apart, and it is the same authority the rest of
+        # the site uses: the current version is LIVE, an older one SUPERSEDED.
+        # Nothing is being guessed at. Measured 2026-09-02, neither database
+        # holds a real fork -- no two documents share a previous_version_id and
+        # no chain has two is_latest, across caper (240 documents) and
+        # caper-dev (169) -- so every multi-candidate group seen so far is this
+        # shape. The apparent forks in previous_versions[] are the array being
+        # cumulative: 43 versions on prod are named by more than one document
+        # simply because every descendant lists every ancestor.
+        #
+        # Two LIVE candidates is the case that stays refused. Those are two live
+        # projects, nothing here can say which history belongs to which, and the
+        # ordinals below the split depend on the answer.
+        live = [m for m in candidates if classify(docs[m]) == LIVE]
+        if len(live) != 1:
+            return None, ('%d documents in this chain are named by nothing and '
+                          '%d of them are LIVE, so it has %d possible heads'
+                          % (len(candidates), len(live), len(candidates)))
+        head = live[0]
     listed = [m for m in ancestors[head] if m in docs and m in set(members)]
     if len(set(listed)) != len(listed):
         return None, 'the head lists the same version more than once'
