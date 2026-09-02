@@ -447,10 +447,6 @@
                 <option value="{{ choice.key }}"{% if choice.key == audit_status_selected %} selected{% endif %}>{{ choice.label }} ({{ choice.count }})</option>
                 {% endfor %}
             </select>
-            {% comment %}
-            "Not recorded" is the state most likely to be misread, so it is
-            explained here rather than only in a tooltip somebody has to find.
-            {% endcomment %}
             <span class="text-muted" style="margin-left: 12px; font-size: 12px;">
                 <strong>➖ Not recorded</strong> is not a fault: the log stored the upload form's
                 <code>NA</code> placeholder, so no version was ever written down to compare against.
@@ -482,32 +478,24 @@
                                 <span class="badge badge-secondary">{{ proj.visibility_display }}</span>
                             {% endif %}
                         </td>
-                        <td class="uuid-cell">{{ proj.project_name_unique|default:proj.id_str }}</td>
+                        <td class="uuid-cell">
+                            <a href="{% url 'project_page' project_name=proj.linkid %}" target="_blank"
+                               title="Open this project" onclick="event.stopPropagation();">{{ proj.project_name_unique|default:proj.id_str }}</a>
+                        </td>
                         <td>
                             {% if proj.validation_status == 'pass' %}
                                 <span class="badge badge-success">✅ Pass</span>
                             {% elif proj.validation_status == 'mismatch' %}
                                 <span class="badge badge-danger">❌ Mismatch</span>
                             {% elif proj.validation_status == 'not_recorded' %}
-                                {# The log holds the upload form's 'NA' placeholder
-                                   where the document holds a real version, so
-                                   there was never a second value to compare.
-                                   Historical only: events from 30 Aug 2026 read
-                                   the document before logging. #}
                                 <span class="badge badge-light text-muted"
                                       title="The log stored the 'NA' placeholder for a version field, so there is nothing to compare. Not a disagreement.">➖ Not recorded</span>
                             {% elif proj.validation_status == 'missing_data' %}
                                 <span class="badge badge-warning text-dark">⚠️ Partial</span>
                             {% elif proj.validation_status == 'lifecycle_only' %}
-                                {# Deletions and promotions are logged, but nothing
-                                   describing a payload -- so there is nothing to
-                                   compare, which is not the same as unaudited. #}
                                 <span class="badge badge-light text-muted"
                                       title="Lifecycle events only; no payload entry to compare against">Lifecycle only</span>
                             {% elif proj.validation_status == 'reconstructed_only' %}
-                                {# The only entry is a creation rebuilt from the
-                                   project document, so it can say nothing the
-                                   document does not already say. #}
                                 <span class="badge badge-light text-muted"
                                       title="Only a reconstructed creation; nothing was recorded at the time to compare against">Reconstructed only</span>
                             {% elif proj.validation_status == 'no_log' %}
