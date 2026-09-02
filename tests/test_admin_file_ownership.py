@@ -189,10 +189,19 @@ def test_the_page_says_an_unlabelled_row_is_not_an_orphan():
 
 @pytest.mark.parametrize('phrase', [
     'This page only counts.',
-    '84 of 345',
-    '80,170',
+    'not on its own a reason to delete one',
+    'believed and acted on',
 ])
 def test_the_page_carries_the_warning_that_the_numbers_are_evidence(phrase):
+    """The warning must be on the screen, in substance rather than in figures.
+
+    An earlier version of this pinned the two incidents' actual counts. They do
+    not go stale -- they record what happened -- but on a page whose whole
+    subject is current counts they read as current counts, and a reader has no
+    way to tell the historical figure from the live one. So the page states what
+    went wrong and this asserts the warning is there, without pinning digits a
+    reader could mistake for today's.
+    """
     assert phrase in TEMPLATE.read_text()
 
 

@@ -10,13 +10,14 @@ question. It does not repeat the modules: each one carries its own reasoning in
 its docstring, and those are the primary source. What is here is the shape they
 fit into and the pointers between them.
 
-Read [AGENTS.md](../AGENTS.md) first for environment setup and the data model,
-and [CLAUDE.md](../CLAUDE.md) for the discipline this codebase demands before a
-claim about the data is written down anywhere. The short version of that
-discipline, because everything below depends on it: **name the falsifying
-measurement and run it before the claim goes into a comment, a commit message
-or a report.** Every number in this document is dated and scoped for that
-reason.
+Read [AGENTS.md](../AGENTS.md) first for environment setup and the data model.
+The verification discipline this codebase demands before a claim about the data
+is written down anywhere is stated in full in §12 below, rather than pointed at:
+the file it used to live in is not tracked by git, so a link to it would resolve
+for nobody who clones this repository. The short version, because everything
+here depends on it: **name the falsifying measurement and run it before the
+claim goes into a comment, a commit message or a report.** Every number in this
+document is dated and scoped for that reason.
 
 ---
 
@@ -111,10 +112,10 @@ the deletion of every version.**
 | version-level | `runs`, `samples`, tool versions, GridFS keys | never carried |
 
 The counters are the interesting case. They are chain-level facts stored per
-version, so the head alone under-reports. Measured on prod 2026-08-29 across the
-45 chains with more than one version: `project_downloads` showed 627 at the
-heads against 7,459 earned by the chains — 92% never displayed. `download_totals.py`
-sums the chain at read time rather than moving the numbers.
+version, so reading only the head under-reports by everything the older versions
+earned — on a chain with several versions that is most of the total.
+`download_totals.py` sums the chain at read time rather than moving the numbers,
+which is why they are the one chain-level group promotion does *not* carry.
 
 ---
 
@@ -199,7 +200,8 @@ The older encoding, the denormalised `previous_versions[]` array, is cumulative:
 every version carries the whole ancestry, so two documents naming the same
 ancestor is normal and is not a fork. Since 2026-09-02 the site reads history
 from the pointers only; the array fallback was removed once both databases were
-fully pointered (`caper` 242/242 and `caper-dev` 160/160 as of 2026-09-02).
+fully pointered — no document in either database is left without a
+`version_chain_id`, which is what invariant I1 asserts.
 
 Every query that used to ask `{'previous_versions.linkid': <id>}` — a scan of an
 array on every document in the collection — is now an equality match on
@@ -208,8 +210,8 @@ array on every document in the collection — is now an equality match on
 The independence of the three axes is a decision, not an oversight, and it has a
 visible failure mode: the "you are viewing an older version" banner reads
 `is_latest` alone, so a document that is `LIVE` but not flagged renders the
-banner and links elsewhere. Invariant I7 catches the shape that produces it
-(1 chain of 88 on dev, **0 of 153 on prod**, measured 2026-09-02).
+banner and links elsewhere. Invariant I7 catches the shape that produces it and
+names the offending document by id, so this class of fault is never silent.
 
 ---
 
@@ -245,10 +247,10 @@ sequenceDiagram
 Two measured facts shape everything on this path.
 
 **Regeneration is recoverable but not free.** A cache miss rebuilds inside the
-request at about 21 MiB/s, so the largest cached project (5.81 GiB) is roughly
-277 s of a blocked worker against gunicorn's 900 s ceiling. That is why nothing
-expires cached objects by age or size, and why a sweep touches only objects
-nothing can ever ask for again.
+request at about 21 MiB/s, so a multi-gigabyte project is several minutes of a
+blocked worker against gunicorn's 900 s ceiling. That is why nothing expires
+cached objects by age or size, and why a sweep touches only objects nothing can
+ever ask for again.
 
 **Failed uploads, not deletions, are what strands files.** TCGA_Sarcoma's failed
 upload of 2026-08-14 left 2,695 files inside a 90-second window.
@@ -381,117 +383,92 @@ page being believed and acted on. The page reports; a sweeper acts, from a
 reviewed snapshot, staged, with an undo record.
 
 ---
+## 9. Measuring the current state
 
-## 9. Measured facts, with their dates and scope
+An earlier draft of this section was a census: document counts, storage totals,
+per-status shares. That was a mistake. A number describing current state is
+wrong the moment somebody uploads or deletes anything, and a stale number in a
+document is worse than no number, because it gets quoted.
 
-Numbers age. These are dated so a reader in six months knows what to re-measure
-rather than what to believe. Scope is the database or bucket named.
+So this section names the command instead. Each is read-only and each prints
+what the older table used to claim:
 
-**Project documents — 2026-09-02, PRIMARY reads**
+| To learn | Run |
+|---|---|
+| documents per status, chains, unpointered documents | `validate_project_lineage.py --expect-db <db>` |
+| GridFS files, bytes, owned vs residue, backlink coverage | `report_gridfs_orphans.py --expect-db <db>` |
+| storage by status with trend | Admin ▸ Statistics, or `snapshot_storage.py` |
+| who owns each file | `manage.py ownership_survey` |
+| whether deleted storage came back | `check_volume_reclamation.py` |
+| S3 objects and which database claims each | `sweep_s3_unreferenced.py` report-only |
 
-| | `caper` (prod) | `caper-dev` |
-|---|---|---|
-| documents | 242 | 160 |
-| LIVE / SUPERSEDED | 103 / 100 | 52 / 66 |
-| SOFT_DELETED / TOMBSTONE | 0 / 4 | 1 / 14 |
-| DETACHED | 35 (14.5%) | 27 (16.9%) |
-| chains (multi-version) | 153 (45) | 88 (36) |
-| documents with no `version_chain_id` | 0 | 0 |
-
-**Lineage invariants — 2026-09-02, full run including the GridFS checks**
-
-`caper` (prod): 242 documents, 824,277 GridFS references, **21 invariants
-checked, 0 not checkable, 1 failing.** The failure is I9 — two chain-view
-documents whose `source_digest` no longer matches their members (Ventura SCLC
-mice, Human Cancer Models Initiative). The documents win by design and
-`rebuild_version_chains.py` is the fix. Nothing in the request paths reads the
-chain view yet, so a stale digest currently costs a second opinion and nothing
-else. Every GridFS invariant — I12, I13, I14, I21 — passes.
-
-`caper-dev`: also failing I7 (one chain, plus a lineage-exercise fixture) and
-I11 (two CCLE documents whose array names a version the pointers do not place
-before it). Both are dev fixture data.
-
-**GridFS — 2026-08-29 / 2026-09-02**
-
-- prod: 808,264 files, 237.6 GiB, **100% owned by a live document, zero residue
-  in every bucket**, 808,264/808,264 carrying a backlink.
-- dev: 360,197 rows, 124.4 GiB, 100% owned, zero residue; one row carries no
-  backlink — a labelling gap on an owned row, not residue.
-- GridFS stores the same content many times: ~70% of measured bytes are
-  duplicate copies, and 59% of that is one project storing the same bytes
-  repeatedly.
-- 64% of prod storage is superseded versions. That is not reclaimable — see the
-  note under §3.
-
-**Deleting data has not shrunk the cluster volume.** 257.80 GiB was removed
-across both databases and `VolumeBytesUsed` did not move. `collStats` free-list
-numbers are stale enough to be misleading: `unusedStorageSize` froze
-byte-identical across a 4 GiB write on 2026-09-01 and drifted on quiet days.
-
-**`private` is an enum, not a boolean** — `'private'` / `'public'` /
-`'hidden_public'`, with legacy booleans still present. `{'private': False}`
-matches nothing, silently. Measured on prod 2026-08-27 over 311 documents:
-private 202, public 93, hidden_public 15, boolean True 1.
-
-**Mixed-type fields are real.** `cnvkit directory` holds 62,651 ObjectIds and
-102,756 strings across prod documents (2026-08-27). The current upload loop
-never writes an id there; a version that ran before 2026-03-13 did. Reading the
-writer forms the hypothesis; counting the values settles it.
+If you do record a measurement somewhere — a commit message, an incident note,
+a wiki page — **date it and name its scope**. "935 private against 2 live,
+measured locally 2026-08-27" survives contact with a reader six months later.
+"The counter is wrong" does not.
 
 ---
 
-## 10. The S3 download cache, and who is filling it
+## 10. Facts that do not go stale
 
-`amprepo-private` is a download cache shared by prod, dev and individual
-laptops. Nothing has ever expired it.
+These are worth writing down because they are not current-state readings. They
+are either rates, or records of something that already happened, and re-running
+a census will not change them.
 
-Measured 2026-09-02 — 829 objects, 137.7 GiB — attributed by asking each
-database whether it knows the project id in the key:
+**Authority runs documents → files.** A file is retained because a retained
+document names it. The `fs.files.metadata` backlink is an index into that fact,
+never a substitute: nothing may delete a file because its own metadata says it
+is unowned.
 
-| claimed by | objects | size | share |
-|---|---|---|---|
-| prod (`caper`) | 208 | 51.0 GiB | 37.1% |
-| dev server (`caper-dev`) | 144 | 36.8 GiB | 26.7% |
-| a developer laptop | 8 | 143.8 MiB | 0.1% |
-| **no reachable database** | 469 | 49.7 GiB | 36.1% |
+**A payload can take longer to delete than a request may live.** Roughly
+`96.4 × GiB + 0.035 × files` seconds, against a 900-second worker timeout. That
+ratio is why deletion writes the tombstone first and purges afterwards.
 
-Grouped instead by the key prefix each writer sets — `S3_DOWNLOADS_BUCKET_PATH`,
-which prod and dev both leave empty:
+**Cache regeneration is recoverable but not free.** A download-cache miss
+rebuilds inside the request at about 21 MiB/s, so a multi-gigabyte project is
+several minutes of a blocked worker. Hence: nothing expires cached objects by
+age or size.
 
-| prefix | objects | size | what it is |
-|---|---|---|---|
-| *(empty)* | 536 | 107.2 GiB | prod and dev, indistinguishable from each other |
-| `jens/dev1*` (five spellings) | 274 | 29.6 GiB | one developer laptop |
-| `ted/dev/` | 15 | 621.3 MiB | another laptop, last written 2024-03 |
-| `tmp/test*`, `project_data/tedtest_office/` | 3 | 150.3 MiB | 2023 test writes |
+**Reads go to a replica.** The cluster URI sets `secondaryPreferred`. In 40
+write-then-immediately-read trials on dev, 40 of 40 missed on the default
+preference and 0 of 40 missed pinned to `PRIMARY`. This is not intermittent, so
+"add a retry" is the wrong shape of fix. Pin anything that writes and then
+checks, and anything that writes a *derived* value computed from what it read.
 
-**So: local development accounts for 30.4 GiB, 22% of the bucket — and 98% of
-what it wrote is dead.** Only 143.8 MiB of the laptop-prefixed objects name a
-project that still exists in that laptop's database; the other 29.3 GiB name
-projects purged from a local Mongo long ago and can never be requested again.
+**Deleting data does not shrink the cluster volume.** Hundreds of gigabytes were
+removed across both databases without `VolumeBytesUsed` moving. `collStats`
+free-list figures are worse than useless here: `unusedStorageSize` froze
+byte-identical across a multi-gigabyte write and drifted on quiet days.
 
-That residue cannot be swept by the ordinary rule, which requires an id set from
-every database that writes to the bucket and so refuses to guess about laptops.
-It *can* be swept by a narrower one: a laptop prefix is written by exactly one
-machine, so that machine's own id set is authoritative for its own prefix.
+**The S3 download cache is versioned, so a delete does not free anything for 90
+days.** Deleting an object leaves a delete marker and makes the old version
+noncurrent; a lifecycle rule expires noncurrent versions after 90 days. The live
+namespace shrinks immediately, the bill does not. This is the same trap as the
+cluster volume, in a different service.
 
-Two smaller notes from the same measurement. The static bucket `amprepobucket`
-is 151.5 MiB across four prefixes (`prod/`, `dev/`, `test/`, `static/`) and is
-not a space question. But a laptop with `AMPLICON_ENV='dev'` syncs its static
-files to `dev/static/` — the same prefix the dev server uses. Nothing has been
-overwritten in practice (the sync is a no-op when the files match; newest object
-2026-08-25 against laptop syncs on 2026-09-02), so this is a hazard rather than
-a fault.
+**`private` is an enum, not a boolean** — `'private'`, `'public'`,
+`'hidden_public'`, with legacy booleans still present. `{'private': False}`
+matches nothing, silently.
 
-**Putting this on the admin page is small work.** The attribution above needs no
-configuration change: the project id is in the key, so a deployment can classify
-every object as *mine*, *someone else's*, or *nobody's* by matching against its
-own `projects` collection. One `ListObjectsV2` pass over 829 objects is
-sub-second, and `storage_stats.py` already provides the daily-snapshot,
-history-and-sparkline pattern to hang it on. The limit is naming *which* other
-deployment holds the rest — that needs each deployment to set
-`S3_DOWNLOADS_BUCKET_PATH`, and it would only label objects written afterwards.
+**A field's name tells you nothing, and neither does the code that writes it
+today.** `cnvkit directory` holds both file paths and GridFS ids, because a
+version of the upload loop that stopped writing ids there shipped in March 2026
+and everything written before still has them. Read the writer to form the
+hypothesis; count the values to settle it. `git log -S` on the field name finds
+the writer you did not know about.
+
+**Failed uploads, not deletions, are what strand files.** One failed upload left
+2,695 files inside a 90-second window. The in-process failure path cleans up
+what it stored; a *killed* worker runs no failure path at all, which is why a
+periodic sweep is the backstop rather than a gap.
+
+**Two production incidents shaped every safety rule here**, and both were the
+same failure: a predicate that lives in the application, re-derived somewhere
+else, and drifted. One cleanup script classified a quarter of production as
+orphaned when most of those still held their payload; one local-database purge
+would have marked tens of thousands of live GridFS files as garbage. This is why
+`project_status.py` exists, why the ownership page has no delete control, and
+why every sweeper is report-only by default.
 
 ---
 
@@ -506,9 +483,9 @@ pytest                   # full suite
 pytest tests/test_browser.py -m browser --base-url http://localhost:8000
 ```
 
-Run 2026-09-02 against a local server: **1353 passed, 11 skipped in 284 s**, and
-the 11 skipped are the browser tests, which then pass in 22 s once `--base-url`
-is supplied.
+The browser tests skip rather than error when no `--base-url` is given, so a
+plain `pytest` run reports them skipped and still passes; supply the URL to run
+them for real.
 
 Two conventions worth keeping:
 
