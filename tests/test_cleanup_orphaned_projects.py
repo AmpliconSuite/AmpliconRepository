@@ -4,6 +4,7 @@ from caper.project_status import matches
 from cleanup_orphaned_projects import (
     collect_needs_review_ids,
     collect_protected_ids,
+    collect_retained_file_ids,
     delete_gridfs_files_for_project,
     is_resolvable_by_url,
     redact_uri,
@@ -207,3 +208,114 @@ def test_redact_uri_removes_the_password():
     assert 'sup3rs3cret' not in out
     assert 'someuser' not in out
     assert 'cluster.example.com' in out
+
+
+# ─────────────────────────────────────────────────────────────────────
+# The shared-file guard
+# ─────────────────────────────────────────────────────────────────────
+
+class _FakeClient:
+    def close(self):
+        pass
+
+
+class _FakeDBHandle(dict):
+    """Enough of a pymongo Database for main() to run end to end.
+
+    main() reaches for three collections by name and nothing else, so the
+    handle is a dict of them.  It exists so the wiring test below can call the
+    real main() rather than re-assembling its steps by hand -- a test that
+    rebuilds the call it is checking passes whatever the code does.
+    """
+
+
+class _FakeProjects(FakeCollection):
+    def find(self, query, projection=None):
+        for doc in self.docs:
+            if matches(doc, query):
+                if projection is None:
+                    yield doc
+                else:
+                    yield {key: doc[key] for key in projection if key in doc}
+
+    def count_documents(self, query):
+        return sum(1 for doc in self.docs if matches(doc, query))
+
+    def delete_one(self, query):
+        self.docs = [d for d in self.docs if not matches(d, query)]
+
+
+def test_a_file_a_surviving_project_names_is_never_deleted():
+    """The guard's whole point: shared payload outlives the orphan."""
+    shared_id = ObjectId()
+    orphan_only_id = ObjectId()
+    survivor = {'_id': ObjectId(), 'tarfile': shared_id}
+    orphan = {'_id': ObjectId(), 'tarfile': shared_id,
+              'Run metadata JSON': orphan_only_id}
+
+    retained = collect_retained_file_ids([survivor, orphan],
+                                         {str(orphan['_id'])})
+    assert retained == {str(shared_id)}
+
+    fs = FakeGridFS()
+    deleted = delete_gridfs_files_for_project(fs.delete, orphan, retained)
+
+    assert deleted == 1
+    assert fs.deleted == [str(orphan_only_id)]
+
+
+def test_the_guard_does_not_protect_the_orphans_own_files():
+    """A guard that keeps everything would be indistinguishable from a bug."""
+    orphan = {'_id': ObjectId(), 'tarfile': ObjectId()}
+    retained = collect_retained_file_ids([orphan], {str(orphan['_id'])})
+    assert retained == set()
+
+    fs = FakeGridFS()
+    assert delete_gridfs_files_for_project(fs.delete, orphan, retained) == 1
+
+
+def test_main_passes_the_retained_ids_to_the_deleter(monkeypatch, tmp_path):
+    """main() must hand the guard to the deleter, not merely compute it.
+
+    Asserted through the real entry point.  The predecessor of this test
+    called the two functions itself in the order main() was believed to use,
+    which proves the functions compose and says nothing about whether main()
+    composes them -- the failure mode that shipped a cleanup able to delete a
+    live payload despite a green suite.
+    """
+    import cleanup_orphaned_projects as cop
+
+    shared_id = ObjectId()
+    survivor = {'_id': ObjectId(), 'project_name': 'live', 'tarfile': shared_id,
+                'delete': False, 'current': True, 'linkid': str(ObjectId())}
+    # No 'delete' field at all, so no resolver query can reach it: orphaned.
+    orphan = {'_id': ObjectId(), 'project_name': 'orphan', 'tarfile': shared_id}
+
+    projects = _FakeProjects([survivor, orphan])
+    handle = _FakeDBHandle({'projects': projects,
+                            'fs.files': object(), 'fs.chunks': object()})
+
+    monkeypatch.setattr(cop, 'get_db_handle', lambda *a, **k: (handle, _FakeClient()))
+    monkeypatch.setattr(cop, 'delete_gridfs_file_in_batches',
+                        lambda *a, **k: 0)
+    monkeypatch.setenv('DB_URI_SECRET', 'mongodb://user:pw@localhost/test')
+    monkeypatch.setenv('DB_NAME', 'caper-test')
+    monkeypatch.delenv('S3_FILE_DOWNLOADS', raising=False)
+    monkeypatch.setattr(cop.os.path, 'isdir', lambda path: False)
+    monkeypatch.setattr(cop.sys, 'argv', ['cleanup_orphaned_projects.py', '--execute'])
+
+    seen = {}
+    real_deleter = cop.delete_gridfs_files_for_project
+
+    def recording_deleter(delete_file, project, protected_file_ids=None,
+                          dry_run=False):
+        seen[str(project['_id'])] = protected_file_ids
+        return real_deleter(delete_file, project, protected_file_ids,
+                            dry_run=dry_run)
+
+    monkeypatch.setattr(cop, 'delete_gridfs_files_for_project', recording_deleter)
+
+    cop.main()
+
+    assert str(orphan['_id']) in seen, 'the orphan was never offered for deletion'
+    assert seen[str(orphan['_id'])] == {str(shared_id)}

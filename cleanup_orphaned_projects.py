@@ -309,7 +309,39 @@ def delete_s3_prefix(s3_client, bucket, prefix, dry_run=False):
     return deleted
 
 
-def delete_gridfs_files_for_project(delete_file, project, dry_run=False):
+def collect_retained_file_ids(all_projects, orphaned_ids):
+    """
+    Every GridFS file id named by a document this run will NOT delete.
+
+    Authority runs documents -> files: a file is retained because a retained
+    document names it.  Nothing here reads a file's own metadata, which records
+    which upload wrote it and can be stale, wrong, or absent -- it is provenance
+    and never the authority for whether a file may go.
+
+    This guard changes nothing today, and that was measured rather than assumed:
+    walking every document of both databases through `iter_gridfs_file_ids` on
+    2026-08-31 found no id named by more than one document -- caper, 311
+    documents and 942,279 distinct ids; caper-dev, 247 and 604,187; 0 shared
+    across 1.55 million.  It exists because nothing enforces that.  Storing
+    identical content once, which is the open plan for the ~70% of measured
+    bytes that are duplicate copies, would make sharing the normal case
+    overnight, and on the first such run deleting an orphan would take a live
+    project's payload with it.
+
+    Returns a set of str(file_id), matching the normalisation used by
+    `delete_payload_within_deadline` in the application.
+    """
+    retained = set()
+    for project in all_projects:
+        if str(project['_id']) in orphaned_ids:
+            continue
+        for file_id in iter_gridfs_file_ids(project):
+            retained.add(str(file_id))
+    return retained
+
+
+def delete_gridfs_files_for_project(delete_file, project,
+                                    protected_file_ids=None, dry_run=False):
     """
     Delete every GridFS file the *project* document names — the tarfile, the
     per-sample feature files, and the directory-shaped payloads.
@@ -326,15 +358,33 @@ def delete_gridfs_files_for_project(delete_file, project, dry_run=False):
     ones with the largest payloads, and `gridfs.GridFS.delete()` on a
     multi-gigabyte tarfile exceeds the driver's socket timeout.
 
+    `protected_file_ids` holds the ids named by documents that survive this run,
+    and any id in it is left alone.  It cannot be derived from the file: only
+    the surviving documents know what they still need.
+
     Returns the count deleted, or the count that would be deleted.
     """
+    protected_file_ids = {str(file_id) for file_id in (protected_file_ids or ())}
     file_ids = []
     seen = set()
+    shared = 0
     for file_id in iter_gridfs_file_ids(project):
         if file_id in seen:
             continue
         seen.add(file_id)
+        if str(file_id) in protected_file_ids:
+            shared += 1
+            continue
         file_ids.append(file_id)
+
+    if shared:
+        # Not a routine skip line.  No id on either database is named by two
+        # documents, so reaching this means either that changed or the
+        # traversal is wrong, and both are worth stopping for.
+        logger.warning(
+            f"    {shared} file(s) KEPT: a project that survives this run also "
+            f"names them. Shared payload is not supposed to exist yet -- "
+            f"establish why before treating this as normal.")
 
     if dry_run:
         for file_id in file_ids:
@@ -508,6 +558,14 @@ def main():
     orphaned_lookup = {str(p['_id']): p for p in all_projects
                        if str(p['_id']) in orphaned_ids}
 
+    # Built from the documents that survive, before anything is deleted, so a
+    # file two documents name is never removed on behalf of the one being
+    # cleaned up.  See collect_retained_file_ids() for why this is empty of
+    # consequence today and will not stay that way.
+    retained_file_ids = collect_retained_file_ids(all_projects, orphaned_ids)
+    logger.info(f"  GridFS ids held by surviving projects : "
+                f"{len(retained_file_ids)}")
+
     # ═════════════════════════════════════════════════════════════════
     # PHASE 2 — Clean up orphaned projects
     # ═════════════════════════════════════════════════════════════════
@@ -543,6 +601,7 @@ def main():
 
             # 2a. GridFS
             g = delete_gridfs_files_for_project(delete_file, project,
+                                                retained_file_ids,
                                                 dry_run=args.dry_run)
             total_gridfs += g
             if g:
