@@ -15,6 +15,18 @@
             "order": [[0, "asc"]]
         });
 
+        /* ── Audit log: filter the master table by validation state ──
+           The state lives on the row as a data attribute rather than being
+           read back out of the badge text, so the filter cannot drift from
+           what the server decided when somebody rewords a label. */
+        var auditStatusFilter = '';
+        $.fn.dataTable.ext.search.push(function (settings, rowText, rowIndex) {
+            if (settings.nTable.id !== 'auditProjectsTable') { return true; }
+            if (!auditStatusFilter) { return true; }
+            var row = settings.aoData[rowIndex].nTr;
+            return !!row && row.getAttribute('data-status') === auditStatusFilter;
+        });
+
         /* ── Audit log: master projects table ── */
         $('#auditProjectsTable').DataTable({
             order: [[4, 'desc']],
@@ -25,6 +37,11 @@
                 { orderable: false, targets: [-1] },
                 { type: 'num', targets: [4] }
             ]
+        });
+
+        $('#auditStatusFilter').on('change', function () {
+            auditStatusFilter = this.value;
+            $('#auditProjectsTable').DataTable().draw();
         });
 
         {% if entries %}
@@ -74,11 +91,18 @@
                 $body.empty();
                 $.each(data.checks, function (_, c) {
                     var rowClass = c.missing ? 'check-row-missing' : (c.match ? 'check-row-match' : 'check-row-miss');
-                    var icon     = c.missing ? '⚠️' : (c.match ? '✅' : '❌');
+                    // A log value of NA is the upload form's placeholder, not a
+                    // recorded version, so there is nothing for it to disagree
+                    // with. Marking it ➖ rather than ❌ is the difference
+                    // between "we never wrote this down" and "these two differ".
+                    var icon     = c.not_recorded ? '➖' : (c.missing ? '⚠️' : (c.match ? '✅' : '❌'));
+                    var note     = c.not_recorded
+                        ? ' <span class="text-muted" style="font-size:11px">not recorded at the time</span>'
+                        : '';
                     $body.append(
                         '<tr class="' + rowClass + '">' +
                         '<td><strong>' + c.field + '</strong></td>' +
-                        '<td>' + c.log_value  + '</td>' +
+                        '<td>' + c.log_value + note + '</td>' +
                         '<td>' + c.live_value + '</td>' +
                         '<td class="text-center check-icon">' + icon + '</td>' +
                         '</tr>'
@@ -89,8 +113,15 @@
                     'edit_new_version': 'Edit (new ver.)',
                     'edit_no_version':  'Edit (no ver.)'
                 }[data.log_event_type] || data.log_event_type;
+                var notRecorded = data.not_recorded || [];
                 if (data.any_mismatch) {
                     $banner.attr('class', 'alert alert-danger').html('<strong>❌ Mismatch detected</strong> — one or more values differ between the most recent log entry (' + eventLabel + ' @ ' + data.log_timestamp + ') and the live project.');
+                } else if (notRecorded.length) {
+                    $banner.attr('class', 'alert alert-secondary').html(
+                        '<strong>➖ Nothing to compare for ' + notRecorded.join(', ') + '</strong> — the log entry (' +
+                        eventLabel + ' @ ' + data.log_timestamp + ') stored the upload form\'s <code>NA</code> placeholder for ' +
+                        (notRecorded.length === 1 ? 'this field' : 'these fields') + ', so no version was ever recorded to compare against. ' +
+                        'Every other field matches. Entries written from 30 Aug 2026 resolve the versions from the project document first, so this only affects older events.');
                 } else if (!data.all_match) {
                     $banner.attr('class', 'alert alert-warning').html('<strong>⚠️ Some values missing</strong> — log entry (' + eventLabel + ' @ ' + data.log_timestamp + ') has missing fields; remaining fields match.');
                 } else {
@@ -407,6 +438,25 @@
     <div class="col-md-12">
         <h3>Project Audit Log</h3>
         <p class="text-muted">Click a project row to view its full audit history.</p>
+        {% if audit_status_counts %}
+        <div class="form-inline" style="margin-bottom: 10px;">
+            <label for="auditStatusFilter" style="margin-right: 8px;">Show</label>
+            <select id="auditStatusFilter" class="form-control form-control-sm">
+                <option value="">All states ({{ audit_all_projects|length }})</option>
+                {% for choice in audit_status_counts %}
+                <option value="{{ choice.key }}"{% if choice.key == audit_status_selected %} selected{% endif %}>{{ choice.label }} ({{ choice.count }})</option>
+                {% endfor %}
+            </select>
+            {% comment %}
+            "Not recorded" is the state most likely to be misread, so it is
+            explained here rather than only in a tooltip somebody has to find.
+            {% endcomment %}
+            <span class="text-muted" style="margin-left: 12px; font-size: 12px;">
+                <strong>➖ Not recorded</strong> is not a fault: the log stored the upload form's
+                <code>NA</code> placeholder, so no version was ever written down to compare against.
+            </span>
+        </div>
+        {% endif %}
         <div class="table-responsive">
             <table id="auditProjectsTable" class="table table-sm table-hover">
                 <thead class="thead-dark">
@@ -422,6 +472,7 @@
                 <tbody>
                     {% for proj in audit_all_projects %}
                     <tr data-project-id="{{ proj.id_str }}"
+                        data-status="{{ proj.validation_status }}"
                         onclick="window.location='?project_id={{ proj.id_str }}'">
                         <td>{{ proj.project_name|default:"—" }}</td>
                         <td>
@@ -437,6 +488,14 @@
                                 <span class="badge badge-success">✅ Pass</span>
                             {% elif proj.validation_status == 'mismatch' %}
                                 <span class="badge badge-danger">❌ Mismatch</span>
+                            {% elif proj.validation_status == 'not_recorded' %}
+                                {# The log holds the upload form's 'NA' placeholder
+                                   where the document holds a real version, so
+                                   there was never a second value to compare.
+                                   Historical only: events from 30 Aug 2026 read
+                                   the document before logging. #}
+                                <span class="badge badge-light text-muted"
+                                      title="The log stored the 'NA' placeholder for a version field, so there is nothing to compare. Not a disagreement.">➖ Not recorded</span>
                             {% elif proj.validation_status == 'missing_data' %}
                                 <span class="badge badge-warning text-dark">⚠️ Partial</span>
                             {% elif proj.validation_status == 'lifecycle_only' %}

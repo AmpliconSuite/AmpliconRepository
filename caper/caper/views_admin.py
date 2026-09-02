@@ -46,6 +46,7 @@ from .utils import (
 )
 from .project_version_cleanup import (
     delete_gridfs_payload_for_project, delete_payload_within_deadline,
+    iter_gridfs_file_ids,
 )
 from .background_tasks import get_background_task_status
 from .project_status import (
@@ -190,6 +191,12 @@ def _s3_health_check():
     return results
 
 
+#: What the upload form puts in a version field when the submitter leaves it
+#: alone. It is not a version; it is the absence of one, and an audit entry
+#: holding it recorded nothing about that tool.
+_VERSION_PLACEHOLDERS = {'NA', 'N/A', 'NOT PROVIDED', 'UNKNOWN'}
+
+
 def _run_audit_checks(project, latest_entry):
     """
     Compare *latest_entry* (an audit-log document) against the live *project* document.
@@ -197,11 +204,36 @@ def _run_audit_checks(project, latest_entry):
 
     Returns a dict:
         {
-            'checks':       list of check dicts (field/log_value/live_value/match/missing),
-            'all_match':    True  – every present field matches,
-            'any_mismatch': True  – at least one present field differs,
-            'status':       'pass' | 'mismatch' | 'missing_data',
+            'checks':       list of check dicts (field/log_value/live_value/match/
+                            missing/not_recorded),
+            'all_match':    True  – every comparable field matches,
+            'any_mismatch': True  – at least one comparable field differs,
+            'status':       'pass' | 'mismatch' | 'not_recorded' | 'missing_data',
         }
+
+    **A placeholder in the log is not a claim.** Events written before
+    2026-08-30 stored whatever the upload form held for AA/AC/ASP version, and
+    the form defaults to ``NA``; the real versions are detected from the
+    uploaded data afterwards and written to the document. So the log says ``NA``
+    and the document says ``1.3.r2``, and reading that as a disagreement between
+    two recorded values is wrong -- only one value was ever recorded. Those
+    entries were reported as mismatches, which is what sent someone looking at
+    PCAWG on dev for a fault that is not there.
+
+    The four cases, kept apart deliberately:
+
+    ============  ============  ==================================================
+    log           document      verdict
+    ============  ============  ==================================================
+    ``NA``        ``NA``        match. Both say "not provided" and they agree.
+    ``NA``        ``1.3.r2``    **not recorded.** Nothing to compare against.
+    ``1.3.r2``    ``NA``        **mismatch.** The document lost a version the log
+                                holds, which is a real finding.
+    ``1.3.r2``    ``1.3.r3``    compare them.
+    ============  ============  ==================================================
+
+    Only the version fields take placeholders. A sample count or a file size of
+    ``NA`` would be a different problem and is left to read as one.
     """
     def _str(v):
         if v is None:
@@ -209,22 +241,41 @@ def _run_audit_checks(project, latest_entry):
         s = str(v).strip()
         return s if s not in ('', 'None') else None
 
-    def _make_check(field, log_raw, live_raw, *, numeric=False):
+    def _make_check(field, log_raw, live_raw, *, numeric=False, versioned=False):
         log_val  = _str(log_raw)
         live_val = _str(live_raw)
-        if numeric and log_val is not None and live_val is not None:
+
+        def placeholder(value):
+            return (versioned and value is not None
+                    and value.upper() in _VERSION_PLACEHOLDERS)
+
+        # The log holds a placeholder while the document holds a real value:
+        # there is no recorded claim on the log side, so there is nothing this
+        # comparison can find. Both placeholders is a different case -- they
+        # agree, and demoting agreement to a warning would turn a page full of
+        # green into a page full of yellow for no new information.
+        not_recorded = placeholder(log_val) and live_val is not None and not placeholder(live_val)
+
+        if not_recorded:
+            match = False
+        elif numeric and log_val is not None and live_val is not None:
             try:
                 match = int(log_val) == int(live_val)
             except (ValueError, TypeError):
                 match = log_val == live_val
         else:
             match = log_val == live_val
+
         return {
             'field':      field,
+            # The raw values are shown as stored, placeholder included. Blanking
+            # them to a dash would hide that the log says 'NA', which is the one
+            # thing a reader needs to see to understand why nothing is compared.
             'log_value':  log_val  if log_val  is not None else '—',
             'live_value': live_val if live_val is not None else '—',
             'match':      match,
-            'missing':    log_val is None or live_val is None,
+            'missing':    log_val is None or live_val is None or not_recorded,
+            'not_recorded': not_recorded,
         }
 
     s3_uri = latest_entry.get('s3_uri')
@@ -238,19 +289,28 @@ def _run_audit_checks(project, latest_entry):
         live_sample_count = len(project['runs'] or {})
 
     checks = [
-        _make_check('AA Version',          latest_entry.get('AA_version'),          project.get('AA_version')),
-        _make_check('AC Version',          latest_entry.get('AC_version'),          project.get('AC_version')),
-        _make_check('ASP Version',         latest_entry.get('ASP_version'),         project.get('ASP_version')),
+        _make_check('AA Version',          latest_entry.get('AA_version'),          project.get('AA_version'),  versioned=True),
+        _make_check('AC Version',          latest_entry.get('AC_version'),          project.get('AC_version'),  versioned=True),
+        _make_check('ASP Version',         latest_entry.get('ASP_version'),         project.get('ASP_version'), versioned=True),
         _make_check('Sample Count',        latest_entry.get('sample_count'),        live_sample_count, numeric=True),
         _make_check('tar.gz Size (bytes)', latest_entry.get('s3_file_size_bytes'),  live_s3_size,      numeric=True),
     ]
 
     any_mismatch = any(not c['match'] and not c['missing'] for c in checks)
     all_match    = not any_mismatch and all(c['match'] or c['missing'] for c in checks)
+    not_recorded = [c['field'] for c in checks if c['not_recorded']]
     has_missing  = any(c['missing'] for c in checks)
 
+    # 'not_recorded' is its own status rather than a flavour of 'missing_data'
+    # so the page can be filtered down to it. It is the largest class on both
+    # databases and it is entirely historical -- every one of these entries
+    # predates the fix that resolves versions from the document before logging
+    # them -- so an admin looking for real faults wants to take it off the
+    # screen in one click rather than read past it.
     if any_mismatch:
         status = 'mismatch'
+    elif not_recorded:
+        status = 'not_recorded'
     elif has_missing:
         status = 'missing_data'
     else:
@@ -260,6 +320,7 @@ def _run_audit_checks(project, latest_entry):
         'checks':       checks,
         'all_match':    all_match,
         'any_mismatch': any_mismatch,
+        'not_recorded': not_recorded,
         'status':       status,
     }
 
@@ -1008,6 +1069,88 @@ def _tombstoned_ancestors(project):
     return found
 
 
+def _permanent_delete_targets(project):
+    """(targets, unresolved) for a permanent delete of *project*.
+
+    ``targets`` is a list of ``(id, document)`` in the order they would be
+    removed -- the versions the history names, then the tombstoned ancestors
+    the array cannot name, then the project itself.  ``unresolved`` holds the
+    history linkids that no longer resolve.
+
+    This exists so the size shown on the page and the documents the button
+    removes come from **one walk**.  A list maintained in two places is the
+    defect this repository keeps finding, and here the two copies would be a
+    number an operator reads before doing something irreversible and the set
+    that irreversible thing actually touches.
+    """
+    targets, unresolved = [], []
+
+    for entry, _encoding in iter_previous_versions(project):
+        linkid = entry.get('linkid')
+        older = get_one_deleted_project(linkid) if linkid else None
+        if older is None:
+            logging.warning(
+                f"History entry {linkid!r} of project {project.get('_id')} names a "
+                f"version that is gone or is not flagged deleted; skipping it.")
+            unresolved.append(linkid)
+            continue
+        targets.append((linkid, older))
+
+    targets.extend(_tombstoned_ancestors(project))
+    targets.append((str(project['_id']), project))
+    return targets, unresolved
+
+
+def permanent_delete_size(project, lengths=None):
+    """What permanently deleting *project* would actually free.
+
+    Returns ``{'versions', 'files', 'bytes', 'unresolved'}``.  ``versions``
+    counts the documents that go, the project itself included, so a project
+    with no history reads 1 rather than 0.
+
+    The page used to show the head version's tarfile and nothing else, which
+    understates the deletion by however much history the project carries -- on
+    this site the superseded versions are 64% of production, so for a project
+    with several versions the figure shown was a small fraction of what the
+    button removes.  It is the number an operator checks before an irreversible
+    action, so it should describe the action.
+
+    *lengths* lets a caller listing many projects hand in one ``{file id:
+    length}`` map instead of paying a query per project.
+    """
+    targets, unresolved = _permanent_delete_targets(project)
+
+    file_ids = set()
+    for _target_id, document in targets:
+        file_ids.update(iter_gridfs_file_ids(document))
+
+    total_bytes = 0
+    counted = 0
+    if file_ids:
+        if lengths is not None:
+            for file_id in file_ids:
+                size = lengths.get(file_id)
+                if size is not None:
+                    total_bytes += size
+                    counted += 1
+        else:
+            cursor = db_handle['fs.files'].find(
+                {'_id': {'$in': list(file_ids)}}, {'length': 1})
+            for row in cursor:
+                total_bytes += row.get('length', 0) or 0
+                counted += 1
+
+    # counted can be lower than len(file_ids): a document naming a file that is
+    # not in fs.files is invariant I12's finding and has no bytes to add. The
+    # count reported is what was actually measured, not what was named.
+    return {
+        'versions':   len(targets),
+        'files':      counted,
+        'bytes':      total_bytes,
+        'unresolved': unresolved,
+    }
+
+
 def permanently_delete_with_history(project_id, project, project_name):
     """
     Permanently delete a soft-deleted project along with the older versions its
@@ -1037,22 +1180,14 @@ def permanently_delete_with_history(project_id, project, project_name):
     strictly lower ordinal -- so this still never reaches forward across the
     chain to versions nobody selected.
     """
-    unresolved = []
-    for entry, _encoding in iter_previous_versions(project):
-        linkid = entry.get('linkid')
-        older = get_one_deleted_project(linkid) if linkid else None
-        if older is None:
-            logging.warning(
-                f"History entry {linkid!r} of project {project_id} names a version "
-                f"that is gone or is not flagged deleted; skipping it.")
-            unresolved.append(linkid)
-            continue
-        admin_permanent_delete_project(linkid, older, older['project_name'])
+    targets, unresolved = _permanent_delete_targets(project)
 
-    for tombstone_id, tombstone in _tombstoned_ancestors(project):
-        admin_permanent_delete_project(tombstone_id, tombstone,
-                                       tombstone.get('project_name'))
-
+    # The last target is the project itself; the caller's project_name is used
+    # for it so the message keeps naming what the operator selected.
+    message = ''
+    for target_id, document in targets[:-1]:
+        admin_permanent_delete_project(target_id, document,
+                                       document.get('project_name'))
     message = admin_permanent_delete_project(project_id, project, project_name)
 
     if unresolved:
@@ -1216,16 +1351,43 @@ def admin_delete_project(request):
     deleted_projects = list(collection_handle.find(STATUS_QUERIES[SOFT_DELETED]))
     for proj in deleted_projects:
         prepare_project_linkid(proj)
+        # Two different sizes, and the page shows both because they answer
+        # different questions. The tarfile is what someone would download; the
+        # total is what the button removes, history included.
+        proj['tar_file_bytes'] = 0
         try:
             tar_file_len = fs_handle.get(ObjectId(proj['tarfile'])).length
+            proj['tar_file_bytes'] = tar_file_len
             proj['tar_file_len'] = sizeof_fmt(tar_file_len)
+        except Exception:
+            proj['tar_file_len'] = '—'
+            logging.warning(
+                f"{proj.get('project_name')} has no readable tarfile; "
+                f"the total below still counts everything the delete would remove")
+        try:
             if proj['delete_date']:
                 import datetime
                 dt = datetime.datetime.strptime(proj['delete_date'], f"%Y-%m-%dT%H:%M:%S")
                 proj['delete_date'] = (dt.strftime(f'%B %d, %Y %I:%M:%S %p %Z'))
-        except:
+        except Exception:
             # ignore missing date
             logging.warning(proj['project_name'] + " missing date")
+        try:
+            removal = permanent_delete_size(proj)
+            proj['delete_versions'] = removal['versions']
+            proj['delete_bytes'] = removal['bytes']
+            proj['delete_size'] = sizeof_fmt(removal['bytes'])
+            proj['delete_files'] = removal['files']
+            proj['delete_unresolved'] = len(removal['unresolved'])
+        except Exception as error:
+            # A size that cannot be computed must not read as a small one.
+            logging.warning(
+                f"Could not size the deletion of {proj.get('project_name')}: {error}")
+            proj['delete_versions'] = None
+            proj['delete_bytes'] = 0
+            proj['delete_size'] = 'unknown'
+            proj['delete_files'] = None
+            proj['delete_unresolved'] = 0
 
     return render(request, 'pages/admin_delete_project.html',
                   {'deleted_projects': deleted_projects, 'error_message': error_message})
@@ -1760,6 +1922,38 @@ def _has_observed_entry(matched_uuids):
          'backfilled': {'$ne': True}}) is not None
 
 
+#: The validation states a project row can be in, in the order an admin wants
+#: to work through them: the ones that might be a fault first, then the ones
+#: that are explained, then the ones with nothing to say. The filter on the page
+#: is built from this, so adding a state here adds it to the filter.
+AUDIT_STATUS_CHOICES = (
+    ('mismatch',           '❌ Mismatch'),
+    ('missing_data',       '⚠️ Partial'),
+    ('not_recorded',       '➖ Not recorded'),
+    ('pass',               '✅ Pass'),
+    ('lifecycle_only',     'Lifecycle only'),
+    ('reconstructed_only', 'Reconstructed only'),
+    ('no_log',             'No log'),
+    ('error',              'Error'),
+)
+
+
+def _audit_status_counts(projects):
+    """How many projects are in each validation state, for the filter control.
+
+    Counted from the rows actually rendered, so the number beside a choice is
+    the number of rows selecting it will leave on screen. Choices nothing is in
+    are dropped rather than shown as zero -- a filter offering an option that
+    hides everything is a small trap.
+    """
+    tally = {}
+    for project in projects:
+        key = project.get('validation_status') or 'error'
+        tally[key] = tally.get(key, 0) + 1
+    return [{'key': key, 'label': label, 'count': tally[key]}
+            for key, label in AUDIT_STATUS_CHOICES if tally.get(key)]
+
+
 def _get_audit_log_context(request):
     """
     Build the audit log context dict shared by admin_project_files_report and admin_audit_log.
@@ -1886,6 +2080,8 @@ def _get_audit_log_context(request):
 
     return {
         'audit_all_projects': all_projects,
+        'audit_status_counts': _audit_status_counts(all_projects),
+        'audit_status_selected': request.GET.get('audit_status', '').strip(),
         'selected_project_id': selected_project_id,
         'selected_project': selected_project,
         'display_name': display_name,
@@ -1959,6 +2155,7 @@ def admin_audit_log_validate(request):
             'log_event_type': latest_entry.get('event_type') or ('edit_new_version' if latest_entry.get('new_version') else 'edit_no_version'),
             'all_match':      result['all_match'],
             'any_mismatch':   result['any_mismatch'],
+            'not_recorded':   result['not_recorded'],
         })
 
     except Exception as e:

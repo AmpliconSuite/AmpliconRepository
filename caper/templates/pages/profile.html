@@ -21,11 +21,17 @@
         $('#projectTable').DataTable({
             columnDefs: [
                 {
-                    targets: 3,
+                    // Date is column 4 since the Versions column was added at 2.
+                    targets: 4,
                     type: 'custom-date'
+                },
+                {
+                    // Sort Versions by its number, not the anchor text.
+                    targets: 2,
+                    type: 'num'
                 }
             ],
-            order: [[3, 'desc']] // Sort by date column (index 3) in descending order
+            order: [[4, 'desc']] // Sort by date column in descending order
         });
 
     } );
@@ -79,6 +85,7 @@
                     <tr>
                         <th>Name</th>
                         <th>Samples</th>
+                        <th title="How many versions this project has, the current one included">Versions</th>
                         <th>Description</th>
                         <th>Date</th>
                         <th>Visibility</th>
@@ -94,7 +101,18 @@
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">
                           <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if "CoRAL" in project.Reconstruction_tools %} <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>{% endif %}
                         </td>
-                        <td>{{ project.sample_count }}</td>
+                        <td>
+                            {% if project.version_count %}
+                                {% if project.version_count > 1 %}
+                                    <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}#headingPrevVersions"
+                                       title="View the version history">{{ project.version_count }}</a>
+                                {% else %}
+                                    {{ project.version_count }}
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted" title="This project has no lineage pointers, so its version history cannot be read">—</span>
+                            {% endif %}
+                        </td>
                         <td style="white-space: normal; word-break: normal; overflow-wrap: anywhere;">{{ project.description|truncatechars:100 }}</td>
                         <td class="date">{{ project.date }}</td>
                         <td>{{ project.visibility_display }}</td>
