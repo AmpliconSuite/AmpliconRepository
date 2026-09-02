@@ -710,15 +710,20 @@ def admin_permanent_delete_project(project_id, project, project_name):
                 f"to continue where this left off."
             )
 
-    try:
-        if os.path.exists(f"../tmp/{project_id}/"):
-            project_data_path = f"../tmp/{project_id}/"
-        else:
-            project_data_path = f"tmp/{project_id}/"
-
-        shutil.rmtree(project_data_path)
-    except:
-        logging.exception(f'Problem deleting tar file from local drive. {project_data_path}')
+    # Only one of these exists, and usually neither: the extracted upload is a
+    # scratch copy that the temp-dir reaper has normally already taken. Picking a
+    # path without checking it made every clean delete log a FileNotFoundError
+    # traceback at ERROR level, so the delete path looked like it was failing
+    # each time it succeeded.
+    project_data_path = next(
+        (path for path in (f"../tmp/{project_id}/", f"tmp/{project_id}/")
+         if os.path.isdir(path)), None)
+    if project_data_path is not None:
+        try:
+            shutil.rmtree(project_data_path)
+        except Exception:
+            logging.exception('Problem deleting the extracted upload directory %s',
+                              project_data_path)
 
     if hasattr(settings, 'S3_DOWNLOADS_BUCKET_PATH'):
         print("============= HAS ATTR  ================")

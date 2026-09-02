@@ -193,6 +193,14 @@ def main(argv=None):
                              'legitimately unreferenced; this is what protects '
                              'an ingestion in flight. Do not lower it.')
     parser.add_argument('--limit', type=int, help='stop after this many files')
+    parser.add_argument('--max-delete', type=int, default=5000, metavar='N',
+                        help='refuse to delete anything at all if more than N '
+                             'files are eligible (default 5000). For the '
+                             'scheduled run: a normal night is a handful of '
+                             'files from one failed upload, so a sudden jump '
+                             'means something changed and a person should look '
+                             'before the bytes go. Raise it deliberately, in '
+                             'the invocation, having seen the report.')
     parser.add_argument('--execute', action='store_true',
                         help='actually delete; without this nothing is written')
     parser.add_argument('--undo-record', help='path for the JSONL undo record '
@@ -229,6 +237,20 @@ def main(argv=None):
 
     if not args.execute:
         print('\nREPORT ONLY -- nothing deleted. Add --execute --undo-record FILE.')
+        return 0
+
+    # Checked after the report is printed, so the operator sees what was found
+    # before being told it will not be touched.
+    if len(rows) > args.max_delete:
+        print('\nREFUSING TO DELETE: %d file(s) eligible, --max-delete is %d.'
+              % (len(rows), args.max_delete))
+        print('A scheduled run expects a handful of files from one failed '
+              'upload. This is not that. Look at the report above, then re-run '
+              'with a --max-delete you chose on purpose.')
+        return 2
+
+    if not rows:
+        print('\nNothing to delete.')
         return 0
 
     undo = open(args.undo_record, 'a')

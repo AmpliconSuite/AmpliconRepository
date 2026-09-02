@@ -32,14 +32,45 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def scratch(mongo_collection):
-    """Two empty collections in the test database, dropped afterwards."""
+    """Empty scratch collections in the test database, dropped afterwards."""
     database = mongo_collection.database
     suffix = uuid.uuid4().hex[:8]
     projects = database[f'cleanup_projects_{suffix}']
     fs_files = database[f'cleanup_files_{suffix}']
+    fs_chunks = database[f'cleanup_chunks_{suffix}']
     yield projects, fs_files
     projects.drop()
     fs_files.drop()
+    fs_chunks.drop()
+
+
+class _ScratchDB:
+    """Maps the names main() opens onto this test's scratch collections.
+
+    main() asks the database for 'projects', 'fs.files' and 'fs.chunks' by name,
+    so a test that inserts into uniquely-named collections is invisible to it --
+    which is what the first version of these cap tests actually measured.
+    """
+
+    def __init__(self, projects, fs_files):
+        database = projects.database
+        suffix = projects.name.split('_')[-1]
+        self.name = database.name
+        self._by_name = {
+            'projects': projects,
+            'fs.files': fs_files,
+            'fs.chunks': database[f'cleanup_chunks_{suffix}'],
+        }
+
+    def __getitem__(self, key):
+        return self._by_name[key]
+
+
+def _patched_main(monkeypatch, projects, fs_files, argv):
+    from cleanup_failed_upload_residue import main
+    shim = _ScratchDB(projects, fs_files)
+    monkeypatch.setattr('cleanup_failed_upload_residue.connect', lambda expect: shim)
+    return main(argv)
 
 
 def _file(fs_files, *, owner=None, length=100, age_days=30):
@@ -263,3 +294,52 @@ def test_undo_entries_are_written_before_the_delete():
     assert body.index('record({') < body.index('delete_gridfs_file_in_batches('), (
         'the undo entry must be appended before the file is deleted')
     assert 'os.fsync(' in body, 'the undo record must be fsynced, not just flushed'
+
+
+def test_a_large_eligible_set_refuses_to_delete(scratch, tmp_path, monkeypatch):
+    """The cap that makes an unattended run safe to schedule.
+
+    A normal night is a handful of files from one failed upload. A sudden jump
+    means something changed -- a mass edit, a bad backfill, a bug in the walk --
+    and the right response is to stop and be looked at, not to delete faster.
+    """
+    projects, fs_files = scratch
+    for _ in range(3):
+        _file(fs_files, owner=ObjectId())
+
+    code = _patched_main(monkeypatch, projects, fs_files,
+                         ['--expect-db', projects.database.name, '--max-delete', '2',
+                          '--execute', '--undo-record', str(tmp_path / 'undo.jsonl')])
+
+    assert code == 2, 'an over-cap run must exit non-zero so cron reports it'
+    assert fs_files.count_documents({}) == 3, 'nothing may be deleted'
+    assert not (tmp_path / 'undo.jsonl').exists()
+
+
+def test_under_the_cap_it_deletes(scratch, tmp_path, monkeypatch):
+    projects, fs_files = scratch
+    _file(fs_files, owner=ObjectId())
+
+    code = _patched_main(monkeypatch, projects, fs_files,
+                         ['--expect-db', projects.database.name, '--max-delete', '10',
+                          '--execute', '--undo-record', str(tmp_path / 'undo.jsonl')])
+
+    assert code == 0
+    assert fs_files.count_documents({}) == 0
+    assert (tmp_path / 'undo.jsonl').exists()
+
+
+def test_nothing_to_delete_is_not_an_error(scratch, tmp_path, monkeypatch):
+    """The normal scheduled outcome. It must exit 0 and write no undo record."""
+    projects, fs_files = scratch
+    project_id = ObjectId()
+    kept = _file(fs_files, owner=project_id)
+    _project(projects, [kept], project_id=project_id)
+
+    code = _patched_main(monkeypatch, projects, fs_files,
+                         ['--expect-db', projects.database.name, '--execute',
+                          '--undo-record', str(tmp_path / 'undo.jsonl')])
+
+    assert code == 0
+    assert fs_files.count_documents({}) == 1
+    assert not (tmp_path / 'undo.jsonl').exists()

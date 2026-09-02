@@ -129,3 +129,40 @@ def test_a_failed_delete_does_not_abandon_the_rest():
     deleted = delete_gridfs_payload_for_project(flaky, project)
     assert set(seen) == {bad, good}, 'must attempt every file'
     assert deleted == 1
+
+
+def test_a_clean_delete_logs_no_temp_dir_traceback(caplog, tmp_path, monkeypatch):
+    """No extracted upload on disk is the normal case, not an error.
+
+    The delete path used to pick `tmp/{id}/` without checking it existed, so
+    every successful delete logged a FileNotFoundError traceback at ERROR level
+    and prod's delete log read as though the path were failing each time it
+    worked.
+    """
+    import logging as _logging
+    import shutil as _shutil
+    from caper import views_admin
+
+    monkeypatch.chdir(tmp_path)
+    called = []
+    monkeypatch.setattr(_shutil, 'rmtree', lambda p: called.append(p))
+
+    project_id = 'deadbeefdeadbeefdeadbeef'
+    with caplog.at_level(_logging.ERROR):
+        path = next((p for p in (f"../tmp/{project_id}/", f"tmp/{project_id}/")
+                     if os.path.isdir(p)), None)
+        assert path is None
+        if path is not None:                      # pragma: no cover
+            _shutil.rmtree(path)
+
+    assert called == []
+    assert not [r for r in caplog.records if 'tmp' in r.getMessage()]
+
+
+def test_the_delete_path_does_not_call_rmtree_unguarded():
+    """The guard must live in views_admin, not only in this test's restatement."""
+    source = open(os.path.join(REPO_ROOT, 'caper', 'caper', 'views_admin.py')).read()
+    body = source[source.index('project_data_path = next('):]
+    assert 'os.path.isdir' in body[:400], (
+        'the extracted-upload directory must be checked before it is removed')
+    assert 'except Exception' in body[:700], 'a bare except: also swallows KeyboardInterrupt'
