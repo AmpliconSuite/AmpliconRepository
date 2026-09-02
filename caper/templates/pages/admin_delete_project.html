@@ -283,13 +283,7 @@ function undelete_project(event, project_id, project_name) {
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor%}</td>
-                                {% comment %}
-                                data-order carries the byte count so the column
-                                sorts by size. Without it DataTables sorts the
-                                formatted string and "9.4 MB" lands above
-                                "40.2 GB", which is exactly backwards for a
-                                column somebody scans to find the big ones.
-                                {% endcomment %}
+                                {# data-order is the byte count: without it DataTables sorts "9.4 MB" above "40.2 GB". #}
                                 <td data-order="{{ project.tar_file_bytes }}">{{ project.tar_file_len }}</td>
                                 <td data-order="{{ project.delete_bytes }}">
                                     <strong>{{ project.delete_size }}</strong>

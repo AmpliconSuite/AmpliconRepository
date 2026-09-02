@@ -71,7 +71,35 @@ def _profile_template():
 def test_the_table_renders_the_count():
     markup = _profile_template()
     assert '{{ project.version_count }}' in markup
-    assert '<th title="How many versions this project has, the current one included">Versions</th>' in markup
+    assert '>Versions</th>' in markup
+
+
+def test_the_header_and_the_body_have_the_same_number_of_columns():
+    """The guard the first version of this file did not have.
+
+    Inserting the Versions column dropped the sample-count cell: ten headers
+    against nine cells, so every column after Samples rendered one to the left
+    of its heading and the table read as nonsense.  Checking that a string is
+    present says nothing about whether the row still lines up.
+    """
+    import re
+
+    markup = _profile_template()
+    head = markup.split('<thead>')[1].split('</thead>')[0]
+    body = markup.split('<tbody>')[1].split('</tbody>')[0]
+
+    headers = len(re.findall(r'<th\b', head))
+    cells = len(re.findall(r'<td\b', body))
+
+    assert headers == cells, (
+        f'{headers} column headings against {cells} cells: the body row does '
+        f'not line up with the header')
+
+
+def test_the_sample_count_still_has_a_cell():
+    """It is the column that went missing, so it gets its own assertion."""
+    markup = _profile_template()
+    assert '<td>{{ project.sample_count }}</td>' in markup
 
 
 def test_the_date_column_index_followed_the_new_column():
