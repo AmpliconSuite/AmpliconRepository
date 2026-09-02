@@ -11,6 +11,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 from .background_tasks import _thread_executor, get_background_task_status
+from . import version_purge
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -3036,6 +3037,15 @@ def delete_project_version(request, project_name, version_id):
     All three write the tombstone through one routine
     (build_deleted_version_tombstone) and all three purge the GridFS payload.
     Case 3 used to do neither.
+
+    **The tombstone is written before the payload is removed, and the removal
+    happens off this thread.** Every document write here is sub-second; the
+    payload walk is minutes, and on a large version it is longer than a request
+    is allowed to live. Doing it inline is what left a version on dev on
+    2026-09-02 with 15,272 of 15,733 files deleted and no tombstone at all --
+    the worker was killed at gunicorn's 900 s timeout between the two. So this
+    view returns as soon as the lineage is correct, and ``version_purge``
+    finishes the bytes and confirms the audit event when it is done.
     """
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -3178,17 +3188,18 @@ def delete_project_version(request, project_name, version_id):
                 **update_fields,
             }
             promoted_file_ids = set(iter_gridfs_file_ids(promoted_project))
-            deleted_gridfs_count = delete_gridfs_payload_for_project(
-                delete_gridfs_file,
-                latest_project,
-                protected_file_ids=promoted_file_ids,
-            )
+            # Read before the tombstone replaces the document: a tombstone does
+            # not carry the payload keys, so this is the last moment the ids
+            # exist anywhere. See version_purge.
+            pending_ids = version_purge.payload_ids_to_purge(
+                latest_project, promoted_file_ids)
             tombstone = build_deleted_version_tombstone(
                 latest_project,
                 promoted_project,
                 deleter,
                 get_date(),
                 is_latest=False if plan is not None else None,
+                pending_payload_ids=pending_ids,
             )
             collection_handle.replace_one(
                 {'_id': ObjectId(current_linkid)},
@@ -3205,16 +3216,15 @@ def delete_project_version(request, project_name, version_id):
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
             delete_project_from_site_statistics(latest_project, vis)
 
-            provenance.confirm(audit_log_handle, delete_event,
-                               outcome='promoted',
-                               promoted_project_id=str(prev_linkid),
-                               gridfs_files_purged=deleted_gridfs_count,
-                               tombstones_retargeted=retarget_count)
+            version_purge.start(current_linkid, pending_ids, delete_event,
+                                outcome='promoted',
+                                promoted_project_id=str(prev_linkid),
+                                tombstones_retargeted=retarget_count)
 
             logging.info(
                 f"Deleted current version {current_linkid}, promoted {prev_linkid} "
-                f"to current; purged {deleted_gridfs_count} GridFS files; "
-                f"retargeted {retarget_count} tombstones"
+                f"to current; queued {len(pending_ids)} GridFS files for "
+                f"removal; retargeted {retarget_count} tombstones"
             )
 
             return JsonResponse({
@@ -3235,16 +3245,14 @@ def delete_project_version(request, project_name, version_id):
             # document it left classified as SUPERSEDED and stayed resolvable
             # with its entire payload still stored and still billed, while the
             # log line said "project fully removed".
-            deleted_gridfs_count = delete_gridfs_payload_for_project(
-                delete_gridfs_file,
-                latest_project,
-            )
+            pending_ids = version_purge.payload_ids_to_purge(latest_project)
             tombstone = build_deleted_version_tombstone(
                 latest_project,
                 None,
                 deleter,
                 get_date(),
                 is_latest=True if plan is not None else None,
+                pending_payload_ids=pending_ids,
             )
             collection_handle.replace_one(
                 {'_id': ObjectId(current_linkid)},
@@ -3255,14 +3263,13 @@ def delete_project_version(request, project_name, version_id):
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
             delete_project_from_site_statistics(latest_project, vis)
 
-            provenance.confirm(audit_log_handle, delete_event,
-                               outcome='chain_emptied',
-                               gridfs_files_purged=deleted_gridfs_count)
+            version_purge.start(current_linkid, pending_ids, delete_event,
+                                outcome='chain_emptied')
 
             logging.info(
-                f"Deleted last surviving version {current_linkid}; purged "
-                f"{deleted_gridfs_count} GridFS files. The project is now an "
-                f"empty chain."
+                f"Deleted last surviving version {current_linkid}; queued "
+                f"{len(pending_ids)} GridFS files for removal. The project is "
+                f"now an empty chain."
             )
 
             return JsonResponse({
@@ -3294,17 +3301,15 @@ def delete_project_version(request, project_name, version_id):
         )
 
         latest_file_ids = set(iter_gridfs_file_ids(latest_project))
-        deleted_gridfs_count = delete_gridfs_payload_for_project(
-            delete_gridfs_file,
-            old_version,
-            protected_file_ids=latest_file_ids,
-        )
+        pending_ids = version_purge.payload_ids_to_purge(
+            old_version, latest_file_ids)
         tombstone = build_deleted_version_tombstone(
             old_version,
             latest_project,
             deleter,
             get_date(),
             is_latest=plan.victim_keeps_head if plan is not None else None,
+            pending_payload_ids=pending_ids,
         )
         collection_handle.replace_one(
             {'_id': ObjectId(version_id)},
@@ -3312,13 +3317,12 @@ def delete_project_version(request, project_name, version_id):
             upsert=True,
         )
 
-        provenance.confirm(audit_log_handle, delete_event,
-                           outcome='tombstoned_in_place',
-                           gridfs_files_purged=deleted_gridfs_count)
+        version_purge.start(version_id, pending_ids, delete_event,
+                            outcome='tombstoned_in_place')
 
         logging.info(
             f"Deleted old version {version_id} from history of project "
-            f"{current_linkid}; purged {deleted_gridfs_count} GridFS files"
+            f"{current_linkid}; queued {len(pending_ids)} GridFS files for removal"
         )
 
         return JsonResponse({

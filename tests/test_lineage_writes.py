@@ -17,7 +17,7 @@ shapes are easier to talk about with names than with prose.
 import pytest
 from bson import ObjectId
 
-from caper import lineage, utils, views
+from caper import lineage, utils, version_purge, views
 from caper.project_status import (classify, status_after, TOMBSTONE,
                                   SUPERSEDED, LIVE)
 from caper.project_version_cleanup import (
@@ -339,6 +339,14 @@ def run_delete(monkeypatch, request_factory, user, members, victim):
     monkeypatch.setattr(utils, 'collection_handle', collection)
     monkeypatch.setattr(views, 'collection_handle', collection)
     monkeypatch.setattr(views, 'delete_gridfs_file', fs.delete)
+    # version_purge resolves its handles from utils at call time, so the fakes
+    # have to be there too.
+    monkeypatch.setattr(utils, 'delete_gridfs_file', fs.delete)
+    # The payload is purged off the request thread now. Run it inline so these
+    # tests stay about *what* a deletion does rather than when it finishes;
+    # that the tombstone is written first is asserted in test_version_purge.
+    monkeypatch.setattr(version_purge._thread_executor, 'submit',
+                        lambda fn, *a, task_label=None, **kw: fn(*a, **kw))
 
     head_id = str(members[-1]['_id'])
     request = request_factory.post(f'/project/{head_id}/delete_version/{victim}')
@@ -1111,6 +1119,7 @@ class RecordingAudit:
 def run_delete_with_audit(monkeypatch, request_factory, user, members, victim):
     audit = RecordingAudit()
     monkeypatch.setattr(views, 'audit_log_handle', audit)
+    monkeypatch.setattr(utils, 'audit_log_handle', audit)
     response, collection, fs = run_delete(monkeypatch, request_factory, user,
                                           members, victim)
     return response, collection, fs, audit

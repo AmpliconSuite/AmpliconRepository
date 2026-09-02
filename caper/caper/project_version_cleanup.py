@@ -178,6 +178,12 @@ def delete_payload_within_deadline(delete_file, project, protected_file_ids=None
     continuation rather than a fresh guess.  Nothing is stranded, because
     nothing that would name the remaining files has been removed.
 
+    Deleting a *version* inverts that order -- the tombstone is written first,
+    and it cannot name the files because a tombstone is built fresh without the
+    payload keys.  That path keeps the same property by a different means: the
+    ids it has not reached are recorded on the tombstone under
+    ``PENDING_PAYLOAD_KEY``.  See ``version_purge``.
+
     *deadline* is a ``now()`` reading, not a duration.  It is checked before
     each file and never before the first, so a pass always makes progress and
     an already-expired deadline cannot turn the work into a no-op.
@@ -187,16 +193,33 @@ def delete_payload_within_deadline(delete_file, project, protected_file_ids=None
     fully gone; a failed delete is logged, counted as reached, and left out of
     it, because retrying it is not what unblocks the project.
     """
+    protected_file_ids = {str(file_id) for file_id in (protected_file_ids or set())}
+    wanted = (file_id for file_id in iter_gridfs_file_ids(project)
+              if str(file_id) not in protected_file_ids)
+    return delete_payload_file_ids(delete_file, wanted, deadline=deadline,
+                                   now=now, owner=project.get('_id'))
+
+
+def delete_payload_file_ids(delete_file, file_ids, deadline=None,
+                            now=time.monotonic, owner='?'):
+    """Delete an explicit list of GridFS ids, stopping at *deadline*.
+
+    The loop both payload deleters run.  One starts from a project document and
+    works out which ids that means; the other starts from the ids a tombstone
+    still carries, because by then the document no longer names them.  They
+    share this so that *how* a payload is removed has one definition -- the
+    same rule the rest of this module is written to, and the one that a second
+    copy of the key list broke by falling eight spellings behind.
+
+    *owner* only names the thing being emptied in the log lines.
+    """
     deleted = 0
     seen = set()
     remaining = []
-    protected_file_ids = {str(file_id) for file_id in (protected_file_ids or set())}
-    for file_id in iter_gridfs_file_ids(project):
+    for file_id in file_ids:
         if file_id in seen:
             continue
         seen.add(file_id)
-        if str(file_id) in protected_file_ids:
-            continue
         if deadline is not None and deleted and now() >= deadline:
             remaining.append(file_id)
             continue
@@ -206,16 +229,16 @@ def delete_payload_within_deadline(delete_file, project, protected_file_ids=None
         except Exception as delete_error:
             logging.warning(
                 f"GridFS delete failed for {file_id} of project "
-                f"{project.get('_id')}: {type(delete_error).__name__}: "
+                f"{owner}: {type(delete_error).__name__}: "
                 f"{delete_error}. The file is now unreachable and will not be "
                 f"collected by any other path."
             )
     if remaining:
         logging.warning(
-            f"Payload delete for project {project.get('_id')} stopped at its "
+            f"Payload delete for project {owner} stopped at its "
             f"deadline with {deleted} file(s) removed and {len(remaining)} "
-            f"left; the project document was kept so the rest can be deleted "
-            f"by running it again."
+            f"left; the ids it did not reach were kept so the rest can be "
+            f"deleted by running it again."
         )
     return PayloadDeletion(deleted, remaining)
 
@@ -256,8 +279,25 @@ def discard_unrecorded_gridfs_files(delete_file, file_ids):
     return deleted
 
 
+#: Written on a tombstone whose payload has not finished being removed: the
+#: GridFS ids this deletion has still to delete.  A tombstone is built fresh
+#: and does not carry the payload keys, so once it is written nothing else
+#: knows which files belonged to that version -- this field is what makes an
+#: interrupted purge resumable instead of a matter for a global orphan sweep.
+PENDING_PAYLOAD_KEY = 'pending_payload_file_ids'
+
+#: When a worker last took responsibility for the pending purge above.  Every
+#: gunicorn worker checks for interrupted purges when it starts, so the claim
+#: is what stops eight of them running the same one.  A claim older than
+#: PURGE_CLAIM_STALE_SECONDS is treated as abandoned.
+PURGE_CLAIM_KEY = 'payload_purge_claimed_at'
+
+PURGE_CLAIM_STALE_SECONDS = 3600
+
+
 def build_deleted_version_tombstone(old_project, latest_project, deleter,
-                                    delete_date, is_latest=None):
+                                    delete_date, is_latest=None,
+                                    pending_payload_ids=None):
     """The one tombstone-creation routine.  Every deletion path calls it.
 
     That is invariant I18, and it is stated as an invariant because the fifth
@@ -324,6 +364,11 @@ def build_deleted_version_tombstone(old_project, latest_project, deleter,
     for field in DATED_COUNTERS:
         if old_project.get(field):
             tombstone[field] = old_project[field]
+
+    # The payload is removed after this document is written, not before, so the
+    # tombstone has to carry the ids until they are gone. See PENDING_PAYLOAD_KEY.
+    if pending_payload_ids:
+        tombstone[PENDING_PAYLOAD_KEY] = list(pending_payload_ids)
     return tombstone
 
 
