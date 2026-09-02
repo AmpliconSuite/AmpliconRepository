@@ -4,6 +4,13 @@ A genomics data repository (ampliconrepository.org) for storing, browsing, and a
 
 ---
 
+**For the backend itself — the stores, the project/version data model, the
+deletion paths and the maintenance tooling — read
+[docs/backend-architecture.md](docs/backend-architecture.md). It is the map;
+this file is the setup.**
+
+---
+
 ## Critical: Environment Setup Before Any Django Command
 
 **Always** source `caper/config.sh` before running any Django management command. It sets all required env vars (MongoDB URI, OAuth secrets, S3, Neo4j, email).
