@@ -238,6 +238,69 @@ def delete_gridfs_file(file_id, batch_size=GRIDFS_DELETE_BATCH):
                                          file_id, batch_size)
 
 
+def get_project_version_chain_for_document(project):
+    """Every UUID in *project*'s version chain, and the name to display.
+
+    Keyed on the document's own ``_id``.  Callers that already hold the
+    document must use this rather than passing its name to
+    ``get_project_version_chain()`` below, because a project name is not an
+    identity and never has been:
+
+    * **Names are not unique.**  Measured 2026-09-02: 6 names are shared by 18
+      of production's 103 live projects, and 4 by 10 of dev's 53.
+    * **The name match is case-insensitive**, so ``Test`` and ``test`` are one
+      key.
+    * **``alias_name`` is tried first and collides across documents.**  On dev,
+      resolving the live project named ``Contino`` returned
+      ``Contino_1-3_agguploader``, a different project that carries
+      ``alias_name: 'Contino'`` -- so unique project names alone would not fix
+      this.
+
+    Any of those makes ``find_one`` hand back some other project, and the audit
+    page then compares one project's document against another project's log.
+    That is what put ``Sample Count 118 vs 7`` on a project with 7 samples.
+
+    A pointered document needs no scan: ``chain_members`` is one indexed
+    equality match and already covers the chain in both directions.  The
+    ``previous_versions[]`` walk stays for documents the backfill could not
+    order, and is unioned rather than preferred, because the two encodings are
+    kept in step by the validator rather than by construction.
+    """
+    project_id = str(project['_id'])
+    uuids = {project_id}
+    display_name = project.get('project_name') or project_id
+
+    members = lineage.chain_members(
+        collection_handle_primary, project,
+        {**lineage.POINTER_PROJECTION, 'project_name': 1})
+    if members is not None:
+        uuids.update(str(member['_id']) for member in members)
+        current = lineage.head(members)
+        if current is not None:
+            display_name = current.get('project_name') or display_name
+
+    for entry, _encoding in iter_previous_versions(project):
+        linkid = entry.get('linkid')
+        if linkid:
+            uuids.add(str(linkid))
+
+    if members is None:
+        # No pointers, so nothing here knows about newer versions except the
+        # array on those newer documents. This is the scan the pointers exist
+        # to avoid; it runs only for the documents that still need it.
+        for descendant in collection_handle_primary.find(
+                {'previous_versions.linkid': project_id},
+                {'_id': 1, 'project_name': 1, 'previous_versions': 1}):
+            uuids.add(str(descendant['_id']))
+            display_name = descendant.get('project_name') or display_name
+            for entry, _encoding in iter_previous_versions(descendant):
+                linkid = entry.get('linkid')
+                if linkid:
+                    uuids.add(str(linkid))
+
+    return list(uuids), display_name
+
+
 def get_project_version_chain(search_term):
     """
     Given a project name (current or historical) or UUID, return:
@@ -278,31 +341,7 @@ def get_project_version_chain(search_term):
     if project is None:
         return list(uuids), display_name
 
-    display_name = project.get('project_name', search_term)
-
-    # Collect UUID of this project
-    uuids.add(str(project['_id']))
-
-    # Collect all previous_versions UUIDs embedded in this document
-    for pv in project.get('previous_versions', []):
-        pv_id = pv.get('linkid')
-        if pv_id:
-            uuids.add(str(pv_id))
-
-    # Also look forward: find any current project that lists this one in its previous_versions
-    descendants = list(collection_handle_primary.find(
-        {'previous_versions.linkid': str(project['_id'])},
-        {'_id': 1, 'project_name': 1, 'previous_versions': 1}
-    ))
-    for desc in descendants:
-        uuids.add(str(desc['_id']))
-        display_name = desc.get('project_name', display_name)
-        for pv in desc.get('previous_versions', []):
-            pv_id = pv.get('linkid')
-            if pv_id:
-                uuids.add(str(pv_id))
-
-    return list(uuids), display_name
+    return get_project_version_chain_for_document(project)
 
 
 def replace_space_to_underscore(runs):

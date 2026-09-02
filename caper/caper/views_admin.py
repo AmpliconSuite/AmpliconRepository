@@ -41,7 +41,7 @@ from .utils import (
     get_one_project, get_one_deleted_project, prepare_project_linkid,
     check_if_db_field_exists, get_date_short,
     form_to_dict, get_date, db_handle, db_handle_primary, format_visibility_for_display,
-    get_project_version_chain, normalize_visibility_field, is_project_private,
+    get_project_version_chain_for_document, normalize_visibility_field, is_project_private,
     PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES,
 )
 from .project_version_cleanup import (
@@ -1854,9 +1854,15 @@ def admin_project_files_report(request):
 #
 # `project_name_unique` is read by the template and is not written by the
 # upload path; it is listed so that a document which does have it keeps it.
+#
+# The lineage fields are here because the chain is resolved from the document
+# rather than from its name. That is a smaller read than it looks: the name
+# lookup this replaced ended in an unprojected `find_one`, so every row already
+# pulled a whole project document -- 690 KB on average -- to learn its chain.
 _AUDIT_PROJECT_FIELDS = {
     '_id': 1, 'project_name': 1, 'project_name_unique': 1, 'private': 1,
     'AA_version': 1, 'AC_version': 1, 'ASP_version': 1, 'sample_count': 1,
+    'previous_versions': 1, **lineage.POINTER_PROJECTION,
 }
 
 
@@ -1973,9 +1979,8 @@ def _get_audit_log_context(request):
 
     # For each project, find its most recent audit-log entry and run validation checks
     for proj in all_projects:
-        search_term = proj.get('project_name') or proj['id_str']
         try:
-            matched_uuids, _ = get_project_version_chain(search_term)
+            matched_uuids, _ = get_project_version_chain_for_document(proj)
 
             # Two different questions, which used to share one answer.
             # "When did this project last change?" is about every event,
@@ -2052,8 +2057,7 @@ def _get_audit_log_context(request):
                     selected_project = raw_proj
 
             if selected_project:
-                search_term = selected_project.get('project_name') or selected_project_id
-                matched_uuids, display_name = get_project_version_chain(search_term)
+                matched_uuids, display_name = get_project_version_chain_for_document(selected_project)
 
                 if matched_uuids:
                     raw_entries = list(
@@ -2134,9 +2138,7 @@ def admin_audit_log_validate(request):
         prepare_project_linkid(project)
 
         # ── 2. Find the most recent audit-log entry for this project ──────────
-        from .utils import get_project_version_chain
-        search_term = project.get('project_name') or project_id
-        matched_uuids, _ = get_project_version_chain(search_term)
+        matched_uuids, _ = get_project_version_chain_for_document(project)
 
         latest_entry = _latest_payload_entry(matched_uuids)
 
