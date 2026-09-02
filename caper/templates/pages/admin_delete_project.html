@@ -107,7 +107,10 @@ function undelete_project(event, project_id, project_name) {
                     },
             // The two checkbox columns and the button column hold no text to
             // sort or search on.
-            columnDefs: [{ orderable: false, searchable: false, targets: [0, 1, -1] }]
+            columnDefs: [{ orderable: false, searchable: false, targets: [0, 1, -1] }],
+            // Size columns sort on their data-order byte counts, which
+            // DataTables picks up automatically; nothing to declare here
+            // beyond leaving them orderable.
         });
 
         $('#select_all').on('change', function () {
@@ -262,6 +265,7 @@ function undelete_project(event, project_id, project_name) {
                                 <th>Deleted on</th>
                                 <th>Project Members</th>
                                 <th>Tarfile Size</th>
+                                <th title="Everything a permanent delete removes: this version, the versions its history names, and any tombstoned ancestors">Total to delete</th>
                                 <th>Permanently Delete</th>
                             </tr>
                         </thead>
@@ -279,7 +283,23 @@ function undelete_project(event, project_id, project_name) {
                                 <td>{% for person in project.project_members %}
                                     {{ person }}<br>
                                 {% endfor%}</td>
-                                <td>{{ project.tar_file_len }}</td>
+                                {% comment %}
+                                data-order carries the byte count so the column
+                                sorts by size. Without it DataTables sorts the
+                                formatted string and "9.4 MB" lands above
+                                "40.2 GB", which is exactly backwards for a
+                                column somebody scans to find the big ones.
+                                {% endcomment %}
+                                <td data-order="{{ project.tar_file_bytes }}">{{ project.tar_file_len }}</td>
+                                <td data-order="{{ project.delete_bytes }}">
+                                    <strong>{{ project.delete_size }}</strong>
+                                    {% if project.delete_versions %}
+                                    <br><small class="text-muted">{{ project.delete_versions }} version{{ project.delete_versions|pluralize }}{% if project.delete_files %}, {{ project.delete_files }} file{{ project.delete_files|pluralize }}{% endif %}</small>
+                                    {% endif %}
+                                    {% if project.delete_unresolved %}
+                                    <br><small class="text-warning" title="History entries naming a version that is already gone. They are skipped, and contribute nothing to the total.">{{ project.delete_unresolved }} dangling</small>
+                                    {% endif %}
+                                </td>
                                 <td>
 
                                     <input type = "button"  onclick="set_project_deleted(event, '{{ project.linkid }}', '{{ project.project_name }}', true)" value="delete"/>
