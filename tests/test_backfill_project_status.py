@@ -20,6 +20,8 @@ from pymongo import MongoClient
 from caper.project_status import (
     DETACHED, LIVE as LIVE_LABEL, SOFT_DELETED, SUPERSEDED, classify)
 from backfill_project_status import (
+    apply_history,
+    plan_history,
     apply_current,
     apply_lineage,
     apply_pointers,
@@ -680,3 +682,55 @@ def test_a_stranded_intermediate_is_placed_by_date_not_at_the_front(projects):
     ordinals = {str(doc['_id']): fields['version_ordinal'] for doc, fields in plan}
     assert ordinals == {str(old_a): 1, str(old_b): 2,
                         str(stranded): 3, str(head): 4}
+
+
+def test_history_repair_adds_only_what_the_pointers_place_before(projects):
+    """previous_versions[] is a copy of the lineage, so the pointers win.
+
+    The array goes short when a version is written without listing an ancestor
+    an earlier version listed. That is how caper-dev grew versions nothing
+    named. Repairing it is what lets I11 hold, and I11 holding is what makes
+    removing the array's readers invisible to anyone reading the site.
+    """
+    v1, v2, v3 = ObjectId(), ObjectId(), ObjectId()
+    projects.insert_many([
+        {'_id': v1, 'project_name': 'p', 'delete': True, 'current': False,
+         'version_chain_id': v1, 'version_ordinal': 1, 'is_latest': False},
+        {'_id': v2, 'project_name': 'p', 'delete': True, 'current': False,
+         'version_chain_id': v1, 'version_ordinal': 2, 'is_latest': False,
+         'previous_versions': [{'linkid': str(v1)}]},
+        # Ordinal 3, but its array skipped v2.
+        {'_id': v3, 'project_name': 'p', 'delete': False, 'current': True,
+         'version_chain_id': v1, 'version_ordinal': 3, 'is_latest': True,
+         'previous_versions': [{'linkid': str(v1)}]},
+    ])
+
+    plan = plan_history(projects)
+
+    assert len(plan) == 1
+    doc, entries, missing = plan[0]
+    assert str(doc['_id']) == str(v3)
+    assert missing == [str(v2)]
+    assert {e['linkid'] for e in entries} == {str(v1), str(v2)}
+
+    apply_history(projects, plan, execute=True)
+    after = {e['linkid'] for e in get(projects, v3)['previous_versions']}
+    assert after == {str(v1), str(v2)}
+    assert plan_history(projects) == [], 'a second run has nothing to do'
+
+
+def test_history_repair_never_removes_an_entry(projects):
+    """An entry the pointers do not place before this one is a different
+    finding, and dropping it here would destroy the evidence."""
+    v1, head, stranger = ObjectId(), ObjectId(), ObjectId()
+    projects.insert_many([
+        {'_id': v1, 'project_name': 'p', 'delete': True, 'current': False,
+         'version_chain_id': v1, 'version_ordinal': 1, 'is_latest': False},
+        {'_id': head, 'project_name': 'p', 'delete': False, 'current': True,
+         'version_chain_id': v1, 'version_ordinal': 2, 'is_latest': True,
+         'previous_versions': [{'linkid': str(v1)}, {'linkid': str(stranger)}]},
+    ])
+
+    plan = plan_history(projects)
+    assert plan == []
+    assert len(get(projects, head)['previous_versions']) == 2

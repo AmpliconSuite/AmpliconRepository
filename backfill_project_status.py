@@ -392,37 +392,116 @@ def order_chain(members, docs, ancestors, named_by):
                           '%d of them are LIVE, so it has %d possible heads'
                           % (len(candidates), len(live), len(candidates)))
         head = live[0]
-    listed = [m for m in ancestors[head] if m in docs and m in set(members)]
-    if len(set(listed)) != len(listed):
-        return None, 'the head lists the same version more than once'
 
-    # An ancestor the head reaches but does not list itself: some intermediate
-    # version named it and the head's own list dropped it. It is still part of
-    # this history and has to be given a position.
-    unlisted = sorted(set(members) - set(listed) - {head},
-                      key=lambda m: (str(docs[m].get('date') or ''), m))
-    if not unlisted:
-        return listed + [head], None
-
-    # Merged by date rather than pushed to the front, but only when the dates
-    # can carry it: every member has one, and the head's own list is already in
-    # date order, so date and the list agree wherever both have an opinion.
-    # Measured on caper-dev 2026-09-02, front-placement got this visibly wrong
-    # -- a 9 February version landed at ordinal 1, ahead of the 5 February one
-    # the head does list.
+    # The order comes from the references, not from the head's list.
     #
-    # Where the dates cannot carry it, the members go in front, because the only
-    # thing then known about them is that they are older than a version that
-    # named them.
-    def key(member):
-        return str(docs[member].get('date') or '')
+    # It used to be read off the head's own previous_versions[], on the
+    # reasoning that this is the order the application wrote. On caper-dev
+    # 2026-09-02 that produced an order contradicting the data: the CCLE head
+    # lists a 2026-04 version before a 2025-09 one, while the 2026-04 document
+    # itself names the 2025-09 one as its ancestor. Trusting the list put an
+    # ancestor after its own descendant.
+    #
+    # Every previous_versions[] entry is an ordering fact -- a document that
+    # names another is newer than it -- and taking all of them together is
+    # strictly more information than taking one document's. Ties, where nothing
+    # orders two members, fall to date and then to id, so a re-run produces the
+    # same ordinals.
+    before = {m: {a for a in ancestors[m] if a in set(members)} for m in members}
+    remaining = dict(before)
+    ordered = []
+    while remaining:
+        free = [m for m, deps in remaining.items() if not deps - set(ordered)]
+        if not free:
+            return None, ('the history references form a cycle among %d '
+                          'document(s)' % len(remaining))
+        # The head goes last whatever the dates say: it is the current version
+        # by classify(), and a chain whose head is not last is not a chain.
+        free = [m for m in free if m != head] or free
+        nxt = min(free, key=lambda m: (str(docs[m].get('date') or ''), m))
+        ordered.append(nxt)
+        del remaining[nxt]
 
-    dated = [key(m) for m in listed + [head]]
-    usable = all(key(m) for m in members) and dated == sorted(dated)
-    if not usable:
-        return unlisted + listed + [head], None
+    if ordered[-1] != head:
+        return None, ('%s is the current version but %s sorts after it'
+                      % (head, ordered[-1]))
+    return ordered, None
 
-    return sorted(listed + unlisted, key=lambda m: (key(m), m)) + [head], None
+
+def plan_history(projects):
+    """(doc, entries) for documents whose previous_versions[] is short.
+
+    The pointers are the authority for lineage and previous_versions[] is a
+    denormalised copy of it, so when the two disagree the array is what is
+    wrong. It goes short whenever a version was written without listing an
+    ancestor an earlier version had listed -- which is how caper-dev ended up
+    with versions that nothing named, and why the pointer backfill could not
+    place them.
+
+    Repairing it rather than leaving it is what lets invariant I11 hold, and
+    I11 holding is what makes removing the array's readers a no-op for anyone
+    reading the site. The array is on its way out; it should be correct on the
+    way.
+
+    Only additions are planned. An entry naming a document the pointers do not
+    place before this one is left alone: that is a different finding and
+    dropping it here would destroy the evidence.
+    """
+    by_id, plan = {}, []
+    for doc in projects.find({}, {'previous_versions': 1, 'version_chain_id': 1,
+                                  'version_ordinal': 1, 'project_name': 1,
+                                  'date': 1, 'linkid': 1}):
+        by_id[doc['_id']] = doc
+
+    chains = {}
+    for doc in by_id.values():
+        chain = doc.get('version_chain_id')
+        if chain is not None and doc.get('version_ordinal') is not None:
+            chains.setdefault(chain, []).append(doc)
+
+    for members in chains.values():
+        members.sort(key=lambda d: d['version_ordinal'])
+        for index, doc in enumerate(members):
+            expected = members[:index]
+            named = {str(entry['linkid'])
+                     for entry, _encoding in iter_previous_versions(doc)
+                     if entry.get('linkid')}
+            missing = [m for m in expected if str(m['_id']) not in named]
+            if not missing:
+                continue
+            entries = list(doc.get('previous_versions') or [])
+            for member in missing:
+                # Written in the encoding the reader expects, with the fields
+                # the history table renders. iter_previous_versions() knows two
+                # encodings; only one of them is written today.
+                entries.append({
+                    'linkid': str(member['_id']),
+                    'project_name': member.get('project_name'),
+                    'date': member.get('date'),
+                })
+            plan.append((doc, entries, [str(m['_id']) for m in missing]))
+    return plan
+
+
+def apply_history(projects, plan, execute, rollback=None):
+    written = skipped = 0
+    for doc, entries, _missing in plan:
+        if not execute:
+            written += 1
+            continue
+        result = projects.update_one(
+            {'_id': doc['_id'],
+             'previous_versions': doc.get('previous_versions')},
+            {'$set': {'previous_versions': entries}})
+        if result.matched_count:
+            written += 1
+            if rollback is not None:
+                rollback.write(json.dumps({
+                    '_id': str(doc['_id']), 'op': '$set',
+                    'fields': {'previous_versions': 'SEE UNDO NOTE'}}) + '\n')
+        else:
+            skipped += 1
+    return written, skipped
 
 
 def plan_pointers(projects):
@@ -653,8 +732,8 @@ def main():
     parser.add_argument('--execute', action='store_true',
                         help='Actually write. Without it the script only reports.')
     parser.add_argument('--only',
-                        choices=['current', 'lineage', 'pointers', 'status',
-                                 'visibility'],
+                        choices=['current', 'lineage', 'pointers', 'history',
+                                 'status', 'visibility'],
                         help='Run one pass instead of all five.')
     parser.add_argument('--limit', type=int, metavar='N',
                         help='Act on only the first N documents of each pass, '
@@ -749,6 +828,25 @@ def main():
                 len(plan), len({fields['version_chain_id'] for _doc, fields in plan})))
             plan = take(plan, args.limit)
             written, skipped = apply_pointers(projects, plan, args.execute, rollback)
+            totals['written'] += written
+            totals['skipped'] += skipped
+        print('')
+
+    if args.only in (None, 'history'):
+        print('=' * 78)
+        print('history -- previous_versions[] brought up to date with the pointers')
+        print('=' * 78)
+        plan = plan_history(projects)
+        if not plan:
+            print('  nothing to do')
+        else:
+            print('  %d document(s)\n' % len(plan))
+            for doc, _entries, missing in plan[:20]:
+                print('  %s  %-34s adds %s' % (
+                    doc['_id'], str(doc.get('project_name'))[:34],
+                    ', '.join(missing)))
+            plan = take(plan, args.limit)
+            written, skipped = apply_history(projects, plan, args.execute, rollback)
             totals['written'] += written
             totals['skipped'] += skipped
         print('')
