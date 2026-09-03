@@ -250,7 +250,7 @@ Prod's kernel journal (this boot, back to 2026-01-02) holds exactly one
 container out-of-memory event: **2026-08-29 02:03:21 UTC**,
 `constraint=CONSTRAINT_MEMCG` — the container's own 8 GiB limit, not the host —
 killing a gunicorn worker (pid 3247682) that held **anon-rss 3,512,240 kB
-(3.35 GiB)**. Dev's journal, covering 2026-02-05 onward, holds none. One event
+(3.35 GiB)**. Dev's journal held none until 2026-09-03, when a deliberate stress run put one there — **not** in the app container but in **neo4j**, covered below. One event
 in eight months is a tail risk, not a routine failure, and it is worth saying so
 plainly. But its shape matters: a single worker at 3.35 GiB against an 8 GiB
 ceiling is a **concurrent peak**, not gradual creep, and no restart schedule
@@ -284,6 +284,39 @@ The 3.2 GiB spike is page cache from writing the temp file, which the kernel
 reclaims under pressure and dropped by itself on unlink. `docker stats` and
 `memory.current` both include it. Judge headroom on `cgroup_anon_kb`, which did
 not move.
+
+**neo4j can be OOM-killed too, and Docker will not tell you.** On dev
+2026-09-03, three back-to-back co-amplification analyses of HMF + PCAWG (6,265
+samples) ended with the kernel killing neo4j's JVM:
+
+    Sep 03 07:18:33 kernel: oom-kill:constraint=CONSTRAINT_MEMCG ... task=java,pid=1849
+    Memory cgroup out of memory: Killed process 1849 (java)
+      total-vm:23360908kB, anon-rss:18820868kB
+
+**17.95 GiB of anonymous memory against neo4j's 18.00 GiB cap.** The container
+came back by itself and served traffic again within twenty seconds.
+
+Three signals said "not an OOM" and all three were wrong, which is the part
+worth remembering:
+
+| Signal | Read | Why it misleads |
+|---|---|---|
+| `docker inspect .State.OOMKilled` | `false` | Docker sets this only when the container's **init** process is the victim. Here the kernel killed `java`; the entrypoint reaped it and exited cleanly. |
+| `.State.ExitCode` | `0` | Same reason — the entrypoint's own exit, not the JVM's. |
+| `memory.events: oom_kill` | `0` | Read **after** the restart. Cgroup counters are per-cgroup, and the restart made a new one. The dead cgroup's counter went with it. |
+
+`neo4j.log` is the fourth tell, by omission: it jumps straight from `Started.`
+on 2026-02-05 to `Starting...` on 2026-09-03 with **no shutdown line at all**.
+A JVM that is asked to stop says so; one that is SIGKILLed cannot.
+
+**The kernel journal on the host is the only authority.** `journalctl -k` and
+grep for `oom-kill`. Do not conclude "not an OOM" from Docker's flag.
+
+The same run took the app container to **6.98 GiB of its 8 GiB cap** with a
+single worker at **5.32 GiB**, still climbing ~175 MB every 20 s when the run
+was stopped. The app was never killed and its `oom_kill` stayed 0. Both halves
+point at the same missing control: nothing caps how many co-amplification
+analyses run at once.
 
 **Is 8 GiB the right cap?** Both boxes are `t4g.2xlarge`: 8 vCPU, 31 GB RAM, no
 swap. Measured 2026-09-03: the app container is capped at 8 GiB and **neo4j at

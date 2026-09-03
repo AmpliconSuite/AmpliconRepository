@@ -438,8 +438,18 @@ def report(path):
             "%.1fh" % (age / 3600.0) if age is not None else "-",
             human(u0), human(u1), human(u1 - u0),
             (human(rate) if rate is not None else "-"), rec["n"]))
-        if last["role"] == "master" and rate is not None:
-            master_rate = (pid, rate, hours)
+        if last["role"] == "master":
+            # The master ramps to its plateau after start just as a worker does
+            # -- prod's caught it at 25 MiB four seconds in and it settled at
+            # 63 MiB, the same figure the two previous generations held, which
+            # the whole-window rate reported as "5 MiB/hour" of drift. Measure
+            # it past warm-up like everything else.
+            mm = rec["mature"]
+            mm_hours = ((i(last, "sample_id") - i(mm, "sample_id")) / 3600.0
+                        if mm is not None else 0.0)
+            mm0 = i(mm, "uss_kb") if mm is not None else None
+            if mm0 is not None and mm_hours >= 1.0:
+                master_rate = (pid, (u1 - mm0) / mm_hours, mm_hours)
         elif last["role"] == "worker":
             # Measure the worker from the first sample past warm-up, not from
             # its birth, and only if an hour of it was seen. See WARMUP_S.
