@@ -6455,9 +6455,27 @@ def clear_cache(request):
     return redirect('index')
 
 
+def _graph_threshold(value, default):
+    """One edge-filter threshold from the query string, as a number.
+
+    The thresholds are bound into the Cypher rather than formatted into it, so
+    a non-numeric value is a bad request rather than something the database
+    should be asked about. Absent means "no threshold" -- the visualizer always
+    sends both, but a hand-built URL need not.
+    """
+    if value is None or value == "":
+        return default
+    return float(value)
+
+
 def fetch_graph(request, gene_name):
-    min_weight = request.GET.get('min_weight')
-    min_samples = request.GET.get('min_samples')
+    try:
+        min_weight = _graph_threshold(request.GET.get('min_weight'), 0)
+        min_samples = _graph_threshold(request.GET.get('min_samples'), 0)
+    except (TypeError, ValueError):
+        return JsonResponse(
+            {'error': 'min_weight and min_samples must be numbers.'},
+            status=400)
     oncogenes = request.GET.get('oncogenes', 'false').lower() == 'true'
     all_edges = request.GET.get('all_edges', 'false').lower() == 'true'
     
@@ -6482,8 +6500,13 @@ def fetch_graph(request, gene_name):
                         gene_name, e)
         return JsonResponse({'error': NEO4J_BUSY_MESSAGE}, status=503)
 
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    except Exception:
+        # Caught here means it never reaches Django's handler, so without this
+        # line the detail goes to the requester and nowhere else -- not to
+        # stdout.log, not to the error log.
+        logging.exception("subgraph query failed for %s", gene_name)
+        return JsonResponse({'error': 'Could not build the subgraph for this '
+                                      'gene.'}, status=500)
 
 
 def coamp_overview(request):
@@ -6502,8 +6525,10 @@ def coamp_overview(request):
     except NEO4J_UNAVAILABLE as e:
         logging.warning("neo4j unavailable serving overview: %s", e)
         return JsonResponse({'error': NEO4J_BUSY_MESSAGE}, status=503)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    except Exception:
+        logging.exception("co-amplification overview failed")
+        return JsonResponse({'error': 'Could not build the gene overview.'},
+                            status=500)
 
 
 def download_coamp_edges(request):

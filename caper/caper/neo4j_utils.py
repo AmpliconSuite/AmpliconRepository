@@ -105,49 +105,54 @@ def fetch_subgraph_helper(driver, name, min_weight, min_samples, oncogenes, all_
     if all_edges:
         if oncogenes:
             query = """
-            MATCH (n)-[r WHERE r.weight >= {mw} and r.lenunion >= {ms}]-(m WHERE m.oncogene = "True"{cf})
+            MATCH (n)-[r WHERE r.weight >= $mw and r.lenunion >= $ms]-(m WHERE m.oncogene = "True"{cf})
             WHERE n.name = $name{cf_base}
-            OPTIONAL MATCH (m)-[r2 WHERE r2.weight >= {mw} and r2.lenunion >= {ms}]-(o WHERE o.oncogene = "True"{cf_o})
-            MATCH (o WHERE o.oncogene = "True"{cf_o})-[r3 WHERE r3.weight >= {mw} and r3.lenunion >= {ms}]-(n)
+            OPTIONAL MATCH (m)-[r2 WHERE r2.weight >= $mw and r2.lenunion >= $ms]-(o WHERE o.oncogene = "True"{cf_o})
+            MATCH (o WHERE o.oncogene = "True"{cf_o})-[r3 WHERE r3.weight >= $mw and r3.lenunion >= $ms]-(n)
             RETURN n, r, m, r2, o
-            """.format(mw = min_weight, ms = min_samples, cf=cache_filter.replace(" AND n.cache_key = $cache_key AND m.cache_key = $cache_key", " AND m.cache_key = $cache_key"), cf_base=" AND n.cache_key = $cache_key" if cache_key else "", cf_o=cache_filter_o)
+            """.format(cf=cache_filter.replace(" AND n.cache_key = $cache_key AND m.cache_key = $cache_key", " AND m.cache_key = $cache_key"), cf_base=" AND n.cache_key = $cache_key" if cache_key else "", cf_o=cache_filter_o)
         else:
             query = """
-            MATCH (n)-[r WHERE r.weight >= {mw} and r.lenunion >= {ms}]-(m{cf_simple})
+            MATCH (n)-[r WHERE r.weight >= $mw and r.lenunion >= $ms]-(m{cf_simple})
             WHERE n.name = $name{cf_base}
-            OPTIONAL MATCH (m)-[r2 WHERE r2.weight >= {mw} and r2.lenunion >= {ms}]-(o{cf_simple})
-            MATCH (o{cf_simple})-[r3 WHERE r3.weight >= {mw} and r3.lenunion >= {ms}]-(n)
+            OPTIONAL MATCH (m)-[r2 WHERE r2.weight >= $mw and r2.lenunion >= $ms]-(o{cf_simple})
+            MATCH (o{cf_simple})-[r3 WHERE r3.weight >= $mw and r3.lenunion >= $ms]-(n)
             RETURN n, r, m, r2, o
-            """.format(mw = min_weight, ms = min_samples, cf_simple=" {cache_key: $cache_key}" if cache_key else "", cf_base=" AND n.cache_key = $cache_key" if cache_key else "")
+            """.format(cf_simple=" {cache_key: $cache_key}" if cache_key else "", cf_base=" AND n.cache_key = $cache_key" if cache_key else "")
     # --------------------------------------------------------------------------
     else:
         if oncogenes:
             query = """
-            MATCH (n)-[r WHERE r.weight >= {mw} and SIZE(r.union) >= {ms}]-(m WHERE m.oncogene = "True"{cf_m})
+            MATCH (n)-[r WHERE r.weight >= $mw and SIZE(r.union) >= $ms]-(m WHERE m.oncogene = "True"{cf_m})
             WHERE n.label = $name{cf_base}
             RETURN n, r, m
-            """.format(mw = min_weight, ms = min_samples, cf_m=" AND m.cache_key = $cache_key" if cache_key else "", cf_base=" AND n.cache_key = $cache_key" if cache_key else "")
+            """.format(cf_m=" AND m.cache_key = $cache_key" if cache_key else "", cf_base=" AND n.cache_key = $cache_key" if cache_key else "")
             
             prev_query = """
-            MATCH (n)-[r WHERE r.weight >= {mw} and r.lenunion >= {ms}]-(m WHERE m.oncogene = "True")
+            MATCH (n)-[r WHERE r.weight >= $mw and r.lenunion >= $ms]-(m WHERE m.oncogene = "True")
             WHERE n.name = $name
             RETURN n, r, m
-            """.format(mw = min_weight, ms = min_samples)
+            """
         else:
             query = """
-            MATCH (n{cf_simple})-[r WHERE r.weight >= {mw} and SIZE(r.union) >= {ms}]-(m{cf_simple})
+            MATCH (n{cf_simple})-[r WHERE r.weight >= $mw and SIZE(r.union) >= $ms]-(m{cf_simple})
             WHERE n.label = $name
             RETURN n, r, m
-            """.format(mw = min_weight, ms = min_samples, cf_simple=" {cache_key: $cache_key}" if cache_key else "")
+            """.format(cf_simple=" {cache_key: $cache_key}" if cache_key else "")
 
             prev_query = """
-            MATCH (n)-[r WHERE r.weight >= {mw} and r.lenunion >= {ms}]-(m)
+            MATCH (n)-[r WHERE r.weight >= $mw and r.lenunion >= $ms]-(m)
             WHERE n.name = $name
             RETURN n, r, m
-            """.format(mw = min_weight, ms = min_samples)
+            """
     # print(query)
     query_start = time.process_time() # time
-    result = driver.run(query, name=name, cache_key=cache_key) if cache_key else driver.run(query, name=name)
+    # mw and ms are bound, not formatted in: they arrive from the query string
+    # and anything pasted into the statement text would be read as Cypher.
+    params = {"name": name, "mw": min_weight, "ms": min_samples}
+    if cache_key:
+        params["cache_key"] = cache_key
+    result = driver.run(query, **params)
     query_end = time.process_time() # time
     print("Query runtime: ", query_end - query_start, " seconds") # time
     
