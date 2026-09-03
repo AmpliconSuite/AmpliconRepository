@@ -193,20 +193,112 @@ run the job so it survives — `docker exec -d` writing to a log inside the
 container is not enough on its own, because the restart stops the container and
 takes the process with it.
 
-**Why it is there:** the web tier leaks memory, the leak was never found, and a
-daily restart is the mitigation that was reached for instead. It works, in the
-sense that the process image never gets old enough to matter. Related but not
-the same thing: containers were also given an 8 GiB cap and `unless-stopped` on
-2026-08-25 after an unbounded container took the host down.
+**Why it is there — measured 2026-09-02.** It predates gunicorn. Until
+2026-01-27 (`6a33a1c3`) `run-manage-py.sh` ran `manage.py runserver`: one
+process, serving every request, for as long as the container lived, with
+nothing to bound its memory. A daily restart was the only bound there was.
+Prod's `stop-and-start-repo.sh` still carries the fossil of that era in its own
+first line — a commented-out `docker exec ... stop-server.sh` above the note
+"now just do a docker stop since we switched to gunicorn", dated 2026-02-03.
+The restart was carried through the gunicorn migration rather than
+re-justified. Related but not the same thing: containers were also given an
+8 GiB cap and `unless-stopped` on 2026-08-25 after an unbounded container took
+the host down.
 
-**Why it is worth removing eventually, and why not today:** a scheduled restart
-is a workaround holding a defect at arm's length, and it hides the very signal
-that would let anyone diagnose the defect — memory never gets to grow far
-enough to characterise. `memory_monitor.py` and `diagnose_memory.py` are in the
-repository, and `docs/gunicorn-worker-concurrency-todo.md` covers the adjacent
-worker-model question. None of that is scheduled work. Removing the restart
-before the leak is understood would trade a known, cheap, 07:12 blip for an
-unknown one at an unknown hour.
+**What now bounds worker memory instead.** `gunicorn_config.py` sets
+`max_requests = 2000` with jitter, so every worker is replaced after roughly
+2000 requests. This is not theoretical: prod's `gunicorn.log` for 2026-08-30 to
+09-02 holds 108 "Autorestarting worker after current request" lines and exactly
+108 "Worker exiting" lines — every non-restart worker replacement in those four
+days was a clean recycle, with zero `WORKER TIMEOUT` and zero crashes. At
+73k–151k requests/day that is 18–36 recycles/day across 9 workers — each worker
+replaced 2–4 times a day, a **mean process age of 6–12 hours**, restart or no
+restart. (That is arithmetic on the recycle rate, not a measured age
+distribution; the probe records `age_s` per worker, so the distribution is
+there to be read once a series spans a full day.) Removing the daily restart
+would not slow recycling down — it would speed it up slightly, since each
+restart currently discards every worker's partial progress toward its next
+2000. The master
+process is the exception: it is never recycled, and only the restart replaces
+it. Measured on dev the same day, the master does not grow — flat at 111 MB RSS
+/ 63 MB USS across an hour of sampling and three large analyses.
+
+**What the restart is actually still doing.** Not curing a leak. A worker's
+memory floor rises when it serves a heavy request and does not come back down.
+Measured on dev 2026-09-02, driving three co-amplification analyses of a
+2095-sample project through one worker: idle 257 MiB RSS → peak **1.99 GiB**
+→ settles at **609 MiB** and stays there. The container went 1.78 GiB → 4.72 GiB
+peak → 2.49 GiB, against an 8 GiB cap, for **one** worker analysing at a time.
+That retained floor is what a restart clears; `max_requests` clears it too, but
+only after 2000 more requests, which on a quiet dev box can be days.
+
+**The failure that actually happened, and that the restart did not prevent.**
+Prod's kernel journal (this boot, back to 2026-01-02) holds exactly one
+container out-of-memory event: **2026-08-29 02:03:21 UTC**,
+`constraint=CONSTRAINT_MEMCG` — the container's own 8 GiB limit, not the host —
+killing a gunicorn worker (pid 3247682) that held **anon-rss 3,512,240 kB
+(3.35 GiB)**. Dev's journal, covering 2026-02-05 onward, holds none. One event
+in eight months is a tail risk, not a routine failure, and it is worth saying so
+plainly. But its shape matters: a single worker at 3.35 GiB against an 8 GiB
+ceiling is a **concurrent peak**, not gradual creep, and no restart schedule
+reaches it — the box had restarted at 07:12 the previous morning. It is not in
+`gunicorn.log`, which only reaches back to 2026-08-30 and contains no `SIGKILL`
+and no `WORKER TIMEOUT` at all; that is why it had not been noticed. The cap
+did its job — a killed worker is contained and gunicorn respawns it, which is
+what the cap was added on 2026-08-25 to buy.
+
+**Is 8 GiB the right cap?** Both boxes are `t4g.2xlarge`: 8 vCPU, 31 GB RAM, no
+swap. Measured 2026-09-03: the app container is capped at 8 GiB and **neo4j at
+18 GiB** — 26 GiB of committed caps against ~30.9 GiB of host, leaving ~5 GiB
+for the OS and page cache. Live at that moment: prod app 2.19 GiB, prod neo4j
+2.44 GiB; dev app 1.66 GiB, dev neo4j 12.51 GiB. So the container that has
+actually been OOM-killed holds the smaller allowance, and on prod the larger
+one is using an eighth of its share. Do not simply raise the app's number —
+the caps are what stop one container taking the host down, and the total is
+already committed. Collect a neo4j series with `memory_probe.py` (it samples
+any process) and re-measure the split per host; dev and prod differ sharply
+enough that the right number is unlikely to be the same on both.
+
+**`/tmp` inside the container is disk, not RAM** — checked 2026-09-03 because
+it matters for where scratch space is charged. `/tmp` is the overlay
+filesystem (106 GB, 47 GB free), so the Django file cache
+(`/tmp/django_cache`, 220 KB over 52 entries on dev), the throttle cache, and
+every `tempfile.NamedTemporaryFile` in the tar and CSV-export paths cost disk
+and not memory. The one RAM-backed mount is `/dev/shm` at Docker's default
+**64 MB**, which `gunicorn_config.py` uses deliberately
+(`worker_tmp_dir = "/dev/shm"`) for per-worker heartbeat files of a few bytes
+each. 64 MB is ample for that; it would only bite if something in the stack
+ever reached for bulk shared memory, and the symptom would look like a puzzling
+I/O error rather than an out-of-memory one. (On a laptop `/tmp` is often tmpfs
+— it is a 30 GB one on the maintainer's — so a harness writing multi-GB scratch
+there charges it to memory and corrupts the measurement. Point `TMPDIR` at real
+disk when running `leak_repro.py --scenario aggregate` locally.)
+
+It is not a Python-level leak. Running the same analysis repeatedly in one
+process, `tracemalloc` reports 0.0 MiB of tracked growth across 40,059
+allocation sites while USS climbs — Python frees the objects and glibc keeps
+the pages. `malloc_trim()` hands about 39 MiB per iteration back to the kernel,
+which is the direct confirmation.
+
+Re-aggregation, long the other suspect, is **not** a significant contributor:
+re-aggregating the 1.7 GB / ~2000-sample PCAWG archive three times in one
+process cost +69, +28 and +13 MiB — a decaying curve, 88 s per run. The
+aggregator streams to disk and is frugal.
+
+**Tooling.** `memory_probe.py` samples per-worker RSS/PSS/USS plus the cgroup
+total, one row per process per sample, and is restart-proof (`--once` from
+cron, appending to a bind-mounted CSV); `memory_probe.py --report` reads the
+series back. `leak_repro.py` drives one suspect operation in a loop and
+separates a leak from allocator retention. Both landed 2026-09-02, replacing
+`memory_monitor.py`, `diagnose_memory.py`, `memory_tracker.py`,
+`memory_profiler.py` and `install_profiling_tools.sh` — a stalled earlier
+attempt that could not answer this question: it saved its samples only on
+Ctrl-C, summed RSS across forked workers (which double-counts the shared image
+— nine dev workers at ~255 MB RSS sum to 2.31 GB against a cgroup reading
+1.65 GiB), and ran `objgraph`/`pympler` inside the monitoring process rather
+than the target, with neither package in `requirements.txt`.
+`docs/gunicorn-worker-concurrency-todo.md` covers the adjacent worker-model
+question.
 
 **What to keep in mind while it exists:**
 

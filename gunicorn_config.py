@@ -47,7 +47,13 @@ preload_app = True
 accesslog = "/srv/logs/gunicorn_access.log"
 errorlog = "/srv/logs/gunicorn_error.log"
 loglevel = os.getenv("GUNICORN_LOG_LEVEL", "info")
-access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
+# %(p)s is the worker pid.  It is here so that a request can be attributed to
+# the worker that served it: memory_probe.py samples memory per worker, and
+# without the pid on each request line there is no way to say which requests a
+# worker was serving while it grew.  Appended rather than inserted, so anything
+# reading the existing fields by position still works.
+access_log_format = ('%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" '
+                     '"%(a)s" %(D)s pid=%(p)s')
 
 # Process naming.  Inert unless `setproctitle` is installed, which it is not, so
 # the processes appear under their default name.  Tooling that needs to find
