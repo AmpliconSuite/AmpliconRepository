@@ -81,6 +81,13 @@ DEFAULT_PATTERN = r"gunicorn|manage\.py|celery"
 
 CLK_TCK = os.sysconf("SC_CLK_TCK")
 
+# A freshly forked worker is a copy-on-write image of the master; it touches
+# pages as it serves its first requests, so its USS climbs steeply for a while
+# before flattening. That ramp is not a leak, and extrapolating it is how this
+# tool reported "the 8.00 GiB cap is 1.9 hours away" on 2026-09-03 from a prod
+# worker six minutes old. Below this age a worker's growth rate is warm-up.
+WARMUP_S = int(os.getenv("MEMORY_PROBE_WARMUP_S", "3600"))
+
 FIELDS = [
     "ts_utc",           # sample time, ISO 8601 UTC
     "sample_id",        # epoch seconds; rows sharing it were taken together
@@ -407,6 +414,8 @@ def report(path):
     print("-" * 78)
 
     worst = None
+    master_rate = None
+    skipped_young = 0
     for (pid, _), rec in sorted(procs.items(), key=lambda kv: int(kv[0][0])):
         first, last = rec["first"], rec["last"]
         u0, u1 = i(first, "uss_kb"), i(last, "uss_kb")
@@ -420,14 +429,26 @@ def report(path):
             "%.1fh" % (age / 3600.0) if age is not None else "-",
             human(u0), human(u1), human(u1 - u0),
             (human(rate) if rate is not None else "-"), rec["n"]))
-        if rate is not None and last["role"] == "worker":
-            if worst is None or rate > worst[1]:
-                worst = (pid, rate)
+        age0 = i(first, "age_s")
+        if last["role"] == "master" and rate is not None:
+            master_rate = (pid, rate, hours)
+        elif rate is not None and last["role"] == "worker":
+            # Only a worker that was already past warm-up when the window
+            # opened, and was then watched for an hour, carries a rate worth
+            # quoting. See WARMUP_S.
+            if hours >= 1.0 and age0 is not None and age0 >= WARMUP_S:
+                if worst is None or rate > worst[1]:
+                    worst = (pid, rate)
+            else:
+                skipped_young += 1
 
     cg = [i(r, "cgroup_current_kb") for r in rows if i(r, "cgroup_current_kb")]
     cap = next((i(r, "cgroup_max_kb") for r in reversed(rows)
                 if i(r, "cgroup_max_kb")), None)
     anon = [i(r, "cgroup_anon_kb") for r in rows if i(r, "cgroup_anon_kb")]
+    # A CSV written by a probe older than the anon/file split has no such
+    # column. Say which line to read rather than naming one that is not there.
+    container_line = ("anonymous-memory" if anon else "cgroup-total")
     if anon:
         print("\nContainer anonymous memory (the part that approaches the cap): "
               "first %s, last %s, peak %s" % (human(anon[0]), human(anon[-1]),
@@ -452,9 +473,16 @@ def report(path):
               "the measurement\nthat matters.")
         return 0
 
+    # The master is the process the restart uniquely replaces: max_requests
+    # recycles workers but never the master, so its drift is the figure the
+    # "can the nightly restart go?" question actually turns on.
+    if master_rate:
+        print("Master (the only process a restart uniquely replaces): "
+              "%s/hour over %.1fh." % (human(master_rate[1]), master_rate[2]))
+
     if worst and worst[1] > 0:
-        print("\nFastest-growing worker: pid %s at %s/hour of private memory."
-              % (worst[0], human(worst[1])))
+        print("\nFastest-growing worker past warm-up: pid %s at %s/hour of "
+              "private memory." % (worst[0], human(worst[1])))
         if cap and cg:
             headroom = cap - cg[-1]
             # Nine workers all growing at that rate is the pessimistic case;
@@ -463,6 +491,15 @@ def report(path):
             if hours and hours > 0:
                 print("If all 9 workers grew at that rate, the %s cap is "
                       "%.1f hours (%.1f days) away." % (human(cap), hours, hours / 24))
+    elif skipped_young:
+        # Not a gap in the data. It is what worker recycling means: no worker
+        # survives long enough past warm-up for a per-worker rate to exist, so
+        # the container-level drift above is the signal, not this line.
+        print("\nNo worker lived long enough past warm-up (%dh) to carry a "
+              "growth rate;\n%d were too young or too briefly seen. That is "
+              "max_requests recycling\nworking as intended -- read the "
+              "container %s drift above instead."
+              % (WARMUP_S // 3600, skipped_young, container_line))
     else:
         print("\nNo worker shows positive USS growth over the observed window.")
     print("\nWindow length is the caveat on all of the above -- a leak that "

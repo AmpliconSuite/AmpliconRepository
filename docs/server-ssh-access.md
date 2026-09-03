@@ -260,6 +260,31 @@ and no `WORKER TIMEOUT` at all; that is why it had not been noticed. The cap
 did its job — a killed worker is contained and gunicorn respawns it, which is
 what the cap was added on 2026-08-25 to buy.
 
+**The fix, measured end to end.** `caper/views.py` used to read the whole
+project archive into one `bytes` object before writing it to a temp file; it now
+`shutil.copyfileobj`s it in 1 MiB chunks. Verified on dev 2026-09-03 by
+requesting the summary CSV of "PCAWG cutoff passed" (a **3.40 GiB** archive,
+larger than HMF's 3.36 GiB) over HTTPS as a logged-in user, cold:
+
+| | |
+|---|---|
+| Response | 200, `text/csv`, 5,427,311 bytes in **168.2 s** |
+| Busiest worker RSS | **355 MiB**, unchanged throughout |
+| Container anonymous memory | 2.21 → 2.23 → **2.13 GiB** (flat) |
+| Container page cache | 0.33 → **3.52 GiB**, then 0.19 GiB when the temp file was unlinked |
+| Container total | 2.59 → **5.78 GiB** peak → 2.39 GiB |
+
+Two things follow. The first is that the fix works: a 3.4 GiB archive moved
+through a worker that never grew, where the old code would have put >3.4 GiB of
+anonymous memory in one process — the shape that was OOM-killed on 08-29.
+
+The second is a **trap for anyone watching `docker stats`**: the container read
+**5.78 GiB of its 8 GiB cap** during that download and none of it was at risk.
+The 3.2 GiB spike is page cache from writing the temp file, which the kernel
+reclaims under pressure and dropped by itself on unlink. `docker stats` and
+`memory.current` both include it. Judge headroom on `cgroup_anon_kb`, which did
+not move.
+
 **Is 8 GiB the right cap?** Both boxes are `t4g.2xlarge`: 8 vCPU, 31 GB RAM, no
 swap. Measured 2026-09-03: the app container is capped at 8 GiB and **neo4j at
 18 GiB** — 26 GiB of committed caps against ~30.9 GiB of host, leaving ~5 GiB
