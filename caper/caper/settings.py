@@ -198,6 +198,29 @@ SERVER_EMAIL = DEFAULT_FROM_EMAIL
 SITE_URL = os.environ.get("SITE_URL", default="http://127.0.0.1:8000/")
 
 SERVER_IDENTIFICATION_BANNER=os.getenv('SERVER_IDENTIFICATION_BANNER', default=None)
+
+# ---------------------------------------------------------------------------
+# Development-server landing gate.  See caper/caper/dev_gate.py.
+#
+# Off unless a deployment turns it on, so production and an ordinary local
+# checkout are untouched.  Keyed on this setting rather than on the dev
+# hostname: a hostname test cannot be exercised on a laptop, and it would put a
+# domain name in the source where a deployment setting belongs.
+#
+# The passphrase is deliberately not a secret -- it is published in README.md,
+# AGENTS.md and the developer wiki.  It keeps wanderers and crawlers out; it is
+# not a security boundary, and the dev server holds no sensitive data.
+DEV_GATE_ENABLED = (os.getenv('DEV_GATE_ENABLED', default='False') == 'True')
+DEV_GATE_PASSPHRASE = os.getenv('DEV_GATE_PASSPHRASE', default='amprepodev')
+DEV_GATE_MAX_AGE_SECONDS = int(os.getenv('DEV_GATE_MAX_AGE_SECONDS', default=str(7 * 24 * 3600)))
+
+# Second stage of getting dev out of search results, and OFF until the first
+# stage has done its work.  DEV_GATE_ENABLED already stamps
+# `X-Robots-Tag: noindex` on every response; a `Disallow: /` now would stop
+# Google re-fetching those pages and therefore stop it ever seeing the noindex,
+# leaving the indexed URLs in place indefinitely.  Turn this on once a
+# `site:dev.ampliconrepository.org` search comes back empty.
+DEV_ROBOTS_DISALLOW_ALL = (os.getenv('DEV_ROBOTS_DISALLOW_ALL', default='False') == 'True')
 AGGREGATOR_DEV_PATH=os.getenv('AGGREGATOR_DEV_PATH', default='')
 
 # Insert the dev path as early as possible (settings.py is loaded before any
@@ -541,6 +564,11 @@ MIDDLEWARE = (
     # template, and a request the load shedder is about to reject should not
     # cost a worker any of that work either.  See caper/middleware.py.
     "caper.middleware.HealthCheckMiddleware",
+    # Third-party to this pair but the same reasoning: a visitor the dev gate is
+    # about to turn away should not cost a session read, a MongoDB query or a
+    # template context processor.  No-op unless DEV_GATE_ENABLED is set, which
+    # only the dev server does.  See caper/dev_gate.py.
+    "caper.dev_gate.DevGateMiddleware",
     "caper.middleware.LoadShedMiddleware",
     # Above UpdateCacheMiddleware on purpose: response middleware runs bottom-up,
     # so listing gzip here means the cache stores the *uncompressed* body and

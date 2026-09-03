@@ -5987,19 +5987,26 @@ def robots(request):
       INSTALLED_APPS wins -- which would serve "Disallow:" and open the whole
       site to crawlers.
     """
+    # The development server can serve a Disallow-everything variant instead.
+    # This is the second stage of removing dev from search results and is off
+    # by default -- see robots-dev.txt for why the order matters.
+    filename = ('robots-dev.txt'
+                if getattr(settings, 'DEV_ROBOTS_DISALLOW_ALL', False)
+                else 'robots.txt')
+
     project_static = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'static')
-    robots_path = os.path.join(project_static, 'robots.txt')
+    robots_path = os.path.join(project_static, filename)
 
     if not os.path.exists(robots_path):
         # Fall back to the collected static root for any deployment that serves
         # only from STATIC_ROOT.
-        candidate = os.path.join(settings.STATIC_ROOT or '', 'robots.txt')
+        candidate = os.path.join(settings.STATIC_ROOT or '', filename)
         robots_path = candidate if os.path.exists(candidate) else None
 
     if not robots_path:
         logging.warning(
-            "robots.txt not found in %s or STATIC_ROOT", project_static)
+            "%s not found in %s or STATIC_ROOT", filename, project_static)
         raise Http404("robots.txt not found")
 
     with open(robots_path, 'r') as fh:

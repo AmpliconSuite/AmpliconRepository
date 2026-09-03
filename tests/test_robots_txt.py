@@ -142,3 +142,38 @@ def _agent_block(body, agent):
         if collecting and stripped and not stripped.startswith('#'):
             block.append(stripped)
     return '\n'.join(block) + '\n' if collecting or block else None
+
+
+# ---------------------------------------------------------------------------
+# The development server's Disallow-everything variant
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_the_dev_disallow_all_file_is_off_by_default(request_factory):
+    """Production must not start refusing crawlers because this shipped."""
+    from caper.views import robots
+
+    body = robots(request_factory.get('/robots.txt')).content.decode()
+
+    assert _agent_block(body, '*').strip() != 'Disallow: /'
+
+
+@pytest.mark.integration
+def test_dev_robots_disallow_all_serves_the_dev_file(request_factory):
+    """Stage two of removing dev from search results.
+
+    Deliberately a separate flag from DEV_GATE_ENABLED rather than following
+    it: the noindex header has to be seen by a crawler before the crawl is
+    refused, and refusing the crawl first would strand the indexed URLs.  See
+    caper/static/robots-dev.txt.
+    """
+    from django.test import override_settings
+
+    from caper.views import robots
+
+    with override_settings(DEV_ROBOTS_DISALLOW_ALL=True):
+        body = robots(request_factory.get('/robots.txt')).content.decode()
+
+    assert _agent_block(body, '*').strip() == 'Disallow: /'
+    assert 'Disallow: /*/download' not in body, \
+        'the dev variant should be the whole-site refusal, not the production file'

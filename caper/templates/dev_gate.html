@@ -1,0 +1,236 @@
+{% comment %}
+Development-server landing gate.  See caper/caper/dev_gate.py.
+
+Standalone on purpose: this does NOT extend base.html.  It is rendered by
+middleware sitting above sessions, auth, MongoDB and the Mezzanine page
+machinery, so it can use no context processor, no staticfiles tag and no site
+navigation.  Everything it needs -- styles and the wordmark -- is inlined,
+which also means the gate cannot break from a static-deploy problem.
+
+The palette is the deployed site's own: #414042 wordmark charcoal, #1f66d0
+action blue, #f0a202 amber (the same signal colour as the yellow dev banner in
+includes/header.html), and the site's blue-biased greys.  A lost visitor has to
+recognise the right project on the wrong server, so a page that looked foreign
+would make the confusion worse.
+
+Light-only, deliberately: it ships into a light-only Bootstrap 4 site.
+
+The passphrase is not a secret, but it does not belong on the page that asks
+for it -- that would gate nobody.  It is in README.md, AGENTS.md and the wiki
+page linked below.
+{% endcomment %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <title>Development server | AmpliconRepository</title>
+  <style>
+    :root {
+      --ink:        #414042;
+      --ink-soft:   #6b6a6d;
+      --ink-faint:  #8e8d91;
+      --ground:     #f7f9fc;
+      --panel:      #ffffff;
+      --panel-warm: #fdf7e8;
+      --rule:       #dfe4ec;
+      --blue:       #1f66d0;
+      --blue-deep:  #12489b;
+      --amber:      #f0a202;
+      --danger:     #b3261e;
+      --danger-bg:  #fdecea;
+      --font-ui:   "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    body {
+      margin: 0;
+      background: var(--ground);
+      color: var(--ink);
+      font-family: var(--font-ui);
+      font-size: 16px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    .shell {
+      max-width: 40rem;
+      margin: 0 auto;
+      padding: clamp(2rem, 7vw, 4.5rem) 1.5rem 3rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+    .mark { display: block; width: 100%; max-width: 21rem; height: auto; }
+
+    .env {
+      background: var(--panel-warm);
+      border: 1px solid #f2e3bd;
+      border-left: 4px solid var(--amber);
+      border-radius: 3px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: .55rem;
+    }
+    .env-label {
+      font-size: .6875rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #8a6300;
+    }
+    .env h1 {
+      margin: 0;
+      font-size: 1.6rem;
+      font-weight: 600;
+      line-height: 1.25;
+      text-wrap: balance;
+    }
+    .env p { margin: 0; color: var(--ink-soft); }
+
+    .exit { display: flex; flex-direction: column; gap: .75rem; }
+    .exit-lead { margin: 0; font-size: 1.0625rem; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+      align-self: flex-start;
+      background: var(--blue);
+      color: #fff;
+      text-decoration: none;
+      font-size: 1.0625rem;
+      font-weight: 600;
+      padding: .8rem 1.6rem;
+      border-radius: 4px;
+      border: 1px solid var(--blue-deep);
+      transition: background 120ms ease;
+    }
+    .btn:hover, .btn:focus-visible { background: var(--blue-deep); color: #fff; }
+    .btn .arrow { font-size: 1.15em; line-height: 1; }
+    .exit-note { margin: 0; font-size: .875rem; color: var(--ink-faint); }
+    .exit-note code { font-family: var(--font-mono); font-size: .95em; color: var(--ink-soft); }
+
+    hr.sep { border: 0; border-top: 1px solid var(--rule); margin: .5rem 0 0; }
+
+    /* Deliberately quiet: a lost visitor should never read this as the way
+       forward, while a developer knows to look for it. */
+    .dev { display: flex; flex-direction: column; gap: .9rem; }
+    .dev-label {
+      font-size: .6875rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .dev p { margin: 0; font-size: .9375rem; color: var(--ink-soft); }
+    .dev a { color: var(--blue); }
+
+    .row { display: flex; flex-wrap: wrap; gap: .6rem; }
+    input[type="password"] {
+      flex: 1 1 15rem;
+      font-family: var(--font-mono);
+      font-size: .9375rem;
+      padding: .65rem .8rem;
+      color: var(--ink);
+      background: var(--panel);
+      border: 1px solid #c7cedb;
+      border-radius: 4px;
+    }
+    input:focus-visible, .btn:focus-visible, button:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+    }
+    button.go {
+      font-family: inherit;
+      font-size: .9375rem;
+      font-weight: 600;
+      padding: .65rem 1.25rem;
+      color: var(--ink);
+      background: #eaeef4;
+      border: 1px solid #c7cedb;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button.go:hover { background: #dde3ec; }
+
+    .msg {
+      margin: 0;
+      font-size: .9375rem;
+      padding: .7rem .9rem;
+      border-radius: 3px;
+      border-left: 3px solid var(--danger);
+      color: var(--danger);
+      background: var(--danger-bg);
+    }
+
+    footer.foot {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--rule);
+      font-size: .8125rem;
+      color: var(--ink-faint);
+    }
+    footer.foot a { color: var(--ink-soft); }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px;
+      overflow: hidden; clip: rect(0 0 0 0);
+    }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+
+    {% include "includes/dev_gate_wordmark.svg" %}
+
+    <section class="env">
+      <span class="env-label">Development server</span>
+      <h1>You have reached the AmpliconRepository development server.</h1>
+      <p>This server runs unreleased code against test data. Results here may be
+         incomplete, wrong, or deleted without notice, and it is not the place to
+         browse or cite published amplicon data.</p>
+    </section>
+
+    <section class="exit">
+      <p class="exit-lead">The public repository is at:</p>
+      <a class="btn" href="https://ampliconrepository.org">
+        Go to AmpliconRepository <span class="arrow" aria-hidden="true">&rarr;</span>
+      </a>
+      <p class="exit-note">
+        Check the address bar for <code>ampliconrepository.org</code> &mdash; this
+        server is <code>dev.ampliconrepository.org</code>.
+      </p>
+    </section>
+
+    <hr class="sep">
+
+    <section class="dev">
+      <span class="dev-label">Developer access</span>
+      <p>If you are working on AmpliconRepository, enter the dev passphrase to
+         continue to this server.</p>
+      <form class="row" method="post" action="/" autocomplete="off">
+        <label class="sr-only" for="code">Dev passphrase</label>
+        <input type="password" id="code" name="code" placeholder="Dev passphrase" spellcheck="false" autofocus>
+        <button class="go" type="submit">Continue</button>
+      </form>
+      {% if error %}
+      <p class="msg">That passphrase is not right. The current one is in the developer wiki, linked below.</p>
+      {% endif %}
+      <p>Don&rsquo;t have it? The
+         <a href="https://github.com/AmpliconSuite/AmpliconRepository/wiki/Development-Server">development server wiki page</a>
+         explains what this server is for, carries the current passphrase, and
+         tells you how to ask Jens Luebeck
+         (<a href="mailto:jluebeck@ucsd.edu">jluebeck@ucsd.edu</a>) for a dev
+         account.</p>
+    </section>
+
+    <footer class="foot">
+      AmpliconRepository is developed at UC San Diego.
+      Production site: <a href="https://ampliconrepository.org">ampliconrepository.org</a>
+    </footer>
+
+  </div>
+</body>
+</html>

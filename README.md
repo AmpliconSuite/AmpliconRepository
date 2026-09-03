@@ -537,6 +537,69 @@ docker inspect -f \
 # Using the development server <a name="dev-server"></a> 
 - Please see the [wiki page on using the development server](https://github.com/mesirovlab/AmpliconRepository/wiki/dev.ampliconrepository.org-instructions).
 
+## The dev landing gate
+
+`dev.ampliconrepository.org` shows a landing page instead of its home page, with
+a link to the production site and a box for a passphrase:
+
+```
+amprepodev
+```
+
+That is not a secret — it is published here, in `AGENTS.md`, and on the
+[development server wiki page](https://github.com/AmpliconSuite/AmpliconRepository/wiki/Development-Server).
+Its job is to stop someone who followed an old link, edited the production URL,
+or arrived from a search result from mistaking a server full of test data for
+the repository. The dev server holds nothing sensitive, and this is not a
+security boundary. For an account on the dev server, contact Jens Luebeck
+(jluebeck@ucsd.edu).
+
+Two things it deliberately does **not** do:
+
+- **It gates the home page only.** A link to a project, a sample, the REST API
+  or an OAuth callback still works without the passphrase. That is the rarer
+  arrival, and leaving it alone is what keeps API clients, the Google and Globus
+  login flows and `caper/weekly-report.py` working with no exemption list.
+- **It does not log you in.** Passing the gate sets one cookie
+  (`amprepo_dev_access`, seven days) and leaves `request.user` anonymous, so
+  anonymous-visitor behaviour stays testable on dev. Logging out of
+  AmpliconRepository does not clear it; posting `leave=1` to `/` does, as does
+  deleting the cookie in your browser.
+
+### Turning it on
+
+Off unless a deployment asks for it, so production and local checkouts are
+unaffected. In `caper/config.sh` on the dev server:
+
+```bash
+export DEV_GATE_ENABLED=True          # show the landing page; also sends
+                                      # X-Robots-Tag: noindex on every response
+export DEV_GATE_PASSPHRASE=amprepodev # optional; this is the built-in default
+export DEV_GATE_MAX_AGE_SECONDS=604800
+
+# Second stage of removing dev from search results. Leave False until a
+# `site:dev.ampliconrepository.org` search comes back empty -- see below.
+export DEV_ROBOTS_DISALLOW_ALL=False
+```
+
+To see the gate locally, `export DEV_GATE_ENABLED=True` before starting the
+server; nothing about the hostname decides this.
+
+### Keeping dev out of search results
+
+Measured 2026-09-03: a `site:dev.ampliconrepository.org` search returned the dev
+home page and a dev project page, and dev was serving production's own
+crawl-permitting `robots.txt`. The removal has two stages and the order matters:
+
+1. `DEV_GATE_ENABLED` stamps `X-Robots-Tag: noindex, nofollow, noarchive` on
+   every response. `robots.txt` stays crawlable on purpose — a crawler has to be
+   allowed to fetch a page in order to see that header.
+2. Once the `site:` search is empty, set `DEV_ROBOTS_DISALLOW_ALL=True`, which
+   serves `caper/static/robots-dev.txt` (`Disallow: /`) instead.
+
+Doing stage 2 first would stop Google re-fetching those pages and therefore stop
+it ever seeing the noindex, leaving the URLs in the index indefinitely.
+
 # Logging in as admin <a name="admin-logging"></a> 
  - Please see the [wiki page on admin login](https://github.com/mesirovlab/AmpliconRepository/wiki/Becoming-Admin-on-a-development-server).
 

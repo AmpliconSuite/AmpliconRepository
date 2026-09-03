@@ -122,6 +122,29 @@ source caper/config.sh && cd caper && python manage.py runserver
 # visit http://localhost:8000
 ```
 
+### The dev server landing gate
+`dev.ampliconrepository.org` shows a landing page instead of its home page. The passphrase
+is **`amprepodev`** — published here, in README.md and in the
+[wiki](https://github.com/AmpliconSuite/AmpliconRepository/wiki/Development-Server), because
+it is a shibboleth to keep wanderers and crawlers out, not a secret. For a dev server
+account, contact Jens Luebeck (jluebeck@ucsd.edu).
+
+Implementation is `caper/caper/dev_gate.py`, second in `MIDDLEWARE` right after the health
+check. Three properties matter when changing anything near it:
+
+- **Home page only.** Deep links, the REST API and the OAuth callbacks are not gated, which
+  is why no exemption list exists. Do not widen this without re-reading the module docstring.
+- **It never authenticates.** It runs above `SessionMiddleware`, so it cannot see
+  `request.user` and cannot admit an admin by login. That is deliberate — dev exists largely
+  to test anonymous behaviour.
+- **It must not touch MongoDB.** The landing page is rendered with `render_to_string` and no
+  request object, so no template context processor runs (`shutdown_mode` alone would be a
+  Mongo round trip). Keep it that way.
+
+Off unless `DEV_GATE_ENABLED=True` is exported, so production and local checkouts are
+unchanged; export it locally to see the gate. `DEV_ROBOTS_DISALLOW_ALL` is the separate,
+later stage of de-indexing dev — README.md explains why the two cannot be flipped together.
+
 ### AWS credentials for S3 (config.sh has `S3_*=TRUE`)
 The app authenticates to S3 via the boto3 profile `amprepo` (`AWS_PROFILE_NAME`), read from
 `~/.aws`. If that profile is SSO-based, refresh the ~8-hour token before running anything

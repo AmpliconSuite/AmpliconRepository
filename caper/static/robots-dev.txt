@@ -1,0 +1,17 @@
+# robots.txt for the development server ONLY.
+#
+# Served instead of robots.txt when DEV_ROBOTS_DISALLOW_ALL is set.  See
+# caper/caper/dev_gate.py and caper/caper/views.py:robots.
+#
+# This is the SECOND stage of getting dev out of search results, and it must
+# not be turned on first.  Stage one is the `X-Robots-Tag: noindex` header that
+# DEV_GATE_ENABLED stamps on every dev response; a crawler has to be allowed to
+# fetch a page in order to see that header.  Switching this file in while dev
+# pages are still indexed would stop the re-fetch and therefore strand the
+# existing entries in the index indefinitely.
+#
+# Measured 2026-09-03, before either stage: a `site:dev.ampliconrepository.org`
+# search returned the dev home page and the project page for CUGA
+# (661095ec16263a58ab871814).  Turn this on once that search comes back empty.
+User-agent: *
+Disallow: /
