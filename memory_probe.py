@@ -403,9 +403,18 @@ def report(path):
     procs = {}
     for row in rows:
         key = (row["pid"], row["started_utc"])
-        procs.setdefault(key, {"first": row, "last": row, "n": 0})
+        procs.setdefault(key, {"first": row, "last": row, "mature": None, "n": 0})
         procs[key]["last"] = row
         procs[key]["n"] += 1
+        # The earliest sample at which this process was past fork warm-up.
+        # Rates are measured from here, so a worker watched from birth still
+        # yields a usable rate once it has been alive long enough.
+        if procs[key]["mature"] is None:
+            try:
+                if int(float(row["age_s"])) >= WARMUP_S:
+                    procs[key]["mature"] = row
+            except (ValueError, KeyError, TypeError):
+                pass
 
     print("\nPer process (USS is the leak signal; RSS includes shared pages)")
     header = "%-8s %-7s %-9s %10s %10s %10s %10s %8s"
@@ -429,16 +438,19 @@ def report(path):
             "%.1fh" % (age / 3600.0) if age is not None else "-",
             human(u0), human(u1), human(u1 - u0),
             (human(rate) if rate is not None else "-"), rec["n"]))
-        age0 = i(first, "age_s")
         if last["role"] == "master" and rate is not None:
             master_rate = (pid, rate, hours)
-        elif rate is not None and last["role"] == "worker":
-            # Only a worker that was already past warm-up when the window
-            # opened, and was then watched for an hour, carries a rate worth
-            # quoting. See WARMUP_S.
-            if hours >= 1.0 and age0 is not None and age0 >= WARMUP_S:
-                if worst is None or rate > worst[1]:
-                    worst = (pid, rate)
+        elif last["role"] == "worker":
+            # Measure the worker from the first sample past warm-up, not from
+            # its birth, and only if an hour of it was seen. See WARMUP_S.
+            mature = rec["mature"]
+            m_hours = ((i(last, "sample_id") - i(mature, "sample_id")) / 3600.0
+                       if mature is not None else 0.0)
+            m0 = i(mature, "uss_kb") if mature is not None else None
+            if m0 is not None and m_hours >= 1.0:
+                m_rate = (u1 - m0) / m_hours
+                if worst is None or m_rate > worst[1]:
+                    worst = (pid, m_rate)
             else:
                 skipped_young += 1
 
@@ -484,7 +496,10 @@ def report(path):
         print("\nFastest-growing worker past warm-up: pid %s at %s/hour of "
               "private memory." % (worst[0], human(worst[1])))
         if cap and cg:
-            headroom = cap - cg[-1]
+            # Headroom against anonymous memory where we have it: page cache
+            # sits in the cgroup total but is reclaimed under pressure rather
+            # than pushing the container into the OOM killer.
+            headroom = cap - (anon[-1] if anon else cg[-1])
             # Nine workers all growing at that rate is the pessimistic case;
             # it is the one that decides whether a restart is load-bearing.
             hours = headroom / (worst[1] * 9) if worst[1] else None
