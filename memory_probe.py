@@ -99,6 +99,8 @@ FIELDS = [
     "cpu_s",            # utime + stime, to separate a busy worker from an idle one
     "cgroup_current_kb",
     "cgroup_max_kb",
+    "cgroup_anon_kb",   # the part that actually approaches the cap
+    "cgroup_file_kb",   # page cache: counted in current, but reclaimable
     "cmd",
 ]
 
@@ -125,10 +127,16 @@ def boot_epoch():
 
 
 def cgroup_memory():
-    """(current_kb, max_kb) for this cgroup, v2 first then v1. None if unreadable.
+    """(current_kb, max_kb, anon_kb, file_kb) for this cgroup. v2 first, then v1.
 
-    This is the number the container's --memory 8g cap is enforced against, and
-    the only one of these figures that is directly comparable to `docker stats`.
+    ``current`` is the number the container's --memory cap is enforced against
+    and the one `docker stats` shows -- but it includes page cache, which is
+    reclaimable and harmless. Reading it alone invites a false alarm: a
+    container sitting at 6 GiB of mostly file cache is fine, while one at 6 GiB
+    of anonymous memory is nearly out of room. ``anon`` is the figure that
+    actually approaches the cap. Measured on dev 2026-09-03 mid-analysis:
+    current 4.00 GB, of which anon 3.95 GB and file 23 MB -- so on this workload
+    they nearly coincide, but that is a fact about the workload, not a rule.
     """
     v2_cur, v2_max = "/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory.max"
     v1_cur = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
@@ -136,6 +144,16 @@ def cgroup_memory():
 
     cur = _read(v2_cur) or _read(v1_cur)
     mx = _read(v2_max) or _read(v1_max)
+    stat = _read("/sys/fs/cgroup/memory.stat") or _read(
+        "/sys/fs/cgroup/memory/memory.stat") or ""
+    parts = {}
+    for line in stat.splitlines():
+        bits = line.split()
+        if len(bits) == 2 and bits[1].isdigit():
+            parts[bits[0]] = int(bits[1])
+    # cgroup v2 spells these "anon"/"file"; v1 uses "rss"/"cache".
+    anon = parts.get("anon", parts.get("rss"))
+    fil = parts.get("file", parts.get("cache"))
 
     def kb(raw):
         if not raw:
@@ -148,7 +166,9 @@ def cgroup_memory():
         except ValueError:
             return ""
 
-    return kb(cur), kb(mx)
+    return (kb(cur), kb(mx),
+            "" if anon is None else anon // 1024,
+            "" if fil is None else fil // 1024)
 
 
 def smaps_rollup(pid):
@@ -226,7 +246,7 @@ def collect(pattern=DEFAULT_PATTERN):
     now = time.time()
     ts = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     base = boot_epoch()
-    cg_cur, cg_max = cgroup_memory()
+    cg_cur, cg_max, cg_anon, cg_file = cgroup_memory()
     rx = re.compile(pattern)
 
     found = {}
@@ -276,6 +296,8 @@ def collect(pattern=DEFAULT_PATTERN):
             "cpu_s": round(st["utime"] + st["stime"], 1),
             "cgroup_current_kb": cg_cur,
             "cgroup_max_kb": cg_max,
+            "cgroup_anon_kb": cg_anon,
+            "cgroup_file_kb": cg_file,
             "cmd": cmd[:120],
         }
         row.update(smaps_rollup(pid))
@@ -298,6 +320,24 @@ def write_rows(rows, output):
         w.writerows(rows)
         return
     exists = os.path.exists(output) and os.path.getsize(output) > 0
+
+    # If the file was written by a version with a different column set, appending
+    # to it would silently produce a CSV whose rows do not match its own header.
+    # Rotate the old series aside instead of corrupting or discarding it: the
+    # history stays readable with the reader of its own era, and a long soak is
+    # not lost because someone added a column halfway through.
+    if exists:
+        with open(output, newline="") as fh:
+            header = fh.readline().strip().split(",")
+        if header != FIELDS:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            rotated = "%s.%s" % (output, stamp)
+            os.rename(output, rotated)
+            sys.stderr.write(
+                "memory_probe: column set changed; previous series kept at %s\n"
+                % rotated)
+            exists = False
+
     with open(output, "a", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=FIELDS)
         if not exists:
@@ -387,8 +427,14 @@ def report(path):
     cg = [i(r, "cgroup_current_kb") for r in rows if i(r, "cgroup_current_kb")]
     cap = next((i(r, "cgroup_max_kb") for r in reversed(rows)
                 if i(r, "cgroup_max_kb")), None)
+    anon = [i(r, "cgroup_anon_kb") for r in rows if i(r, "cgroup_anon_kb")]
+    if anon:
+        print("\nContainer anonymous memory (the part that approaches the cap): "
+              "first %s, last %s, peak %s" % (human(anon[0]), human(anon[-1]),
+                                              human(max(anon))))
     if cg:
-        print("\nContainer cgroup: first %s, last %s, peak %s%s" % (
+        print("Container cgroup total (includes reclaimable page cache): "
+              "first %s, last %s, peak %s%s" % (
             human(cg[0]), human(cg[-1]), human(max(cg)),
             ", cap %s" % human(cap) if cap else ""))
 

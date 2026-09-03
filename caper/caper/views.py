@@ -1359,11 +1359,20 @@ def project_summary_download(request, project_name):
                     logging.info(f"Attempting to extract run.json from GridFS tarfile")
                     tar_id = project['tarfile']
                     
-                    # Create a temporary file to write the tar data
+                    # Copy the archive to disk in chunks.  Reading it with
+                    # .read() puts the whole tarball in memory as one bytes
+                    # object, and these are project archives: HMF's is 2.05 GiB.
+                    # That is what killed a prod worker on 2026-08-29 -- the
+                    # kernel OOM-killed a gunicorn process holding 3.35 GiB
+                    # against the container's 8 GiB cap, while serving this
+                    # exact view for HMF.  The bytes are needed on disk, not in
+                    # memory: the code below seeks around the archive
+                    # (getnames(), then getmember()), which a streamed .tar.gz
+                    # cannot do, so the temp file stays -- only the copy changes.
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.tar.gz') as temp_tar:
                         temp_tar_path = temp_tar.name
-                        tar_file_data = fs_handle.get(ObjectId(tar_id)).read()
-                        temp_tar.write(tar_file_data)
+                        shutil.copyfileobj(
+                            fs_handle.get(ObjectId(tar_id)), temp_tar, 1024 * 1024)
                     
                     # Extract run.json from the tar file
                     with tarfile.open(temp_tar_path, 'r:gz') as tar:

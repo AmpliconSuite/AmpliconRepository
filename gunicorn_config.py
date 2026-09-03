@@ -88,6 +88,74 @@ reload_engine = "auto"
 
 
 
+# --- returning memory to the kernel after an expensive request --------------
+#
+# A worker that has once served a large request keeps that footprint for the
+# rest of its life. Measured 2026-09-02: three co-amplification analyses took a
+# dev worker from 257 MiB to a 1.99 GiB peak, after which it settled at 609 MiB
+# and stayed there. Nothing is leaked in the Python sense -- tracemalloc reports
+# no growth across repeats -- but glibc keeps the freed pages in its own arenas
+# rather than handing them back, so the peak becomes a floor.
+#
+# malloc_trim(0) is the syscall-level "give it back". In the harness it
+# recovered ~39 MiB per iteration and cut the per-run residue from 6.5 MiB to
+# 2.1 MiB.
+#
+# Two things this is NOT:
+#   - It does not reduce the *peak*, only what is held afterwards, so it would
+#     not by itself have prevented the container OOM of 2026-08-29.
+#   - It is not free. Trimming walks the arenas, so it is gated on the worker
+#     actually being large rather than run after every request; a worker serving
+#     small pages never pays for it.
+#
+# glibc-only. On any other libc the lookup fails once and the hook disables
+# itself, because a hook that raises on every request would be far worse than
+# one that does nothing.
+
+_TRIM_ABOVE_KB = int(os.getenv("AMPREPO_TRIM_ABOVE_KB", str(600 * 1024)))
+_TRIM_ENABLED = os.getenv("AMPREPO_MALLOC_TRIM", "on").lower() not in (
+    "off", "false", "0")
+_trim_fn = None
+_trim_broken = False
+
+
+def _resident_kb():
+    """This process's resident size, from statm -- one short read, no imports."""
+    try:
+        with open("/proc/self/statm") as fh:
+            return int(fh.read().split()[1]) * (os.sysconf("SC_PAGE_SIZE") // 1024)
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def post_request(worker, req, environ, resp):
+    """After a request, hand back arena pages if this worker has grown large."""
+    global _trim_fn, _trim_broken
+    if not _TRIM_ENABLED or _trim_broken:
+        return
+    try:
+        if _resident_kb() < _TRIM_ABOVE_KB:
+            return
+        if _trim_fn is None:
+            import ctypes
+            _trim_fn = ctypes.CDLL("libc.so.6").malloc_trim
+        before = _resident_kb()
+        _trim_fn(0)
+        after = _resident_kb()
+        if before - after > 16 * 1024:      # only worth a line if it did something
+            worker.log.info(
+                "malloc_trim released %d MiB (%d -> %d MiB) after %s",
+                (before - after) // 1024, before // 1024, after // 1024,
+                environ.get("PATH_INFO", "?"))
+    except Exception:
+        # Never let this affect a response that has already been produced.
+        _trim_broken = True
+        try:
+            worker.log.exception("malloc_trim hook disabled after an error")
+        except Exception:
+            pass
+
+
 def post_fork(server, worker):
     """Restart any version payload purge that an interruption left unfinished.
 
