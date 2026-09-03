@@ -24,9 +24,9 @@ NEO4J_UNAVAILABLE = (ServiceUnavailable, SessionExpired, TransientError)
 
 # Shown to the user when the above happens. Says what to do, not what broke.
 NEO4J_BUSY_MESSAGE = (
-    "The co-amplification service ran out of resources while building this "
-    "graph. It restarts itself automatically -- please wait a few seconds and "
-    "try again. Selecting fewer or smaller projects makes this less likely."
+    "The co-amplification service ran out of resources answering this "
+    "request. It restarts itself automatically -- please wait a few seconds "
+    "and try again. Selecting fewer or smaller projects makes this less likely."
 )
 
 import logging

@@ -29,10 +29,22 @@ visible — which also makes them the inputs that fill GridFS and S3 fastest.
 | prod host crontab | the same probe line, added 2026-09-03 with approval | `crontab -e`, delete the line and its comment block |
 | dev checkout | on branch `memory-probe-nightly-restart` (was detached at `93af56a`) | `git checkout` the release ref when the branch merges |
 | dev + prod logs | `memory_probe.csv` (~1.5 MB/day each), plus a rotated `.csv.<stamp>` from the column change | **keep** — they are the measurement; move somewhere durable |
+| prod checkout | on branch `memory-probe-nightly-restart` since 2026-09-03 07:27 (was tag `v4.0.0_090226`) | `git checkout` the 4.1.0 tag once it is cut |
+| prod host | `/home/ubuntu/memory_probe.py.bak-20260903T065719Z`, the pre-update probe | delete once the branch is merged |
+| dev host crontab | nightly restart `15 0 * * *` **commented out** 2026-09-03 15:53 | delete the leading `#` to restore; backup at `/home/ubuntu/crontab.bak-20260903T155351Z` |
+| dev host | `/home/ubuntu/coamp_sampler.sh` + `coamp_sample.log`, `/home/ubuntu/disable_restart.py` | delete; the sampler self-terminates after an hour |
 
 The in-place edits to dev's `gunicorn_config.py` are gone: dev now runs the
 branch from git, so nothing is hand-patched and nothing is waiting to be lost
 to the next checkout.
+
+## Deliberate outages caused (all on dev, all recovered)
+
+- **2026-09-03 07:18** — neo4j OOM-killed by the kernel during three
+  back-to-back HMF+PCAWG co-amplification analyses. Not intended, recovered by
+  itself in twenty seconds. Nothing to undo; the graph cache rebuilds.
+- **2026-09-03 16:04 and 16:0x** — neo4j stopped and started deliberately to
+  confirm the user-facing retry message. Roughly 35 s each. Nothing to undo.
 
 ## Projects created
 
