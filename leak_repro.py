@@ -118,6 +118,53 @@ def mem():
     return snap.get("rss_kb") or 0, snap.get("uss_kb") or 0
 
 
+class PeakSampler:
+    """Records the highest RSS/USS reached *while* an operation runs.
+
+    The per-iteration figures elsewhere in this file are taken after the
+    operation returns, which is the floor it leaves behind. That is the wrong
+    number for an out-of-memory question: what kills a container is the
+    transient peak, and by the time the call returns the peak is gone. A
+    background thread sampling /proc is the cheapest way to catch it -- smaps
+    is a read, so it perturbs nothing it measures.
+    """
+
+    def __init__(self, interval=0.05):
+        self.interval = interval
+        self.peak_rss = 0
+        self.peak_uss = 0
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _loop(self):
+        pid = os.getpid()
+        while not self._stop.is_set():
+            snap = smaps_rollup(pid)
+            self.peak_rss = max(self.peak_rss, snap.get("rss_kb") or 0)
+            self.peak_uss = max(self.peak_uss, snap.get("uss_kb") or 0)
+            self._stop.wait(self.interval)
+
+    def __enter__(self):
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        self._thread.join(timeout=2)
+        return False
+
+
+# Scenarios append (label, uss_kb) here to say where inside the operation the
+# memory went. Localising the peak to a phase is what turns "it peaks at 2 GiB"
+# into something someone can go and fix.
+STAGES = []
+
+
+def mark(label):
+    STAGES.append((label, smaps_rollup(os.getpid()).get("uss_kb") or 0))
+
+
 def pick_projects(count):
     """The `count` projects with the most samples: the heaviest realistic input."""
     from caper.utils import collection_handle
@@ -168,10 +215,18 @@ def scenario_graph(project_ids, _args):
     """
     from caper.views import concat_projects
     from caper.coamp_graph import Graph
+    mark("start")
     df, _info = concat_projects(project_ids)
+    mark("after concat_projects")
     graph = Graph(dataset=df)
+    mark("after Graph()")
     n, e = len(graph.nodes), len(graph.edges)
-    del graph, df
+    del graph
+    gc.collect()
+    mark("after del graph")
+    del df
+    gc.collect()
+    mark("after del dataframe")
     return "graph with %d nodes, %d edges" % (n, e)
 
 
@@ -279,6 +334,10 @@ def main():
     p.add_argument("--tracemalloc", action="store_true",
                    help="attribute growth to source lines (slows each "
                         "iteration, but it is what names the leak)")
+    p.add_argument("--peak", action="store_true",
+                   help="sample memory in a background thread during each "
+                        "iteration and report the transient peak -- the figure "
+                        "an out-of-memory question actually turns on")
     p.add_argument("--trim", action="store_true",
                    help="call malloc_trim() after each iteration and report "
                         "what it recovered -- this is the test that separates "
@@ -338,8 +397,14 @@ def main():
 
     for i in range(1, args.iterations + 1):
         t0 = time.time()
+        del STAGES[:]
+        sampler = PeakSampler() if args.peak else None
         try:
-            detail = run(project_ids, args)
+            if sampler:
+                with sampler:
+                    detail = run(project_ids, args)
+            else:
+                detail = run(project_ids, args)
         except Exception as exc:      # keep the series; a failing iteration
             detail = "FAILED: %s" % exc   # is data, not a reason to stop
         elapsed = time.time() - t0
@@ -362,6 +427,20 @@ def main():
         print(header % (i, "%.1f" % elapsed, "%.1f MiB" % (uss / 1024),
                         "%+.1f MiB" % (delta / 1024), threading.active_count(),
                         objs or "-", detail[:40]))
+
+        if sampler:
+            print("      peak during run: %.1f MiB USS / %.1f MiB RSS  "
+                  "(settles at %.1f MiB, so %.1f MiB was transient)"
+                  % (sampler.peak_uss / 1024, sampler.peak_rss / 1024,
+                     uss / 1024, (sampler.peak_uss - uss) / 1024))
+        if STAGES and i == 1:
+            base = STAGES[0][1]
+            print("      where it goes:")
+            prev = base
+            for name, val in STAGES:
+                print("        %-24s %8.1f MiB   %+8.1f MiB"
+                      % (name, val / 1024, (val - prev) / 1024))
+                prev = val
 
         if args.tracemalloc and i == args.warmup:
             baseline_snapshot = tracemalloc.take_snapshot()

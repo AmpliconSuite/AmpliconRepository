@@ -210,12 +210,25 @@ the host down.
 2000 requests. This is not theoretical: prod's `gunicorn.log` for 2026-08-30 to
 09-02 holds 108 "Autorestarting worker after current request" lines and exactly
 108 "Worker exiting" lines — every non-restart worker replacement in those four
-days was a clean recycle, with zero `WORKER TIMEOUT` and zero crashes. At
-73k–151k requests/day that is 18–36 recycles/day across 9 workers — each worker
-replaced 2–4 times a day, a **mean process age of 6–12 hours**, restart or no
-restart. (That is arithmetic on the recycle rate, not a measured age
-distribution; the probe records `age_s` per worker, so the distribution is
-there to be read once a series spans a full day.) Removing the daily restart
+days was a clean recycle, with zero `WORKER TIMEOUT` and zero crashes. Complete
+daily counts, with the access log beside them:
+
+| Day | Requests | Recycles | Requests per recycle |
+|---|---|---|---|
+| 2026-08-30 | 80,203 | 27 | 2,971 |
+| 2026-08-31 | 82,362 | 18 | 4,576 |
+| 2026-09-01 | 73,055 | 27 | 2,706 |
+| 2026-09-02 | 177,582 | 53 | 3,350 |
+
+Recycles track traffic, as they should. **Do not average this into a worker
+lifetime** — an earlier draft of this section did, got "6–12 hours", and the
+probe falsified it within the hour. Traffic is bursty, and the bursts are when
+memory matters. Measured directly at 2026-09-03 01:14 UTC, during a sustained
+~250 requests/minute, the probe's `age_s` column had all nine workers between
+**183 s and 2,347 s old** — 3 to 39 minutes — while the master was 3.9 hours old
+(it had started at the 21:20 restart). At that rate the log shows 5–9 recycles
+*per hour*. So worker lifetime is tens of minutes under load and a few hours
+when quiet; it is never a day, restart or no restart. Removing the daily restart
 would not slow recycling down — it would speed it up slightly, since each
 restart currently discards every worker's partial progress toward its next
 2000. The master
@@ -273,6 +286,25 @@ I/O error rather than an out-of-memory one. (On a laptop `/tmp` is often tmpfs
 — it is a 30 GB one on the maintainer's — so a harness writing multi-GB scratch
 there charges it to memory and corrupts the measurement. Point `TMPDIR` at real
 disk when running `leak_repro.py --scenario aggregate` locally.)
+
+**Where the peak comes from.** Measured locally with
+`leak_repro.py --scenario graph --peak`, which samples in a background thread
+during the call rather than after it, on a 2,095-sample project:
+
+| Stage | USS | Change |
+|---|---|---|
+| start | 184.5 MiB | |
+| after `concat_projects` | 262.0 MiB | +77.6 MiB (the merged DataFrame) |
+| after `Graph()` | 435.1 MiB | +173.1 MiB (3,929 nodes, 118,562 edges) |
+| after `del graph` | 286.5 MiB | −148.6 MiB |
+| after `del dataframe` | 259.0 MiB | −27.6 MiB |
+
+So roughly two thirds of the transient cost is the `Graph` object itself and one
+third the DataFrame, and about 75 MiB of the first run does not come back. The
+same analysis through the real server peaked far higher (1.99 GiB), and the
+difference is the part this harness skips: `load_graph` materialising the same
+118,562 edges for the Neo4j driver, plus the page render. Both halves are
+batchable — that is where a peak-reduction fix would go.
 
 It is not a Python-level leak. Running the same analysis repeatedly in one
 process, `tracemalloc` reports 0.0 MiB of tracked growth across 40,059
