@@ -172,13 +172,35 @@ changed — and on prod, rebuild from the separate build checkout. See
 [the deployment section of the README](../README.md#deploy) for the full release
 procedure.
 
-## Both servers restart themselves every day
+## The daily restart, retired 2026-09-03
 
-**`12 7 * * * /home/ubuntu/stop-and-start-repo.sh`** is in `ubuntu`'s crontab on
+**Neither server restarts itself any more.** Both cron lines were commented out
+on 2026-09-03 alongside release `v4.1.0_090326`, dev at 15:53 UTC and prod at
+16:38 UTC, each with a note in the crontab and a `crontab.bak-<stamp>` beside
+it. Re-enable either by deleting one `#`.
+
+Read the rest of this section as the case for that decision and as the history
+you need when reasoning about anything dated before it. Two practical
+consequences of the change:
+
+- **Code in a checkout no longer goes live by itself.** `preload_app = True`
+  means the master imports the application before forking, so `kill -HUP`
+  re-forks from the same master and does not re-import. The nightly restart was
+  a master start, so edits left in a bind-mounted checkout used to go live
+  overnight. Now a deploy needs `docker restart`, deliberately.
+- **The process to watch is the master.** `max_requests = 2000` recycles
+  workers — on prod they measure minutes old under load — but never the master,
+  so it is the only process the restart uniquely replaced. Watch its USS in
+  `memory_probe.csv`, and watch `cgroup_anon_kb` rather than `docker stats`,
+  which includes reclaimable page cache.
+
+### What the restart was, before it was retired
+
+**`12 7 * * * /home/ubuntu/stop-and-start-repo.sh`** was in `ubuntu`'s crontab on
 prod. The site goes down and comes back at **07:12 UTC every day**. Measured
 2026-08-31; it is not in any other document, and it was surprising to find.
 
-**Dev does the same at 00:15 UTC**, via `15 0 * * *` and its own copy of the
+**Dev did the same at 00:15 UTC**, via `15 0 * * *` and its own copy of the
 same script. Measured 2026-09-01, and found the hard way: a 90-minute
 maintenance job launched on dev at 23:46 UTC was killed 29 minutes in, having
 deleted 17 of 70 documents. `docker inspect` showed `RestartCount=0` and
@@ -186,7 +208,10 @@ deleted 17 of 70 documents. `docker inspect` showed `RestartCount=0` and
 deliberate `docker stop`/`docker start`, not a crash — the restart script stops
 the container, so nothing increments the restart counter.
 
-**The two windows are 7 hours apart, and neither host checks for running work.**
+**The two windows were 7 hours apart, and neither host checked for running
+work.** This no longer applies, but it is why several jobs died mid-run in
+2026-08 and 2026-09, and the warning below is kept because the restart can be
+switched back on in one edit.
 Before starting anything on either box that will take more than a few minutes,
 check the clock against that host's window; if it does not fit, either wait or
 run the job so it survives — `docker exec -d` writing to a log inside the
