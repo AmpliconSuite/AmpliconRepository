@@ -166,10 +166,17 @@ def mark(label):
 
 
 def pick_projects(count):
-    """The `count` projects with the most samples: the heaviest realistic input."""
+    """The `count` projects with the most samples: the heaviest realistic input.
+
+    Uses ``NOT_DELETED_QUERY`` rather than spelling the predicate out, both
+    because ``test_project_status_guard`` requires it and because it is the
+    same gate ``coamplification_graph`` itself applies -- picking a project the
+    visualizer would not offer would measure a path no user can reach.
+    """
     from caper.utils import collection_handle
+    from caper.project_status import NOT_DELETED_QUERY
     docs = collection_handle.find(
-        {"delete": False}, {"_id": 1, "project_name": 1, "runs": 1})
+        NOT_DELETED_QUERY, {"_id": 1, "project_name": 1, "runs": 1})
     sized = []
     for doc in docs:
         sized.append((len(doc.get("runs") or {}), str(doc["_id"]),
