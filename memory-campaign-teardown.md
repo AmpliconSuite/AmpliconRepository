@@ -26,9 +26,13 @@ visible — which also makes them the inputs that fill GridFS and S3 fastest.
 | Where | What | Removal |
 |---|---|---|
 | dev host crontab | `* * * * * docker exec amplicon-dev … memory_probe.py --once` | `crontab -e`, delete the line and its comment block |
-| dev checkout | `/home/ubuntu/AmpliconRepository-dev/memory_probe.py` (untracked copy) | `rm`, or leave once the file is in the repo and pulled |
-| dev checkout | `gunicorn_config.py` edited in place to add `pid=%(p)s` to the access log | backup at `/tmp/gunicorn_config.py.bak`; superseded once the branch lands |
-| dev logs | `/srv/logs/memory_probe.csv` (~1.5 MB/day) | **keep** — it is the measurement; move it somewhere durable |
+| prod host crontab | the same probe line, added 2026-09-03 with approval | `crontab -e`, delete the line and its comment block |
+| dev checkout | on branch `memory-probe-nightly-restart` (was detached at `93af56a`) | `git checkout` the release ref when the branch merges |
+| dev + prod logs | `memory_probe.csv` (~1.5 MB/day each), plus a rotated `.csv.<stamp>` from the column change | **keep** — they are the measurement; move somewhere durable |
+
+The in-place edits to dev's `gunicorn_config.py` are gone: dev now runs the
+branch from git, so nothing is hand-patched and nothing is waiting to be lost
+to the next checkout.
 
 ## Projects created
 
