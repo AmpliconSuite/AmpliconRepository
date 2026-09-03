@@ -3,6 +3,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from neo4j import GraphDatabase
+from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 from .coamp_graph import Graph
 
 import pandas as pd
@@ -12,6 +13,21 @@ import time
 import hashlib
 
 neo4j_driver = None
+
+# What the driver raises when neo4j is not there to answer, as opposed to when
+# the query itself is wrong. On 2026-09-03 the kernel OOM-killed neo4j's JVM
+# mid-analysis (17.95 GiB against its 18 GiB cap) and it was back inside twenty
+# seconds -- so this is a "try again shortly" condition, not a fault to report
+# as a server error. TransientError also covers the server telling us it is out
+# of memory before it dies.
+NEO4J_UNAVAILABLE = (ServiceUnavailable, SessionExpired, TransientError)
+
+# Shown to the user when the above happens. Says what to do, not what broke.
+NEO4J_BUSY_MESSAGE = (
+    "The co-amplification service ran out of resources while building this "
+    "graph. It restarts itself automatically -- please wait a few seconds and "
+    "try again. Selecting fewer or smaller projects makes this less likely."
+)
 
 import logging
 logging.getLogger("neo4j").setLevel(logging.WARNING)

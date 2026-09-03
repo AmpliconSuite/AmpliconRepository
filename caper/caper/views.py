@@ -119,7 +119,8 @@ from .project_version_cleanup import (
 from .extra_metadata import *
 
 # imports for coamp graph
-from .neo4j_utils import load_graph, fetch_subgraph, fetch_overview
+from .neo4j_utils import (load_graph, fetch_subgraph, fetch_overview,
+                          NEO4J_UNAVAILABLE, NEO4J_BUSY_MESSAGE)
 
 # Import search function
 from .search import (
@@ -6473,6 +6474,14 @@ def fetch_graph(request, gene_name):
             'edges': edges
         })
 
+    except NEO4J_UNAVAILABLE as e:
+        # neo4j is gone or overloaded rather than the request being wrong. It
+        # comes back on its own, so tell the user to retry instead of showing
+        # them a driver exception. 503 so this is distinguishable in the logs.
+        logging.warning("neo4j unavailable serving subgraph for %s: %s",
+                        gene_name, e)
+        return JsonResponse({'error': NEO4J_BUSY_MESSAGE}, status=503)
+
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -6490,6 +6499,9 @@ def coamp_overview(request):
 
     try:
         return JsonResponse(fetch_overview(cache_key))
+    except NEO4J_UNAVAILABLE as e:
+        logging.warning("neo4j unavailable serving overview: %s", e)
+        return JsonResponse({'error': NEO4J_BUSY_MESSAGE}, status=503)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
