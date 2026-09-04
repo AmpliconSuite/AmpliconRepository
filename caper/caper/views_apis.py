@@ -564,6 +564,12 @@ _CANONICAL_CLASSIFICATION = {
     'ECDNA': 'ecDNA',
     'BFB': 'BFB',
     'LINEAR': 'Linear',
+    # search.py already treats these as the same class ("if searching for
+    # LINEAR AMPLIFICATION, also match just Linear"), and the dev collection
+    # holds both spellings -- 4 documents say LINEAR, 3 say LINEAR
+    # AMPLIFICATION.  Folding them here means a client filtering on 'Linear'
+    # finds both, which is what the UI's search already does.
+    'LINEAR AMPLIFICATION': 'Linear',
     'COMPLEX-NON-CYCLIC': 'Complex-non-cyclic',
     'COMPLEX NON-CYCLIC': 'Complex-non-cyclic',
     'FAN': 'FAN',

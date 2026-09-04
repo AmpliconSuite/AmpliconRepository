@@ -386,3 +386,33 @@ class TestAgentFacingDiscoveryFiles:
         allow = len('/api/v1/')
         deny = len('/api/v1/projects/*/download/')
         assert deny > allow
+
+
+class TestClassificationSpellingsAreFolded:
+    """
+    The collection holds several spellings of the same class.
+
+    Counted on caper-dev 2026-09-04: ECDNA 30, BFB 6, LINEAR 4,
+    COMPLEX-NON-CYCLIC 3, LINEAR AMPLIFICATION 3, COMPLEX NON-CYCLIC 2, FAN 1 --
+    seven spellings for five classes. A client filtering on 'Linear' should not
+    silently miss the projects that happen to say 'LINEAR AMPLIFICATION';
+    search.py already treats those two as equivalent.
+    """
+
+    def _cls(self, stored):
+        return views_apis._project_to_dict(
+            {'_id': 'x', 'linkid': 'x', 'Classification': stored})['classifications']
+
+    def test_every_spelling_seen_in_the_data_folds(self):
+        assert self._cls(['ECDNA']) == ['ecDNA']
+        assert self._cls(['LINEAR']) == ['Linear']
+        assert self._cls(['LINEAR AMPLIFICATION']) == ['Linear']
+        assert self._cls(['COMPLEX-NON-CYCLIC']) == ['Complex-non-cyclic']
+        assert self._cls(['COMPLEX NON-CYCLIC']) == ['Complex-non-cyclic']
+        assert self._cls(['BFB']) == ['BFB']
+        assert self._cls(['FAN']) == ['FAN']
+
+    def test_two_spellings_of_one_class_collapse_to_one_entry(self):
+        assert self._cls(['LINEAR', 'LINEAR AMPLIFICATION']) == ['Linear']
+        assert self._cls(['COMPLEX-NON-CYCLIC', 'COMPLEX NON-CYCLIC']) == \
+            ['Complex-non-cyclic']
