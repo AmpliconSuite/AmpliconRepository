@@ -340,3 +340,49 @@ class TestVersionIsVisible:
         for field in ('version', 'version_count', 'is_latest_version',
                       'classifications'):
             assert field in props, field
+
+
+class TestAgentFacingDiscoveryFiles:
+    """
+    /llms.txt and the robots.txt rule that permits the API.
+
+    Measured 2026-09-04 acting as an agent against production: `/robots.txt`
+    told a compliant client `Disallow: /api/`, while leaving the project and
+    sample *pages* crawlable. A well-behaved agent was therefore instructed to
+    scrape hundreds of HTML renders and keep off the one endpoint that would
+    have answered its question in a single call -- exactly backwards.
+    """
+
+    def test_llms_txt_is_served_as_plain_text(self):
+        resp = _client().get('/llms.txt')
+        assert resp.status_code == 200
+        assert resp['Content-Type'].startswith('text/plain')
+
+    def test_llms_txt_points_at_the_spec_and_the_recipe(self):
+        body = _client().get('/llms.txt').content.decode()
+        assert '/api/v1/openapi.json' in body
+        assert '/api/v1/projects/' in body
+        # The whole point is steering programs off the pages and onto the API.
+        assert 'samples/' in body
+
+    def test_robots_allows_the_public_api(self):
+        body = _client().get('/robots.txt').content.decode()
+        assert 'Allow: /api/v1/' in body
+
+    def test_robots_still_blocks_internal_api_and_bulk_downloads(self):
+        """
+        The allow must not become a hole. `/api/` covers the internal endpoints
+        the site's own pages call, and archive downloads stay off-limits to
+        crawlers -- stated explicitly rather than relying on which pattern
+        happens to be longer.
+        """
+        body = _client().get('/robots.txt').content.decode()
+        assert 'Disallow: /api/\n' in body
+        assert 'Disallow: /api/v1/projects/*/download/' in body
+
+    def test_longest_match_puts_the_download_rule_above_the_allow(self):
+        """RFC 9309 resolves conflicts by rule length, so assert the ordering
+        we depend on rather than trusting it."""
+        allow = len('/api/v1/')
+        deny = len('/api/v1/projects/*/download/')
+        assert deny > allow

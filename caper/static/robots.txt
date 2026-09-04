@@ -5,7 +5,28 @@ Disallow: /admin-*
 # Prefix-matched, so this also covers .../download/png/..., .../download/pdf/...
 # and .../download_metadata.
 Disallow: /*/download
+
+# /api/ holds internal endpoints the site's own pages call
+# (background-task-status, username-autocomplete).  Nothing outside the site has
+# any use for them.
 Disallow: /api/
+
+# ...but /api/v1/ is the public, documented, read-only REST API, and it is the
+# path we would rather a program take.  Answering a question through it costs
+# one request and a few KB; answering the same question by crawling project and
+# sample pages costs hundreds of renders.  This line used to be absent, which
+# meant a well-behaved agent was told "scrape the HTML, keep off the API" --
+# precisely backwards.  Start at /llms.txt or /api/v1/openapi.json.
+#
+# Longest-match wins under RFC 9309, so this beats the Disallow above for
+# /api/v1/ paths, and the explicit download rule below beats this in turn.
+Allow: /api/v1/
+
+# Archive downloads stay off-limits to crawlers whichever door they come to.
+# /*/download already covers this by being the longer pattern, but depending on
+# that arithmetic is fragile -- say it outright.  A person or an agent acting on
+# someone's explicit request can still download; this governs bulk crawlers.
+Disallow: /api/v1/projects/*/download/
 
 # ---------------------------------------------------------------------------
 # Policy

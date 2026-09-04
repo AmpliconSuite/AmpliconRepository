@@ -5981,6 +5981,37 @@ def process_version_set(version_set):
         return ', '.join(str(v) for v in version_list)
 
 
+def llms_txt(request):
+    """
+    Serve /llms.txt -- the agent-facing description of this site.
+
+    Same file-resolution reasoning as robots() below, and for the same reasons:
+    the project's own static directory is what git deploys and what the
+    container bind-mounts, while STATIC_ROOT can be a stale collectstatic copy
+    that a source-only deploy never refreshes.
+
+    Why this file exists at all: an AI assistant asked about ecDNA in some gene
+    has no way to know this site has primary data, or that the cheap way to read
+    it is the REST API rather than the rendered pages.  robots.txt can only say
+    what is permitted; this says what is *useful*, and points at
+    /api/v1/openapi.json for the exact contract.
+    """
+    project_static = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'static')
+    path = os.path.join(project_static, 'llms.txt')
+
+    if not os.path.exists(path):
+        candidate = os.path.join(settings.STATIC_ROOT or '', 'llms.txt')
+        path = candidate if os.path.exists(candidate) else None
+
+    if not path:
+        logging.warning("llms.txt not found in %s or STATIC_ROOT", project_static)
+        raise Http404("llms.txt not found")
+
+    with open(path, 'r', encoding='utf-8') as handle:
+        return HttpResponse(handle.read(), content_type='text/plain; charset=utf-8')
+
+
 def robots(request):
     """
     View for robots.txt.

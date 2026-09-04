@@ -139,6 +139,9 @@ urlpatterns += [
     path('api/v1/openapi.json', views.ApiSchemaView.as_view(), name='api_openapi'),
 
     path('robots.txt', views.robots, name = "robots.txt"),
+    # The agent-facing companion to robots.txt: what this site holds and how to
+    # read it cheaply.  robots.txt says what is allowed; this says what is useful.
+    path('llms.txt', views.llms_txt, name = "llms.txt"),
     path('loading/', views.loading),
     path('search_results/', views.search_results, name='search_results'),
     path('ec3d/<str:sample_name>/', views.ec3d_visualization, name='ec3d_visualization'),
