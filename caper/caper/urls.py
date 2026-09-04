@@ -133,6 +133,10 @@ urlpatterns += [
     path('api/v1/projects/<str:project_id>/download/', views.ProjectDownloadView.as_view(), name='api_project_download'),
     path('api/v1/projects/<str:project_id>/samples/', views.ProjectSamplesView.as_view(), name='api_project_samples'),
     path('api/v1/token/', views.ApiTokenView.as_view(), name='api_token'),
+    # The machine-readable description of everything above.  Inside /api/v1/ on
+    # purpose -- that prefix is what the WAF's AllowApiV1 rule lets through, so
+    # the spec is reachable by the same clients as the endpoints it documents.
+    path('api/v1/openapi.json', views.ApiSchemaView.as_view(), name='api_openapi'),
 
     path('robots.txt', views.robots, name = "robots.txt"),
     path('loading/', views.loading),

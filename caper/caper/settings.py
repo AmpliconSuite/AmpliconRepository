@@ -289,6 +289,10 @@ CACHES = {
 # NUM_PROXIES = 1 makes DRF use it.
 REST_FRAMEWORK = {
     'NUM_PROXIES': 1,
+    # One error shape for /api/v1/, and only for /api/v1/.  See caper/api_errors.py:
+    # the legacy upload endpoints keep the bodies AmpliconSuiteAggregator parses.
+    'EXCEPTION_HANDLER': 'caper.api_errors.normalize_api_v1_errors',
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_THROTTLE_CLASSES': [],  # opt-in per view via throttle_scope
     'DEFAULT_THROTTLE_RATES': {
         # Read endpoints returning metadata.
@@ -304,6 +308,42 @@ REST_FRAMEWORK = {
         # Token create/revoke, from a logged-in browser session.
         'api_token': '10/min',
     },
+}
+
+# ---------------------------------------------------------------------------
+# OpenAPI document for /api/v1/  (drf-spectacular)
+#
+# Served at /api/v1/openapi.json.  That URL is deliberately *inside* the
+# /api/v1/ prefix: the WAF's AllowApiV1 rule is keyed on that prefix, so the
+# spec is reachable by the same non-browser clients as the endpoints it
+# describes.  A spec behind the bot filter would document an API to callers who
+# could not then call it.
+#
+# SERVE_INCLUDE_SCHEMA=False keeps the schema endpoint itself out of the
+# document.  PREPROCESSING_HOOKS restricts the document to /api/v1/ -- without
+# it the generator would also enumerate the legacy upload endpoints, which are
+# not part of the public read API and whose contract is with the aggregator.
+# ---------------------------------------------------------------------------
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'AmpliconRepository API',
+    'DESCRIPTION': (
+        'Read-only programmatic access to AmpliconRepository: the projects, '
+        'their samples, and their result archives.\n\n'
+        'Public projects need no authentication. A personal token (Profile -> '
+        'Developer API Token) additionally reaches private projects you are a '
+        'member of, and raises your rate limits. Send it as '
+        '`Authorization: Token <your-token>`.\n\n'
+        'Every error response has the shape `{"error": "...", "code": "..."}`. '
+        'Branch on `code`, not on the prose in `error`.\n\n'
+        'Rate limits are per client. On 429 the response carries a '
+        '`Retry-After` header and a `retry_after` field, in seconds.'
+    ),
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'PREPROCESSING_HOOKS': ['caper.api_schema.only_api_v1'],
+    'SCHEMA_PATH_PREFIX': '/api/v1',
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SORT_OPERATIONS': False,
 }
 
 # The numeric mode to set newly-uploaded files to. The value should be
@@ -553,6 +593,10 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.google',
     'rest_framework',
     'rest_framework.authtoken',
+    # Generates the OpenAPI document served at /api/v1/openapi.json.  Schema
+    # generation only -- it adds no middleware, no models and no runtime cost
+    # to any other request.
+    'drf_spectacular',
     ]
 
 CRISPY_TEMPLATE_PACK = 'bootstrap4'

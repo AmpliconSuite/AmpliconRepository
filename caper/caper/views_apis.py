@@ -429,8 +429,46 @@ from bson.objectid import ObjectId
 from django.http import StreamingHttpResponse, HttpResponseRedirect
 from rest_framework.authentication import TokenAuthentication, SessionAuthentication
 from rest_framework.exceptions import AuthenticationFailed
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from drf_spectacular.renderers import OpenApiJsonRenderer
+from drf_spectacular.views import SpectacularAPIView
 
+from . import api_schema
 from .throttles import ApiScopedRateThrottle
+
+
+# ── Error bodies ────────────────────────────────────────────────────────────
+
+def api_error(message, code, status_code):
+    """
+    The one error shape for /api/v1/: ``{"error": ..., "code": ...}``.
+
+    `error` is prose for a human reading a terminal; `code` is the stable slug a
+    program branches on.  Framework-raised errors (429, malformed JSON, wrong
+    method) are given the same shape by caper/api_errors.py, so a v1 client only
+    ever has to parse one thing.
+    """
+    return Response({'error': message, 'code': code}, status=status_code)
+
+
+def _access_error(user):
+    """
+    The right refusal for a caller who may not read this project.
+
+    401 and 403 are not interchangeable here, and the difference is the whole
+    point for an unattended client: 401 means *authenticate and try again*, 403
+    means *this token will never work, stop retrying*.  Returning 401 to a
+    caller who is already authenticated -- which this API used to do -- invites
+    exactly the retry loop the status code exists to prevent.
+
+    Neither reveals more than the other: both confirm the project exists, as the
+    404-vs-401 split above already did.
+    """
+    if user is None:
+        return api_error('Authentication required', 'authentication_required',
+                         status.HTTP_401_UNAUTHORIZED)
+    return api_error('You do not have access to this project',
+                     'permission_denied', status.HTTP_403_FORBIDDEN)
 
 
 # ── Auth + access-control helpers ───────────────────────────────────────────
@@ -449,7 +487,8 @@ def _authenticate_api_request(request):
         result = auth.authenticate(request)
         return (result[0], None) if result else (None, None)
     except AuthenticationFailed as exc:
-        return (None, Response({'error': str(exc)}, status=status.HTTP_401_UNAUTHORIZED))
+        return (None, api_error(str(exc), 'invalid_token',
+                                status.HTTP_401_UNAUTHORIZED))
 
 
 def _user_can_access_project(project, user):
@@ -597,6 +636,24 @@ class ProjectListView(APIView):
     throttle_classes = [ApiScopedRateThrottle]
     throttle_scope = 'api_read'
 
+    @extend_schema(
+        operation_id='listProjects',
+        summary='List projects',
+        description='Every project the caller may read. Anonymous callers get '
+                    'public projects; a token adds the private projects the '
+                    'caller is a member of. Not paginated: the response is the '
+                    'whole visible set. Sample-level data is not included -- '
+                    'follow `id` to `/api/v1/projects/{id}/samples/`.',
+        parameters=[
+            OpenApiParameter('name', str, OpenApiParameter.QUERY, required=False,
+                             description='Case-insensitive substring filter on '
+                                         'project_name.'),
+        ],
+        responses={200: api_schema.ProjectSerializer(many=True),
+                   401: api_schema.AUTH_REQUIRED,
+                   429: api_schema.RATE_LIMITED},
+        tags=['projects'],
+    )
     def get(self, request):
         user, err = _authenticate_api_request(request)
         if err:
@@ -654,6 +711,22 @@ class ProjectDetailView(APIView):
     throttle_classes = [ApiScopedRateThrottle]
     throttle_scope = 'api_read'
 
+    @extend_schema(
+        operation_id='getProject',
+        summary='Get one project',
+        description='Metadata for a single project, including its version '
+                    'history. Does not include samples.',
+        parameters=[OpenApiParameter('project_id', str, OpenApiParameter.PATH,
+                             description='Project id, as returned in `id` by the '
+                                         'list endpoint. Ids of superseded '
+                                         'versions also resolve.')],
+        responses={200: api_schema.ProjectSerializer,
+                   401: api_schema.AUTH_REQUIRED,
+                   403: api_schema.FORBIDDEN,
+                   404: api_schema.NOT_FOUND,
+                   429: api_schema.RATE_LIMITED},
+        tags=['projects'],
+    )
     def get(self, request, project_id):
         user, err = _authenticate_api_request(request)
         if err:
@@ -664,9 +737,10 @@ class ProjectDetailView(APIView):
         # project) — the read amplification that took production down.
         project = get_one_project_sans_runs(project_id, _PROJECT_METADATA_PROJECTION)
         if not project:
-            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+            return api_error('Project not found', 'not_found',
+                             status.HTTP_404_NOT_FOUND)
         if not _user_can_access_project(project, user):
-            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            return _access_error(user)
 
         if 'linkid' not in project:
             project['linkid'] = str(project['_id'])
@@ -689,6 +763,25 @@ class ProjectSamplesView(APIView):
     throttle_classes = [ApiScopedRateThrottle]
     throttle_scope = 'api_read'
 
+    @extend_schema(
+        operation_id='listProjectSamples',
+        summary='List a project\'s samples',
+        description='Every sample in the project, with its per-sample metadata '
+                    'and amplicon calls. This is the endpoint to read when '
+                    'answering a question about genes or classifications. The '
+                    'response can be large -- it scales with `sample_count` '
+                    'from the project endpoint.',
+        parameters=[OpenApiParameter('project_id', str, OpenApiParameter.PATH,
+                             description='Project id, as returned in `id` by the '
+                                         'list endpoint. Ids of superseded '
+                                         'versions also resolve.')],
+        responses={200: api_schema.SampleSerializer(many=True),
+                   401: api_schema.AUTH_REQUIRED,
+                   403: api_schema.FORBIDDEN,
+                   404: api_schema.NOT_FOUND,
+                   429: api_schema.RATE_LIMITED},
+        tags=['projects'],
+    )
     def get(self, request, project_id):
         user, err = _authenticate_api_request(request)
         if err:
@@ -700,9 +793,10 @@ class ProjectSamplesView(APIView):
         # let an anonymous caller trigger a multi-megabyte read and get a 401.
         project = get_one_project_sans_runs(project_id, _PROJECT_METADATA_PROJECTION)
         if not project:
-            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+            return api_error('Project not found', 'not_found',
+                             status.HTTP_404_NOT_FOUND)
         if not _user_can_access_project(project, user):
-            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            return _access_error(user)
 
         # Authorized: now fetch the runs, by the id the lookup above resolved to.
         doc = collection_handle.find_one({'_id': project['_id']}, {'runs': 1})
@@ -732,6 +826,30 @@ class ProjectDownloadView(APIView):
     throttle_classes = [ApiScopedRateThrottle]
     throttle_scope = 'api_download'
 
+    @extend_schema(
+        operation_id='downloadProject',
+        summary='Download a project archive',
+        description='Returns the project\'s `.tar.gz` result archive. Normally '
+                    'a 302 to a short-lived pre-signed storage URL, so a client '
+                    'must follow redirects. The archive can be large; prefer '
+                    '`/samples/` when metadata is enough. The URL ends in a '
+                    'slash, so name the output file explicitly '
+                    '(`curl -L -o project.tar.gz ...`).',
+        parameters=[OpenApiParameter('project_id', str, OpenApiParameter.PATH,
+                             description='Project id, as returned in `id` by the '
+                                         'list endpoint.')],
+        responses={
+            200: OpenApiResponse(description='The archive, streamed as application/gzip.'),
+            302: OpenApiResponse(description='Redirect to a pre-signed storage URL, valid ~10 minutes.'),
+            401: api_schema.AUTH_REQUIRED,
+            403: api_schema.FORBIDDEN,
+            404: api_schema.NO_ARCHIVE,
+            429: api_schema.RATE_LIMITED,
+            503: api_schema.DOWNLOAD_UNAVAILABLE,
+        },
+        tags=['downloads'],
+    )
+
     def get(self, request, project_id):
         from django.conf import settings as django_settings
 
@@ -744,16 +862,15 @@ class ProjectDownloadView(APIView):
         # read here was the most expensive amplification of the set.
         project = get_one_project_sans_runs(project_id, _PROJECT_METADATA_PROJECTION)
         if not project:
-            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+            return api_error('Project not found', 'not_found',
+                             status.HTTP_404_NOT_FOUND)
         if not _user_can_access_project(project, user):
-            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            return _access_error(user)
 
         tar_id = project.get('tarfile')
         if not tar_id:
-            return Response(
-                {'error': 'Project has no downloadable archive yet'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return api_error('Project has no downloadable archive yet',
+                             'no_archive', status.HTTP_404_NOT_FOUND)
 
         linkid = str(project.get('linkid') or project.get('_id', ''))
         filename = f"{project.get('project_name', linkid)}.tar.gz"
@@ -775,8 +892,9 @@ class ProjectDownloadView(APIView):
                 return HttpResponseRedirect(presigned_url)
             except Exception as exc:
                 logging.error(f"[API] S3 presigned URL failed for {linkid}: {exc}")
-                return Response({'error': 'Download temporarily unavailable'},
-                                status=status.HTTP_503_SERVICE_UNAVAILABLE)
+                return api_error('Download temporarily unavailable',
+                                 'service_unavailable',
+                                 status.HTTP_503_SERVICE_UNAVAILABLE)
 
         # Non-S3 path — stream from GridFS
         try:
@@ -794,8 +912,9 @@ class ProjectDownloadView(APIView):
             return response
         except Exception as exc:
             logging.error(f"[API] GridFS stream failed for {linkid}: {exc}")
-            return Response({'error': 'Download temporarily unavailable'},
-                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return api_error('Download temporarily unavailable',
+                             'service_unavailable',
+                             status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 # ── POST /api/v1/projects/download/ (batch) ──────────────────────────────────
@@ -829,15 +948,38 @@ class ProjectBatchDownloadView(APIView):
     throttle_classes = [ApiScopedRateThrottle]
     throttle_scope = 'api_batch'
 
+    @extend_schema(
+        operation_id='resolveDownloadUrls',
+        summary='Resolve many project ids to download URLs',
+        description='Takes a list of project ids and returns the download URL '
+                    'for each one the caller may download. Resolves URLs only; '
+                    'it transfers no data and changes nothing. The only POST in '
+                    'the public API.',
+        request=api_schema.BatchDownloadRequestSerializer,
+        responses={200: api_schema.BatchDownloadResponseSerializer,
+                   400: api_schema.BAD_REQUEST,
+                   401: api_schema.AUTH_REQUIRED,
+                   429: api_schema.RATE_LIMITED},
+        tags=['downloads'],
+    )
     def post(self, request):
         user, err = _authenticate_api_request(request)
         if err:
             return err
 
-        ids = request.data.get('ids', [])
+        # A body without `ids` used to fall through to `{"downloads": [],
+        # "skipped": []}` with a 200 -- so a caller that misspelled the key, or
+        # sent the wrong shape entirely, got something indistinguishable from
+        # "none of your projects are downloadable".  Silence that reads as
+        # success is the worst answer to give an unattended client, which has no
+        # way to tell it guessed wrong.  Say so instead.
+        if not isinstance(request.data, dict) or 'ids' not in request.data:
+            return api_error("Request body must be a JSON object with an 'ids' key",
+                             'ids_required', status.HTTP_400_BAD_REQUEST)
+        ids = request.data['ids']
         if not isinstance(ids, list):
-            return Response({'error': "'ids' must be a JSON array"},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return api_error("'ids' must be a JSON array", 'ids_not_a_list',
+                             status.HTTP_400_BAD_REQUEST)
 
         # build_absolute_uri raises DisallowedHost in test environments;
         # construct the base URL directly from META to avoid that.
@@ -898,16 +1040,35 @@ class ApiTokenView(APIView):
     authentication_classes = [SessionAuthentication]
     permission_classes = []
     throttle_classes = [ApiScopedRateThrottle]
+
+    # Documented, but flagged: a programmatic client cannot use this endpoint.
+    # It authenticates by browser session and enforces CSRF on POST/DELETE, so a
+    # caller holding only an API token gets 401 here no matter what it sends.
+    # Leaving it out of the document entirely would be worse -- a client would
+    # discover the 401 by trying.
+    _TOKEN_NOTE = ('Browser-session endpoint: requires a logged-in session '
+                   'cookie and CSRF token. It cannot be called with an API '
+                   'token, by design -- a stolen token must not be able to '
+                   'mint its replacement. Obtain a token from the Settings '
+                   'page in a browser.')
     throttle_scope = 'api_token'
 
     def _session_user(self, request):
         user = request.user
         return user if (user and user.is_authenticated) else None
 
+    @extend_schema(
+        operation_id='getTokenStatus', summary='Token status',
+        description=_TOKEN_NOTE, request=None,
+        responses={200: api_schema.TokenStatusSerializer,
+                   401: api_schema.LOGIN_REQUIRED},
+        tags=['token'],
+    )
     def get(self, request):
         user = self._session_user(request)
         if not user:
-            return Response({'error': 'Login required'}, status=status.HTTP_401_UNAUTHORIZED)
+            return api_error('Login required', 'login_required',
+                             status.HTTP_401_UNAUTHORIZED)
         from rest_framework.authtoken.models import Token
         try:
             token = Token.objects.get(user=user)
@@ -915,24 +1076,44 @@ class ApiTokenView(APIView):
         except Token.DoesNotExist:
             return Response({'has_token': False, 'token_suffix': None})
 
+    @extend_schema(
+        operation_id='createToken', summary='Create or regenerate a token',
+        description=_TOKEN_NOTE + ' The full token is returned only here; '
+                    'regenerating invalidates the previous one.',
+        request=None,
+        responses={201: api_schema.TokenSerializer,
+                   401: api_schema.LOGIN_REQUIRED},
+        tags=['token'],
+    )
     def post(self, request):
         user = self._session_user(request)
         if not user:
-            return Response({'error': 'Login required'}, status=status.HTTP_401_UNAUTHORIZED)
+            return api_error('Login required', 'login_required',
+                             status.HTTP_401_UNAUTHORIZED)
         from rest_framework.authtoken.models import Token
         Token.objects.filter(user=user).delete()
         token = Token.objects.create(user=user)
         return Response({'token': token.key}, status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        operation_id='revokeToken', summary='Revoke the token',
+        description=_TOKEN_NOTE, request=None,
+        responses={200: api_schema.TokenRevokedSerializer,
+                   401: api_schema.LOGIN_REQUIRED,
+                   404: api_schema.NO_TOKEN},
+        tags=['token'],
+    )
     def delete(self, request):
         user = self._session_user(request)
         if not user:
-            return Response({'error': 'Login required'}, status=status.HTTP_401_UNAUTHORIZED)
+            return api_error('Login required', 'login_required',
+                             status.HTTP_401_UNAUTHORIZED)
         from rest_framework.authtoken.models import Token
         deleted, _ = Token.objects.filter(user=user).delete()
         if deleted:
             return Response({'detail': 'API token revoked'})
-        return Response({'detail': 'No active token to revoke'}, status=status.HTTP_404_NOT_FOUND)
+        return api_error('No active token to revoke', 'no_token',
+                         status.HTTP_404_NOT_FOUND)
 
 
 class BackgroundTaskStatusView(APIView):
@@ -963,3 +1144,30 @@ class BackgroundTaskStatusView(APIView):
         task_status = get_background_task_status()
         return Response(task_status, status=status.HTTP_200_OK)
 
+
+
+# ── GET /api/v1/openapi.json ────────────────────────────────────────────────
+
+class ApiSchemaView(SpectacularAPIView):
+    """
+    The OpenAPI 3 description of `/api/v1/`.
+
+    Public and unauthenticated: a client has to be able to read the description
+    before it has any credentials, and the document contains no data -- only the
+    shape of the endpoints, which the published documentation states anyway.
+
+    Throttled on the `api_read` scope like the other read endpoints.  It is a
+    generated document rather than a checked-in file so that it cannot quietly
+    fall out of step with the views; the price is that generation happens per
+    request, which is why it shares the read throttle.
+    """
+
+    permission_classes = []
+    authentication_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
+    # SpectacularAPIView negotiates YAML by default, so the URL would end in
+    # .json and return YAML unless the caller knew to ask.  A client that
+    # fetches a path called openapi.json and cannot json.loads() the body has
+    # been misled by the URL; pin the renderer to match it.
+    renderer_classes = [OpenApiJsonRenderer]
