@@ -3664,6 +3664,12 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
                             'subscribers': updated_subscribers,
                             'publication_link': form_dict['publication_link'],
                             'Oncogenes': get_project_oncogenes(current_runs),
+                            # Recomputed alongside Oncogenes: both are derived
+                            # from the run set, and an edit that changes the
+                            # samples changes both.  Leaving this out left the
+                            # project's classifications describing the sample
+                            # set it had at creation.
+                            'Classification': get_project_classifications(current_runs),
                             'alias_name': alias_name}}
 
         if project.get('sample_data', False) and samples_to_remove and len(samples_to_remove) > 0:
@@ -4563,7 +4569,10 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             runs = process_metadata_no_request(replace_underscore_keys(runs), old_extra_metadata = old_extra_metadata, remap_name_to_alias=remap_names_to_alias )
 
         new_val = {"$set": {'runs': runs,
-                            'Oncogenes': get_project_oncogenes(runs)}}
+                            'Oncogenes': get_project_oncogenes(runs),
+                            # See the note at the edit path above: derived from
+                            # runs, so it must be refreshed whenever runs is.
+                            'Classification': get_project_classifications(runs)}}
 
         get_tool_versions(project, runs)
         version_keys = [

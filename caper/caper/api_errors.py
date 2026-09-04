@@ -101,3 +101,40 @@ def normalize_api_v1_errors(exc, context):
 
     response.data = body
     return response
+
+
+# ── Errors raised before DRF is reached ─────────────────────────────────────
+#
+# The handler above only sees exceptions raised *inside* a DRF view.  A URL that
+# resolves to nothing never reaches one: Django calls the project's handler404,
+# which is Mezzanine's HTML error page.  A client that fetches
+# /api/v1/openapi.json against a deployment that lacks it therefore receives
+# 21 KB of HTML where JSON was promised -- measured against production on
+# 2026-09-04, before this existed.  Same for an unhandled crash and handler500.
+#
+# These two wrappers answer in JSON under /api/v1/ and delegate everything else
+# to Mezzanine unchanged, so the site's own error pages are untouched.
+
+from django.http import JsonResponse
+from mezzanine.core.views import page_not_found as _mezzanine_404
+from mezzanine.core.views import server_error as _mezzanine_500
+
+
+def api_aware_page_not_found(request, exception=None, template_name='errors/404.html'):
+    if request.path.startswith(API_V1_PREFIX):
+        return JsonResponse(
+            {'error': 'No such endpoint. See /api/v1/openapi.json for the '
+                      'endpoints this API has.',
+             'code': 'endpoint_not_found'},
+            status=404)
+    return _mezzanine_404(request, exception, template_name)
+
+
+def api_aware_server_error(request, template_name='errors/500.html'):
+    if request.path.startswith(API_V1_PREFIX):
+        # Deliberately says nothing about the failure: this path is reached by
+        # unhandled exceptions, and their text is not fit for a public body.
+        return JsonResponse(
+            {'error': 'Internal server error', 'code': 'internal_error'},
+            status=500)
+    return _mezzanine_500(request, template_name)

@@ -128,7 +128,20 @@ class ProjectSerializer(serializers.Serializer):
         help_text='Gene symbols amplified somewhere in this project.')
     classifications = serializers.ListField(
         child=serializers.CharField(),
-        help_text='Amplicon classes present, e.g. ecDNA, BFB, Linear.')
+        help_text='Amplicon classes present anywhere in this project, in the '
+                  'same spelling the sample rows use: ecDNA, BFB, Linear, '
+                  'Complex-non-cyclic, FAN. Filter on this to find projects '
+                  'with ecDNA.')
+    version = serializers.IntegerField(
+        help_text='Which version of this project the response describes, '
+                  'counting from 1. Resolving a project by name always returns '
+                  'its current version; cite this number alongside the id when '
+                  'reporting results.')
+    version_count = serializers.IntegerField(
+        help_text='How many versions this project has in total.')
+    is_latest_version = serializers.BooleanField(
+        help_text='False when this id names a superseded version, which still '
+                  'resolves so that published results stay reachable.')
     previous_versions = PreviousVersionSerializer(
         many=True,
         help_text='Superseded versions, oldest first. Each still resolves.')

@@ -553,6 +553,83 @@ def _history_row(member):
     return row
 
 
+# Project documents store classifications upper-cased -- get_project_classifications()
+# in views.py does `.upper()` -- while the per-sample rows that /samples/ returns
+# carry the mixed-case spelling ('ecDNA', 'Complex-non-cyclic').  A client that
+# filters projects on 'ecDNA' and then reads the samples it selected should not
+# have to know that the two levels disagree about capitalisation, so the API
+# answers in the sample-level spelling at both.  Unknown values pass through
+# untouched: a classification this map has not heard of must not be mangled.
+_CANONICAL_CLASSIFICATION = {
+    'ECDNA': 'ecDNA',
+    'BFB': 'BFB',
+    'LINEAR': 'Linear',
+    'COMPLEX-NON-CYCLIC': 'Complex-non-cyclic',
+    'COMPLEX NON-CYCLIC': 'Complex-non-cyclic',
+    'FAN': 'FAN',
+    'VIRUS': 'Virus',
+    'UNKNOWN': 'Unknown',
+}
+
+
+def _canonical_classifications(project):
+    """The project's amplicon classes, in the spelling /samples/ uses.
+
+    Reads `Classification` -- singular, which is the key the upload path writes
+    (views.py: `project['Classification'] = get_project_classifications(runs)`).
+    This serializer read `Classifications`, plural, from the day it was written;
+    nothing has ever written that key, so the field was `[]` on every project on
+    the site.  Measured 2026-09-04: 0 of 33 public projects reported a
+    classification through the API, while 10 of 10 sampled had ecDNA features in
+    their sample rows -- an ecDNA repository answering "no ecDNA here" to the
+    one question it exists to answer.
+
+    The plural spelling is still read as a fallback: it costs nothing, and a
+    document written by some past version may yet turn up holding it.
+    """
+    raw = project.get('Classification') or project.get('Classifications') or []
+    if isinstance(raw, str):
+        raw = [raw]
+    seen, out = set(), []
+    for value in raw:
+        canonical = _CANONICAL_CLASSIFICATION.get(str(value).upper(), value)
+        if canonical not in seen:
+            seen.add(canonical)
+            out.append(canonical)
+    return out
+
+
+def _version_fields(project, members):
+    """Which version of its project this document is, and how many there are.
+
+    The API always resolves a project name to its current version, so without
+    this a client has no way to say *which* version it read -- and results
+    published from a superseded version are still cited by that version's id.
+    `previous_versions` already lists the history, but it makes the caller count
+    entries to work out where it is standing.
+
+    Two sources, in the order lineage.py established: the pointers when the
+    document carries them, and the cumulative `previous_versions` array
+    otherwise.  A document written before the pointer backfill has no
+    `version_ordinal`, but its array holds every earlier version, so its
+    position is `len(previous_versions) + 1` either way.
+    """
+    ordinal = project.get('version_ordinal')
+    if not isinstance(ordinal, int) or isinstance(ordinal, bool):
+        ordinal = len(project.get('previous_versions') or []) + 1
+
+    if members:
+        count = len(members)
+    else:
+        count = max(ordinal, len(project.get('previous_versions') or []) + 1)
+
+    is_latest = project.get('is_latest')
+    if not isinstance(is_latest, bool):
+        # No pointer to trust: a document is the head when nothing follows it.
+        is_latest = ordinal >= count
+    return ordinal, count, is_latest
+
+
 def _project_to_dict(project, members=None):
     """Serialize a MongoDB project document to a JSON-safe dict, omitting internal fields.
 
@@ -561,6 +638,7 @@ def _project_to_dict(project, members=None):
     passes them in; asking per row would be a query per project.
     """
     linkid = str(project.get('linkid') or project.get('_id', ''))
+    version, version_count, is_latest = _version_fields(project, members)
     return {
         'id':                 linkid,
         'project_name':       project.get('project_name', ''),
@@ -578,7 +656,10 @@ def _project_to_dict(project, members=None):
         'reconstruction_tools': project.get('Reconstruction_tools', ''),
         'CoRAL_version':      project.get('CoRAL_version', ''),
         'oncogenes':          project.get('Oncogenes', []),
-        'classifications':    project.get('Classifications', []),
+        'classifications':    _canonical_classifications(project),
+        'version':            version,
+        'version_count':      version_count,
+        'is_latest_version':  is_latest,
         'previous_versions': _previous_versions_payload(project, members),
     }
 

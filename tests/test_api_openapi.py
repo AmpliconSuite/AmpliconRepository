@@ -227,3 +227,116 @@ class TestFrameworkErrorsAreNormalized:
         resp = normalize_api_v1_errors(ParseError('bad'), {'request': request})
         assert 'detail' in resp.data
         assert 'code' not in resp.data
+
+
+class TestUnroutedApiPathsAnswerInJson:
+    """
+    A path under /api/v1/ that resolves to nothing must not return HTML.
+
+    Measured against production 2026-09-04: `/api/v1/` and
+    `/api/v1/openapi.json` both returned the site's HTML error page -- 21 KB of
+    markup, with a 404 status, to a client that had asked for JSON. Django's
+    handler404 runs before any DRF view, so the EXCEPTION_HANDLER never sees it.
+    """
+
+    def test_unrouted_v1_path_returns_json(self):
+        resp = _client().get('/api/v1/no-such-endpoint/')
+        assert resp.status_code == 404
+        assert resp['Content-Type'].startswith('application/json')
+        body = json.loads(resp.content)
+        assert body['code'] == 'endpoint_not_found'
+        assert 'openapi.json' in body['error']
+
+    def test_the_body_is_small(self):
+        """The HTML page cost 21 KB to say 'no'. This should cost ~100 bytes."""
+        resp = _client().get('/api/v1/no-such-endpoint/')
+        assert len(resp.content) < 500, len(resp.content)
+
+    def test_site_404s_are_untouched(self):
+        """Everything outside /api/v1/ keeps Mezzanine's HTML error page."""
+        resp = _client().get('/definitely-not-a-page/')
+        assert resp.status_code == 404
+        assert not resp['Content-Type'].startswith('application/json')
+
+
+class TestProjectClassificationsAreReported:
+    """
+    The API read `Classifications`; the upload path writes `Classification`.
+
+    Measured against production 2026-09-04: 0 of 33 public projects reported any
+    classification, while 10 of 10 sampled had ecDNA features in their sample
+    rows -- 211 of them. An ecDNA repository was answering "no ecDNA here" to
+    the one question it exists to answer, because the reader and the writer
+    disagreed by one character.
+    """
+
+    def test_reads_the_key_the_upload_path_writes(self):
+        d = views_apis._project_to_dict({'_id': 'x', 'linkid': 'x',
+                                         'Classification': ['ECDNA', 'BFB']})
+        assert d['classifications'] == ['ecDNA', 'BFB']
+
+    def test_plural_spelling_still_read_as_a_fallback(self):
+        d = views_apis._project_to_dict({'_id': 'x', 'linkid': 'x',
+                                         'Classifications': ['ECDNA']})
+        assert d['classifications'] == ['ecDNA']
+
+    def test_spelling_matches_the_sample_rows(self):
+        """
+        Project documents store these upper-cased; /samples/ returns mixed case.
+        A client filtering projects on 'ecDNA' must not then find that the
+        samples it selected spell it differently.
+        """
+        d = views_apis._project_to_dict({
+            '_id': 'x', 'linkid': 'x',
+            'Classification': ['ECDNA', 'LINEAR', 'COMPLEX-NON-CYCLIC', 'BFB']})
+        assert d['classifications'] == ['ecDNA', 'Linear',
+                                        'Complex-non-cyclic', 'BFB']
+
+    def test_unknown_values_pass_through_unmangled(self):
+        d = views_apis._project_to_dict({'_id': 'x', 'linkid': 'x',
+                                         'Classification': ['SomethingNew']})
+        assert d['classifications'] == ['SomethingNew']
+
+    def test_absent_field_is_an_empty_list_not_an_error(self):
+        assert views_apis._project_to_dict({'_id': 'x', 'linkid': 'x'})[
+            'classifications'] == []
+
+
+class TestVersionIsVisible:
+    """
+    Resolving a project always returns its current version, so the response has
+    to say which version that was -- superseded versions keep their ids and back
+    published results, and a caller citing only the id cannot say what it read.
+    """
+
+    def test_ordinal_from_the_pointer_when_present(self):
+        d = views_apis._project_to_dict(
+            {'_id': 'x', 'linkid': 'x', 'version_ordinal': 3,
+             'is_latest': True},
+            members=[{}, {}, {}])
+        assert (d['version'], d['version_count'], d['is_latest_version']) == (3, 3, True)
+
+    def test_ordinal_from_the_array_when_unpointered(self):
+        """Documents predating the pointer backfill still know where they are:
+        previous_versions is cumulative, so position is len + 1."""
+        d = views_apis._project_to_dict(
+            {'_id': 'x', 'linkid': 'x',
+             'previous_versions': [{'linkid': 'a'}, {'linkid': 'b'}]})
+        assert d['version'] == 3
+        assert d['version_count'] == 3
+
+    def test_a_first_version_reports_one(self):
+        d = views_apis._project_to_dict({'_id': 'x', 'linkid': 'x'})
+        assert (d['version'], d['version_count'], d['is_latest_version']) == (1, 1, True)
+
+    def test_superseded_version_says_so(self):
+        d = views_apis._project_to_dict(
+            {'_id': 'x', 'linkid': 'x', 'version_ordinal': 1, 'is_latest': False},
+            members=[{}, {}])
+        assert d['version'] == 1 and d['is_latest_version'] is False
+
+    def test_fields_are_in_the_openapi_document(self):
+        props = _generate_schema()['components']['schemas']['Project']['properties']
+        for field in ('version', 'version_count', 'is_latest_version',
+                      'classifications'):
+            assert field in props, field
