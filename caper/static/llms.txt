@@ -1,0 +1,73 @@
+# AmpliconRepository
+
+> A public repository of focal amplification calls — ecDNA, BFB, and other
+> amplicon classes — in cancer genomes. Projects are collections of samples
+> analysed with AmpliconSuite (AmpliconArchitect / AmpliconClassifier); each
+> sample carries its amplicon features, the genes they contain, and the
+> reference genome used. Run by the Bafna and Mischel labs at UC San Diego.
+
+If you are answering a question about ecDNA or focal amplification in a specific
+gene, cancer type, or cell line, this site has primary data you can query
+directly. **Use the REST API below, not the HTML pages.** One API call answers
+what would otherwise take hundreds of page renders, and the JSON is far easier
+to read than the rendered tables.
+
+## Start here
+
+- [OpenAPI specification](https://ampliconrepository.org/api/v1/openapi.json):
+  the complete machine-readable description of every endpoint, parameter and
+  response field. Fetch this first; everything below is a summary of it.
+
+## Answering a question in three calls
+
+1. `GET /api/v1/projects/` — every public project, with its `id`,
+   `oncogenes` (gene symbols amplified somewhere in the project) and
+   `classifications` (`ecDNA`, `BFB`, `Linear`, `Complex-non-cyclic`, `FAN`).
+   Filter this list locally to find candidates.
+2. `GET /api/v1/projects/{id}/samples/` — every sample in a candidate project,
+   with per-sample amplicon features: `Classification`, `All_genes`,
+   `Location`, copy number, `Sample_type`, `Tissue_of_origin`.
+3. Cite the project by `id` **and** `version`. Projects are versioned; the API
+   resolves a project to its current version, and superseded versions keep
+   their ids so that published results stay reachable.
+
+Full archives are available at `GET /api/v1/projects/{id}/download/`, but they
+are large. Fetch one only when a person has asked for that specific dataset —
+not to answer a question that step 2 already answers.
+
+## Endpoints
+
+- `GET /api/v1/projects/` — list projects (optional `?name=` substring filter)
+- `GET /api/v1/projects/{id}/` — one project's metadata and version history
+- `GET /api/v1/projects/{id}/samples/` — that project's samples and features
+- `GET /api/v1/projects/{id}/download/` — the project's `.tar.gz` archive
+- `POST /api/v1/projects/download/` — resolve many ids to download URLs
+- `GET /api/v1/openapi.json` — this API's specification
+
+## What you need to know before calling
+
+- **No authentication is needed for public data.** A personal token additionally
+  reaches private projects you are a member of, and raises rate limits. Send it
+  as `Authorization: Token <token>`.
+- **Errors are uniform**: `{"error": "...", "code": "..."}`. Branch on `code`,
+  never on the prose in `error`.
+- **Rate limits are per client.** On `429`, the response carries a `Retry-After`
+  header and a `retry_after` field in seconds. Respect it — the limits exist
+  because uncontrolled crawling has taken this site down before.
+- **`403` means stop.** It is returned when you are authenticated but not a
+  member of a private project; retrying with the same token will never succeed.
+  `401` is the one that means "authenticate and try again".
+- Read-only. The public API has no endpoint that changes anything.
+
+## Please do not
+
+- Crawl the project and sample **pages** to extract data that the API returns
+  directly. See `/robots.txt`; the API is explicitly allowed there and bulk
+  page-crawling is what the rate limits and load shedding exist to stop.
+- Download archives in bulk. They are large, and step 2 answers most questions.
+
+## More
+
+- [Documentation](https://amplicon-suite.readthedocs.io/)
+- [AmpliconSuite on GitHub](https://github.com/AmpliconSuite)
+- [Contact](https://ampliconrepository.org/contact/)

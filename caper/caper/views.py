@@ -58,6 +58,7 @@ from .views_apis import (
     FileUploadView, ProjectFileAddView, BackgroundTaskStatusView,
     ProjectListView, ProjectDetailView, ProjectSamplesView,
     ProjectDownloadView, ProjectBatchDownloadView, ApiTokenView,
+    ApiSchemaView,
 )
 
 # from django.views.generic import TemplateView
@@ -3663,6 +3664,12 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
                             'subscribers': updated_subscribers,
                             'publication_link': form_dict['publication_link'],
                             'Oncogenes': get_project_oncogenes(current_runs),
+                            # Recomputed alongside Oncogenes: both are derived
+                            # from the run set, and an edit that changes the
+                            # samples changes both.  Leaving this out left the
+                            # project's classifications describing the sample
+                            # set it had at creation.
+                            'Classification': get_project_classifications(current_runs),
                             'alias_name': alias_name}}
 
         if project.get('sample_data', False) and samples_to_remove and len(samples_to_remove) > 0:
@@ -4562,7 +4569,10 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             runs = process_metadata_no_request(replace_underscore_keys(runs), old_extra_metadata = old_extra_metadata, remap_name_to_alias=remap_names_to_alias )
 
         new_val = {"$set": {'runs': runs,
-                            'Oncogenes': get_project_oncogenes(runs)}}
+                            'Oncogenes': get_project_oncogenes(runs),
+                            # See the note at the edit path above: derived from
+                            # runs, so it must be refreshed whenever runs is.
+                            'Classification': get_project_classifications(runs)}}
 
         get_tool_versions(project, runs)
         version_keys = [
@@ -5969,6 +5979,37 @@ def process_version_set(version_set):
         return str(version_list[0])
     else:
         return ', '.join(str(v) for v in version_list)
+
+
+def llms_txt(request):
+    """
+    Serve /llms.txt -- the agent-facing description of this site.
+
+    Same file-resolution reasoning as robots() below, and for the same reasons:
+    the project's own static directory is what git deploys and what the
+    container bind-mounts, while STATIC_ROOT can be a stale collectstatic copy
+    that a source-only deploy never refreshes.
+
+    Why this file exists at all: an AI assistant asked about ecDNA in some gene
+    has no way to know this site has primary data, or that the cheap way to read
+    it is the REST API rather than the rendered pages.  robots.txt can only say
+    what is permitted; this says what is *useful*, and points at
+    /api/v1/openapi.json for the exact contract.
+    """
+    project_static = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'static')
+    path = os.path.join(project_static, 'llms.txt')
+
+    if not os.path.exists(path):
+        candidate = os.path.join(settings.STATIC_ROOT or '', 'llms.txt')
+        path = candidate if os.path.exists(candidate) else None
+
+    if not path:
+        logging.warning("llms.txt not found in %s or STATIC_ROOT", project_static)
+        raise Http404("llms.txt not found")
+
+    with open(path, 'r', encoding='utf-8') as handle:
+        return HttpResponse(handle.read(), content_type='text/plain; charset=utf-8')
 
 
 def robots(request):

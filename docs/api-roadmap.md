@@ -35,7 +35,25 @@ Design principles:
 
 ## Known issues & status
 
-### 1. Load-balancer blocks non-browser User-Agents — **infra, open**
+### 1. Load-balancer blocks non-browser User-Agents — **fixed for `/api/v1/`, 2026-09-04**
+
+Read from the live WebACL, not inferred. `Amplicon_WAF` (attached to both the prod
+and dev ALBs) carries `AllowApiV1` at priority 3 — a terminating `Allow` on URIs
+starting `/api/v1/`, ordered *after* `KnownBadInputs` (2) and *before* Bot Control
+(4), exactly as proposed below. Measured the same day: `curl` default UA, empty UA,
+`Wget/1.21.4` and `python-requests/2.32.3` all get `200` from
+`/api/v1/projects/`, `404` from a nonexistent project and `401` from `/token/` —
+application status codes, so the requests reach Django. `RateLimitApiV1` (priority 1)
+backs it: 600 requests / 300 s per IP, `429` + `Retry-After: 60`.
+
+**Still true outside that prefix.** Every other path — `/`, `/robots.txt`,
+`/sitemap.xml`, `/healthz`, `/api/background-task-status/` — still 403s to
+non-browser UAs. That is a *discovery* problem, not an API problem, and it is
+entangled with a finding that changes the plan: see "AI-agent enablement" below.
+
+The original text follows.
+
+### 1a. Original diagnosis (superseded)
 The AWS load balancer / WAF returns `403` to requests without a browser-style
 `User-Agent` (default `curl`, `requests`, `wget`, empty UA all blocked; a full browser
 UA passes). This blocks every default programmatic client and is the main reason the API
@@ -84,7 +102,10 @@ Per-endpoint scopes with a higher limit for token-authenticated callers, 429 +
   documented back-off signal. They do nothing against a distributed crawl —
   that is what the read-amplification work is for.
 
-**WAF exception — proposed, not applied.** Rate rule + `/api/v1/*` prefix allow,
+**WAF exception — applied.** Confirmed in the live ACL 2026-09-04; the paragraph
+below described the plan and is kept because it explains the ordering.
+
+**Original proposal:** Rate rule + `/api/v1/*` prefix allow,
 ordered so `KnownBadInputs` still inspects API traffic (`Allow` is terminating in
 WAF, so a naive priority-0 allow would disable it). Bot Control stays enforcing for
 the rest of the site. Making the *prefix* the boundary rather than enumerating
@@ -110,15 +131,66 @@ client.download_project(hits[0].id)     # full .tar.gz archive
 ```
 
 ### Phase 4 — Machine-readable interface & AI-agent enablement
+
+**Before doing the `robots.txt` / `llms.txt` work, read this.** On 2026-09-04,
+`get-sampled-requests` over a 3-hour window returned 500 sampled Bot Control
+blocks. Of the ~108 carrying AI-crawler User-Agents (`GPTBot`, `ClaudeBot`,
+`ChatGPT-User`, `OAI-SearchBot`, `PerplexityBot`, `Google-Extended`, `Applebot`),
+essentially all came from **one GCP host, 34.62.98.30**, rotating through those
+names while probing for `/actuator/env`, `/home/node/.aws/credentials`,
+`/jenkins/credentials.xml` and SSRF against `169.254.169.254`. Two requests in the
+window looked like genuine crawlers.
+
+Two consequences:
+
+* **Never allowlist AI crawlers by User-Agent.** It is an unauthenticated claim,
+  and on this site it is already being worn by an attacker; a UA allowlist would
+  be a direct bypass around Bot Control. The only safe mechanism is Bot Control's
+  *verified*-bot label (reverse-DNS validated), matched in a rule evaluated after
+  the managed group runs in `Count` mode.
+* **The premise that we are turning away lots of agent traffic is unmeasured.**
+  It may also be circular — crawlers may not come *because* `/robots.txt` 403s
+  them and `Disallow: /api/` tells the ones that get through to stay out. WAF
+  logging was enabled to `aws-waf-logs-amplicon` on 2026-09-04 (BLOCK-only,
+  30-day retention, `authorization`/`cookie` redacted) to settle it with data
+  rather than a 3-hour sample. Let it accumulate before changing Bot Control.
 Goal: **AI agents that know about AmpliconRepository can discover and use the API to
 answer user questions** (e.g. "does AmpRepo have ecDNA calls for MYC in gastric cancer —
 pull the sample table"). Deliverables:
 
 - **`llms.txt` at the site root** naming the API and linking the docs + OpenAPI spec, with
   a minimal task recipe. This is the convention agents increasingly look for.
-- **OpenAPI/Swagger spec** at a stable URL (e.g. `/api/v1/openapi.json`) so agents and
-  codegen enumerate endpoints/params/response shapes without scraping prose. DRF has
-  schema generators (`drf-spectacular`) that fit our existing `APIView`s.
+- **OpenAPI/Swagger spec — done, 2026-09-04.** `drf-spectacular` 0.27.2 generates an
+  OpenAPI 3.0.3 document served at `/api/v1/openapi.json`. Inside the `/api/v1/`
+  prefix on purpose: that prefix is what `AllowApiV1` lets through, so the spec is
+  reachable by the same clients as the endpoints it describes. A `PREPROCESSING_HOOKS`
+  entry restricts it to `/api/v1/`, keeping the write endpoints
+  (`/upload_api/`, `/add_samples_to_project_api/`) out — their contract is with
+  released AmpliconSuiteAggregator versions, not with this document.
+
+  Writing it surfaced three defects, all fixed in the same change:
+
+  1. **401 where 403 was meant.** An *authenticated* caller who was not a project
+     member got `401 Authentication required` from all three project endpoints.
+     For an unattended client the two codes mean opposite things — 401 says retry
+     with credentials, 403 says stop — so the old behaviour invited an infinite
+     retry loop. Now 401 for anonymous, 403 for authenticated non-members.
+  2. **A silent no-op on the batch endpoint.** `POST /api/v1/projects/download/`
+     read `ids` from the body and defaulted to `[]`, so a caller that misspelled
+     the key got `200 {"downloads": [], "skipped": []}` — indistinguishable from a
+     truthful "none of these are downloadable". Found by making that exact mistake
+     against production. A missing or non-list `ids` is now a `400` with a code.
+  3. **Two error shapes.** The v1 views returned `{"error": ...}`; DRF's own
+     failures — throttling above all — returned `{"detail": ...}`.
+     `caper/api_errors.py` is installed as `EXCEPTION_HANDLER` and restates
+     framework errors in the v1 shape, adding a stable `code` and, on 429, a
+     `retry_after`. **Scoped to `/api/v1/` by URL prefix** so it cannot reach the
+     upload endpoints.
+
+  Tests: `tests/test_api_openapi.py` (16). The load-bearing one is
+  `test_every_v1_route_is_documented`, which fails if a route is added under
+  `/api/v1/` without an annotation — a generated spec's whole value is that it
+  cannot silently under-describe the API, and nothing else enforces that.
 - **Reachable by default clients** — depends on the #1 WAF fix (agents send library UAs).
 - **Predictable, self-describing responses** — stable field names, strict valid JSON
   (no `NaN`/`Inf`), consistent error bodies/status codes, stable IDs across calls.

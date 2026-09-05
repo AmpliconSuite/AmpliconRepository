@@ -102,24 +102,21 @@ def test_robots_still_blocks_extraction_only_crawlers(request_factory):
 
 
 @pytest.mark.integration
-def test_allowed_crawlers_are_not_given_their_own_group(request_factory):
-    """A group of its own would release a bot from the wildcard disallows.
+def _allow_rule_offenders(body):
+    """Allow: rules outside the wildcard group, and any bare "Allow: /".
 
-    robots.txt agents obey only the single most specific matching group, so
-    adding "User-agent: GPTBot / Allow: /" would silently let it into
-    /*/download and /api/ -- the opposite of what such an edit intends.
+    Shared by the guard below and its negative control, so the control really
+    exercises the guard rather than a copy of it.
     """
-    from caper.views import robots
+    offenders, bare_allows = _allow_rule_offenders(body)
 
-    body = robots(request_factory.get('/robots.txt')).content.decode()
-
-    for line in body.splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith('user-agent:'):
-            continue
-        assert not stripped.lower().startswith('allow:'), \
-            ("robots.txt has an Allow: rule. Allowed crawlers must simply be "
-             "absent from this file so the wildcard block governs them.")
+    assert not offenders, (
+        f"Allow: rules outside the wildcard group: {offenders}. Allowed "
+        "crawlers must simply be absent from this file so the wildcard block "
+        "governs them.")
+    assert not bare_allows, (
+        f'robots.txt has a bare "Allow: /": {bare_allows}. That releases '
+        "whichever group it sits in from every Disallow above it.")
 
 
 def _agent_block(body, agent):

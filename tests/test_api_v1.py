@@ -361,7 +361,16 @@ class TestProjectDetailView:
             resp = self.view(req, project_id='abc')
         assert resp.status_code == 401
 
-    def test_private_non_member_returns_401(self):
+    def test_private_non_member_returns_403_not_401(self):
+        """An authenticated caller who is not a member gets 403, not 401.
+
+        This asserted 401 until 2026-09-04.  The pair of statuses is the only
+        signal an unattended client has for whether retrying is worth anything:
+        401 means "authenticate and try again", which is true for the anonymous
+        caller in the test above, and false here -- this token will never open
+        this project.  A client that reads 401 as "refresh credentials and
+        retry" will loop forever against a project it can never read.
+        """
         proj = _make_project(private='private', members=['owner'])
         mock_user = _MockUser()
         mock_user.username = 'intruder'
@@ -371,7 +380,8 @@ class TestProjectDetailView:
             MockTA.return_value.authenticate.return_value = (mock_user, None)
             req = self.rf.get('/api/v1/projects/abc/', HTTP_AUTHORIZATION='Token t')
             resp = self.view(req, project_id='abc')
-        assert resp.status_code == 401
+        assert resp.status_code == 403
+        assert resp.data['code'] == 'permission_denied'
 
     def test_private_member_returns_200(self):
         proj = _make_project(private='private', members=['testuser'])

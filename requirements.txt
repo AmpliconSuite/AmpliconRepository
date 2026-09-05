@@ -25,6 +25,7 @@ django-contrib-comments==2.2.0
 django-crispy-forms==1.14.0
 djangorestframework==3.14.0
 djongo==1.3.6
+drf-spectacular==0.27.2
 filebrowser-safe==1.1.1
 Flask==2.2.2
 fonttools==4.38.0
@@ -32,6 +33,7 @@ GEOparse==2.0.3
 grappelli-safe==1.1.1
 idna==3.3
 importlib-metadata==5.0.0
+inflection==0.5.1
 intervaltree==3.1.0
 ipykernel==6.29.5
 itsdangerous==2.1.2
@@ -61,6 +63,7 @@ pyparsing==3.0.9
 pyrsistent==0.19.2
 python-dateutil==2.8.2
 python3-openid==3.2.0
+PyYAML==6.0.3
 pytz==2022.1
 pytz-deprecation-shim==0.1.0.post0
 requests==2.28.1
@@ -77,6 +80,7 @@ tinycss2==1.1.1
 tqdm==4.64.1
 tzdata==2024.1
 tzlocal==4.2
+uritemplate==4.2.0
 urllib3==1.26.11
 uuid==1.30
 webencodings==0.5.1

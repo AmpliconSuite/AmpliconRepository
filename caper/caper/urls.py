@@ -133,8 +133,15 @@ urlpatterns += [
     path('api/v1/projects/<str:project_id>/download/', views.ProjectDownloadView.as_view(), name='api_project_download'),
     path('api/v1/projects/<str:project_id>/samples/', views.ProjectSamplesView.as_view(), name='api_project_samples'),
     path('api/v1/token/', views.ApiTokenView.as_view(), name='api_token'),
+    # The machine-readable description of everything above.  Inside /api/v1/ on
+    # purpose -- that prefix is what the WAF's AllowApiV1 rule lets through, so
+    # the spec is reachable by the same clients as the endpoints it documents.
+    path('api/v1/openapi.json', views.ApiSchemaView.as_view(), name='api_openapi'),
 
     path('robots.txt', views.robots, name = "robots.txt"),
+    # The agent-facing companion to robots.txt: what this site holds and how to
+    # read it cheaply.  robots.txt says what is allowed; this says what is useful.
+    path('llms.txt', views.llms_txt, name = "llms.txt"),
     path('loading/', views.loading),
     path('search_results/', views.search_results, name='search_results'),
     path('ec3d/<str:sample_name>/', views.ec3d_visualization, name='ec3d_visualization'),
@@ -211,5 +218,8 @@ urlpatterns += [
 
 # Adds ``STATIC_URL`` to the context of error pages, so that error
 # pages can use JS, CSS and images.
-handler404 = "mezzanine.core.views.page_not_found"
-handler500 = "mezzanine.core.views.server_error"
+# JSON under /api/v1/, Mezzanine's HTML pages everywhere else.  A programmatic
+# client that asks for a path this deployment does not have should be told so in
+# the format the rest of the API speaks, not handed an error page.
+handler404 = "caper.api_errors.api_aware_page_not_found"
+handler500 = "caper.api_errors.api_aware_server_error"
