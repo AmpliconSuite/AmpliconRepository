@@ -6,6 +6,8 @@ from django.views.i18n import set_language
 import mezzanine
 from mezzanine.conf import settings
 from . import account_views, views
+from .sitemaps import HttpsDisplayableSitemap
+from django.contrib.sitemaps.views import sitemap as sitemap_view
 from django.conf.urls.static import static
 from django.shortcuts import render, redirect
 
@@ -142,6 +144,11 @@ urlpatterns += [
     # The agent-facing companion to robots.txt: what this site holds and how to
     # read it cheaply.  robots.txt says what is allowed; this says what is useful.
     path('llms.txt', views.llms_txt, name = "llms.txt"),
+    # Mezzanine registers its own sitemap.xml inside ``mezzanine.urls``, which
+    # must stay last because of its catch-all; registering ours here means ours
+    # is matched first.  The only difference is the scheme -- see sitemaps.py.
+    path('sitemap.xml', sitemap_view,
+         {'sitemaps': {'all': HttpsDisplayableSitemap}}, name='sitemap'),
     path('loading/', views.loading),
     path('search_results/', views.search_results, name='search_results'),
     path('ec3d/<str:sample_name>/', views.ec3d_visualization, name='ec3d_visualization'),
