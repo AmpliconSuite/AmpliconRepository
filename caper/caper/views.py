@@ -22,6 +22,7 @@ from bson.objectid import ObjectId
 
 from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, HttpResponseNotFound, Http404, JsonResponse
 from django.shortcuts import render, redirect
+from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 from django.utils.http import urlencode
 
@@ -77,7 +78,8 @@ from .download_gate import (
 from .utils import (
     collection_handle, collection_handle_primary, db_handle_primary, current_flags, fs_handle,
     audit_log_handle,
-    get_one_project, get_one_sample, get_one_sample_rows, get_one_deleted_project,
+    get_one_project, get_one_project_sans_runs, get_one_sample, get_one_sample_rows,
+    get_one_deleted_project,
     prepare_project_linkid, check_if_db_field_exists,
     get_date, get_date_short, previous_versions, form_to_dict,
     replace_space_to_underscore, sample_data_from_feature_list,
@@ -2496,12 +2498,24 @@ def batch_sample_download(request):
     # Group samples by project
     projects_and_samples = {}
 
+    # One lookup per project, not one per selected sample: a "Select All"
+    # download names every sample on the site but only a couple of dozen
+    # distinct projects, and this loop was re-fetching the whole project
+    # document -- runs included, which is ~93% of its bytes -- for each one.
+    # Nothing below reads project['runs']: process_sample_data() touches only
+    # 'sample_downloads' and '_id', and get_one_sample() loads its own rows.
+    project_cache = {}
+
     for sample_str in samples:
         try:
             project_id, sample_name = sample_str.split(':')
 
             # Skip if no access
-            project = get_one_project(project_id)
+            if project_id not in project_cache:
+                project_cache[project_id] = get_one_project_sans_runs(project_id)
+            project = project_cache[project_id]
+            if project is None:
+                continue
             visibility = normalize_visibility_field(project.get('private', 'private'))
             # Allow access for members, or for hidden_public/public projects
             if is_project_private(visibility) and not is_project_hidden_public(visibility) and not is_user_a_project_member(project, request):
@@ -2749,9 +2763,17 @@ def gene_search_page(request):
 
             data = sample_data_from_feature_list(features_list)
 
+            # One reverse() per project rather than one per row.  The template
+            # called {% url %} inside the row loop, which re-resolved the route
+            # for all 16,950 rows of the unfiltered search; project_linkid only
+            # takes as many distinct values as there are projects.
+            project_url = reverse('project_page',
+                                  kwargs={'project_name': str(project_linkid)})
+
             for sample in data:
                 sample['project_name'] = project_name
                 sample['project_linkid'] = project_linkid
+                sample['project_url'] = project_url
 
                 # Gene and classification checks
                 gene_match = (genequery in sample['Oncogenes'] or len(genequery) == 0)

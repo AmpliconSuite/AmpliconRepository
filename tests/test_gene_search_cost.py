@@ -1,0 +1,254 @@
+"""
+Regression tests for the cost of the gene search page.
+
+Measured on production 2026-09-06, unauthenticated, whole-page wall time:
+
+    /gene-search/?genequery=ZZZNOSUCHGENE   0 projects match     0.5-0.8 s
+    /gene-search/?genequery=MYC             29 rows rendered     8.7-9.7 s
+    /gene-search/                           16,950 rows          12.1-12.4 s
+
+The page therefore costs about nine seconds even when it returns twenty-nine
+rows: nearly all of it is fetching every matching project document -- ``runs``
+is 95.7% of their bytes -- and rolling every sample up.  Two of the three pieces
+this file pins down are the cheap half of that: the rollup itself, and the
+per-row URL reverse in the template.  The document fetch is not addressed here.
+
+The third is ``batch_sample_download``, which is the same read amplification in
+the download path: it fetched a full project document per *selected sample*.
+"""
+
+import math
+
+import pytest
+
+from caper.utils import sample_data_from_feature_list
+
+
+def _row(sample, classification='ecDNA', oncogenes=None, **extra):
+    row = {'Sample_name': sample, 'Classification': classification,
+           'Oncogenes': list(oncogenes or []), 'Feature_ID': f'{sample}_1'}
+    row.update(extra)
+    return row
+
+
+class TestSampleDataRollup:
+    """``sample_data_from_feature_list`` replaced a pandas groupby.
+
+    What matters is that it still produces exactly what the pandas version did,
+    because views.py writes this output into ``project['sample_data']`` -- a
+    shape change would be persisted, not merely rendered.
+    """
+
+    def test_groups_rows_by_sample_and_unions_oncogenes(self):
+        rows = [_row('S1', oncogenes=['MYC']),
+                _row('S1', oncogenes=['EGFR', 'MYC']),
+                _row('S2', oncogenes=['CDK4'])]
+        out = {d['Sample_name']: d for d in sample_data_from_feature_list(rows)}
+        assert out['S1']['Oncogenes'] == ['EGFR', 'MYC']
+        assert out['S2']['Oncogenes'] == ['CDK4']
+
+    def test_samples_come_back_in_sorted_order(self):
+        # pandas' groupby sorted its keys, and the template renders in this order.
+        rows = [_row('S3'), _row('S1'), _row('S2')]
+        names = [d['Sample_name'] for d in sample_data_from_feature_list(rows)]
+        assert names == ['S1', 'S2', 'S3']
+
+    def test_invalid_classifications_are_not_counted(self):
+        rows = [_row('S1', classification='ecDNA'),
+                _row('S1', classification='NA'),
+                _row('S1', classification='Not Provided'),
+                _row('S1', classification='ecDNA')]
+        out = sample_data_from_feature_list(rows)[0]
+        assert out['Features'] == 2
+        assert out['Classifications'] == ['ecDNA']
+        assert out['Classifications_counted'] == ['ecDNA (2)']
+
+    def test_singleton_classification_carries_no_count(self):
+        out = sample_data_from_feature_list([_row('S1', classification='BFB')])[0]
+        assert out['Classifications_counted'] == ['BFB']
+
+    def test_optional_field_takes_the_first_row_of_the_sample(self):
+        rows = [_row('S1', Cancer_type='Breast'), _row('S1', Cancer_type='Lung')]
+        assert sample_data_from_feature_list(rows)[0]['Cancer_type'] == 'Breast'
+
+    def test_missing_optional_field_is_nan_not_none(self):
+        """pd.DataFrame filled absent keys with NaN, so stored documents hold NaN.
+
+        Returning None instead would change ``project['sample_data']`` for every
+        project re-saved after the change.
+        """
+        rows = [_row('S1', Cancer_type='Breast'), _row('S2')]
+        out = {d['Sample_name']: d for d in sample_data_from_feature_list(rows)}
+        value = out['S2']['Cancer_type']
+        assert isinstance(value, float) and math.isnan(value)
+
+    def test_column_absent_from_every_row_is_absent_from_the_result(self):
+        out = sample_data_from_feature_list([_row('S1')])[0]
+        assert 'Cancer_type' not in out
+        assert 'Tissue_of_origin' not in out
+
+    def test_present_keys_keeps_columns_a_row_filter_would_drop(self):
+        """The trap for any caller that rolls up a subset of a project's rows.
+
+        Which optional columns appear depends on *all* the project's rows, not
+        on the rows of the sample being rolled up.  "PCAWG filtered" carries
+        Cancer_type on 3,749 of its 3,880 feature rows and 92 of its 2,095
+        samples have it on none (measured locally 2026-09-06), so a caller that
+        filters rows without passing ``present_keys`` silently drops the column
+        from samples that should keep it.
+        """
+        all_rows = [_row('S1', Cancer_type='Breast'), _row('S2')]
+        every_key = set()
+        for row in all_rows:
+            every_key.update(row)
+
+        subset = [r for r in all_rows if r['Sample_name'] == 'S2']
+
+        naive = sample_data_from_feature_list(subset)[0]
+        assert 'Cancer_type' not in naive          # the trap
+
+        guarded = sample_data_from_feature_list(subset, present_keys=every_key)[0]
+        assert 'Cancer_type' in guarded
+        assert math.isnan(guarded['Cancer_type'])
+
+    def test_empty_input(self):
+        assert sample_data_from_feature_list([]) == []
+
+    def test_does_not_mutate_its_input(self):
+        rows = [_row('S1', oncogenes=['MYC'])]
+        before = [dict(r) for r in rows]
+        sample_data_from_feature_list(rows)
+        assert rows == before
+
+
+class TestGeneSearchTemplateCost:
+    """The project link is reversed once per project, not once per row."""
+
+    def test_rendered_project_link_is_unchanged(self, request_factory, test_user,
+                                                mongo_collection):
+        """Swapping {% url %} for a precomputed value must not move the link.
+
+        The top-level ``Oncogenes`` list is what the view's Mongo query filters
+        projects on, before it ever looks at ``runs``.
+        """
+        from caper.views import gene_search_page
+
+        doc = {
+            'project_name': 'GeneSearchUrlCost',
+            'creator': test_user.username,
+            'project_members': [test_user.username],
+            'private': 'public',
+            'delete': False, 'current': True, 'FINISHED?': True,
+            'sample_count': 1,
+            'Oncogenes': ['GSCOSTGENE'],
+            'runs': {'GS_SAMPLE': [_row('GS_SAMPLE', oncogenes=['GSCOSTGENE'])]},
+        }
+        inserted = mongo_collection.insert_one(doc)
+        project_id = str(inserted.inserted_id)
+        try:
+            request = request_factory.get('/gene-search/',
+                                          {'genequery': 'GSCOSTGENE'})
+            request.user = test_user
+            response = gene_search_page(request)
+            assert response.status_code == 200
+            content = response.content.decode()
+            assert f'href="/project/{project_id}"' in content
+            assert 'GS_SAMPLE' in content
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+    def test_template_does_not_reverse_per_row(self):
+        """A guard on the template, since the cost is invisible in the output.
+
+        Both sample tables rendered ``{% url 'project_page' %}`` inside the row
+        loop.  On the unfiltered search that is 16,950 route resolutions for 32
+        distinct values.  The project tables above them are per-project and may
+        keep using the tag.
+        """
+        import os
+        from django.conf import settings
+
+        path = None
+        for directory in settings.TEMPLATES[0]['DIRS']:
+            candidate = os.path.join(directory, 'pages', 'gene_search.html')
+            if os.path.exists(candidate):
+                path = candidate
+                break
+        assert path, "gene_search.html not found"
+
+        with open(path) as handle:
+            source = handle.read()
+
+        for loop_var, table in (('public_sample_data', 'public'),
+                                ('private_sample_data', 'private')):
+            start = source.index(f'for sample in {loop_var}')
+            end = source.index('endfor', start)
+            body = source[start:end]
+            assert "{% url" not in body, (
+                f"the {table} sample row loop reverses a URL per row")
+            assert 'sample.project_url' in body
+
+
+class TestBatchDownloadReadAmplification:
+    """``batch_sample_download`` loaded a project document per selected sample.
+
+    A "Select All" download on the unfiltered gene search names every sample on
+    the site -- 16,950 of them, measured on production 2026-09-06 -- spread over
+    32 distinct projects, and the loop fetched the whole project document,
+    ``runs`` included, once per sample rather than once per project.  There is
+    no server-side cap on the selection: the 1000-sample guard is commented out
+    and ``DATA_UPLOAD_MAX_NUMBER_FIELDS`` is None.
+    """
+
+    def test_one_project_load_per_project_not_per_sample(
+            self, request_factory, test_user, mongo_collection, monkeypatch):
+        from caper import views
+
+        runs = {f'SAMPLE_{c}': [_row(f'SAMPLE_{c}')] for c in 'ABCDE'}
+        inserted = mongo_collection.insert_one({
+            'project_name': 'BatchDownloadReadAmp',
+            'creator': test_user.username,
+            'project_members': [test_user.username],
+            'private': 'public',
+            'delete': False, 'current': True, 'FINISHED?': True,
+            'sample_count': len(runs),
+            'runs': runs,
+        })
+        project_id = str(inserted.inserted_id)
+
+        loaded = []
+
+        def _spy(name):
+            original = getattr(views, name)
+
+            def wrapper(*args, **kwargs):
+                doc = original(*args, **kwargs)
+                loaded.append((name, doc))
+                return doc
+            return wrapper
+
+        for fn in ('get_one_project', 'get_one_project_sans_runs'):
+            monkeypatch.setattr(views, fn, _spy(fn))
+
+        try:
+            request = request_factory.post(
+                '/batch-sample-download/',
+                {'samples': [f'{project_id}:{s}' for s in runs]})
+            request.user = test_user
+            try:
+                views.batch_sample_download(request)
+            except Exception:
+                # The zip/S3 tail of the view is not what this test pins down;
+                # the loads above it have already happened either way.
+                pass
+
+            assert loaded, "the view loaded no project document at all"
+            assert len(loaded) == 1, (
+                f"loaded a project document {len(loaded)} times for "
+                f"{len(runs)} samples of one project")
+            name, doc = loaded[0]
+            assert name == 'get_one_project_sans_runs'
+            assert doc is not None and 'runs' not in doc, (
+                "the whole project document was fetched to read its metadata")
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
