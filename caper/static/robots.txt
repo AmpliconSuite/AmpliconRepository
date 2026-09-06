@@ -1,3 +1,17 @@
+# Sitemap is a group-independent directive, so it sits above the first
+# User-agent block rather than inside one.  RFC 9309 requires an absolute URL
+# here; note that the dev deployment serves this same file, so dev advertises
+# production's sitemap.  That is harmless -- dev is noindex by header and has
+# nothing of its own to submit -- but it is deliberate, not an oversight.
+#
+# The sitemap lists the CMS pages only.  Project and sample pages are
+# deliberately absent: a reaggregation mints a new /project/<linkid> rather
+# than updating the old one, so project URLs are not stable identities, and the
+# ~19,400 sample pages are the most expensive thing the site renders.  Both are
+# already reachable by link-following from the home page, so leaving them out
+# costs no discoverability.  See caper/caper/sitemaps.py.
+Sitemap: https://ampliconrepository.org/sitemap.xml
+
 User-agent: *
 Disallow: /accounts/
 Disallow: /admin-*
