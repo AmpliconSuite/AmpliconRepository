@@ -1178,7 +1178,7 @@
                                        data-project-id="{{ sample.project_linkid }}"
                                        data-sample-name="{{ sample.Sample_name }}">
                             </td>
-                            <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
+                            <td><a target="_blank" href="{{ sample.project_url }}">{{ sample.project_name }}</a></td>
                             <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
                             <td><code>{{ sample.Feature_ID }}</code></td>
                             <td>{{ sample.All_genes|join:", " }}</td>
@@ -1250,7 +1250,7 @@
                                        data-project-id="{{ sample.project_linkid }}"
                                        data-sample-name="{{ sample.Sample_name }}">
                             </td>
-                            <td><a target="_blank" href="{% url 'project_page' project_name=sample.project_linkid %}">{{ sample.project_name }}</a></td>
+                            <td><a target="_blank" href="{{ sample.project_url }}">{{ sample.project_name }}</a></td>
                             <td><a target="_blank" href="/project/{{sample.project_linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
                             <td><code>{{ sample.Feature_ID }}</code></td>
                             <td>{{ sample.All_genes|join:", " }}</td>

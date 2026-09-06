@@ -1,5 +1,5 @@
 import logging
-from collections import Counter
+from collections import Counter, defaultdict
 
 import pandas as pd
 from bson import ObjectId
@@ -526,6 +526,63 @@ def get_one_sample_rows(project_name, sample_name):
     return project, rows
 
 
+def fetch_sample_rows_by_name(project_id, sample_names, chunk_size=250):
+    """Return ``{Sample_name: rows}`` for many samples of one project at once.
+
+    ``get_one_sample()`` and ``get_one_sample_rows()`` each scan every run in
+    the project server-side to find one sample, so calling either in a loop
+    costs O(samples requested x samples in project).  Measured on dev
+    2026-09-06 against HMF (4,170 samples, 12.6 MB document): 0.97s per sample
+    through ``get_one_sample()``, which is 4,050s to gather the whole project
+    for one batch download.  A single scan filtered against 250 names took
+    1.05s, and against 1,000 names 0.76s.
+
+    Names are chunked so that a large selection does not have to be assembled
+    into one reply, and a name matching no run is simply absent from the
+    result.  Where two runs carry the same ``Sample_name`` the lower run key
+    wins, which is the sample ``get_one_sample()`` would have returned.
+
+    Deadlines propagate rather than falling back, on the same reasoning as
+    ``get_one_sample()``: a database too slow to meet this deadline should not
+    then be asked to do the same work one sample at a time.
+    """
+    rows_by_name = {}
+    wanted_all = [name for name in dict.fromkeys(sample_names) if name]
+
+    for start in range(0, len(wanted_all), chunk_size):
+        wanted = wanted_all[start:start + chunk_size]
+        pipeline = [
+            {'$match': {'_id': project_id}},
+            {'$limit': 1},
+            {'$project': {
+                '_matched': {'$filter': {
+                    'input': {'$objectToArray': '$runs'},
+                    'as': 'r',
+                    'cond': {'$in': [
+                        {'$arrayElemAt': ['$$r.v.Sample_name', 0]}, wanted]},
+                }},
+            }},
+        ]
+        with pymongo.timeout(page_query_timeout()):
+            doc = next(iter(collection_handle.aggregate(pipeline)), None)
+        if doc is None:
+            continue
+
+        # Sorted by run key, so a duplicated Sample_name resolves the same way
+        # _fetch_sample_slice() resolves it.
+        for entry in sorted(doc.get('_matched') or [],
+                            key=lambda e: e.get('k') or ''):
+            rows = entry.get('v')
+            if not rows:
+                continue
+            name = rows[0].get('Sample_name')
+            if name is None or name in rows_by_name:
+                continue
+            rows_by_name[name] = replace_space_to_underscore(rows)
+
+    return rows_by_name
+
+
 def _get_one_sample_full_scan(project_name, sample_name):
     """Original whole-document implementation, kept as a fallback.
 
@@ -705,27 +762,74 @@ def initialize_ecDNA_context(project):
     logging.debug(f"ecDNA_context initialized and saved for project {project.get('project_name', project['_id'])}")
 
 
-def sample_data_from_feature_list(features_list):
+# The keys sample_data_from_feature_list() rolls up, in the order the pandas
+# implementation it replaced produced them (it took the intersection of this
+# list with the DataFrame's columns, so the order came from here, not the data).
+_SAMPLE_DATA_COLUMNS = ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID',
+                        'Sample_type', "Cancer_type", 'Tissue_of_origin',
+                        'extra_metadata_from_csv']
+
+# Classification strings that mean "no classification", stripped before counting.
+_INVALID_CLASSIFICATIONS = {None, 'NA', 'None', 'Not Provided', ''}
+
+
+def sample_data_from_feature_list(features_list, present_keys=None):
     """
     extracts sample data from a list of features
-    
+
     ## only these fields are returned in the sample data for search!! ##
     [['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', 'Tissue_of_origin', 'extra_metadata_from_csv']]
+
+    This was a pandas rollup: build a DataFrame, ``groupby('Sample_name').groups``,
+    then ``df.iloc[indices]`` once per sample.  That materialised a fresh
+    sub-DataFrame -- a copy of eight object-dtype columns -- for every sample, and
+    the loop body immediately converted the columns it wanted back into Python
+    lists with ``.values.tolist()`` to do set/Counter arithmetic on them.  Grouping
+    the rows directly gives the same answer without the copies: measured over every
+    project in the local database (30 projects, 8,203 feature rows, 3,216 samples,
+    2026-09-06) the output is identical and the cost falls from 23.2 to 5.9 us per
+    feature row, a factor of 3.9.
+
+    Two details are load-bearing for that "identical", and both are easy to lose:
+
+    - A row missing an optional key yields ``float('nan')``, not ``None``.  That is
+      what ``pd.DataFrame`` filled in for an absent key, so it is what the stored
+      ``project['sample_data']`` documents already contain (views.py writes this
+      function's output to the database).
+    - ``present_keys`` is the set of keys to treat as available columns.  pandas
+      took the column list from the whole DataFrame, so which optional fields
+      appear in the result depended on *every* row passed in.  A caller that passes
+      a subset of a project's rows must therefore pass the full project's key set,
+      or the samples it kept will silently lose a column.  Not hypothetical:
+      "PCAWG filtered" carries Cancer_type on 3,749 of its 3,880 feature rows
+      (measured locally 2026-09-06).  Defaults to the keys in ``features_list``.
     """
-    df = pd.DataFrame(features_list)
-    # print("sample_data_from_feature_list df")
-    # print(df.head())
-    cols = [col for col in ['Sample_name', 'Oncogenes', 'Classification', 'Feature_ID', 'Sample_type', "Cancer_type", 'Tissue_of_origin', 'extra_metadata_from_csv'] if col in df.columns]
-    df= df[cols]
+    if not features_list:
+        return []
+
+    if present_keys is None:
+        present_keys = set()
+        for row in features_list:
+            present_keys.update(row.keys())
+    cols = [col for col in _SAMPLE_DATA_COLUMNS if col in present_keys]
+
+    grouped = defaultdict(list)
+    for row in features_list:
+        grouped[row.get('Sample_name')].append(row)
+
+    missing = float('nan')  # what pd.DataFrame put in the gaps; see the docstring
     sample_data = []
-    for sample_name, indices in df.groupby(['Sample_name']).groups.items():
+    for sample_name in sorted(grouped):   # pandas groupby sorts its keys
+        rows = grouped[sample_name]
         sample_dict = dict()
-        subset = df.iloc[indices]
         sample_dict['Sample_name'] = sample_name
-        sample_dict['Oncogenes'] = sorted(set(flatten(subset['Oncogenes'].values.tolist())))
-        _invalid_classes = {None, 'NA', 'None', 'Not Provided', ''}
-        all_classifications = flatten(subset['Classification'].values.tolist())
-        classifications = [c for c in all_classifications if c not in _invalid_classes]
+        sample_dict['Oncogenes'] = sorted(set(flatten(
+            [row.get('Oncogenes', missing) for row in rows], sort=False)))
+
+        all_classifications = flatten(
+            [row.get('Classification', missing) for row in rows], sort=False)
+        classifications = [c for c in all_classifications
+                           if c not in _INVALID_CLASSIFICATIONS]
         sample_dict['Classifications'] = list(set(classifications))
         class_counts = Counter(classifications)
         sample_dict['Classifications_counted'] = [
@@ -733,25 +837,13 @@ def sample_data_from_feature_list(features_list):
             for c, count in sorted(class_counts.items())
         ]
         sample_dict['Features'] = len(classifications) if classifications else 0
-        
-        # if 'extra_metadata_from_csv' in subset.columns:
-        #     try:
-        #         for k, v in subset['extra_metadata_from_csv']:
-        #             sample_dict[k] = v
-        #     except Exception as e:
-        #         logging.info(subset['extra_metadata_from_csv'])
-        #         logging.info(e)
-        if 'Sample_type' in subset.columns:
-            sample_dict['Sample_type'] = subset['Sample_type'].values[0]
-        if 'Cancer_type' in subset.columns:
-            sample_dict['Cancer_type'] = subset['Cancer_type'].values[0]
-        if 'Tissue_of_origin' in subset.columns:
-            sample_dict['Tissue_of_origin'] = subset['Tissue_of_origin'].values[0]
-        sample_dict['Sample_name'] = sample_name
-        sample_data.append(sample_dict)
-    # print(f'********** TOOK {datetime.datetime.now() - now}')
-    return sample_data
 
+        for key in ('Sample_type', 'Cancer_type', 'Tissue_of_origin'):
+            if key in cols:
+                # pandas read .values[0]: the first row of the group in input order.
+                sample_dict[key] = rows[0].get(key, missing)
+        sample_data.append(sample_dict)
+    return sample_data
 
 
 def get_all_alias():

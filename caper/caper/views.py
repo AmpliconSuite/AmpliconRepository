@@ -22,6 +22,7 @@ from bson.objectid import ObjectId
 
 from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, HttpResponseNotFound, Http404, JsonResponse
 from django.shortcuts import render, redirect
+from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 from django.utils.http import urlencode
 
@@ -77,7 +78,9 @@ from .download_gate import (
 from .utils import (
     collection_handle, collection_handle_primary, db_handle_primary, current_flags, fs_handle,
     audit_log_handle,
-    get_one_project, get_one_sample, get_one_sample_rows, get_one_deleted_project,
+    fetch_sample_rows_by_name,
+    get_one_project, get_one_project_sans_runs, get_one_sample, get_one_sample_rows,
+    get_one_deleted_project,
     prepare_project_linkid, check_if_db_field_exists,
     get_date, get_date_short, previous_versions, form_to_dict,
     replace_space_to_underscore, sample_data_from_feature_list,
@@ -2044,7 +2047,49 @@ def create_zip_response(zip_source_dir, filename):
                 logging.error(f"Failed to clean up directory {zip_source_dir}: {e}")
 
 
-def process_sample_data(project, sample_name, sample_data, output_dir=None):
+def record_sample_downloads(project, count=1):
+    """Add ``count`` to today's entry in the project's sample_downloads counter.
+
+    This used to run at the top of process_sample_data(), which meant a batch
+    download paid one write per sample.  DocumentDB rewrites the whole document
+    for any update, so what this costs is set by the size of the project, not
+    the size of the field: measured on dev 2026-09-06 it took 537ms against
+    HMF's 12.62 MB document and 10.7ms against a 0.07 MB one.  Per sample that
+    was 90% of process_sample_data()'s time under cProfile, and 2,281s of the
+    time to gather all 4,170 samples of HMF.
+
+    ``project`` is mutated as well as written, so a caller holding one project
+    document across several calls accumulates rather than overwrites.
+    """
+    # Track downloads
+    if check_if_db_field_exists(project, 'sample_downloads'):
+        sample_download_data = project['sample_downloads']
+        if isinstance(sample_download_data, int):
+            # Legacy whole-project integer: migrate it under today's date.  The
+            # migration branch used not to count the download that triggered it,
+            # which is invisible at one download per call but would have lost a
+            # whole batch.  3 of 243 production project documents still hold an
+            # int here (measured 2026-09-06), so this corrects at most three
+            # counters by one.
+            temp_data = sample_download_data
+            sample_download_data = dict()
+            sample_download_data[get_date_short()] = temp_data + count
+        elif get_date_short() in sample_download_data:
+            sample_download_data[get_date_short()] += count
+        else:
+            sample_download_data[get_date_short()] = count
+    else:
+        sample_download_data = dict()
+        sample_download_data[get_date_short()] = count
+
+    project['sample_downloads'] = sample_download_data
+    query = {'_id': ObjectId(project['_id'])}
+    new_val = {"$set": {'sample_downloads': sample_download_data}}
+    collection_handle.update_one(query, new_val)
+
+
+def process_sample_data(project, sample_name, sample_data, output_dir=None,
+                        record_download=True):
     """
     Process sample data and save it to the specified directory or a temporary directory.
 
@@ -2053,30 +2098,17 @@ def process_sample_data(project, sample_name, sample_data, output_dir=None):
         sample_name: Name of the sample
         sample_data: Sample data to process
         output_dir: Directory to save processed data (or None for a temp directory)
+        record_download: Whether to bump the project's sample_downloads counter.
+            Batch downloads pass False and call record_sample_downloads() once
+            for the whole project instead -- see that function.
 
     Returns:
         tuple: (sample_data_path, updated_data) where
             sample_data_path is the directory containing the processed sample data
             updated_data is the processed feature data
     """
-    # Track downloads
-    if check_if_db_field_exists(project, 'sample_downloads'):
-        sample_download_data = project['sample_downloads']
-        if isinstance(sample_download_data, int):
-            temp_data = sample_download_data
-            sample_download_data = dict()
-            sample_download_data[get_date_short()] = temp_data
-        elif get_date_short() in sample_download_data:
-            sample_download_data[get_date_short()] += 1
-        else:
-            sample_download_data[get_date_short()] = 1
-    else:
-        sample_download_data = dict()
-        sample_download_data[get_date_short()] = 1
-
-    query = {'_id': ObjectId(project['_id'])}
-    new_val = {"$set": {'sample_downloads': sample_download_data}}
-    collection_handle.update_one(query, new_val)
+    if record_download:
+        record_sample_downloads(project)
 
     # Create directory for files
     if output_dir is None:
@@ -2473,20 +2505,33 @@ def batch_sample_download(request):
     Download multiple samples organized by project.
     If emailResults is set to 'true', uploads the zip to S3 and emails a presigned URL.
     """
+    # These refusals used to pass the message as a reverse() keyword argument --
+    # redirect('gene_search_page', alert_message=...) -- but that route takes no
+    # arguments, so every one of them raised NoReverseMatch and returned a 500
+    # instead of the message it was written to show.  Neither is reachable from
+    # the UI, because the JavaScript returns early on an empty selection, so a
+    # direct request was the only way to see it.  base.html already renders
+    # django.contrib.messages, which is where a message like this belongs.
     if request.method != 'POST':
-        alert_message = "Invalid request method. Please use the selection checkboxes to choose samples."
-        return redirect('gene_search_page', alert_message=alert_message)
+        messages.error(request, "Invalid request method. Please use the selection "
+                                "checkboxes to choose samples.")
+        return redirect('gene_search_page')
     logging.error("begin batch download")
     samples = request.POST.getlist('samples')
     email_results = request.POST.get('emailResults', 'false').lower() == 'true'
 
     if not samples:
-        alert_message = "No samples were selected. Please select at least one sample to download."
-        return redirect('gene_search_page', alert_message=alert_message)
+        messages.error(request, "No samples were selected. Please select at least "
+                                "one sample to download.")
+        return redirect('gene_search_page')
 
-    #if len(samples) > 1000:
-    #    alert_message = "Too many samples selected. Please download relevant projects directly."
-    #    return redirect('gene_search_page', alert_message=alert_message)
+    # There is deliberately no cap on len(samples).  A `len(samples) > 1000`
+    # refusal stood here until #469 removed it, implementing #348: batches over
+    # a thousand samples are meant to work, delivered as an emailed link rather
+    # than a wait the user has to sit through.  Do not reinstate it.  What #348
+    # also asked for and did not get is that the work run off the request
+    # thread -- handle_email_results() still zips, uploads and mails inline --
+    # which is the part that needs finishing.  See #637.
 
     # Create a temporary directory for the batch
     batch_id = uuid.uuid4()
@@ -2496,12 +2541,25 @@ def batch_sample_download(request):
     # Group samples by project
     projects_and_samples = {}
 
+    # One lookup per project, not one per selected sample: a "Select All"
+    # download names every sample on the site but only a couple of dozen
+    # distinct projects, and this loop was re-fetching the whole project
+    # document -- runs included, which is ~93% of its bytes -- for each one.
+    # Nothing below reads project['runs']: process_sample_data() touches only
+    # '_id', record_sample_downloads() only 'sample_downloads' and '_id', and
+    # fetch_sample_rows_by_name() asks the server for the rows it needs.
+    project_cache = {}
+
     for sample_str in samples:
         try:
             project_id, sample_name = sample_str.split(':')
 
             # Skip if no access
-            project = get_one_project(project_id)
+            if project_id not in project_cache:
+                project_cache[project_id] = get_one_project_sans_runs(project_id)
+            project = project_cache[project_id]
+            if project is None:
+                continue
             visibility = normalize_visibility_field(project.get('private', 'private'))
             # Allow access for members, or for hidden_public/public projects
             if is_project_private(visibility) and not is_project_hidden_public(visibility) and not is_user_a_project_member(project, request):
@@ -2528,18 +2586,31 @@ def batch_sample_download(request):
             project_dir = f"{batch_dir}/{project['project_name']}"
             os.makedirs(project_dir, exist_ok=True)
 
+            # One server-side pass over this project's runs for the whole
+            # selection, rather than one per sample.  get_one_sample() scans
+            # every run in the project to find one of them, so calling it in
+            # this loop made a project cost O(selected x total): 0.97s per
+            # sample on HMF, 4,050s to gather its 4,170 samples.  Measured on
+            # dev 2026-09-06.
+            rows_by_name = fetch_sample_rows_by_name(
+                project['_id'], project_info['samples'])
+
             # Process each sample in the project
+            project_processed = 0
             for sample_name in project_info['samples']:
                 try:
-                    # Get sample data
-                    _, sample_data, _, _ = get_one_sample(project_id, sample_name)
+                    sample_data = rows_by_name.get(sample_name)
                     if not sample_data:
                         continue
 
                     # Process the sample
                     sample_dir = f"{project_dir}/{sample_name}"
-                    process_sample_data(project, sample_name, sample_data, sample_dir)
-                    
+                    # The download counter is written once for the project
+                    # below, not once per sample: see record_sample_downloads().
+                    process_sample_data(project, sample_name, sample_data,
+                                        sample_dir, record_download=False)
+
+                    project_processed += 1
                     processed_count += 1
                     if processed_count % 20 == 0:
                         logging.info(f"Processed {processed_count} samples so far...")
@@ -2547,7 +2618,10 @@ def batch_sample_download(request):
                 except Exception as e:
                     logging.exception(f"Error processing sample {sample_name}: {e}")
                     continue
-        
+
+            if project_processed:
+                record_sample_downloads(project, project_processed)
+
         logging.info(f"Completed processing {processed_count} samples total")
 
         # Create the zip file with timestamp
@@ -2749,9 +2823,17 @@ def gene_search_page(request):
 
             data = sample_data_from_feature_list(features_list)
 
+            # One reverse() per project rather than one per row.  The template
+            # called {% url %} inside the row loop, which re-resolved the route
+            # for all 16,950 rows of the unfiltered search; project_linkid only
+            # takes as many distinct values as there are projects.
+            project_url = reverse('project_page',
+                                  kwargs={'project_name': str(project_linkid)})
+
             for sample in data:
                 sample['project_name'] = project_name
                 sample['project_linkid'] = project_linkid
+                sample['project_url'] = project_url
 
                 # Gene and classification checks
                 gene_match = (genequery in sample['Oncogenes'] or len(genequery) == 0)

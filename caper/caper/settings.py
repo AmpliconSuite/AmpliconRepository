@@ -704,7 +704,27 @@ else:
     set_dynamic_settings(globals())
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 524288000
-DATA_UPLOAD_MAX_NUMBER_FIELDS = None
+
+# Django refuses a request carrying more form fields than this, with a 400,
+# before any view runs -- parsing cost grows with the field count, so one
+# request with a million of them is a cheap way to spend server CPU.  The
+# default is 1000.  This was set to None -- the check disabled entirely -- in
+# 2023 alongside the 500 MB body limit above, for the upload API; a tarball
+# upload needs the larger body but is a single field, so losing the field
+# guard looks like collateral rather than intent.
+#
+# Measured on dev 2026-09-06: unauthenticated, with a CSRF token obtained by one
+# GET, a POST of 200,000 fields (1.9 MB) was accepted and cost 1.45 s of server
+# time; 50,000 fields cost 0.71 s.  Django's default would have rejected each in
+# about a millisecond.  Nothing in production is doing this -- a sample of 120
+# ALB log files from 2026-09-05 (16,541 requests) held 20 POSTs, none with a
+# body over 100 KB -- so this closes a latent hazard, not an active one.
+#
+# The bound has to clear the largest honest submission, which is a "Select All"
+# batch sample download: one field per selected sample, and the unfiltered gene
+# search offers 16,950 of them (production, 2026-09-06).  50,000 leaves room for
+# that corpus to grow severalfold before anyone notices a limit.
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 50000
 
 ###########################
 # version info for footer #
