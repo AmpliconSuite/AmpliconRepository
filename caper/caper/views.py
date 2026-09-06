@@ -78,6 +78,7 @@ from .download_gate import (
 from .utils import (
     collection_handle, collection_handle_primary, db_handle_primary, current_flags, fs_handle,
     audit_log_handle,
+    fetch_sample_rows_by_name,
     get_one_project, get_one_project_sans_runs, get_one_sample, get_one_sample_rows,
     get_one_deleted_project,
     prepare_project_linkid, check_if_db_field_exists,
@@ -2046,7 +2047,49 @@ def create_zip_response(zip_source_dir, filename):
                 logging.error(f"Failed to clean up directory {zip_source_dir}: {e}")
 
 
-def process_sample_data(project, sample_name, sample_data, output_dir=None):
+def record_sample_downloads(project, count=1):
+    """Add ``count`` to today's entry in the project's sample_downloads counter.
+
+    This used to run at the top of process_sample_data(), which meant a batch
+    download paid one write per sample.  DocumentDB rewrites the whole document
+    for any update, so what this costs is set by the size of the project, not
+    the size of the field: measured on dev 2026-09-06 it took 537ms against
+    HMF's 12.62 MB document and 10.7ms against a 0.07 MB one.  Per sample that
+    was 90% of process_sample_data()'s time under cProfile, and 2,281s of the
+    time to gather all 4,170 samples of HMF.
+
+    ``project`` is mutated as well as written, so a caller holding one project
+    document across several calls accumulates rather than overwrites.
+    """
+    # Track downloads
+    if check_if_db_field_exists(project, 'sample_downloads'):
+        sample_download_data = project['sample_downloads']
+        if isinstance(sample_download_data, int):
+            # Legacy whole-project integer: migrate it under today's date.  The
+            # migration branch used not to count the download that triggered it,
+            # which is invisible at one download per call but would have lost a
+            # whole batch.  3 of 243 production project documents still hold an
+            # int here (measured 2026-09-06), so this corrects at most three
+            # counters by one.
+            temp_data = sample_download_data
+            sample_download_data = dict()
+            sample_download_data[get_date_short()] = temp_data + count
+        elif get_date_short() in sample_download_data:
+            sample_download_data[get_date_short()] += count
+        else:
+            sample_download_data[get_date_short()] = count
+    else:
+        sample_download_data = dict()
+        sample_download_data[get_date_short()] = count
+
+    project['sample_downloads'] = sample_download_data
+    query = {'_id': ObjectId(project['_id'])}
+    new_val = {"$set": {'sample_downloads': sample_download_data}}
+    collection_handle.update_one(query, new_val)
+
+
+def process_sample_data(project, sample_name, sample_data, output_dir=None,
+                        record_download=True):
     """
     Process sample data and save it to the specified directory or a temporary directory.
 
@@ -2055,30 +2098,17 @@ def process_sample_data(project, sample_name, sample_data, output_dir=None):
         sample_name: Name of the sample
         sample_data: Sample data to process
         output_dir: Directory to save processed data (or None for a temp directory)
+        record_download: Whether to bump the project's sample_downloads counter.
+            Batch downloads pass False and call record_sample_downloads() once
+            for the whole project instead -- see that function.
 
     Returns:
         tuple: (sample_data_path, updated_data) where
             sample_data_path is the directory containing the processed sample data
             updated_data is the processed feature data
     """
-    # Track downloads
-    if check_if_db_field_exists(project, 'sample_downloads'):
-        sample_download_data = project['sample_downloads']
-        if isinstance(sample_download_data, int):
-            temp_data = sample_download_data
-            sample_download_data = dict()
-            sample_download_data[get_date_short()] = temp_data
-        elif get_date_short() in sample_download_data:
-            sample_download_data[get_date_short()] += 1
-        else:
-            sample_download_data[get_date_short()] = 1
-    else:
-        sample_download_data = dict()
-        sample_download_data[get_date_short()] = 1
-
-    query = {'_id': ObjectId(project['_id'])}
-    new_val = {"$set": {'sample_downloads': sample_download_data}}
-    collection_handle.update_one(query, new_val)
+    if record_download:
+        record_sample_downloads(project)
 
     # Create directory for files
     if output_dir is None:
@@ -2516,7 +2546,8 @@ def batch_sample_download(request):
     # distinct projects, and this loop was re-fetching the whole project
     # document -- runs included, which is ~93% of its bytes -- for each one.
     # Nothing below reads project['runs']: process_sample_data() touches only
-    # 'sample_downloads' and '_id', and get_one_sample() loads its own rows.
+    # '_id', record_sample_downloads() only 'sample_downloads' and '_id', and
+    # fetch_sample_rows_by_name() asks the server for the rows it needs.
     project_cache = {}
 
     for sample_str in samples:
@@ -2555,18 +2586,31 @@ def batch_sample_download(request):
             project_dir = f"{batch_dir}/{project['project_name']}"
             os.makedirs(project_dir, exist_ok=True)
 
+            # One server-side pass over this project's runs for the whole
+            # selection, rather than one per sample.  get_one_sample() scans
+            # every run in the project to find one of them, so calling it in
+            # this loop made a project cost O(selected x total): 0.97s per
+            # sample on HMF, 4,050s to gather its 4,170 samples.  Measured on
+            # dev 2026-09-06.
+            rows_by_name = fetch_sample_rows_by_name(
+                project['_id'], project_info['samples'])
+
             # Process each sample in the project
+            project_processed = 0
             for sample_name in project_info['samples']:
                 try:
-                    # Get sample data
-                    _, sample_data, _, _ = get_one_sample(project_id, sample_name)
+                    sample_data = rows_by_name.get(sample_name)
                     if not sample_data:
                         continue
 
                     # Process the sample
                     sample_dir = f"{project_dir}/{sample_name}"
-                    process_sample_data(project, sample_name, sample_data, sample_dir)
-                    
+                    # The download counter is written once for the project
+                    # below, not once per sample: see record_sample_downloads().
+                    process_sample_data(project, sample_name, sample_data,
+                                        sample_dir, record_download=False)
+
+                    project_processed += 1
                     processed_count += 1
                     if processed_count % 20 == 0:
                         logging.info(f"Processed {processed_count} samples so far...")
@@ -2574,7 +2618,10 @@ def batch_sample_download(request):
                 except Exception as e:
                     logging.exception(f"Error processing sample {sample_name}: {e}")
                     continue
-        
+
+            if project_processed:
+                record_sample_downloads(project, project_processed)
+
         logging.info(f"Completed processing {processed_count} samples total")
 
         # Create the zip file with timestamp

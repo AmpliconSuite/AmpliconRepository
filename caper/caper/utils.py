@@ -526,6 +526,63 @@ def get_one_sample_rows(project_name, sample_name):
     return project, rows
 
 
+def fetch_sample_rows_by_name(project_id, sample_names, chunk_size=250):
+    """Return ``{Sample_name: rows}`` for many samples of one project at once.
+
+    ``get_one_sample()`` and ``get_one_sample_rows()`` each scan every run in
+    the project server-side to find one sample, so calling either in a loop
+    costs O(samples requested x samples in project).  Measured on dev
+    2026-09-06 against HMF (4,170 samples, 12.6 MB document): 0.97s per sample
+    through ``get_one_sample()``, which is 4,050s to gather the whole project
+    for one batch download.  A single scan filtered against 250 names took
+    1.05s, and against 1,000 names 0.76s.
+
+    Names are chunked so that a large selection does not have to be assembled
+    into one reply, and a name matching no run is simply absent from the
+    result.  Where two runs carry the same ``Sample_name`` the lower run key
+    wins, which is the sample ``get_one_sample()`` would have returned.
+
+    Deadlines propagate rather than falling back, on the same reasoning as
+    ``get_one_sample()``: a database too slow to meet this deadline should not
+    then be asked to do the same work one sample at a time.
+    """
+    rows_by_name = {}
+    wanted_all = [name for name in dict.fromkeys(sample_names) if name]
+
+    for start in range(0, len(wanted_all), chunk_size):
+        wanted = wanted_all[start:start + chunk_size]
+        pipeline = [
+            {'$match': {'_id': project_id}},
+            {'$limit': 1},
+            {'$project': {
+                '_matched': {'$filter': {
+                    'input': {'$objectToArray': '$runs'},
+                    'as': 'r',
+                    'cond': {'$in': [
+                        {'$arrayElemAt': ['$$r.v.Sample_name', 0]}, wanted]},
+                }},
+            }},
+        ]
+        with pymongo.timeout(page_query_timeout()):
+            doc = next(iter(collection_handle.aggregate(pipeline)), None)
+        if doc is None:
+            continue
+
+        # Sorted by run key, so a duplicated Sample_name resolves the same way
+        # _fetch_sample_slice() resolves it.
+        for entry in sorted(doc.get('_matched') or [],
+                            key=lambda e: e.get('k') or ''):
+            rows = entry.get('v')
+            if not rows:
+                continue
+            name = rows[0].get('Sample_name')
+            if name is None or name in rows_by_name:
+                continue
+            rows_by_name[name] = replace_space_to_underscore(rows)
+
+    return rows_by_name
+
+
 def _get_one_sample_full_scan(project_name, sample_name):
     """Original whole-document implementation, kept as a fallback.
 

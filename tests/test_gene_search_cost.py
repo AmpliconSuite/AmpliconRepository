@@ -316,3 +316,257 @@ class TestBatchDownloadRefusals:
                               if not line.lstrip().startswith('#'))
         assert 'len(samples) >' not in stripped, (
             "a sample-count cap was reinstated; see #348 and #637")
+
+
+class TestBulkSampleFetch:
+    """``fetch_sample_rows_by_name`` replaced a per-sample ``get_one_sample``.
+
+    ``get_one_sample`` scans every run in the project server-side to find one
+    sample, so calling it once per selected sample made a batch download cost
+    O(selected x total).  Measured on dev 2026-09-06 against HMF (4,170
+    samples, 12.6 MB document): 0.97s per sample, 4,050s for the project.  One
+    filtered scan covering 1,000 names took 0.76s.
+    """
+
+    @staticmethod
+    def _project(mongo_collection, test_user, runs, name='BulkSampleFetch'):
+        return mongo_collection.insert_one({
+            'project_name': name,
+            'creator': test_user.username,
+            'project_members': [test_user.username],
+            'private': 'public',
+            'delete': False, 'current': True, 'FINISHED?': True,
+            'sample_count': len(runs),
+            'runs': runs,
+        })
+
+    def test_returns_only_the_requested_samples(self, mongo_collection, test_user):
+        from caper.utils import fetch_sample_rows_by_name
+
+        runs = {f'run_{c}': [_row(f'S{c}')] for c in 'ABCDE'}
+        inserted = self._project(mongo_collection, test_user, runs)
+        try:
+            got = fetch_sample_rows_by_name(inserted.inserted_id,
+                                            ['SA', 'SC', 'NOSUCHSAMPLE'])
+            assert sorted(got) == ['SA', 'SC']
+            assert got['SA'][0]['Sample_name'] == 'SA'
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+    def test_chunking_does_not_drop_names(self, mongo_collection, test_user):
+        """The chunk boundary is where a bulk fetch silently loses samples."""
+        from caper.utils import fetch_sample_rows_by_name
+
+        runs = {f'run_{i:02d}': [_row(f'S{i:02d}')] for i in range(7)}
+        inserted = self._project(mongo_collection, test_user, runs)
+        try:
+            wanted = [f'S{i:02d}' for i in range(7)]
+            got = fetch_sample_rows_by_name(inserted.inserted_id, wanted,
+                                            chunk_size=2)
+            assert sorted(got) == wanted
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+    def test_all_feature_rows_of_a_sample_come_back(self, mongo_collection, test_user):
+        from caper.utils import fetch_sample_rows_by_name
+
+        runs = {'run_A': [_row('SA'), _row('SA', classification='BFB')]}
+        inserted = self._project(mongo_collection, test_user, runs)
+        try:
+            got = fetch_sample_rows_by_name(inserted.inserted_id, ['SA'])
+            assert len(got['SA']) == 2
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+    def test_space_containing_keys_are_normalised(self, mongo_collection, test_user):
+        """``get_one_sample`` normalised these, and the download path relies on it."""
+        from caper.utils import fetch_sample_rows_by_name
+
+        row = _row('SA')
+        row['AA amplicon number'] = 1
+        inserted = self._project(mongo_collection, test_user, {'run_A': [row]})
+        try:
+            got = fetch_sample_rows_by_name(inserted.inserted_id, ['SA'])
+            assert 'AA_amplicon_number' in got['SA'][0]
+            assert 'AA amplicon number' not in got['SA'][0]
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+    def test_matches_get_one_sample_for_a_duplicated_name(
+            self, mongo_collection, test_user):
+        """Two runs can carry the same Sample_name; the lower run key wins."""
+        from caper.utils import fetch_sample_rows_by_name
+
+        runs = {'run_b': [_row('SA', classification='BFB')],
+                'run_a': [_row('SA', classification='ecDNA')]}
+        inserted = self._project(mongo_collection, test_user, runs)
+        try:
+            got = fetch_sample_rows_by_name(inserted.inserted_id, ['SA'])
+            assert got['SA'][0]['Classification'] == 'ecDNA'
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+    def test_batch_download_fetches_once_per_project(
+            self, request_factory, test_user, mongo_collection, monkeypatch):
+        from caper import views
+
+        runs = {f'run_{c}': [_row(f'S{c}')] for c in 'ABCDE'}
+        inserted = self._project(mongo_collection, test_user, runs,
+                                 name='BulkSampleFetchView')
+        project_id = str(inserted.inserted_id)
+
+        calls = []
+        original = views.fetch_sample_rows_by_name
+        monkeypatch.setattr(views, 'fetch_sample_rows_by_name',
+                            lambda pid, names, **kw: calls.append(list(names))
+                            or original(pid, names, **kw))
+
+        def _no_per_sample_lookup(*args, **kwargs):
+            raise AssertionError(
+                "batch download fell back to a per-sample project scan")
+        monkeypatch.setattr(views, 'get_one_sample', _no_per_sample_lookup)
+
+        try:
+            request = request_factory.post(
+                '/batch-sample-download/',
+                {'samples': [f'{project_id}:S{c}' for c in 'ABCDE']})
+            request.user = test_user
+            try:
+                views.batch_sample_download(request)
+            except Exception:
+                # The zip tail of the view is not what this test pins down.
+                pass
+            assert len(calls) == 1, (
+                f"fetched sample rows {len(calls)} times for one project")
+            assert sorted(calls[0]) == ['SA', 'SB', 'SC', 'SD', 'SE']
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+
+class TestDownloadCounterWrites:
+    """The ``sample_downloads`` counter was written once per sample.
+
+    DocumentDB rewrites the whole document for any update, so the cost is set
+    by the size of the project rather than of the field: 537ms per write
+    against HMF's 12.62 MB document and 10.7ms against a 0.07 MB one, measured
+    on dev 2026-09-06.  Under cProfile that single ``update_one`` was 90% of
+    ``process_sample_data``, and 2,281s of a whole-project HMF batch.
+    """
+
+    def test_absent_counter_starts_at_the_batch_size(
+            self, mongo_collection, test_user, monkeypatch):
+        from caper import views
+        from caper.utils import get_date_short
+
+        inserted = mongo_collection.insert_one(
+            {'project_name': 'CounterAbsent', 'creator': test_user.username,
+             'delete': False, 'current': True})
+        try:
+            monkeypatch.setattr(views, 'collection_handle', mongo_collection)
+            project = mongo_collection.find_one({'_id': inserted.inserted_id})
+            views.record_sample_downloads(project, 12)
+            stored = mongo_collection.find_one(
+                {'_id': inserted.inserted_id})['sample_downloads']
+            assert stored == {get_date_short(): 12}
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+    def test_existing_day_accumulates(self, mongo_collection, test_user, monkeypatch):
+        from caper import views
+        from caper.utils import get_date_short
+
+        today = get_date_short()
+        inserted = mongo_collection.insert_one(
+            {'project_name': 'CounterToday', 'creator': test_user.username,
+             'delete': False, 'current': True,
+             'sample_downloads': {'2020-01-01': 5, today: 3}})
+        try:
+            monkeypatch.setattr(views, 'collection_handle', mongo_collection)
+            project = mongo_collection.find_one({'_id': inserted.inserted_id})
+            views.record_sample_downloads(project, 4)
+            stored = mongo_collection.find_one(
+                {'_id': inserted.inserted_id})['sample_downloads']
+            assert stored == {'2020-01-01': 5, today: 7}
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+    def test_legacy_integer_counter_is_migrated_and_counted(
+            self, mongo_collection, test_user, monkeypatch):
+        """3 of 243 production projects still hold an int here (2026-09-06).
+
+        The migration branch used to drop the download that triggered it, which
+        was invisible at one download per call and would have lost a whole
+        batch.
+        """
+        from caper import views
+        from caper.utils import get_date_short
+
+        inserted = mongo_collection.insert_one(
+            {'project_name': 'CounterLegacyInt', 'creator': test_user.username,
+             'delete': False, 'current': True, 'sample_downloads': 9})
+        try:
+            monkeypatch.setattr(views, 'collection_handle', mongo_collection)
+            project = mongo_collection.find_one({'_id': inserted.inserted_id})
+            views.record_sample_downloads(project, 6)
+            stored = mongo_collection.find_one(
+                {'_id': inserted.inserted_id})['sample_downloads']
+            assert stored == {get_date_short(): 15}
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+    def test_repeated_calls_accumulate_in_the_passed_project(
+            self, mongo_collection, test_user, monkeypatch):
+        """The batch loop holds one project document across the whole run."""
+        from caper import views
+        from caper.utils import get_date_short
+
+        inserted = mongo_collection.insert_one(
+            {'project_name': 'CounterRepeat', 'creator': test_user.username,
+             'delete': False, 'current': True})
+        try:
+            monkeypatch.setattr(views, 'collection_handle', mongo_collection)
+            project = mongo_collection.find_one({'_id': inserted.inserted_id})
+            views.record_sample_downloads(project, 2)
+            views.record_sample_downloads(project, 3)
+            stored = mongo_collection.find_one(
+                {'_id': inserted.inserted_id})['sample_downloads']
+            assert stored == {get_date_short(): 5}
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+    def test_batch_download_writes_the_counter_once_per_project(
+            self, request_factory, test_user, mongo_collection, monkeypatch):
+        from caper import views
+
+        # process_sample_data() has to run to completion for the sample to be
+        # counted, and preprocess_sample_data() requires Location and
+        # AA_amplicon_number.
+        runs = {f'run_{c}': [_row(f'S{c}', Location=["'chr1:1-2'"],
+                                  AA_amplicon_number=1,
+                                  Feature_BED_file='Not Provided')]
+                for c in 'ABCDE'}
+        inserted = mongo_collection.insert_one({
+            'project_name': 'CounterBatch', 'creator': test_user.username,
+            'project_members': [test_user.username], 'private': 'public',
+            'delete': False, 'current': True, 'FINISHED?': True,
+            'sample_count': len(runs), 'runs': runs,
+        })
+        project_id = str(inserted.inserted_id)
+
+        counted = []
+        monkeypatch.setattr(views, 'record_sample_downloads',
+                            lambda project, count=1: counted.append(count))
+        try:
+            request = request_factory.post(
+                '/batch-sample-download/',
+                {'samples': [f'{project_id}:S{c}' for c in 'ABCDE']})
+            request.user = test_user
+            try:
+                views.batch_sample_download(request)
+            except Exception:
+                pass
+            assert counted == [5], (
+                f"the counter was written {len(counted)} times for "
+                f"{len(runs)} samples of one project: {counted}")
+        finally:
+            mongo_collection.delete_one({'_id': inserted.inserted_id})
