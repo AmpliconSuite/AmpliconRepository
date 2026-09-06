@@ -252,3 +252,67 @@ class TestBatchDownloadReadAmplification:
                 "the whole project document was fetched to read its metadata")
         finally:
             mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+
+class TestBatchDownloadRefusals:
+    """The two refusal paths in ``batch_sample_download`` returned 500s.
+
+    Each passed its message as a ``reverse()`` keyword argument --
+    ``redirect('gene_search_page', alert_message=...)`` -- to a route that takes
+    no arguments, so every refusal raised ``NoReverseMatch``.  Neither is
+    reachable from the UI, since the JavaScript returns early on an empty
+    selection, so a direct request was the only way to reach them.
+    """
+
+    @staticmethod
+    def _request(request_factory, test_user, method='post', data=None):
+        """A request carrying message storage, which RequestFactory omits."""
+        from django.contrib.messages.storage.fallback import FallbackStorage
+
+        request = getattr(request_factory, method)('/batch-sample-download/',
+                                                   data or {})
+        request.user = test_user
+        request.session = {}
+        request._messages = FallbackStorage(request)
+        return request
+
+    def test_get_is_refused_without_a_server_error(self, request_factory, test_user):
+        from caper.views import batch_sample_download
+
+        response = batch_sample_download(
+            self._request(request_factory, test_user, method='get'))
+        assert response.status_code == 302
+        assert response['Location'] == '/gene-search/'
+
+    def test_empty_selection_is_refused_without_a_server_error(
+            self, request_factory, test_user):
+        from caper.views import batch_sample_download
+
+        response = batch_sample_download(self._request(request_factory, test_user))
+        assert response.status_code == 302
+        assert response['Location'] == '/gene-search/'
+
+    def test_the_refusal_message_reaches_the_user(self, request_factory, test_user):
+        """A redirect that drops the message is the bug in a quieter form."""
+        from caper.views import batch_sample_download
+
+        request = self._request(request_factory, test_user)
+        batch_sample_download(request)
+        texts = [str(m) for m in request._messages]
+        assert any('No samples were selected' in t for t in texts), texts
+
+    def test_no_sample_cap_is_reinstated(self):
+        """#469 removed the `len(samples) > 1000` refusal on purpose, per #348.
+
+        Batches over a thousand samples are meant to work, delivered as an
+        emailed link.  A cap here would be a regression against that issue, so
+        this fails if one comes back.
+        """
+        import inspect
+        from caper import views
+
+        source = inspect.getsource(views.batch_sample_download)
+        stripped = '\n'.join(line for line in source.splitlines()
+                              if not line.lstrip().startswith('#'))
+        assert 'len(samples) >' not in stripped, (
+            "a sample-count cap was reinstated; see #348 and #637")

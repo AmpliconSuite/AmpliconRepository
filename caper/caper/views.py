@@ -2475,20 +2475,33 @@ def batch_sample_download(request):
     Download multiple samples organized by project.
     If emailResults is set to 'true', uploads the zip to S3 and emails a presigned URL.
     """
+    # These refusals used to pass the message as a reverse() keyword argument --
+    # redirect('gene_search_page', alert_message=...) -- but that route takes no
+    # arguments, so every one of them raised NoReverseMatch and returned a 500
+    # instead of the message it was written to show.  Neither is reachable from
+    # the UI, because the JavaScript returns early on an empty selection, so a
+    # direct request was the only way to see it.  base.html already renders
+    # django.contrib.messages, which is where a message like this belongs.
     if request.method != 'POST':
-        alert_message = "Invalid request method. Please use the selection checkboxes to choose samples."
-        return redirect('gene_search_page', alert_message=alert_message)
+        messages.error(request, "Invalid request method. Please use the selection "
+                                "checkboxes to choose samples.")
+        return redirect('gene_search_page')
     logging.error("begin batch download")
     samples = request.POST.getlist('samples')
     email_results = request.POST.get('emailResults', 'false').lower() == 'true'
 
     if not samples:
-        alert_message = "No samples were selected. Please select at least one sample to download."
-        return redirect('gene_search_page', alert_message=alert_message)
+        messages.error(request, "No samples were selected. Please select at least "
+                                "one sample to download.")
+        return redirect('gene_search_page')
 
-    #if len(samples) > 1000:
-    #    alert_message = "Too many samples selected. Please download relevant projects directly."
-    #    return redirect('gene_search_page', alert_message=alert_message)
+    # There is deliberately no cap on len(samples).  A `len(samples) > 1000`
+    # refusal stood here until #469 removed it, implementing #348: batches over
+    # a thousand samples are meant to work, delivered as an emailed link rather
+    # than a wait the user has to sit through.  Do not reinstate it.  What #348
+    # also asked for and did not get is that the work run off the request
+    # thread -- handle_email_results() still zips, uploads and mails inline --
+    # which is the part that needs finishing.  See #637.
 
     # Create a temporary directory for the batch
     batch_id = uuid.uuid4()
