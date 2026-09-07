@@ -31,6 +31,25 @@ from conftest import (
 # Project-level download tests
 # ---------------------------------------------------------------------------
 
+def _download_bytes(response):
+    """Return a download response's body, streaming or not.
+
+    ``create_zip_response()`` returns a streaming response so that a multi-GB
+    archive is not assembled in memory, and a streaming response has no
+    ``.content``.  Reading it here keeps these assertions about the bytes that
+    reach the client rather than about which response class produced them.
+    """
+    if getattr(response, 'streaming', False):
+        try:
+            return b''.join(response.streaming_content)
+        finally:
+            # The archive is removed when the response is closed, which in
+            # production the WSGI server does.  A test that walks away without
+            # closing leaves a .zip in the repository root.
+            response.close()
+    return response.content
+
+
 @pytest.mark.integration
 @pytest.mark.functional
 def test_project_tar_download(loaded_datasets, request_factory, test_user):
@@ -151,7 +170,7 @@ def test_ac2_single_and_batch_sample_download_contents(
         single_req.user = test_user
         single_response = sample_download(single_req, project_id, sample_name)
         assert single_response.status_code == 200
-        assert_download_zip(single_response.content, sample_name)
+        assert_download_zip(_download_bytes(single_response), sample_name)
 
         batch_req = request_factory.post('/batch-sample-download/', {
             'samples': [f'{project_id}:{sample_name}'],
@@ -160,7 +179,7 @@ def test_ac2_single_and_batch_sample_download_contents(
         batch_req.user = test_user
         batch_response = batch_sample_download(batch_req)
         assert batch_response.status_code == 200
-        assert_download_zip(batch_response.content, sample_name)
+        assert_download_zip(_download_bytes(batch_response), sample_name)
     finally:
         for handle in handles:
             handle.close()
@@ -194,7 +213,7 @@ def test_sample_download(loaded_datasets, request_factory, test_user, mongo_coll
     assert resp.status_code in (200, 302), \
         f"Unexpected status {resp.status_code} for sample_download"
     if resp.status_code == 200:
-        assert len(resp.content) > 0, "Sample download response must not be empty"
+        assert len(_download_bytes(resp)) > 0, "Sample download response must not be empty"
 
 
 @pytest.mark.integration

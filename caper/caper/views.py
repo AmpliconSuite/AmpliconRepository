@@ -20,7 +20,7 @@ logging.getLogger("pymongo").setLevel(logging.WARNING)
 
 from bson.objectid import ObjectId
 
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseRedirect, HttpResponseNotFound, Http404, JsonResponse
+from django.http import HttpResponse, StreamingHttpResponse, FileResponse, HttpResponseRedirect, HttpResponseNotFound, Http404, JsonResponse
 from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.contrib.auth.decorators import login_required
@@ -2006,6 +2006,46 @@ class JSONEncoder(json.JSONEncoder):
         return super().default(o)
 
 
+def _remove_file(path):
+    """Remove a file if it is there, logging rather than raising on failure."""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception as e:
+        logging.error(f"Failed to clean up file {path}: {e}")
+
+
+def _remove_tree(path):
+    """Remove a directory tree if it is there, logging rather than raising."""
+    try:
+        if os.path.exists(path):
+            shutil.rmtree(path)
+            logging.debug(f"Cleaned up temporary directory: {path}")
+    except Exception as e:
+        logging.error(f"Failed to clean up directory {path}: {e}")
+
+
+class ZipFileResponse(FileResponse):
+    """A FileResponse that deletes the file it streamed once it is done with it.
+
+    The archive cannot be removed before returning the response the way it was
+    under HttpResponse, because nothing has been sent yet at that point.  close()
+    is called by the WSGI server once the body has been iterated, and also when a
+    client disconnects part way through, so this covers both.
+    """
+
+    def __init__(self, *args, cleanup_paths=(), **kwargs):
+        self._cleanup_paths = list(cleanup_paths)
+        super().__init__(*args, **kwargs)
+
+    def close(self):
+        try:
+            super().close()
+        finally:
+            for path in self._cleanup_paths:
+                _remove_file(path)
+
+
 def create_zip_response(zip_source_dir, filename):
     """
     Create a zip file from a directory and return it as an HTTP response.
@@ -2025,26 +2065,29 @@ def create_zip_response(zip_source_dir, filename):
         # Create the zip archive
         shutil.make_archive(filename, 'zip', zip_source_dir)
 
-        # Create the response
-        with open(zip_path, 'rb') as zip_file:
-            response = HttpResponse(zip_file)
-            response['Content-Type'] = 'application/x-zip-compressed'
-            response['Content-Disposition'] = f'attachment; filename={filename}.zip'
+        # The archive is written; the directory it was built from is dead weight
+        # from here on, so drop it now rather than after the response has been
+        # streamed.  On a whole-project download that is several GB of disk
+        # returned while the client is still receiving.
+        _remove_tree(zip_source_dir)
 
+        # FileResponse streams the archive in fixed-size blocks.  HttpResponse
+        # does not stream: it consumes the file object, and a binary file
+        # iterates by *line*, so a multi-GB archive was split on whatever 0x0a
+        # bytes it happened to contain, held as a list of chunks, and then
+        # joined -- both copies alive at once.  Measured on dev 2026-09-06 that
+        # cost ~1.8x the archive: a 2.66 GB download peaked at 6,675 MB of
+        # container anonymous memory against a 1,862 MB baseline.
+        response = ZipFileResponse(open(zip_path, 'rb'), cleanup_paths=[zip_path])
+        response['Content-Type'] = 'application/x-zip-compressed'
+        response['Content-Disposition'] = f'attachment; filename={filename}.zip'
         return response
 
-    finally:
-        # Clean up both the zip file and the source directory
-        if os.path.exists(zip_path):
-            os.remove(zip_path)
-
-        # Clean up the source directory
-        if os.path.exists(zip_source_dir):
-            try:
-                shutil.rmtree(zip_source_dir)
-                logging.debug(f"Cleaned up temporary directory: {zip_source_dir}")
-            except Exception as e:
-                logging.error(f"Failed to clean up directory {zip_source_dir}: {e}")
+    except Exception:
+        # Nothing will stream, so the archive is cleaned up here instead.
+        _remove_file(zip_path)
+        _remove_tree(zip_source_dir)
+        raise
 
 
 def record_sample_downloads(project, count=1):
@@ -2337,93 +2380,53 @@ def sample_download(request, project_name, sample_name):
     return create_zip_response(sample_data_path, sample_name)
 
 
-def handle_email_results(request, batch_dir, zip_filename):
-    """
-    Upload the zip file to S3, generate a presigned URL, and email it to the user.
-    
-    Args:
-        request: The HTTP request object
-        batch_dir: Directory containing the files to zip
-        zip_filename: Name of the zip file (without .zip extension)
-    
-    Returns:
-        HttpResponse with a message about the email
+def _email_batch_archive(username, user_email, batch_dir, zip_filename):
+    """Archive batch_dir, put it in S3 and email a presigned link to user_email.
+
+    Split out of handle_email_results() so that it can also run on a background
+    thread, where there is no request to take the username and address from and
+    no response to return.  Raises on failure; the caller decides what that
+    looks like.  Returns the S3 key, so a caller that fails afterwards can
+    remove the object.
     """
     from django.core.mail import EmailMessage
-    from django.template.loader import render_to_string
-    from django.utils.html import strip_tags
-    logging.error("handle email results called")
-    zip_path = None
-    s3_key = None
-    
+
+    if not settings.AWS_PROFILE_NAME:
+        settings.AWS_PROFILE_NAME = 'default'
+
+    session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+    s3_client = session.client('s3')
+    bucket_name = settings.S3_DOWNLOADS_BUCKET
+    s3_key = f"batch_downloads/{username}/{uuid.uuid4()}/{zip_filename}.zip"
+
+    # make_archive's base_name must not carry the .zip extension; it appends one.
+    parent_dir = os.path.dirname(batch_dir)
+    zip_base_path = os.path.join(parent_dir, zip_filename)
+    zip_path = f"{zip_base_path}.zip"
+
     try:
-        # Check if S3 downloads are configured first
-        if not settings.USE_S3_DOWNLOADS:
-            messages.error(request, "Email results feature requires S3 to be configured.")
-            return redirect('gene_search_page')
-        
-        # Set up AWS profile and create S3 client
-        if not settings.AWS_PROFILE_NAME:
-            settings.AWS_PROFILE_NAME = 'default'
-        
-        session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
-        s3_client = session.client('s3')
-        bucket_name = settings.S3_DOWNLOADS_BUCKET
-        
-        # Create a unique key for the file in S3
-        s3_key = f"batch_downloads/{request.user.username}/{uuid.uuid4()}/{zip_filename}.zip"
-        
-        # Create the zip archive with full path
-        # shutil.make_archive base_name should NOT include .zip extension
-        # It will create the file at: <parent_of_batch_dir>/<zip_filename>.zip
-        parent_dir = os.path.dirname(batch_dir)
-        zip_base_path = os.path.join(parent_dir, zip_filename)
-        zip_path = f"{zip_base_path}.zip"
-        
         logging.info(f"Creating zip file at: {zip_path}")
         shutil.make_archive(zip_base_path, 'zip', batch_dir)
-        
         if not os.path.exists(zip_path):
-            raise FileNotFoundError(f"Zip file was not created at expected location: {zip_path}")
-        
+            raise FileNotFoundError(
+                f"Zip file was not created at expected location: {zip_path}")
+
         logging.info(f"Uploading {zip_path} to S3: s3://{bucket_name}/{s3_key}")
-        
+        # upload_fileobj streams in parts, so this does not hold the archive in
+        # memory the way the direct-download path once did.
         with open(zip_path, 'rb') as zip_file:
             s3_client.upload_fileobj(zip_file, bucket_name, s3_key)
-        
         logging.info(f"Successfully uploaded to S3: {s3_key}")
-        
-        # Generate presigned URL (valid for 7 days)
+
         presigned_url = s3_client.generate_presigned_url(
             'get_object',
             Params={'Bucket': bucket_name, 'Key': s3_key},
             ExpiresIn=604800  # 7 days in seconds
         )
-        
-        # Get user email
-        user_email = request.user.email
-        if not user_email:
-            messages.error(request, "Your account does not have an email address. Please add one under Change Email.")
-            # Clean up S3 file
-            s3_client.delete_object(Bucket=bucket_name, Key=s3_key)
-            return redirect('gene_search_page')
-        
-        # Send email
+
         subject = f"Your batch sample download is ready - {zip_filename}"
-        
-        # Prepare email context
-        email_context = {
-            'username': request.user.username,
-            'download_url': presigned_url,
-            'filename': f"{zip_filename}.zip",
-            'expiration_days': 7,
-            'SITE_TITLE': settings.SITE_TITLE,
-            'SITE_URL': settings.SITE_URL,
-        }
-        
-        # Render email body from template or create simple text
         email_body = f"""
-Dear {request.user.username},
+Dear {username},
 
 Your batch sample download is ready!
 
@@ -2437,8 +2440,6 @@ Best regards,
 {settings.SITE_TITLE} Team
 {settings.SITE_URL}
 """
-        
-        # Send the email
         email = EmailMessage(
             subject,
             email_body,
@@ -2447,56 +2448,151 @@ Best regards,
             reply_to=[settings.EMAIL_HOST_USER]
         )
         email.send(fail_silently=False)
-        
-        # The recipient is the requesting user, so naming the archive is enough to
-        # tie this line to the request that produced it without copying an address
-        # into the application log.
+
+        # The recipient is the requesting user, so naming the archive is enough
+        # to tie this line to the request that produced it without copying an
+        # address into the application log.
         logging.info(f"Batch download link emailed for {zip_filename}")
-        
-        # Check if this is an AJAX request
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-        
+        return s3_key
+
+    finally:
+        _remove_file(zip_path)
+
+
+def _delete_s3_object(s3_key):
+    """Remove an uploaded archive, for when the send failed after the upload."""
+    if not s3_key:
+        return
+    try:
+        session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
+        session.client('s3').delete_object(
+            Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_key)
+    except Exception as cleanup_error:
+        logging.exception(f"Error cleaning up S3 file: {cleanup_error}")
+
+
+def handle_email_results(request, batch_dir, zip_filename):
+    """
+    Upload the zip file to S3, generate a presigned URL, and email it to the user.
+
+    The work itself is in _email_batch_archive(); what is left here is the
+    request-shaped part -- deciding what the caller sees when it works and when
+    it does not.
+
+    Args:
+        request: The HTTP request object
+        batch_dir: Directory containing the files to zip
+        zip_filename: Name of the zip file (without .zip extension)
+
+    Returns:
+        HttpResponse with a message about the email
+    """
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+    def fail(message, status=500):
         if is_ajax:
-            return JsonResponse({
-                'success': True,
-                'message': f"A download link has been sent to {user_email}. The link will be valid for 7 days."
-            })
-        else:
-            messages.success(request, f"A download link has been sent to {user_email}. The link will be valid for 7 days.")
-            return redirect('gene_search_page')
-        
+            return JsonResponse({'success': False, 'error': message}, status=status)
+        messages.error(request, message)
+        return redirect('gene_search_page')
+
+    if not settings.USE_S3_DOWNLOADS:
+        return fail("Email results feature requires S3 to be configured.", status=400)
+
+    user_email = request.user.email
+    if not user_email:
+        return fail("Your account does not have an email address. "
+                    "Please add one under Change Email.", status=400)
+
+    s3_key = None
+    try:
+        s3_key = _email_batch_archive(
+            request.user.username, user_email, batch_dir, zip_filename)
     except Exception as e:
         logging.exception(f"Error handling email results: {e}")
-        
-        # Try to clean up S3 file if it was uploaded
-        if s3_key:
+        _delete_s3_object(s3_key)
+        return fail(f"Error processing your request: {str(e)}")
+
+    message = (f"A download link has been sent to {user_email}. "
+               f"The link will be valid for 7 days.")
+    if is_ajax:
+        return JsonResponse({'success': True, 'message': message})
+    messages.success(request, message)
+    return redirect('gene_search_page')
+
+
+# Above this many samples a batch is delivered by email instead of in the
+# response.  It matches the threshold the gene search page has always applied
+# client-side; the point of naming it here is that the server now applies it too.
+BATCH_DIRECT_DOWNLOAD_MAX_SAMPLES = 100
+
+
+def _gather_batch_samples(projects_and_samples, batch_dir):
+    """Write every selected sample of every project into batch_dir.
+
+    Returns the number of samples actually written, which can be short of the
+    number selected: a name that resolves to no rows is skipped.
+    """
+    processed_count = 0
+    for project_id, project_info in projects_and_samples.items():
+        project = project_info['project']
+        project_dir = f"{batch_dir}/{project['project_name']}"
+        os.makedirs(project_dir, exist_ok=True)
+
+        # One server-side pass over this project's runs for the whole
+        # selection, rather than one per sample.  get_one_sample() scans
+        # every run in the project to find one of them, so calling it in
+        # this loop made a project cost O(selected x total): 0.97s per
+        # sample on HMF, 4,050s to gather its 4,170 samples.  Measured on
+        # dev 2026-09-06.
+        rows_by_name = fetch_sample_rows_by_name(
+            project['_id'], project_info['samples'])
+
+        project_processed = 0
+        for sample_name in project_info['samples']:
             try:
-                session = boto3.Session(profile_name=settings.AWS_PROFILE_NAME)
-                s3_client = session.client('s3')
-                s3_client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=s3_key)
-            except Exception as cleanup_error:
-                logging.exception(f"Error cleaning up S3 file: {cleanup_error}")
-        
-        # Check if this is an AJAX request
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-        
-        if is_ajax:
-            return JsonResponse({
-                'success': False,
-                'error': f"Error processing your request: {str(e)}"
-            }, status=500)
-        else:
-            messages.error(request, f"Error processing your request: {str(e)}")
-            return redirect('gene_search_page')
-        
-    finally:
-        # Clean up local zip file
-        if zip_path and os.path.exists(zip_path):
-            try:
-                os.remove(zip_path)
-                logging.debug(f"Cleaned up local zip file: {zip_path}")
+                sample_data = rows_by_name.get(sample_name)
+                if not sample_data:
+                    continue
+
+                sample_dir = f"{project_dir}/{sample_name}"
+                # The download counter is written once for the project below,
+                # not once per sample: see record_sample_downloads().
+                process_sample_data(project, sample_name, sample_data,
+                                    sample_dir, record_download=False)
+
+                project_processed += 1
+                processed_count += 1
+                if processed_count % 20 == 0:
+                    logging.info(f"Processed {processed_count} samples so far...")
+
             except Exception as e:
-                logging.error(f"Failed to clean up zip file {zip_path}: {e}")
+                logging.exception(f"Error processing sample {sample_name}: {e}")
+                continue
+
+        if project_processed:
+            record_sample_downloads(project, project_processed)
+
+    logging.info(f"Completed processing {processed_count} samples total")
+    return processed_count
+
+
+def _run_batch_download_and_email(projects_and_samples, batch_dir, zip_filename,
+                                  username, user_email):
+    """Gather, archive, upload and email a batch.  Runs on a background thread.
+
+    Nothing here touches the request: it is gone by the time this runs.  The
+    task tracker removes batch_dir when this returns, however it returns.
+    """
+    try:
+        _gather_batch_samples(projects_and_samples, batch_dir)
+        _email_batch_archive(username, user_email, batch_dir, zip_filename)
+    except Exception:
+        # There is no response left to carry this, so the log is the only place
+        # it can be seen.  The user is left waiting for an email that will not
+        # arrive, which is worth saying plainly here.
+        logging.exception(
+            f"Batch download {zip_filename} failed; no link was emailed")
+        raise
 
 
 @login_required(login_url='/accounts/login/')
@@ -2578,67 +2674,71 @@ def batch_sample_download(request):
             logging.exception(f"Error processing sample string {sample_str}: {e}")
             continue
     logging.error("batch download - processing samples ")
+
+    selected_count = sum(len(info['samples']) for info in projects_and_samples.values())
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_filename = f"batch_samples_{timestamp}"
+
+    # Which delivery this gets is decided here rather than by the page, which
+    # only ever advised: the form carries emailResults, and a request that does
+    # not come from the page can leave it out for any size of selection.  That
+    # is how a 4,170-sample direct download was made while testing on
+    # 2026-09-06.
+    #
+    # This is NOT the `len(samples) > 1000` refusal that #469 removed to
+    # implement #348.  That one rejected the batch outright; this one bounds
+    # only the synchronous path, and the email path it points at has no cap at
+    # all.  Batches of any size still work -- see #348 before adding a limit
+    # anywhere else.
+    if email_results or selected_count > BATCH_DIRECT_DOWNLOAD_MAX_SAMPLES:
+        if not email_results:
+            messages.error(
+                request,
+                f"{selected_count} samples is too many to download in one "
+                f"request; batches over {BATCH_DIRECT_DOWNLOAD_MAX_SAMPLES} are "
+                f"delivered by email. Re-submit with the emailed-link option.")
+            _remove_tree(batch_dir)
+            return redirect('gene_search_page')
+
+        if not settings.USE_S3_DOWNLOADS:
+            messages.error(request, "Email results feature requires S3 to be configured.")
+            _remove_tree(batch_dir)
+            return redirect('gene_search_page')
+
+        user_email = request.user.email
+        if not user_email:
+            messages.error(request, "Your account does not have an email address. "
+                                    "Please add one under Change Email.")
+            _remove_tree(batch_dir)
+            return redirect('gene_search_page')
+
+        # Off the request thread.  Gathering the whole public corpus took ~596s
+        # of the 900s gunicorn timeout on dev on 2026-09-06, against a corpus
+        # smaller than production's, so the request cannot be where this runs.
+        # submit() also records batch_dir against the task, which is what stops
+        # cleanup_stale_temp_dirs() removing a directory that is still being
+        # written into -- the top-level mtime stops advancing as soon as the
+        # first project subdirectory exists, so age alone does not protect it.
+        _thread_executor.submit(
+            _run_batch_download_and_email,
+            projects_and_samples, batch_dir, zip_filename,
+            request.user.username, user_email,
+            task_label='batch_sample_download', temp_dir=batch_dir)
+
+        message = (f"Preparing {selected_count} samples. A download link will be "
+                   f"emailed to {user_email} when it is ready.")
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': True, 'message': message})
+        messages.success(request, message)
+        return redirect('gene_search_page')
+
+    # Small enough to answer in the request: gather, then stream the archive.
     try:
-        # Process each project's samples
-        processed_count = 0
-        for project_id, project_info in projects_and_samples.items():
-            project = project_info['project']
-            project_dir = f"{batch_dir}/{project['project_name']}"
-            os.makedirs(project_dir, exist_ok=True)
-
-            # One server-side pass over this project's runs for the whole
-            # selection, rather than one per sample.  get_one_sample() scans
-            # every run in the project to find one of them, so calling it in
-            # this loop made a project cost O(selected x total): 0.97s per
-            # sample on HMF, 4,050s to gather its 4,170 samples.  Measured on
-            # dev 2026-09-06.
-            rows_by_name = fetch_sample_rows_by_name(
-                project['_id'], project_info['samples'])
-
-            # Process each sample in the project
-            project_processed = 0
-            for sample_name in project_info['samples']:
-                try:
-                    sample_data = rows_by_name.get(sample_name)
-                    if not sample_data:
-                        continue
-
-                    # Process the sample
-                    sample_dir = f"{project_dir}/{sample_name}"
-                    # The download counter is written once for the project
-                    # below, not once per sample: see record_sample_downloads().
-                    process_sample_data(project, sample_name, sample_data,
-                                        sample_dir, record_download=False)
-
-                    project_processed += 1
-                    processed_count += 1
-                    if processed_count % 20 == 0:
-                        logging.info(f"Processed {processed_count} samples so far...")
-
-                except Exception as e:
-                    logging.exception(f"Error processing sample {sample_name}: {e}")
-                    continue
-
-            if project_processed:
-                record_sample_downloads(project, project_processed)
-
-        logging.info(f"Completed processing {processed_count} samples total")
-
-        # Create the zip file with timestamp
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        zip_filename = f"batch_samples_{timestamp}"
-
-        # If emailResults is true, upload to S3 and send email
-        if email_results:
-            return handle_email_results(request, batch_dir, zip_filename)
-        else:
-            # Return the response directly
-            return create_zip_response(batch_dir, zip_filename)
-
-    finally:
-        # Clean up the temporary directory
-        if os.path.exists(batch_dir):
-            shutil.rmtree(batch_dir)
+        _gather_batch_samples(projects_and_samples, batch_dir)
+        return create_zip_response(batch_dir, zip_filename)
+    except Exception:
+        _remove_tree(batch_dir)
+        raise
 
 
 def feature_page(request, project_name, sample_name, feature_name):
