@@ -132,6 +132,46 @@
     .sample-checkbox {
         cursor: pointer;
     }
+    /* The server renders every matching row into the table, so the browser lays
+       all of them out before DataTables runs and then pages down to ten -- the
+       page balloons and snaps shut, dragging everything below it back up the
+       screen.  Same treatment as the project page's sample table: the wrapper
+       holds the height a paged table will occupy and keeps the rows out of
+       layout until they are paged. */
+    .gs-table-wrap {
+        position: relative;
+        min-height: 430px;
+    }
+
+    /* display, not visibility: hidden rows still take their full height. */
+    .gs-table-wrap > .gs-table-inner {
+        display: none;
+    }
+
+    .gs-table-wrap.is-ready {
+        min-height: 0;
+    }
+
+    .gs-table-wrap.is-ready > .gs-table-inner {
+        display: block;
+    }
+
+    .gs-table-wrap.is-ready > .gs-table-placeholder {
+        display: none;
+    }
+
+    .gs-table-placeholder {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 430px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #9aa0a6;
+        font-size: 13px;
+    }
 </style>
 {% endblock %}
 
@@ -437,6 +477,16 @@
         $('#samples-tab table.table').each(function() { initializeTable(this); });
         $('#private-projects-tab table.table').each(function() { initializeTable(this); });
         $('#private-samples-tab table.table').each(function() { initializeTable(this); });
+
+        // Now that every table is paged, put them back into layout.  Column
+        // widths were computed while the rows were display:none, so clear the
+        // stale table width before measuring, and adjust only the tables that
+        // are actually visible -- the three inactive tabs are display:none and
+        // measure as zero, which is what the shown.bs.tab handler above exists
+        // to fix.
+        $('.gs-table-wrap').addClass('is-ready');
+        $('.gs-table-inner table').css('width', '100%');
+        $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
 
 
         // Handle click on the toggle button
@@ -767,13 +817,20 @@
                                 'X-Requested-With': 'XMLHttpRequest'
                             },
                             success: function(response, status, xhr) {
-                                // Email was sent - update modal to show success
-                                console.log('Email request successful');
+                                // The request is accepted here, not finished: the
+                                // server gathers, archives and mails on a background
+                                // thread, so this must not claim the email has been
+                                // sent.  Prefer the server's own wording, which names
+                                // the address and the sample count.
+                                console.log('Email request accepted');
+                                var accepted = (response && response.message)
+                                    ? response.message
+                                    : 'You will receive an email with the download link when it is ready.';
                                 $('#loadingModal .modal-body').html(
                                     $('<div>').append(
                                         $('<i>', {'class': 'fas fa-check-circle fa-3x text-success mb-3'}),
-                                        $('<h5>').text('Email sent successfully!'),
-                                        $('<p>').text('Check your email for the download link.'),
+                                        $('<h5>').text('Request accepted'),
+                                        $('<p>').text(accepted),
                                         $('<p>', {'class': 'text-muted small'}).text('The link will be valid for 7 days.')
                                     )
                                 );
@@ -1124,6 +1181,9 @@
         <div class="tab-content" style="padding-top: 20px; overflow-x: auto;">
             <!-- Public Projects Tab -->
             <div class="tab-pane" id="projects-tab">
+                <div class="gs-table-wrap">
+                <div class="gs-table-placeholder" aria-hidden="true">Loading results&hellip;</div>
+                <div class="gs-table-inner">
                 <table class="table">
                     <thead>
                         <tr>
@@ -1144,6 +1204,8 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                </div>
+                </div>
             </div>
 
             <!-- Public Samples Tab -->
@@ -1156,6 +1218,9 @@
                     <span id="public-selected-count" class="selected-count">0 amplifications selected (0 samples)</span>
                 </div>
 
+                <div class="gs-table-wrap">
+                <div class="gs-table-placeholder" aria-hidden="true">Loading results&hellip;</div>
+                <div class="gs-table-inner">
                 <table class="table" id="public-samples-table">
                     <thead>
                         <tr>
@@ -1190,11 +1255,16 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                </div>
+                </div>
             </div>
 
             {% if user.is_authenticated %}
             <!-- Private Projects Tab -->
             <div class="tab-pane" id="private-projects-tab">
+                <div class="gs-table-wrap">
+                <div class="gs-table-placeholder" aria-hidden="true">Loading results&hellip;</div>
+                <div class="gs-table-inner">
                 <table class="table">
                     <thead>
                         <tr>
@@ -1216,6 +1286,8 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                </div>
+                </div>
             </div>
 
             <!-- Private Samples Tab -->
@@ -1228,6 +1300,9 @@
                     <span id="private-selected-count" class="selected-count">0 amplifications selected (0 samples)</span>
                 </div>
 
+                <div class="gs-table-wrap">
+                <div class="gs-table-placeholder" aria-hidden="true">Loading results&hellip;</div>
+                <div class="gs-table-inner">
                 <table class="table" id="private-samples-table">
                     <thead>
                         <tr>
@@ -1262,6 +1337,8 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                </div>
+                </div>
             </div>
             {% endif %}
         </div>
