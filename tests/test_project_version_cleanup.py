@@ -377,7 +377,12 @@ def test_delete_current_version_retargets_existing_tombstones_to_promoted_versio
     # The view deletes through the batched helper, not the GridFS handle,
     # so that a multi-gigabyte tarfile cannot exceed the socket timeout.
     monkeypatch.setattr(views, 'delete_gridfs_file', fs.delete)
-    monkeypatch.setattr(views, 'delete_project_from_site_statistics', lambda *args, **kwargs: None)
+    # Both derived-copy updates are stubbed: the view now goes through
+    # project_events, which updates the site statistics and the feature
+    # index together. Neither is what this test is about, and the fake
+    # collection they would be handed is not a real one.
+    monkeypatch.setattr(views, 'project_removed', lambda *args, **kwargs: None)
+    monkeypatch.setattr(views, 'project_content_changed', lambda *args, **kwargs: None)
 
     request = request_factory.post(f'/project/{latest_id}/delete_version/{latest_id}')
     request.user = test_user

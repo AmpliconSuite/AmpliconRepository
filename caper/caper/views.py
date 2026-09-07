@@ -32,7 +32,11 @@ from django.contrib.auth.models import User
 from rest_framework.response import Response
 
 from .user_preferences import update_user_preferences, get_user_preferences, notify_users_of_project_membership_change
-from .site_stats import get_latest_site_statistics, add_project_to_site_statistics, delete_project_from_site_statistics, edit_proj_privacy
+from .site_stats import get_latest_site_statistics
+from .project_events import (
+    project_changed, project_content_changed, project_removed,
+    project_visibility_changed,
+)
 from .user_preferences import notify_subscribers_of_project_update
 from .utils import normalize_visibility_field, is_project_private, is_project_public, is_project_hidden_public, format_visibility_for_display, PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES
 
@@ -3198,7 +3202,7 @@ def project_delete(request, project_name):
                              'delete_user': deleter, 'delete_date': get_date()} }
         collection_handle.update_one(query, new_val)
         provenance.confirm(audit_log_handle, event_id)
-        delete_project_from_site_statistics(project, visibility)
+        project_removed(project, visibility)
 
         # No Neo4j graph invalidation here on purpose. This is a reversible soft
         # delete and it runs synchronously on the request path (including as the
@@ -3422,7 +3426,13 @@ def delete_project_version(request, project_name, version_id):
 
             # Update site statistics
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
-            delete_project_from_site_statistics(latest_project, vis)
+            project_removed(latest_project, vis)
+            # The predecessor is the head of the chain now, so it is what a
+            # search has to find. Reindexing only the deleted version would
+            # take the whole project out of search results: the version that
+            # was indexed is gone, and the one that replaced it was never
+            # indexed as a head.
+            project_content_changed(prev_linkid)
 
             version_purge.start(current_linkid, pending_ids, delete_event,
                                 outcome='promoted',
@@ -3469,7 +3479,7 @@ def delete_project_version(request, project_name, version_id):
             )
 
             vis = normalize_visibility_field(latest_project.get('private', 'private'))
-            delete_project_from_site_statistics(latest_project, vis)
+            project_removed(latest_project, vis)
 
             version_purge.start(current_linkid, pending_ids, delete_event,
                                 outcome='chain_emptied')
@@ -3903,15 +3913,15 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
                 updated_project_snapshot['runs'] = current_runs
                 updated_project_snapshot['private'] = normalize_visibility_field(form_dict['private'])
 
-                delete_project_from_site_statistics(project, old_visibility)
-                add_project_to_site_statistics(updated_project_snapshot, new_visibility)
+                project_removed(project, old_visibility)
+                project_changed(updated_project_snapshot, new_visibility)
                 logging.debug(
                     f"Site stats updated after sample removal: "
                     f"{len(project.get('runs', {}))} → {len(current_runs)} samples"
                 )
             else:
                 # No samples removed – only a potential privacy change.
-                edit_proj_privacy(project, old_privacy, new_privacy)
+                project_visibility_changed(project, old_privacy, new_privacy)
             # ------------------------------------------------------------------
 
             logging.debug("Updated collection_handle with new data")
@@ -4783,6 +4793,12 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
 
         collection_handle.update_one(query, new_val)
 
+        # The samples only exist as of this write. The site statistics were
+        # taken when the document was inserted and do not change here, but the
+        # feature index does -- before this line the project has no searchable
+        # rows at all, because it had no runs to build them from.
+        project_content_changed(project_id)
+
         # The document now names every file written above, so they are reachable
         # and must NOT be discarded if a later step fails.
         uploaded_file_ids = []
@@ -5088,8 +5104,9 @@ def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
     # Nothing is extracted afterwards, so the version is complete as written.
     # The aggregated path leaves this False for extract_project_files to flip.
     project['FINISHED?'] = True
-    # Both, and in this order, because add_project_to_site_statistics() reads
-    # _id off the dict it is handed rather than from the database.
+    # Both, and in this order, because project_changed() passes the dict
+    # straight to add_project_to_site_statistics(), which reads _id off it
+    # rather than from the database.
     project['_id'] = project_id
     project['linkid'] = str(project_id)
 
@@ -5111,8 +5128,7 @@ def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
         collection_handle.update_one({'_id': project_id},
                                      {"$set": {'featured': True}})
 
-    add_project_to_site_statistics(
-        project, normalize_visibility_field(project['private']))
+    project_changed(project, normalize_visibility_field(project['private']))
 
     if audit_event_type is not None:
         try:
@@ -5251,6 +5267,15 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         # file it still names is kept -- the rollback target must not lose
         # payload to the cleanup of the version that replaced it.
         _discard_failed_upload(failed_placeholder_id, old_project_id)
+
+        # Both documents changed indexability, in opposite directions: the old
+        # project is LIVE again and searchable, the placeholder is DETACHED and
+        # must not be. This function has no site-statistics hook -- the counters
+        # were never decremented for the placeholder, so there is nothing to put
+        # back -- which is why the index is brought into line explicitly rather
+        # than as a side effect of one.
+        project_content_changed(old_project_id)
+        project_content_changed(failed_placeholder_id)
 
     try:
         logging.info(f"_process_and_aggregate_files - start")
@@ -5780,7 +5805,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
 
         # Create new project
         new_id = collection_handle.insert_one(project)
-        add_project_to_site_statistics(project, normalize_visibility_field(project['private']))
+        project_changed(project, normalize_visibility_field(project['private']))
         project_id = new_id.inserted_id
 
         # Put the document in its chain: a new project is a chain of one, an
@@ -5836,7 +5861,7 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
             project['featured'] = True
             collection_handle.update_one({'_id': project_id}, {"$set": {'featured': True}})
 
-        add_project_to_site_statistics(project, normalize_visibility_field(project['private']))
+        project_changed(project, normalize_visibility_field(project['private']))
 
     file_location = f'{project_data_path}/{request_file.name}'
     logging.debug("file stats: " + str(os.stat(file_location).st_size))

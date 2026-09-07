@@ -341,10 +341,10 @@ class ProjectFileAddView(APIView):
                     alert_message = "Edit project failed. Form validation error - please check project information."
                     # project_delete already removed old project stats; restore them so the
                     # site statistics are not left in a permanently decremented state.
-                    from .site_stats import add_project_to_site_statistics
+                    from .project_events import project_changed
                     try:
                         vis = normalize_visibility_field(project.get('private', 'private'))
-                        add_project_to_site_statistics(project, vis)
+                        project_changed(project, vis)
                         logging.error("Restored old project stats after form validation failure")
                     except Exception as stats_err:
                         logging.error(f"Failed to restore stats after form validation failure: {stats_err}")
@@ -358,10 +358,10 @@ class ProjectFileAddView(APIView):
                 if new_id is None:
                     # _create_project failed after project_delete already removed the old project's
                     # stats — restore them so the site statistics are not permanently wrong.
-                    from .site_stats import add_project_to_site_statistics
+                    from .project_events import project_changed
                     try:
                         vis = normalize_visibility_field(project.get('private', 'private'))
-                        add_project_to_site_statistics(project, vis)
+                        project_changed(project, vis)
                         logging.error("Restored old project stats after _create_project failure")
                     except Exception as stats_err:
                         logging.error(f"Failed to restore stats after _create_project failure: {stats_err}")
