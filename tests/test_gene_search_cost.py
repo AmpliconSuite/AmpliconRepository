@@ -24,6 +24,18 @@ import pytest
 from caper.utils import sample_data_from_feature_list
 
 
+def _close(response):
+    """Release a download response.
+
+    create_zip_response() returns a streaming response and deletes the archive
+    when it is closed -- which the WSGI server does in production.  A test that
+    drops the response instead leaves a .zip in the repository root.
+    """
+    if response is not None:
+        response.close()
+    return response
+
+
 def _row(sample, classification='ecDNA', oncogenes=None, **extra):
     row = {'Sample_name': sample, 'Classification': classification,
            'Oncogenes': list(oncogenes or []), 'Feature_ID': f'{sample}_1'}
@@ -236,7 +248,7 @@ class TestBatchDownloadReadAmplification:
                 {'samples': [f'{project_id}:{s}' for s in runs]})
             request.user = test_user
             try:
-                views.batch_sample_download(request)
+                _close(views.batch_sample_download(request))
             except Exception:
                 # The zip/S3 tail of the view is not what this test pins down;
                 # the loads above it have already happened either way.
@@ -432,7 +444,7 @@ class TestBulkSampleFetch:
                 {'samples': [f'{project_id}:S{c}' for c in 'ABCDE']})
             request.user = test_user
             try:
-                views.batch_sample_download(request)
+                _close(views.batch_sample_download(request))
             except Exception:
                 # The zip tail of the view is not what this test pins down.
                 pass
@@ -562,7 +574,11 @@ class TestDownloadCounterWrites:
                 {'samples': [f'{project_id}:S{c}' for c in 'ABCDE']})
             request.user = test_user
             try:
-                views.batch_sample_download(request)
+                response = views.batch_sample_download(request)
+                # Closing is what deletes the archive; the WSGI server does it
+                # in production.
+                if response is not None:
+                    response.close()
             except Exception:
                 pass
             assert counted == [5], (
