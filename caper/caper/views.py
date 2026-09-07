@@ -1759,13 +1759,26 @@ def igv_features_creation(locations):
         ## each key is a chromosome
         ## each value is a constructed focal range, including chr_num, chr_min, chr_max
     locuses = {}
+    unparsed = []
     for location in locations:
         if not location:
             continue
         parsed = location.replace(":", ",").replace("'", "").replace("-", ",").replace(" ", '').split(",")
-        chrom = parsed[0]
-        start = int(parsed[1])
-        end = int(parsed[2])
+        # A Location need not be a range at all.  The aggregator writes
+        # sentinels such as 'Interval file not found' into this field, and that
+        # splits to a single element, so parsed[1] raised IndexError and 500'd
+        # the whole sample page.  Guarding the plot's copy of this problem was
+        # not enough: fixing sample_plot.py alone only moved the 500 here.
+        if len(parsed) < 3:
+            unparsed.append(location)
+            continue
+        try:
+            chrom = parsed[0]
+            start = int(parsed[1])
+            end = int(parsed[2])
+        except ValueError:
+            unparsed.append(location)
+            continue
         features.append({
             'chr':chrom,
             'start':start,
@@ -1782,6 +1795,9 @@ def igv_features_creation(locations):
                 'max':end,
 
                 }
+
+    if unparsed:
+        logging.warning('igv_features_creation: skipped unparseable location(s) %r', unparsed)
 
     ## reconstruct locuses
     for key in locuses.keys():
