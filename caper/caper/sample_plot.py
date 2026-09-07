@@ -176,11 +176,29 @@ def plot(db_handle, sample, sample_name, project_name, filter_plots=False):
     chr_order = lambda x: int(x) if x.isnumeric() else ord(x[0])
     if filter_plots:
         chromosomes = set()
+        unplottable = set()
         for x in amplicon['Location']:
             for loc in x:
                 chr_num = get_chrom_num(loc)
-                if chr_num:
-                    chromosomes.add(chr_num)
+                if not chr_num:
+                    continue
+                # A Location need not name a contig we have a length for.  The
+                # aggregator writes sentinels such as 'Interval file not found'
+                # into this field, and get_chrom_num() hands them straight
+                # back: no colon to split on and no 'chr' prefix to strip.  That
+                # reached chrom_lens[key] below as a KeyError and 500'd the
+                # sample page -- three samples of one production project had
+                # been failing that way for at least a day when it was found on
+                # 2026-09-06.  Drop what cannot be plotted, and say so.
+                if chr_num not in chrom_lens:
+                    unplottable.add(chr_num)
+                    continue
+                chromosomes.add(chr_num)
+
+        if unplottable:
+            logging.warning(
+                f'{sample_name}: no contig length for {sorted(unplottable)!r}; '
+                f'those locations are not plotted')
 
         if chromosomes:
             chromosomes = sorted(list(chromosomes), key=chr_order)
