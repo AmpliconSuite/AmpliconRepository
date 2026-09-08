@@ -14,6 +14,7 @@ Read-only. It runs both searches and compares; it writes nothing.
 """
 
 import itertools
+import contextlib
 import time
 
 from django.core.management.base import BaseCommand
@@ -85,6 +86,32 @@ def _comparable(row):
     return {key: row.get(key) for key in COMPARED_KEYS}
 
 
+
+@contextlib.contextmanager
+def _forced_old_path():
+    """Make perform_search take the scan, whatever the deployed flag says.
+
+    Without this the gate stops being a gate at the exact moment it matters.
+    perform_search dispatches to the index when USE_FEATURE_INDEX_SEARCH is on,
+    so on a host where the flag has been turned on -- which is precisely when
+    somebody runs this to check the switch was safe -- both sides of the
+    comparison were the index. It reported "all queries identical" and a 1x
+    speedup, and both were true and meaningless.
+
+    Caught on dev on 2026-09-08, on the first run after the flag went live.
+
+    feature_index_search_enabled() reads the setting at call time rather than at
+    import, which is what makes this override work at all.
+    """
+    from django.conf import settings
+    previous = getattr(settings, 'USE_FEATURE_INDEX_SEARCH', False)
+    settings.USE_FEATURE_INDEX_SEARCH = False
+    try:
+        yield
+    finally:
+        settings.USE_FEATURE_INDEX_SEARCH = previous
+
+
 class Command(BaseCommand):
     help = 'Compare the indexed search against the project-document search.'
 
@@ -136,7 +163,8 @@ class Command(BaseCommand):
                 continue
 
             started = time.time()
-            old = perform_search(user=user, **params)
+            with _forced_old_path():
+                old = perform_search(user=user, **params)
             old_seconds = time.time() - started
             started = time.time()
             new = search_from_index(user=user, **params)

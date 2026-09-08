@@ -323,3 +323,51 @@ def test_the_results_table_lists_projects_by_id_not_by_name():
     source = inspect.getsource(search.perform_search)
     assert 'public_project_ids' in source
     assert 'proj["project_name"] in public_project_names' not in source
+
+
+# ---------------------------------------------------------------------------
+# The gate has to keep being a gate
+# ---------------------------------------------------------------------------
+
+def test_the_comparison_command_forces_the_scan():
+    """`compare_search_paths` must not compare the index against itself.
+
+    perform_search dispatches to the index when USE_FEATURE_INDEX_SEARCH is on.
+    A host where the flag is on is exactly where someone runs this command to
+    check the switch was safe -- and there both sides of the comparison were the
+    index. It reported every query identical and a 1x speedup: both true, both
+    meaningless. Found on dev on 2026-09-08, on the first run after the flag
+    went live.
+    """
+    import inspect
+    from caper.management.commands import compare_search_paths
+
+    source = inspect.getsource(compare_search_paths)
+    assert '_forced_old_path' in source, (
+        'the command no longer forces the old path, so it may be comparing the '
+        'index against itself wherever the flag is enabled')
+
+    call = source[source.index('old = perform_search('):]
+    preceding = source[:source.index('old = perform_search(')]
+    assert '_forced_old_path()' in preceding.rsplit('\n', 3)[-1] or \
+           'with _forced_old_path():' in preceding[-200:], (
+        'perform_search is called outside the _forced_old_path context')
+
+
+def test_forcing_the_old_path_restores_the_setting():
+    """The override must not leak into the rest of the process."""
+    from django.conf import settings
+    from caper.management.commands.compare_search_paths import _forced_old_path
+    from caper.search import feature_index_search_enabled
+
+    previous = getattr(settings, 'USE_FEATURE_INDEX_SEARCH', False)
+    settings.USE_FEATURE_INDEX_SEARCH = True
+    try:
+        assert feature_index_search_enabled() is True
+        with _forced_old_path():
+            assert feature_index_search_enabled() is False, (
+                'the override did not reach feature_index_search_enabled, which '
+                'means it reads the setting at import rather than at call time')
+        assert feature_index_search_enabled() is True, 'the override leaked'
+    finally:
+        settings.USE_FEATURE_INDEX_SEARCH = previous
