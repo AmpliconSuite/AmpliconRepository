@@ -222,10 +222,10 @@ def test_a_stale_index_is_not_used():
 
     original = feature_index.index_coverage
     try:
-        feature_index.index_coverage = lambda: {'indexable': 33, 'indexed': 31}
+        feature_index.index_coverage = lambda: {'indexable': 33, 'indexed': 31, 'outdated': 0}
         assert feature_index.index_is_usable() is False
 
-        feature_index.index_coverage = lambda: {'indexable': 33, 'indexed': 33}
+        feature_index.index_coverage = lambda: {'indexable': 33, 'indexed': 33, 'outdated': 0}
         assert feature_index.index_is_usable() is True
     finally:
         feature_index.index_coverage = original
@@ -242,10 +242,44 @@ def test_an_empty_index_is_not_mistaken_for_an_empty_site():
 
     original = feature_index.index_coverage
     try:
-        feature_index.index_coverage = lambda: {'indexable': 0, 'indexed': 0}
+        feature_index.index_coverage = lambda: {'indexable': 0, 'indexed': 0, 'outdated': 0}
         assert feature_index.index_is_usable() is False
     finally:
         feature_index.index_coverage = original
+
+def test_rows_from_an_older_builder_are_not_used():
+    """Full coverage is not the same as usable coverage.
+
+    After a SCHEMA_VERSION bump every project is still present and still
+    indexed, so the two counts agree while the rows are the wrong shape -- any
+    query touching a field the old builder did not write answers zero. Caught on
+    the bump to 4, which added sample_key: deploying without this would have
+    served the sample-level gene AND as an empty result until someone rebuilt,
+    and an empty result is indistinguishable from a real one.
+    """
+    import caper.feature_index as feature_index
+
+    original = feature_index.index_coverage
+    try:
+        feature_index.index_coverage = lambda: {
+            'indexable': 33, 'indexed': 33, 'outdated': 1}
+        assert feature_index.index_is_usable() is False
+
+        feature_index.index_coverage = lambda: {
+            'indexable': 33, 'indexed': 33, 'outdated': 0}
+        assert feature_index.index_is_usable() is True
+    finally:
+        feature_index.index_coverage = original
+
+
+def test_the_outdated_count_is_computed_against_the_current_schema():
+    """The guard must read SCHEMA_VERSION, not a number written beside it."""
+    import inspect
+    import caper.feature_index as feature_index
+
+    source = inspect.getsource(feature_index.index_coverage)
+    assert 'SCHEMA_VERSION' in source
+
 
 
 def test_the_guard_is_consulted_on_every_search_not_once_at_boot():

@@ -780,6 +780,14 @@ def index_coverage():
     return {
         'indexable': collection_handle.count_documents(indexable_projects_query()),
         'indexed': manifest_handle.count_documents({}),
+        # Rows built by an older builder.  Coverage alone cannot see this: after
+        # a SCHEMA_VERSION bump every project is still counted and still
+        # indexed, so the counts agree while the rows are the wrong shape and
+        # any query touching a new field answers zero.  Caught on the bump to 4,
+        # which added sample_key: without this a deploy would have served the
+        # sample-level gene AND as an empty result until someone rebuilt.
+        'outdated': manifest_handle.count_documents(
+            {'schema_version': {'$ne': SCHEMA_VERSION}}),
     }
 
 
@@ -793,6 +801,13 @@ def index_is_usable():
 
     The cost of being wrong in each direction is what sets the default: a false
     'unusable' costs one slow search, a false 'usable' costs a wrong answer.
+
+    Three counts, not two: rows written by an older builder are unusable even
+    though every project is present, because the query asks for fields those
+    rows do not carry.  A deploy that bumps SCHEMA_VERSION therefore serves the
+    old way until the rebuild runs, rather than answering from the wrong shape.
     """
     coverage = index_coverage()
-    return coverage['indexable'] == coverage['indexed'] and coverage['indexed'] > 0
+    return (coverage['indexable'] == coverage['indexed']
+            and coverage['indexed'] > 0
+            and coverage['outdated'] == 0)
