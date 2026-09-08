@@ -2882,6 +2882,32 @@ def gene_search_page(request):
     # Get the combined cancer/tissue field
     metadata_cancer_tissue = request.GET.get("metadata_cancer_tissue", "")
 
+    # A bare /gene-search/ is a landing page, not a search.  It used to answer it
+    # by rendering the entire corpus: 16,950 rows and 15,683,226 bytes of HTML,
+    # ~11 s of server time, and ~49 s of blocked main thread while DataTables
+    # ingested 152,678 cells to show 25 of them.  Nobody was reading it -- over
+    # three days of production ALB logs (627,888 lines, 2026-09-05 to 09-07) the
+    # route took 41 requests, and once this laptop's own measurement traffic is
+    # excluded every external non-bot request either abandoned the load (7 x 460)
+    # or came from a scanner.  The two clients that did abandon it arrived by
+    # being redirected here from a GET on /search_results/.
+    #
+    # So the corpus dump is skipped unless the request actually asks something.
+    # A query still searches, which keeps the parameterised route and its tests
+    # working; only the empty case changes.
+    search_submitted = any(
+        request.GET.get(key, "").strip()
+        for key in ("genequery", "classquery", "metadata_cancer_tissue"))
+    if not search_submitted:
+        return render(request, "pages/gene_search.html", {
+            "landing": True,
+            "public_projects": [], "private_projects": [],
+            "public_sample_data": [], "private_sample_data": [],
+            "public_project_filters": [], "private_project_filters": [],
+            "public_projects_count": 0, "private_projects_count": 0,
+            "public_samples_count": 0, "private_samples_count": 0,
+        })
+
     # Gene Search
     if request.user.is_authenticated:
         username = request.user.username
@@ -7063,7 +7089,14 @@ def search_results(request):
         })
 
     else:
-        return redirect("gene_search_page")  # Redirect if accessed incorrectly
+        # A GET here has no query to run: this route is the POST target of the
+        # search form, and after a search the address bar reads /search_results/,
+        # so anyone who bookmarks their results or reloads later comes back
+        # without a body.  That is not hypothetical -- it is the only way real
+        # users reached /gene-search/ in three days of production logs, and both
+        # of them abandoned the page it sent them to.  Send them to the home page,
+        # which carries the search box, rather than to the advanced form.
+        return redirect("index")
 
 
 def ec3d_visualization(request, sample_name):
