@@ -90,7 +90,7 @@ from .visibility import (
 # folded into every digest, so a builder change invalidates every stored row
 # and the drift check reports the whole corpus as stale -- which is correct: it
 # is stale, against the new builder.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 FEATURE_INDEX_COLLECTION = 'feature_index'
 GENE_CATALOG_COLLECTION = 'gene_catalog'
@@ -403,6 +403,15 @@ def _row(*, project_id, project_name, project_sample_count, visibility, members,
     return {
         'project_id': project_id,
         'project_name': project_name,
+        # One string identifying the sample this feature belongs to.  A gene AND
+        # query means "all of these genes in the same sample", and a sample's
+        # genes are spread across its feature rows, so answering it needs a
+        # second pass keyed on the sample.  Project id and sample name together
+        # are that key -- sample names are not unique across projects, which is
+        # the same trap that made the results table list the wrong project when
+        # it grouped by name.  Stored rather than composed at query time so the
+        # second pass is one indexed $in instead of a large $or.
+        'sample_key': f'{project_id}:{sample_name}',
         'project_name_lower': str(project_name or '').lower(),
         'project_sample_count': project_sample_count,
         'visibility': visibility,
@@ -524,6 +533,7 @@ def ensure_feature_index_indexes():
     feature_index_handle.create_index([('genes', 1), ('classification', 1)], name='ix_genes_class')
     feature_index_handle.create_index([('project_id', 1)], name='ix_project')
     feature_index_handle.create_index([('sample_name', 1)], name='ix_sample_name')
+    feature_index_handle.create_index([('sample_key', 1)], name='ix_sample_key')
     feature_index_handle.create_index([('project_name', 1)], name='ix_project_name')
     feature_index_handle.create_index([('classification', 1)], name='ix_class')
     feature_index_handle.create_index([('reference_build', 1)], name='ix_reference_build')
