@@ -30,6 +30,7 @@ from caper.project_version_cleanup import (
     GRIDFS_FILE_KEYS,
     delete_gridfs_file_in_batches,
 )
+from caper.feature_index import DERIVED_COLLECTIONS
 from caper.project_status import (
     HEAD_VERSION_QUERY,
     LIVE,
@@ -402,7 +403,10 @@ def report_tarfile_references(db_handle, limit=50):
 
 
 def purge_project_data(db_handle, execute=False):
-    collections = ['projects', *GRIDFS_COLLECTIONS]
+    # DERIVED_COLLECTIONS is imported, not listed here, for the same reason
+    # APP_GRIDFS_KEYS is: a copy of it would go stale, and a stale copy would
+    # leave the feature index describing projects this just deleted.
+    collections = ['projects', *GRIDFS_COLLECTIONS, *DERIVED_COLLECTIONS]
     if not execute:
         print("DRY RUN: would drop collections: " + ', '.join(collections))
         return

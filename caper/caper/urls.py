@@ -134,6 +134,10 @@ urlpatterns += [
     path('api/v1/projects/<str:project_id>/', views.ProjectDetailView.as_view(), name='api_project_detail'),
     path('api/v1/projects/<str:project_id>/download/', views.ProjectDownloadView.as_view(), name='api_project_download'),
     path('api/v1/projects/<str:project_id>/samples/', views.ProjectSamplesView.as_view(), name='api_project_samples'),
+    # Search across every project, from the feature index.  Placed before the
+    # token route only for readability; the paths do not overlap.
+    path('api/v1/features/', views.FeatureSearchView.as_view(), name='api_feature_search'),
+    path('api/v1/features/facets/', views.FeatureFacetsView.as_view(), name='api_feature_facets'),
     path('api/v1/token/', views.ApiTokenView.as_view(), name='api_token'),
     # The machine-readable description of everything above.  Inside /api/v1/ on
     # purpose -- that prefix is what the WAF's AllowApiV1 rule lets through, so

@@ -21,6 +21,7 @@ from conftest import (
     _build_create_request,
     _build_edit_request,
     _cleanup_project,
+    _download_bytes,
     _poll_until_finished,
     _project_id_from_redirect,
     DATASET_AC2_FAN_TAR,
@@ -306,7 +307,7 @@ def test_create_coral_ac2_project(
         download_request.user = test_user
         download_response = sample_download(download_request, project_id, sample_name)
         assert download_response.status_code == 200
-        with zipfile.ZipFile(io.BytesIO(download_response.content)) as archive:
+        with zipfile.ZipFile(io.BytesIO(_download_bytes(download_response))) as archive:
             names = archive.namelist()
             assert any(name.endswith('_cycles.png') for name in names)
             assert any(

@@ -221,6 +221,15 @@ DEV_GATE_MAX_AGE_SECONDS = int(os.getenv('DEV_GATE_MAX_AGE_SECONDS', default=str
 # leaving the indexed URLs in place indefinitely.  Turn this on once a
 # `site:dev.ampliconrepository.org` search comes back empty.
 DEV_ROBOTS_DISALLOW_ALL = (os.getenv('DEV_ROBOTS_DISALLOW_ALL', default='False') == 'True')
+
+# Serve searches from the feature index rather than by reading every project
+# document. Off by default: the index has to be built (manage.py
+# rebuild_feature_index) and shown current (--check) before anything reads it,
+# and a deployment that turned this on without a built index would report an
+# empty site rather than an error. Turn it on only after
+# `manage.py compare_search_paths` reports every query identical on that
+# deployment's own data.
+USE_FEATURE_INDEX_SEARCH = (os.getenv('USE_FEATURE_INDEX_SEARCH', default='False') == 'True')
 AGGREGATOR_DEV_PATH=os.getenv('AGGREGATOR_DEV_PATH', default='')
 
 # Insert the dev path as early as possible (settings.py is loaded before any

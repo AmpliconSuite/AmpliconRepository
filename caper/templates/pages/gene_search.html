@@ -1200,7 +1200,7 @@
                             <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                             <td>{{ project.description }}</td>
                             <td>{{ project.date }}</td>
-                            <td>{{ project.runs|length }}</td>
+                            <td>{{ project.sample_count_display }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -1282,7 +1282,7 @@
                             <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if project.visibility_display == 'Hidden Public' %} <span class="badge" style="background-color: #BBBBBB; color: white;" title="Unlisted: anyone with the link can view this project, but it is not listed publicly">Unlisted</span>{% elif project.visibility_display == 'Private' %} <span class="badge" style="background-color: #BBBBBB; color: white;" title="Private: visible only to project members">Private</span>{% endif %}</td>
                             <td>{{ project.description }}</td>
                             <td>{{ project.date }}</td>
-                            <td>{{ project.runs|length }}</td>
+                            <td>{{ project.sample_count_display }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

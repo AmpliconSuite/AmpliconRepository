@@ -33,6 +33,8 @@ from threading import Thread
 
 from .serializers import FileSerializer
 from .forms import RunForm
+from .classifications import _CANONICAL_CLASSIFICATION, _canonical_classifications
+from . import api_features
 from .utils import (
     collection_handle, get_one_project, get_one_project_sans_runs, form_to_dict,
     get_latest_project_version, normalize_visibility_field, is_project_private,
@@ -138,6 +140,7 @@ class FileUploadView(APIView):
             create_project_helper, extract_project_files,
             upload_file_to_s3
         )
+        from .project_events import project_content_changed
         
         logging.info('starting api helper')
         project, tmp_id = create_project_helper(form, current_user, request_file, save = False, tmp_id = api_id, from_api = True)
@@ -145,6 +148,14 @@ class FileUploadView(APIView):
             project['project_name'] = actual_proj_name
         logging.info('the project is here: ')
         new_id = collection_handle.insert_one(project)
+        # Index-only.  The project is LIVE and therefore indexable from here;
+        # extract_project_files fills in runs on another thread and reindexes
+        # when it does.  Without this the project is indexable-but-unindexed for
+        # the length of the aggregation, which index_coverage() reads as the
+        # whole index being behind.  Statistics are deliberately left alone:
+        # this path has never counted an API upload in site_statistics, and
+        # changing that is a separate question from making it searchable.
+        project_content_changed(new_id.inserted_id)
         logging.info(str(new_id))
         project_data_path = os.path.join(settings.MEDIA_ROOT, api_id)
         # move the project location to a new name using the UUID to prevent name collisions
@@ -341,10 +352,10 @@ class ProjectFileAddView(APIView):
                     alert_message = "Edit project failed. Form validation error - please check project information."
                     # project_delete already removed old project stats; restore them so the
                     # site statistics are not left in a permanently decremented state.
-                    from .site_stats import add_project_to_site_statistics
+                    from .project_events import project_changed
                     try:
                         vis = normalize_visibility_field(project.get('private', 'private'))
-                        add_project_to_site_statistics(project, vis)
+                        project_changed(project, vis)
                         logging.error("Restored old project stats after form validation failure")
                     except Exception as stats_err:
                         logging.error(f"Failed to restore stats after form validation failure: {stats_err}")
@@ -358,10 +369,10 @@ class ProjectFileAddView(APIView):
                 if new_id is None:
                     # _create_project failed after project_delete already removed the old project's
                     # stats — restore them so the site statistics are not permanently wrong.
-                    from .site_stats import add_project_to_site_statistics
+                    from .project_events import project_changed
                     try:
                         vis = normalize_visibility_field(project.get('private', 'private'))
-                        add_project_to_site_statistics(project, vis)
+                        project_changed(project, vis)
                         logging.error("Restored old project stats after _create_project failure")
                     except Exception as stats_err:
                         logging.error(f"Failed to restore stats after _create_project failure: {stats_err}")
@@ -553,56 +564,6 @@ def _history_row(member):
     return row
 
 
-# Project documents store classifications upper-cased -- get_project_classifications()
-# in views.py does `.upper()` -- while the per-sample rows that /samples/ returns
-# carry the mixed-case spelling ('ecDNA', 'Complex-non-cyclic').  A client that
-# filters projects on 'ecDNA' and then reads the samples it selected should not
-# have to know that the two levels disagree about capitalisation, so the API
-# answers in the sample-level spelling at both.  Unknown values pass through
-# untouched: a classification this map has not heard of must not be mangled.
-_CANONICAL_CLASSIFICATION = {
-    'ECDNA': 'ecDNA',
-    'BFB': 'BFB',
-    'LINEAR': 'Linear',
-    # search.py already treats these as the same class ("if searching for
-    # LINEAR AMPLIFICATION, also match just Linear"), and the dev collection
-    # holds both spellings -- 4 documents say LINEAR, 3 say LINEAR
-    # AMPLIFICATION.  Folding them here means a client filtering on 'Linear'
-    # finds both, which is what the UI's search already does.
-    'LINEAR AMPLIFICATION': 'Linear',
-    'COMPLEX-NON-CYCLIC': 'Complex-non-cyclic',
-    'COMPLEX NON-CYCLIC': 'Complex-non-cyclic',
-    'FAN': 'FAN',
-    'VIRUS': 'Virus',
-    'UNKNOWN': 'Unknown',
-}
-
-
-def _canonical_classifications(project):
-    """The project's amplicon classes, in the spelling /samples/ uses.
-
-    Reads `Classification` -- singular, which is the key the upload path writes
-    (views.py: `project['Classification'] = get_project_classifications(runs)`).
-    This serializer read `Classifications`, plural, from the day it was written;
-    nothing has ever written that key, so the field was `[]` on every project on
-    the site.  Measured 2026-09-04: 0 of 33 public projects reported a
-    classification through the API, while 10 of 10 sampled had ecDNA features in
-    their sample rows -- an ecDNA repository answering "no ecDNA here" to the
-    one question it exists to answer.
-
-    The plural spelling is still read as a fallback: it costs nothing, and a
-    document written by some past version may yet turn up holding it.
-    """
-    raw = project.get('Classification') or project.get('Classifications') or []
-    if isinstance(raw, str):
-        raw = [raw]
-    seen, out = set(), []
-    for value in raw:
-        canonical = _CANONICAL_CLASSIFICATION.get(str(value).upper(), value)
-        if canonical not in seen:
-            seen.add(canonical)
-            out.append(canonical)
-    return out
 
 
 def _version_fields(project, members):
@@ -1258,3 +1219,122 @@ class ApiSchemaView(SpectacularAPIView):
     # fetches a path called openapi.json and cannot json.loads() the body has
     # been misled by the URL; pin the renderer to match it.
     renderer_classes = [OpenApiJsonRenderer]
+
+
+# ── GET /api/v1/features/ ────────────────────────────────────────────────────
+
+class FeatureSearchView(APIView):
+    """
+    Search amplicons across every project the caller may read.
+
+    curl examples:
+        curl "https://ampliconrepository.org/api/v1/features/?gene_any=MYC,EGFR"
+        curl "https://ampliconrepository.org/api/v1/features/?gene_all=MYC,CDK4&same_amp=true"
+        curl "https://ampliconrepository.org/api/v1/features/?classification=ecDNA&count_only=true"
+    """
+    permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
+
+    @extend_schema(
+        operation_id='searchFeatures',
+        summary='Search amplicons',
+        description=(
+            'Find focal amplifications by gene, classification, project or '
+            'sample metadata, across every project the caller may read. This '
+            'is the endpoint to use for "which samples have X"; reading '
+            '/projects/{id}/samples/ for every project transfers the whole '
+            'corpus to answer the same question.\n\n'
+            'Gene operators are in the parameter name, not the value: '
+            '`gene_any` is OR, `gene_all` is AND, and supplying both ANDs the '
+            'two clauses. `gene_all` means "in the same sample"; add '
+            '`same_amp=true` to require one focal amplification. Gene symbols '
+            'are matched whole and case-insensitively -- there are no '
+            'wildcards, because a partial symbol conflates real genes.\n\n'
+            'Results carry a `reference_builds` breakdown. Gene symbols are '
+            'build-dependent and the corpus holds both vocabularies, so a '
+            'result of {"hg38": 56, "hg19": 0} means the gene may exist under '
+            'another name in the hg19 projects.'),
+        parameters=[
+            OpenApiParameter('gene_any', str, OpenApiParameter.QUERY, required=False,
+                description='Comma-delimited gene symbols; matches rows carrying ANY of them.'),
+            OpenApiParameter('gene_all', str, OpenApiParameter.QUERY, required=False,
+                description='Comma-delimited gene symbols; matches samples carrying ALL of them.'),
+            OpenApiParameter('same_amp', bool, OpenApiParameter.QUERY, required=False,
+                description='Narrow gene_all from same-sample to a single focal amplification.'),
+            OpenApiParameter('classification', str, OpenApiParameter.QUERY, required=False,
+                description='Amplicon class, repeatable or comma-delimited. An '
+                            'unknown value is a 400, never an empty result.'),
+            OpenApiParameter('oncogenes_only', bool, OpenApiParameter.QUERY, required=False,
+                description='Only rows carrying at least one catalogued oncogene.'),
+            OpenApiParameter('project_id', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('project_name', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('sample_name', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('sample_type', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('cancer_type', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('tissue', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('reference_build', str, OpenApiParameter.QUERY, required=False,
+                description='hg19 or hg38; GRCh37 and GRCh38 are accepted and folded.'),
+            OpenApiParameter('fields', str, OpenApiParameter.QUERY, required=False,
+                description='Comma-delimited subset of the row fields to return.'),
+            OpenApiParameter('limit', int, OpenApiParameter.QUERY, required=False,
+                description=f'Rows per page, 1-{api_features.MAX_LIMIT}, default {api_features.DEFAULT_LIMIT}.'),
+            OpenApiParameter('cursor', str, OpenApiParameter.QUERY, required=False,
+                description='Opaque cursor from a previous response\'s next_cursor.'),
+            OpenApiParameter('count_only', bool, OpenApiParameter.QUERY, required=False,
+                description='Return only the count and the build breakdown.'),
+        ],
+        responses={200: api_schema.FeatureSearchSerializer,
+                   400: api_schema.BAD_REQUEST,
+                   401: api_schema.AUTH_REQUIRED,
+                   429: api_schema.RATE_LIMITED,
+                   503: api_schema.INDEX_UNAVAILABLE},
+        tags=['search'],
+    )
+    def get(self, request):
+        user, err = _authenticate_api_request(request)
+        if err:
+            return err
+        try:
+            body = api_features.search_features(request.query_params, user, request)
+        except api_features.FeatureQueryError as exc:
+            return api_error(exc.message, exc.code, exc.status_code)
+        return Response(body)
+
+
+# ── GET /api/v1/features/facets/ ─────────────────────────────────────────────
+
+class FeatureFacetsView(APIView):
+    """
+    The values a caller can actually filter on, with counts.
+
+    curl example:
+        curl https://ampliconrepository.org/api/v1/features/facets/
+    """
+    permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
+
+    @extend_schema(
+        operation_id='featureFacets',
+        summary='Discover filter values',
+        description=(
+            'Every classification, sample type, cancer type, tissue and '
+            'reference build that appears in the rows the caller may read, '
+            'with a count for each. Read this before filtering on metadata: '
+            'metadata is not unified across projects, so a reasonable guess '
+            'usually returns an empty result rather than an error.'),
+        responses={200: api_schema.FeatureFacetsSerializer,
+                   401: api_schema.AUTH_REQUIRED,
+                   429: api_schema.RATE_LIMITED,
+                   503: api_schema.INDEX_UNAVAILABLE},
+        tags=['search'],
+    )
+    def get(self, request):
+        user, err = _authenticate_api_request(request)
+        if err:
+            return err
+        try:
+            return Response(api_features.feature_facets(user))
+        except api_features.FeatureQueryError as exc:
+            return api_error(exc.message, exc.code, exc.status_code)

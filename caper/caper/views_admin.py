@@ -1561,7 +1561,7 @@ def make_project_current(request, project_id):
     
     if request.method == "POST":
         from bson.objectid import ObjectId
-        from .site_stats import add_project_to_site_statistics
+        from .project_events import project_changed
         from .utils import normalize_visibility_field
 
         try:
@@ -1585,7 +1585,7 @@ def make_project_current(request, project_id):
             )
             
             if result.modified_count > 0:
-                add_project_to_site_statistics(
+                project_changed(
                     project, normalize_visibility_field(project.get('private', 'private')))
                 
                 messages.success(request, f"Project {project_id} has been set to current=True and added to site statistics")

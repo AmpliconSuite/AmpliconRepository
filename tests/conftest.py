@@ -144,6 +144,25 @@ def _poll_until_finished(collection, project_id,
     return None
 
 
+def _download_bytes(response):
+    """Return a download response's body, streaming or not.
+
+    ``create_zip_response()`` returns a streaming response so that a multi-GB
+    archive is not assembled in memory, and a streaming response has no
+    ``.content``.  Reading it here keeps these assertions about the bytes that
+    reach the client rather than about which response class produced them.
+    """
+    if getattr(response, 'streaming', False):
+        try:
+            return b''.join(response.streaming_content)
+        finally:
+            # The archive is removed when the response is closed, which in
+            # production the WSGI server does.  A test that walks away without
+            # closing leaves a .zip in the repository root.
+            response.close()
+    return response.content
+
+
 def _cleanup_project(collection, project_id):
     """
     Fully remove all artifacts created for a test project:
@@ -178,6 +197,22 @@ def _cleanup_project(collection, project_id):
         logging.info(f"[cleanup] Deleted MongoDB document {project_id}")
     except Exception as e:
         logging.warning(f"[cleanup] Could not delete MongoDB document {project_id}: {e}")
+
+    # Through the application, for the same reason the GridFS step above is:
+    # this deletes the document directly rather than through a view, so no
+    # lifecycle hook fires and the feature index would keep the project's rows.
+    # A full suite run left 56 orphaned projects in the index before this was
+    # added -- harmless, since the rows are derived and a rebuild clears them,
+    # but it makes the drift check report noise on a developer's machine and a
+    # check nobody reads is a check that is not doing anything.
+    try:
+        from caper.feature_index import unindex_project
+
+        removed = unindex_project(ObjectId(project_id))
+        if removed:
+            logging.info(f"[cleanup] Removed {removed} feature index row(s) for {project_id}")
+    except Exception as e:
+        logging.warning(f"[cleanup] Could not clear feature index rows for {project_id}: {e}")
 
     tmp_path = os.path.join(TMP_DIR, project_id)
     try:
