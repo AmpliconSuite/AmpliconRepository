@@ -16,6 +16,7 @@ the suite, not the code.  So these insert a known corpus, force the guard true,
 and scope every query to their own project.
 """
 
+from urllib.parse import quote
 import pytest
 
 from caper import api_features
@@ -363,13 +364,24 @@ def test_a_stale_index_is_a_503_and_not_an_empty_answer(monkeypatch):
 
 
 def test_facet_values_are_all_filterable(corpus):
-    """Every value the facets endpoint advertises must be one the filter accepts.
+    """Every facet must be filterable *under the name the facets response uses*.
 
-    The point of facets is that a client stops guessing at the vocabulary.  A
-    value it offers that the filter then rejects with a 400 is worse than
-    silence: it reads as a supported query.  Measured on the local corpus when
-    this was written, the classification facet offered 'NA' and
-    ?classification=NA was a 400.
+    The point of facets is that a client stops guessing -- so the name it reads
+    there has to be the name the filter accepts, and the count it reads there
+    has to be the count filtering on that value returns.  Both halves matter,
+    and only the first was checked before.
+
+    The earlier version of this test carried a translation map with
+    ``'tissue_of_origin': 'tissue'`` in it, encoding the very mismatch it should
+    have failed on.  Because it only asserted "not a 400", it passed while
+    ``?tissue_of_origin=lung`` silently dropped the parameter and returned the
+    whole corpus -- 37,795 rows on prod against the 33,722 the facet advertised.
+    An ignored filter is worse than a rejected one: the caller gets a plausible
+    number back and no way to tell it answers a different question.
+
+    So: no translation map, and compare counts, not statuses.  Facets and search
+    run the same access filter over the same index, so the two counts are
+    comparable exactly, whatever else is in the collection.
     """
     from caper.views_apis import FeatureFacetsView
     request = RequestFactory(SERVER_NAME='localhost').get('/api/v1/features/facets/')
@@ -377,23 +389,50 @@ def test_facet_values_are_all_filterable(corpus):
     facets = FeatureFacetsView.as_view()(request)
     assert facets.status_code == 200
 
-    param_for = {
-        'classification': 'classification',
-        'sample_type': 'sample_type',
-        'cancer_type': 'cancer_type',
-        'tissue_of_origin': 'tissue',
-        'reference_build': 'reference_build',
-    }
-    rejected = []
-    for facet_name, param in param_for.items():
-        for entry in facets.data.get(facet_name, []):
-            resp = _get('?%s=%s&count_only=true' % (param, entry['value']))
+    wrong = []
+    total = facets.data['total_rows']
+    assert total > 0
+    for facet_name, entries in facets.data['facets'].items():
+        for entry in entries:
+            resp = _get('?%s=%s&count_only=true'
+                        % (facet_name, quote(str(entry['value']))))
             if resp.status_code != 200:
-                rejected.append((facet_name, entry['value'], resp.status_code,
-                                 resp.data.get('code')))
-    assert not rejected, (
-        'these values are advertised by /facets/ and refused by the filter:\n'
-        + '\n'.join('  %s=%r -> %s %s' % r for r in rejected))
+                wrong.append('%s=%r advertised by /facets/, refused by the '
+                             'filter: %s %s' % (facet_name, entry['value'],
+                                                resp.status_code,
+                                                resp.data.get('code')))
+            elif resp.data['count'] != entry['count']:
+                wrong.append('%s=%r: /facets/ says %d, filtering returns %d'
+                             % (facet_name, entry['value'], entry['count'],
+                                resp.data['count']))
+    assert not wrong, 'facets and the filter disagree:\n  ' + '\n  '.join(wrong)
+
+
+def test_an_unknown_parameter_is_refused(corpus):
+    """A parameter this endpoint does not implement is a 400, never silence.
+
+    Silently ignoring it returns the unfiltered corpus, which the caller reads
+    as the answer to the narrower question they asked.  That is how the
+    ``tissue_of_origin`` mismatch above stayed invisible, and it is the failure
+    mode an agent composing a query from the OpenAPI document is most likely to
+    hit -- a plausible name that does not exist.
+    """
+    resp = _get('?nonsense_parameter=xyz')
+    assert resp.status_code == 400
+    assert resp.data['code'] == 'invalid_parameter'
+    assert 'nonsense_parameter' in resp.data['error']
+
+
+def test_the_legacy_tissue_alias_still_answers(corpus):
+    """``tissue`` was the original name and is still accepted.
+
+    Renaming a published parameter without keeping the old one working breaks
+    whoever already wrote the old spelling.
+    """
+    canonical = _get('?tissue_of_origin=Lung&count_only=true')
+    legacy = _get('?tissue=Lung&count_only=true')
+    assert canonical.status_code == legacy.status_code == 200
+    assert canonical.data['count'] == legacy.data['count']
 
 
 def test_a_build_outside_the_fold_map_is_still_filterable(corpus):

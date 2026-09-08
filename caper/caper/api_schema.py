@@ -270,9 +270,21 @@ class FacetValueSerializer(serializers.Serializer):
     count = serializers.IntegerField()
 
 
-class FeatureFacetsSerializer(serializers.Serializer):
+class FacetSetSerializer(serializers.Serializer):
     classification = FacetValueSerializer(many=True)
     sample_type = FacetValueSerializer(many=True)
     cancer_type = FacetValueSerializer(many=True)
     tissue_of_origin = FacetValueSerializer(many=True)
     reference_build = FacetValueSerializer(many=True)
+
+
+class FeatureFacetsSerializer(serializers.Serializer):
+    """Facet values, plus the total they should be read against.
+
+    Each key under ``facets`` is also the query parameter that filters on it.
+    A facet's counts summing to less than ``total_rows`` means the remaining
+    rows carry no value for that field at all, so a filter on it can never
+    reach them -- the filtered count is a floor, not an answer.
+    """
+    total_rows = serializers.IntegerField()
+    facets = FacetSetSerializer()
