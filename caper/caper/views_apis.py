@@ -138,6 +138,7 @@ class FileUploadView(APIView):
             create_project_helper, extract_project_files,
             upload_file_to_s3
         )
+        from .project_events import project_content_changed
         
         logging.info('starting api helper')
         project, tmp_id = create_project_helper(form, current_user, request_file, save = False, tmp_id = api_id, from_api = True)
@@ -145,6 +146,14 @@ class FileUploadView(APIView):
             project['project_name'] = actual_proj_name
         logging.info('the project is here: ')
         new_id = collection_handle.insert_one(project)
+        # Index-only.  The project is LIVE and therefore indexable from here;
+        # extract_project_files fills in runs on another thread and reindexes
+        # when it does.  Without this the project is indexable-but-unindexed for
+        # the length of the aggregation, which index_coverage() reads as the
+        # whole index being behind.  Statistics are deliberately left alone:
+        # this path has never counted an API upload in site_statistics, and
+        # changing that is a separate question from making it searchable.
+        project_content_changed(new_id.inserted_id)
         logging.info(str(new_id))
         project_data_path = os.path.join(settings.MEDIA_ROOT, api_id)
         # move the project location to a new name using the UUID to prevent name collisions

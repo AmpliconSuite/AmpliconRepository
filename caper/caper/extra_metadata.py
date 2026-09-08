@@ -6,6 +6,7 @@ from collections import Counter
 import pandas as pd
 
 from .utils import *
+from .project_events import project_content_changed
 
 # Columns that carry sample identity rather than a metadata value. They are
 # indexed for lookup (see _build_metadata_lookup_from_dataframe) and are not
@@ -328,6 +329,13 @@ def process_metadata(request, project_id, remap_name_to_alias=False):
             {'_id': ObjectId(project_id)},
             {'$set': {'runs': runs}}
         )
+        # A metadata sheet rewrites Cancer_type / Sample_type / Tissue_of_origin
+        # inside runs, which the feature index copies out and searches on.  This
+        # is a content change with no change to whether the project is
+        # indexable, so index_coverage() cannot see it: without this call the
+        # index keeps serving the pre-sheet values and the search disagrees with
+        # the project page, with nothing to say so.
+        project_content_changed(project_id)
         return "complete"
 
     except Exception as e:

@@ -144,6 +144,25 @@ def _poll_until_finished(collection, project_id,
     return None
 
 
+def _download_bytes(response):
+    """Return a download response's body, streaming or not.
+
+    ``create_zip_response()`` returns a streaming response so that a multi-GB
+    archive is not assembled in memory, and a streaming response has no
+    ``.content``.  Reading it here keeps these assertions about the bytes that
+    reach the client rather than about which response class produced them.
+    """
+    if getattr(response, 'streaming', False):
+        try:
+            return b''.join(response.streaming_content)
+        finally:
+            # The archive is removed when the response is closed, which in
+            # production the WSGI server does.  A test that walks away without
+            # closing leaves a .zip in the repository root.
+            response.close()
+    return response.content
+
+
 def _cleanup_project(collection, project_id):
     """
     Fully remove all artifacts created for a test project:

@@ -4312,6 +4312,16 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 })),
             }
             collection_handle.insert_one(placeholder_project)
+            # Index-only, deliberately.  The placeholder is LIVE from this
+            # moment, so it is indexable, and an indexable project with no
+            # manifest row makes index_coverage() report the index incomplete --
+            # which switches every search on the site back to the slow path
+            # until aggregation finishes.  It holds no runs yet, so this writes
+            # a manifest row and zero feature rows.  It must NOT go through
+            # project_changed(): that also counts the project in
+            # site_statistics, and the real document is counted when
+            # aggregation finishes, so the placeholder would be counted twice.
+            project_content_changed(ObjectId(temp_proj_id))
             logging.info(f"EditProject - placeholder insert complete for new version {temp_proj_id}")
             # Audit log is written inside _process_and_aggregate_files after aggregation
             # completes (or fails), so it captures the real S3 URI, file size, and sample count.
@@ -4351,6 +4361,9 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             # Clean up the failed placeholder if it was inserted
             try:
                 collection_handle.delete_one({'_id': ObjectId(temp_proj_id)})
+                # The placeholder was indexed on insert; the document is gone
+                # now, so this re-read finds nothing and drops its rows.
+                project_content_changed(ObjectId(temp_proj_id))
             except:
                 pass
 
@@ -4361,6 +4374,10 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                     {'$set': status_flags(LIVE),
                      '$unset': {'delete_user': '', 'delete_date': ''}}
                 )
+                # project_delete already ran, which took this project out of the
+                # index.  Restoring it to LIVE without putting the rows back
+                # leaves the index short of a live project for good.
+                project_content_changed(ObjectId(project_name))
             except Exception as rb_err:
                 logging.error(f"Failed to rollback old project {project_name}: {rb_err}")
             
@@ -5048,6 +5065,10 @@ def create_empty_project(request):
             {'_id': ObjectId(project_id)},
             {"$set": {'linkid': project_id}}
         )
+        # An empty project is a real LIVE project that happens to hold no runs.
+        # It contributes no feature rows but must still be counted as indexed,
+        # or index_coverage() reads the site as permanently behind.
+        project_content_changed(ObjectId(project_id))
 
         # Create empty project directory structure
         project_data_path = f"tmp/{project_id}"
@@ -5729,6 +5750,9 @@ def create_project(request):
         }
         
         collection_handle.insert_one(placeholder_project)
+        # Index-only; see the note on the edit path's placeholder for why this
+        # must not be project_changed().
+        project_content_changed(placeholder_project['_id'])
         logging.info(f"CreateProject - placeholder insert complete")
         # Audit log is written inside _process_and_aggregate_files after aggregation
         # completes (or fails), so it captures the real S3 URI, file size, and sample count.
