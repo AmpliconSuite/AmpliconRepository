@@ -52,6 +52,7 @@ from .classifications import (
     ACCEPTED_CLASSIFICATION_INPUTS, CANONICAL_CLASSIFICATIONS,
     NO_AMPLICON_CANONICAL, canonical_classification,
 )
+from .request_url import absolute_url
 from .feature_index import (
     REFERENCE_EQUIVALENCE, feature_index_handle, index_access_filter,
     index_is_usable, normalize_gene,
@@ -203,16 +204,34 @@ def parse_classifications(values):
 
 
 def parse_reference_build(value):
+    """Fold an equivalent build name, but never reject one the corpus contains.
+
+    REFERENCE_EQUIVALENCE folds the names that mean the same assembly (GRCh38 ->
+    hg38). It is not the list of builds that exist. Prod carries **mm10**, which
+    neither the local corpus nor dev had, so a static allowlist advertised mm10
+    through /facets/ and then answered ?reference_build=mm10 with a 400 -- the
+    same facets-versus-filter break this endpoint had for classification, found
+    the same way, on the first real query after it shipped.
+
+    So an unrecognised name is checked against the index before it is called a
+    typo. The distinct() runs only for a name outside the fold map, so the
+    common builds cost nothing.
+    """
     if not value:
         return None
     build = str(value).strip()
     normalized = REFERENCE_EQUIVALENCE.get(build, REFERENCE_EQUIVALENCE.get(build.lower()))
-    if not normalized:
-        raise FeatureQueryError(
-            f"Unknown reference build {build!r}. Valid values are: "
-            f"{', '.join(sorted(set(REFERENCE_EQUIVALENCE.values())))}.",
-            'invalid_parameter')
-    return normalized
+    if normalized:
+        return normalized
+
+    present = set(feature_index_handle.distinct('reference_build'))
+    for candidate in (build, build.lower()):
+        if candidate in present:
+            return candidate
+    known = sorted(set(REFERENCE_EQUIVALENCE.values()) | {p for p in present if p})
+    raise FeatureQueryError(
+        f"Unknown reference build {build!r}. Valid values are: "
+        f"{', '.join(known)}.", 'invalid_parameter')
 
 
 # ---------------------------------------------------------------------------
@@ -433,9 +452,13 @@ def row_to_dict(row, fields, request=None):
 
 
 def _absolute(request, path):
-    if request is None:
-        return path
-    return request.build_absolute_uri(path)
+    """Absolute URL for a row's links.
+
+    Via request_url, not build_absolute_uri: behind the TLS-terminating ELB the
+    container's own scheme is http, and prod handed out
+    http://ampliconrepository.org/... on the first request after this shipped.
+    """
+    return absolute_url(request, path)
 
 
 def reference_build_facet(query):
