@@ -1,20 +1,25 @@
 """
-Regression tests for the cost of the gene search page.
+Regression tests for the rollup and batch-download costs that /gene-search/
+exposed.
 
-Measured on production 2026-09-06, unauthenticated, whole-page wall time:
+The page itself was retired on 2026-09-08 -- it was the pre-2025 search, and
+/search_results/ replaced it -- but the code these tests pin down did not go
+with it:
+
+    sample_data_from_feature_list()  still renders project.html and class_search.html
+    batch_sample_download()          still serves the results table's checkboxes
+
+The measurements that motivated them, production 2026-09-06, are kept because
+they are what the assertions are calibrated against:
 
     /gene-search/?genequery=ZZZNOSUCHGENE   0 projects match     0.5-0.8 s
     /gene-search/?genequery=MYC             29 rows rendered     8.7-9.7 s
     /gene-search/                           16,950 rows          12.1-12.4 s
 
-The page therefore costs about nine seconds even when it returns twenty-nine
-rows: nearly all of it is fetching every matching project document -- ``runs``
-is 95.7% of their bytes -- and rolling every sample up.  Two of the three pieces
-this file pins down are the cheap half of that: the rollup itself, and the
-per-row URL reverse in the template.  The document fetch is not addressed here.
-
-The third is ``batch_sample_download``, which is the same read amplification in
-the download path: it fetched a full project document per *selected sample*.
+Nearly all of that was fetching every matching project document -- ``runs`` is
+95.7% of their bytes -- and rolling every sample up.  ``batch_sample_download``
+was the same read amplification in the download path: a full project document
+per *selected sample*.
 """
 
 import math
@@ -140,10 +145,11 @@ class TestGeneSearchTemplateCost:
                                                 mongo_collection):
         """Swapping {% url %} for a precomputed value must not move the link.
 
-        The top-level ``Oncogenes`` list is what the view's Mongo query filters
-        projects on, before it ever looks at ``runs``.
+        Asserted against /search_results/, not the retired /gene-search/. The
+        two rendered the same template, so retiring one left this guarantee
+        needing a live host -- and search_results is the one users reach.
         """
-        from caper.views import gene_search_page
+        from caper.views import search_results
 
         doc = {
             'project_name': 'GeneSearchUrlCost',
@@ -158,11 +164,11 @@ class TestGeneSearchTemplateCost:
         inserted = mongo_collection.insert_one(doc)
         project_id = str(inserted.inserted_id)
         try:
-            request = request_factory.get('/gene-search/',
-                                          {'genequery': 'GSCOSTGENE'})
+            request = request_factory.post('/search_results/',
+                                           {'genequery': 'GSCOSTGENE'})
             request.user = test_user
-            response = gene_search_page(request)
-            assert response.status_code == 200
+            response = search_results(request)
+            assert response.status_code == 200, response.status_code
             content = response.content.decode()
             assert f'href="/project/{project_id}"' in content
             assert 'GS_SAMPLE' in content
@@ -586,3 +592,55 @@ class TestDownloadCounterWrites:
                 f"{len(runs)} samples of one project: {counted}")
         finally:
             mongo_collection.delete_one({'_id': inserted.inserted_id})
+
+
+# ---------------------------------------------------------------------------
+# The retired route
+# ---------------------------------------------------------------------------
+
+class TestGeneSearchIsRetired:
+    """`/gene-search/` must redirect, not render and not 404.
+
+    The route is kept on purpose. Ten call sites in batch_sample_download and
+    handle_email_results redirect to it by name after a batch download, and
+    bingbot has the URL indexed -- a 301 answers both better than a 404 or a
+    rewrite of ten call sites.
+    """
+
+    def test_the_view_is_a_permanent_redirect_to_the_home_page(self, request_factory):
+        from django.contrib.auth.models import AnonymousUser
+        from caper.views import gene_search_page
+
+        request = request_factory.get('/gene-search/')
+        request.user = AnonymousUser()
+        response = gene_search_page(request)
+
+        assert response.status_code == 301, (
+            f'expected a permanent redirect, got {response.status_code}')
+        assert response.url == '/', response.url
+
+    def test_a_query_string_does_not_resurrect_the_old_page(self, request_factory):
+        """The parameterised form is retired too, not just the landing page."""
+        from django.contrib.auth.models import AnonymousUser
+        from caper.views import gene_search_page
+
+        request = request_factory.get('/gene-search/?genequery=MYC')
+        request.user = AnonymousUser()
+        response = gene_search_page(request)
+        assert response.status_code == 301, response.status_code
+
+    def test_the_route_name_still_resolves(self):
+        """Ten internal redirects name this route; removing it would 500 them."""
+        from django.urls import reverse
+        assert reverse('gene_search_page') == '/gene-search/'
+
+    def test_nothing_still_renders_the_retired_view(self):
+        """The 194-line query-and-rollup body is gone, not merely unreachable."""
+        import inspect
+        from caper.views import gene_search_page
+
+        source = inspect.getsource(gene_search_page)
+        assert 'collection_handle' not in source, (
+            'the retired view still queries the projects collection')
+        assert len(source.splitlines()) < 40, (
+            'the retired view still carries its old body')

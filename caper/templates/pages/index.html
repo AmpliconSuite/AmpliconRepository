@@ -1304,9 +1304,13 @@
         // reaches that listener and the link appears dead. Call the native
         // method instead.
         //
-        // The href is a real destination (the full search page) rather than
-        // '#', so middle-clicking, opening in a new tab, or landing here with
-        // scripts disabled goes somewhere useful instead of nowhere.
+        // The href is a real destination rather than '#', so middle-clicking,
+        // opening in a new tab, or landing here with scripts disabled goes
+        // somewhere useful instead of nowhere.  It points at the home page:
+        // it used to point at /gene-search/, which was retired -- that page
+        // was the pre-2025 search, had fewer filters than the box beside this
+        // link, and served 34 requests in three days, almost all of them
+        // crawlers and measurement traffic.
         $('#home-advanced').on('click', function (event) {
             var modalTrigger = document.getElementById('openSearchModal');
             if (!modalTrigger) {
@@ -1673,6 +1677,7 @@
                        placeholder="Find amplified genes, e.g. MYC or MYC&amp;EGFR"
                        aria-label="Search query">
                 <button type="submit">Search</button>
+                <a href="{% url 'index' %}" id="home-advanced" class="home-advanced">Advanced</a>
             </div>
             <div class="home-examples">
                 Try
@@ -1688,7 +1693,6 @@
                         data-tip="Searches Genes for amplicons carrying both CDK4 and MDM2">CDK4 &amp; MDM2</button>
                 <button type="button" class="home-ex" data-scope="metadata_cancer_tissue" data-query="glioblastoma"
                         data-tip="Searches Cancer type for glioblastoma">glioblastoma</button>
-                <a href="{% url 'gene_search_page' %}" id="home-advanced" class="home-advanced">Advanced</a>
             </div>
         </form>
 
