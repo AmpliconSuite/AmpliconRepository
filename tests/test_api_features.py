@@ -312,8 +312,13 @@ def test_anonymous_callers_never_see_a_private_row(corpus):
 
 
 class _Member:
-    """Just enough user for index_access_filter, which reads these three."""
+    """Just enough user for the code under test.
+
+    index_access_filter reads username/email/is_authenticated; the throttle
+    identifies an authenticated caller by pk.
+    """
     is_authenticated = True
+    pk = 1
 
     def __init__(self, username, email):
         self.username = username
@@ -426,3 +431,63 @@ def test_row_urls_use_the_scheme_the_client_used(corpus):
     row = resp.data['results'][0]
     assert row['project_url'].startswith('https://'), row['project_url']
     assert row['sample_url'].startswith('https://'), row['sample_url']
+
+
+# ---------------------------------------------------------------------------
+# Authenticated access, through the view
+# ---------------------------------------------------------------------------
+
+def test_a_token_gets_the_caller_their_private_rows(corpus, monkeypatch):
+    """The link the other membership test cannot reach.
+
+    test_a_member_sees_their_private_rows calls search_features directly,
+    because setting request.user does nothing -- the view resolves its caller
+    from an API token. That leaves the view's own wiring untested: token ->
+    user -> index_access_filter -> rows. This patches the authenticator rather
+    than the endpoint, so _authenticate_api_request still does its real work and
+    the whole chain is exercised.
+
+    This is the answer to "how does someone pull their private projects": a
+    token, and nothing else changes about the request.
+    """
+    from rest_framework.authentication import TokenAuthentication
+    from caper.views_apis import FeatureSearchView
+
+    member = _Member('someone', 'someone@example.org')
+    monkeypatch.setattr(TokenAuthentication, 'authenticate',
+                        lambda self, request: (member, 'a-token'))
+
+    request = RequestFactory(SERVER_NAME='localhost').get(
+        '/api/v1/features/?gene_any=MYC&limit=500',
+        HTTP_AUTHORIZATION='Token a-token')
+    request.user = AnonymousUser()
+    resp = FeatureSearchView.as_view()(request)
+
+    assert resp.status_code == 200, resp.data
+    ids = {row['project_id'] for row in resp.data['results']}
+    assert str(corpus['private']) in ids, 'a token did not unlock the caller\'s own rows'
+    assert str(corpus['public']) in ids
+
+
+def test_a_bad_token_is_401_and_not_a_quiet_downgrade(corpus, monkeypatch):
+    """A rejected token must not silently serve the anonymous view of the corpus.
+
+    Falling back to public results would hand the caller a smaller answer that
+    looks like a complete one -- the same failure the stale-index 503 exists to
+    prevent, arriving through the front door.
+    """
+    from rest_framework.exceptions import AuthenticationFailed
+    from rest_framework.authentication import TokenAuthentication
+    from caper.views_apis import FeatureSearchView
+
+    def reject(self, request):
+        raise AuthenticationFailed('Invalid token.')
+
+    monkeypatch.setattr(TokenAuthentication, 'authenticate', reject)
+    request = RequestFactory(SERVER_NAME='localhost').get(
+        '/api/v1/features/?gene_any=MYC', HTTP_AUTHORIZATION='Token nope')
+    request.user = AnonymousUser()
+    resp = FeatureSearchView.as_view()(request)
+
+    assert resp.status_code == 401
+    assert resp.data['code'] == 'invalid_token'

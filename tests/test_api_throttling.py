@@ -293,22 +293,46 @@ class TestConfiguration:
         """
         Guard against a new endpoint landing unthrottled, or naming a scope
         that has no rate in settings.
+
+        The views are enumerated from the URLconf, not listed here. A hand-kept
+        list is the defect this repository keeps finding, and this one had
+        already fallen behind: it named six views while /api/v1/ served eight,
+        so the two feature-search endpoints were outside the only test that
+        checks an endpoint is throttled at all.
         """
         from django.conf import settings
-        from caper import views_apis
+        from django.urls import get_resolver
         from caper.throttles import ApiScopedRateThrottle
 
-        expected = {
-            'ProjectListView':          'api_read',
-            'ProjectDetailView':        'api_read',
-            'ProjectSamplesView':       'api_read',
-            'ProjectDownloadView':      'api_download',
-            'ProjectBatchDownloadView': 'api_batch',
-            'ApiTokenView':             'api_token',
-        }
         rates = settings.REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']
-        for name, scope in expected.items():
-            view = getattr(views_apis, name)
-            assert getattr(view, 'throttle_scope', None) == scope, name
+        views = {}
+        for pattern in get_resolver().url_patterns:
+            route = str(getattr(pattern, 'pattern', ''))
+            if not route.startswith('api/v1/'):
+                continue
+            callback = getattr(pattern, 'callback', None)
+            view = getattr(callback, 'cls', getattr(callback, 'view_class', None))
+            if view is not None:
+                views[view.__name__] = view
+
+        assert len(views) >= 8, (
+            f'only found {sorted(views)} under /api/v1/ -- the URLconf walk has '
+            f'broken, so this test is no longer checking anything')
+
+        for name, view in sorted(views.items()):
+            # The schema document describes the API and is not itself throttled
+            # traffic worth limiting; it is static and cached.
+            if name == 'ApiSchemaView':
+                continue
+            scope = getattr(view, 'throttle_scope', None)
+            assert scope, f'{name} declares no throttle_scope'
             assert ApiScopedRateThrottle in view.throttle_classes, name
-            assert scope in rates, f'{scope} missing from DEFAULT_THROTTLE_RATES'
+            assert scope in rates, f'{name}: {scope} missing from DEFAULT_THROTTLE_RATES'
+
+            # ApiTokenView is how a caller *gets* a token, from a logged-in
+            # browser session, so there is no token in hand to raise its limit
+            # with. Every other v1 endpoint should reward authenticating.
+            if name != 'ApiTokenView':
+                assert f'{scope}_auth' in rates, (
+                    f'{name}: {scope} has no _auth rate, so a token would not '
+                    f'raise the limit and there is no reason to authenticate')
