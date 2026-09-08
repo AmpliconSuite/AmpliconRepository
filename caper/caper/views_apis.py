@@ -35,6 +35,7 @@ from .serializers import FileSerializer
 from .forms import RunForm
 from .classifications import _CANONICAL_CLASSIFICATION, _canonical_classifications
 from . import api_features
+from .request_url import absolute_base
 from .utils import (
     collection_handle, get_one_project, get_one_project_sans_runs, form_to_dict,
     get_latest_project_version, normalize_visibility_field, is_project_private,
@@ -1033,12 +1034,7 @@ class ProjectBatchDownloadView(APIView):
         # construct the base URL directly from META to avoid that.
         # Behind the TLS-terminating load balancer the WSGI scheme is 'http';
         # trust X-Forwarded-Proto (set by the ELB) so download_url is https.
-        forwarded_proto = request.META.get('HTTP_X_FORWARDED_PROTO', '')
-        scheme = (forwarded_proto.split(',')[0].strip()
-                  or request.META.get('wsgi.url_scheme')
-                  or ('https' if request.META.get('HTTPS') == 'on' else 'http'))
-        host = request.META.get('HTTP_HOST', '')
-        base = f'{scheme}://{host}' if host else ''
+        base = absolute_base(request)
         downloads, skipped = [], []
 
         for pid in ids:

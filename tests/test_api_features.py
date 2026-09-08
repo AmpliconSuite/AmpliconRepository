@@ -178,6 +178,11 @@ def corpus(monkeypatch):
              build='hg19'),
         # A sample the classifier found nothing in.
         _row(public, 'Pub', 'public', 'S3', 'S3_a1', 'NA', []),
+        # A build the fold map has never heard of.  Prod carries mm10 and
+        # neither dev nor the local corpus did, so a static allowlist advertised
+        # it through /facets/ and then 400'd anyone who filtered on it.
+        _row(public, 'Pub', 'public', 'S4', 'S4_a1', 'ecDNA', ['MYC'],
+             build='mm10'),
         # Not visible to an anonymous caller.
         _row(private, 'Priv', 'private', 'S9', 'S9_a1', 'ecDNA', ['MYC'],
              members=['someone@example.org']),
@@ -200,13 +205,13 @@ def _scoped(corpus, qs):
 
 
 def test_gene_any_is_an_or(corpus):
-    assert _scoped(corpus, 'gene_any=MYC&count_only=true').data['count'] == 2
-    assert _scoped(corpus, 'gene_any=MYC,EGFR&count_only=true').data['count'] == 3
+    assert _scoped(corpus, 'gene_any=MYC&count_only=true').data['count'] == 3
+    assert _scoped(corpus, 'gene_any=MYC,EGFR&count_only=true').data['count'] == 4
     assert _scoped(corpus, 'gene_any=NOSUCHGENE&count_only=true').data['count'] == 0
 
 
 def test_gene_matching_is_case_insensitive(corpus):
-    assert _scoped(corpus, 'gene_any=myc&count_only=true').data['count'] == 2
+    assert _scoped(corpus, 'gene_any=myc&count_only=true').data['count'] == 3
 
 
 def test_gene_all_means_the_same_sample_not_the_same_amplicon(corpus):
@@ -232,16 +237,16 @@ def test_gene_any_and_gene_all_combine_as_an_and(corpus):
 
 
 def test_classification_filter_and_the_no_amplicon_value(corpus):
-    assert _scoped(corpus, 'classification=ecDNA&count_only=true').data['count'] == 2
-    assert _scoped(corpus, 'classification=ECDNA&count_only=true').data['count'] == 2
+    assert _scoped(corpus, 'classification=ecDNA&count_only=true').data['count'] == 3
+    assert _scoped(corpus, 'classification=ECDNA&count_only=true').data['count'] == 3
     assert _scoped(corpus, 'classification=None&count_only=true').data['count'] == 1
     assert _scoped(corpus, 'classification=NA&count_only=true').data['count'] == 1
-    assert _scoped(corpus, 'classification=ecDNA,None&count_only=true').data['count'] == 3
+    assert _scoped(corpus, 'classification=ecDNA,None&count_only=true').data['count'] == 4
 
 
 def test_reference_build_breakdown_sums_to_the_count(corpus):
     resp = _scoped(corpus, 'count_only=true')
-    assert resp.data['reference_builds'] == {'hg38': 3, 'hg19': 1}
+    assert resp.data['reference_builds'] == {'hg38': 3, 'hg19': 1, 'mm10': 1}
     assert sum(resp.data['reference_builds'].values()) == resp.data['count']
 
 
@@ -367,6 +372,57 @@ def test_facet_values_are_all_filterable(corpus):
     facets = FeatureFacetsView.as_view()(request)
     assert facets.status_code == 200
 
-    for entry in facets.data['classification']:
-        resp = _get('?classification=%s&count_only=true' % entry['value'])
-        assert resp.status_code == 200, (entry, resp.data)
+    param_for = {
+        'classification': 'classification',
+        'sample_type': 'sample_type',
+        'cancer_type': 'cancer_type',
+        'tissue_of_origin': 'tissue',
+        'reference_build': 'reference_build',
+    }
+    rejected = []
+    for facet_name, param in param_for.items():
+        for entry in facets.data.get(facet_name, []):
+            resp = _get('?%s=%s&count_only=true' % (param, entry['value']))
+            if resp.status_code != 200:
+                rejected.append((facet_name, entry['value'], resp.status_code,
+                                 resp.data.get('code')))
+    assert not rejected, (
+        'these values are advertised by /facets/ and refused by the filter:\n'
+        + '\n'.join('  %s=%r -> %s %s' % r for r in rejected))
+
+
+def test_a_build_outside_the_fold_map_is_still_filterable(corpus):
+    """Prod carries mm10; the fold map only knows the human assemblies.
+
+    REFERENCE_EQUIVALENCE says which names mean the same assembly. It is not a
+    list of the assemblies that exist, and using it as one made every mm10 row
+    unreachable while /facets/ advertised them.
+    """
+    resp = _scoped(corpus, 'reference_build=mm10&count_only=true')
+    assert resp.status_code == 200, resp.data
+    assert resp.data['count'] == 1
+
+
+def test_a_build_that_is_in_neither_is_still_a_400(corpus):
+    """Checking the data must not turn every typo into an empty result."""
+    resp = _scoped(corpus, 'reference_build=hg17&count_only=true')
+    assert resp.status_code == 400
+    assert resp.data['code'] == 'invalid_parameter'
+
+
+def test_row_urls_use_the_scheme_the_client_used(corpus):
+    """Behind the TLS-terminating ELB the container's own scheme is http.
+
+    Prod handed out http://ampliconrepository.org/... on the first request after
+    this endpoint shipped, which is the same defect #600 logged against the
+    batch download's download_url.
+    """
+    from caper.views_apis import FeatureSearchView
+    request = RequestFactory(SERVER_NAME='ampliconrepository.org').get(
+        '/api/v1/features/?gene_any=MYC&limit=1&fields=project_url,sample_url',
+        HTTP_X_FORWARDED_PROTO='https')
+    request.user = AnonymousUser()
+    resp = FeatureSearchView.as_view()(request)
+    row = resp.data['results'][0]
+    assert row['project_url'].startswith('https://'), row['project_url']
+    assert row['sample_url'].startswith('https://'), row['sample_url']

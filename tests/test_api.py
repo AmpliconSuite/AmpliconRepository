@@ -13,6 +13,7 @@ BackgroundTaskStatusView (/api/background-task-status/) is a simple GET
 endpoint with no auth requirements and is always tested.
 """
 
+import time
 import os
 import pytest
 
@@ -107,17 +108,49 @@ def test_upload_api_accepts_tar_file(mongo_collection):
             },
             format='multipart')
 
+    before_ids = {d['_id'] for d in mongo_collection.find(
+        combine(NOT_DELETED_QUERY, project_name='APITest_Upload'), {'_id': 1})}
+
     response = FileUploadView.as_view()(resp)
 
     assert response.status_code == 201, \
         f"Expected 201 from FileUploadView, got {response.status_code}: {getattr(response, 'data', '')}"
 
-    # If a project document was created, clean it up
+    # Clean up the document THIS run created, which means waiting for it.
+    #
+    # FileUploadView hands off to api_helper on a thread and returns 201 before
+    # the project exists.  Looking it up by name straight away therefore finds
+    # the *previous* run's leftover and deletes that instead.  Traced with an
+    # instrumented collection handle, 2026-09-08: cleanup deleted 6aa0441a at
+    # t=0.69s and api_helper inserted 6aa0465b at t=0.72s.  The collection was
+    # left holding exactly one stale project forever, which is why a count that
+    # never moved off 1 never looked like a leak.
+    #
+    # Identify by id, not by name -- the same reason the gene search results
+    # table had to stop grouping projects by name.
     if response.status_code in (200, 201):
-        new_doc = mongo_collection.find_one(
-            combine(NOT_DELETED_QUERY, project_name='APITest_Upload'))
-        if new_doc:
-            _cleanup_project(mongo_collection, str(new_doc['_id']))
+        new_id = None
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            fresh = [d['_id'] for d in mongo_collection.find(
+                combine(NOT_DELETED_QUERY, project_name='APITest_Upload'),
+                {'_id': 1}) if d['_id'] not in before_ids]
+            if fresh:
+                new_id = fresh[0]
+                break
+            time.sleep(0.25)
+        assert new_id is not None, (
+            'api_helper never inserted a project. The endpoint returned 201 and '
+            'then did nothing, which the status code alone cannot tell you -- '
+            'this is the only check in the suite that covers that thread at all.')
+        # Let the extraction thread finish before removing the document out from
+        # under it, or it spends its time updating a document that is gone.
+        for _ in range(120):
+            doc = mongo_collection.find_one({'_id': new_id}, {'FINISHED?': 1})
+            if doc is None or doc.get('FINISHED?'):
+                break
+            time.sleep(0.25)
+        _cleanup_project(mongo_collection, str(new_id))
 
 
 # ---------------------------------------------------------------------------
