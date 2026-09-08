@@ -271,3 +271,21 @@ def test_the_flag_is_read_at_call_time():
 
     source = inspect.getsource(search.feature_index_search_enabled)
     assert 'settings' in source
+
+
+def test_the_results_table_lists_projects_by_id_not_by_name():
+    """A name is not an identity, and two LIVE projects can share one.
+
+    Measured on caper-dev 2026-09-07: four names are held by more than one LIVE
+    project, two of them both called 'test' with 118 samples and 7. Filtering
+    the results table by name listed both whenever a sample in either matched,
+    showing the description, date and sample count of a project that
+    contributed nothing to the search.
+    """
+    import inspect
+
+    from caper import search
+
+    source = inspect.getsource(search.perform_search)
+    assert 'public_project_ids' in source
+    assert 'proj["project_name"] in public_project_names' not in source

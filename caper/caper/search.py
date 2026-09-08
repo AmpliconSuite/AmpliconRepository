@@ -361,13 +361,19 @@ def perform_search(genequery=None,
         include_no_amp=include_no_amp, no_filter=no_filter
     )
 
-    # Extract project names from sample data
-    public_project_names = {sample["project_name"] for sample in public_sample_data}
-    private_project_names = {sample["project_name"] for sample in private_sample_data}
+    # Which projects actually contributed a row, by id.
+    #
+    # This used to match on project_name, and a name is not an identity: two
+    # LIVE projects may carry the same one. Measured on caper-dev 2026-09-07,
+    # four names are held by more than one LIVE project -- two private projects
+    # are both called 'test', with 118 samples and 7. A search matching a sample
+    # in one of them listed *both* in the results table, with the description,
+    # date and sample count of a project that contributed nothing to the search.
+    public_project_ids = {sample["project_linkid"] for sample in public_sample_data}
+    private_project_ids = {sample["project_linkid"] for sample in private_sample_data}
 
-    # Filter projects to only include those found in sample data
-    public_projects = [proj for proj in public_projects if proj["project_name"] in public_project_names]
-    private_projects = [proj for proj in private_projects if proj["project_name"] in private_project_names]
+    public_projects = [proj for proj in public_projects if proj["_id"] in public_project_ids]
+    private_projects = [proj for proj in private_projects if proj["_id"] in private_project_ids]
 
     return {
         "public_projects": public_projects,
