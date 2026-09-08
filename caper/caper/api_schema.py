@@ -213,3 +213,66 @@ LOGIN_REQUIRED = _err(
 
 NO_TOKEN = _err('The caller has no token to revoke.', 'no_token',
                 'No active token to revoke')
+
+
+INDEX_UNAVAILABLE = _err(
+    'The search index is rebuilding and cannot answer accurately yet.',
+    'index_unavailable',
+    'The search index is rebuilding and cannot answer accurately yet. Retry shortly.',
+    status_code=503)
+
+
+class FeatureRowSerializer(serializers.Serializer):
+    """One focal amplification, as a search result.
+
+    `genes` and `oncogenes` are reported in the spelling the source data uses,
+    not the upper-cased form the index matches on -- 1,083 symbols in the corpus
+    are not upper-case, and reporting C17ORF37 for C17orf37 would be reporting a
+    name that does not exist.
+    """
+    project_id = serializers.CharField()
+    project_name = serializers.CharField()
+    sample_name = serializers.CharField()
+    feature_id = serializers.CharField()
+    classification = serializers.CharField(
+        help_text='Amplicon class in the same spelling the sample rows use: '
+                  'ecDNA, BFB, Linear, Complex-non-cyclic, FAN, Virus.')
+    genes = serializers.ListField(child=serializers.CharField())
+    oncogenes = serializers.ListField(child=serializers.CharField())
+    locations = serializers.ListField(child=serializers.CharField())
+    reference_build = serializers.CharField()
+    sample_type = serializers.CharField(allow_null=True)
+    cancer_type = serializers.CharField(allow_null=True)
+    tissue_of_origin = serializers.CharField(allow_null=True)
+    project_url = serializers.CharField()
+    sample_url = serializers.CharField(
+        help_text='Fetch this to get the sample rows behind the match. Search '
+                  'returns rows, never payload; every row carries the URL to '
+                  'fetch its data.')
+
+
+class FeatureSearchSerializer(serializers.Serializer):
+    count = serializers.IntegerField(
+        help_text='Total matching rows, not the number on this page.')
+    results = FeatureRowSerializer(many=True)
+    next_cursor = serializers.CharField(
+        allow_null=True,
+        help_text='Pass as ?cursor= for the next page. Null on the last page.')
+    reference_builds = serializers.DictField(
+        child=serializers.IntegerField(),
+        help_text='How the whole result set splits by reference build. Gene '
+                  'symbols are build-dependent, so a zero on one build is the '
+                  'signal that the gene may exist there under another name.')
+
+
+class FacetValueSerializer(serializers.Serializer):
+    value = serializers.CharField()
+    count = serializers.IntegerField()
+
+
+class FeatureFacetsSerializer(serializers.Serializer):
+    classification = FacetValueSerializer(many=True)
+    sample_type = FacetValueSerializer(many=True)
+    cancer_type = FacetValueSerializer(many=True)
+    tissue_of_origin = FacetValueSerializer(many=True)
+    reference_build = FacetValueSerializer(many=True)

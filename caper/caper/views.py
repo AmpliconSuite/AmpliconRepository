@@ -63,7 +63,7 @@ from .views_apis import (
     FileUploadView, ProjectFileAddView, BackgroundTaskStatusView,
     ProjectListView, ProjectDetailView, ProjectSamplesView,
     ProjectDownloadView, ProjectBatchDownloadView, ApiTokenView,
-    ApiSchemaView,
+    ApiSchemaView, FeatureSearchView, FeatureFacetsView,
 )
 
 # from django.views.generic import TemplateView
