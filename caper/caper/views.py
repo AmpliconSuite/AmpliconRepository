@@ -2862,199 +2862,33 @@ def png_download(request, project_name, sample_name, feature_name, feature_id):
 #
 
 def gene_search_page(request):
-    genequery = request.GET.get("genequery")
-    if genequery:
-        genequery = genequery.upper()
-        gen_query = {'$regex': genequery}
-    else:
-        genequery = ""
-        gen_query = {'$regex': ''}
+    """Permanently redirect the retired advanced search to the home page.
 
-    logging.debug("Performing gene search")
+    `/gene-search/` was added on 2022-11-30 ("get ready for demo") and was
+    superseded by the search redesign of 2025-02-13, which added
+    `/search_results/` and the home page search box that posts to it. The old
+    page was never removed, so the site carried two search implementations
+    sharing no query code -- and the older one was strictly less capable: three
+    parameters against five, all three of them among the five.
 
-    classquery = request.GET.get("classquery", "")
-    if classquery:
-        classquery = classquery.upper()
-        class_query = {'$regex': classquery}
-    else:
-        class_query = {'$regex': ''}
+    Three days of production ALB logs (130,338 requests, 2026-09-06 to 09-08)
+    found 34 requests here: sixteen from one address running measurements, about
+    seven from bingbot, two that abandoned the load, one blocked bot. Against 30
+    requests to `/search_results/` from ten distinct addresses worldwide. Nobody
+    was using it.
 
-    # Get the combined cancer/tissue field
-    metadata_cancer_tissue = request.GET.get("metadata_cancer_tissue", "")
+    Retiring it closes #635 -- Feature ID, Genes and Classification rendered
+    empty on every row here, because this view produced per-sample rollups while
+    the template reads per-feature keys. `/search_results/` renders the same
+    template and fills those columns correctly, so the defect went with the
+    view rather than needing a fix.
 
-    # A bare /gene-search/ is a landing page, not a search.  It used to answer it
-    # by rendering the entire corpus: 16,950 rows and 15,683,226 bytes of HTML,
-    # ~11 s of server time, and ~49 s of blocked main thread while DataTables
-    # ingested 152,678 cells to show 25 of them.  Nobody was reading it -- over
-    # three days of production ALB logs (627,888 lines, 2026-09-05 to 09-07) the
-    # route took 41 requests, and once this laptop's own measurement traffic is
-    # excluded every external non-bot request either abandoned the load (7 x 460)
-    # or came from a scanner.  The two clients that did abandon it arrived by
-    # being redirected here from a GET on /search_results/.
-    #
-    # So the corpus dump is skipped unless the request actually asks something.
-    # A query still searches, which keeps the parameterised route and its tests
-    # working; only the empty case changes.
-    search_submitted = any(
-        request.GET.get(key, "").strip()
-        for key in ("genequery", "classquery", "metadata_cancer_tissue"))
-    if not search_submitted:
-        return render(request, "pages/gene_search.html", {
-            "landing": True,
-            "public_projects": [], "private_projects": [],
-            "public_sample_data": [], "private_sample_data": [],
-            "public_project_filters": [], "private_project_filters": [],
-            "public_projects_count": 0, "private_projects_count": 0,
-            "public_samples_count": 0, "private_samples_count": 0,
-        })
-
-    # Gene Search
-    if request.user.is_authenticated:
-        username = request.user.username
-        useremail = request.user.email
-        query_obj = status_query(
-            LIVE,
-            private={'$in': RESTRICTED_QUERY_VALUES},
-            Oncogenes=gen_query,
-            **{"$or": [{"project_members": username}, {"project_members": useremail}]})
-
-        private_projects = list(collection_handle.find(query_obj))
-        # private_projects = get_projects_close_cursor(query_obj)
-    else:
-        private_projects = []
-
-    public_projects = list(collection_handle.find(status_query(
-        LIVE, private={'$in': PUBLIC_QUERY_VALUES}, Oncogenes=gen_query)))
-
-    for proj in private_projects:
-        prepare_project_linkid(proj)
-        proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
-    for proj in public_projects:
-        prepare_project_linkid(proj)
-        proj['visibility_display'] = format_visibility_for_display(proj.get('private', False))
-
-    def collect_class_data(projects):
-        sample_data = []
-        for project in projects:
-            project_name = project['project_name']
-            project_linkid = project['_id']
-            features = project['runs']
-            features_list = replace_space_to_underscore(features)
-
-            # Include zero-feature samples (runs entries with empty lists)
-            if isinstance(features, dict):
-                cached_sample_meta = {}
-                for sd in project.get('sample_data', []) or []:
-                    sn = sd.get('Sample_name')
-                    if sn:
-                        cached_sample_meta[sn] = sd
-
-                for run_key, feature_list_entry in features.items():
-                    if not feature_list_entry:  # empty list — zero features
-                        cached = cached_sample_meta.get(run_key, {})
-                        placeholder = {
-                            'Sample_name': run_key,
-                            'Feature_ID': 'NA',
-                            'Classification': 'No FSCNA',
-                            'All_genes': [],
-                            'Oncogenes': [],
-                            'Sample_type': cached.get('Sample_type', ''),
-                            'Cancer_type': cached.get('Cancer_type', ''),
-                            'Tissue_of_origin': cached.get('Tissue_of_origin', ''),
-                        }
-                        features_list.append(placeholder)
-
-            if not features_list:
-                continue
-
-            data = sample_data_from_feature_list(features_list)
-
-            # One reverse() per project rather than one per row.  The template
-            # called {% url %} inside the row loop, which re-resolved the route
-            # for all 16,950 rows of the unfiltered search; project_linkid only
-            # takes as many distinct values as there are projects.
-            project_url = reverse('project_page',
-                                  kwargs={'project_name': str(project_linkid)})
-
-            for sample in data:
-                sample['project_name'] = project_name
-                sample['project_linkid'] = project_linkid
-                sample['project_url'] = project_url
-
-                # Gene and classification checks
-                gene_match = (genequery in sample['Oncogenes'] or len(genequery) == 0)
-                upperclass = list(map(str.upper, sample['Classifications']))
-                class_match = (classquery in upperclass or len(classquery) == 0)
-
-                # Cancer type or tissue of origin check
-                cancer_tissue_match = True  # Default to True if no filter
-                if metadata_cancer_tissue:
-                    cancer_type = sample.get('Cancer_type', '').lower()
-                    tissue_origin = sample.get('Tissue_of_origin', '').lower()
-                    cancer_tissue_match = (
-                            metadata_cancer_tissue.lower() in cancer_type or
-                            metadata_cancer_tissue.lower() in tissue_origin
-                    )
-
-                # Only add the sample if all filters match
-                if gene_match and class_match and cancer_tissue_match:
-                    sample_data.append(sample)
-
-        return sample_data
-
-    public_sample_data = collect_class_data(public_projects)
-    private_sample_data = collect_class_data(private_projects)
-
-    # Calculate project filter data with counts
-    def get_project_filters(sample_data):
-        """Generate a list of projects with sample counts for filtering"""
-        project_counts = {}
-        for sample in sample_data:
-            project_id = sample['project_linkid']
-            project_name = sample['project_name']
-            sample_name = sample.get('Sample_name')
-            
-            if project_id not in project_counts:
-                project_counts[project_id] = {
-                    'id': project_id,
-                    'name': project_name,
-                    'count': 0,
-                    'unique_samples': set()  # Track unique sample names
-                }
-            
-            # Add sample to the set (automatically handles duplicates)
-            if sample_name:
-                project_counts[project_id]['unique_samples'].add(sample_name)
-        
-        # Convert sets to counts and remove the sets before returning
-        for project_id in project_counts:
-            project_counts[project_id]['count'] = len(project_counts[project_id]['unique_samples'])
-            del project_counts[project_id]['unique_samples']
-        
-        # Sort by project name
-        return sorted(project_counts.values(), key=lambda x: x['name'])
-
-    public_project_filters = get_project_filters(public_sample_data)
-    private_project_filters = get_project_filters(private_sample_data)
-
-    # for display on the results page
-    if len(classquery) == 0:
-        classquery = "all amplicon types"
-
-    return render(request, "pages/gene_search.html",
-                  {'public_projects': public_projects, 'private_projects': private_projects,
-                   'public_sample_data': public_sample_data, 'private_sample_data': private_sample_data,
-                   'public_project_filters': public_project_filters,
-                   'private_project_filters': private_project_filters,
-                   'gene_query': genequery, 'class_query': classquery,
-                   'query_info': {
-                       "Project Name": request.GET.get("project_name", ""),
-                       "Sample Name": request.GET.get("metadata_sample_name", ""),
-                       "Gene": genequery,
-                       "Classification": classquery,
-                       "Sample Type": request.GET.get("metadata_sample_type", ""),
-                       "Cancer Type or Tissue": metadata_cancer_tissue
-                   }})
+    The route and its name are kept deliberately: ten call sites in
+    `batch_sample_download` and `handle_email_results` redirect here after a
+    batch download, bingbot has the URL indexed, and a 301 is a better answer to
+    both than a 404.
+    """
+    return redirect('index', permanent=True)
 
 
 

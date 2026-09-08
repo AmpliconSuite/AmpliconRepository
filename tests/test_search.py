@@ -2,14 +2,17 @@
 Integration tests for project search: gene search, full-text search,
 tissue/classification filters, and access-control visibility in results.
 
-Note on gene_search_page vs search_results:
-  - gene_search_page (GET /gene-search/) queries MongoDB using legacy boolean
-    values only (private=False for public).  String-format projects ('public')
-    are NOT returned by that view.  Tests that need a project to appear in
-    gene_search_page results temporarily set private=False (legacy boolean).
-  - search_results (POST /search_results/) uses perform_search(), which
-    handles both boolean and string visibility formats.  Tests using
-    search_results set private='public'.
+Note on visibility encodings:
+  - Projects carry `private` as either a legacy boolean or one of the visibility
+    strings. visibility.py normalises both, and the tests below that need a
+    public project set the legacy boolean deliberately, to keep that path
+    covered.
+  - /gene-search/ was retired on 2026-09-08; it was the pre-2025 search, and
+    /search_results/ (POST) is the live one. The tests that exercised the old
+    view's rendering are gone -- TestGeneSearchIsRetired in
+    tests/test_gene_search_cost.py pins the redirect that replaced it -- and the
+    one that covered legacy-boolean visibility was repointed rather than
+    dropped.
 """
 
 import re
@@ -33,7 +36,7 @@ from conftest import (
 # ---------------------------------------------------------------------------
 
 def _set_public_legacy(collection, project_id):
-    """Set private=False (legacy boolean) so gene_search_page finds the project."""
+    """Set private=False (legacy boolean) so the search finds the project."""
     collection.update_one(
         {'_id': ObjectId(project_id)},
         {'$set': {'private': False}})
@@ -968,44 +971,23 @@ def test_cancer_type_and_operator(request_factory, test_user, mongo_collection):
 
 
 # ---------------------------------------------------------------------------
-# gene_search_page tests (GET /gene-search/)
+# legacy-boolean visibility, through the live search
 # ---------------------------------------------------------------------------
-
-@pytest.mark.integration
-@pytest.mark.functional
-def test_gene_search_page_returns_200(loaded_datasets, request_factory, test_user):
-    """gene_search_page must return 200 for any authenticated request."""
-    from caper.views import gene_search_page
-    req = request_factory.get('/gene-search/')
-    req.user = test_user
-    resp = gene_search_page(req)
-    assert resp.status_code == 200
-
-
-@pytest.mark.integration
-@pytest.mark.functional
-def test_gene_search_no_results(loaded_datasets, request_factory, test_user):
-    """Searching for a nonsense gene name must return 200 with no sample rows."""
-    from caper.views import gene_search_page
-    req = request_factory.get('/gene-search/', {'genequery': 'ZZZNOMATCHXYZ'})
-    req.user = test_user
-    resp = gene_search_page(req)
-    assert resp.status_code == 200
-    assert b'ZZZNOMATCHXYZ' not in resp.content or b'no results' in resp.content.lower() \
-        or resp.content  # response rendered — gene not in dataset, template rendered OK
-
-
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.functional
 def test_gene_search_finds_public_project(
         request_factory, test_user, mongo_collection):
     """
-    gene_search_page must return at least one result for a project set to
-    private=False (legacy boolean public).  Uses a dedicated project so
-    loaded_datasets projects are not mutated.
+    Search must return at least one result for a project set to private=False
+    (legacy boolean public).  Uses a dedicated project so loaded_datasets
+    projects are not mutated.
+
+    Asserted against /search_results/ since /gene-search/ was retired. The
+    legacy boolean is the point of the test and is unaffected by which view
+    reads it -- visibility.py normalises it for both.
     """
-    from caper.views import create_project, gene_search_page
+    from caper.views import create_project, search_results
 
     req, handles = _build_create_request(
         request_factory, test_user, 'SearchTest_GeneSearch',
@@ -1028,16 +1010,14 @@ def test_gene_search_finds_public_project(
 
         gene = doc.get('Oncogenes', [''])[0] if doc.get('Oncogenes') else ''
 
-        req_search = request_factory.get('/gene-search/')
+        req_search = request_factory.post('/search_results/',
+                                          {'genequery': gene} if gene else {})
         req_search.user = test_user
-        if gene:
-            req_search = request_factory.get('/gene-search/', {'genequery': gene})
-            req_search.user = test_user
 
-        resp_search = gene_search_page(req_search)
+        resp_search = search_results(req_search)
         assert resp_search.status_code == 200
         assert b'SearchTest_GeneSearch' in resp_search.content, \
-            "Public project must appear in gene search results"
+            "Public project must appear in search results"
 
     finally:
         _set_private(mongo_collection, project_id)
@@ -1672,74 +1652,6 @@ def test_all_classification_checkboxes_checked_equals_no_filter(
             "Zero-feature sample must appear when all 5 checked"
     finally:
         mongo_collection.delete_one({'_id': result.inserted_id})
-
-
-@pytest.mark.integration
-def test_gene_search_page_get_is_a_landing_page(
-        request_factory, test_user, mongo_collection):
-    """
-    A bare GET /gene-search/ must render the form and no results.
-
-    It used to answer with the whole corpus -- 16,950 rows and 15.68 MB on
-    production -- and this test asserted that dump by looking for a sample
-    name in the response.  Nobody read it: three days of ALB logs showed the
-    route taking 41 requests, every external non-bot one either abandoned or
-    from a scanner.  Zero-feature coverage for the path users actually take
-    lives in test_none_checked_returns_all_including_zero_feature below.
-    """
-    from caper.views import gene_search_page
-
-    doc = {
-        'project_name':  'SearchZeroFeat_GET',
-        'creator':       test_user.username,
-        'private':       False,  # legacy boolean for gene_search_page
-        'delete':        False,
-        'current':       True,
-        'FINISHED?':     True,
-        'Oncogenes':     ['MYC'],
-        'runs': {
-            'GETSampleWithFeat': [
-                {
-                    'Sample_name': 'GETSampleWithFeat',
-                    'Feature_ID': 'feat_1',
-                    'Classification': 'ecDNA',
-                    'All_genes': ['MYC'],
-                    'Oncogenes': ['MYC'],
-                    'Sample_type': '',
-                    'Cancer_type': '',
-                    'Tissue_of_origin': '',
-                }
-            ],
-            'GETSampleNoFeat': [],
-        },
-        'sample_count': 2,
-    }
-    result = mongo_collection.insert_one(doc)
-
-    try:
-        # No query at all: the form renders, the corpus does not.
-        req = request_factory.get('/gene-search/')
-        req.user = test_user
-        resp = gene_search_page(req)
-        assert resp.status_code == 200
-        assert b'GETSampleNoFeat' not in resp.content, \
-            "A bare /gene-search/ must not render sample rows"
-        assert b'GETSampleWithFeat' not in resp.content, \
-            "A bare /gene-search/ must not render sample rows"
-        assert b'id="genequery"' in resp.content, \
-            "A bare /gene-search/ must still render the search form"
-
-        # A query still searches, so the parameterised route keeps working.
-        req = request_factory.get('/gene-search/', {'genequery': 'MYC'})
-        req.user = test_user
-        resp = gene_search_page(req)
-        assert resp.status_code == 200
-        assert b'GETSampleWithFeat' in resp.content, \
-            "A gene query must still return matching samples"
-    finally:
-        mongo_collection.delete_one({'_id': result.inserted_id})
-
-
 @pytest.mark.integration
 def test_none_checked_returns_all_including_zero_feature(
         request_factory, test_user, mongo_collection):
