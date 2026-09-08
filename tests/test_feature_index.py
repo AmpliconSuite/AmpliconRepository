@@ -424,3 +424,68 @@ def test_changing_visibility_for_real_is_still_drift():
     boolean_private = _project(private=True)
     made_public = {**boolean_private, 'private': 'public'}
     assert project_digest(boolean_private) != project_digest(made_public)
+
+
+# ---------------------------------------------------------------------------
+# Display spelling vs match spelling
+# ---------------------------------------------------------------------------
+
+def test_display_genes_keep_their_case():
+    """1,083 symbols in the corpus are not upper-case.
+
+    Measured on caper-dev 2026-09-07: 11,986 of 325,264 gene mentions differ
+    from their upper-case form, nearly all open reading frame names whose
+    canonical refGene spelling is mixed case. Showing C17ORF37 for C17orf37
+    would put a symbol on screen that is not the gene's name.
+    """
+    project = _project()
+    project['runs']['sample_365'][0]['All_genes'] = ["'C17orf37'", "'MYC'"]
+    rows = feature_rows_for_project(project)
+    row = next(r for r in rows if r['feature_id'] == 'sample_365_amplicon1')
+
+    assert row['genes_display'] == ['C17orf37', 'MYC']
+    assert row['genes'] == ['C17ORF37', 'MYC']
+
+
+def test_matching_is_still_case_insensitive():
+    """The upper-cased array is what a query matches, so case cannot miss."""
+    project = _project()
+    project['runs']['sample_365'][0]['All_genes'] = ["'C17orf37'"]
+    row = feature_rows_for_project(project)[0]
+    assert 'C17ORF37' in row['genes']
+
+
+def test_display_genes_are_not_deduplicated():
+    """Today's output does not deduplicate, so neither does the display array.
+
+    Deduplicating would be an improvement, and an improvement is a difference:
+    a result served from the index has to be indistinguishable from one served
+    the old way, or the equivalence gate is measuring the wrong thing.
+    """
+    project = _project()
+    project['runs']['sample_365'][0]['All_genes'] = ["'MYC'", "'PVT1'", "'MYC'"]
+    row = feature_rows_for_project(project)[0]
+
+    assert row['genes_display'] == ['MYC', 'PVT1', 'MYC']
+    assert row['genes'] == ['MYC', 'PVT1']
+
+
+def test_display_genes_match_what_the_old_search_returns():
+    """Byte-for-byte against get_samples_from_features, not by eye."""
+    project = _project()
+    project['runs']['sample_365'][0]['All_genes'] = ["'C17orf37'", "'MYC'", "'MYC'"]
+
+    indexed = {row['feature_id']: row['genes_display']
+               for row in feature_rows_for_project(project)}
+    for row in _search_rows(project):
+        feature_id = str(row.get('Feature_ID', ''))
+        if feature_id in indexed and row.get('All_genes') is not None:
+            assert indexed[feature_id] == list(row['All_genes'])
+
+
+def test_oncogenes_carry_both_spellings_too():
+    project = _project()
+    project['runs']['sample_365'][0]['Oncogenes'] = ["'C17orf37'"]
+    row = feature_rows_for_project(project)[0]
+    assert row['oncogenes_display'] == ['C17orf37']
+    assert row['oncogenes'] == ['C17ORF37']

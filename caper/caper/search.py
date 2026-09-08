@@ -1,4 +1,6 @@
+import math
 import re
+
 from pymongo import MongoClient
 from .utils import *
 from .project_status import LIVE, status_query
@@ -21,6 +23,14 @@ from .project_status import LIVE, status_query
 # starts-with, '*FLO' is ends-with, '*FLO*' is contains.  With no '*' the term
 # is a plain substring match, which is what people expect when they type half a
 # sample name.  Every text field works this way; only quoting narrows it.
+
+# The result fields the page renders as text. Anything missing from a row has
+# to reach the template as an empty string rather than as NaN or None, both of
+# which Django renders as their repr.
+_TEXT_RESULT_FIELDS = (
+    'Sample_name', 'Feature_ID', 'Classification',
+    'Sample_type', 'Cancer_type', 'Tissue_of_origin',
+)
 
 QUOTE_CHAR = '"'
 OPERATOR_CHARS = '&|'
@@ -243,6 +253,17 @@ def _gene_matches(query_gene, gene_list):
     else:
         return query_gene.upper() in gene_list
 
+def feature_index_search_enabled():
+    """Whether searches are served from the feature index on this deployment.
+
+    Read at call time rather than captured at import, so the switch can be
+    flipped by restarting a worker instead of by a release.
+    """
+    from django.conf import settings
+
+    return bool(getattr(settings, 'USE_FEATURE_INDEX_SEARCH', False))
+
+
 def perform_search(genequery=None,
                    project_name=None,
                    classquery=None,
@@ -254,6 +275,29 @@ def perform_search(genequery=None,
                    include_no_amp=True,
                    no_filter=False,
                    user=None):
+
+    # The indexed path answers the same question by reading rows that were
+    # copied out of these documents, instead of reading the documents. It is
+    # off unless a deployment turns it on, and it declines anything it cannot
+    # reproduce exactly rather than approximating it -- see search_index.
+    if feature_index_search_enabled():
+        from .feature_index import index_is_usable
+        from .search_index import can_serve, search_from_index
+
+        # Checked per search, not once at boot: an index that falls behind
+        # mid-run would otherwise keep serving short answers until a restart.
+        # Two counted queries against indexed fields, and the failure it
+        # prevents -- a result that is quietly incomplete -- is worse than the
+        # slow path it falls back to.
+        if can_serve(extra_metadata=extra_metadata) and index_is_usable():
+            return search_from_index(
+                genequery=genequery, project_name=project_name,
+                classquery=classquery, metadata_sample_name=metadata_sample_name,
+                metadata_sample_type=metadata_sample_type,
+                metadata_cancer_type=metadata_cancer_type,
+                metadata_tissue_origin=metadata_tissue_origin,
+                extra_metadata=extra_metadata, include_no_amp=include_no_amp,
+                no_filter=no_filter, user=user)
 
     gen_query = {'$regex': genequery } if genequery else None
 
@@ -286,12 +330,21 @@ def perform_search(genequery=None,
     # visibility_display drives the Private/Unlisted tag on the results table.  The
     # private list holds both 'private' and 'hidden_public' projects, so the tag is
     # what tells them apart; defaults match the query each list came from.
+    # sample_count_display is the sample count the results table prints. It is
+    # len(runs) here and comes off the feature index on the indexed path, and it
+    # is set explicitly on both rather than left to the template to derive,
+    # because deriving it means the template reads 'runs' -- and 'runs' is
+    # essentially all of the bytes a search transfers. The stored 'sample_count'
+    # field is not a substitute: on caper-dev, measured 2026-09-07, one of 52
+    # LIVE projects has none and three disagree with len(runs).
     for proj in private_projects:
         prepare_project_linkid(proj)
         proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
+        proj['sample_count_display'] = len(proj.get('runs') or {})
     for proj in public_projects:
         prepare_project_linkid(proj)
         proj['visibility_display'] = format_visibility_for_display(proj.get('private', False))
+        proj['sample_count_display'] = len(proj.get('runs') or {})
 
     # Fetch sample data based on new metadata fields
     public_sample_data = get_samples_from_features(
@@ -481,10 +534,18 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
     returns a list of samples and feature_ids
     """
 
+    from django.urls import reverse
+
     sample_data = []
     for project in projects:
         project_name = project['project_name']
         project_linkid = project['_id']
+        # The results table links each row back to its project, and the shared
+        # template reads sample.project_url to do it. gene_search_page set it
+        # and this path did not, so every project link on the search results
+        # page rendered href="" -- one reverse() per project, not per row.
+        project_url = reverse('project_page',
+                              kwargs={'project_name': str(project_linkid)})
         features = project['runs']
         features_list = replace_space_to_underscore(features)
 
@@ -637,8 +698,18 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
 
         for _, row in df.iterrows():
             sample_dict = row.to_dict()
+            # A DataFrame fills an absent column with NaN, and a NaN reaches the
+            # template as the literal text 'nan' -- which is what the Cancer Type
+            # column has been showing for every sample that has no cancer type.
+            # None renders as 'None' the same way. Both become '', which is what
+            # the column is meant to show when there is nothing to show.
+            for field in _TEXT_RESULT_FIELDS:
+                value = sample_dict.get(field)
+                if value is None or (isinstance(value, float) and math.isnan(value)):
+                    sample_dict[field] = ''
             sample_dict['project_name'] = project_name
             sample_dict['project_linkid'] = project_linkid
+            sample_dict['project_url'] = project_url
             # Only process All_genes if it exists in the row
             if 'All_genes' in sample_dict and sample_dict['All_genes'] is not None:
                 sample_dict['All_genes'] = [i.replace("'", "").strip() for i in sample_dict['All_genes']]

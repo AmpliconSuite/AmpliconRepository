@@ -89,7 +89,7 @@ from .visibility import (
 # folded into every digest, so a builder change invalidates every stored row
 # and the drift check reports the whole corpus as stale -- which is correct: it
 # is stale, against the new builder.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 FEATURE_INDEX_COLLECTION = 'feature_index'
 GENE_CATALOG_COLLECTION = 'gene_catalog'
@@ -143,37 +143,54 @@ def normalize_reference(value):
     return REFERENCE_EQUIVALENCE.get(text, text)
 
 
-def _gene_list(feature):
-    """Genes on one feature, normalised, deduplicated, order preserved.
+def _gene_list(feature, key='All_genes'):
+    """Genes on one feature, upper-cased, deduplicated, order preserved.
 
-    Order is kept so the stored array reads the way the source does; the
-    deduplication is what the index needs, since a repeated symbol would
-    otherwise cost a second multikey entry that matches nothing new.
+    This is the array that gets indexed and matched against. Upper-casing is
+    what makes an equality match case-insensitive without a regex, and it
+    agrees with the existing search, which compares ``genequery.upper()``
+    against ``[g.upper() for g in All_genes]``.
+
+    It is emphatically **not** the array to display. Measured on caper-dev
+    2026-09-07 over 30,597 feature rows and 325,264 gene mentions, **11,986
+    mentions across 1,083 distinct symbols are not upper-case** -- the open
+    reading frame names, whose canonical refGene spelling is mixed case
+    (``C17orf37``, 514 mentions; ``C19orf2``, 326). Rendering those upper-cased
+    would show a symbol that is not the gene's name. See ``_gene_display_list``.
     """
     seen = {}
-    for gene in feature.get('All_genes') or []:
+    for gene in feature.get(key) or []:
         symbol = normalize_gene(gene)
         if symbol:
             seen.setdefault(symbol, None)
     return list(seen)
+
+
+def _gene_display_list(feature, key='All_genes'):
+    """Genes on one feature exactly as a search result reports them today.
+
+    Quote characters stripped and whitespace trimmed, case preserved, and
+    **not** deduplicated -- which is precisely what
+    ``get_samples_from_features`` returns:
+    ``[i.replace("'", "").strip() for i in sample_dict['All_genes']]``.
+    Deduplicating here would be an improvement, and an improvement is a
+    difference: this array exists so that a result served from the index is
+    indistinguishable from one served the old way.
+    """
+    return [str(gene).replace("'", '').strip()
+            for gene in feature.get(key) or []]
 
 
 def _oncogene_list(feature):
-    """Oncogenes on one feature, normalised the same way as All_genes.
+    """Oncogenes on one feature, upper-cased the same way as ``genes``.
 
     Not indexed: oncogene status is a property of the symbol, not of the row,
-    so it lives in the gene catalog.  Measured on prod 2026-09-07, 0 of 1,025
+    so it lives in the gene catalog. Measured on prod 2026-09-07, 0 of 1,025
     distinct oncogenes appear outside that row's All_genes, which is what
-    AmpliconClassifier's make_results_table.py builds both columns from one
-    sorted gene list would predict.  Stored anyway because it is what the
-    result rows report.
+    AmpliconClassifier building both columns from one sorted gene list would
+    predict. Stored anyway because it is what the result rows report.
     """
-    seen = {}
-    for gene in feature.get('Oncogenes') or []:
-        symbol = normalize_gene(gene)
-        if symbol:
-            seen.setdefault(symbol, None)
-    return list(seen)
+    return _gene_list(feature, 'Oncogenes')
 
 
 def _location_list(feature):
@@ -232,6 +249,15 @@ def feature_rows_for_project(project):
         return []
 
     cached_metadata = _sample_metadata_lookup(project)
+    # len(runs), carried on every row. The search results table reports a
+    # project's sample count, and the stored 'sample_count' field cannot supply
+    # it: measured on caper-dev 2026-09-07, of 52 LIVE projects one has no
+    # sample_count at all and three disagree with len(runs) (9 vs 8, 1 vs 0,
+    # 4 vs 2). Counting the run keys here is exact by construction, and putting
+    # it on the row is what lets the results page report it without reading
+    # 'runs' back out of the project document -- which is the whole cost this
+    # index exists to avoid.
+    project_sample_count = len(runs)
     rows = []
 
     for run_key, features in runs.items():
@@ -243,6 +269,7 @@ def feature_rows_for_project(project):
             rows.append(_row(
                 project_id=project_id,
                 project_name=project_name,
+                project_sample_count=project_sample_count,
                 visibility=visibility,
                 members=members,
                 run_key=run_key,
@@ -250,10 +277,13 @@ def feature_rows_for_project(project):
                 feature_id='',
                 classification='NA',
                 genes=[],
+                genes_display=[],
                 oncogenes=[],
+                oncogenes_display=[],
                 locations=[],
                 reference_build='',
-                metadata={field: cached.get(field, '') for field in _SAMPLE_METADATA_FIELDS},
+                metadata={field: str(cached.get(field, '') or '').strip()
+                          for field in _SAMPLE_METADATA_FIELDS},
                 extra_metadata=cached.get('extra_metadata_from_csv') or {},
                 has_amplicon=False,
             ))
@@ -270,6 +300,7 @@ def feature_rows_for_project(project):
             rows.append(_row(
                 project_id=project_id,
                 project_name=project_name,
+                project_sample_count=project_sample_count,
                 visibility=visibility,
                 members=members,
                 run_key=run_key,
@@ -277,11 +308,17 @@ def feature_rows_for_project(project):
                 feature_id=str(get('Feature_ID', 'Feature ID') or ''),
                 classification=classification,
                 genes=_gene_list(feature),
+                genes_display=_gene_display_list(feature),
                 oncogenes=_oncogene_list(feature),
+                oncogenes_display=_gene_display_list(feature, 'Oncogenes'),
                 locations=_location_list(feature),
                 reference_build=normalize_reference(get('Reference_version', 'Reference version')),
+                # Stripped, because that is how the values are displayed and
+                # how the existing filters compare them: _term_mask() calls
+                # .str.strip() before matching, so a stored 'Lung ' has to be
+                # findable by searching for 'Lung'.
                 metadata={
-                    field: str(get(field, field.replace('_', ' ')) or '')
+                    field: str(get(field, field.replace('_', ' ')) or '').strip()
                     for field in _SAMPLE_METADATA_FIELDS
                 },
                 extra_metadata=feature.get('extra_metadata_from_csv') or {},
@@ -292,9 +329,10 @@ def feature_rows_for_project(project):
     return rows
 
 
-def _row(*, project_id, project_name, visibility, members, run_key, sample_name,
-         feature_id, classification, genes, oncogenes, locations, reference_build,
-         metadata, extra_metadata, has_amplicon):
+def _row(*, project_id, project_name, project_sample_count, visibility, members, run_key, sample_name,
+         feature_id, classification, genes, genes_display, oncogenes,
+         oncogenes_display, locations, reference_build, metadata, extra_metadata,
+         has_amplicon):
     """Assemble one index document.
 
     ``sample_name_lower`` and ``project_name_lower`` are stored rather than
@@ -309,6 +347,7 @@ def _row(*, project_id, project_name, visibility, members, run_key, sample_name,
         'project_id': project_id,
         'project_name': project_name,
         'project_name_lower': str(project_name or '').lower(),
+        'project_sample_count': project_sample_count,
         'visibility': visibility,
         'project_members': members,
         'run_key': run_key,
@@ -317,8 +356,15 @@ def _row(*, project_id, project_name, visibility, members, run_key, sample_name,
         'feature_id': feature_id,
         'classification': classification,
         'has_amplicon': has_amplicon,
+        # Two arrays for the same genes, and the split is load-bearing: 'genes'
+        # is upper-cased so an equality match is case-insensitive and indexable,
+        # '*_display' is what a result reports, because 1,083 symbols are not
+        # upper-case and showing C17ORF37 for C17orf37 would be showing a name
+        # that does not exist.
         'genes': genes,
+        'genes_display': genes_display,
         'oncogenes': oncogenes,
+        'oncogenes_display': oncogenes_display,
         'locations': locations,
         'reference_build': reference_build,
         'metadata': metadata,
@@ -643,3 +689,43 @@ def index_access_filter(user):
         {'visibility': {'$in': RESTRICTED_QUERY_VALUES},
          'project_members': {'$in': identities}},
     ]}
+
+
+def index_coverage():
+    """How many projects should be indexed, and how many are. Two counted queries.
+
+    This is the cheap half of ``feature_index_drift``. That one recomputes every
+    project's digest, which means reading ``runs`` for every project -- the very
+    scan the index exists to avoid, and far too expensive to do per request.
+    This is two ``count_documents`` calls against indexed fields.
+
+    What it catches: a project that was created, deleted, promoted or demoted
+    by something that did not go through ``project_events`` -- a migration, a
+    backfill, a script, a test fixture inserting straight into the collection.
+    That is the common shape of writing around the hooks, and it is the shape
+    that makes a search silently return fewer results than the site holds.
+
+    What it does not catch: a project whose *content* changed without its
+    indexability changing. Only the digest finds that, so
+    ``rebuild_feature_index --check`` is still the standing measurement and
+    this does not replace it.
+    """
+    return {
+        'indexable': collection_handle.count_documents(indexable_projects_query()),
+        'indexed': manifest_handle.count_documents({}),
+    }
+
+
+def index_is_usable():
+    """Whether a search may be served from the index right now.
+
+    A stale index does not fail: it quietly answers with fewer rows than the
+    site holds, which is worse than being slow, because nothing about the
+    result says it is incomplete. So the reads check first, and a deployment
+    whose index has fallen behind serves the old way until someone rebuilds.
+
+    The cost of being wrong in each direction is what sets the default: a false
+    'unusable' costs one slow search, a false 'usable' costs a wrong answer.
+    """
+    coverage = index_coverage()
+    return coverage['indexable'] == coverage['indexed'] and coverage['indexed'] > 0
