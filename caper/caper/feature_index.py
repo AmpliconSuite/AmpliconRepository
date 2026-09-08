@@ -79,6 +79,7 @@ from .utils import (
     db_handle_primary,
     get_collection_handle,
 )
+from .search import METADATA_COLUMN_FOR_KEY
 from .visibility import (
     PUBLIC_QUERY_VALUES,
     RESTRICTED_QUERY_VALUES,
@@ -89,7 +90,7 @@ from .visibility import (
 # folded into every digest, so a builder change invalidates every stored row
 # and the drift check reports the whole corpus as stale -- which is correct: it
 # is stale, against the new builder.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 FEATURE_INDEX_COLLECTION = 'feature_index'
 GENE_CATALOG_COLLECTION = 'gene_catalog'
@@ -210,6 +211,62 @@ def _location_list(feature):
     return [str(location)]
 
 
+def _metadata_key_map(runs):
+    """Lower-cased metadata key -> the spelling actually stored, per project.
+
+    Rows normally share one sheet's columns, but a project whose metadata was
+    uploaded more than once holds the union of them, so every row is consulted
+    and the first spelling seen wins. Mirrors ``search._metadata_key_map``,
+    including that tie-break: picking the other spelling would lift a different
+    column and the two paths would disagree about a sample's cancer type.
+    """
+    key_map = {}
+    for features in (runs or {}).values():
+        for feature in features or []:
+            if not isinstance(feature, dict):
+                continue
+            for key in feature.get('extra_metadata_from_csv') or {}:
+                key_map.setdefault(str(key).lower(), key)
+    return key_map
+
+
+def _clean_metadata_value(value):
+    """A metadata cell as a stripped string, with blanks and NaN as ''."""
+    if value is None:
+        return ''
+    if isinstance(value, float) and value != value:  # NaN
+        return ''
+    return str(value).strip()
+
+
+def _lift_metadata(feature, key_map, fallback):
+    """The three dedicated metadata fields, uploaded sheet taking precedence.
+
+    A run row normally carries Sample_type, Cancer_type and Tissue_of_origin
+    already, denormalised at upload. Not always: a project re-uploaded without a
+    fresh metadata sheet before mid-2026 carried ``extra_metadata_from_csv``
+    forward without rewriting them, so the row holds the metadata and no
+    Cancer_type at all. ``add_extra_metadata`` lifts the values back out at
+    search time, and the index has to do the same or a cancer-type search stops
+    agreeing with the project page.
+
+    The sheet **overwrites** the row's own value wherever the sheet has a
+    non-blank one -- it is not a fallback for blanks. That is what
+    ``df.loc[values.index, column] = values`` does, and it was worth reading
+    twice: 3 of the dev corpus's projects differ on this, and the index
+    returned '' for samples the old path reports as 'Adenocarcinoma'.
+    """
+    metadata = feature.get('extra_metadata_from_csv') or {}
+    lifted = {}
+    for lower, column in METADATA_COLUMN_FOR_KEY.items():
+        value = ''
+        stored_key = key_map.get(lower)
+        if stored_key is not None:
+            value = _clean_metadata_value(metadata.get(stored_key))
+        lifted[column] = value or fallback(column)
+    return lifted
+
+
 def _sample_metadata_lookup(project):
     """Sample name -> that sample's cached metadata row.
 
@@ -258,6 +315,7 @@ def feature_rows_for_project(project):
     # 'runs' back out of the project document -- which is the whole cost this
     # index exists to avoid.
     project_sample_count = len(runs)
+    metadata_keys = _metadata_key_map(runs)
     rows = []
 
     for run_key, features in runs.items():
@@ -317,10 +375,9 @@ def feature_rows_for_project(project):
                 # how the existing filters compare them: _term_mask() calls
                 # .str.strip() before matching, so a stored 'Lung ' has to be
                 # findable by searching for 'Lung'.
-                metadata={
-                    field: str(get(field, field.replace('_', ' ')) or '').strip()
-                    for field in _SAMPLE_METADATA_FIELDS
-                },
+                metadata=_lift_metadata(
+                    feature, metadata_keys,
+                    lambda column: str(get(column, column.replace('_', ' ')) or '').strip()),
                 extra_metadata=feature.get('extra_metadata_from_csv') or {},
                 has_amplicon=classification.strip().upper() not in NO_AMPLICON_CLASSIFICATIONS
                 and bool(str(get('Feature_ID', 'Feature ID') or '')),

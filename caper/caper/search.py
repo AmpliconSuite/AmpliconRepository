@@ -711,8 +711,14 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
             sample_dict['project_linkid'] = project_linkid
             sample_dict['project_url'] = project_url
             # Only process All_genes if it exists in the row
-            if 'All_genes' in sample_dict and sample_dict['All_genes'] is not None:
-                sample_dict['All_genes'] = [i.replace("'", "").strip() for i in sample_dict['All_genes']]
+            # Both gene lists, not just one. All_genes was stripped here and
+            # Oncogenes was not, so a project whose genes are stored as the repr
+            # of a Python list returned Oncogenes as ["'ARID2'"] -- quote
+            # characters and all. 51 rows of the dev corpus show it.
+            for field in ('All_genes', 'Oncogenes'):
+                if sample_dict.get(field) is not None:
+                    sample_dict[field] = [str(i).replace("'", "").strip()
+                                          for i in sample_dict[field]]
 
             sample_data.append(sample_dict)
 

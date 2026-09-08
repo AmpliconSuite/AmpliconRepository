@@ -489,3 +489,93 @@ def test_oncogenes_carry_both_spellings_too():
     row = feature_rows_for_project(project)[0]
     assert row['oncogenes_display'] == ['C17orf37']
     assert row['oncogenes'] == ['C17ORF37']
+
+
+# ---------------------------------------------------------------------------
+# Metadata lifted out of the uploaded sheet
+# ---------------------------------------------------------------------------
+
+def _project_with_uploaded_metadata(**metadata):
+    project = _project()
+    for feature in project['runs']['sample_365']:
+        feature['Cancer_type'] = ''
+        feature['extra_metadata_from_csv'] = dict(metadata)
+    return project
+
+
+def test_cancer_type_is_lifted_out_of_the_uploaded_sheet():
+    """A row can hold the metadata and no Cancer_type of its own.
+
+    A project re-uploaded without a fresh metadata sheet before mid-2026
+    carried extra_metadata_from_csv forward without rewriting the columns. The
+    old path lifts the value back out at search time; an index that did not
+    would report '' for samples the site shows as 'Adenocarcinoma' -- which is
+    what 3 of the dev corpus's projects actually do.
+    """
+    project = _project_with_uploaded_metadata(cancer_type='Adenocarcinoma')
+    rows = feature_rows_for_project(project)
+    amplicon = next(r for r in rows if r['feature_id'] == 'sample_365_amplicon1')
+    assert amplicon['metadata']['Cancer_type'] == 'Adenocarcinoma'
+
+
+def test_the_sheet_overwrites_the_row_rather_than_only_filling_blanks():
+    """`df.loc[values.index, column] = values` assigns, it does not coalesce.
+
+    Reading it as a fallback-for-blanks is the natural misreading and produces
+    a different answer for every row that has both.
+    """
+    project = _project_with_uploaded_metadata(cancer_type='Adenocarcinoma')
+    for feature in project['runs']['sample_365']:
+        feature['Cancer_type'] = 'Glioblastoma'
+    rows = feature_rows_for_project(project)
+    amplicon = next(r for r in rows if r['feature_id'] == 'sample_365_amplicon1')
+    assert amplicon['metadata']['Cancer_type'] == 'Adenocarcinoma'
+
+
+def test_a_blank_sheet_value_does_not_erase_the_rows_own():
+    """Blanks are dropped, not written through.
+
+    A sheet that leaves cancer_type empty for a sample must not erase what the
+    AmpliconSuite run already recorded.
+    """
+    project = _project_with_uploaded_metadata(cancer_type='   ')
+    for feature in project['runs']['sample_365']:
+        feature['Cancer_type'] = 'Glioblastoma'
+    rows = feature_rows_for_project(project)
+    amplicon = next(r for r in rows if r['feature_id'] == 'sample_365_amplicon1')
+    assert amplicon['metadata']['Cancer_type'] == 'Glioblastoma'
+
+
+def test_the_sheet_key_is_matched_case_insensitively():
+    project = _project_with_uploaded_metadata(Cancer_Type='Adenocarcinoma')
+    rows = feature_rows_for_project(project)
+    amplicon = next(r for r in rows if r['feature_id'] == 'sample_365_amplicon1')
+    assert amplicon['metadata']['Cancer_type'] == 'Adenocarcinoma'
+
+
+def test_lifted_metadata_matches_what_the_old_search_returns():
+    """Compared against get_samples_from_features, not asserted by hand."""
+    project = _project_with_uploaded_metadata(
+        cancer_type='Adenocarcinoma', sample_type='Cell Line',
+        tissue_of_origin='Ovary')
+
+    indexed = {r['feature_id']: r['metadata'] for r in feature_rows_for_project(project)}
+    for row in _search_rows(project):
+        feature_id = str(row.get('Feature_ID', ''))
+        if feature_id not in indexed:
+            continue
+        for column in ('Sample_type', 'Cancer_type', 'Tissue_of_origin'):
+            assert indexed[feature_id][column] == (row.get(column) or '')
+
+
+def test_oncogenes_come_back_without_quote_characters_on_either_path():
+    """The old path stripped All_genes and not Oncogenes; 51 dev rows show it."""
+    project = _project()
+    project['runs']['sample_365'][0]['Oncogenes'] = ["'ARID2'", "'MYC'"]
+
+    indexed = feature_rows_for_project(project)[0]['oncogenes_display']
+    assert indexed == ['ARID2', 'MYC']
+
+    for row in _search_rows(project):
+        if str(row.get('Feature_ID', '')) == 'sample_365_amplicon1':
+            assert list(row['Oncogenes']) == ['ARID2', 'MYC']
