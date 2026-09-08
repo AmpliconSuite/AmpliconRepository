@@ -1675,11 +1675,17 @@ def test_all_classification_checkboxes_checked_equals_no_filter(
 
 
 @pytest.mark.integration
-def test_zero_feature_samples_in_gene_search_page_get(
+def test_gene_search_page_get_is_a_landing_page(
         request_factory, test_user, mongo_collection):
     """
-    Zero-feature samples must appear in the legacy GET gene_search_page view
-    when no gene/classification filter is applied.
+    A bare GET /gene-search/ must render the form and no results.
+
+    It used to answer with the whole corpus -- 16,950 rows and 15.68 MB on
+    production -- and this test asserted that dump by looking for a sample
+    name in the response.  Nobody read it: three days of ALB logs showed the
+    route taking 41 requests, every external non-bot one either abandoned or
+    from a scanner.  Zero-feature coverage for the path users actually take
+    lives in test_none_checked_returns_all_including_zero_feature below.
     """
     from caper.views import gene_search_page
 
@@ -1711,13 +1717,25 @@ def test_zero_feature_samples_in_gene_search_page_get(
     result = mongo_collection.insert_one(doc)
 
     try:
-        # No gene or class filter — should return all samples including zero-feature
+        # No query at all: the form renders, the corpus does not.
         req = request_factory.get('/gene-search/')
         req.user = test_user
         resp = gene_search_page(req)
         assert resp.status_code == 200
-        assert b'GETSampleNoFeat' in resp.content, \
-            "Zero-feature sample must appear in gene_search_page GET results"
+        assert b'GETSampleNoFeat' not in resp.content, \
+            "A bare /gene-search/ must not render sample rows"
+        assert b'GETSampleWithFeat' not in resp.content, \
+            "A bare /gene-search/ must not render sample rows"
+        assert b'id="genequery"' in resp.content, \
+            "A bare /gene-search/ must still render the search form"
+
+        # A query still searches, so the parameterised route keeps working.
+        req = request_factory.get('/gene-search/', {'genequery': 'MYC'})
+        req.user = test_user
+        resp = gene_search_page(req)
+        assert resp.status_code == 200
+        assert b'GETSampleWithFeat' in resp.content, \
+            "A gene query must still return matching samples"
     finally:
         mongo_collection.delete_one({'_id': result.inserted_id})
 

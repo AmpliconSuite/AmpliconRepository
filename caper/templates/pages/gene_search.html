@@ -1090,7 +1090,7 @@
 {% endblock %}
 
 {% block main %}
-<h2 class="mt-4">Search Query Information </h2>
+{% if landing %}<h2 class="mt-4">Advanced Search</h2>{% else %}<h2 class="mt-4">Search Query Information </h2>{% endif %}
 
 
 <div class="search-container">
@@ -1152,6 +1152,7 @@
     </div>
 
     <!-- Results (Right) -->
+{% if not landing %}
     <div class="results-container" >
         <ul class="nav nav-tabs" id="search-result-tabs">
             <li class="nav-item">
@@ -1343,6 +1344,7 @@
             {% endif %}
         </div>
     </div>
+{% endif %}
 </div>
 {% csrf_token %}
 {% endblock %}
