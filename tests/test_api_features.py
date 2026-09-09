@@ -170,6 +170,7 @@ def corpus(monkeypatch):
     """
     public = ObjectId()
     private = ObjectId()
+    tissue = ObjectId()
     rows = [
         # One sample carrying MYC and CDK4 on the SAME amplicon...
         _row(public, 'Pub', 'public', 'S1', 'S1_a1', 'ecDNA', ['MYC', 'CDK4']),
@@ -197,11 +198,22 @@ def corpus(monkeypatch):
         # Not visible to an anonymous caller.
         _row(private, 'Priv', 'private', 'S9', 'S9_a1', 'ecDNA', ['MYC'],
              members=['someone@example.org']),
+        # The same tissue spelled two ways, which is what prod's metadata
+        # actually looks like: 16 case-collision groups across the three
+        # metadata fields on 2026-09-08, and dev had none -- so dev could not
+        # show that /facets/ counted 'Lung' and 'lung' separately while
+        # filtering on either returned both.  Held in their own project so the
+        # counts the other tests assert stay about what those tests are for.
+        _row(tissue, 'Tiss', 'public', 'T1', 'T1_a1', 'BFB', ['KRAS'],
+             build='hg19', metadata={'Tissue_of_origin': 'Lung'}),
+        _row(tissue, 'Tiss', 'public', 'T2', 'T2_a1', 'BFB', ['KRAS'],
+             build='hg19', metadata={'Tissue_of_origin': 'lung'}),
     ]
     feature_index_handle.insert_many(rows)
     monkeypatch.setattr(api_features, 'index_is_usable', lambda: True)
-    yield {'public': public, 'private': private}
-    feature_index_handle.delete_many({'project_id': {'$in': [public, private]}})
+    yield {'public': public, 'private': private, 'tissue': tissue}
+    feature_index_handle.delete_many(
+        {'project_id': {'$in': [public, private, tissue]}})
 
 
 def _get(qs, user=None):
@@ -609,3 +621,40 @@ def test_no_amplicon_rows_are_reachable_however_they_were_spelled(corpus):
 
     # And within the known corpus, that is both spellings and not just one.
     assert _scoped(corpus, 'classification=None&count_only=true').data['count'] == 2
+
+
+def test_facet_values_never_differ_only_by_case(corpus):
+    """Two spellings of one value must be one entry, because the filter is one query.
+
+    The filter folds case, so ?tissue_of_origin=Lung and ?tissue_of_origin=lung
+    return the same rows. A facet list that carries both spellings with separate
+    counts therefore advertises two numbers neither of which filtering will
+    reproduce -- on prod that was 'Lung' at 88 and 'lung' at 379 against 467
+    either way, and 27 disagreements in total.
+
+    test_facet_values_are_all_filterable catches this too, but only against a
+    corpus that contains a collision, which dev's did not. This states the
+    property directly so it cannot pass by absence.
+    """
+    from caper.views_apis import FeatureFacetsView
+    request = RequestFactory(SERVER_NAME='localhost').get('/api/v1/features/facets/')
+    request.user = AnonymousUser()
+    facets = FeatureFacetsView.as_view()(request)
+
+    for facet_name, entries in facets.data['facets'].items():
+        seen = {}
+        for entry in entries:
+            key = str(entry['value']).strip().lower()
+            assert key not in seen, (
+                '%s advertises %r and %r as separate values; the filter treats '
+                'them as one' % (facet_name, seen[key], entry['value']))
+            seen[key] = entry['value']
+
+
+def test_a_case_variant_filters_to_the_advertised_count(corpus):
+    """Whichever spelling the caller has, they get the count /facets/ showed."""
+    def count(spelling):
+        return _get('?project_id=%s&tissue_of_origin=%s&count_only=true'
+                    % (corpus['tissue'], spelling)).data['count']
+
+    assert count('Lung') == count('lung') == count('LUNG') == 2, 'both spellings, not one'
