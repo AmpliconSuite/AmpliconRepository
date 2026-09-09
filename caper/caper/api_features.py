@@ -311,7 +311,15 @@ def _classification_clause(classifications):
             # amplicon, which the index already carries as a flag.  Matching the
             # flag rather than the sentinel strings means a project written by a
             # classifier version that spells it differently is still found.
-            branches.append({'has_amplicon': False})
+            #
+            # The blank is matched as well, because rows indexed before
+            # is_no_amplicon() learned about a null Classification carry
+            # has_amplicon: True with an empty classification -- 1,002 rows on
+            # prod and 4,117 on dev when this was measured, 2026-09-08.  A
+            # reindex rewrites them to 'NA' and the flag becomes sufficient; the
+            # clause stays correct either way, and costs one extra branch.
+            branches.append({'$or': [{'has_amplicon': False},
+                                     {'classification': ''}]})
             continue
         wanted.add(canonical)
         for alias, _folds_to in _ALIAS_BY_CANONICAL.get(canonical, ()):
@@ -708,10 +716,17 @@ def feature_facets(user):
         values = []
         for row in feature_index_handle.aggregate(pipeline):
             value = row['_id']
+            if name == 'classification':
+                # A blank is not an absence here, it is a classification: rows
+                # indexed before is_no_amplicon() learned about a null
+                # Classification carry '' and mean "no amplicon found".  Folding
+                # before the skip puts them in the 'None' entry, which is where
+                # ?classification=None now finds them.  Skipping first dropped
+                # them from the facet while the filter still returned them --
+                # the same facets-versus-filter break in the other direction.
+                value = canonical_classification(value)
             if value in (None, '', 'Not Provided'):
                 continue
-            if name == 'classification':
-                value = canonical_classification(value)
             values.append({'value': value, 'count': row['count']})
         # Every value advertised here must be one the filter accepts -- see
         # test_facet_values_are_all_filterable.  A facet a client cannot then

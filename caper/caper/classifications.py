@@ -80,6 +80,35 @@ NO_AMPLICON_CANONICAL = 'None'
 
 _NO_AMPLICON_INPUTS = NO_AMPLICON_SPELLINGS | {'NONE', 'NO AMPLICON'}
 
+
+def is_no_amplicon(value):
+    """True when a stored classification means "the classifier found nothing".
+
+    A **blank** classification is one of those spellings, and it is the one that
+    was missed.  The stored features hold ``Classification: None`` -- a JSON
+    null, not the string 'NA' -- on a sample AmpliconClassifier cleared, and the
+    index reader turns a null into ``''`` before this predicate sees it.  So the
+    set of spellings alone is not enough; the empty case has to be part of the
+    same test.
+
+    It matters because this decides ``has_amplicon``, which is what
+    ``?classification=None`` matches.  Measured 2026-09-08: prod's feature index
+    held 12,793 rows whose feature id ends ``_NA`` and 11,791 marked
+    ``has_amplicon: False`` -- the 1,002-row gap was exactly the rows whose
+    Classification was null, every one of them carrying no genes.  Dev's gap was
+    4,117 of 9,883.  Those rows answered no classification query at all: not
+    ``None``, because the flag said they had an amplicon, and not any real class,
+    because their stored value is blank.
+
+    This is the predicate; ``feature_index.py`` used to keep a second copy of the
+    spellings and that copy is what drifted.  One function, imported by both
+    sides.
+    """
+    if value is None:
+        return True
+    text = str(value).strip().upper()
+    return text == '' or text in _NO_AMPLICON_INPUTS
+
 # The values a caller may filter on.  Both the canonical spellings and every
 # alias that folds into one are accepted, so a client that learned 'ecDNA' from
 # a sample row and a client that learned 'ECDNA' from a project document both
@@ -104,7 +133,6 @@ CANONICAL_CLASSIFICATIONS = tuple(
 
 def canonical_classification(value):
     """One classification in the spelling the API answers in."""
-    text = str(value).upper()
-    if text in _NO_AMPLICON_INPUTS:
+    if is_no_amplicon(value):
         return NO_AMPLICON_CANONICAL
-    return _CANONICAL_CLASSIFICATION.get(text, value)
+    return _CANONICAL_CLASSIFICATION.get(str(value).upper(), value)

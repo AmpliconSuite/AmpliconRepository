@@ -459,6 +459,34 @@
         margin-left: 3px;
     }
 
+    /* The line under the search row for people arriving with an agent rather
+       than a browser. It is deliberately not a card or a callout: the offer is
+       one sentence and a URL, and dressing it up would put it in competition
+       with the search box, which is still what most first-time visitors want.
+       The URL is spelled in full because the thing you do with it is paste it
+       into a chat window, where a bare path resolves to nothing. */
+    .home-agent {
+        font-size: 13.5px;
+        color: #6a6d73;
+        display: flex;
+        gap: 7px;
+        align-items: baseline;
+        flex-wrap: wrap;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #eef0f2;
+    }
+
+    .home-agent code {
+        font-size: 12.5px;
+        color: #414042;
+        background: #f5f6f8;
+        border: 1px solid #e3e6ea;
+        border-radius: 4px;
+        padding: 1px 6px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
     /* ---- what you get out of the resource ---- */
     .home-caps {
         display: grid;
@@ -1695,6 +1723,15 @@
                         data-tip="Searches Cancer type for glioblastoma">glioblastoma</button>
             </div>
         </form>
+
+        <div class="home-agent">
+            <span>
+                Using an AI assistant? Point it at
+                <code>ampliconrepository.org/llms.txt</code> &mdash; that file tells it how to
+                query every amplicon here directly, instead of reading pages.
+            </span>
+            <a href="https://docs.ampliconrepository.org/ai-assistants/" target="_blank" rel="noopener">How this works</a>
+        </div>
 
         <div class="home-caps">
             <div class="home-cap">

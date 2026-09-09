@@ -39,6 +39,14 @@ Each row names its project, sample, feature, classification, genes, oncogenes,
 locations and reference build, and carries `project_url` and `sample_url` for
 citation. Page with `limit` and the returned `next_cursor`.
 
+**Not every row is an amplicon.** A sample that was analysed and found to carry
+no focal amplification is a result worth keeping, so it is in the corpus as a
+row with `classification: "None"` and no genes. It is a large minority of the
+rows. Never report a row count as an amplicon count without excluding them, and
+never use the unfiltered total as the denominator for "what fraction of samples
+have ecDNA" — filter to `classification=None` to count the clean samples, which
+is the question that denominator is really made of.
+
 `GET /api/v1/features/facets/` lists every value you can filter on, with counts.
 **Read it before filtering on metadata**, and read it the way described under
 "Metadata is uneven" below.
@@ -62,7 +70,8 @@ specific dataset — not to answer a question `/features/` already answers.
 ## Metadata is uneven, and this will change your answer
 
 `classification`, `genes`, `oncogenes`, `locations` and `reference_build` are
-computed for every amplicon and are complete.
+computed by the analysis pipeline for every row and are complete. Anything
+derived from them is trustworthy.
 
 `cancer_type`, `sample_type` and `tissue_of_origin` are **free text supplied by
 whoever submitted each project**. They are not controlled vocabularies, they are

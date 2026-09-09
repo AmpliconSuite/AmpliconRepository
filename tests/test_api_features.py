@@ -135,6 +135,7 @@ from django.test import RequestFactory  # noqa: E402
 
 from caper import feature_index  # noqa: E402
 from caper.feature_index import feature_index_handle  # noqa: E402
+from caper.classifications import is_no_amplicon  # noqa: E402
 
 
 def _row(project_id, project_name, visibility, sample, feature_id,
@@ -154,7 +155,7 @@ def _row(project_id, project_name, visibility, sample, feature_id,
         genes=[g.upper() for g in genes], genes_display=list(genes),
         oncogenes=[], oncogenes_display=[], locations=['chr8:1-2'],
         reference_build=build, metadata=(metadata or {}), extra_metadata={},
-        has_amplicon=classification.upper() not in feature_index.NO_AMPLICON_CLASSIFICATIONS,
+        has_amplicon=not is_no_amplicon(classification),
     )
 
 
@@ -179,6 +180,15 @@ def corpus(monkeypatch):
              build='hg19'),
         # A sample the classifier found nothing in.
         _row(public, 'Pub', 'public', 'S3', 'S3_a1', 'NA', []),
+        # The same thing, as rows written before the indexer learned that a
+        # null Classification means "found nothing": stored blank, and flagged
+        # as carrying an amplicon.  1,002 rows on prod and 4,117 on dev looked
+        # like this when it was measured, 2026-09-08, and they answered no
+        # classification query at all.  Built by hand rather than through _row()
+        # precisely because _row() now gets this right; the corpus has to hold
+        # what the old writer left behind.
+        dict(_row(public, 'Pub', 'public', 'S5', 'S5_a1', 'NA', []),
+             classification='', has_amplicon=True),
         # A build the fold map has never heard of.  Prod carries mm10 and
         # neither dev nor the local corpus did, so a static allowlist advertised
         # it through /facets/ and then 400'd anyone who filtered on it.
@@ -240,19 +250,22 @@ def test_gene_any_and_gene_all_combine_as_an_and(corpus):
 def test_classification_filter_and_the_no_amplicon_value(corpus):
     assert _scoped(corpus, 'classification=ecDNA&count_only=true').data['count'] == 3
     assert _scoped(corpus, 'classification=ECDNA&count_only=true').data['count'] == 3
-    assert _scoped(corpus, 'classification=None&count_only=true').data['count'] == 1
-    assert _scoped(corpus, 'classification=NA&count_only=true').data['count'] == 1
-    assert _scoped(corpus, 'classification=ecDNA,None&count_only=true').data['count'] == 4
+    # Two cleared samples, stored under two spellings -- 'NA' and the blank a
+    # pre-fix indexer wrote for a null Classification.  Both are the same answer
+    # to "which samples came back clean", so both have to come back.
+    assert _scoped(corpus, 'classification=None&count_only=true').data['count'] == 2
+    assert _scoped(corpus, 'classification=NA&count_only=true').data['count'] == 2
+    assert _scoped(corpus, 'classification=ecDNA,None&count_only=true').data['count'] == 5
 
 
 def test_reference_build_breakdown_sums_to_the_count(corpus):
     resp = _scoped(corpus, 'count_only=true')
-    assert resp.data['reference_builds'] == {'hg38': 3, 'hg19': 1, 'mm10': 1}
+    assert resp.data['reference_builds'] == {'hg38': 4, 'hg19': 1, 'mm10': 1}
     assert sum(resp.data['reference_builds'].values()) == resp.data['count']
 
 
 def test_reference_build_filter_folds_equivalent_names(corpus):
-    assert _scoped(corpus, 'reference_build=GRCh38&count_only=true').data['count'] == 3
+    assert _scoped(corpus, 'reference_build=GRCh38&count_only=true').data['count'] == 4
     assert _scoped(corpus, 'reference_build=hg19&count_only=true').data['count'] == 1
 
 
@@ -530,3 +543,69 @@ def test_a_bad_token_is_401_and_not_a_quiet_downgrade(corpus, monkeypatch):
 
     assert resp.status_code == 401
     assert resp.data['code'] == 'invalid_token'
+
+
+def test_a_null_classification_is_indexed_as_no_amplicon():
+    """A cleared sample reaches the indexer with Classification null, not 'NA'.
+
+    This is the shape that produced the defect: AmpliconClassifier found nothing,
+    the aggregator wrote a JSON null, the index reader turned it into '' and the
+    old predicate -- which knew only the strings 'NA' and 'NO FSCNA' -- concluded
+    the row had an amplicon.  Measured 2026-09-08, that was 1,002 rows on prod
+    and 4,117 on dev: rows that answered no classification query at all, since
+    ?classification=None matched the flag and no real class matched a blank.
+
+    Built from a project document rather than by calling the predicate, because
+    the bug was in the two steps between the stored null and the flag.
+    """
+    project = {
+        '_id': ObjectId(),
+        'project_name': 'Cleared',
+        'private': 'public',
+        'project_members': [],
+        'runs': {
+            'S_clean': [{'Feature_ID': 'S_clean_NA', 'Classification': None,
+                         'All genes': [''], 'Location': ['']}],
+            'S_amp': [{'Feature_ID': 'S_amp_1', 'Classification': 'ecDNA',
+                       'All genes': ['MYC'], 'Location': ["'chr8:1-2'"]}],
+        },
+    }
+
+    rows = {row['feature_id']: row
+            for row in feature_index.feature_rows_for_project(project)}
+
+    cleared = rows['S_clean_NA']
+    assert cleared['has_amplicon'] is False
+    # And it is stored under one spelling, so /facets/ cannot advertise 'NA'
+    # while a blank row hides behind it.
+    assert cleared['classification'] == 'NA'
+    assert rows['S_amp_1']['has_amplicon'] is True
+
+
+def test_no_amplicon_rows_are_reachable_however_they_were_spelled(corpus):
+    """?classification=None finds both spellings, and /facets/ counts both.
+
+    The two halves are asserted together on purpose: the defect showed up as
+    /facets/ dropping the blank rows while the filter's flag also missed them,
+    so the rows were invisible from both sides at once and no count disagreed
+    with any other count.  Only a row known to exist can catch that.
+    """
+    from caper.views_apis import FeatureFacetsView
+    request = RequestFactory(SERVER_NAME='localhost').get('/api/v1/features/facets/')
+    request.user = AnonymousUser()
+    facets = FeatureFacetsView.as_view()(request)
+    assert facets.status_code == 200
+
+    entries = {e['value']: e['count']
+               for e in facets.data['facets']['classification']}
+    assert 'None' in entries, 'cleared samples must be advertised as a value'
+    assert '' not in entries, 'a blank is not its own facet value'
+
+    # The invariant, over whatever the collection holds: what /facets/ advertises
+    # for 'None' is what filtering on it returns.
+    resp = _get('?classification=None&count_only=true')
+    assert resp.status_code == 200
+    assert resp.data['count'] == entries['None']
+
+    # And within the known corpus, that is both spellings and not just one.
+    assert _scoped(corpus, 'classification=None&count_only=true').data['count'] == 2
