@@ -73,6 +73,7 @@ import datetime
 import hashlib
 import json
 
+from .classifications import is_no_amplicon
 from .project_status import LIVE, status_query
 from .utils import (
     collection_handle,
@@ -117,12 +118,14 @@ REFERENCE_EQUIVALENCE = {
 # replace_space_to_underscore has run, so they are the underscored spellings.
 _SAMPLE_METADATA_FIELDS = ('Sample_type', 'Cancer_type', 'Tissue_of_origin')
 
-# Classifications that mean "this sample was analysed and carries no focal
-# amplification", as opposed to a real amplicon.  Mirrors _zero_feature_mask in
-# search.py: 'No FSCNA' comes from AmpliconClassifier, 'NA' is the
-# AmpliconSuiteAggregator convention.  Kept as a set of upper-case spellings so
-# the comparison cannot be defeated by case.
-NO_AMPLICON_CLASSIFICATIONS = frozenset({'NO FSCNA', 'NA'})
+# Which classifications mean "this sample was analysed and carries no focal
+# amplification" is decided by classifications.is_no_amplicon(), imported above.
+# This module used to keep its own frozenset of the spellings, and that copy is
+# what drifted: it listed 'NO FSCNA' and 'NA' but not the blank a null
+# Classification is read as, so 1,002 cleared samples on prod and 4,117 on dev
+# were indexed as carrying an amplicon (measured 2026-09-08).  A vocabulary
+# written down twice is the defect this codebase keeps producing; there is now
+# one copy.
 
 
 def normalize_gene(value):
@@ -354,7 +357,14 @@ def feature_rows_for_project(project):
             # searching, but the stored documents are not all written that way.
             get = lambda *names: next(
                 (feature[name] for name in names if feature.get(name) not in (None, '')), '')
+            # A cleared sample reaches here spelled two ways: 'NA' from the
+            # aggregator, and a JSON null that get() has already turned into ''.
+            # Storing both meant /facets/ advertised one and silently dropped the
+            # other, so the blank is folded onto the spelling the rest of the
+            # corpus uses rather than being written through.
             classification = str(get('Classification') or '')
+            if is_no_amplicon(classification):
+                classification = 'NA'
             rows.append(_row(
                 project_id=project_id,
                 project_name=project_name,
@@ -379,7 +389,7 @@ def feature_rows_for_project(project):
                     feature, metadata_keys,
                     lambda column: str(get(column, column.replace('_', ' ')) or '').strip()),
                 extra_metadata=feature.get('extra_metadata_from_csv') or {},
-                has_amplicon=classification.strip().upper() not in NO_AMPLICON_CLASSIFICATIONS
+                has_amplicon=not is_no_amplicon(classification)
                 and bool(str(get('Feature_ID', 'Feature ID') or '')),
             ))
 

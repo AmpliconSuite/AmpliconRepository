@@ -82,6 +82,52 @@ ROW_FIELDS = (
 )
 DEFAULT_FIELDS = ROW_FIELDS
 
+# Every query parameter ``/api/v1/features/`` accepts.  Anything else is a 400
+# rather than silence.  Silence is the dangerous answer here: an unrecognised
+# filter that is ignored does not narrow the query, so the caller gets the whole
+# corpus back and reads it as the answer to the question they thought they
+# asked.  That is exactly how ``tissue_of_origin`` went unnoticed -- see below.
+ACCEPTED_PARAMS = frozenset({
+    'gene_any', 'gene_all', 'same_amp', 'classification', 'oncogenes_only',
+    'project_id', 'project_name', 'sample_name', 'sample_type', 'cancer_type',
+    'tissue_of_origin', 'reference_build', 'fields', 'limit', 'cursor',
+    'count_only',
+    # DRF's own content negotiation reads this one; it is not ours to refuse.
+    'format',
+})
+
+# ``/features/facets/`` keys its tissue facet ``tissue_of_origin``, and a row
+# reports the field under that name too, but the filter originally accepted only
+# ``tissue``.  So a client that read the facets response and filtered on the name
+# it found there had its parameter silently dropped and got every row back.
+# Measured on prod 2026-09-08: ``?tissue_of_origin=lung`` returned 37,795 -- the
+# whole corpus -- where ``?tissue=lung`` returned 467.  The facet name is now the
+# parameter name; ``tissue`` stays accepted so existing callers keep working.
+PARAM_ALIASES = {'tissue': 'tissue_of_origin'}
+
+
+def reject_unknown_params(params):
+    """400 on any parameter this endpoint does not implement.
+
+    Returns the parameter names folded through PARAM_ALIASES, so the caller of
+    this function reads canonical names only.
+    """
+    seen = {}
+    unknown = []
+    for name in params.keys():
+        canonical = PARAM_ALIASES.get(name, name)
+        if canonical not in ACCEPTED_PARAMS:
+            unknown.append(name)
+        else:
+            seen[canonical] = name
+    if unknown:
+        raise FeatureQueryError(
+            '%s is not a parameter of this endpoint. Accepted: %s.'
+            % (', '.join(repr(u) for u in sorted(unknown)),
+               ', '.join(sorted(ACCEPTED_PARAMS))),
+            'invalid_parameter')
+    return seen
+
 
 class FeatureQueryError(Exception):
     """A caller's request cannot be answered as asked.
@@ -265,16 +311,35 @@ def _classification_clause(classifications):
             # amplicon, which the index already carries as a flag.  Matching the
             # flag rather than the sentinel strings means a project written by a
             # classifier version that spells it differently is still found.
-            branches.append({'has_amplicon': False})
+            #
+            # The blank is matched as well, because rows indexed before
+            # is_no_amplicon() learned about a null Classification carry
+            # has_amplicon: True with an empty classification -- 1,002 rows on
+            # prod and 4,117 on dev when this was measured, 2026-09-08.  A
+            # reindex rewrites them to 'NA' and the flag becomes sufficient; the
+            # clause stays correct either way, and costs one extra branch.
+            branches.append({'$or': [{'has_amplicon': False},
+                                     {'classification': ''}]})
             continue
         wanted.add(canonical)
         for alias, _folds_to in _ALIAS_BY_CANONICAL.get(canonical, ()):
             wanted.add(alias)
 
     if wanted:
-        spellings = sorted({s for value in wanted
-                            for s in (value, value.upper(), value.lower())})
-        branches.append({'classification': {'$in': spellings}})
+        # Take the spellings from the rows themselves and fold each through the
+        # same function /facets/ uses, so the two cannot disagree.  Enumerating
+        # case variants of the alias table instead -- which is what this did --
+        # left any spelling the table did not anticipate reachable through
+        # /facets/ and unreachable through the filter: 'Linear' was advertised
+        # with 1,420 rows locally and returned 1,417.  Deriving both sides from
+        # one source is the only version of this that stays true as the
+        # classifier's spellings change.
+        spellings = sorted(
+            raw for raw in feature_index_handle.distinct('classification')
+            if isinstance(raw, str)
+            and canonical_classification(raw) in wanted)
+        if spellings:
+            branches.append({'classification': {'$in': spellings}})
 
     if len(branches) == 1:
         return branches[0]
@@ -352,7 +417,8 @@ def sample_keys_for_and(genes, base_clauses):
 
 def non_gene_clauses(*, user, classifications=(), project_id=None,
                      sample_name=None, project_name=None, sample_type=None,
-                     cancer_type=None, tissue=None, reference_build=None,
+                     cancer_type=None, tissue_of_origin=None,
+                     reference_build=None,
                      oncogenes_only=False):
     """Every filter except the gene ones, as a list of clauses.
 
@@ -389,8 +455,16 @@ def non_gene_clauses(*, user, classifications=(), project_id=None,
 
     for field, value in (('Sample_type', sample_type),
                          ('Cancer_type', cancer_type),
-                         ('Tissue_of_origin', tissue)):
-        values = [v for raw in (value or []) for v in parse_csv(raw)]
+                         ('Tissue_of_origin', tissue_of_origin)):
+        # Deliberately NOT comma-split.  These values are free text written by
+        # whoever submitted the project, and real ones contain commas: the index
+        # carries 'BRAIN, & CRANIAL NERVES, & SPINAL CORD, (EXCL. VENTRICLE,
+        # CEREBELLUM)' and 'UTERUS, NOS'.  Splitting on commas turned each of
+        # those into fragments that match nothing -- /facets/ advertised the
+        # first with 316 rows and filtering on it returned 1.  Repeat the
+        # parameter to pass several values; that is unambiguous whatever the
+        # value contains.
+        values = [str(v).strip() for v in (value or []) if str(v).strip()]
         if values:
             # Exact, case-insensitively, against the values the rows carry.
             # Metadata is not unified across projects, so this is a convenience
@@ -485,6 +559,23 @@ def reference_build_facet(query):
 # Running one search
 # ---------------------------------------------------------------------------
 
+def _values(params, name, *aliases):
+    """Repeatable parameter values, read from the canonical name or an alias.
+
+    A QueryDict repeats; a plain dict does not.  Both are passed in by tests and
+    by the view, so both are handled here rather than at each call site.
+    """
+    for candidate in (name,) + aliases:
+        if hasattr(params, 'getlist'):
+            values = params.getlist(candidate)
+        else:
+            value = params.get(candidate)
+            values = [value] if value is not None else []
+        if values:
+            return values
+    return []
+
+
 def search_features(params, user, request=None):
     """Answer one ``/api/v1/features/`` request.
 
@@ -499,6 +590,8 @@ def search_features(params, user, request=None):
         raise FeatureQueryError(
             'The search index is rebuilding and cannot answer accurately yet. '
             'Retry shortly.', 'index_unavailable', status_code=503)
+
+    reject_unknown_params(params)
 
     gene_any = parse_csv(params.get('gene_any'))
     gene_all = parse_csv(params.get('gene_all'))
@@ -525,8 +618,7 @@ def search_features(params, user, request=None):
                      else params.get('sample_type')),
         cancer_type=(params.getlist('cancer_type') if hasattr(params, 'getlist')
                      else params.get('cancer_type')),
-        tissue=(params.getlist('tissue') if hasattr(params, 'getlist')
-                else params.get('tissue')),
+        tissue_of_origin=_values(params, 'tissue_of_origin', 'tissue'),
         reference_build=parse_reference_build(params.get('reference_build')),
         oncogenes_only=parse_bool(params.get('oncogenes_only'), 'oncogenes_only'),
     )
@@ -596,6 +688,19 @@ def feature_facets(user):
     So a client discovers the vocabulary instead of guessing at it and getting a
     silent empty result -- which, for metadata that is not unified across
     projects, is otherwise the normal outcome of a reasonable guess.
+
+    ``total_rows`` is reported alongside because the facet counts alone cannot
+    show what is *missing*.  A row whose project never recorded a cancer type
+    carries no value to group on, so it appears in no facet entry; measured on
+    prod 2026-09-08, the cancer_type entries summed to 17,122 against 37,795
+    rows visible anonymously.  A client comparing those two numbers can tell
+    that filtering on cancer type reaches at most 45% of the corpus.  Without
+    the total there is nothing to compare against, and a filtered count reads
+    as complete when it is a floor.
+
+    Reporting the total rather than a coverage percentage is deliberate: the
+    percentage moves whenever metadata is backfilled, and anything that quotes
+    a percentage goes stale silently.  Two counts computed per request cannot.
     """
     if not index_is_usable():
         raise FeatureQueryError(
@@ -611,10 +716,17 @@ def feature_facets(user):
         values = []
         for row in feature_index_handle.aggregate(pipeline):
             value = row['_id']
+            if name == 'classification':
+                # A blank is not an absence here, it is a classification: rows
+                # indexed before is_no_amplicon() learned about a null
+                # Classification carry '' and mean "no amplicon found".  Folding
+                # before the skip puts them in the 'None' entry, which is where
+                # ?classification=None now finds them.  Skipping first dropped
+                # them from the facet while the filter still returned them --
+                # the same facets-versus-filter break in the other direction.
+                value = canonical_classification(value)
             if value in (None, '', 'Not Provided'):
                 continue
-            if name == 'classification':
-                value = canonical_classification(value)
             values.append({'value': value, 'count': row['count']})
         # Every value advertised here must be one the filter accepts -- see
         # test_facet_values_are_all_filterable.  A facet a client cannot then
@@ -625,4 +737,5 @@ def feature_facets(user):
             merged[entry['value']] = merged.get(entry['value'], 0) + entry['count']
         facets[name] = [{'value': v, 'count': c} for v, c in
                         sorted(merged.items(), key=lambda kv: -kv[1])]
-    return facets
+    return {'total_rows': feature_index_handle.count_documents(access),
+            'facets': facets}
