@@ -466,12 +466,25 @@ def non_gene_clauses(*, user, classifications=(), project_id=None,
         # value contains.
         values = [str(v).strip() for v in (value or []) if str(v).strip()]
         if values:
-            # Exact, case-insensitively, against the values the rows carry.
-            # Metadata is not unified across projects, so this is a convenience
-            # and not a contract -- every row returns its own metadata for the
-            # caller to interpret, which is the authoritative answer.
-            spellings = sorted({s for v in values for s in (v, v.upper(), v.lower(),
-                                                           v.title())})
+            # Take the spellings from the rows themselves and fold each the same
+            # way /facets/ groups them, so the two cannot disagree.  Enumerating
+            # case variants of what the caller typed -- (v, v.upper(), v.lower(),
+            # v.title()), which is what this did -- matched 'Lung' and 'lung'
+            # while /facets/ counted them separately, so the endpoint advertised
+            # 'Lung' at 88 and returned 467 for it.  Measured on prod 2026-09-08:
+            # 16 such collision groups across the three metadata fields, and
+            # every one of the 27 facets-versus-filter disagreements was one.
+            # It also missed spellings the four variants do not generate, which
+            # is the same reason this pattern was already removed from the
+            # classification clause.
+            wanted = {v.strip().lower() for v in values}
+            spellings = sorted(
+                raw for raw in feature_index_handle.distinct(f'metadata.{field}')
+                if isinstance(raw, str) and raw.strip().lower() in wanted)
+            if not spellings:
+                # No row carries the value.  Match nothing rather than dropping
+                # the clause, which would return the unfiltered corpus.
+                spellings = list(values)
             clauses.append({f'metadata.{field}': {'$in': spellings}})
 
     return clauses
@@ -728,14 +741,27 @@ def feature_facets(user):
             if value in (None, '', 'Not Provided'):
                 continue
             values.append({'value': value, 'count': row['count']})
-        # Every value advertised here must be one the filter accepts -- see
-        # test_facet_values_are_all_filterable.  A facet a client cannot then
-        # use is worse than no facet: it reads as a supported query.
-        # Aliases fold onto one spelling, so two rows can become one entry.
+        # Every value advertised here must be one the filter accepts, and must
+        # return the count advertised -- see test_facet_values_are_all_filterable.
+        # A facet a client cannot then use is worse than no facet: it reads as a
+        # supported query.
+        #
+        # Grouping is case-insensitive because the filter is.  Grouping on the
+        # exact stored value while the filter folded case is what made /facets/
+        # advertise 'Lung' at 88 and 'lung' at 379 when filtering on either
+        # returned 467 -- prod, 2026-09-08, 16 collision groups and 27
+        # disagreements, none of them visible on dev, whose tissue values are
+        # all one case.  The entry is shown under the commonest spelling, which
+        # is also the one most likely to be what a client already has.
+        # The aggregate is sorted by count descending, so the first spelling
+        # seen for a group is its commonest and is the one shown.
         merged = {}
         for entry in values:
-            merged[entry['value']] = merged.get(entry['value'], 0) + entry['count']
+            value = entry['value']
+            key = value.strip().lower() if isinstance(value, str) else value
+            spelling, total = merged.get(key, (value, 0))
+            merged[key] = (spelling, total + entry['count'])
         facets[name] = [{'value': v, 'count': c} for v, c in
-                        sorted(merged.items(), key=lambda kv: -kv[1])]
+                        sorted(merged.values(), key=lambda vc: -vc[1])]
     return {'total_rows': feature_index_handle.count_documents(access),
             'facets': facets}

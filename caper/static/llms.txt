@@ -82,10 +82,11 @@ consequences, all of which produce confidently wrong answers if ignored:
    facets response against the sum of the counts for the field you are
    filtering on. If they differ, the shortfall is rows carrying no value for
    that field, and no filter on it can ever reach them. Say so in your answer.
-2. **The same thing is spelled several ways.** `lung` and `Lung` are separate
-   entries; so are `Breast` and `Breast Adenocarcinoma`. Matching is
-   case-insensitive, but granularity is not — check the facet list and query
-   the spellings you find there, repeating the parameter for each.
+2. **The same thing is spelled several ways.** Case is folded for you — `lung`
+   and `Lung` are one entry with one count — but granularity is not: `Breast`
+   and `Breast Adenocarcinoma` are separate values covering overlapping
+   samples. Read the facet list and query the spellings you find there,
+   repeating the parameter for each one you want.
 3. **`NA` is a value, not a gap.** It means the submitter recorded "not
    applicable"; it is filterable and it is common.
 
