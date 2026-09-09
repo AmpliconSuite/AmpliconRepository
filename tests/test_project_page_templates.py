@@ -398,3 +398,28 @@ def test_the_remove_all_warning_is_resynced_when_the_boxes_are_cleared():
         "setCheckboxesDisabled(true, 'Not available when replacing or "
         "re-aggregating the project.');")[1].split('} else {')[0]
     assert 'syncRemoveAllWarning();' in branch
+
+
+def test_documentation_links_carry_the_readthedocs_version_prefix():
+    """readthedocs serves pages under /en/latest/, and a bare path 404s.
+
+    Every documentation link in the templates and static files already used the
+    prefix; the home page's new AI-assistant link did not, and shipped to prod
+    pointing at a 404. The convention was there to copy and the miss was
+    invisible in review, which is what a test is for. The bare site root is
+    allowed -- it redirects.
+    """
+    import re
+    from pathlib import Path
+
+    root = TEMPLATE_DIR.parent
+    bad = []
+    for path in list(root.rglob("*.html")) + list(root.rglob("*.txt")):
+        for url in re.findall(r"https://docs\.ampliconrepository\.org[^\"' )\n]*",
+                              path.read_text(errors="ignore")):
+            tail = url[len("https://docs.ampliconrepository.org"):]
+            if tail in ("", "/"):
+                continue
+            if not tail.startswith("/en/latest/"):
+                bad.append("%s: %s" % (path.relative_to(root), url))
+    assert not bad, "documentation links missing the /en/latest/ prefix:\n  " + "\n  ".join(bad)
