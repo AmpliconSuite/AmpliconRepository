@@ -423,3 +423,30 @@ def test_documentation_links_carry_the_readthedocs_version_prefix():
             if not tail.startswith("/en/latest/"):
                 bad.append("%s: %s" % (path.relative_to(root), url))
     assert not bad, "documentation links missing the /en/latest/ prefix:\n  " + "\n  ".join(bad)
+
+
+def test_the_advanced_link_sits_with_the_examples_not_inside_the_search_box():
+    """`.home-search` is a bordered pill with `align-items: stretch` and
+    `overflow: hidden`, so a bare text link placed inside it renders stretched
+    to full height against the submit button and clipped by the rounded corner.
+
+    Retiring /gene-search/ moved `#home-advanced` from `.home-examples` into
+    `.home-search` while changing its href, and the mangled result shipped. The
+    href change was needed; the move was not. `.home-advanced` is styled for the
+    examples row -- it takes a font size and a left margin, not the padding a
+    flex child of the pill would need.
+    """
+    import re
+
+    source = (TEMPLATE_DIR / "index.html").read_text()
+    search_box = re.search(
+        r'<div class="home-search">(.*?)\n            </div>', source, re.S)
+    assert search_box, "the search box markup moved; update this test"
+    assert "home-advanced" not in search_box.group(1), (
+        "the Advanced link is inside .home-search again; it belongs in "
+        ".home-examples, which is what .home-advanced is styled for")
+
+    examples = re.search(
+        r'<div class="home-examples">(.*?)\n            </div>', source, re.S)
+    assert examples and "home-advanced" in examples.group(1), (
+        "the Advanced link should sit beside the example pills")

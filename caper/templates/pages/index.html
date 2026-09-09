@@ -437,7 +437,8 @@
        at 13.5 against the pills' grey at 12.5, one section apart, for the same
        kind of act. They do not submit; they fill the field and hand it back to
        you. So they take the pill's treatment exactly, and Advanced beside them
-       keeps the blue, because Advanced is the one that leaves the page. */
+       keeps the blue, because Advanced is the one that opens something rather
+       than filling the field in place. */
     .home-ex {
         appearance: none;
         border: 1px solid #e3e6ea;
@@ -1705,7 +1706,6 @@
                        placeholder="Find amplified genes, e.g. MYC or MYC&amp;EGFR"
                        aria-label="Search query">
                 <button type="submit">Search</button>
-                <a href="{% url 'index' %}" id="home-advanced" class="home-advanced">Advanced</a>
             </div>
             <div class="home-examples">
                 Try
@@ -1721,6 +1721,7 @@
                         data-tip="Searches Genes for amplicons carrying both CDK4 and MDM2">CDK4 &amp; MDM2</button>
                 <button type="button" class="home-ex" data-scope="metadata_cancer_tissue" data-query="glioblastoma"
                         data-tip="Searches Cancer type for glioblastoma">glioblastoma</button>
+                <a href="{% url 'index' %}" id="home-advanced" class="home-advanced">Advanced</a>
             </div>
         </form>
 
