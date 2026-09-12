@@ -13,6 +13,7 @@ These tests therefore do two different jobs:
 """
 
 import json
+import re
 
 import pytest
 from django.test import Client
@@ -68,8 +69,11 @@ class TestOpenApiDocument:
             route = str(getattr(pattern, 'pattern', ''))
             if not route.startswith('api/v1/'):
                 continue
-            # Django's <str:project_id> is {project_id} in OpenAPI.
-            path = '/' + route.replace('<str:project_id>', '{project_id}')
+            # Django's <str:project_id> is {project_id} in OpenAPI.  Rewritten
+            # by pattern rather than by name: spelling each parameter out here
+            # meant a new one read as an undocumented route rather than as the
+            # documented route it is, which is a false failure of this guard.
+            path = '/' + re.sub(r'<(?:[a-z_]+:)?([^>]+)>', r'{\1}', route)
             routed.add(path)
 
         # The schema endpoint documents everything but itself, by design.
