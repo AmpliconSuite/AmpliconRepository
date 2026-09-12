@@ -100,6 +100,23 @@ class PreviousVersionSerializer(serializers.Serializer):
     CoRAL_version = serializers.CharField(required=False)
 
 
+class MetadataCoverageSerializer(serializers.Serializer):
+    """What fraction of this project's rows carry each metadata field.
+
+    0.0 means the field is empty for the whole project, so no filter on it can
+    ever reach this project -- a query that looks like it returned "no matches"
+    actually returned "nothing to match against". Measured on prod on
+    2026-09-12, 22 of 34 public projects recorded no cancer type at all.
+
+    The denominator is rows, which is what a `/features/` filter returns.
+    Recomputed at most every five minutes, so a metadata backfill shows up
+    here almost immediately.
+    """
+    cancer_type = serializers.FloatField()
+    sample_type = serializers.FloatField()
+    tissue_of_origin = serializers.FloatField()
+
+
 class ProjectSerializer(serializers.Serializer):
     """One project's metadata. Sample-level data is at `.../samples/`."""
 
@@ -142,6 +159,12 @@ class ProjectSerializer(serializers.Serializer):
     is_latest_version = serializers.BooleanField(
         help_text='False when this id names a superseded version, which still '
                   'resolves so that published results stay reachable.')
+    metadata_coverage = MetadataCoverageSerializer(
+        allow_null=True,
+        help_text='Per-field metadata coverage, 0.0 to 1.0. Read it before '
+                  'filtering this project on cancer_type, sample_type or '
+                  'tissue_of_origin: a 0.0 means the filter cannot reach this '
+                  'project at all. Null when the project has no indexed rows.')
     previous_versions = PreviousVersionSerializer(
         many=True,
         help_text='Superseded versions, oldest first. Each still resolves.')
@@ -246,14 +269,26 @@ class FeatureRowSerializer(serializers.Serializer):
     tissue_of_origin = serializers.CharField(allow_null=True)
     project_url = serializers.CharField()
     sample_url = serializers.CharField(
-        help_text='Fetch this to get the sample rows behind the match. Search '
-                  'returns rows, never payload; every row carries the URL to '
-                  'fetch its data.')
+        help_text='Fetch this to get this sample\'s rows. Search returns '
+                  'rows, never payload; every row carries the URL to fetch '
+                  'its data.')
+    sample_page_url = serializers.CharField(
+        help_text='The human-readable page for this sample -- what to cite, '
+                  'and what to give a person. It is an HTML page, not part of '
+                  'the API: read the data through sample_url instead of '
+                  'fetching it.')
 
 
 class FeatureSearchSerializer(serializers.Serializer):
     count = serializers.IntegerField(
         help_text='Total matching rows, not the number on this page.')
+    sample_count = serializers.IntegerField(
+        help_text='Distinct samples those rows cover. One sample carries a '
+                  'mean of 1.97 rows and up to 161, so this is the '
+                  'denominator for any "what fraction of samples" question -- '
+                  '`count` answers a question about amplicons, not about '
+                  'samples. A sample is identified by project and name '
+                  'together, never by name alone.')
     results = FeatureRowSerializer(many=True)
     next_cursor = serializers.CharField(
         allow_null=True,
@@ -263,6 +298,40 @@ class FeatureSearchSerializer(serializers.Serializer):
         help_text='How the whole result set splits by reference build. Gene '
                   'symbols are build-dependent, so a zero on one build is the '
                   'signal that the gene may exist there under another name.')
+
+
+class FeatureSampleSerializer(serializers.Serializer):
+    """One sample, as a search result."""
+
+    project_id = serializers.CharField()
+    project_name = serializers.CharField()
+    sample_name = serializers.CharField(
+        help_text='Unique only within its project: 2,324 names in the public '
+                  'corpus occur in more than one (prod, 2026-09-12). Key on '
+                  '(project_id, sample_name).')
+    reference_build = serializers.CharField()
+    row_count = serializers.IntegerField(
+        help_text='Matching rows for this sample.')
+    amplicon_count = serializers.IntegerField(
+        help_text='How many of those rows are amplicons. Zero means the '
+                  'sample was analysed and nothing focal was found -- a '
+                  'result, not a gap.')
+    classifications = serializers.ListField(
+        child=serializers.CharField(),
+        help_text='The amplicon classes this sample carries among the '
+                  'matching rows.')
+    project_url = serializers.CharField()
+    sample_url = serializers.CharField()
+    sample_page_url = serializers.CharField()
+
+
+class FeatureSampleSearchSerializer(serializers.Serializer):
+    count = serializers.IntegerField(
+        help_text='Total matching samples, not the number on this page.')
+    results = FeatureSampleSerializer(many=True)
+    next_cursor = serializers.CharField(
+        allow_null=True,
+        help_text='Pass as ?cursor= for the next page. Null on the last page.')
 
 
 class FacetValueSerializer(serializers.Serializer):

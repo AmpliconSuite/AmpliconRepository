@@ -171,6 +171,7 @@ def corpus(monkeypatch):
     public = ObjectId()
     private = ObjectId()
     tissue = ObjectId()
+    names = ObjectId()
     rows = [
         # One sample carrying MYC and CDK4 on the SAME amplicon...
         _row(public, 'Pub', 'public', 'S1', 'S1_a1', 'ecDNA', ['MYC', 'CDK4']),
@@ -208,12 +209,24 @@ def corpus(monkeypatch):
              build='hg19', metadata={'Tissue_of_origin': 'Lung'}),
         _row(tissue, 'Tiss', 'public', 'T2', 'T2_a1', 'BFB', ['KRAS'],
              build='hg19', metadata={'Tissue_of_origin': 'lung'}),
+        # Two cell lines whose names nest, which is what defeats a client-side
+        # prefix match: HOS and HOS-MNNG are different lines, and 315 of the
+        # corpus's normalised names are a prefix of another (prod, 2026-09-12).
+        # 'S1' as well, because it is also a sample name in the 'Pub' project
+        # above -- 2,324 names occur in more than one project, so a count of
+        # distinct names is not a count of samples.  Their own project, so the
+        # counts the other tests assert stay about what those tests are for.
+        _row(names, 'Names', 'public', 'HOS', 'HOS_a1', 'ecDNA', ['MYC']),
+        _row(names, 'Names', 'public', 'HOS-MNNG', 'HOS-MNNG_a1', 'ecDNA', ['MYC']),
+        _row(names, 'Names', 'public', 'HOS-MNNG', 'HOS-MNNG_a2', 'BFB', ['MYC']),
+        _row(names, 'Names', 'public', 'S1', 'S1_a1', 'ecDNA', ['MYC']),
     ]
     feature_index_handle.insert_many(rows)
     monkeypatch.setattr(api_features, 'index_is_usable', lambda: True)
-    yield {'public': public, 'private': private, 'tissue': tissue}
+    yield {'public': public, 'private': private, 'tissue': tissue,
+           'names': names}
     feature_index_handle.delete_many(
-        {'project_id': {'$in': [public, private, tissue]}})
+        {'project_id': {'$in': [public, private, tissue, names]}})
 
 
 def _get(qs, user=None):
@@ -658,3 +671,260 @@ def test_a_case_variant_filters_to_the_advertised_count(corpus):
                     % (corpus['tissue'], spelling)).data['count']
 
     assert count('Lung') == count('lung') == count('LUNG') == 2, 'both spellings, not one'
+
+
+# ---------------------------------------------------------------------------
+# Samples, as distinct from rows
+# ---------------------------------------------------------------------------
+
+def _samples(qs, user=None):
+    from caper.views_apis import FeatureSamplesView
+    request = RequestFactory(SERVER_NAME='localhost').get(
+        '/api/v1/features/samples/' + qs)
+    request.user = user or AnonymousUser()
+    return FeatureSamplesView.as_view()(request)
+
+
+def test_sample_count_counts_samples_and_count_counts_rows(corpus):
+    """The distinction an agent got wrong against the live API.
+
+    S2 carries two amplicons, so the 'Pub' project's six rows are five samples.
+    Reported per response because a paged caller cannot compute it: the rows
+    for one sample can straddle a page boundary.
+    """
+    resp = _scoped(corpus, 'count_only=true')
+    assert resp.data['count'] == 6
+    assert resp.data['sample_count'] == 5
+
+
+def test_sample_identity_is_project_and_name_not_name_alone(corpus):
+    """'S1' exists in two of the corpus's projects and is two samples.
+
+    Counting distinct sample names instead undercounts: on prod 2,324 names
+    occur in more than one project and the shortfall is 11.7% (2026-09-12).
+    """
+    listed = _samples('?sample_name=S1&limit=500')
+    names = {r['project_name'] for r in listed.data['results']}
+    assert {'Pub', 'Names'} <= names
+    # One name, at least two samples -- and the row endpoint agrees.
+    assert listed.data['count'] >= 2
+    assert _get('?sample_name=S1&count_only=true').data['sample_count'] \
+        == listed.data['count']
+
+
+def test_count_only_and_the_full_response_agree_on_both_counts(corpus):
+    full = _scoped(corpus, 'limit=500')
+    counted = _scoped(corpus, 'count_only=true')
+    assert counted.data['count'] == full.data['count']
+    assert counted.data['sample_count'] == full.data['sample_count']
+
+
+def test_an_empty_result_still_reports_a_sample_count(corpus):
+    """Shape stability: a client reading the field must always find it."""
+    resp = _scoped(corpus, 'gene_all=MYC,NOSUCHGENE&count_only=true')
+    assert resp.data['count'] == 0
+    assert resp.data['sample_count'] == 0
+
+
+def test_sample_name_is_exact_and_case_insensitive(corpus):
+    """Exact on the name, folded on case.
+
+    The case folding is the half that was undocumented, so a caller did it
+    client-side and fetched whole projects to do it.
+    """
+    assert _scoped(corpus, 'sample_name=s1&count_only=true').data['count'] == 1
+    assert _scoped(corpus, 'sample_name=S1&count_only=true').data['count'] == 1
+    # And exact: S1 does not match S1_something.
+    assert _get('?sample_name=HOS&project_id=%s&count_only=true'
+                % corpus['names']).data['count'] == 1
+
+
+def test_sample_name_contains_finds_the_longer_spelling(corpus):
+    """The entity-resolution case: a name spelled differently here."""
+    resp = _get('?sample_name_contains=MNNG&count_only=true')
+    assert resp.data['count'] == 2
+    assert resp.data['sample_count'] == 1
+
+
+def test_sample_name_contains_does_not_silently_merge_nested_names(corpus):
+    """'HOS' matches HOS and HOS-MNNG, and the caller is able to see that.
+
+    This is the failure the endpoint exists to prevent: prefix-matching HOS
+    client-side merged it with HOS-MNNG, a different line, and reported one
+    number for both.
+    """
+    rows = _get('?sample_name_contains=HOS&count_only=true')
+    assert rows.data['count'] == 3
+    assert rows.data['sample_count'] == 2
+
+    listed = _samples('?sample_name_contains=HOS&limit=500')
+    assert [r['sample_name'] for r in listed.data['results']] == ['HOS', 'HOS-MNNG']
+    by_name = {r['sample_name']: r for r in listed.data['results']}
+    assert by_name['HOS']['row_count'] == 1
+    assert by_name['HOS-MNNG']['row_count'] == 2
+    assert by_name['HOS-MNNG']['classifications'] == ['BFB', 'ecDNA']
+
+
+def test_sample_name_contains_is_a_literal_not_a_pattern(corpus):
+    """No wildcards and no operators.
+
+    The site's own query language treats ``*``, ``&`` and ``|`` as operators
+    with no way to escape them; that is not a contract to repeat in an API,
+    where the value arrives from a URL.
+    """
+    assert _get('?sample_name_contains=HOS*&count_only=true').data['count'] == 0
+    assert _get('?sample_name_contains=.&count_only=true').data['count'] == 0
+
+
+def test_sample_name_contains_matching_nothing_matches_nothing(corpus):
+    """Not 'every row': a dropped clause answers a different question."""
+    resp = _get('?sample_name_contains=NOSUCHSAMPLE&count_only=true')
+    assert resp.data['count'] == 0
+
+
+def test_sample_name_contains_refuses_to_expand_too_far(corpus, monkeypatch):
+    """A fragment matching most of the corpus is refused, not served slowly."""
+    monkeypatch.setattr(api_features, 'MAX_SAMPLE_NAME_MATCHES', 1)
+    resp = _get('?sample_name_contains=S&count_only=true')
+    assert resp.status_code == 400
+    assert resp.data['code'] == 'query_too_broad'
+
+
+def test_a_row_points_at_its_own_sample(corpus):
+    """sample_url named a sample and returned the whole project until 2026-09-12."""
+    resp = _get('?project_id=%s&sample_name=HOS-MNNG&limit=1' % corpus['names'])
+    row = resp.data['results'][0]
+    assert row['sample_url'].endswith(
+        '/api/v1/projects/%s/samples/HOS-MNNG/' % corpus['names'])
+    assert row['sample_page_url'].endswith(
+        '/project/%s/sample/HOS-MNNG' % corpus['names'])
+
+
+def test_the_two_endpoints_answer_the_same_question(corpus):
+    """/features/ sample_count and /features/samples/ count must agree.
+
+    They filter through one shared parser for exactly this reason. The
+    facets-versus-filter breaks this file is full of were all two code paths
+    that were supposed to mean the same thing and drifted; this is the guard
+    against the next one.
+    """
+    for qs in ('', 'gene_any=MYC', 'classification=ecDNA', 'classification=None',
+               'sample_name_contains=HOS', 'reference_build=hg19',
+               'gene_all=MYC,EGFR', 'gene_all=MYC,CDK4&same_amp=true',
+               'oncogenes_only=true', 'tissue_of_origin=Lung'):
+        rows = _get('?count_only=true&' + qs)
+        grouped = _samples('?limit=500&' + qs)
+        assert rows.status_code == grouped.status_code == 200, qs
+        assert rows.data['sample_count'] == grouped.data['count'], qs
+
+
+def test_grouped_samples_report_their_amplicon_count(corpus):
+    """A sample with no amplicon is a result, not a gap."""
+    listed = _samples('?project_id=%s&limit=500' % corpus['public'])
+    by_name = {r['sample_name']: r for r in listed.data['results']}
+    assert by_name['S3']['row_count'] == 1
+    assert by_name['S3']['amplicon_count'] == 0
+    assert by_name['S3']['classifications'] == ['None']
+    assert by_name['S2']['row_count'] == 2
+    assert by_name['S2']['amplicon_count'] == 2
+
+
+def test_grouped_samples_page_exactly_once(corpus):
+    """No sample repeated, none skipped, and the walk ends."""
+    total = _samples('?limit=500').data['count']
+    seen, cursor, pages = [], None, 0
+    while True:
+        qs = 'limit=2'
+        if cursor:
+            qs += '&cursor=%s' % cursor
+        resp = _samples('?' + qs)
+        assert resp.status_code == 200, resp.data
+        seen.extend((r['project_id'], r['sample_name']) for r in resp.data['results'])
+        cursor = resp.data['next_cursor']
+        pages += 1
+        if not cursor:
+            break
+        assert pages <= total + 1, 'cursor walk did not terminate'
+    assert len(seen) == total
+    assert len(set(seen)) == len(seen), 'a sample appeared on two pages'
+
+
+def test_grouped_samples_respect_the_access_boundary(corpus):
+    listed = _samples('?gene_any=MYC&limit=500')
+    assert str(corpus['private']) not in {r['project_id'] for r in listed.data['results']}
+
+    body = api_features.search_feature_samples(
+        QueryDict('gene_any=MYC&limit=500'),
+        _Member('someone', 'someone@example.org'))
+    assert str(corpus['private']) in {r['project_id'] for r in body['results']}
+
+
+def test_grouped_samples_refuse_a_row_shaped_parameter(corpus):
+    """'fields' and 'count_only' describe a row and mean nothing on a sample."""
+    for bad in ('fields=sample_name', 'count_only=true'):
+        resp = _samples('?' + bad)
+        assert resp.status_code == 400, bad
+        assert resp.data['code'] == 'invalid_parameter'
+
+
+def test_grouped_samples_are_503_on_a_stale_index(monkeypatch):
+    monkeypatch.setattr(api_features, 'index_is_usable', lambda: False)
+    resp = _samples('?gene_any=MYC')
+    assert resp.status_code == 503
+    assert resp.data['code'] == 'index_unavailable'
+
+
+# ---------------------------------------------------------------------------
+# Per-project metadata coverage
+# ---------------------------------------------------------------------------
+
+def test_metadata_coverage_is_the_fraction_of_rows_with_a_value(corpus):
+    """Rows, not samples: rows are what a /features/ filter returns.
+
+    The number answers "can a filter on this field reach this project", which
+    is the question an agent got wrong against PCAWG unfiltered -- 5,002 rows,
+    no cancer type on any of them, and an empty result that read as an answer.
+    """
+    from django.core.cache import cache
+    from caper import feature_index
+    cache.delete(feature_index._COVERAGE_CACHE_KEY)
+    try:
+        coverage = feature_index.metadata_coverage_by_project()
+    finally:
+        cache.delete(feature_index._COVERAGE_CACHE_KEY)
+
+    # The 'Tiss' project records a tissue for both its rows and nothing else.
+    tissue = coverage[str(corpus['tissue'])]
+    assert tissue == {'cancer_type': 0.0, 'sample_type': 0.0,
+                      'tissue_of_origin': 1.0}
+    # The 'Pub' project records none of the three.
+    assert coverage[str(corpus['public'])]['tissue_of_origin'] == 0.0
+
+
+def test_metadata_coverage_counts_na_as_recorded_and_not_provided_as_absent(
+        corpus, monkeypatch):
+    """'NA' is the submitter saying "not applicable" -- a value, and filterable.
+
+    'Not Provided' is the aggregator's placeholder for a field nobody filled
+    in, and /features/facets/ already skips it; counting it as coverage would
+    advertise a filter that reaches nothing.
+    """
+    from django.core.cache import cache
+    from caper import feature_index
+    marked = ObjectId()
+    feature_index_handle.insert_many([
+        _row(marked, 'Marked', 'public', 'M1', 'M1_a1', 'ecDNA', ['MYC'],
+             metadata={'Cancer_type': 'NA', 'Sample_type': 'Not Provided'}),
+        _row(marked, 'Marked', 'public', 'M2', 'M2_a1', 'ecDNA', ['MYC'],
+             metadata={'Cancer_type': '', 'Sample_type': 'Cell Line'}),
+    ])
+    cache.delete(feature_index._COVERAGE_CACHE_KEY)
+    try:
+        coverage = feature_index.metadata_coverage_by_project()[str(marked)]
+    finally:
+        cache.delete(feature_index._COVERAGE_CACHE_KEY)
+        feature_index_handle.delete_many({'project_id': marked})
+
+    assert coverage['cancer_type'] == 0.5      # 'NA' counts, '' does not
+    assert coverage['sample_type'] == 0.5      # 'Cell Line' counts, the
+                                               # placeholder does not

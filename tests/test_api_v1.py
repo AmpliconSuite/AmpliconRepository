@@ -980,3 +980,142 @@ def test_batch_download_resolves_known_projects(loaded_datasets):
     finally:
         collection_handle.update_one(
             {'_id': project['_id']}, {'$set': {'private': project.get('private', 'private')}})
+
+
+# ===========================================================================
+# Section K — ProjectSampleDetailView
+# ===========================================================================
+
+def _project_with_named_samples():
+    proj = _make_project(private='public')
+    proj['runs'] = {'run1': [
+        {'Sample_name': 'HOS', 'oncogene': 'MYC'},
+        {'Sample_name': 'HOS-MNNG', 'Feature_ID': 'a1'},
+        {'Sample_name': 'HOS-MNNG', 'Feature_ID': 'a2'},
+    ]}
+    return proj
+
+
+class TestProjectSampleDetailView:
+    """One sample by name -- what a search result's sample_url points at.
+
+    Until 2026-09-12 a row's sample_url was the project's whole sample list,
+    so following it for one row of a 9,090-row project returned all 9,090.
+    """
+
+    def setup_method(self):
+        from caper.views_apis import ProjectSampleDetailView
+        self.view = ProjectSampleDetailView.as_view()
+        self.rf = APIRequestFactory()
+
+    def _get(self, proj, name):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj), \
+             patch('caper.views_apis.collection_handle') as mock_col:
+            mock_col.find_one.return_value = proj
+            req = self.rf.get('/api/v1/projects/x/samples/%s/' % name)
+            return self.view(req, project_id='x', sample_name=name)
+
+    def test_returns_only_that_sample(self):
+        resp = self._get(_project_with_named_samples(), 'HOS-MNNG')
+        assert resp.status_code == 200
+        assert len(resp.data) == 2
+        assert {r['Feature_ID'] for r in resp.data} == {'a1', 'a2'}
+
+    def test_a_nested_name_is_not_the_same_sample(self):
+        """HOS and HOS-MNNG are different cell lines.
+
+        315 of the corpus's normalised sample names are a strict prefix of
+        another (prod, 2026-09-12), so a prefix match here would merge them.
+        """
+        resp = self._get(_project_with_named_samples(), 'HOS')
+        assert resp.status_code == 200
+        assert len(resp.data) == 1
+        assert resp.data[0]['oncogene'] == 'MYC'
+
+    def test_the_name_is_matched_case_insensitively(self):
+        """As sample_name= is on /features/, so a URL built from either works."""
+        assert len(self._get(_project_with_named_samples(), 'hos-mnng').data) == 2
+
+    def test_an_unknown_sample_is_404_not_an_empty_list(self):
+        """An empty list is what a sample with no rows looks like.
+
+        The two want different things from the caller, so they get different
+        responses.
+        """
+        resp = self._get(_project_with_named_samples(), 'NOSUCHSAMPLE')
+        assert resp.status_code == 404
+        assert resp.data['code'] == 'not_found'
+
+    def test_the_name_is_read_the_way_the_index_reads_it(self):
+        """The URL that gets here was built from the index's spelling.
+
+        Both key spellings, and the run key for a feature that carries no name
+        at all -- one rule, imported, so a sample_url cannot 404 on a sample
+        that exists.
+        """
+        proj = _make_project(private='public')
+        proj['runs'] = {'run1': [{'Sample name': 'Spaced', 'Feature_ID': 'a1'},
+                                 {'Feature_ID': 'a2'}]}
+        assert len(self._get(proj, 'Spaced').data) == 1
+        assert len(self._get(proj, 'run1').data) == 1
+
+    def test_not_found_returns_404(self):
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=None):
+            req = self.rf.get('/api/v1/projects/x/samples/S1/')
+            resp = self.view(req, project_id='x', sample_name='S1')
+        assert resp.status_code == 404
+
+    def test_private_non_member_returns_401(self):
+        proj = _make_project(private='private', members=['owner'])
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj):
+            req = self.rf.get('/api/v1/projects/x/samples/S1/')
+            resp = self.view(req, project_id='x', sample_name='S1')
+        assert resp.status_code == 401
+
+    def test_authorization_happens_before_the_runs_are_read(self):
+        """Otherwise an anonymous caller triggers a multi-megabyte read for a 401.
+
+        That read amplification is what took production down; the project
+        endpoints are projected sans-runs for the same reason.
+        """
+        proj = _make_project(private='private', members=['owner'])
+        with patch('caper.views_apis.get_one_project_sans_runs', return_value=proj), \
+             patch('caper.views_apis.collection_handle') as mock_col:
+            req = self.rf.get('/api/v1/projects/x/samples/S1/')
+            self.view(req, project_id='x', sample_name='S1')
+            assert not mock_col.find_one.called
+
+
+# ===========================================================================
+# Section L — metadata_coverage on the project object
+# ===========================================================================
+
+class TestProjectMetadataCoverage:
+    """Why a project reports its own metadata coverage.
+
+    The three metadata fields are free text supplied per project, so a filter
+    that reaches none of a project's rows is indistinguishable from a project
+    whose samples do not match. Measured on prod on 2026-09-12, 22 of 34
+    public projects held no cancer type at all.
+    """
+
+    def test_the_fraction_is_attached_to_the_right_project(self):
+        from caper.views_apis import _project_to_dict
+        proj = _make_project(private='public', linkid='a' * 24)
+        coverage = {'a' * 24: {'cancer_type': 0.0, 'sample_type': 1.0,
+                               'tissue_of_origin': 1.0}}
+        out = _project_to_dict(proj, None, coverage)
+        assert out['metadata_coverage']['cancer_type'] == 0.0
+        assert out['metadata_coverage']['sample_type'] == 1.0
+
+    def test_a_project_with_no_indexed_rows_reports_null(self):
+        """Null, not zero: 'no rows here' is not 'no metadata here'."""
+        from caper.views_apis import _project_to_dict
+        proj = _make_project(private='public', linkid='b' * 24)
+        assert _project_to_dict(proj, None, {})['metadata_coverage'] is None
+
+    def test_the_field_is_always_present(self):
+        """Shape stability for a client that reads it unconditionally."""
+        from caper.views_apis import _project_to_dict
+        out = _project_to_dict(_make_project(private='public'))
+        assert 'metadata_coverage' in out

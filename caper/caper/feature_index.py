@@ -73,6 +73,8 @@ import datetime
 import hashlib
 import json
 
+from django.core.cache import cache
+
 from .classifications import is_no_amplicon
 from .project_status import LIVE, status_query
 from .utils import (
@@ -372,7 +374,7 @@ def feature_rows_for_project(project):
                 visibility=visibility,
                 members=members,
                 run_key=run_key,
-                sample_name=str(get('Sample_name', 'Sample name') or run_key),
+                sample_name=sample_name_of(feature, run_key),
                 feature_id=str(get('Feature_ID', 'Feature ID') or ''),
                 classification=classification,
                 genes=_gene_list(feature),
@@ -394,6 +396,22 @@ def feature_rows_for_project(project):
             ))
 
     return rows
+
+
+def sample_name_of(feature, run_key=''):
+    """What this feature row's sample is called.
+
+    Imported by ``/api/v1/projects/{id}/samples/{name}/`` rather than restated
+    there: the index builds a search result's ``sample_url`` out of this value,
+    so a second spelling of the rule would produce URLs that 404.  Three things
+    it has to get right -- both key spellings, a blank that is not a name, and
+    the run key a nameless feature falls back to.
+    """
+    for key in ('Sample_name', 'Sample name'):
+        value = feature.get(key) if isinstance(feature, dict) else None
+        if value not in (None, ''):
+            return str(value)
+    return str(run_key)
 
 
 def _row(*, project_id, project_name, project_sample_count, visibility, members, run_key, sample_name,
@@ -734,6 +752,78 @@ def rebuild_search_names():
     if names:
         search_names_handle.insert_many(list(names.values()))
     return len(names)
+
+
+# How long a coverage map is reused.  Coverage moves only when a project is
+# re-indexed, which is rare, and the aggregate behind it reads every row (1.03 s
+# over 39,114 rows on prod, 2026-09-12) -- too slow to run on /api/v1/projects/,
+# which is the entry point every client and crawler hits first.  Five minutes
+# bounds that to one aggregate per five minutes while keeping a metadata
+# backfill visible in the API almost immediately.
+METADATA_COVERAGE_TTL = 300
+_COVERAGE_CACHE_KEY = 'feature_index:metadata_coverage:v1'
+
+# The values that are a gap rather than an answer.  'Not Provided' is the
+# aggregator's placeholder and is skipped by /features/facets/ for the same
+# reason; 'NA' is NOT in this list, because the submitter recorded "not
+# applicable" and that is a real, filterable value.
+#
+# A missing key is folded onto '' with $ifNull rather than compared against
+# null: a field path that does not exist does not compare unequal to null the
+# way a written null does, so a project that never recorded a field was
+# measured at 100% coverage by the first version of this.
+_COVERAGE_BLANKS = ('', 'Not Provided')
+
+
+def metadata_coverage_by_project():
+    """What fraction of each project's rows carry each metadata field.
+
+    Why the API reports this rather than leaving a caller to discover it: the
+    three metadata fields are free text supplied per project, and a project
+    that recorded none of one field is indistinguishable, through a filter,
+    from a project whose samples all happen not to match.  Measured on prod on
+    2026-09-12, before the backfill of the two unfiltered projects: 22 of 34
+    public projects held no cancer type at all, and six held none of the three.
+    An agent that queried PCAWG unfiltered by cancer type got an empty result
+    that looked like an answer.
+
+    The denominator is rows, not samples, because rows are what a filter on
+    ``/features/`` returns -- the number answers "can a filter on this field
+    reach this project", which is the question that was being got wrong.
+
+    One aggregate over the whole index, cached: per-project counts cannot be
+    read off the project documents, and computing them per request would put a
+    second full scan on the listing endpoint.
+    """
+    cached = cache.get(_COVERAGE_CACHE_KEY)
+    if cached is not None:
+        return cached
+
+    def counted(path):
+        value = {'$ifNull': ['$' + path, '']}
+        return {'$sum': {'$cond': [
+            {'$and': [{'$ne': [value, blank]} for blank in _COVERAGE_BLANKS]},
+            1, 0]}}
+
+    pipeline = [{'$group': {
+        '_id': '$project_id',
+        'rows': {'$sum': 1},
+        'cancer_type': counted('metadata.Cancer_type'),
+        'sample_type': counted('metadata.Sample_type'),
+        'tissue_of_origin': counted('metadata.Tissue_of_origin'),
+    }}]
+
+    coverage = {}
+    for row in feature_index_handle.aggregate(pipeline):
+        rows = row.get('rows') or 0
+        if not rows:
+            continue
+        coverage[str(row['_id'])] = {
+            field: round(row.get(field, 0) / float(rows), 4)
+            for field in ('cancer_type', 'sample_type', 'tissue_of_origin')
+        }
+    cache.set(_COVERAGE_CACHE_KEY, coverage, METADATA_COVERAGE_TTL)
+    return coverage
 
 
 def index_access_filter(user):

@@ -134,10 +134,16 @@ urlpatterns += [
     path('api/v1/projects/<str:project_id>/', views.ProjectDetailView.as_view(), name='api_project_detail'),
     path('api/v1/projects/<str:project_id>/download/', views.ProjectDownloadView.as_view(), name='api_project_download'),
     path('api/v1/projects/<str:project_id>/samples/', views.ProjectSamplesView.as_view(), name='api_project_samples'),
+    # What a search result's sample_url points at.  No sample name on prod
+    # contains '/', '?', '#', '%' or whitespace (measured 2026-09-12), so a
+    # single percent-encoded path segment holds every name the corpus has.
+    path('api/v1/projects/<str:project_id>/samples/<str:sample_name>/',
+         views.ProjectSampleDetailView.as_view(), name='api_project_sample'),
     # Search across every project, from the feature index.  Placed before the
     # token route only for readability; the paths do not overlap.
     path('api/v1/features/', views.FeatureSearchView.as_view(), name='api_feature_search'),
     path('api/v1/features/facets/', views.FeatureFacetsView.as_view(), name='api_feature_facets'),
+    path('api/v1/features/samples/', views.FeatureSamplesView.as_view(), name='api_feature_samples'),
     path('api/v1/token/', views.ApiTokenView.as_view(), name='api_token'),
     # The machine-readable description of everything above.  Inside /api/v1/ on
     # purpose -- that prefix is what the WAF's AllowApiV1 rule lets through, so

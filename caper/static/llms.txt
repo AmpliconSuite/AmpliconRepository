@@ -36,8 +36,17 @@ first.
 ```
 
 Each row names its project, sample, feature, classification, genes, oncogenes,
-locations and reference build, and carries `project_url` and `sample_url` for
-citation. Page with `limit` and the returned `next_cursor`.
+locations and reference build. `sample_url` fetches that one sample's rows and
+`sample_page_url` is the human-readable page to cite. Page with `limit` and the
+returned `next_cursor`.
+
+**A row is an amplicon, not a sample.** Most samples have several rows, and
+some have over a hundred, so `count` never answers "how many samples" — the
+two differ by enough to change a conclusion. Every response carries
+`sample_count` alongside `count`; use it for any fraction of samples. Do not
+reconstruct it by deduplicating `sample_name` yourself: a sample is identified
+by **project and name together**, and thousands of names in this corpus occur
+in more than one project.
 
 **Not every row is an amplicon.** A sample that was analysed and found to carry
 no focal amplification is a result worth keeping, so it is in the corpus as a
@@ -47,18 +56,44 @@ never use the unfiltered total as the denominator for "what fraction of samples
 have ecDNA" — filter to `classification=None` to count the clean samples, which
 is the question that denominator is really made of.
 
+`GET /api/v1/features/samples/` takes every filter `/features/` takes and
+answers one entry per sample instead of per amplicon, each with its
+`row_count`, `amplicon_count` and the classifications it carries. Use it for
+any question about samples rather than about amplifications.
+
 `GET /api/v1/features/facets/` lists every value you can filter on, with counts.
 **Read it before filtering on metadata**, and read it the way described under
 "Metadata is uneven" below.
+
+## Finding a sample by a name you are not sure of
+
+`sample_name=` is an exact match, with case folded for you — do not lowercase
+or strip punctuation client-side, and do not fetch a whole project to search it
+yourself.
+
+For a name you only half know — a cell line recorded here as `U2OS_BONE` or
+`G-292_clone_A141B1` — use `sample_name_contains=`, a plain case-insensitive
+substring with no wildcards and no operators. Then **look at what it matched
+before you aggregate it**: ask
+`/api/v1/features/samples/?sample_name_contains=...`, which lists the
+candidates. `HOS` matches both `HOS` and `HOS-MNNG`, which are different cell
+lines, and hundreds of names here are a prefix of another. Deciding which one
+you meant is your job; this endpoint exists so that you can.
 
 ## The other endpoints
 
 - `GET /api/v1/projects/` — list projects (optional `?name=` substring filter)
 - `GET /api/v1/projects/{id}/` — one project's metadata and version history
 - `GET /api/v1/projects/{id}/samples/` — that project's samples and features
+- `GET /api/v1/projects/{id}/samples/{name}/` — one sample's rows
 - `GET /api/v1/projects/{id}/download/` — the project's `.tar.gz` archive
 - `POST /api/v1/projects/download/` — resolve many ids to download URLs
 - `GET /api/v1/openapi.json` — this API's specification
+
+`GET /api/v1/projects/` is worth one call before you start. Every project
+carries a `description` written by whoever submitted it — the cohort, the
+paper, the selection criteria, context that is nowhere in the feature rows —
+along with `publication_link` and the classifications that project contains.
 
 Cite a project by `id` **and** `version`. Projects are versioned; the API
 resolves a project to its current version, and superseded versions keep their
@@ -82,6 +117,10 @@ consequences, all of which produce confidently wrong answers if ignored:
    facets response against the sum of the counts for the field you are
    filtering on. If they differ, the shortfall is rows carrying no value for
    that field, and no filter on it can ever reach them. Say so in your answer.
+   Per project, `metadata_coverage` on the project object says the same thing
+   directly: `"cancer_type": 0.0` means that project recorded no cancer type at
+   all, so filtering it by cancer type returns an empty result that is not an
+   answer.
 2. **The same thing is spelled several ways.** Case is folded for you — `lung`
    and `Lung` are one entry with one count — but granularity is not: `Breast`
    and `Breast Adenocarcinoma` are separate values covering overlapping
