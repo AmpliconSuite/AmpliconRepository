@@ -78,7 +78,7 @@ from django.core.cache import cache
 from .classifications import is_no_amplicon
 from .project_status import LIVE, status_query
 from .utils import (
-    collection_handle,
+    collection_handle_primary,
     db_handle_primary,
     get_collection_handle,
 )
@@ -616,7 +616,7 @@ def rebuild_feature_index(limit=None, progress=None):
     ``limit`` exists so a rebuild can be staged on a handful of projects and
     the result diffed before the rest is run.
     """
-    cursor = collection_handle.find(indexable_projects_query(), INDEX_SOURCE_PROJECTION)
+    cursor = collection_handle_primary.find(indexable_projects_query(), INDEX_SOURCE_PROJECTION)
     if limit:
         cursor = cursor.limit(limit)
 
@@ -657,7 +657,7 @@ def feature_index_drift():
     """
     live_digests = {
         project['_id']: project_digest(project)
-        for project in collection_handle.find(indexable_projects_query(), INDEX_SOURCE_PROJECTION)
+        for project in collection_handle_primary.find(indexable_projects_query(), INDEX_SOURCE_PROJECTION)
     }
     indexed = {entry['project_id']: entry.get('digest') for entry in manifest_handle.find({})}
 
@@ -878,7 +878,7 @@ def index_coverage():
     this does not replace it.
     """
     return {
-        'indexable': collection_handle.count_documents(indexable_projects_query()),
+        'indexable': collection_handle_primary.count_documents(indexable_projects_query()),
         'indexed': manifest_handle.count_documents({}),
         # Rows built by an older builder.  Coverage alone cannot see this: after
         # a SCHEMA_VERSION bump every project is still counted and still

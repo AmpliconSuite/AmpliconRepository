@@ -117,3 +117,50 @@ def test_a_project_can_come_back(uploaded_project, mongo_collection):
                                 {'$set': {'delete': False, 'current': True}})
     reindex_project(project_id)
     assert feature_index_handle.count_documents({'project_id': ObjectId(project_id)}) > 0
+
+
+# ---------------------------------------------------------------------------
+# Where the reindex reads from
+# ---------------------------------------------------------------------------
+
+def test_the_reindex_reads_the_primary_not_a_replica():
+    """The hook runs immediately after the write that triggered it.
+
+    The cluster URI ends ``readPreference=secondaryPreferred``, so the default
+    handle can serve the replica's pre-write copy -- and the reindex would
+    then index the document as it was *before* the change that called it,
+    reporting success and leaving the search one edit behind.
+
+    That is not hypothetical. Measured on prod on 2026-09-12: three projects
+    stale, each with an index manifest written 2 to 4 seconds after its
+    document, each missing exactly the content that write had added. Two were
+    metadata sheets whose cancer types could then not be filtered on at all.
+    """
+    from pymongo import ReadPreference
+    from caper import project_events, feature_index
+
+    for module in (project_events, feature_index):
+        handle = getattr(module, 'collection_handle_primary')
+        assert handle.read_preference == ReadPreference.PRIMARY, module.__name__
+        # And the replica-preferring handle is not reachable to be used by
+        # mistake: importing it is how this regressed in the first place.
+        assert not hasattr(module, 'collection_handle'), module.__name__
+
+
+def test_the_reindex_uses_that_handle_to_read_its_source(monkeypatch):
+    """Behavioural half: the read actually goes through the pinned handle."""
+    from caper import project_events
+
+    project_id = ObjectId()
+    calls = []
+
+    class _Pinned:
+        def find_one(self, query, projection=None):
+            calls.append(query)
+            return None       # not indexable -> unindex, no rows written
+
+    monkeypatch.setattr(project_events, 'collection_handle_primary', _Pinned())
+    monkeypatch.setattr(project_events.feature_index, 'unindex_project',
+                        lambda oid: None)
+    assert project_events.reindex_project(project_id) == 0
+    assert calls and calls[0]['_id'] == project_id
