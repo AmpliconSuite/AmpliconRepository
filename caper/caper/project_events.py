@@ -49,7 +49,7 @@ from .site_stats import (
     delete_project_from_site_statistics,
     edit_proj_privacy,
 )
-from .utils import collection_handle
+from .utils import collection_handle_primary
 
 
 def reindex_project(project_id):
@@ -73,7 +73,16 @@ def reindex_project(project_id):
     try:
         query = dict(feature_index.indexable_projects_query())
         query['_id'] = object_id
-        project = collection_handle.find_one(query, feature_index.INDEX_SOURCE_PROJECTION)
+        # PRIMARY, not the default handle.  The cluster URI ends
+        # readPreference=secondaryPreferred, and this function runs
+        # immediately after the write that triggered it -- so the default
+        # handle can read the replica's pre-write copy and index that.  It
+        # does: on prod on 2026-09-12 three projects were stale, each with a
+        # manifest written 2 to 4 seconds after its document, each missing
+        # exactly the content that write had added.  Two of them were a
+        # metadata sheet whose cancer types then could not be filtered on.
+        project = collection_handle_primary.find_one(
+            query, feature_index.INDEX_SOURCE_PROJECTION)
         if project is None:
             feature_index.unindex_project(object_id)
             return 0

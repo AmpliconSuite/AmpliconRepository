@@ -44,6 +44,7 @@ has no way to tell a real zero from a broken index.
 import base64
 import binascii
 import logging
+from urllib.parse import quote
 
 from bson.objectid import ObjectId
 from bson.errors import InvalidId
@@ -71,6 +72,13 @@ MAX_LIMIT = 500
 # it, rather than being served slowly or partially.
 MAX_AND_SAMPLE_KEYS = 200_000
 
+# A substring match over sample names resolves to an $in of exact names, so the
+# list it produces is the query.  Bounded for the same reason as the AND
+# intersection above: 's' matches most of the corpus, and an $in of seventeen
+# thousand names is not a query anyone meant to write.  Past the bound the
+# caller is told to narrow it rather than served a scan.
+MAX_SAMPLE_NAME_MATCHES = 500
+
 # What a row reports.  Field selection picks from exactly this set: a client
 # asking for a field that does not exist is told, rather than silently getting a
 # response missing the column it was counting on.
@@ -78,7 +86,7 @@ ROW_FIELDS = (
     'project_id', 'project_name', 'sample_name', 'feature_id',
     'classification', 'genes', 'oncogenes', 'locations', 'reference_build',
     'sample_type', 'cancer_type', 'tissue_of_origin', 'project_url',
-    'sample_url',
+    'sample_url', 'sample_page_url',
 )
 DEFAULT_FIELDS = ROW_FIELDS
 
@@ -89,7 +97,8 @@ DEFAULT_FIELDS = ROW_FIELDS
 # asked.  That is exactly how ``tissue_of_origin`` went unnoticed -- see below.
 ACCEPTED_PARAMS = frozenset({
     'gene_any', 'gene_all', 'same_amp', 'classification', 'oncogenes_only',
-    'project_id', 'project_name', 'sample_name', 'sample_type', 'cancer_type',
+    'project_id', 'project_name', 'sample_name', 'sample_name_contains',
+    'sample_type', 'cancer_type',
     'tissue_of_origin', 'reference_build', 'fields', 'limit', 'cursor',
     'count_only',
     # DRF's own content negotiation reads this one; it is not ours to refuse.
@@ -105,18 +114,25 @@ ACCEPTED_PARAMS = frozenset({
 # parameter name; ``tissue`` stays accepted so existing callers keep working.
 PARAM_ALIASES = {'tissue': 'tissue_of_origin'}
 
+# ``/features/samples/`` takes every filter ``/features/`` takes and answers at
+# a different granularity, so its parameter set is derived from that one rather
+# than written out again -- a second list here is a list that falls behind.
+# ``fields`` and ``count_only`` are row-shaped and have no meaning on a sample.
+SAMPLE_ACCEPTED_PARAMS = (ACCEPTED_PARAMS - {'fields', 'count_only'})
 
-def reject_unknown_params(params):
+
+def reject_unknown_params(params, accepted=None):
     """400 on any parameter this endpoint does not implement.
 
     Returns the parameter names folded through PARAM_ALIASES, so the caller of
     this function reads canonical names only.
     """
+    accepted = ACCEPTED_PARAMS if accepted is None else accepted
     seen = {}
     unknown = []
     for name in params.keys():
         canonical = PARAM_ALIASES.get(name, name)
-        if canonical not in ACCEPTED_PARAMS:
+        if canonical not in accepted:
             unknown.append(name)
         else:
             seen[canonical] = name
@@ -124,7 +140,7 @@ def reject_unknown_params(params):
         raise FeatureQueryError(
             '%s is not a parameter of this endpoint. Accepted: %s.'
             % (', '.join(repr(u) for u in sorted(unknown)),
-               ', '.join(sorted(ACCEPTED_PARAMS))),
+               ', '.join(sorted(accepted))),
             'invalid_parameter')
     return seen
 
@@ -415,8 +431,46 @@ def sample_keys_for_and(genes, base_clauses):
     return keys
 
 
+def sample_names_containing(text, access):
+    """The exact sample names that contain ``text``, case-insensitively.
+
+    Substring name search cannot be served from an index on DocumentDB -- an
+    anchored prefix regex was measured as a COLLSCAN on dev on 2026-09-07 -- so
+    the match is made over the distinct names and handed back to the index as
+    an ``$in`` of exact names, which is indexed.  ``distinct('sample_name')``
+    over the access-filtered collection returned 19,602 names in 0.10 s on prod
+    on 2026-09-12.
+
+    Deliberately not read from the ``search_names`` collection, which exists for
+    exactly this shape and is a second copy: it is rebuilt only by
+    ``rebuild_feature_index``, never by an incremental reindex, and on prod on
+    2026-09-12 it was missing 468 of the index's names ('143B', '253J' and
+    friends).  A filter that quietly cannot see a sample is the failure this
+    endpoint is supposed to not have.
+
+    Matching is plain casefolded containment, not a regex: these values reach
+    the query from a URL, and the site's other query language -- where ``*``,
+    ``&`` and ``|`` are operators with no way to escape them -- is not a
+    contract to repeat in an API.
+    """
+    needle = str(text).strip().lower()
+    if not needle:
+        return None
+
+    matches = sorted(
+        name for name in feature_index_handle.distinct('sample_name', access)
+        if isinstance(name, str) and needle in name.lower())
+    if len(matches) > MAX_SAMPLE_NAME_MATCHES:
+        raise FeatureQueryError(
+            f'{len(matches)} sample names contain {text!r}, more than the '
+            f'{MAX_SAMPLE_NAME_MATCHES} this endpoint will expand. Use a '
+            'longer fragment, or add a project_id.', 'query_too_broad')
+    return matches
+
+
 def non_gene_clauses(*, user, classifications=(), project_id=None,
-                     sample_name=None, project_name=None, sample_type=None,
+                     sample_name=None, sample_name_contains=None,
+                     project_name=None, sample_type=None,
                      cancer_type=None, tissue_of_origin=None,
                      reference_build=None,
                      oncogenes_only=False):
@@ -446,6 +500,15 @@ def non_gene_clauses(*, user, classifications=(), project_id=None,
 
     if sample_name:
         clauses.append({'sample_name_lower': str(sample_name).strip().lower()})
+    if sample_name_contains:
+        # An empty match list is a clause that matches nothing, never a clause
+        # left off: dropping it would answer a narrowed question with the
+        # unfiltered corpus, which is the failure mode ACCEPTED_PARAMS exists
+        # to prevent one parameter earlier.
+        matches = sample_names_containing(sample_name_contains,
+                                          index_access_filter(user))
+        if matches is not None:
+            clauses.append({'sample_name': {'$in': matches}})
     if project_name:
         clauses.append({'project_name_lower': str(project_name).strip().lower()})
     if reference_build:
@@ -532,8 +595,8 @@ def row_to_dict(row, fields, request=None):
         # search itself never returns payload -- a result set has no natural
         # size bound and download authorisation is per project, not per row.
         'project_url': _absolute(request, f'/api/v1/projects/{linkid}/') if linkid else None,
-        'sample_url': (_absolute(request, f'/api/v1/projects/{linkid}/samples/')
-                       if linkid else None),
+        'sample_url': _sample_url(request, linkid, sample_name),
+        'sample_page_url': _sample_page_url(request, linkid, sample_name),
     }
     return {field: available[field] for field in fields}
 
@@ -546,6 +609,60 @@ def _absolute(request, path):
     http://ampliconrepository.org/... on the first request after this shipped.
     """
     return absolute_url(request, path)
+
+
+def _sample_url(request, linkid, sample_name):
+    """The API resource for this row's sample.
+
+    Until 2026-09-12 this was the project's whole sample list, which is the
+    granularity that existed rather than the one the field promises: an agent
+    following it for one HMF row was handed 9,090 rows.  The per-sample
+    endpoint is what a row can honestly point at.
+    """
+    if not linkid or not sample_name:
+        return None
+    return _absolute(request, '/api/v1/projects/%s/samples/%s/'
+                     % (linkid, quote(str(sample_name), safe='')))
+
+
+def _sample_page_url(request, linkid, sample_name):
+    """The human-readable page for the same sample.
+
+    Reported because a row is evidence somebody will cite, and a citation is a
+    page, not a JSON document.  Without it the route has to be reverse
+    engineered off the HTML -- which an agent evaluating this API in September
+    2026 did, and then hit the WAF fetching it.
+    """
+    if not linkid or not sample_name:
+        return None
+    return _absolute(request, '/project/%s/sample/%s'
+                     % (quote(str(linkid), safe=''),
+                        quote(str(sample_name), safe='')))
+
+
+def distinct_sample_count(query):
+    """How many distinct samples the result set covers, not how many rows.
+
+    The load-bearing number for any "what fraction of samples" question, and
+    the one a caller cannot compute from a paged response without walking every
+    page.  Measured on prod 2026-09-12: 39,114 public rows over 19,897 samples,
+    a mean of 1.97 rows each and a maximum of 161, so ecDNA is 11.5% of rows and
+    15.7% of samples -- an answer taken from the row count is off by a third.
+
+    The identity is ``sample_key`` (project id and sample name), never the name
+    alone: 2,324 names occur in more than one project on prod -- COLO320DM is in
+    four -- so counting distinct names undercounts samples by 11.7%.
+
+    Two ``$group`` stages rather than ``distinct()``: it is not capped by the
+    16 MB reply limit, and it measured faster on the whole public corpus
+    (0.16 s against 0.28 s, prod, 2026-09-12).
+    """
+    pipeline = [{'$match': query},
+                {'$group': {'_id': '$sample_key'}},
+                {'$group': {'_id': None, 'n': {'$sum': 1}}}]
+    for row in feature_index_handle.aggregate(pipeline):
+        return row['n']
+    return 0
 
 
 def reference_build_facet(query):
@@ -589,21 +706,168 @@ def _values(params, name, *aliases):
     return []
 
 
+def filters_from_params(params, user):
+    """Every non-gene filter, read off the query string once.
+
+    Shared by ``/features/`` and ``/features/samples/``: the two endpoints
+    differ in what they return, not in what they filter on, and a second copy
+    of this is the shape of defect this codebase keeps producing -- the two
+    would answer differently for the same query and nothing would say so.
+    """
+    return dict(
+        user=user,
+        classifications=parse_classifications(params.getlist('classification')
+                                              if hasattr(params, 'getlist')
+                                              else params.get('classification') or []),
+        project_id=params.get('project_id'),
+        sample_name=params.get('sample_name'),
+        sample_name_contains=params.get('sample_name_contains'),
+        project_name=params.get('project_name'),
+        sample_type=(params.getlist('sample_type') if hasattr(params, 'getlist')
+                     else params.get('sample_type')),
+        cancer_type=(params.getlist('cancer_type') if hasattr(params, 'getlist')
+                     else params.get('cancer_type')),
+        tissue_of_origin=_values(params, 'tissue_of_origin', 'tissue'),
+        reference_build=parse_reference_build(params.get('reference_build')),
+        oncogenes_only=parse_bool(params.get('oncogenes_only'), 'oncogenes_only'),
+    )
+
+
+def _require_usable_index():
+    """A stale index is a 503, never an empty result.
+
+    A caller cannot tell a real zero from a broken index, and an API that
+    answers "no ecDNA anywhere" when it means "ask again later" is worse than
+    one that is briefly unavailable.
+    """
+    if not index_is_usable():
+        raise FeatureQueryError(
+            'The search index is rebuilding and cannot answer accurately yet. '
+            'Retry shortly.', 'index_unavailable', status_code=503)
+
+
+def encode_key_cursor(sample_key):
+    """Cursor for a page of samples, which are ordered by ``sample_key``."""
+    return base64.urlsafe_b64encode(str(sample_key).encode()).decode()
+
+
+def decode_key_cursor(value):
+    if not value:
+        return None
+    try:
+        return base64.urlsafe_b64decode(str(value).encode()).decode()
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        raise FeatureQueryError(
+            "'cursor' is not a cursor this endpoint issued.", 'invalid_cursor')
+
+
+def search_feature_samples(params, user, request=None):
+    """``GET /api/v1/features/samples/`` -- the same search, one row per sample.
+
+    Why this exists rather than a note in the docs: sample identity is the
+    thing the row-shaped endpoint cannot express, and every attempt to recover
+    it client-side gets it wrong in a specific way.  An agent evaluating the
+    API in September 2026 deduplicated on ``sample_name``, which merges the
+    2,324 names that occur in more than one project; and it resolved cell lines
+    by prefix, which merged HOS into HOS-MNNG -- two different lines.  Prefix
+    conflation is not a one-off: 315 of the corpus's normalised names are a
+    strict prefix of another (COLO320 of five, BT474 of two), measured on prod
+    2026-09-12.
+
+    So this endpoint answers with the samples themselves -- identified by
+    project *and* name, each with its row and amplicon counts -- and a caller
+    resolving a fuzzy name sees the candidates and chooses between them
+    instead of summing them by accident.
+    """
+    _require_usable_index()
+    reject_unknown_params(params, SAMPLE_ACCEPTED_PARAMS)
+
+    gene_any = parse_csv(params.get('gene_any'))
+    gene_all = parse_csv(params.get('gene_all'))
+    same_amp = parse_bool(params.get('same_amp'), 'same_amp')
+    if same_amp and not gene_all:
+        raise FeatureQueryError(
+            "'same_amp' narrows an AND gene query and only means something "
+            "with 'gene_all'.", 'invalid_parameter')
+
+    limit = parse_limit(params.get('limit'))
+    after = decode_key_cursor(params.get('cursor'))
+
+    base = non_gene_clauses(**filters_from_params(params, user))
+    query = _and(base + _gene_clauses(gene_any, gene_all, same_amp))
+
+    if gene_all and not same_amp:
+        keys = sample_keys_for_and(gene_all, base)
+        if not keys:
+            return {'count': 0, 'results': [], 'next_cursor': None}
+        query = _and(base + _gene_clauses(gene_any, gene_all, same_amp)
+                     + [{'sample_key': {'$in': sorted(keys)}}])
+
+    total = distinct_sample_count(query)
+
+    # ``sample_key`` is a stored field, so the cursor is applied before the
+    # grouping rather than after it -- which keeps the page boundary an indexed
+    # comparison and means a walk cannot repeat or skip a sample.
+    page = _and([query, {'sample_key': {'$gt': after}}]) if after else query
+    pipeline = [
+        {'$match': page},
+        # $max over values that are equal within the group, rather than $first,
+        # which would need a $sort before the $group to be defined.
+        {'$group': {'_id': '$sample_key',
+                    'project_id': {'$max': '$project_id'},
+                    'project_name': {'$max': '$project_name'},
+                    'sample_name': {'$max': '$sample_name'},
+                    'reference_build': {'$max': '$reference_build'},
+                    'row_count': {'$sum': 1},
+                    'amplicon_count': {'$sum': {'$cond': ['$has_amplicon', 1, 0]}},
+                    'classifications': {'$addToSet': '$classification'}}},
+        {'$sort': {'_id': 1}},
+        {'$limit': limit + 1},
+    ]
+    groups = list(feature_index_handle.aggregate(pipeline))
+    has_more = len(groups) > limit
+    groups = groups[:limit]
+
+    return {
+        'count': total,
+        'results': [_sample_to_row(g, request) for g in groups],
+        'next_cursor': (encode_key_cursor(groups[-1]['_id'])
+                        if (has_more and groups) else None),
+    }
+
+
+def _sample_to_row(group, request):
+    """One grouped sample as the API reports it."""
+    linkid = (str(group['project_id'])
+              if group.get('project_id') is not None else None)
+    sample_name = group.get('sample_name')
+    classifications = sorted(
+        {canonical_classification(value)
+         for value in (group.get('classifications') or [])})
+    return {
+        'project_id': linkid,
+        'project_name': group.get('project_name'),
+        'sample_name': sample_name,
+        'reference_build': group.get('reference_build'),
+        'row_count': group.get('row_count', 0),
+        'amplicon_count': group.get('amplicon_count', 0),
+        'classifications': classifications,
+        'project_url': (_absolute(request, f'/api/v1/projects/{linkid}/')
+                        if linkid else None),
+        'sample_url': _sample_url(request, linkid, sample_name),
+        'sample_page_url': _sample_page_url(request, linkid, sample_name),
+    }
+
+
 def search_features(params, user, request=None):
     """Answer one ``/api/v1/features/`` request.
 
     Raises FeatureQueryError for anything the caller can fix; the view turns
     that into the v1 error body.
     """
-    if not index_is_usable():
-        # Deliberately not a fallback to the slow path and deliberately not an
-        # empty result.  A caller cannot tell a real zero from a stale index,
-        # and an API that answers "no ecDNA anywhere" when it means "ask again
-        # later" is worse than one that is briefly unavailable.
-        raise FeatureQueryError(
-            'The search index is rebuilding and cannot answer accurately yet. '
-            'Retry shortly.', 'index_unavailable', status_code=503)
-
+    # Deliberately not a fallback to the slow path and deliberately not an
+    # empty result -- see _require_usable_index().
+    _require_usable_index()
     reject_unknown_params(params)
 
     gene_any = parse_csv(params.get('gene_any'))
@@ -619,23 +883,7 @@ def search_features(params, user, request=None):
     count_only = parse_bool(params.get('count_only'), 'count_only')
     after = decode_cursor(params.get('cursor'))
 
-    filters = dict(
-        user=user,
-        classifications=parse_classifications(params.getlist('classification')
-                                              if hasattr(params, 'getlist')
-                                              else params.get('classification') or []),
-        project_id=params.get('project_id'),
-        sample_name=params.get('sample_name'),
-        project_name=params.get('project_name'),
-        sample_type=(params.getlist('sample_type') if hasattr(params, 'getlist')
-                     else params.get('sample_type')),
-        cancer_type=(params.getlist('cancer_type') if hasattr(params, 'getlist')
-                     else params.get('cancer_type')),
-        tissue_of_origin=_values(params, 'tissue_of_origin', 'tissue'),
-        reference_build=parse_reference_build(params.get('reference_build')),
-        oncogenes_only=parse_bool(params.get('oncogenes_only'), 'oncogenes_only'),
-    )
-    base = non_gene_clauses(**filters)
+    base = non_gene_clauses(**filters_from_params(params, user))
     query = _and(base + _gene_clauses(gene_any, gene_all, same_amp))
 
     # A gene AND that is not confined to one amplification is a question about a
@@ -654,6 +902,7 @@ def search_features(params, user, request=None):
     if count_only:
         return {
             'count': total,
+            'sample_count': distinct_sample_count(query),
             'reference_builds': reference_build_facet(query),
         }
 
@@ -669,6 +918,7 @@ def search_features(params, user, request=None):
 
     return {
         'count': total,
+        'sample_count': distinct_sample_count(query),
         'results': [row_to_dict(row, fields, request) for row in rows],
         'next_cursor': encode_cursor(rows[-1]['_id']) if (has_more and rows) else None,
         'reference_builds': reference_build_facet(query),
@@ -677,8 +927,8 @@ def search_features(params, user, request=None):
 
 def _empty_response(fields, count_only):
     if count_only:
-        return {'count': 0, 'reference_builds': {}}
-    return {'count': 0, 'results': [], 'next_cursor': None,
+        return {'count': 0, 'sample_count': 0, 'reference_builds': {}}
+    return {'count': 0, 'sample_count': 0, 'results': [], 'next_cursor': None,
             'reference_builds': {}}
 
 
@@ -715,10 +965,7 @@ def feature_facets(user):
     percentage moves whenever metadata is backfilled, and anything that quotes
     a percentage goes stale silently.  Two counts computed per request cannot.
     """
-    if not index_is_usable():
-        raise FeatureQueryError(
-            'The search index is rebuilding and cannot answer accurately yet. '
-            'Retry shortly.', 'index_unavailable', status_code=503)
+    _require_usable_index()
 
     access = index_access_filter(user)
     facets = {}

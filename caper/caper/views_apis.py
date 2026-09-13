@@ -35,6 +35,7 @@ from .serializers import FileSerializer
 from .forms import RunForm
 from .classifications import _CANONICAL_CLASSIFICATION, _canonical_classifications
 from . import api_features
+from . import feature_index
 from .request_url import absolute_base
 from .utils import (
     collection_handle, get_one_project, get_one_project_sans_runs, form_to_dict,
@@ -598,12 +599,15 @@ def _version_fields(project, members):
     return ordinal, count, is_latest
 
 
-def _project_to_dict(project, members=None):
+def _project_to_dict(project, members=None, coverage=None):
     """Serialize a MongoDB project document to a JSON-safe dict, omitting internal fields.
 
     *members* is this project's chain, oldest first, when the caller has already
     read it. The list endpoint reads every chain on the page in one query and
     passes them in; asking per row would be a query per project.
+
+    *coverage* is ``metadata_coverage_by_project()``, read once per response for
+    the same reason.
     """
     linkid = str(project.get('linkid') or project.get('_id', ''))
     version, version_count, is_latest = _version_fields(project, members)
@@ -628,6 +632,7 @@ def _project_to_dict(project, members=None):
         'version':            version,
         'version_count':      version_count,
         'is_latest_version':  is_latest,
+        'metadata_coverage':  (coverage or {}).get(linkid),
         'previous_versions': _previous_versions_payload(project, members),
     }
 
@@ -741,8 +746,9 @@ class ProjectListView(APIView):
         # One query for every chain on the page, not one per project.
         chains = lineage.chains_for(collection_handle, projects,
                                     _PREV_VERSION_PROJECTION)
+        coverage = feature_index.metadata_coverage_by_project()
         return Response([
-            _project_to_dict(p, chains.get(p.get('version_chain_id')))
+            _project_to_dict(p, chains.get(p.get('version_chain_id')), coverage)
             for p in projects])
 
 
@@ -795,7 +801,8 @@ class ProjectDetailView(APIView):
             project['linkid'] = str(project['_id'])
         members = lineage.chain_members(collection_handle, project,
                                         _PREV_VERSION_PROJECTION)
-        return Response(_project_to_dict(project, members))
+        return Response(_project_to_dict(
+            project, members, feature_index.metadata_coverage_by_project()))
 
 
 # ── GET /api/v1/projects/<project_id>/samples/ ───────────────────────────────
@@ -855,6 +862,77 @@ class ProjectSamplesView(APIView):
             for sample in run_samples:
                 samples.append(_sample_to_dict(sample, run_name))
 
+        return Response(samples)
+
+
+# ── GET /api/v1/projects/<project_id>/samples/<sample_name>/ ────────────────
+
+class ProjectSampleDetailView(APIView):
+    """
+    One sample's rows, by name.
+
+    curl example:
+        curl https://ampliconrepository.org/api/v1/projects/<id>/samples/<name>/
+    """
+    permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
+
+    @extend_schema(
+        operation_id='getProjectSample',
+        summary='Get one sample',
+        description='The amplicon rows for a single sample. This is what a '
+                    'search result\'s `sample_url` points at: the list '
+                    'endpoint is the whole project, which for a large one is '
+                    'thousands of rows to read back the handful a search '
+                    'matched. Matching on the name is case-insensitive, as it '
+                    'is everywhere else in the API.',
+        parameters=[
+            OpenApiParameter('project_id', str, OpenApiParameter.PATH,
+                description='Project id. Ids of superseded versions also resolve.'),
+            OpenApiParameter('sample_name', str, OpenApiParameter.PATH,
+                description='Sample name, as reported in `sample_name`. '
+                            'Case-insensitive; percent-encode it.'),
+        ],
+        responses={200: api_schema.SampleSerializer(many=True),
+                   401: api_schema.AUTH_REQUIRED,
+                   403: api_schema.FORBIDDEN,
+                   404: api_schema.NOT_FOUND,
+                   429: api_schema.RATE_LIMITED},
+        tags=['projects'],
+    )
+    def get(self, request, project_id, sample_name):
+        user, err = _authenticate_api_request(request)
+        if err:
+            return err
+
+        # Authorize on metadata before reading runs, for the same reason the
+        # list endpoint does: otherwise an anonymous caller triggers a
+        # multi-megabyte read and then gets a 401 for it.
+        project = get_one_project_sans_runs(project_id, _PROJECT_METADATA_PROJECTION)
+        if not project:
+            return api_error('Project not found', 'not_found',
+                             status.HTTP_404_NOT_FOUND)
+        if not _user_can_access_project(project, user):
+            return _access_error(user)
+
+        doc = collection_handle.find_one({'_id': project['_id']}, {'runs': 1})
+        wanted = str(sample_name).strip().lower()
+        samples = []
+        for run_name, run_samples in (doc or {}).get('runs', {}).items():
+            for sample in run_samples:
+                # The index's spelling of the name, not a second reading of the
+                # document: the URL that got here was built from the index.
+                name = feature_index.sample_name_of(sample, run_name)
+                if name.strip().lower() == wanted:
+                    samples.append(_sample_to_dict(sample, run_name))
+
+        if not samples:
+            # A 404 rather than an empty list: an empty list is what a sample
+            # with no rows would look like, and the two want different
+            # responses from the caller.
+            return api_error('Sample not found in this project', 'not_found',
+                             status.HTTP_404_NOT_FOUND)
         return Response(samples)
 
 
@@ -1265,7 +1343,19 @@ class FeatureSearchView(APIView):
                 description='Only rows carrying at least one catalogued oncogene.'),
             OpenApiParameter('project_id', str, OpenApiParameter.QUERY, required=False),
             OpenApiParameter('project_name', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('sample_name', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('sample_name', str, OpenApiParameter.QUERY, required=False,
+                description='Exact sample name, matched case-insensitively. '
+                            'There is no partial match here -- use '
+                            'sample_name_contains for that.'),
+            OpenApiParameter('sample_name_contains', str, OpenApiParameter.QUERY,
+                required=False,
+                description='Case-insensitive substring of the sample name, '
+                            'for resolving a name spelled differently here '
+                            '(U2OS against U2OS_BONE). Plain text, not a '
+                            'pattern. A name that contains another name is a '
+                            'different sample: read '
+                            '/api/v1/features/samples/ to see which ones '
+                            'matched before aggregating them.'),
             OpenApiParameter('sample_type', str, OpenApiParameter.QUERY, required=False),
             OpenApiParameter('cancer_type', str, OpenApiParameter.QUERY, required=False),
             OpenApiParameter('tissue_of_origin', str, OpenApiParameter.QUERY,
@@ -1283,7 +1373,8 @@ class FeatureSearchView(APIView):
             OpenApiParameter('cursor', str, OpenApiParameter.QUERY, required=False,
                 description='Opaque cursor from a previous response\'s next_cursor.'),
             OpenApiParameter('count_only', bool, OpenApiParameter.QUERY, required=False,
-                description='Return only the count and the build breakdown.'),
+                description='Return only the counts and the build breakdown, '
+                            'without the rows.'),
         ],
         responses={200: api_schema.FeatureSearchSerializer,
                    400: api_schema.BAD_REQUEST,
@@ -1298,6 +1389,94 @@ class FeatureSearchView(APIView):
             return err
         try:
             body = api_features.search_features(request.query_params, user, request)
+        except api_features.FeatureQueryError as exc:
+            return api_error(exc.message, exc.code, exc.status_code)
+        return Response(body)
+
+
+# ── GET /api/v1/features/samples/ ────────────────────────────────────────────
+
+class FeatureSamplesView(APIView):
+    """
+    The same search, answered one row per sample instead of per amplicon.
+
+    curl examples:
+        curl "https://ampliconrepository.org/api/v1/features/samples/?sample_name_contains=U2OS"
+        curl "https://ampliconrepository.org/api/v1/features/samples/?gene_any=MYC&classification=ecDNA"
+    """
+    permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
+
+    @extend_schema(
+        operation_id='searchFeatureSamples',
+        summary='Search, grouped by sample',
+        description=(
+            'Every filter `/api/v1/features/` takes, answered as one entry per '
+            'sample rather than per amplicon. Two questions need this '
+            'granularity.\n\n'
+            '**"What fraction of samples..."** A sample carries a mean of 1.97 '
+            'rows and up to 161, so a fraction computed from row counts is not '
+            'the fraction of samples: ecDNA is 11.5% of public rows and 15.7% '
+            'of public samples (prod, 2026-09-12).\n\n'
+            '**"Which sample is this?"** Sample identity is the pair '
+            '(`project_id`, `sample_name`), never the name alone -- 2,324 names '
+            'occur in more than one project. Combined with '
+            '`sample_name_contains`, this endpoint is how to resolve a cell '
+            'line whose name is spelled differently here: it returns the '
+            'candidates, so `HOS` and `HOS-MNNG` can be told apart rather than '
+            'summed. 315 of the corpus\'s names are a prefix of another, so '
+            'prefix matching a name client-side will merge distinct lines.'),
+        parameters=[
+            OpenApiParameter('sample_name_contains', str, OpenApiParameter.QUERY,
+                required=False,
+                description='Case-insensitive substring of the sample name. '
+                            'Plain text, not a pattern: there are no wildcards '
+                            'and no operators.'),
+            OpenApiParameter('gene_any', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('gene_all', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('same_amp', bool, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('classification', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('oncogenes_only', bool, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('project_id', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('project_name', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('sample_name', str, OpenApiParameter.QUERY, required=False,
+                description='Exact sample name, matched case-insensitively. '
+                            'There is no partial match here -- use '
+                            'sample_name_contains for that.'),
+            OpenApiParameter('sample_name_contains', str, OpenApiParameter.QUERY,
+                required=False,
+                description='Case-insensitive substring of the sample name, '
+                            'for resolving a name spelled differently here '
+                            '(U2OS against U2OS_BONE). Plain text, not a '
+                            'pattern. A name that contains another name is a '
+                            'different sample: read '
+                            '/api/v1/features/samples/ to see which ones '
+                            'matched before aggregating them.'),
+            OpenApiParameter('sample_type', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('cancer_type', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('tissue_of_origin', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('reference_build', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('limit', int, OpenApiParameter.QUERY, required=False,
+                description=f'Samples per page, 1-{api_features.MAX_LIMIT}, '
+                            f'default {api_features.DEFAULT_LIMIT}.'),
+            OpenApiParameter('cursor', str, OpenApiParameter.QUERY, required=False,
+                description='Opaque cursor from a previous response\'s next_cursor.'),
+        ],
+        responses={200: api_schema.FeatureSampleSearchSerializer,
+                   400: api_schema.BAD_REQUEST,
+                   401: api_schema.AUTH_REQUIRED,
+                   429: api_schema.RATE_LIMITED,
+                   503: api_schema.INDEX_UNAVAILABLE},
+        tags=['search'],
+    )
+    def get(self, request):
+        user, err = _authenticate_api_request(request)
+        if err:
+            return err
+        try:
+            body = api_features.search_feature_samples(
+                request.query_params, user, request)
         except api_features.FeatureQueryError as exc:
             return api_error(exc.message, exc.code, exc.status_code)
         return Response(body)

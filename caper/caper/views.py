@@ -62,6 +62,7 @@ from .views_admin import (
 from .views_apis import (
     FileUploadView, ProjectFileAddView, BackgroundTaskStatusView,
     ProjectListView, ProjectDetailView, ProjectSamplesView,
+    ProjectSampleDetailView, FeatureSamplesView,
     ProjectDownloadView, ProjectBatchDownloadView, ApiTokenView,
     ApiSchemaView, FeatureSearchView, FeatureFacetsView,
 )

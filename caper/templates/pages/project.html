@@ -1038,16 +1038,33 @@
                 .dl-btn-label { display: none; }
             }
         </style>
+        {% comment %}
+        Each button says what the file actually is.  Three buttons labelled
+        "Download X" do not tell a first-time visitor which one they want, and
+        the largest of them is a multi-gigabyte archive on the big projects --
+        the wrong guess is expensive for the reader and for the server.  Text
+        taken from a real archive (GBM39, fetched 2026-09-12), not from the
+        button labels.
+        {% endcomment %}
         <div style="display: inline-flex; flex-direction: column; gap: 10px; align-items: stretch;">
             <a class="btn btn-primary btn-sm" style="color: white; white-space: nowrap; font-size: 0.8rem;"
+               data-toggle="tooltip"
+               title="Everything, as a .tar.gz: the aggregated results table, plus each sample's amplicon reconstructions (cycles, graphs, PDF/PNG), classifier tables, copy-number calls and metadata. Large projects run to several GB."
+               aria-label="Download the whole project as a .tar.gz archive: aggregated results table, each sample's amplicon reconstructions, classifier tables, copy-number calls and metadata."
                onclick="downloadAndReload();">
                 <i class="fas fa-download"></i><span class="dl-btn-label"><span class="dl-btn-download"> Download</span> Project</span>
             </a>
             <a class="btn btn-primary btn-sm" style="color: white; cursor: pointer; white-space: nowrap; font-size: 0.8rem;"
+               data-toggle="tooltip"
+               title="Just the table on this page, as a CSV: one row per amplicon, with its classification, genes and location. No sequence data or figures."
+               aria-label="Download the summary table shown on this page as a CSV: one row per amplicon with its classification, genes and location."
                onclick="downloadSummaryTable();">
                 <i class="fas fa-download"></i><span class="dl-btn-label"><span class="dl-btn-download"> Download</span> Summary</span>
             </a>
             <a class="btn btn-primary btn-sm" style="color: white; cursor: pointer; white-space: nowrap; font-size: 0.8rem;"
+               data-toggle="tooltip"
+               title="Just the sample annotations, as a TSV: one row per sample, with whatever the submitter recorded — sample type, tissue, cancer type and any extra columns."
+               aria-label="Download the sample annotations as a TSV: one row per sample with the metadata the submitter recorded."
                onclick="downloadMetadata();">
                 <i class="fas fa-download"></i><span class="dl-btn-label"><span class="dl-btn-download"> Download</span> Metadata</span>
             </a>
@@ -1058,6 +1075,16 @@
                 <i class="fas fa-chart-pie"></i><span class="dl-btn-label"> Metadata Summary</span>
             </a>
             {% endif %}
+            {% comment %}
+            A hover tooltip is undiscoverable on a touch screen and gone the
+            moment you look away, so the full file-by-file description is one
+            click away as well.
+            {% endcomment %}
+            <a class="dl-btn-label" style="font-size: 0.75rem;"
+               href="https://docs.ampliconrepository.org/en/latest/project-structure/"
+               target="_blank" rel="noopener">
+                <i class="far fa-question-circle" aria-hidden="true"></i> What's in a download?
+            </a>
         </div>
     </div>
     
