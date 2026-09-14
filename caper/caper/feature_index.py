@@ -39,6 +39,13 @@ Two prongs, because either alone has a known failure mode:
    disagrees.  It is the standing falsifying measurement for "the index is
    current", and it is what makes prong 1 allowed to have gaps.
 
+Both prongs have to cover every collection derived here, not just the rows.
+``search_names`` was in neither until 2026-09-14 -- no hook wrote it and the
+drift check could not see it -- and prod carried 468 names the index had and a
+search could not resolve for three days, answering ``143B`` with 1 row where
+the index held 6.  A partial answer is quieter than an empty one, which is why
+prong 2 matters more than it looks.
+
 Prong 2 is not belt-and-braces.  A project document is written from 50 call
 sites across 30 functions in this codebase (``views.py`` 40 of them, 8 inside
 ``_do_rollback`` alone), plus standalone scripts that connect to the database
@@ -583,6 +590,9 @@ def index_project(project):
     feature_index_handle.delete_many({'project_id': project_id})
     if rows:
         feature_index_handle.insert_many(rows)
+        # The rows are searchable the moment they are written; the names they
+        # introduce have to be too, or a substring search cannot reach them.
+        add_search_names(rows)
     manifest_handle.update_one(
         {'project_id': project_id},
         {'$set': {
@@ -654,6 +664,19 @@ def feature_index_drift():
     ``missing``   indexable, with no rows                (a search under-reports)
     ``stale``     indexed, but the source has changed    (a search reports the old truth)
     ``orphaned``  indexed, but no longer indexable       (a search over-reports)
+
+    and two lists of ``(kind, name)`` from ``search_name_drift``:
+
+    ``names_missing``  in the index, not in the name list  (a name search finds nothing)
+    ``names_extra``    in the name list, not in the index  (harmless; resolves to no rows)
+
+    The name half is here rather than in its own command because leaving it
+    out is what let prod carry 468 unfindable names for three days: this
+    function is where "is the derived data current" gets asked, and a
+    collection it did not cover was a collection nothing asked about.  It
+    costs a scan of the index, which is why this stays a command and is not
+    called on a request path -- ``index_coverage()`` is the cheap per-request
+    half and deliberately does not do this.
     """
     live_digests = {
         project['_id']: project_digest(project)
@@ -674,6 +697,7 @@ def feature_index_drift():
         'orphaned': orphaned,
         'indexable': len(live_digests),
         'indexed': len(indexed),
+        **search_name_drift(),
     }
 
 
@@ -692,6 +716,14 @@ def rebuild_gene_catalog():
     ``C17ORF37`` and ``MIEN1`` are the same gene under two refGene vocabularies,
     on 283 and 160 feature rows respectively, and no single query reaches both.
     """
+    # Rebuild-only, like ``search_names`` was, and for now that is left alone
+    # on purpose. Nothing reads this collection: repo-wide on 2026-09-14 the
+    # only reader is `manage.py compare_search_paths`. So a stale catalogue is
+    # a hazard, not a fault, and maintaining ~24,000 symbols incrementally on
+    # every project write would be real cost against no reader. If something
+    # starts reading it, give it the same treatment ``add_search_names`` got --
+    # and add it to ``search_name_drift``'s half of the check, or it will drift
+    # unobserved the way the names did.
     catalogue = {}
     for row in feature_index_handle.find({}, {'genes': 1, 'oncogenes': 1, 'reference_build': 1}):
         build = row.get('reference_build') or ''
@@ -735,9 +767,30 @@ def rebuild_search_names():
     as ``{'sample_name': {'$in': [...]}}``, which is an indexed lookup.  Two
     indexed steps in place of one scan over everything.
     """
+    names = search_name_documents(feature_index_handle.find({}, NAME_SOURCE_PROJECTION))
+    search_names_handle.delete_many({})
+    if names:
+        search_names_handle.insert_many(list(names.values()))
+    return len(names)
+
+
+# The three fields a name document is derived from.  A projection rather than
+# whole rows: the derivation runs over every row in the corpus, and the payload
+# it does not need is most of the row.
+NAME_SOURCE_PROJECTION = {'sample_name': 1, 'project_name': 1, 'project_id': 1}
+
+
+def search_name_documents(rows):
+    """The name documents a set of index rows implies, keyed ``(kind, name)``.
+
+    One derivation, used by the full rebuild, by the per-project hook and by
+    the drift check.  Three copies of this loop is how the two collections came
+    to disagree in the first place, so there is one.
+    """
     names = {}
-    for row in feature_index_handle.find({}, {'sample_name': 1, 'project_name': 1, 'project_id': 1}):
-        for kind, value in (('sample', row.get('sample_name')), ('project', row.get('project_name'))):
+    for row in rows:
+        for kind, value in (('sample', row.get('sample_name')),
+                            ('project', row.get('project_name'))):
             text = str(value or '').strip()
             if not text:
                 continue
@@ -747,11 +800,70 @@ def rebuild_search_names():
                 'lower': text.lower(),
                 'project_id': row.get('project_id'),
             }
+    return names
 
-    search_names_handle.delete_many({})
-    if names:
-        search_names_handle.insert_many(list(names.values()))
-    return len(names)
+
+def add_search_names(rows):
+    """Record any name these rows introduce.  Returns the number added.
+
+    Additions only, and ``unindex_project`` deliberately removes nothing,
+    because the two failure modes are not symmetric:
+
+    * A name the list is **missing** makes a search silently under-report.
+      Measured on prod 2026-09-13, before this hook existed: 468 of one
+      project's 476 sample names were absent, and a search for ``143B``
+      returned 1 row where the index held 6.  A partial answer, not an empty
+      one, so nothing looked wrong for three days.
+    * A name the list **keeps** after its rows are gone resolves to an ``$in``
+      entry that matches nothing.  It cannot over-report and it cannot widen
+      access, because ``index_access_filter``'s clause is ANDed beside it, not
+      replaced by it.
+
+    So the cheap, safe direction is done on every write and the expensive one
+    is left to ``rebuild_search_names``.  That the expensive one is rarely
+    needed is measured, not assumed: the same prod run found 468 missing names
+    and **zero** extra.
+
+    Read the stored names once and insert the difference, rather than issuing
+    one upsert per name.  That is not a micro-optimisation: this runs inside
+    ``reindex_project``, which an ordinary user action fires synchronously, and
+    the upsert form was measured on dev on 2026-09-14 at **9.32 s** for HMF's
+    4,171 names -- adding nine seconds to a project write while inserting
+    nothing, because every name was already there.  Reading the whole
+    collection costs one indexed scan of ~20,000 short documents.
+
+    Two callers racing can both decide the same new name is absent and insert
+    it twice.  That is tolerated: ``_resolve_names`` hands the names to an
+    ``$in``, where a repeat selects the same rows, and ``rebuild_search_names``
+    collapses the pair.  A unique index would be the alternative and would make
+    a concurrent upload fail rather than a search return the same answer
+    slightly less tidily.
+    """
+    documents = search_name_documents(rows)
+    if not documents:
+        return 0
+    stored = {(row.get('kind'), str(row.get('name') or '').strip())
+              for row in search_names_handle.find({}, {'kind': 1, 'name': 1, '_id': 0})}
+    new = [document for key, document in documents.items() if key not in stored]
+    if new:
+        search_names_handle.insert_many(new, ordered=False)
+    return len(new)
+
+
+def search_name_drift():
+    """What disagrees between the index and the name list.  Reads only.
+
+    Returns ``(kind, name)`` pairs, not counts, because the useful next
+    question is always which name a search cannot find.
+    """
+    live = set(search_name_documents(
+        feature_index_handle.find({}, NAME_SOURCE_PROJECTION)))
+    stored = {(row.get('kind'), str(row.get('name') or '').strip())
+              for row in search_names_handle.find({}, {'kind': 1, 'name': 1, '_id': 0})}
+    return {
+        'names_missing': sorted(live - stored),
+        'names_extra': sorted(stored - live),
+    }
 
 
 # How long a coverage map is reused.  Coverage moves only when a project is

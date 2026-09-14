@@ -3,11 +3,26 @@
 
 Why this exists
 ---------------
-Both servers restart themselves daily (dev 00:15 UTC, prod 07:12 UTC) because
-"the web tier leaks memory" -- a claim that has never been attached to a
-measurement. The restart is what makes it unfalsifiable: the process image
-never gets old enough to show a trend, so there is nothing to plot. This
-records the trend so the claim can be settled either way.
+Written for one question and kept as an ops tool. Both servers used to restart
+themselves daily (dev 00:15 UTC, prod 07:12 UTC) because "the web tier leaks
+memory" -- a claim that had never been attached to a measurement, and that the
+restart itself made unfalsifiable: the process image never got old enough to
+show a trend. This sampled every gunicorn process once a minute on both hosts
+from 2026-09-03 to 2026-09-14 with the restart disabled, and settled it: the
+master grew 0 MiB/hour over 110.7 h on prod and container anonymous memory
+had no trend across 112 hourly medians at ~3 GiB of the 8 GiB cap. The restart
+crons stay commented out with that verdict beside them (GitHub issue #629,
+docs/server-ssh-access.md "The daily restart, retired 2026-09-03").
+
+It stays in the repo because the next memory question -- can the instance be
+shrunk, did a release change the floor, is a new page expensive -- needs the
+same series. Install the cron line below, wait a few days, read the report.
+Two things to know when reading it: judge headroom on ``cgroup_anon_kb``, not
+on ``docker stats`` or the cgroup total (both include reclaimable page cache);
+and ignore the report's closing "cap is N hours away" line, which extrapolates
+the fastest worker as if all nine grew forever -- look at the container trend
+instead. Every fresh container ramps for its first ~6 h; do not judge a
+generation younger than a day.
 
 What it records, and why each column is here
 --------------------------------------------

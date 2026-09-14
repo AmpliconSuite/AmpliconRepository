@@ -179,6 +179,27 @@ on 2026-09-03 alongside release `v4.1.0_090326`, dev at 15:53 UTC and prod at
 16:38 UTC, each with a note in the crontab and a `crontab.bak-<stamp>` beside
 it. Re-enable either by deleting one `#`.
 
+**Closed out 2026-09-14.** Eleven days of `memory_probe.py` on both hosts,
+sampling every gunicorn process once a minute, found nothing for the restart
+to hold off. The load-bearing window is prod's longest container generation,
+110.7 h from 2026-09-09 03:35 to 09-13 18:20 UTC (ended by a deploy): the
+master grew 0 MiB/hour past its first hour; container anonymous memory ran
+1.82–3.32 GiB across 112 hourly medians with a +0.78 MiB/hour fit and daily
+medians of 3.00 / 2.91 / 2.95 / 2.96 / 2.87 GiB; the one 4.00 GiB peak cleared
+within the hour; the host kernel journal shows no OOM kill. Dev's 86.4 h
+generation read +4.46 MiB/hour at ~2 GiB. The one alarming-looking event, 6.10
+GiB anon on prod at 2026-09-07 01:0x, fell back to 3.13 GiB inside ten minutes
+on its own and was followed by a manual `docker stop` for a deploy. Every fresh
+container ramps at +50–60 MiB/hour for its first ~6 h, so a generation younger
+than a day says nothing either way.
+
+The restart lines stay in both crontabs, commented, with that verdict written
+beside them. The probe crons are removed and the two CSV series are archived
+off-AWS and md5-verified against the hosts. `memory_probe.py`
+stays in the repo as the tool for the next memory question — shrinking the
+instance, or checking a release's floor; its header says how to run it. GitHub
+issue #629 holds the same numbers.
+
 Read the rest of this section as the case for that decision and as the history
 you need when reasoning about anything dated before it. Two practical
 consequences of the change:
