@@ -81,7 +81,6 @@ import hashlib
 import json
 
 from django.core.cache import cache
-from pymongo import UpdateOne
 
 from .classifications import is_no_amplicon
 from .project_status import LIVE, status_query
@@ -824,22 +823,31 @@ def add_search_names(rows):
     is left to ``rebuild_search_names``.  That the expensive one is rarely
     needed is measured, not assumed: the same prod run found 468 missing names
     and **zero** extra.
+
+    Read the stored names once and insert the difference, rather than issuing
+    one upsert per name.  That is not a micro-optimisation: this runs inside
+    ``reindex_project``, which an ordinary user action fires synchronously, and
+    the upsert form was measured on dev on 2026-09-14 at **9.32 s** for HMF's
+    4,171 names -- adding nine seconds to a project write while inserting
+    nothing, because every name was already there.  Reading the whole
+    collection costs one indexed scan of ~20,000 short documents.
+
+    Two callers racing can both decide the same new name is absent and insert
+    it twice.  That is tolerated: ``_resolve_names`` hands the names to an
+    ``$in``, where a repeat selects the same rows, and ``rebuild_search_names``
+    collapses the pair.  A unique index would be the alternative and would make
+    a concurrent upload fail rather than a search return the same answer
+    slightly less tidily.
     """
     documents = search_name_documents(rows)
     if not documents:
         return 0
-    # Filtered on ``lower`` as well as ``name`` so the ``(kind, lower)`` index
-    # narrows the upsert instead of it scanning; ``name`` keeps the match
-    # exact, so two spellings differing only in case stay two documents and a
-    # search for either still resolves.
-    result = search_names_handle.bulk_write([
-        UpdateOne({'kind': document['kind'],
-                   'lower': document['lower'],
-                   'name': document['name']},
-                  {'$setOnInsert': document}, upsert=True)
-        for document in documents.values()
-    ], ordered=False)
-    return result.upserted_count
+    stored = {(row.get('kind'), str(row.get('name') or '').strip())
+              for row in search_names_handle.find({}, {'kind': 1, 'name': 1, '_id': 0})}
+    new = [document for key, document in documents.items() if key not in stored]
+    if new:
+        search_names_handle.insert_many(new, ordered=False)
+    return len(new)
 
 
 def search_name_drift():
