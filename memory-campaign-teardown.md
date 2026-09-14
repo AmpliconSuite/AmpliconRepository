@@ -7,6 +7,25 @@ visible — which also makes them the inputs that fill GridFS and S3 fastest.
 
 **Nothing is deleted from this list automatically. Work through it at the end.**
 
+## Close-out, 2026-09-14
+
+The soak is concluded (issue #629 has the numbers; docs/server-ssh-access.md
+"The daily restart, retired 2026-09-03" has the write-up). Status of every row
+below:
+
+| Item | Outcome |
+|---|---|
+| dev probe cron | removed 2026-09-14 05:37 UTC; backup `/home/ubuntu/crontab.bak-20260914T053706Z` |
+| prod probe cron | removed 2026-09-14 05:41 UTC with approval; backup `/home/ubuntu/crontab.bak-20260914T054109Z` |
+| restart crons, both hosts | **kept commented, by decision** (Jens, 2026-09-14), with the verdict written in the comment block |
+| both CSV series | archived off-AWS (dev and prod kept separate), md5-verified against the hosts; originals left in place |
+| dev `coamp_sampler.sh`, `coamp_sample.log`, `disable_restart.py` | deleted 2026-09-14 |
+| prod `disable_restart.py`, `memory_probe.py.bak-20260903T065719Z` | deleted 2026-09-14 with approval |
+| dev / prod checkouts | both on tag `v4.1.9_091326`; the branch merged, nothing to move |
+| projects, GridFS, S3 | **none to delete** — measured 2026-09-14: 0 of 160 `caper-dev` project documents have an `_id` generated on or after 2026-09-02 |
+| `memory_probe.py` | **stays, by decision** — ops tool for the next memory question (instance sizing) |
+| `leak_repro.py`, `coamp_drive.py` | untouched; not asked about |
+
 ## What does and does not need teardown
 
 - `leak_repro.py --scenario aggregate` **creates nothing to clean up.** It calls
