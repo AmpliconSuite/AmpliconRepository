@@ -61,7 +61,28 @@ class Command(BaseCommand):
             if len(ids) > 10:
                 self.stdout.write(f"             ... and {len(ids) - 10} more")
 
-        if drift['missing'] or drift['stale'] or drift['orphaned']:
+        # The name list is derived from the index the way the index is derived
+        # from the projects, and it drifts the same way. Reported beside the
+        # rows because a name a search cannot resolve is a sample the site
+        # cannot find, however current the rows behind it are.
+        self.stdout.write(
+            f"searchable names {len(drift['names_missing']) + len(drift['names_extra'])} "
+            f"disagreements")
+        for label, key, meaning in (
+            ('missing ', 'names_missing', 'a name search cannot find these'),
+            ('extra   ', 'names_extra', 'harmless; these resolve to no rows'),
+        ):
+            names = drift[key]
+            self.stdout.write(f"  {label} {len(names):>5}   {meaning}")
+            for kind, name in names[:10]:
+                self.stdout.write(f"             {kind:<8} {name}")
+            if len(names) > 10:
+                self.stdout.write(f"             ... and {len(names) - 10} more")
+
+        # ``names_extra`` is not a reason to rebuild: an extra name resolves to
+        # no rows and cannot over-report. A missing one is, because a search
+        # for it comes back short without saying so.
+        if drift['missing'] or drift['stale'] or drift['orphaned'] or drift['names_missing']:
             self.stdout.write(self.style.WARNING(
                 'index is not current; rebuild with: manage.py rebuild_feature_index'))
         else:
