@@ -37,8 +37,18 @@ first.
 
 Each row names its project, sample, feature, classification, genes, oncogenes,
 locations and reference build. `sample_url` fetches that one sample's rows and
-`sample_page_url` is the human-readable page to cite. Page with `limit` and the
-returned `next_cursor`.
+`sample_page_url` is the human-readable page to cite.
+
+Page with `limit`, then send the value of the response's `next_cursor` back as
+**`cursor`**. The request parameter and the response field are deliberately
+different words; `?next_cursor=` is a `400`.
+
+The filters not shown above are `project_id` and `project_name`, which scope a
+query to one project (`project_name` is an exact match with case folded — not
+the substring match `/api/v1/projects/?name=` does), `oncogenes_only=true`,
+which drops rows carrying no catalogued oncogene, and `reference_build` (`hg19`
+or `hg38`; `GRCh37` and `GRCh38` fold into them). `fields=` returns only the row fields you name, which
+is worth doing on any query wide enough to need paging.
 
 **A row is an amplicon, not a sample.** Most samples have several rows, and
 some have over a hundred, so `count` never answers "how many samples" — the

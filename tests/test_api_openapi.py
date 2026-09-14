@@ -81,6 +81,27 @@ class TestOpenApiDocument:
         missing = routed - documented
         assert not missing, f'v1 routes missing from the OpenAPI document: {missing}'
 
+    def test_feature_parameters_match_the_allowlist_both_ways(self):
+        """
+        Route coverage is not parameter coverage.  Every v1 route was documented
+        while /features/samples/ re-declared eleven parameters with no
+        description, omitted the `tissue` alias it accepts, and declared
+        `sample_name_contains` twice (2026-09-14).  The allowlist the view
+        enforces is the truth; the document has to say exactly that, described.
+        """
+        from caper.api_features import ACCEPTED_PARAMS, SAMPLE_ACCEPTED_PARAMS, PARAM_ALIASES
+        paths = _generate_schema()['paths']
+        for path, accepted in (('/api/v1/features/', ACCEPTED_PARAMS),
+                               ('/api/v1/features/samples/', SAMPLE_ACCEPTED_PARAMS)):
+            params = paths[path]['get']['parameters']
+            names = [p['name'] for p in params]
+            # `format` is DRF's content negotiation, not part of the contract.
+            expected = (set(accepted) | set(PARAM_ALIASES)) - {'format'}
+            assert set(names) == expected, (path, set(names) ^ expected)
+            assert len(names) == len(set(names)), (path, 'declared twice')
+            undescribed = [p['name'] for p in params if not p.get('description')]
+            assert not undescribed, (path, undescribed)
+
     def test_write_endpoints_are_not_advertised(self):
         """
         The upload endpoints are DRF views, so the generator finds them unless
@@ -390,6 +411,137 @@ class TestAgentFacingDiscoveryFiles:
         allow = len('/api/v1/')
         deny = len('/api/v1/projects/*/download/')
         assert deny > allow
+
+
+class TestLlmsTxtDescribesTheRealApi:
+    """
+    /llms.txt is the one piece of API documentation that is written by hand.
+
+    The OpenAPI document cannot drift -- it is generated from the views, and
+    ``test_every_v1_route_is_documented`` covers the one thing generation does
+    not. llms.txt is prose, maintained separately, describing the same API: the
+    list-in-two-places shape this codebase produces over and over.
+
+    It had drifted. Measured against production 2026-09-14: the file said
+    "Page with ``limit`` and the returned ``next_cursor``", and the request
+    parameter is ``cursor`` -- ``?next_cursor=`` is a 400 naming the accepted
+    parameters. An agent following the published instructions could not fetch a
+    second page. The spec was right about this the whole time; only the hand-
+    written summary was wrong, which is exactly why the hand-written one is the
+    one that needs a check.
+
+    These tests read the shipped file and compare it against the routes and the
+    parameter allowlist the API actually enforces.
+    """
+
+    def _body(self):
+        return _client().get('/llms.txt').content.decode()
+
+    def _tokens(self, body):
+        """Identifiers llms.txt presents as names: in backticks, or after ? or &.
+
+        Deliberately not every word in the file -- a prose mention of "fields"
+        is not documentation of the ``fields`` parameter, and a guard that
+        accepted one would pass while the parameter went unexplained.
+
+        The fenced block has to come out before the inline spans are paired.
+        The first version of this method did not do that, and the three
+        backticks of the fence shifted every pair after it by one, so it
+        collected the prose *between* the code spans instead of the code spans
+        -- a measurement of the opposite of what it claimed, which failed
+        loudly here only because the file it was checking was correct.
+        """
+        fenced = re.findall(r'```(.*?)```', body, re.S)
+        inline = re.sub(r'```.*?```', '\n', body, flags=re.S)
+
+        tokens = set()
+        for span in fenced + re.findall(r'`([^`\n]+)`', inline):
+            tokens.update(re.findall(r'[a-z_][a-z0-9_]*', span))
+        tokens.update(re.findall(r'[?&]([a-z_][a-z0-9_]*)=', body))
+        return tokens
+
+    def _paths(self, body):
+        found = set()
+        for raw in re.findall(r'/api/v1/[A-Za-z0-9_{}/.]*', body):
+            path = raw.split('?')[0]
+            # The file writes the placeholders the way a reader thinks of them.
+            path = path.replace('{id}', '{project_id}').replace('{name}', '{sample_name}')
+            if path != '/api/v1/':          # the prefix, named as a prefix
+                found.add(path)
+        return found
+
+    def test_every_path_it_names_is_routed(self):
+        routed = set()
+        for pattern in get_resolver().url_patterns:
+            route = str(getattr(pattern, 'pattern', ''))
+            if route.startswith('api/v1/'):
+                routed.add('/' + re.sub(r'<(?:[a-z_]+:)?([^>]+)>', r'{\1}', route))
+
+        invented = self._paths(self._body()) - routed
+        assert not invented, f'llms.txt names endpoints that do not exist: {invented}'
+
+    def test_every_endpoint_is_mentioned_or_deliberately_omitted(self):
+        """A new endpoint must not land unmentioned quietly.
+
+        ``/api/v1/token/`` is the one omission, and it is deliberate: it mints a
+        token for a signed-in human, so there is nothing an agent reading this
+        file can do with it. Named here rather than filtered out silently, so
+        that the next omission is a decision someone writes down.
+        """
+        deliberate = {'/api/v1/token/'}
+
+        routed = set()
+        for pattern in get_resolver().url_patterns:
+            route = str(getattr(pattern, 'pattern', ''))
+            if route.startswith('api/v1/'):
+                routed.add('/' + re.sub(r'<(?:[a-z_]+:)?([^>]+)>', r'{\1}', route))
+
+        unmentioned = routed - self._paths(self._body()) - deliberate
+        assert not unmentioned, (
+            f'endpoints llms.txt does not mention: {unmentioned}. Either describe '
+            f'them, or add them to `deliberate` with the reason.')
+
+    def test_every_filter_the_api_accepts_is_named(self):
+        """The direction that catches a new parameter shipping undocumented."""
+        from caper.api_features import ACCEPTED_PARAMS
+
+        # DRF's content negotiation reads `format`; it is not one of ours to
+        # explain to anybody.
+        ours = set(ACCEPTED_PARAMS) - {'format'}
+        missing = ours - self._tokens(self._body())
+        assert not missing, f'parameters /features/ accepts that llms.txt never names: {missing}'
+
+    def test_it_invents_no_filters(self):
+        """The other direction: a parameter named here that the API would 400.
+
+        ``next_cursor`` is written as ``?next_cursor=`` on purpose -- the file
+        names the wrong parameter in order to say it is wrong. The exemption is
+        earned rather than granted: the assertion below requires the warning to
+        still be there, so deleting the warning and leaving the name behind
+        fails.
+        """
+        from caper.api_features import ACCEPTED_PARAMS, PARAM_ALIASES
+
+        body = self._body()
+        assert re.search(r'`\?next_cursor=`\s+is a `400`', body), (
+            'llms.txt no longer warns that ?next_cursor= is rejected')
+
+        real = set(ACCEPTED_PARAMS) | set(PARAM_ALIASES) | {'name', 'next_cursor'}
+        named = set(re.findall(r'[?&]([a-z_][a-z0-9_]*)=', body))
+        invented = named - real
+        assert not invented, f'llms.txt names parameters the API rejects: {invented}'
+
+    def test_the_pagination_instruction_names_the_request_parameter(self):
+        """Regression guard for the drift measured on prod 2026-09-14.
+
+        ``next_cursor`` is the response field and ``cursor`` is the request
+        parameter. A file that names only the first tells a reader to send a
+        parameter that is a 400, and asserting that ``cursor`` appears
+        somewhere would be satisfied by the ``next_cursor`` that caused this.
+        """
+        body = self._body()
+        assert re.search(r'(?<!next_)\bcursor\b', body.replace('next_cursor', '')), (
+            'llms.txt describes paging without naming the `cursor` request parameter')
 
 
 class TestClassificationSpellingsAreFolded:
