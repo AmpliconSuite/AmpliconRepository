@@ -1295,6 +1295,72 @@ class ApiSchemaView(SpectacularAPIView):
     renderer_classes = [OpenApiJsonRenderer]
 
 
+# The filters /features/ and /features/samples/ have in common.  Written once
+# and shared, the way SAMPLE_ACCEPTED_PARAMS is derived from ACCEPTED_PARAMS
+# rather than written out again: the two lists had already diverged, with the
+# samples endpoint re-declaring eleven of these with no description at all and
+# omitting the `tissue` alias it accepts.  A published spec that under-describes
+# half its own parameters is the failure a generated spec is supposed to make
+# impossible.
+#
+# Paging is not in here.  Both endpoints take `limit`, but a row and a sample
+# are not the same unit and the description has to say which one it is counting.
+_SHARED_FEATURE_FILTERS = [
+    OpenApiParameter('gene_any', str, OpenApiParameter.QUERY, required=False,
+        description='Comma-delimited gene symbols; matches rows carrying ANY of them.'),
+    OpenApiParameter('gene_all', str, OpenApiParameter.QUERY, required=False,
+        description='Comma-delimited gene symbols; matches samples carrying ALL of them.'),
+    OpenApiParameter('same_amp', bool, OpenApiParameter.QUERY, required=False,
+        description='Narrow gene_all from same-sample to a single focal amplification.'),
+    OpenApiParameter('classification', str, OpenApiParameter.QUERY, required=False,
+        description='Amplicon class, repeatable or comma-delimited. An '
+                    'unknown value is a 400, never an empty result.'),
+    OpenApiParameter('oncogenes_only', bool, OpenApiParameter.QUERY, required=False,
+        description='Only rows carrying at least one catalogued oncogene.'),
+    OpenApiParameter('project_id', str, OpenApiParameter.QUERY, required=False,
+        description='Restrict to one project, by the id /api/v1/projects/ '
+                    'reports. A malformed id is a 400.'),
+    OpenApiParameter('project_name', str, OpenApiParameter.QUERY, required=False,
+        description='Restrict to one project by name. Exact match with case '
+                    'folded -- not a substring. /api/v1/projects/?name= is the '
+                    'substring filter; these two are spelled alike and behave '
+                    'differently.'),
+    OpenApiParameter('sample_name', str, OpenApiParameter.QUERY, required=False,
+        description='Exact sample name, matched case-insensitively. '
+                    'There is no partial match here -- use '
+                    'sample_name_contains for that.'),
+    OpenApiParameter('sample_name_contains', str, OpenApiParameter.QUERY,
+        required=False,
+        description='Case-insensitive substring of the sample name, '
+                    'for resolving a name spelled differently here '
+                    '(U2OS against U2OS_BONE). Plain text, not a '
+                    'pattern. A name that contains another name is a '
+                    'different sample: read '
+                    '/api/v1/features/samples/ to see which ones '
+                    'matched before aggregating them.'),
+    OpenApiParameter('sample_type', str, OpenApiParameter.QUERY, required=False,
+        description='Sample type, as spelled by the facets endpoint. Free text '
+                    'written by the submitter: matched exactly with case '
+                    'folded, never split on commas (real values contain them). '
+                    'Repeat the parameter for several values.'),
+    OpenApiParameter('cancer_type', str, OpenApiParameter.QUERY, required=False,
+        description='Cancer type, as spelled by the facets endpoint. Same '
+                    'matching as sample_type: exact, case folded, repeatable, '
+                    'never comma-split.'),
+    OpenApiParameter('tissue_of_origin', str, OpenApiParameter.QUERY,
+        required=False,
+        description='Tissue of origin, as spelled by the facets endpoint.'),
+    OpenApiParameter('tissue', str, OpenApiParameter.QUERY, required=False,
+        deprecated=True,
+        description='Former name for tissue_of_origin; still accepted.'),
+    OpenApiParameter('reference_build', str, OpenApiParameter.QUERY, required=False,
+        description='Any build the corpus carries, as listed by the facets '
+                    'endpoint (hg38, hg19 and a few mm10 rows on 2026-09-14); '
+                    'GRCh37 and GRCh38 fold to hg19 and hg38. An unknown '
+                    'build is a 400 naming the valid ones.'),
+]
+
+
 # ── GET /api/v1/features/ ────────────────────────────────────────────────────
 
 class FeatureSearchView(APIView):
@@ -1329,43 +1395,7 @@ class FeatureSearchView(APIView):
             'build-dependent and the corpus holds both vocabularies, so a '
             'result of {"hg38": 56, "hg19": 0} means the gene may exist under '
             'another name in the hg19 projects.'),
-        parameters=[
-            OpenApiParameter('gene_any', str, OpenApiParameter.QUERY, required=False,
-                description='Comma-delimited gene symbols; matches rows carrying ANY of them.'),
-            OpenApiParameter('gene_all', str, OpenApiParameter.QUERY, required=False,
-                description='Comma-delimited gene symbols; matches samples carrying ALL of them.'),
-            OpenApiParameter('same_amp', bool, OpenApiParameter.QUERY, required=False,
-                description='Narrow gene_all from same-sample to a single focal amplification.'),
-            OpenApiParameter('classification', str, OpenApiParameter.QUERY, required=False,
-                description='Amplicon class, repeatable or comma-delimited. An '
-                            'unknown value is a 400, never an empty result.'),
-            OpenApiParameter('oncogenes_only', bool, OpenApiParameter.QUERY, required=False,
-                description='Only rows carrying at least one catalogued oncogene.'),
-            OpenApiParameter('project_id', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('project_name', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('sample_name', str, OpenApiParameter.QUERY, required=False,
-                description='Exact sample name, matched case-insensitively. '
-                            'There is no partial match here -- use '
-                            'sample_name_contains for that.'),
-            OpenApiParameter('sample_name_contains', str, OpenApiParameter.QUERY,
-                required=False,
-                description='Case-insensitive substring of the sample name, '
-                            'for resolving a name spelled differently here '
-                            '(U2OS against U2OS_BONE). Plain text, not a '
-                            'pattern. A name that contains another name is a '
-                            'different sample: read '
-                            '/api/v1/features/samples/ to see which ones '
-                            'matched before aggregating them.'),
-            OpenApiParameter('sample_type', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('cancer_type', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('tissue_of_origin', str, OpenApiParameter.QUERY,
-                required=False,
-                description='Tissue of origin, as spelled by the facets endpoint.'),
-            OpenApiParameter('tissue', str, OpenApiParameter.QUERY, required=False,
-                deprecated=True,
-                description='Former name for tissue_of_origin; still accepted.'),
-            OpenApiParameter('reference_build', str, OpenApiParameter.QUERY, required=False,
-                description='hg19 or hg38; GRCh37 and GRCh38 are accepted and folded.'),
+        parameters=_SHARED_FEATURE_FILTERS + [
             OpenApiParameter('fields', str, OpenApiParameter.QUERY, required=False,
                 description='Comma-delimited subset of the row fields to return.'),
             OpenApiParameter('limit', int, OpenApiParameter.QUERY, required=False,
@@ -1427,36 +1457,7 @@ class FeatureSamplesView(APIView):
             'candidates, so `HOS` and `HOS-MNNG` can be told apart rather than '
             'summed. 315 of the corpus\'s names are a prefix of another, so '
             'prefix matching a name client-side will merge distinct lines.'),
-        parameters=[
-            OpenApiParameter('sample_name_contains', str, OpenApiParameter.QUERY,
-                required=False,
-                description='Case-insensitive substring of the sample name. '
-                            'Plain text, not a pattern: there are no wildcards '
-                            'and no operators.'),
-            OpenApiParameter('gene_any', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('gene_all', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('same_amp', bool, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('classification', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('oncogenes_only', bool, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('project_id', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('project_name', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('sample_name', str, OpenApiParameter.QUERY, required=False,
-                description='Exact sample name, matched case-insensitively. '
-                            'There is no partial match here -- use '
-                            'sample_name_contains for that.'),
-            OpenApiParameter('sample_name_contains', str, OpenApiParameter.QUERY,
-                required=False,
-                description='Case-insensitive substring of the sample name, '
-                            'for resolving a name spelled differently here '
-                            '(U2OS against U2OS_BONE). Plain text, not a '
-                            'pattern. A name that contains another name is a '
-                            'different sample: read '
-                            '/api/v1/features/samples/ to see which ones '
-                            'matched before aggregating them.'),
-            OpenApiParameter('sample_type', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('cancer_type', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('tissue_of_origin', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('reference_build', str, OpenApiParameter.QUERY, required=False),
+        parameters=_SHARED_FEATURE_FILTERS + [
             OpenApiParameter('limit', int, OpenApiParameter.QUERY, required=False,
                 description=f'Samples per page, 1-{api_features.MAX_LIMIT}, '
                             f'default {api_features.DEFAULT_LIMIT}.'),

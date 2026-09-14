@@ -31,7 +31,17 @@ Design principles:
 | Download a project archive | `GET /api/v1/projects/<id>/download/` | ✅ Available |
 | Batch-resolve download URLs | `POST /api/v1/projects/download/` | ✅ Available |
 | Personal API token | Profile page → Developer API Token | ✅ Available |
-| **Site-wide search** | `GET /api/v1/search/` | 🔜 Planned |
+| One sample's rows | `GET /api/v1/projects/<id>/samples/<name>/` | ✅ Available |
+| **Search every amplicon** | `GET /api/v1/features/` | ✅ Available |
+| Search, one entry per sample | `GET /api/v1/features/samples/` | ✅ Available |
+| Filter vocabulary, with counts | `GET /api/v1/features/facets/` | ✅ Available |
+| OpenAPI 3 document | `GET /api/v1/openapi.json` | ✅ Available |
+| Agent-facing summary | `GET /llms.txt` | ✅ Available |
+
+Status verified against production 2026-09-14: every row above answers, the
+OpenAPI document lists all ten public routes, and two tests keep the document
+and `llms.txt` from drifting from the parameter allowlist the views enforce
+(`tests/test_api_openapi.py`).
 
 ## Known issues & status
 
@@ -68,13 +78,13 @@ UA passes). This blocks every default programmatic client and is the main reason
 - **Why it matters most for agents:** AI agents' HTTP tooling sends library UAs and
   cannot easily impersonate a browser, so this gate must go for smooth agent access.
 
-### 2. `GET /samples/` returned 500 — **fixed in working tree, undeployed**
+### 2. `GET /samples/` returned 500 — **fixed; on prod (200, verified 2026-09-14)**
 `_sample_to_dict` returned bson `ObjectId` GridFS refs (and occasional `NaN`/`Inf`
 floats) that DRF's JSON renderer cannot serialize. Fix (`views_apis.py`): drop
 ObjectId-valued fields, sanitize non-finite floats via `_json_safe`. Regression tests in
 `tests/test_api_v1.py::TestSampleToDict`.
 
-### 3. Batch `download_url` used `http://` — **fixed in working tree, undeployed**
+### 3. Batch `download_url` used `http://` — **fixed; on prod (`https://`, verified 2026-09-14)**
 `ProjectBatchDownloadView` built URLs from the WSGI scheme, which is `http` behind the
 TLS-terminating ELB. Fix: honor `X-Forwarded-Proto`. Regression test
 `test_download_url_honors_x_forwarded_proto`.
@@ -111,10 +121,14 @@ WAF, so a naive priority-0 allow would disable it). Bot Control stays enforcing 
 the rest of the site. Making the *prefix* the boundary rather than enumerating
 endpoints means Phases 2–4 need no further WAF edits.
 
-### Phase 2 — Site-wide search endpoint
-Wrap the existing `search.perform_search()` as `GET /api/v1/search/?q=...` (genes,
-projects, classifications, metadata; same wildcard/logic support as the UI), returning
-JSON that links to project and sample endpoints.
+### Phase 2 — Site-wide search endpoint — **done, as `/api/v1/features/`**
+The plan was to wrap `search.perform_search()` as `GET /api/v1/search/?q=...`. What
+shipped instead reads the feature index directly (`caper/api_features.py`): one
+row per amplicon, filterable by gene, classification, project, sample name and
+the three metadata fields, with `/features/samples/` for per-sample answers and
+`/features/facets/` for the filter vocabulary. Not the UI's query language: an
+unknown parameter or value is a 400 rather than silence, because a filter that
+is silently dropped answers a narrowed question with the whole corpus.
 
 ### Phase 3 — Python client library
 A thin, `pip`-installable client over the REST API: handles auth, redirects, filenames,
@@ -200,6 +214,9 @@ pull the sample table"). Deliverables:
 
 ## Deployment note
 
-Fixes #2/#3 (code) and the doc/profile-page changes are complete but must be deployed for
-the live site to reflect them. #1 requires an AWS-side WAF change by the account owner.
+Everything above is on production as of 2026-09-14. The one open item outside
+this repository is the second half of the WAF change (#630: Bot Control to
+Count mode for verified agents), which is an AWS-side edit.
+
+Still not done: Phase 3, the Python client.
 </content>

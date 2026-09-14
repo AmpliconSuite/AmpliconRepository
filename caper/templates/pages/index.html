@@ -362,34 +362,100 @@
         overflow: hidden;
     }
 
-    /* This picker went unnoticed for a long time when it sat on the same white
-       as the input beside it: a bold word behind a hairline rule reads as a
-       label for the field, not as something you can change. It needs to look
-       like a distinct control, so it gets a filled ground, a chevron dark
-       enough to see, and a hover state that moves. */
-    .home-scope {
-        appearance: none;
-        -webkit-appearance: none;
-        -moz-appearance: none;
-        border: 0;
+    /* The scope picker was a <select>, and the comment that stood here
+       explained how to make a popup look like something you can change -- the
+       picker had gone unnoticed for a long time sitting on the same white as
+       the input beside it. That was the wrong repair for the wrong problem.
+       A popup hides three of the four things this site can be searched for
+       until you open it, so no amount of styling the closed state tells a
+       first-time visitor that samples and cancer types are in there.
+
+       It was also, on 2026-09-14, reported not staying open on a click at all
+       -- only while the mouse button was held down. Instrumenting this page in
+       headless Chromium ruled out everything here as the cause: nothing
+       overlays the control, nothing steals focus from it for three seconds
+       after the click, no handler calls preventDefault, and no ancestor
+       establishes a compositing context. That leaves the browser's own popup,
+       which we do not control and cannot test from here.
+
+       Radios have no popup to lose. All four scopes are on the page, one click
+       sets one, and the keyboard and screen-reader behaviour comes from the
+       element rather than from us.
+
+       They sit inside the pill where the <select> did, so the row costs no
+       more height than it did. The pill's overflow:hidden clips the first
+       segment to the pill's own corner, so the segments carry no radius. */
+    .home-scopes {
+        position: relative;
+        display: flex;
+        flex: 0 0 auto;
+        margin: 0;
         border-right: 1px solid #e3e6ea;
-        background: #f5f7fa url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23414042' stroke-width='2'%3E%3Cpath d='M2.5 4.5L6 8l3.5-3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 11px center;
-        padding: 0 30px 0 14px;
+    }
+
+    /* Present to the keyboard and to a screen reader, absent to the eye: the
+       label beside it is what gets drawn. Not display:none or
+       visibility:hidden, either of which would take it out of the tab order
+       and out of the radio group's arrow-key navigation. */
+    .home-scope-option {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .home-scopes label {
+        display: flex;
+        align-items: center;
+        margin: 0;
+        padding: 0 13px;
+        border-right: 1px solid #e3e6ea;
+        background: #f5f7fa;
+        color: #6a6d73;
         font-family: inherit;
-        font-size: 13.5px;
+        font-size: 13px;
         font-weight: 600;
-        color: #414042;
+        white-space: nowrap;
         cursor: pointer;
-        outline: 0;
     }
 
-    .home-scope:hover {
-        background-color: #eaeef4;
+    .home-scopes label:last-of-type {
+        border-right: 0;
     }
 
-    .home-scope:focus {
-        background-color: #eaeef4;
+    .home-scopes label:hover {
+        background: #eaeef4;
+        color: #414042;
+    }
+
+    .home-scope-option:checked + label {
+        background: #fff;
+        color: #1f66d0;
+        box-shadow: inset 0 -2px 0 #1f66d0;
+    }
+
+    .home-scope-option:focus-visible + label {
         box-shadow: inset 0 0 0 2px #1f66d0;
+    }
+
+    /* Four segments, a field and a button do not fit one line on a phone.
+       Below this the segments take a row of their own across the top of the
+       pill, still inside it, and the field and button keep the bottom row. */
+    @media (max-width: 720px) {
+        .home-search {
+            flex-wrap: wrap;
+        }
+        .home-scopes {
+            flex: 1 0 100%;
+            border-right: 0;
+            border-bottom: 1px solid #e3e6ea;
+        }
+        .home-scopes label {
+            flex: 1 1 auto;
+            justify-content: center;
+            padding: 8px 6px;
+        }
     }
 
     .home-search input[type="text"] {
@@ -1252,17 +1318,32 @@
     $(document).ready(function () {
         // --- hero search: one field, with the scope choosing which of the
         // search_results POST parameters it is submitted as. -----------------
-        var scopeSelect = document.getElementById('home-scope');
+        var scopeOptions = document.querySelectorAll('.home-scope-option');
         var queryInput = document.getElementById('home-query');
 
         function applyScope() {
-            var option = scopeSelect.options[scopeSelect.selectedIndex];
-            queryInput.name = option.value;
-            queryInput.placeholder = option.getAttribute('data-placeholder');
+            var chosen = document.querySelector('.home-scope-option:checked');
+            if (!chosen) { return; }
+            queryInput.name = chosen.value;
+            queryInput.placeholder = chosen.getAttribute('data-placeholder');
         }
 
-        if (scopeSelect && queryInput) {
-            scopeSelect.addEventListener('change', applyScope);
+        function chooseScope(value) {
+            var option = document.getElementById('home-scope-' + value);
+            if (option) { option.checked = true; }
+            applyScope();
+        }
+
+        if (scopeOptions.length && queryInput) {
+            // Every radio, not the group: `change` fires on the one being
+            // turned on, and does not fire on the one being turned off.
+            Array.prototype.forEach.call(scopeOptions, function (option) {
+                option.addEventListener('change', applyScope);
+            });
+            // The markup already ships the Genes name and placeholder, so a
+            // visitor whose JS never ran still gets a working gene search.
+            // This is for the back button, which restores a radio the markup
+            // did not check.
             applyScope();
         }
 
@@ -1275,8 +1356,7 @@
         // Search keeps the examples as discoverability without arming them.
         $('.home-ex').on('click', function () {
             var button = $(this);
-            scopeSelect.value = button.attr('data-scope');
-            applyScope();
+            chooseScope(button.attr('data-scope'));
             queryInput.value = button.attr('data-query');
             queryInput.focus();
         });
@@ -1695,13 +1775,34 @@
 
         <form class="home-searchrow" id="home-search-form" method="POST" action="{% url 'search_results' %}">
             {% csrf_token %}
+            {% comment %}
+            Four radios, all visible, rather than a dropdown holding the same
+            four. The scope is the choice that decides what the box beside it
+            even means, and it is the first one a visitor makes; a popup keeps
+            three of the four out of sight until it is opened.
+
+            "scope" is posted along with the query and search_results ignores
+            it -- the view reads named keys, and the name it reads is the one
+            this picker writes onto the input below.
+            {% endcomment %}
             <div class="home-search">
-                <select class="home-scope" id="home-scope" aria-label="What to search">
-                    <option value="genequery" data-placeholder="Find amplified genes, e.g. MYC or MYC&amp;EGFR">Genes</option>
-                    <option value="project_name" data-placeholder="Find a project by name">Projects</option>
-                    <option value="metadata_sample_name" data-placeholder="Find a sample by name">Samples</option>
-                    <option value="metadata_cancer_tissue" data-placeholder="Find a cancer type or tissue of origin">Cancer type</option>
-                </select>
+                <div class="home-scopes" role="radiogroup" aria-label="What to search">
+                    <input class="home-scope-option" type="radio" name="scope" id="home-scope-genequery"
+                           value="genequery" data-placeholder="Find amplified genes, e.g. MYC or MYC&amp;EGFR" checked>
+                    <label for="home-scope-genequery">Genes</label>
+
+                    <input class="home-scope-option" type="radio" name="scope" id="home-scope-project_name"
+                           value="project_name" data-placeholder="Find a project by name">
+                    <label for="home-scope-project_name">Projects</label>
+
+                    <input class="home-scope-option" type="radio" name="scope" id="home-scope-metadata_sample_name"
+                           value="metadata_sample_name" data-placeholder="Find a sample by name">
+                    <label for="home-scope-metadata_sample_name">Samples</label>
+
+                    <input class="home-scope-option" type="radio" name="scope" id="home-scope-metadata_cancer_tissue"
+                           value="metadata_cancer_tissue" data-placeholder="Find a cancer type or tissue of origin">
+                    <label for="home-scope-metadata_cancer_tissue">Cancer type</label>
+                </div>
                 <input type="text" id="home-query" name="genequery"
                        placeholder="Find amplified genes, e.g. MYC or MYC&amp;EGFR"
                        aria-label="Search query">
