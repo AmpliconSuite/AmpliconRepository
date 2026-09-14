@@ -1354,7 +1354,10 @@ _SHARED_FEATURE_FILTERS = [
         deprecated=True,
         description='Former name for tissue_of_origin; still accepted.'),
     OpenApiParameter('reference_build', str, OpenApiParameter.QUERY, required=False,
-        description='hg19 or hg38; GRCh37 and GRCh38 are accepted and folded.'),
+        description='Any build the corpus carries, as listed by the facets '
+                    'endpoint (hg38, hg19 and a few mm10 rows on 2026-09-14); '
+                    'GRCh37 and GRCh38 fold to hg19 and hg38. An unknown '
+                    'build is a 400 naming the valid ones.'),
 ]
 
 

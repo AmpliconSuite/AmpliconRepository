@@ -46,8 +46,8 @@ different words; `?next_cursor=` is a `400`.
 The filters not shown above are `project_id` and `project_name`, which scope a
 query to one project (`project_name` is an exact match with case folded — not
 the substring match `/api/v1/projects/?name=` does), `oncogenes_only=true`,
-which drops rows carrying no catalogued oncogene, and `reference_build` (`hg19`
-or `hg38`; `GRCh37` and `GRCh38` fold into them). `fields=` returns only the row fields you name, which
+which drops rows carrying no catalogued oncogene, and `reference_build` (the
+builds the facets endpoint lists; `GRCh37` and `GRCh38` fold to `hg19` and `hg38`). `fields=` returns only the row fields you name, which
 is worth doing on any query wide enough to need paging.
 
 **A row is an amplicon, not a sample.** Most samples have several rows, and
