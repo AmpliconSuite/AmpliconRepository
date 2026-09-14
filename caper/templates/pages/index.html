@@ -346,7 +346,6 @@
         display: flex;
         align-items: center;
         gap: 16px;
-        row-gap: 9px;
         margin: 14px 0 0;
         flex-wrap: wrap;
     }
@@ -381,13 +380,17 @@
 
        Radios have no popup to lose. All four scopes are on the page, one click
        sets one, and the keyboard and screen-reader behaviour comes from the
-       element rather than from us. */
+       element rather than from us.
+
+       They sit inside the pill where the <select> did, so the row costs no
+       more height than it did. The pill's overflow:hidden clips the first
+       segment to the pill's own corner, so the segments carry no radius. */
     .home-scopes {
-        flex: 1 0 100%;
         position: relative;
         display: flex;
-        flex-wrap: wrap;
+        flex: 0 0 auto;
         margin: 0;
+        border-right: 1px solid #e3e6ea;
     }
 
     /* Present to the keyboard and to a screen reader, absent to the eye: the
@@ -403,45 +406,56 @@
     }
 
     .home-scopes label {
-        margin: 0 0 0 -1px;
-        padding: 6px 14px;
-        border: 1px solid #cfd6de;
-        background: #fff;
+        display: flex;
+        align-items: center;
+        margin: 0;
+        padding: 0 13px;
+        border-right: 1px solid #e3e6ea;
+        background: #f5f7fa;
         color: #6a6d73;
         font-family: inherit;
         font-size: 13px;
         font-weight: 600;
+        white-space: nowrap;
         cursor: pointer;
     }
 
-    .home-scopes label:first-of-type {
-        margin-left: 0;
-        border-radius: 8px 0 0 8px;
-    }
-
     .home-scopes label:last-of-type {
-        border-radius: 0 8px 8px 0;
+        border-right: 0;
     }
 
     .home-scopes label:hover {
-        background: #f5f7fa;
+        background: #eaeef4;
         color: #414042;
     }
 
-    /* Raised, so its coloured border draws over the neighbour's grey one
-       rather than under it -- the segments overlap by the 1px negative
-       margin that joins them. */
     .home-scope-option:checked + label {
-        position: relative;
-        z-index: 1;
-        background: #eef4fd;
-        border-color: #1f66d0;
+        background: #fff;
         color: #1f66d0;
+        box-shadow: inset 0 -2px 0 #1f66d0;
     }
 
     .home-scope-option:focus-visible + label {
-        outline: 2px solid #1f66d0;
-        outline-offset: 2px;
+        box-shadow: inset 0 0 0 2px #1f66d0;
+    }
+
+    /* Four segments, a field and a button do not fit one line on a phone.
+       Below this the segments take a row of their own across the top of the
+       pill, still inside it, and the field and button keep the bottom row. */
+    @media (max-width: 720px) {
+        .home-search {
+            flex-wrap: wrap;
+        }
+        .home-scopes {
+            flex: 1 0 100%;
+            border-right: 0;
+            border-bottom: 1px solid #e3e6ea;
+        }
+        .home-scopes label {
+            flex: 1 1 auto;
+            justify-content: center;
+            padding: 8px 6px;
+        }
     }
 
     .home-search input[type="text"] {
@@ -1771,25 +1785,24 @@
             it -- the view reads named keys, and the name it reads is the one
             this picker writes onto the input below.
             {% endcomment %}
-            <div class="home-scopes" role="radiogroup" aria-label="What to search">
-                <input class="home-scope-option" type="radio" name="scope" id="home-scope-genequery"
-                       value="genequery" data-placeholder="Find amplified genes, e.g. MYC or MYC&amp;EGFR" checked>
-                <label for="home-scope-genequery">Genes</label>
-
-                <input class="home-scope-option" type="radio" name="scope" id="home-scope-project_name"
-                       value="project_name" data-placeholder="Find a project by name">
-                <label for="home-scope-project_name">Projects</label>
-
-                <input class="home-scope-option" type="radio" name="scope" id="home-scope-metadata_sample_name"
-                       value="metadata_sample_name" data-placeholder="Find a sample by name">
-                <label for="home-scope-metadata_sample_name">Samples</label>
-
-                <input class="home-scope-option" type="radio" name="scope" id="home-scope-metadata_cancer_tissue"
-                       value="metadata_cancer_tissue" data-placeholder="Find a cancer type or tissue of origin">
-                <label for="home-scope-metadata_cancer_tissue">Cancer type</label>
-            </div>
-
             <div class="home-search">
+                <div class="home-scopes" role="radiogroup" aria-label="What to search">
+                    <input class="home-scope-option" type="radio" name="scope" id="home-scope-genequery"
+                           value="genequery" data-placeholder="Find amplified genes, e.g. MYC or MYC&amp;EGFR" checked>
+                    <label for="home-scope-genequery">Genes</label>
+
+                    <input class="home-scope-option" type="radio" name="scope" id="home-scope-project_name"
+                           value="project_name" data-placeholder="Find a project by name">
+                    <label for="home-scope-project_name">Projects</label>
+
+                    <input class="home-scope-option" type="radio" name="scope" id="home-scope-metadata_sample_name"
+                           value="metadata_sample_name" data-placeholder="Find a sample by name">
+                    <label for="home-scope-metadata_sample_name">Samples</label>
+
+                    <input class="home-scope-option" type="radio" name="scope" id="home-scope-metadata_cancer_tissue"
+                           value="metadata_cancer_tissue" data-placeholder="Find a cancer type or tissue of origin">
+                    <label for="home-scope-metadata_cancer_tissue">Cancer type</label>
+                </div>
                 <input type="text" id="home-query" name="genequery"
                        placeholder="Find amplified genes, e.g. MYC or MYC&amp;EGFR"
                        aria-label="Search query">
