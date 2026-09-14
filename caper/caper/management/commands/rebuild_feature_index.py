@@ -79,12 +79,49 @@ class Command(BaseCommand):
             if len(names) > 10:
                 self.stdout.write(f"             ... and {len(names) - 10} more")
 
-        # ``names_extra`` is not a reason to rebuild: an extra name resolves to
-        # no rows and cannot over-report. A missing one is, because a search
-        # for it comes back short without saying so.
+        # The gene catalogue is derived the same way and reported the same way,
+        # but graded differently below: repo-wide on 2026-09-14 nothing reads
+        # it but `manage.py compare_search_paths`, so drift here cannot give
+        # anyone a wrong answer. Measured regardless -- a derived collection
+        # nothing asks about is the defect this module keeps producing.
+        genes = drift['genes_missing'] + drift['genes_extra'] + drift['genes_changed']
+        self.stdout.write(f"gene catalogue {len(genes)} disagreements")
+        for label, key, meaning in (
+            ('missing ', 'genes_missing', 'in the index, not in the catalogue'),
+            ('extra   ', 'genes_extra', 'in the catalogue, not in the index'),
+            ('changed ', 'genes_changed', 'in both, described differently'),
+        ):
+            symbols = drift[key]
+            self.stdout.write(f"  {label} {len(symbols):>5}   {meaning}")
+            if symbols:
+                self.stdout.write(f"             {', '.join(symbols[:10])}")
+            if len(symbols) > 10:
+                self.stdout.write(f"             ... and {len(symbols) - 10} more")
+
+        # Should always be empty. It is printed rather than assumed because the
+        # failure it guards against is a collection added to DERIVED_COLLECTIONS
+        # and measured by nothing -- which is precisely how ``search_names``
+        # came to drift unobserved, and which no amount of care remembers to
+        # check by hand.
+        if drift['unchecked']:
+            self.stdout.write(self.style.ERROR(
+                'derived collections no drift check covers: '
+                + ', '.join(drift['unchecked'])))
+
+        # What flips the verdict is whether a reader can get a wrong answer.
+        # ``names_extra`` cannot: an extra name resolves to an $in entry
+        # matching no rows, beside an access filter it does not replace. A
+        # missing name can, because the search comes back short without saying
+        # so. Gene drift cannot either, today, for want of a reader -- so it is
+        # reported as the hazard it is rather than upgraded to an incident.
         if drift['missing'] or drift['stale'] or drift['orphaned'] or drift['names_missing']:
             self.stdout.write(self.style.WARNING(
                 'index is not current; rebuild with: manage.py rebuild_feature_index'))
+        elif genes:
+            self.stdout.write(self.style.NOTICE(
+                'rows and names are current; the gene catalogue is behind. '
+                'Nothing reads it today, so this is a hazard, not a fault -- '
+                'a rebuild clears it.'))
         else:
             self.stdout.write(self.style.SUCCESS('index is current'))
 
