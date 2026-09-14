@@ -536,6 +536,27 @@ DERIVED_COLLECTIONS = (
 )
 
 
+# Which measurement covers which derived collection.  A registry rather than a
+# habit, because the habit is what failed: ``search_names`` was derived here,
+# written by one command, covered by no check, and nothing in the code said so
+# -- prod carried 468 unfindable names for three days and ``--check`` reported
+# "index is current" throughout.  Anything in ``DERIVED_COLLECTIONS`` and not
+# in here is reported by ``feature_index_drift`` as ``unchecked``, and a test
+# asserts that list is empty, so the next collection added here cannot go
+# unmeasured quietly.  The values are what the check calls its findings.
+DERIVED_DRIFT_CHECKS = {
+    FEATURE_INDEX_COLLECTION: 'missing / stale / orphaned',
+    FEATURE_INDEX_MANIFEST_COLLECTION: 'missing / stale / orphaned',
+    GENE_CATALOG_COLLECTION: 'genes_missing / genes_extra / genes_changed',
+    SEARCH_NAMES_COLLECTION: 'names_missing / names_extra',
+}
+
+
+def unchecked_derived_collections():
+    """Derived collections that no drift measurement covers."""
+    return [name for name in DERIVED_COLLECTIONS if name not in DERIVED_DRIFT_CHECKS]
+
+
 def indexable_projects_query():
     """The projects that belong in the index.
 
@@ -665,18 +686,34 @@ def feature_index_drift():
     ``stale``     indexed, but the source has changed    (a search reports the old truth)
     ``orphaned``  indexed, but no longer indexable       (a search over-reports)
 
-    and two lists of ``(kind, name)`` from ``search_name_drift``:
+    two lists of ``(kind, name)`` from ``search_name_drift``:
 
     ``names_missing``  in the index, not in the name list  (a name search finds nothing)
     ``names_extra``    in the name list, not in the index  (harmless; resolves to no rows)
 
-    The name half is here rather than in its own command because leaving it
-    out is what let prod carry 468 unfindable names for three days: this
-    function is where "is the derived data current" gets asked, and a
-    collection it did not cover was a collection nothing asked about.  It
-    costs a scan of the index, which is why this stays a command and is not
-    called on a request path -- ``index_coverage()`` is the cheap per-request
-    half and deliberately does not do this.
+    three lists of gene symbols from ``gene_catalog_drift``:
+
+    ``genes_missing``  in the index, not in the catalogue  (nothing reads it; a hazard)
+    ``genes_extra``    in the catalogue, not in the index  (likewise)
+    ``genes_changed``  in both, describing it differently  (likewise)
+
+    and ``unchecked``, the derived collections no measurement above covers,
+    which should always be empty.
+
+    Every collection in ``DERIVED_COLLECTIONS`` is covered here, and that is
+    the point of the function rather than a detail of it.  Leaving one out is
+    what let prod carry 468 unfindable names for three days -- not because the
+    hook was missing, which is an ordinary bug, but because the check that
+    exists to catch missing hooks did not look at that collection, so the
+    verdict read "index is current" while a search under-reported.  The gene
+    catalogue has no reader and could be argued out of this list on those
+    grounds; it was, once, and that argument is exactly how the names got
+    left out, so it is not made again here.  The command grades the two
+    differently instead.
+
+    It costs two projected scans of the index, which is why this stays a
+    command and is not called on a request path -- ``index_coverage()`` is the
+    cheap per-request half and deliberately does not do this.
     """
     live_digests = {
         project['_id']: project_digest(project)
@@ -698,6 +735,8 @@ def feature_index_drift():
         'indexable': len(live_digests),
         'indexed': len(indexed),
         **search_name_drift(),
+        **gene_catalog_drift(),
+        'unchecked': unchecked_derived_collections(),
     }
 
 
@@ -716,40 +755,97 @@ def rebuild_gene_catalog():
     ``C17ORF37`` and ``MIEN1`` are the same gene under two refGene vocabularies,
     on 283 and 160 feature rows respectively, and no single query reaches both.
     """
-    # Rebuild-only, like ``search_names`` was, and for now that is left alone
-    # on purpose. Nothing reads this collection: repo-wide on 2026-09-14 the
-    # only reader is `manage.py compare_search_paths`. So a stale catalogue is
-    # a hazard, not a fault, and maintaining ~24,000 symbols incrementally on
-    # every project write would be real cost against no reader. If something
-    # starts reading it, give it the same treatment ``add_search_names`` got --
-    # and add it to ``search_name_drift``'s half of the check, or it will drift
-    # unobserved the way the names did.
+    # Rebuild-only, unlike ``search_names``, and that part is deliberate:
+    # nothing reads this collection -- repo-wide on 2026-09-14 the only reader
+    # is `manage.py compare_search_paths` -- so a stale catalogue is a hazard,
+    # not a fault, and maintaining ~24,000 symbols incrementally on every
+    # project write would be real cost against no reader.  What is no longer
+    # deliberate is going unmeasured: ``gene_catalog_drift`` covers it since
+    # 2026-09-14, so drift here is reported rather than discovered by whoever
+    # reads the catalogue next.  If something does start reading it, give it
+    # the same treatment ``add_search_names`` got.
+    catalogue = gene_catalog_documents(
+        feature_index_handle.find({}, GENE_SOURCE_PROJECTION))
+    gene_catalog_handle.delete_many({})
+    if catalogue:
+        gene_catalog_handle.insert_many(list(catalogue.values()))
+    return len(catalogue)
+
+
+# The three fields the catalogue is derived from, projected for the reason
+# ``NAME_SOURCE_PROJECTION`` is: the derivation runs over every row in the
+# corpus and needs none of the payload.
+GENE_SOURCE_PROJECTION = {'genes': 1, 'oncogenes': 1, 'reference_build': 1}
+
+
+def gene_catalog_documents(rows):
+    """The catalogue documents a set of index rows implies, keyed by symbol.
+
+    One derivation, shared by the rebuild and the drift check, for the reason
+    ``search_name_documents`` is shared: a check that restates the predicate in
+    its own words measures its own copy, not the one the rebuild writes, and so
+    agrees with the defect.  That has already happened once in this codebase --
+    a test restated ``is_no_amplicon`` and could not catch the blank
+    classification 1,002 prod rows carried.
+    """
     catalogue = {}
-    for row in feature_index_handle.find({}, {'genes': 1, 'oncogenes': 1, 'reference_build': 1}):
+    for row in rows:
         build = row.get('reference_build') or ''
         oncogenes = set(row.get('oncogenes') or [])
         for symbol in row.get('genes') or []:
-            entry = catalogue.setdefault(symbol, {'symbol': symbol,
-                                                  'is_oncogene': False,
-                                                  'reference_builds': set()})
+            entry = catalogue.setdefault(symbol, {
+                'symbol': symbol,
+                'is_oncogene': False,
+                'reference_builds': set(),
+                # Where the names came from, carried on every document rather
+                # than written in a doc page that a caller of the API will not
+                # read.
+                'source': 'refGene, via AmpliconClassifier',
+                'schema_version': SCHEMA_VERSION,
+            })
             if symbol in oncogenes:
                 entry['is_oncogene'] = True
             if build:
                 entry['reference_builds'].add(build)
+    for entry in catalogue.values():
+        entry['reference_builds'] = sorted(entry['reference_builds'])
+    return catalogue
 
-    gene_catalog_handle.delete_many({})
-    if catalogue:
-        gene_catalog_handle.insert_many([
-            {'symbol': entry['symbol'],
-             'is_oncogene': entry['is_oncogene'],
-             'reference_builds': sorted(entry['reference_builds']),
-             # Where the names came from, carried on every document rather than
-             # written in a doc page that a caller of the API will not read.
-             'source': 'refGene, via AmpliconClassifier',
-             'schema_version': SCHEMA_VERSION}
-            for entry in catalogue.values()
-        ])
-    return len(catalogue)
+
+def _gene_signature(document):
+    """What has to match for a stored catalogue entry to be current.
+
+    ``schema_version`` is part of it for the same reason it is folded into
+    ``project_digest``: a builder change makes every stored entry stale against
+    the new builder, and the check should say so rather than compare the old
+    shape to the new one and call it agreement.
+    """
+    return (bool(document.get('is_oncogene')),
+            tuple(document.get('reference_builds') or ()),
+            document.get('source'),
+            document.get('schema_version'))
+
+
+def gene_catalog_drift():
+    """What disagrees between the index and the gene catalogue.  Reads only.
+
+    Reported as a hazard rather than a fault, and the command says so: nothing
+    reads this collection today, so a stale catalogue cannot give anyone a
+    wrong answer.  It is measured anyway.  The recurring defect in this module
+    is not "a collection went stale", it is "a collection nothing asked about",
+    and the cost of asking is one projected scan of the index.
+    """
+    live = gene_catalog_documents(feature_index_handle.find({}, GENE_SOURCE_PROJECTION))
+    stored = {document['symbol']: document for document in gene_catalog_handle.find(
+        {}, {'_id': 0, 'symbol': 1, 'is_oncogene': 1, 'reference_builds': 1,
+             'source': 1, 'schema_version': 1})}
+    return {
+        'genes_missing': sorted(set(live) - set(stored)),
+        'genes_extra': sorted(set(stored) - set(live)),
+        'genes_changed': sorted(
+            symbol for symbol in set(live) & set(stored)
+            if _gene_signature(live[symbol]) != _gene_signature(stored[symbol])),
+    }
 
 
 def rebuild_search_names():
