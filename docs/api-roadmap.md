@@ -130,7 +130,15 @@ the three metadata fields, with `/features/samples/` for per-sample answers and
 unknown parameter or value is a 400 rather than silence, because a filter that
 is silently dropped answers a narrowed question with the whole corpus.
 
-### Phase 3 — Python client library
+### Phase 3 — Python client library (retired, 2026-09-15)
+Not built, and not planned. The reasoning: `/features/` answers most questions
+in one `requests.get`, the OpenAPI document is complete, errors are uniform, and
+the clients the API was hardened for — agents — do not install packages. A
+wrapper would be a second place for the contract to live, which is the defect
+this repository keeps producing. If a human user asks for one, that request is
+the evidence this paragraph lacks; until then it stays an idea. The original
+sketch follows for reference.
+
 A thin, `pip`-installable client over the REST API: handles auth, redirects, filenames,
 retries, client-side rate limiting, and sets a proper User-Agent under the hood. Reads
 results straight into pandas.
@@ -214,9 +222,9 @@ pull the sample table"). Deliverables:
 
 ## Deployment note
 
-Everything above is on production as of 2026-09-14. The one open item outside
-this repository is the second half of the WAF change (#630: Bot Control to
-Count mode for verified agents), which is an AWS-side edit.
-
-Still not done: Phase 3, the Python client.
+Everything above is on production as of 2026-09-15, and #600 is closed. The
+WAF's second half (#630, change B) was applied the same day: Bot Control's
+`CategoryAI` rule is overridden to Count and a `BlockUnverifiedAI` rule keyed
+on the verified labels re-blocks the impostors, so a verified AI agent can now
+read the HTML pages as well as the API. Phase 3 is retired (see above).
 </content>
