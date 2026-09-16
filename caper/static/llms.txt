@@ -144,7 +144,8 @@ Two questions only the archive answers:
   `results/consolidated_classification/`; in projects submitted before the
   layout was standardised it is wherever the submitter's AmpliconClassifier
   run wrote it, sometimes one file per sample. Glob for it under `results/`
-  rather than assuming the path.
+  rather than assuming the path, and skip any match whose name starts with
+  `._` — a macOS resource fork some uploads carry, not data.
 - **The amplicon's structure** — `*_cycles.txt` (the reconstructed paths and
   cycles, with copy numbers) and `*_graph.txt` (the breakpoint graph), one
   pair per AmpliconArchitect amplicon, usually under

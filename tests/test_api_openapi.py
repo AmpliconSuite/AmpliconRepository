@@ -659,7 +659,11 @@ class TestLlmsTxtDescribesTheRealApi:
                 timeout=300) as resp:
             archive = resp.read()
 
-        names = tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz').getnames()
+        # Skipping AppleDouble entries the way the file tells a reader to: a
+        # dev upload carries results/other_files/.../._X_gene_list.tsv, a macOS
+        # resource fork whose first bytes are not text.
+        names = [n for n in tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz').getnames()
+                 if not n.rsplit('/', 1)[-1].startswith('._')]
         gene_lists = [n for n in names if re.fullmatch(r'results/.*_gene_list\.tsv', n)]
         cycles = [n for n in names if re.fullmatch(r'results/.*_cycles\.txt', n)]
         assert gene_lists, f'no results/**/*_gene_list.tsv in {smallest["project_name"]!r}'
