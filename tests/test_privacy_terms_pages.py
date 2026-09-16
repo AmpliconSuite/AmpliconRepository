@@ -19,7 +19,14 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def client():
-    return Client(HTTP_HOST='localhost')
+    from caper.dev_gate import COOKIE_NAME, gate_enabled, issue_pass
+    c = Client(HTTP_HOST='localhost')
+    # On a deployment with the landing gate on, `/` is the gate page and has
+    # no footer.  The gate's own tests cover the gate; this one is about the
+    # page behind it.
+    if gate_enabled():
+        c.cookies[COOKIE_NAME] = issue_pass()
+    return c
 
 
 def _text(client, path):

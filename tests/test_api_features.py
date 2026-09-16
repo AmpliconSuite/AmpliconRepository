@@ -739,9 +739,22 @@ def test_sample_name_is_exact_and_case_insensitive(corpus):
                 % corpus['names']).data['count'] == 1
 
 
+def _named(corpus, qs):
+    """Scoped to the 'Names' project.
+
+    The fixture writes into the live feature index next to whatever the
+    deployment already holds, so an unscoped substring query counts the
+    deployment's samples too.  Measured on dev 2026-09-16: 'HOS' matched 8
+    rows against the 3 the fixture holds (JHOS-4 and its kin), and '.' matched
+    113.  The fixture names are the fixture's, not the corpus's -- which is
+    also how HOS-MNNG got into llms.txt as if it were data.
+    """
+    return _get('?project_id=%s&%s' % (corpus['names'], qs))
+
+
 def test_sample_name_contains_finds_the_longer_spelling(corpus):
     """The entity-resolution case: a name spelled differently here."""
-    resp = _get('?sample_name_contains=MNNG&count_only=true')
+    resp = _named(corpus, 'sample_name_contains=MNNG&count_only=true')
     assert resp.data['count'] == 2
     assert resp.data['sample_count'] == 1
 
@@ -753,11 +766,12 @@ def test_sample_name_contains_does_not_silently_merge_nested_names(corpus):
     client-side merged it with HOS-MNNG, a different line, and reported one
     number for both.
     """
-    rows = _get('?sample_name_contains=HOS&count_only=true')
+    rows = _named(corpus, 'sample_name_contains=HOS&count_only=true')
     assert rows.data['count'] == 3
     assert rows.data['sample_count'] == 2
 
-    listed = _samples('?sample_name_contains=HOS&limit=500')
+    listed = _samples('?project_id=%s&sample_name_contains=HOS&limit=500'
+                      % corpus['names'])
     assert [r['sample_name'] for r in listed.data['results']] == ['HOS', 'HOS-MNNG']
     by_name = {r['sample_name']: r for r in listed.data['results']}
     assert by_name['HOS']['row_count'] == 1
@@ -772,8 +786,8 @@ def test_sample_name_contains_is_a_literal_not_a_pattern(corpus):
     with no way to escape them; that is not a contract to repeat in an API,
     where the value arrives from a URL.
     """
-    assert _get('?sample_name_contains=HOS*&count_only=true').data['count'] == 0
-    assert _get('?sample_name_contains=.&count_only=true').data['count'] == 0
+    assert _named(corpus, 'sample_name_contains=HOS*&count_only=true').data['count'] == 0
+    assert _named(corpus, 'sample_name_contains=.&count_only=true').data['count'] == 0
 
 
 def test_sample_name_contains_matching_nothing_matches_nothing(corpus):
