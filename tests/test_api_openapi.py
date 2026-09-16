@@ -601,13 +601,20 @@ class TestLlmsTxtDescribesTheRealApi:
                 return json.load(resp)
 
         facets = fetch('/api/v1/features/facets/')['facets']
-        metadata_values = {v['value'].lower()
-                           for field in ('cancer_type', 'tissue_of_origin', 'sample_type')
-                           for v in facets[field]}
+        facet_values = {v['value'].lower()
+                        for field in ('cancer_type', 'tissue_of_origin', 'sample_type',
+                                      'classification')
+                        for v in facets[field]}
 
         def holds(claim):
-            if claim.lower() in metadata_values:
+            if claim.lower() in facet_values:
                 return True
+            # A feature_id is sample_name, amplicon number and feature joined
+            # with underscores; ask for the sample's rows and look for it.
+            if '_amplicon' in claim:
+                sample = claim.split('_amplicon', 1)[0]
+                rows = fetch('/api/v1/features/', sample_name=sample, fields='feature_id')
+                return any(r['feature_id'] == claim for r in rows['results'])
             if fetch('/api/v1/features/samples/', sample_name_contains=claim, limit=1)['count']:
                 return True
             return bool(fetch('/api/v1/features/', gene_any=claim, count_only='true')['count'])
