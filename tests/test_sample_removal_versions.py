@@ -71,7 +71,10 @@ def two_sample_project(mongo_collection, test_user):
     try:
         yield project_id
     finally:
-        mongo_collection.delete_one({'_id': ObjectId(project_id)})
+        # The edit under test reindexes this document, so a bare delete_one
+        # would leave its index rows behind: three orphans per full run, and
+        # /features/ 503 on dev after the 2026-09-16 deploy until a rebuild.
+        _cleanup_project(mongo_collection, project_id)
 
 
 def _sample_names(doc):
@@ -127,8 +130,7 @@ def _submitted_edit(request, mongo_collection):
         return response, captured.get('args')
     finally:
         for pid in placeholder_ids:
-            mongo_collection.delete_one({'_id': ObjectId(pid)})
-            shutil.rmtree(os.path.join('tmp', pid), ignore_errors=True)
+            _cleanup_project(mongo_collection, pid)   # unindexes, and removes tmp/<pid>
 
 
 def test_removing_a_sample_starts_a_new_version(

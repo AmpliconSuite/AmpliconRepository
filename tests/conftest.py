@@ -566,3 +566,74 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if 'browser' in item.keywords:
             item.add_marker(skip)
+
+
+# ---------------------------------------------------------------------------
+# What the suite leaves in the feature index
+# ---------------------------------------------------------------------------
+
+def _index_orphans():
+    """``{project_id: project_name}`` for every index manifest entry whose
+    project is no longer indexable.  ``None`` if there is no database to ask.
+
+    Ids only, on purpose: ``feature_index_drift()`` recomputes every project's
+    digest, which reads ``runs`` for the whole corpus, and this runs at the
+    start and end of every invocation including a one-test one.
+    """
+    try:
+        from caper.feature_index import (
+            collection_handle_primary, indexable_projects_query, manifest_handle)
+        live = {doc['_id'] for doc in
+                collection_handle_primary.find(indexable_projects_query(), {'_id': 1})}
+        manifest = {entry['project_id']: entry.get('project_name') for entry in
+                    manifest_handle.find({}, {'project_id': 1, 'project_name': 1})}
+    except Exception as exc:
+        logging.warning(f"[index] could not measure feature index orphans: {exc}")
+        return None
+    return {pid: name for pid, name in manifest.items() if pid not in live}
+
+
+def pytest_sessionstart(session):
+    session.config._index_orphans_before = _index_orphans()
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_sessionfinish(session, exitstatus):
+    """Fail the run if it left rows in the feature index for projects it deleted.
+
+    A test that inserts a project document directly, drives a view that
+    reindexes it, and then deletes the document directly has written around
+    the lifecycle hooks, and the rows it leaves make ``index_is_usable()``
+    answer no: on 2026-09-16 the full suite left six such rows on dev and
+    ``/features/`` served 503 until the index was rebuilt.  The writers were
+    four cleanups that called ``delete_one`` instead of ``_cleanup_project``.
+
+    The manifest is compared before and after rather than asserted empty, so a
+    machine whose index was already carrying orphans still gets a clean run
+    reported as clean; only what *this* run added is counted.
+    """
+    before = getattr(session.config, '_index_orphans_before', None)
+    if before is None:
+        return
+    after = _index_orphans()
+    if after is None:
+        return
+    left = {pid: name for pid, name in after.items() if pid not in before}
+    session.config._index_orphans_left = left
+    if left and exitstatus == 0:
+        session.exitstatus = 1
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    left = getattr(config, '_index_orphans_left', None)
+    if not left:
+        return
+    terminalreporter.section('feature index rows left behind by this run', sep='=', red=True)
+    terminalreporter.line(
+        f'{len(left)} project(s) were removed from `projects` without being removed from '
+        'the feature index; a search would still return their samples and '
+        'index_is_usable() now answers no.  Clean up test projects with '
+        '_cleanup_project(), which unindexes, rather than delete_one().')
+    for pid, name in sorted(left.items(), key=lambda item: str(item[0])):
+        terminalreporter.line(f'  {pid}  {name}')
+    terminalreporter.line('`manage.py rebuild_feature_index` clears them.')
