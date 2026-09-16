@@ -38,6 +38,7 @@ Design principles:
 | OpenAPI 3 document | `GET /api/v1/openapi.json` | ✅ Available |
 | Agent-facing summary | `GET /llms.txt` | ✅ Available |
 | API index (spec, llms.txt, every endpoint) | `GET /api/v1/` | ✅ In `main`; not yet deployed |
+| Feature copy number, complexity, interval length on search rows | `GET /api/v1/features/` | ✅ In `main`; not yet deployed (index schema 5 — needs a rebuild) |
 
 Status verified against production 2026-09-14: every row above answers, the
 OpenAPI document lists all ten public routes, and two tests keep the document
@@ -47,6 +48,25 @@ agent's first request was the bare prefix and got a 404; the same day a
 live check was added for the *examples* in `llms.txt` (a sample name the
 file cited did not exist in the corpus) -- run it with
 `LLMS_TXT_LIVE_URL=https://ampliconrepository.org pytest tests/test_api_openapi.py -k corpus_holds`.
+
+The four feature numbers were added 2026-09-16 after a chat assistant, asked
+to plot EGFR ecDNA copy number, read `llms.txt` and concluded the API does not
+expose copy number. It did -- on `/projects/<id>/samples/<name>/`, one call
+per sample, under undocumented column names -- but not on the search rows
+the file steers everything to. The four (`Feature_maximum_copy_number`,
+`Feature_median_copy_number`, `Complexity_score`, `Captured_interval_length`)
+are the per-feature keys that are present on every row of prod's live corpus
+(39,114 rows; float on 27,040 of the 27,045 real amplicons, measured
+2026-09-16), which is the same completeness class as `classification` and
+`genes`; the file-path and tool-version keys range from 0.2% to 87.6%
+coverage and stay on the sample endpoint. What the API still does not carry
+-- per-gene copy number, the reconstruction itself -- lives only in the
+project archive, so `llms.txt` and the download endpoint's description now
+say which files hold it and how they key to `feature_id`. A second live
+check downloads the smallest public archive and verifies those claims:
+`-k archive_holds`. Carrying per-gene copy number on search rows would need
+the aggregator to lift `gene_cn` out of `gene_list.tsv` into each row, and
+would then fill in only as projects are re-aggregated -- a separate change.
 
 ## Known issues & status
 

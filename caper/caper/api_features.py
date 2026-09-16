@@ -85,6 +85,8 @@ MAX_SAMPLE_NAME_MATCHES = 500
 ROW_FIELDS = (
     'project_id', 'project_name', 'sample_name', 'feature_id',
     'classification', 'genes', 'oncogenes', 'locations', 'reference_build',
+    'feature_max_copy_number', 'feature_median_copy_number',
+    'complexity_score', 'captured_interval_length',
     'sample_type', 'cancer_type', 'tissue_of_origin', 'project_url',
     'sample_url', 'sample_page_url',
 )
@@ -587,6 +589,14 @@ def row_to_dict(row, fields, request=None):
         'oncogenes': row.get('oncogenes_display') or [],
         'locations': row.get('locations') or [],
         'reference_build': row.get('reference_build'),
+        # The feature's numbers, as the index stored them: a float, or None
+        # where the aggregator wrote 'NA'.  They describe the amplification,
+        # not any one gene on it -- see FeatureRowSerializer for what that
+        # distinction costs a caller who ignores it.
+        'feature_max_copy_number': row.get('feature_max_copy_number'),
+        'feature_median_copy_number': row.get('feature_median_copy_number'),
+        'complexity_score': row.get('complexity_score'),
+        'captured_interval_length': row.get('captured_interval_length'),
         'sample_type': metadata.get('Sample_type'),
         'cancer_type': metadata.get('Cancer_type'),
         'tissue_of_origin': metadata.get('Tissue_of_origin'),

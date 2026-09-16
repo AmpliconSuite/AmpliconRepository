@@ -100,7 +100,7 @@ from .visibility import (
 # folded into every digest, so a builder change invalidates every stored row
 # and the drift check reports the whole corpus as stale -- which is correct: it
 # is stale, against the new builder.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 FEATURE_INDEX_COLLECTION = 'feature_index'
 GENE_CATALOG_COLLECTION = 'gene_catalog'
@@ -154,6 +154,42 @@ def normalize_reference(value):
     if not text:
         return ''
     return REFERENCE_EQUIVALENCE.get(text, text)
+
+
+# The four per-feature numbers AmpliconClassifier's results table carries, in
+# the order (index key, source column).  Measured on prod 2026-09-16 across
+# 39,114 live public rows: every row carries all four keys, as a float on
+# 27,040 of the 27,045 rows that hold a real amplicon and as the string 'NA'
+# (or a null) on the rest -- the same completeness class as Classification and
+# All_genes, and unlike the file-path and tool-version keys, whose coverage
+# ranges from 0.2% to 87.6% depending on which aggregator wrote the project.
+# That measurement is why these four are on the row and the others are not.
+_FEATURE_NUMBERS = (
+    ('feature_max_copy_number', 'Feature_maximum_copy_number'),
+    ('feature_median_copy_number', 'Feature_median_copy_number'),
+    ('complexity_score', 'Complexity_score'),
+    ('captured_interval_length', 'Captured_interval_length'),
+)
+
+
+def _number(value):
+    """A stored number as a float, or None for anything that is not one.
+
+    The aggregator writes 'NA' where AmpliconClassifier had nothing to report,
+    and older documents hold numeric strings and ints beside the floats.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number else None
+
+
+def _feature_numbers(feature):
+    return {key: _number(feature.get(column, feature.get(column.replace('_', ' '))))
+            for key, column in _FEATURE_NUMBERS}
 
 
 def _gene_list(feature, key='All_genes'):
@@ -352,6 +388,7 @@ def feature_rows_for_project(project):
                 oncogenes_display=[],
                 locations=[],
                 reference_build='',
+                numbers={key: None for key, _ in _FEATURE_NUMBERS},
                 metadata={field: str(cached.get(field, '') or '').strip()
                           for field in _SAMPLE_METADATA_FIELDS},
                 extra_metadata=cached.get('extra_metadata_from_csv') or {},
@@ -390,6 +427,7 @@ def feature_rows_for_project(project):
                 oncogenes_display=_gene_display_list(feature, 'Oncogenes'),
                 locations=_location_list(feature),
                 reference_build=normalize_reference(get('Reference_version', 'Reference version')),
+                numbers=_feature_numbers(feature),
                 # Stripped, because that is how the values are displayed and
                 # how the existing filters compare them: _term_mask() calls
                 # .str.strip() before matching, so a stored 'Lung ' has to be
@@ -423,8 +461,8 @@ def sample_name_of(feature, run_key=''):
 
 def _row(*, project_id, project_name, project_sample_count, visibility, members, run_key, sample_name,
          feature_id, classification, genes, genes_display, oncogenes,
-         oncogenes_display, locations, reference_build, metadata, extra_metadata,
-         has_amplicon):
+         oncogenes_display, locations, reference_build, numbers, metadata,
+         extra_metadata, has_amplicon):
     """Assemble one index document.
 
     ``sample_name_lower`` and ``project_name_lower`` are stored rather than
@@ -468,6 +506,11 @@ def _row(*, project_id, project_name, project_sample_count, visibility, members,
         'oncogenes_display': oncogenes_display,
         'locations': locations,
         'reference_build': reference_build,
+        # The feature's numbers, flat on the row so that a projection can pick
+        # them by name.  None where the source held 'NA' or nothing: a cleared
+        # sample has no copy number, and storing 0 there would let a
+        # "lowest copy number" query rank it first.
+        **numbers,
         'metadata': metadata,
         'extra_metadata': extra_metadata,
         'schema_version': SCHEMA_VERSION,

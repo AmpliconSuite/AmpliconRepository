@@ -50,6 +50,12 @@ def _project(**overrides):
                     'Sample_type': 'Cell Line',
                     'Cancer_type': 'Glioblastoma',
                     'Tissue_of_origin': 'Brain',
+                    # In the mix of types prod holds (measured 2026-09-16):
+                    # floats, ints, numeric strings, and 'NA'.
+                    'Feature_maximum_copy_number': 91.00208132312208,
+                    'Feature_median_copy_number': '88.5',
+                    'Complexity_score': 'NA',
+                    'Captured_interval_length': 1461334,
                 },
                 {
                     'Sample_name': 'sample_365',
@@ -164,6 +170,40 @@ def test_has_amplicon_is_a_stored_flag_not_an_absent_field():
     rows = feature_rows_for_project(_project())
     assert all('has_amplicon' in row for row in rows)
     assert {row['has_amplicon'] for row in rows} == {True, False}
+
+
+def test_the_feature_numbers_are_floats_or_none_whatever_the_source_type():
+    """Prod stores the four AmpliconClassifier numbers as floats, ints, numeric
+    strings and the string 'NA' side by side (measured 2026-09-16: 27,040
+    floats, 90 ints, 11,849 'NA' for Captured_interval_length alone).  A
+    caller sorting or plotting them must never see a string, and 'NA' must
+    become None rather than 0 -- 0 would rank a cleared sample as the lowest
+    copy number in the corpus."""
+    rows = feature_rows_for_project(_project())
+    amplicon1 = next(row for row in rows if row['feature_id'] == 'sample_365_amplicon1')
+    assert amplicon1['feature_max_copy_number'] == 91.00208132312208
+    assert amplicon1['feature_median_copy_number'] == 88.5
+    assert amplicon1['complexity_score'] is None
+    assert amplicon1['captured_interval_length'] == 1461334.0
+    assert all(isinstance(amplicon1[key], float) for key in
+               ('feature_max_copy_number', 'feature_median_copy_number',
+                'captured_interval_length'))
+
+
+def test_every_row_carries_every_feature_number_key():
+    """Absent and null must not be confused: a row written by this builder
+    always has the four keys, so a projection on them never returns a
+    document missing the column, and a row missing them is one written by an
+    older schema."""
+    keys = ('feature_max_copy_number', 'feature_median_copy_number',
+            'complexity_score', 'captured_interval_length')
+    rows = feature_rows_for_project(_project())
+    assert all(key in row for row in rows for key in keys)
+    cleared = next(row for row in rows if row['feature_id'] == '')
+    assert all(cleared[key] is None for key in keys)
+    # A feature that simply lacks the columns (an older aggregator) is None too.
+    amplicon2 = next(row for row in rows if row['feature_id'] == 'sample_365_amplicon2')
+    assert all(amplicon2[key] is None for key in keys)
 
 
 def test_project_with_no_runs_yields_no_rows():

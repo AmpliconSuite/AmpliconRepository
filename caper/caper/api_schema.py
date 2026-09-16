@@ -172,12 +172,18 @@ class ProjectSerializer(serializers.Serializer):
 
 class SampleSerializer(serializers.Serializer):
     """
-    One sample row.
+    One sample row: one line of AmpliconClassifier's results table, with the
+    column names' spaces replaced by underscores (`Feature_maximum_copy_number`
+    for "Feature maximum copy number"). The columns are defined in the
+    AmpliconClassifier README under "Results table":
+    https://github.com/AmpliconSuite/AmpliconClassifier#3-outputs
 
-    Only `run` is guaranteed. The remaining keys come from the uploaded
-    aggregator output and vary with the pipeline version that produced the
-    project, so a client must tolerate unknown keys and absent ones. Fields
-    holding server-side file references are removed before serialization.
+    Only `run` is guaranteed. The remaining keys vary with the pipeline
+    version that produced the project, so a client must tolerate unknown keys
+    and absent ones. Fields holding server-side file references are removed
+    before serialization. Everything on this row that describes the
+    amplification itself is also on `/api/v1/features/` rows under stable
+    names, which is the better place to read it from.
     """
 
     run = serializers.CharField(help_text='Run this sample belongs to.')
@@ -245,6 +251,13 @@ INDEX_UNAVAILABLE = _err(
     status_code=503)
 
 
+# Measured on prod 2026-09-16: of 27,045 rows holding a real amplicon, five
+# carry 'NA' for these numbers.  "Null means no amplicon" would be a lie for
+# those five, so the wording is the measured one.
+_NULL_NUMBER = ('Null where the pipeline recorded no value, which is almost '
+                'always a row that carries no amplicon.')
+
+
 class FeatureRowSerializer(serializers.Serializer):
     """One focal amplification, as a search result.
 
@@ -264,6 +277,28 @@ class FeatureRowSerializer(serializers.Serializer):
     oncogenes = serializers.ListField(child=serializers.CharField())
     locations = serializers.ListField(child=serializers.CharField())
     reference_build = serializers.CharField()
+    feature_max_copy_number = serializers.FloatField(
+        allow_null=True,
+        help_text='Highest copy number of any segment of this feature, as '
+                  'AmpliconArchitect estimated it. This is the amplification\'s '
+                  'copy number, not any one gene\'s: a feature spans segments '
+                  'at different copy numbers, and a gene on one of the lower '
+                  'ones has a lower copy number than this. Per-gene copy '
+                  'number is in the project archive (gene_list.tsv, column '
+                  'gene_cn), not in the API. ' + _NULL_NUMBER)
+    feature_median_copy_number = serializers.FloatField(
+        allow_null=True,
+        help_text='Median copy number across this feature\'s segments. '
+                  + _NULL_NUMBER)
+    complexity_score = serializers.FloatField(
+        allow_null=True,
+        help_text='AmpliconClassifier\'s feature complexity score: higher means '
+                  'more segments and more copy-number diversity among them. '
+                  + _NULL_NUMBER)
+    captured_interval_length = serializers.FloatField(
+        allow_null=True,
+        help_text='Total length in bp of the genomic intervals this feature '
+                  'covers. ' + _NULL_NUMBER)
     sample_type = serializers.CharField(allow_null=True)
     cancer_type = serializers.CharField(allow_null=True)
     tissue_of_origin = serializers.CharField(allow_null=True)

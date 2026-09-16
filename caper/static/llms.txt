@@ -36,8 +36,16 @@ first.
 ```
 
 Each row names its project, sample, feature, classification, genes, oncogenes,
-locations and reference build. `sample_url` fetches that one sample's rows and
+locations and reference build, and carries the feature's numbers:
+`feature_max_copy_number`, `feature_median_copy_number`, `complexity_score`
+and `captured_interval_length`. `sample_url` fetches that one sample's rows and
 `sample_page_url` is the human-readable page to cite.
+
+**The copy number is the amplification's, not any gene's.** A feature spans
+segments at different copy numbers, and a gene on one of the lower segments has
+a lower copy number than the feature's maximum. For "the copy number of EGFR
+in these samples", the feature's number is an upper bound, and the per-gene
+value is in the project archive — see "What the archive holds" below.
 
 Page with `limit`, then send the value of the response's `next_cursor` back as
 **`cursor`**. The request parameter and the response field are deliberately
@@ -113,13 +121,47 @@ resolves a project to its current version, and superseded versions keep their
 ids so that published results stay reachable.
 
 Full archives are large. Fetch one only when a person has asked for that
-specific dataset — not to answer a question `/features/` already answers.
+specific dataset, or when the question needs something only the archive holds
+— not to answer a question `/features/` already answers.
+
+## What the archive holds
+
+The API reports a summary of each amplicon. The archive
+(`/api/v1/projects/{id}/download/`) is the complete AmpliconSuite output the
+submitter uploaded, and it is far richer: for every sample, AmpliconArchitect's
+graph and cycles files and the whole of AmpliconClassifier's output. The
+[AmpliconClassifier README](https://github.com/AmpliconSuite/AmpliconClassifier#3-outputs)
+defines every file and column; read it before reading the archive.
+
+The archive's layout is standardised and documented at
+[Project Archive Structure](https://docs.ampliconrepository.org/en/latest/project-structure/).
+Two questions only the archive answers:
+
+- **Per-gene copy number and truncation** — `*_gene_list.tsv`, columns
+  `gene_cn` and `truncated`. A row's `feature_id` in the API is that file's
+  `sample_name`, `amplicon_number` and `feature` columns joined with
+  underscores. Usually one file for the whole project at
+  `results/consolidated_classification/`; in projects submitted before the
+  layout was standardised it is wherever the submitter's AmpliconClassifier
+  run wrote it, sometimes one file per sample. Glob for it under `results/`
+  rather than assuming the path.
+- **The amplicon's structure** — `*_cycles.txt` (the reconstructed paths and
+  cycles, with copy numbers) and `*_graph.txt` (the breakpoint graph), one
+  pair per AmpliconArchitect amplicon, usually under
+  `results/samples/<sample>/`. Same advice: glob.
+
+`/api/v1/projects/{id}/samples/` reports each sample's row of
+AmpliconClassifier's results table under the same column names with spaces
+replaced by underscores, so most of the archive's summary is reachable without
+downloading it. The two files above are not.
 
 ## Metadata is uneven, and this will change your answer
 
-`classification`, `genes`, `oncogenes`, `locations` and `reference_build` are
-computed by the analysis pipeline for every row and are complete. Anything
-derived from them is trustworthy.
+`classification`, `genes`, `oncogenes`, `locations`, `reference_build` and
+the four feature numbers are computed by the analysis pipeline for every row
+and are complete (the numbers are `null` where the pipeline recorded none,
+which is almost always a row that carries no amplicon).
+Anything derived from them is trustworthy.
 
 `cancer_type`, `sample_type` and `tissue_of_origin` are **free text supplied by
 whoever submitted each project**. They are not controlled vocabularies, they are

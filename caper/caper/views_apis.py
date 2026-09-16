@@ -962,7 +962,27 @@ class ProjectDownloadView(APIView):
                     'must follow redirects. The archive can be large; prefer '
                     '`/samples/` when metadata is enough. The URL ends in a '
                     'slash, so name the output file explicitly '
-                    '(`curl -L -o project.tar.gz ...`).',
+                    '(`curl -L -o project.tar.gz ...`).\n\n'
+                    'The archive is the complete AmpliconSuite output the '
+                    'submitter uploaded, which is far richer than what the API '
+                    'reports: per sample, AmpliconArchitect\'s graph and cycles '
+                    'files and AmpliconClassifier\'s full output, whose files '
+                    'are documented in the AmpliconClassifier README '
+                    '(https://github.com/AmpliconSuite/AmpliconClassifier#3-outputs). '
+                    'Its layout is documented at '
+                    'https://docs.ampliconrepository.org/en/latest/project-structure/. '
+                    'Two things only the archive answers: per-gene copy number '
+                    'and truncation (`*_gene_list.tsv`, columns `gene_cn` and '
+                    '`truncated`; a row\'s `feature_id` is its `sample_name`, '
+                    '`amplicon_number` and `feature` columns joined with '
+                    'underscores), and the amplicon\'s reconstructed structure '
+                    '(the `*_cycles.txt` and `*_graph.txt` files). Glob for '
+                    'them under `results/`: archives built by the current '
+                    'aggregator put one gene list at '
+                    '`results/consolidated_classification/` and the cycles '
+                    'under `results/samples/<sample>/`, but projects submitted '
+                    'before the layout was standardised keep them wherever '
+                    'the submitter\'s run wrote them.',
         parameters=[OpenApiParameter('project_id', str, OpenApiParameter.PATH,
                              description='Project id, as returned in `id` by the '
                                          'list endpoint.')],
