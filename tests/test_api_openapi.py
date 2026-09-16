@@ -13,7 +13,9 @@ These tests therefore do two different jobs:
 """
 
 import json
+import os
 import re
+from urllib.parse import urlparse
 
 import pytest
 from django.test import Client
@@ -468,6 +470,10 @@ class TestLlmsTxtDescribesTheRealApi:
             path = path.replace('{id}', '{project_id}').replace('{name}', '{sample_name}')
             if path != '/api/v1/':          # the prefix, named as a prefix
                 found.add(path)
+        # The index is the one path that is also the prefix; only the form
+        # `GET /api/v1/` names it as an endpoint rather than as a prefix.
+        if re.search(r'`GET /api/v1/`', body):
+            found.add('/api/v1/')
         return found
 
     def test_every_path_it_names_is_routed(self):
@@ -542,6 +548,120 @@ class TestLlmsTxtDescribesTheRealApi:
         body = self._body()
         assert re.search(r'(?<!next_)\bcursor\b', body.replace('next_cursor', '')), (
             'llms.txt describes paging without naming the `cursor` request parameter')
+
+    # ── examples that are claims about the corpus ────────────────────────
+
+    def _corpus_claims(self, body):
+        """Backticked names that only the data can vouch for.
+
+        Parameter and field names are lowercase identifiers and are checked
+        against the code above.  Everything else in backticks -- a sample name,
+        a gene, a metadata spelling -- is a claim that the corpus contains that
+        value, and nothing in this repository can settle it: the test database
+        is seeded, not real.  The three exemptions are names of things that are
+        not corpus values at all.
+        """
+        not_data = {'Retry-After', 'GRCh37', 'GRCh38'}
+        inline = re.sub(r'```.*?```', '\n', body, flags=re.S)
+        claims = set()
+        for span in re.findall(r'`([^`\n]+)`', inline):
+            if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9 _\-]*', span) \
+                    and re.search(r'[A-Z]', span) and span not in not_data:
+                claims.add(span)
+        for genes in re.findall(r'gene_(?:any|all)=([A-Za-z0-9,]+)', body):
+            claims.update(genes.split(','))
+        return claims
+
+    def test_the_examples_it_gives_are_things_the_corpus_holds(self):
+        """Run against a live deployment; skipped otherwise.
+
+            LLMS_TXT_LIVE_URL=https://ampliconrepository.org \\
+                pytest tests/test_api_openapi.py -k corpus_holds
+
+        Measured on prod 2026-09-16: the file said "``HOS`` matches both
+        ``HOS`` and ``HOS-MNNG``", and ``sample_name_contains=MNNG`` matched
+        nothing -- the second name came from an earlier agent's mistake and was
+        written into the documentation as if it were data. An example a reader
+        cannot reproduce teaches them the endpoint is broken. The guards above
+        could not catch it because they compare the file against the code, and
+        this is a claim about the data.
+        """
+        import urllib.parse
+        import urllib.request
+
+        base = os.environ.get('LLMS_TXT_LIVE_URL')
+        if not base:
+            pytest.skip('set LLMS_TXT_LIVE_URL to check the examples against a live corpus')
+        base = base.rstrip('/')
+
+        def fetch(path, **params):
+            url = f'{base}{path}?{urllib.parse.urlencode(params)}' if params else f'{base}{path}'
+            req = urllib.request.Request(url, headers={'User-Agent': 'llms-txt-example-check'})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return json.load(resp)
+
+        facets = fetch('/api/v1/features/facets/')['facets']
+        metadata_values = {v['value'].lower()
+                           for field in ('cancer_type', 'tissue_of_origin', 'sample_type')
+                           for v in facets[field]}
+
+        def holds(claim):
+            if claim.lower() in metadata_values:
+                return True
+            if fetch('/api/v1/features/samples/', sample_name_contains=claim, limit=1)['count']:
+                return True
+            return bool(fetch('/api/v1/features/', gene_any=claim, count_only='true')['count'])
+
+        body = self._body()
+        claims = self._corpus_claims(body)
+        assert claims, 'no corpus claims found in llms.txt -- the extractor is broken'
+        invented = sorted(c for c in claims if not holds(c))
+        assert not invented, (
+            f'llms.txt gives examples the corpus at {base} does not hold: {invented}')
+
+
+class TestApiIndex:
+    """
+    ``GET /api/v1/`` is an index, not a 404.
+
+    Measured on prod 2026-09-16: an agent's first request to the API was the
+    bare prefix, which answered ``endpoint_not_found``. It recovered by
+    guessing ``openapi.json``. The root of an API is the one URL every client
+    can construct without reading anything, so it should hand over the things
+    to read.
+    """
+
+    def _index(self):
+        resp = _client().get('/api/v1/')
+        assert resp.status_code == 200, resp.content[:200]
+        assert resp['Content-Type'].startswith('application/json')
+        return json.loads(resp.content)
+
+    def test_points_at_the_spec_and_the_prose(self):
+        body = self._index()
+        assert body['openapi'].endswith('/api/v1/openapi.json')
+        assert body['llms_txt'].endswith('/llms.txt')
+        assert body['start_here'].endswith('/api/v1/features/')
+        # Absolute, so a client can follow them without knowing the host.
+        assert body['openapi'].startswith('http')
+
+    def test_lists_every_routed_endpoint_and_nothing_else(self):
+        """Read from the URLconf, so it cannot drift from the routes."""
+        listed = {urlparse(u).path for u in self._index()['endpoints']}
+
+        routed = set()
+        for pattern in get_resolver().url_patterns:
+            route = str(getattr(pattern, 'pattern', ''))
+            if route.startswith('api/v1/'):
+                routed.add('/' + re.sub(r'<(?:[a-z_]+:)?([^>]+)>', r'{\1}', route))
+        routed.discard('/api/v1/')          # the index does not list itself
+
+        assert listed == routed, (listed - routed, routed - listed)
+
+    def test_is_anonymous_and_small(self):
+        resp = _client().get('/api/v1/')
+        assert resp.status_code == 200
+        assert len(resp.content) < 2000, len(resp.content)
 
 
 class TestClassificationSpellingsAreFolded:

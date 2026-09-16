@@ -36,7 +36,8 @@ from .forms import RunForm
 from .classifications import _CANONICAL_CLASSIFICATION, _canonical_classifications
 from . import api_features
 from . import feature_index
-from .request_url import absolute_base
+from .request_url import absolute_base, absolute_url
+from .api_errors import API_V1_PREFIX
 from .utils import (
     collection_handle, get_one_project, get_one_project_sans_runs, form_to_dict,
     get_latest_project_version, normalize_visibility_field, is_project_private,
@@ -1293,6 +1294,63 @@ class ApiSchemaView(SpectacularAPIView):
     # fetches a path called openapi.json and cannot json.loads() the body has
     # been misled by the URL; pin the renderer to match it.
     renderer_classes = [OpenApiJsonRenderer]
+
+
+class ApiIndexView(APIView):
+    """
+    ``GET /api/v1/`` -- where a client that knows only the prefix starts.
+
+    Measured on prod 2026-09-16: an agent evaluating the API opened with
+    ``GET /api/v1/`` and got the JSON 404, then guessed ``openapi.json`` five
+    seconds later.  The guess happened to be right; the root should not make a
+    client guess.  This answers with the spec, the prose companion, and the
+    endpoint paths -- read from the URLconf rather than written out again, so
+    that a route added there appears here without anyone remembering to.
+
+    curl example:
+        curl https://ampliconrepository.org/api/v1/
+    """
+    permission_classes = []
+    authentication_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
+
+    @extend_schema(
+        operation_id='apiIndex',
+        summary='API index',
+        description=(
+            'The starting point for a client that knows only the prefix: '
+            'absolute URLs for the OpenAPI document, the agent-facing '
+            '/llms.txt, and every endpoint under /api/v1/. Contains no data.'),
+        responses={200: api_schema.ApiIndexSerializer,
+                   429: api_schema.RATE_LIMITED},
+        tags=['discovery'],
+    )
+    def get(self, request):
+        return Response({
+            'name': settings.SPECTACULAR_SETTINGS['TITLE'],
+            'version': 'v1',
+            'openapi': absolute_url(request, '/api/v1/openapi.json'),
+            'llms_txt': absolute_url(request, '/llms.txt'),
+            'documentation': 'https://docs.ampliconrepository.org/en/latest/api/',
+            'start_here': absolute_url(request, '/api/v1/features/'),
+            'endpoints': [absolute_url(request, path) for path in _api_v1_paths()],
+        })
+
+
+def _api_v1_paths():
+    """Every routed path under /api/v1/ except this index, as OpenAPI templates.
+
+    Same rewrite the spec's route-coverage test uses (``<str:project_id>``
+    becomes ``{project_id}``), so the paths here are the keys of openapi.json.
+    """
+    from django.urls import get_resolver
+    paths = []
+    for pattern in get_resolver().url_patterns:
+        route = str(getattr(pattern, 'pattern', ''))
+        if route.startswith(API_V1_PREFIX.lstrip('/')):
+            paths.append('/' + re.sub(r'<(?:[a-z_]+:)?([^>]+)>', r'{\1}', route))
+    return [p for p in paths if p != API_V1_PREFIX]
 
 
 # The filters /features/ and /features/samples/ have in common.  Written once

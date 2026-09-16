@@ -64,7 +64,7 @@ from .views_apis import (
     ProjectListView, ProjectDetailView, ProjectSamplesView,
     ProjectSampleDetailView, FeatureSamplesView,
     ProjectDownloadView, ProjectBatchDownloadView, ApiTokenView,
-    ApiSchemaView, FeatureSearchView, FeatureFacetsView,
+    ApiSchemaView, FeatureSearchView, FeatureFacetsView, ApiIndexView,
 )
 
 # from django.views.generic import TemplateView

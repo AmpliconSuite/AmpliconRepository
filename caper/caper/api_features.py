@@ -769,10 +769,11 @@ def search_feature_samples(params, user, request=None):
     it client-side gets it wrong in a specific way.  An agent evaluating the
     API in September 2026 deduplicated on ``sample_name``, which merges the
     2,324 names that occur in more than one project; and it resolved cell lines
-    by prefix, which merged HOS into HOS-MNNG -- two different lines.  Prefix
-    conflation is not a one-off: 315 of the corpus's normalised names are a
-    strict prefix of another (COLO320 of five, BT474 of two), measured on prod
-    2026-09-12.
+    by prefix, which merged HOS with a line the corpus does not even hold
+    (HOS-MNNG; the name went into llms.txt as if it were data and was caught
+    on prod 2026-09-16).  Prefix conflation is not a one-off: 315 of the
+    corpus's normalised names are a strict prefix of another (COLO320 of five,
+    BT474 of two), measured on prod 2026-09-12.
 
     So this endpoint answers with the samples themselves -- identified by
     project *and* name, each with its row and amplicon counts -- and a caller

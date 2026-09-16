@@ -41,12 +41,19 @@ HOST = 'localhost'
 PASSPHRASE = 'amprepodev'
 
 # Enable the gate with a known passphrase.  Applied per-test rather than
-# globally so the "disabled by default" tests exercise the real default.
+# globally, so that each test says which state it is about.
 enabled = override_settings(
     DEV_GATE_ENABLED=True,
     DEV_GATE_PASSPHRASE=PASSPHRASE,
     DEV_GATE_MAX_AGE_SECONDS=7 * 24 * 3600,
 )
+# The "disabled" tests used to run against whatever the environment said,
+# on the theory that this exercised the real default.  On the dev server the
+# environment says enabled -- that is the deployment the gate is for -- and
+# the three of them failed there on 2026-09-16 while asserting nothing about
+# the code.  Pinned instead: settings.py's own default is False (it reads
+# DEV_GATE_ENABLED with default='False'), and these test what False means.
+disabled = override_settings(DEV_GATE_ENABLED=False)
 
 
 @pytest.fixture
@@ -85,6 +92,7 @@ def _post(request_factory, code, path='/', cookie=None):
 # Disabled by default: production and localhost are unchanged
 # ---------------------------------------------------------------------------
 
+@disabled
 def test_the_gate_is_off_unless_it_is_explicitly_enabled():
     """The deployment opts in.  Nothing about the host decides this.
 
@@ -95,6 +103,7 @@ def test_the_gate_is_off_unless_it_is_explicitly_enabled():
     assert gate_enabled() is False
 
 
+@disabled
 def test_a_disabled_gate_passes_the_home_page_through(request_factory, middleware):
     mw, state = middleware
     response = mw(_get(request_factory, '/'))
@@ -103,6 +112,7 @@ def test_a_disabled_gate_passes_the_home_page_through(request_factory, middlewar
     assert response.content == b'APPLICATION BODY'
 
 
+@disabled
 def test_a_disabled_gate_adds_no_crawler_headers(request_factory, middleware):
     """Production must not start advertising noindex because this shipped."""
     mw, _ = middleware

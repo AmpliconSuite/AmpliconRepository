@@ -86,9 +86,11 @@ For a name you only half know — a cell line recorded here as `U2OS_BONE` or
 substring with no wildcards and no operators. Then **look at what it matched
 before you aggregate it**: ask
 `/api/v1/features/samples/?sample_name_contains=...`, which lists the
-candidates. `HOS` matches both `HOS` and `HOS-MNNG`, which are different cell
-lines, and hundreds of names here are a prefix of another. Deciding which one
-you meant is your job; this endpoint exists so that you can.
+candidates. `COLO320` matches both `COLO320DM` and `COLO320HSR`, which are
+different cell lines — the same amplification carried as ecDNA in one and as a
+chromosomal HSR in the other — and hundreds of names here are a prefix of
+another. Deciding which one you meant is your job; this endpoint exists so that
+you can.
 
 ## The other endpoints
 
@@ -99,6 +101,7 @@ you meant is your job; this endpoint exists so that you can.
 - `GET /api/v1/projects/{id}/download/` — the project's `.tar.gz` archive
 - `POST /api/v1/projects/download/` — resolve many ids to download URLs
 - `GET /api/v1/openapi.json` — this API's specification
+- `GET /api/v1/` — an index of the above, with absolute URLs
 
 `GET /api/v1/projects/` is worth one call before you start. Every project
 carries a `description` written by whoever submitted it — the cohort, the
@@ -153,7 +156,7 @@ from `/api/v1/features/facets/` at the time you answer.
   are not where you should be.
 - **Gene lists are comma-delimited** (`gene_any=MYC,EGFR`). **Metadata values
   are not** — real ones contain commas, so repeat the parameter instead:
-  `?tissue_of_origin=Lung&tissue_of_origin=lung`.
+  `?cancer_type=Breast&cancer_type=Breast%20Adenocarcinoma`.
 - **An unrecognised parameter is a `400`, not silence.** If you get one, the
   error names the parameters that do exist. Fix the name and retry rather than
   trusting a result you are not sure was filtered.

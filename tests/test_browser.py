@@ -39,6 +39,22 @@ def _require_base_url(base_url):
             "Example: pytest -m browser --base-url http://localhost:8000 -v")
 
 
+@pytest.fixture(autouse=True)
+def _through_the_dev_gate(page, base_url):
+    """Carry a landing-gate pass when the server under test has the gate on.
+
+    Read from this process's settings, which is the same config.sh the server
+    loaded when both run in the container.  Without it every test that starts
+    at `/` sees the landing page instead of the site: three did, on dev,
+    2026-09-16.  A laptop or production has the gate off and this is a no-op.
+    """
+    from caper.dev_gate import COOKIE_NAME, gate_enabled, issue_pass
+    if gate_enabled():
+        page.context.add_cookies([{
+            'name': COOKIE_NAME, 'value': issue_pass(), 'url': base_url,
+        }])
+
+
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
