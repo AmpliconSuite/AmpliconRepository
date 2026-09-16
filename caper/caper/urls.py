@@ -129,6 +129,9 @@ urlpatterns += [
     path('api/background-task-status/', views.BackgroundTaskStatusView.as_view(), name='background_task_status'),
 
     # REST API v1
+    # The index first: a client that knows only the prefix should land on the
+    # pointers to the spec and the endpoints, not on the JSON 404.
+    path('api/v1/', views.ApiIndexView.as_view(), name='api_index'),
     path('api/v1/projects/', views.ProjectListView.as_view(), name='api_project_list'),
     path('api/v1/projects/download/', views.ProjectBatchDownloadView.as_view(), name='api_project_batch_download'),
     path('api/v1/projects/<str:project_id>/', views.ProjectDetailView.as_view(), name='api_project_detail'),

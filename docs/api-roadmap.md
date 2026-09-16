@@ -37,11 +37,16 @@ Design principles:
 | Filter vocabulary, with counts | `GET /api/v1/features/facets/` | ✅ Available |
 | OpenAPI 3 document | `GET /api/v1/openapi.json` | ✅ Available |
 | Agent-facing summary | `GET /llms.txt` | ✅ Available |
+| API index (spec, llms.txt, every endpoint) | `GET /api/v1/` | ✅ In `main`; not yet deployed |
 
 Status verified against production 2026-09-14: every row above answers, the
 OpenAPI document lists all ten public routes, and two tests keep the document
 and `llms.txt` from drifting from the parameter allowlist the views enforce
-(`tests/test_api_openapi.py`).
+(`tests/test_api_openapi.py`). The index row was added 2026-09-16 after an
+agent's first request was the bare prefix and got a 404; the same day a
+live check was added for the *examples* in `llms.txt` (a sample name the
+file cited did not exist in the corpus) -- run it with
+`LLMS_TXT_LIVE_URL=https://ampliconrepository.org pytest tests/test_api_openapi.py -k corpus_holds`.
 
 ## Known issues & status
 

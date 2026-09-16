@@ -357,3 +357,18 @@ class FeatureFacetsSerializer(serializers.Serializer):
     """
     total_rows = serializers.IntegerField()
     facets = FacetSetSerializer()
+
+
+class ApiIndexSerializer(serializers.Serializer):
+    """What ``GET /api/v1/`` answers: pointers, no data."""
+    name = serializers.CharField()
+    version = serializers.CharField(help_text='The API version this prefix serves.')
+    openapi = serializers.URLField(help_text='This document.')
+    llms_txt = serializers.URLField(
+        help_text='The prose companion: what the corpus holds and how to read it cheaply.')
+    documentation = serializers.URLField()
+    start_here = serializers.URLField(
+        help_text='The endpoint that answers most questions in one call.')
+    endpoints = serializers.ListField(
+        child=serializers.CharField(),
+        help_text='Every path under /api/v1/, as URL templates.')
