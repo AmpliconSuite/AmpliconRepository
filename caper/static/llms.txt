@@ -35,9 +35,54 @@ first.
     just the count, plus a per-reference-build breakdown
 ```
 
-Each row names its project, sample, feature, classification, genes, oncogenes,
-locations and reference build. `sample_url` fetches that one sample's rows and
-`sample_page_url` is the human-readable page to cite.
+## What a row is
+
+A **sample** is one sequenced genome. AmpliconArchitect finds its focally
+amplified regions and reconstructs each as an **amplicon**: a set of genomic
+segments, each with an estimated copy number, joined by the structural
+variants that connect them. AmpliconClassifier then resolves each amplicon
+into one or more **features** — `ecDNA`, `BFB`, `Complex-non-cyclic`,
+`Linear`, `FAN`, `Virus` — and one amplicon can hold several: two distinct
+ecDNA, or an ecDNA and a BFB side by side.
+
+**A row in this API is one feature.** Its `feature_id` says which —
+`GBM39EC_amplicon1_ecDNA_1` is sample, amplicon, feature — and it carries the
+feature's classification, its genes and oncogenes, its genomic `locations`,
+the reference build, and four numbers:
+
+- `feature_max_copy_number` and `feature_median_copy_number` — the maximum
+  and median of the copy numbers of the segments that make up the feature.
+- `complexity_score` — AmpliconClassifier's measure of how many segments the
+  feature has and how varied their copy numbers are; higher is more complex.
+- `captured_interval_length` — the total length in bp of the genomic
+  intervals the feature covers.
+
+Because a feature is built from segments at different copy numbers, a gene's
+own copy number is that of the segment it sits on: at most the feature's
+maximum, and usually lower. The API does not carry per-gene copy number; the
+project archive does (see "What the archive holds").
+
+Three consequences of a row being a feature:
+
+- **A sample has as many rows as it has features** — usually several, in some
+  cases over a hundred. `count` counts features. Every response also carries
+  `sample_count`, which counts samples by **project and name together**
+  (thousands of sample names in this corpus occur in more than one project);
+  use it for any fraction of samples, and do not reconstruct it by
+  deduplicating `sample_name` yourself.
+- **A sample in which nothing focal was found is still a row.** It is kept as
+  one row with `classification: "None"`, no genes and `null` numbers, and such
+  rows are a large minority of the corpus. Exclude them before reporting a
+  count as an amplicon count. For "what fraction of samples carry ecDNA", the
+  denominator is the samples that were analysed, and
+  `classification=None` counts the clean ones.
+- **Two features of one amplicon share a sample and may share genes**, so
+  `gene_all=MYC,PVT1` (both genes somewhere in the sample) and
+  `gene_all=MYC,PVT1&same_amp=true` (both on one feature) are different
+  questions with different counts.
+
+`sample_url` fetches one sample's rows and `sample_page_url` is the
+human-readable page to cite.
 
 Page with `limit`, then send the value of the response's `next_cursor` back as
 **`cursor`**. The request parameter and the response field are deliberately
@@ -49,22 +94,6 @@ the substring match `/api/v1/projects/?name=` does), `oncogenes_only=true`,
 which drops rows carrying no catalogued oncogene, and `reference_build` (the
 builds the facets endpoint lists; `GRCh37` and `GRCh38` fold to `hg19` and `hg38`). `fields=` returns only the row fields you name, which
 is worth doing on any query wide enough to need paging.
-
-**A row is an amplicon, not a sample.** Most samples have several rows, and
-some have over a hundred, so `count` never answers "how many samples" — the
-two differ by enough to change a conclusion. Every response carries
-`sample_count` alongside `count`; use it for any fraction of samples. Do not
-reconstruct it by deduplicating `sample_name` yourself: a sample is identified
-by **project and name together**, and thousands of names in this corpus occur
-in more than one project.
-
-**Not every row is an amplicon.** A sample that was analysed and found to carry
-no focal amplification is a result worth keeping, so it is in the corpus as a
-row with `classification: "None"` and no genes. It is a large minority of the
-rows. Never report a row count as an amplicon count without excluding them, and
-never use the unfiltered total as the denominator for "what fraction of samples
-have ecDNA" — filter to `classification=None` to count the clean samples, which
-is the question that denominator is really made of.
 
 `GET /api/v1/features/samples/` takes every filter `/features/` takes and
 answers one entry per sample instead of per amplicon, each with its
@@ -113,13 +142,57 @@ resolves a project to its current version, and superseded versions keep their
 ids so that published results stay reachable.
 
 Full archives are large. Fetch one only when a person has asked for that
-specific dataset — not to answer a question `/features/` already answers.
+specific dataset, or when the question needs something only the archive holds
+— not to answer a question `/features/` already answers.
+
+## What the archive holds
+
+The API reports each feature's summary. The archive
+(`/api/v1/projects/{id}/download/`) is the complete AmpliconSuite output the
+submitter uploaded, and it holds what the API does not. Decide from this list
+whether a question needs the download:
+
+- **Per-gene copy number and truncation** — `*_gene_list.tsv`, columns
+  `gene_cn` (the copy number of the segments overlapping the gene) and
+  `truncated` (whether the amplified region holds only part of the gene, and
+  which end it lost). Rows
+  join to the API's `feature_id` by their `sample_name`, `amplicon_number`
+  and `feature` columns, underscore-joined.
+- **The reconstruction itself** — `*_cycles.txt` (the segments, their copy
+  numbers, and the paths and cycles AmpliconArchitect assembled from them)
+  and `*_graph.txt` (the breakpoint graph), one pair per amplicon. Needed for
+  any question about structure: which segments, in what order, joined how.
+- **Feature intervals as BED** — `*_classification_bed_files/`, one file per
+  feature, the same intervals as `locations` in a form tools can read. Absent
+  from some older archives.
+- **Per-amplicon classification detail** —
+  `*_amplicon_classification_profiles.tsv`, the scores and calls behind each
+  feature's class, and `*_SV_summaries/`, the structural variants per amplicon.
+- **Genome-wide copy number** — each sample's `*_CNV_CALLS.bed`, the calls
+  used to find candidate regions, covering the whole genome rather than the
+  amplified part. Present when the submitter included it, which is usual.
+- **Figures** — AmpliconArchitect's amplicon plots as PNG and PDF.
+
+The [AmpliconClassifier README](https://github.com/AmpliconSuite/AmpliconClassifier#3-outputs)
+defines every file and column; read it before reading the archive. Find files
+by name with a glob under `results/`: archives built by the current aggregator
+put one gene list at `results/consolidated_classification/` and each sample's
+cycles under `results/samples/<sample>/`, but projects submitted before the
+layout was standardised keep them wherever the submitter's run wrote them,
+sometimes one gene list per sample. Skip any match whose name starts with
+`._` — a macOS resource fork some uploads carry, not data.
+
+`/api/v1/projects/{id}/samples/` reports each sample's row of
+AmpliconClassifier's results table under the same column names with spaces
+replaced by underscores, so the results table itself never needs the download.
 
 ## Metadata is uneven, and this will change your answer
 
-`classification`, `genes`, `oncogenes`, `locations` and `reference_build` are
-computed by the analysis pipeline for every row and are complete. Anything
-derived from them is trustworthy.
+`classification`, `genes`, `oncogenes`, `locations`, `reference_build` and
+the four feature numbers are computed by the analysis pipeline for every row
+and are complete (the numbers are `null` where the pipeline recorded none,
+which is almost always a row with nothing focal in it). Anything derived
+from them is trustworthy.
 
 `cancer_type`, `sample_type` and `tissue_of_origin` are **free text supplied by
 whoever submitted each project**. They are not controlled vocabularies, they are

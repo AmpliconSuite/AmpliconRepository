@@ -601,13 +601,20 @@ class TestLlmsTxtDescribesTheRealApi:
                 return json.load(resp)
 
         facets = fetch('/api/v1/features/facets/')['facets']
-        metadata_values = {v['value'].lower()
-                           for field in ('cancer_type', 'tissue_of_origin', 'sample_type')
-                           for v in facets[field]}
+        facet_values = {v['value'].lower()
+                        for field in ('cancer_type', 'tissue_of_origin', 'sample_type',
+                                      'classification')
+                        for v in facets[field]}
 
         def holds(claim):
-            if claim.lower() in metadata_values:
+            if claim.lower() in facet_values:
                 return True
+            # A feature_id is sample_name, amplicon number and feature joined
+            # with underscores; ask for the sample's rows and look for it.
+            if '_amplicon' in claim:
+                sample = claim.split('_amplicon', 1)[0]
+                rows = fetch('/api/v1/features/', sample_name=sample, fields='feature_id')
+                return any(r['feature_id'] == claim for r in rows['results'])
             if fetch('/api/v1/features/samples/', sample_name_contains=claim, limit=1)['count']:
                 return True
             return bool(fetch('/api/v1/features/', gene_any=claim, count_only='true')['count'])
@@ -618,6 +625,61 @@ class TestLlmsTxtDescribesTheRealApi:
         invented = sorted(c for c in claims if not holds(c))
         assert not invented, (
             f'llms.txt gives examples the corpus at {base} does not hold: {invented}')
+
+    def test_the_archive_holds_what_it_says_only_the_archive_holds(self):
+        """Run against a live deployment; skipped otherwise.
+
+            LLMS_TXT_LIVE_URL=https://ampliconrepository.org \\
+                pytest tests/test_api_openapi.py -k archive_holds
+
+        llms.txt and the download endpoint's description send a reader into
+        the archive for two things the API does not carry -- per-gene copy
+        number in ``*_gene_list.tsv`` and the reconstruction in the
+        ``*_cycles.txt`` files -- and names them.  The names are a claim
+        about what an archive holds, and the first two drafts of the claim
+        were wrong in opposite directions: the first described only the
+        loosely-organised upload layout, the second only the aggregator's
+        standardised one.  Measured across prod's eight smallest public
+        archives on 2026-09-16, the six built by aggregator 7+ hold one gene
+        list at results/consolidated_classification/ and the two with no
+        aggregator version hold theirs under other_files/ and AA_outputs/,
+        one per sample.  So the file tells a reader to glob, and this checks
+        that a glob finds the files with the columns it names -- in the
+        smallest public archive, which keeps the download near a megabyte.
+        """
+        import io
+        import tarfile
+        import urllib.request
+
+        base = os.environ.get('LLMS_TXT_LIVE_URL')
+        if not base:
+            pytest.skip('set LLMS_TXT_LIVE_URL to check the archive claims against a live corpus')
+        base = base.rstrip('/')
+        headers = {'User-Agent': 'llms-txt-example-check'}
+
+        with urllib.request.urlopen(urllib.request.Request(
+                f'{base}/api/v1/projects/', headers=headers), timeout=60) as resp:
+            projects = json.load(resp)
+        smallest = min(projects, key=lambda p: p.get('sample_count') or float('inf'))
+        with urllib.request.urlopen(urllib.request.Request(
+                f'{base}/api/v1/projects/{smallest["id"]}/download/', headers=headers),
+                timeout=300) as resp:
+            archive = resp.read()
+
+        # Skipping AppleDouble entries the way the file tells a reader to: a
+        # dev upload carries results/other_files/.../._X_gene_list.tsv, a macOS
+        # resource fork whose first bytes are not text.
+        names = [n for n in tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz').getnames()
+                 if not n.rsplit('/', 1)[-1].startswith('._')]
+        gene_lists = [n for n in names if re.fullmatch(r'results/.*_gene_list\.tsv', n)]
+        cycles = [n for n in names if re.fullmatch(r'results/.*_cycles\.txt', n)]
+        assert gene_lists, f'no results/**/*_gene_list.tsv in {smallest["project_name"]!r}'
+        assert cycles, f'no results/**/*_cycles.txt in {smallest["project_name"]!r}'
+
+        with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tar:
+            header = tar.extractfile(gene_lists[0]).readline().decode().rstrip('\n').split('\t')
+        for column in ('sample_name', 'amplicon_number', 'feature', 'gene', 'gene_cn', 'truncated'):
+            assert column in header, (column, header)
 
 
 class TestApiIndex:

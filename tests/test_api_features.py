@@ -139,7 +139,8 @@ from caper.classifications import is_no_amplicon  # noqa: E402
 
 
 def _row(project_id, project_name, visibility, sample, feature_id,
-         classification, genes, build='hg38', members=(), metadata=None):
+         classification, genes, build='hg38', members=(), metadata=None,
+         numbers=None):
     """One index row, built through the indexer's own row builder.
 
     Not a hand-written dict: the builder owns the shape, and a test carrying its
@@ -154,7 +155,9 @@ def _row(project_id, project_name, visibility, sample, feature_id,
         classification=classification,
         genes=[g.upper() for g in genes], genes_display=list(genes),
         oncogenes=[], oncogenes_display=[], locations=['chr8:1-2'],
-        reference_build=build, metadata=(metadata or {}), extra_metadata={},
+        reference_build=build,
+        numbers=numbers or {key: None for key, _ in feature_index._FEATURE_NUMBERS},
+        metadata=(metadata or {}), extra_metadata={},
         has_amplicon=not is_no_amplicon(classification),
     )
 
@@ -174,7 +177,11 @@ def corpus(monkeypatch):
     names = ObjectId()
     rows = [
         # One sample carrying MYC and CDK4 on the SAME amplicon...
-        _row(public, 'Pub', 'public', 'S1', 'S1_a1', 'ecDNA', ['MYC', 'CDK4']),
+        _row(public, 'Pub', 'public', 'S1', 'S1_a1', 'ecDNA', ['MYC', 'CDK4'],
+             numbers={'feature_max_copy_number': 91.0,
+                      'feature_median_copy_number': 88.5,
+                      'complexity_score': 2.15,
+                      'captured_interval_length': 1461334.0}),
         # ...and one carrying MYC and EGFR on two DIFFERENT amplicons, which is
         # the case that separates gene_all from gene_all+same_amp.
         _row(public, 'Pub', 'public', 'S2', 'S2_a1', 'ecDNA', ['MYC']),
@@ -305,6 +312,30 @@ def test_count_only_agrees_with_the_full_response(corpus):
 def test_field_selection_returns_exactly_what_was_asked_for(corpus):
     resp = _scoped(corpus, 'fields=sample_name,classification&limit=1')
     assert set(resp.data['results'][0]) == {'sample_name', 'classification'}
+
+
+def test_rows_carry_the_feature_numbers_and_null_where_there_is_none(corpus):
+    """The four AmpliconClassifier numbers ride on the row, so a caller can
+    plot copy number from the search alone instead of fetching every sample.
+    A row without them reports null, not 0 and not a missing key: a client
+    that asked for the field gets the column either way."""
+    resp = _scoped(corpus, 'gene_any=CDK4&limit=1')
+    row = resp.data['results'][0]
+    assert row['feature_max_copy_number'] == 91.0
+    assert row['feature_median_copy_number'] == 88.5
+    assert row['complexity_score'] == 2.15
+    assert row['captured_interval_length'] == 1461334.0
+
+    resp = _scoped(corpus, 'classification=None&limit=1')
+    row = resp.data['results'][0]
+    for key in ('feature_max_copy_number', 'feature_median_copy_number',
+                'complexity_score', 'captured_interval_length'):
+        assert key in row and row[key] is None
+
+
+def test_the_feature_numbers_are_selectable_by_name(corpus):
+    resp = _scoped(corpus, 'gene_any=CDK4&fields=sample_name,feature_max_copy_number')
+    assert resp.data['results'][0] == {'sample_name': 'S1', 'feature_max_copy_number': 91.0}
 
 
 def test_rows_report_genes_in_their_source_spelling(corpus):
