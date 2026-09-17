@@ -37,10 +37,10 @@ Design principles:
 | Filter vocabulary, with counts | `GET /api/v1/features/facets/` | ✅ Available |
 | OpenAPI 3 document | `GET /api/v1/openapi.json` | ✅ Available |
 | Agent-facing summary | `GET /llms.txt` | ✅ Available |
-| API index (spec, llms.txt, every endpoint) | `GET /api/v1/` | ✅ In `main`; not yet deployed |
-| Feature copy number, complexity, interval length on search rows | `GET /api/v1/features/` | ✅ In `main`; not yet deployed (index schema 5 — needs a rebuild) |
+| API index (spec, llms.txt, every endpoint) | `GET /api/v1/` | ✅ Available (prod 2026-09-16) |
+| Feature copy number, complexity, interval length on search rows | `GET /api/v1/features/` | ✅ Available (prod 2026-09-16, index schema 5) |
 
-Status verified against production 2026-09-14: every row above answers, the
+Status verified against production 2026-09-16 (tag `v4.2.0_091626`): every row above answers, the
 OpenAPI document lists all ten public routes, and two tests keep the document
 and `llms.txt` from drifting from the parameter allowlist the views enforce
 (`tests/test_api_openapi.py`). The index row was added 2026-09-16 after an
