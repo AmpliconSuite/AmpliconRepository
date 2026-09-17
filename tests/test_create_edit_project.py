@@ -427,7 +427,11 @@ def test_metadata_upload_does_not_create_new_version(request_factory, test_user,
         assert sample.get('Cancer_type') == 'GBM', \
             "Cancer_type from metadata sheet must be applied to the matching sample"
     finally:
-        mongo_collection.delete_one({'_id': ObjectId(project_id)})
+        # Not a bare delete_one: process_metadata reindexes the project, and a
+        # document deleted around the lifecycle hooks leaves its index rows
+        # behind -- six orphans per full run, and /features/ answering 503
+        # on dev after the 2026-09-16 deploy until someone rebuilt the index.
+        _cleanup_project(mongo_collection, project_id)
 
 
 # ---------------------------------------------------------------------------
@@ -871,7 +875,11 @@ def test_process_metadata_preserves_unlisted_samples_via_mongodb(
         assert sample_a.get('extra_metadata_from_csv', {}).get('Cancer_type') == 'Lung', \
             "Sample_A Cancer_type must survive a partial metadata upload (Issue #508)"
     finally:
-        mongo_collection.delete_one({'_id': ObjectId(project_id)})
+        # Not a bare delete_one: process_metadata reindexes the project, and a
+        # document deleted around the lifecycle hooks leaves its index rows
+        # behind -- six orphans per full run, and /features/ answering 503
+        # on dev after the 2026-09-16 deploy until someone rebuilt the index.
+        _cleanup_project(mongo_collection, project_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1153,16 +1161,11 @@ def test_alias_propagates_to_new_version_on_reaggregate(
         )
 
     finally:
-        mongo_collection.delete_one({'_id': ObjectId(project_id)})
-        for pid in placeholder_ids:
-            try:
-                mongo_collection.delete_one({'_id': ObjectId(pid)})
-            except Exception:
-                pass
-            try:
-                shutil.rmtree(os.path.join('tmp', pid), ignore_errors=True)
-            except Exception:
-                pass
+        # edit_project_page reindexes both documents; a bare delete_one would
+        # leave their index rows behind (see the Issue #510 test above).
+        # _cleanup_project also removes tmp/<pid>.
+        for pid in [project_id] + placeholder_ids:
+            _cleanup_project(mongo_collection, pid)
 
 
 @pytest.mark.slow
