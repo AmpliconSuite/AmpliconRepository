@@ -5,12 +5,75 @@ import numpy as np
 from collections import defaultdict
 import json
 import time
+import ast
+import hashlib
+import importlib.metadata
 import os
 import threading
 from intervaltree import IntervalTree
 from scipy.stats import gamma
 from scipy.stats import chi2
 from statsmodels.stats.multitest import fdrcorrection
+
+
+# What the statistics depend on, hashed, so a cached graph cannot outlive the
+# method that produced it.
+#
+# A cached graph -- the neo4j import and the saved edge CSV -- holds p-values,
+# q-values, odds ratios and p_d_D computed by the code in this file, from the
+# gene annotation in bed_files/, through scipy and statsmodels.  A change to any
+# of those would leave every cached graph serving the old numbers until someone
+# cleared the cache by hand.  A version constant to bump would be a second place
+# that has to move when the first does, and the record here is that such places
+# drift.  So the version is derived: the hash below goes into every cache key,
+# and a change to any input makes every existing graph and CSV unreachable on
+# the next deploy, with nothing to remember.
+#
+# Over-invalidation is the safe direction, so the source is hashed as its AST
+# (comments and formatting do not count; a renamed variable does), and the
+# dependency versions are hashed as strings.  A spurious bust costs one
+# background rebuild per graph, on demand.
+METHOD_DEPENDENCIES = ('scipy', 'statsmodels', 'numpy', 'intervaltree')
+
+
+def method_hash(source, annotation_files, dependency_versions):
+    """The hash for one set of inputs.  Pure; the module computes it once from
+    its own source, BED files and installed packages, and the tests call it
+    with inputs of their own."""
+    digest = hashlib.sha1()
+    digest.update(ast.dump(ast.parse(source)).encode('utf-8'))
+    for name in sorted(annotation_files):
+        digest.update(name.encode('utf-8'))
+        digest.update(annotation_files[name])
+    for name in sorted(dependency_versions):
+        digest.update(f'{name}={dependency_versions[name]}'.encode('utf-8'))
+    return digest.hexdigest()[:12]
+
+
+def _bed_dir():
+    return os.path.join(os.environ.get('CAPER_ROOT', ''), 'caper', 'bed_files')
+
+
+def _compute_method_hash():
+    with open(__file__, 'rb') as fh:
+        source = fh.read().decode('utf-8')
+    annotation = {}
+    for name in ('hg19_genes.bed', 'hg38_genes.bed'):
+        try:
+            with open(os.path.join(_bed_dir(), name), 'rb') as fh:
+                annotation[name] = fh.read()
+        except OSError:
+            annotation[name] = b'<missing>'
+    versions = {}
+    for name in METHOD_DEPENDENCIES:
+        try:
+            versions[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            versions[name] = '<not installed>'
+    return method_hash(source, annotation, versions)
+
+
+METHOD_HASH = _compute_method_hash()
 
 
 # The gene annotation, parsed once per process.
