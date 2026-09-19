@@ -470,6 +470,30 @@ def _fetch_sample_slice(match, sample_name):
     return rows, prev_name, next_name
 
 
+def _sample_slice_from_index(project_id, sample_name, neighbours=True):
+    """The indexed copy of one sample, or ``None`` when the old path must run.
+
+    Imported lazily because ``feature_index`` imports this module.  A failure
+    reading the index is logged and treated as "not indexed" -- the
+    aggregation path is the fallback for that, not the whole-document scan --
+    except a deadline, which propagates for the reason ``get_one_sample``
+    gives.
+    """
+    from .feature_index import sample_slice_from_index
+    try:
+        found = sample_slice_from_index(project_id, sample_name, neighbours=neighbours)
+    except PyMongoError as exc:
+        if getattr(exc, 'timeout', False):
+            raise
+        logging.warning(
+            "sample index read failed for %s/%s (%s); reading the project instead",
+            project_id, sample_name, exc)
+        return None
+    if found is not None:
+        logging.info("[PERF] sample %s/%s served from the sample index", project_id, sample_name)
+    return found
+
+
 def get_one_sample_rows(project_name, sample_name):
     """Return ``(project, sample_rows)`` without building the sample-name index.
 
@@ -489,6 +513,10 @@ def get_one_sample_rows(project_name, sample_name):
             project = get_one_project_sans_runs(project_name)
             if project is None:
                 return validate_project(None, project_name), None
+
+            indexed = _sample_slice_from_index(project['_id'], sample_name, neighbours=False)
+            if indexed is not None:
+                return project, replace_space_to_underscore(indexed[0])
 
             pipeline = [
                 {'$match': {'_id': project['_id']}},
@@ -633,6 +661,15 @@ def get_one_sample(project_name, sample_name):
     ``prev_sample``/``next_sample`` are name-only stubs: the sole consumer
     (``views.sample_page``) reads ``[0]['Sample_name']`` from them for the
     prev/next navigation links.
+
+    Two ways to get the rows, tried in order.  The sample index
+    (``feature_index.sample_slice_from_index``) is three point reads and does
+    not grow with the project; the aggregation (``_fetch_sample_slice``) asks
+    the server to unpack every run and does -- 1,033 ms against 1.6 ms on the
+    largest prod project, measured 2026-09-18.  The aggregation is kept
+    because the index only covers what ``indexable_projects_query`` covers,
+    which superseded versions are not, and because it declines whenever it
+    is not sure.
     """
     try:
         with pymongo.timeout(page_query_timeout()):
@@ -646,9 +683,17 @@ def get_one_sample(project_name, sample_name):
                 return validate_project(None, project_name), None, None, None
 
             # Match on the RESOLVED id: for a tombstone redirect this is the
-            # surviving project, which is not the id in the URL.
-            rows, prev_name, next_name = _fetch_sample_slice(
-                {'_id': project['_id']}, sample_name)
+            # surviving project, which is not the id in the URL.  The sample
+            # index is asked first; it declines rather than guesses, so the
+            # aggregation below is still the path for anything it does not
+            # hold -- superseded versions, projects not yet reindexed after a
+            # schema bump, samples it has no document for.
+            indexed = _sample_slice_from_index(project['_id'], sample_name)
+            if indexed is not None:
+                rows, prev_name, next_name = indexed
+            else:
+                rows, prev_name, next_name = _fetch_sample_slice(
+                    {'_id': project['_id']}, sample_name)
     except PyMongoError as exc:
         # ExecutionTimeout subclasses OperationFailure, so the error type alone
         # cannot tell a deadline from an unsupported aggregation operator.

@@ -96,17 +96,19 @@ from .visibility import (
     normalize_visibility_field,
 )
 
-# Bump when feature_rows_for_project changes what it emits.  The version is
-# folded into every digest, so a builder change invalidates every stored row
-# and the drift check reports the whole corpus as stale -- which is correct: it
-# is stale, against the new builder.
-SCHEMA_VERSION = 5
+# Bump when feature_rows_for_project or sample_documents_for_project changes
+# what it emits.  The version is folded into every digest, so a builder change
+# invalidates every stored row and the drift check reports the whole corpus as
+# stale -- which is correct: it is stale, against the new builder.
+SCHEMA_VERSION = 6
 
 FEATURE_INDEX_COLLECTION = 'feature_index'
+SAMPLE_INDEX_COLLECTION = 'sample_index'
 GENE_CATALOG_COLLECTION = 'gene_catalog'
 SEARCH_NAMES_COLLECTION = 'search_names'
 
 feature_index_handle = get_collection_handle(db_handle_primary, FEATURE_INDEX_COLLECTION)
+sample_index_handle = get_collection_handle(db_handle_primary, SAMPLE_INDEX_COLLECTION)
 gene_catalog_handle = get_collection_handle(db_handle_primary, GENE_CATALOG_COLLECTION)
 search_names_handle = get_collection_handle(db_handle_primary, SEARCH_NAMES_COLLECTION)
 
@@ -459,6 +461,94 @@ def sample_name_of(feature, run_key=''):
     return str(run_key)
 
 
+def sample_documents_for_project(project):
+    """One document per run, holding that run's feature rows verbatim.  Pure.
+
+    This is the sample page's copy of the project, and it exists because the
+    page's cost was the shape of the document it read.  ``get_one_sample``
+    asks the server to ``$objectToArray`` the whole ``runs`` dict to return one
+    sample's rows, so the work scales with the project and not with the
+    request: measured on prod 2026-09-18, 1,033 ms for one 7-row sample of
+    Hartwig (4,170 samples) against 1.6 ms for the same rows read from an
+    indexed collection, and 75% of prod's 22,408 samples sit in the six
+    projects where the scan is slowest.
+
+    The rows are stored as they are in ``runs``, not as the search rows
+    reshape them.  The page reads a feature dict -- ``AA_PNG_file``,
+    ``CNV_BED_file``, ``Location`` as a string, every metadata column -- and a
+    list of "which keys the page needs" kept here would be the second copy of
+    something the template already says.  A verbatim copy has no such list,
+    and the parity test can then compare both read paths field for field.
+
+    Empty runs are kept, as ``features: []``, because the prev/next links are
+    computed over every run key in sorted order and an empty run is a position
+    in that order.  ``sample_name`` for one is the run key, which is what the
+    search row for it says too.
+    """
+    project_id = project.get('_id')
+    runs = project.get('runs') or {}
+    if not isinstance(runs, dict):
+        return []
+    documents = []
+    for run_key, features in runs.items():
+        features = list(features or [])
+        # The name the aggregation path matches on: ``$$r.v.Sample_name`` is
+        # the array of that key over the features that carry it, so it is the
+        # first feature *with* a Sample_name, not the first feature.  Same
+        # rule here so the two paths find the same run.
+        named = next((f for f in features
+                      if isinstance(f, dict) and f.get('Sample_name') not in (None, '')),
+                     {})
+        sample_name = sample_name_of(named, run_key)
+        documents.append({
+            'project_id': project_id,
+            'run_key': run_key,
+            'sample_name': sample_name,
+            'sample_key': f'{project_id}:{sample_name}',
+            'feature_count': len(features),
+            'features': features,
+            'schema_version': SCHEMA_VERSION,
+        })
+    return documents
+
+
+def sample_slice_from_index(project_id, sample_name, neighbours=True):
+    """``(rows, prev_name, next_name)`` for one sample, or ``None`` to fall back.
+
+    This is what ``utils.get_one_sample`` asks before it runs the whole-project
+    aggregation, and it answers only when it positively has the sample: a
+    project that was never indexed, one indexed by an older builder, or a
+    sample the index does not hold all return ``None`` and the caller runs the
+    old path.  A genuine 404 therefore costs what it costs today; what it can
+    never cost is a page served from a copy that is not there.
+
+    Three indexed point reads.  Where two runs carry the same ``Sample_name``
+    the lowest run key wins, and a neighbour that is an empty run is reported
+    as ``None`` -- both exactly what ``_fetch_sample_slice`` does, so that the
+    two paths are interchangeable and the parity test can say so.
+    """
+    current = {'sample_key': f'{project_id}:{sample_name}',
+               'schema_version': SCHEMA_VERSION}
+    doc = sample_index_handle.find_one(current, sort=[('run_key', 1)])
+    if doc is None or not doc.get('features'):
+        return None
+
+    if not neighbours:
+        return doc['features'], None, None
+
+    def neighbour(direction):
+        side = {'project_id': project_id, 'schema_version': SCHEMA_VERSION,
+                'run_key': {'$lt' if direction < 0 else '$gt': doc['run_key']}}
+        found = sample_index_handle.find_one(
+            side, {'sample_name': 1, 'feature_count': 1},
+            sort=[('run_key', direction)])
+        if found is None or not found.get('feature_count'):
+            return None
+        return found['sample_name']
+
+    return doc['features'], neighbour(-1), neighbour(1)
+
+
 def _row(*, project_id, project_name, project_sample_count, visibility, members, run_key, sample_name,
          feature_id, classification, genes, genes_display, oncogenes,
          oncogenes_display, locations, reference_build, numbers, metadata,
@@ -573,6 +663,7 @@ manifest_handle = get_collection_handle(db_handle_primary, FEATURE_INDEX_MANIFES
 # results in the meantime.
 DERIVED_COLLECTIONS = (
     FEATURE_INDEX_COLLECTION,
+    SAMPLE_INDEX_COLLECTION,
     FEATURE_INDEX_MANIFEST_COLLECTION,
     GENE_CATALOG_COLLECTION,
     SEARCH_NAMES_COLLECTION,
@@ -589,6 +680,10 @@ DERIVED_COLLECTIONS = (
 # unmeasured quietly.  The values are what the check calls its findings.
 DERIVED_DRIFT_CHECKS = {
     FEATURE_INDEX_COLLECTION: 'missing / stale / orphaned',
+    # Written by the same index_project call as the rows, from the same
+    # ``runs``, under the same manifest digest -- so the digest check covers
+    # it for exactly the reason it covers the rows.
+    SAMPLE_INDEX_COLLECTION: 'missing / stale / orphaned',
     FEATURE_INDEX_MANIFEST_COLLECTION: 'missing / stale / orphaned',
     GENE_CATALOG_COLLECTION: 'genes_missing / genes_extra / genes_changed',
     SEARCH_NAMES_COLLECTION: 'names_missing / names_extra',
@@ -636,6 +731,12 @@ def ensure_feature_index_indexes():
     feature_index_handle.create_index([('project_name', 1)], name='ix_project_name')
     feature_index_handle.create_index([('classification', 1)], name='ix_class')
     feature_index_handle.create_index([('reference_build', 1)], name='ix_reference_build')
+    # The sample page: one point read by sample_key, then the previous and
+    # next run key within the project.  Unique on (project, run key) because
+    # a run is one document, and a second one would be a builder bug.
+    sample_index_handle.create_index([('sample_key', 1)], name='ix_sample_key')
+    sample_index_handle.create_index([('project_id', 1), ('run_key', 1)],
+                                     name='ix_project_run', unique=True)
     manifest_handle.create_index([('project_id', 1)], name='ix_manifest_project', unique=True)
     gene_catalog_handle.create_index([('symbol', 1)], name='ix_symbol', unique=True)
     search_names_handle.create_index([('kind', 1), ('lower', 1)], name='ix_kind_lower')
@@ -651,12 +752,16 @@ def index_project(project):
     """
     project_id = project.get('_id')
     rows = feature_rows_for_project(project)
+    samples = sample_documents_for_project(project)
     feature_index_handle.delete_many({'project_id': project_id})
+    sample_index_handle.delete_many({'project_id': project_id})
     if rows:
         feature_index_handle.insert_many(rows)
         # The rows are searchable the moment they are written; the names they
         # introduce have to be too, or a substring search cannot reach them.
         add_search_names(rows)
+    if samples:
+        sample_index_handle.insert_many(samples)
     manifest_handle.update_one(
         {'project_id': project_id},
         {'$set': {
@@ -675,6 +780,7 @@ def index_project(project):
 def unindex_project(project_id):
     """Drop one project's rows and its manifest entry.  Returns rows removed."""
     removed = feature_index_handle.delete_many({'project_id': project_id}).deleted_count
+    sample_index_handle.delete_many({'project_id': project_id})
     manifest_handle.delete_one({'project_id': project_id})
     return removed
 
