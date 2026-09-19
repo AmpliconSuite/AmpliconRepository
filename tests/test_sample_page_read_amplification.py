@@ -194,3 +194,38 @@ def test_get_one_sample_missing_sample_returns_none(mongo_collection, test_user)
         assert next_sample is None
     finally:
         mongo_collection.delete_one({'_id': ObjectId(project_id)})
+
+
+@pytest.mark.integration
+def test_get_one_sample_does_not_fetch_the_sample_summary_table(mongo_collection, test_user):
+    """``sample_data`` is the project page's table, one row per sample.
+
+    Nothing a sample-level route does reads it, and on Hartwig it was 1,080 KiB
+    of the 1,158 KiB the document still weighed without ``runs`` (prod,
+    2026-09-19).  What the routes do read has to survive: the ecDNA context
+    the page renders and the download counter the download route increments.
+    """
+    from caper.utils import get_one_sample
+
+    runs = {'SAMPLE_A': [_feature_row('SAMPLE_A', 'A_amplicon1')],
+            'SAMPLE_B': [_feature_row('SAMPLE_B', 'B_amplicon1')]}
+    document = _project_doc('SampleSummaryNotFetched', runs, test_user.username)
+    document['sample_data'] = [{'Sample_name': name, 'Features': 1, 'pad': 'x' * 50_000}
+                               for name in runs]
+    document['ecDNA_context'] = {'A_amplicon1': 'ecDNA'}
+    document['sample_downloads'] = {'2026-09-19': 3}
+    result = mongo_collection.insert_one(document)
+    project_id = str(result.inserted_id)
+    mongo_collection.update_one({'_id': result.inserted_id},
+                                {'$set': {'linkid': project_id}})
+    try:
+        project, sample_data, _, _ = get_one_sample(project_id, 'SAMPLE_A')
+        assert sample_data[0]['Feature_ID'] == 'A_amplicon1'
+        assert 'sample_data' not in project, \
+            "the per-sample summary table was fetched for a single sample page"
+        assert 'runs' not in project
+        assert project['ecDNA_context'] == {'A_amplicon1': 'ecDNA'}
+        assert project['sample_downloads'] == {'2026-09-19': 3}
+        assert str(project['linkid']) == project_id
+    finally:
+        mongo_collection.delete_one({'_id': ObjectId(project_id)})
