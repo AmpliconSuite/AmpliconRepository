@@ -470,6 +470,19 @@ def _fetch_sample_slice(match, sample_name):
     return rows, prev_name, next_name
 
 
+# What a sample-level route fetches of the project document.  ``runs`` was
+# excluded in August 2026 for the read amplification it caused; ``sample_data``
+# is the same shape one size down.  It is the per-sample summary table the
+# *project* page renders -- one row per sample, cached out of ``runs`` -- and no
+# sample-level route reads it, but on Hartwig it is 1,080 KiB of the 1,158 KiB
+# that remained without ``runs`` (measured on prod 2026-09-19).  With the
+# sample's own rows now coming from the sample index, this document was the
+# largest thing a sample page fetched.  Everything else stays: ``ecDNA_context``
+# (the page reads it), ``sample_downloads`` (the download route increments it),
+# and the lookup-chain fields get_one_project_sans_runs needs.
+SAMPLE_ROUTE_PROJECTION = {'runs': 0, 'sample_data': 0}
+
+
 def _sample_slice_from_index(project_id, sample_name, neighbours=True):
     """The indexed copy of one sample, or ``None`` when the old path must run.
 
@@ -510,7 +523,7 @@ def get_one_sample_rows(project_name, sample_name):
     """
     try:
         with pymongo.timeout(page_query_timeout()):
-            project = get_one_project_sans_runs(project_name)
+            project = get_one_project_sans_runs(project_name, SAMPLE_ROUTE_PROJECTION)
             if project is None:
                 return validate_project(None, project_name), None
 
@@ -676,7 +689,7 @@ def get_one_sample(project_name, sample_name):
             # get_one_project_sans_runs() carries the full lookup semantics —
             # ObjectId, alias, project name, older versions (current=False) and
             # deleted-version redirect tombstones — while excluding runs.
-            project = get_one_project_sans_runs(project_name)
+            project = get_one_project_sans_runs(project_name, SAMPLE_ROUTE_PROJECTION)
 
             if project is None:
                 # Preserve the previous not-found behaviour (log, return None).

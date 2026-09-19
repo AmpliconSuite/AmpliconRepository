@@ -172,7 +172,8 @@ def test_ac2_single_and_batch_sample_download_contents(
 
 @pytest.mark.integration
 @pytest.mark.functional
-def test_sample_download(loaded_datasets, request_factory, test_user, mongo_collection):
+def test_sample_download(loaded_datasets, request_factory, test_user, mongo_collection,
+                         monkeypatch):
     """
     GET /project/<id>/sample/<name>/download must return a zip with content.
     Retrieves the first sample name from the MongoDB document dynamically.
@@ -191,13 +192,20 @@ def test_sample_download(loaded_datasets, request_factory, test_user, mongo_coll
     else:
         sample_name = first_sample_key
 
+    # Served from this process, not redirected to S3: the point is to open
+    # the archive this route builds.  An authenticated user passes the gate.
+    from django.conf import settings
+    monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', False)
     req = request_factory.get(f'/project/{pid}/sample/{sample_name}/download')
     req.user = test_user
     resp = sample_download(req, project_name=pid, sample_name=sample_name)
-    assert resp.status_code in (200, 302), \
-        f"Unexpected status {resp.status_code} for sample_download"
-    if resp.status_code == 200:
-        assert len(_download_bytes(resp)) > 0, "Sample download response must not be empty"
+    assert resp.status_code == 200, \
+        f"sample_download returned {resp.status_code}; this used to accept a 302 and " \
+        f"then prove nothing about the archive"
+    with zipfile.ZipFile(io.BytesIO(_download_bytes(resp))) as archive:
+        members = archive.namelist()
+        assert members, "the sample archive is empty"
+        assert archive.testzip() is None, "the sample archive is corrupt"
 
 
 @pytest.mark.integration
