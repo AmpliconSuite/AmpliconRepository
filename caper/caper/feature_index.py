@@ -607,6 +607,72 @@ def _row(*, project_id, project_name, project_sample_count, visibility, members,
     }
 
 
+def coamp_summary_for_project(project):
+    """The three facts the co-amplification pages need per project.  Pure.
+
+    The landing page decides whether to list a project from its reference
+    genome and whether any sample carries an ecDNA; the visualizer's cache-hit
+    path shows sample and ecDNA-sample counts.  Both read every project in
+    full to learn this -- measured on prod 2026-09-19, the landing page pulled
+    43 documents and 71 MiB, 3.4 s, for a list that needs 0.5 MiB -- so the
+    facts are computed here, once, when the project is indexed.
+
+    Semantics are those of the views this replaces, kept exactly:
+
+    * ``reference_genome``: one value if every feature agrees, ``'Multiple'`` if
+      they do not, ``'Unknown'`` for a feature without ``Reference_version`` or
+      a project with no features at all.
+    * ``sample_count``: run keys, empty runs included -- ``len(runs)``.
+    * ``ecdna_sample_count``: runs with at least one feature classified ecDNA,
+      compared case-insensitively.  The landing page compared exactly; prod
+      holds the one spelling (8,204 rows, all ``ecDNA``, measured 2026-09-19),
+      so the two agree on the data.
+    """
+    runs = project.get('runs') or {}
+    if not isinstance(runs, dict):
+        runs = {}
+    references = set()
+    saw_feature = False
+    ecdna_samples = 0
+    for features in runs.values():
+        has_ecdna = False
+        for feature in features or []:
+            if not isinstance(feature, dict):
+                continue
+            saw_feature = True
+            references.add(feature['Reference_version'] if 'Reference_version' in feature else 'Unknown')
+            if str(feature.get('Classification') or '').lower() == 'ecdna':
+                has_ecdna = True
+        if has_ecdna:
+            ecdna_samples += 1
+    if not saw_feature:
+        reference = 'Unknown'
+    elif len(references) > 1:
+        reference = 'Multiple'
+    else:
+        reference = next(iter(references))
+    return {
+        'reference_genome': reference,
+        'sample_count': len(runs),
+        'ecdna_sample_count': ecdna_samples,
+    }
+
+
+def coamp_summaries(project_ids):
+    """``{project_id: summary}`` from the manifests, for the ids that have one.
+
+    A project indexed before the summary existed has a manifest without it and
+    is simply absent from the result; the caller reads that project the old
+    way.  Nothing is dropped from a page because the index is behind.
+    """
+    found = {}
+    for manifest in manifest_handle.find(
+            {'project_id': {'$in': list(project_ids)}, 'coamp': {'$exists': True}},
+            {'project_id': 1, 'coamp': 1}):
+        found[manifest['project_id']] = manifest['coamp']
+    return found
+
+
 def project_digest(project):
     """A hash of exactly what feature_rows_for_project reads.
 
@@ -769,6 +835,7 @@ def index_project(project):
             'project_name': project.get('project_name'),
             'digest': project_digest(project),
             'row_count': len(rows),
+            'coamp': coamp_summary_for_project(project),
             'schema_version': SCHEMA_VERSION,
             'indexed_at': datetime.datetime.utcnow(),
         }},

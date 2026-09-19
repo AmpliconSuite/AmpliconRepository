@@ -6,10 +6,53 @@ from collections import defaultdict
 import json
 import time
 import os
+import threading
 from intervaltree import IntervalTree
 from scipy.stats import gamma
 from scipy.stats import chi2
 from statsmodels.stats.multitest import fdrcorrection
+
+
+# The gene annotation, parsed once per process.
+#
+# Every Graph re-read its BED with pandas and walked 23,000 groupby groups to
+# build its gene records: "Loaded 22998 genes from hg38 in 8.80 seconds" on
+# every build in prod's log, and a 9-sample project's whole build was 10 s of
+# which this was 8.8.  The file is static and shipped with the code, so the
+# rows are parsed once and kept.  What is cached is the immutable row tuples,
+# not the records: create_nodes accumulates samples, features and intervals
+# onto each record, so every Graph must still get records of its own.
+_BED_ROWS = {}
+_BED_ROWS_LOCK = threading.Lock()
+
+
+def _parsed_bed_rows(bed_file, normalize_chr):
+    """``[(gene_name, chrom, start, end, transcript_ids), ...]`` for one BED.
+
+    One row per gene, in the order pandas' groupby yields them, with the first
+    transcript's coordinates and every transcript id -- exactly what
+    ``create_gene_records_from_bed`` derived per call before the cache.
+    """
+    key = os.path.abspath(bed_file)
+    rows = _BED_ROWS.get(key)
+    if rows is not None:
+        return rows
+    with _BED_ROWS_LOCK:
+        rows = _BED_ROWS.get(key)
+        if rows is not None:
+            return rows
+        bed_data = pd.read_csv(bed_file, sep="\t", header=None, comment="#")
+        bed_data['chr_normalized'] = bed_data[0].apply(normalize_chr)
+        rows = []
+        for gene_name, group in bed_data.groupby(3):
+            first_row = group.iloc[0]
+            rows.append((gene_name,
+                         first_row['chr_normalized'],
+                         int(first_row[1]),
+                         int(first_row[2]),
+                         frozenset(group[6].dropna().astype(str))))
+        _BED_ROWS[key] = rows
+        return rows
 
 
 class Graph:
@@ -186,21 +229,9 @@ class Graph:
         gene_records = {}
 
         try:
-            bed_data = pd.read_csv(bed_file, sep="\t", header=None, comment="#")
-            bed_data['chr_normalized'] = bed_data[0].apply(self.normalize_chr)
-
-            # Group by gene name to handle duplicates
-            # Multiple rows per gene can exist (different transcripts)
-            for gene_name, group in bed_data.groupby(3):
-                # Use the first entry for location (or could merge/extend ranges)
-                first_row = group.iloc[0]
-                chrom = first_row['chr_normalized']
-                start = int(first_row[1])
-                end = int(first_row[2])
-
-                # Collect all transcript IDs for this gene (column 6)
-                transcript_ids = set(group[6].dropna().astype(str))
-
+            # Multiple rows per gene can exist (different transcripts); the
+            # parse keeps the first entry's location and every transcript id.
+            for gene_name, chrom, start, end, transcript_ids in _parsed_bed_rows(bed_file, self.normalize_chr):
                 # Create gene record
                 gene_records[gene_name] = {
                     'label': gene_name,

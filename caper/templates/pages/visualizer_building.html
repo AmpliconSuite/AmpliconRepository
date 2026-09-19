@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block meta_title %}Building co-amplification graph{% endblock %}
+
+{% block extra_css %}
+<style>
+  .coamp-building { max-width: 640px; margin: 4rem auto; padding: 0 1rem; }
+  .coamp-building h1 { font-size: 1.5rem; margin-bottom: .5rem; }
+  .coamp-building .facts { color: #555; margin-bottom: 1.5rem; }
+  .coamp-building .status { display: flex; align-items: center; gap: .75rem; font-size: 1.05rem; }
+  .coamp-building .spinner { width: 1.1rem; height: 1.1rem; border: 2px solid #ccc; border-top-color: #333;
+                             border-radius: 50%; animation: coamp-spin .8s linear infinite; flex: none; }
+  @keyframes coamp-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .coamp-building .spinner { animation: none; } }
+  .coamp-building .detail { color: #666; margin-top: .5rem; min-height: 1.4em; }
+  .coamp-building .failed { color: #a33; }
+  .coamp-building .actions { margin-top: 1.5rem; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="coamp-building">
+  <h1>Building the co-amplification graph</h1>
+  <p class="facts">
+    {{ project_count }} project{{ project_count|pluralize }},
+    {{ sample_count }} sample{{ sample_count|pluralize }}
+    ({{ ecdna_sample_count }} with ecDNA).
+    A graph is built once and kept, so the next visit to this selection opens immediately.
+  </p>
+
+  <div class="status" id="buildStatus" role="status" aria-live="polite">
+    <span class="spinner" id="buildSpinner" aria-hidden="true"></span>
+    <span id="buildState">{% if build_state == 'queued' %}Waiting for a build slot&hellip;{% else %}Building&hellip;{% endif %}</span>
+  </div>
+  <div class="detail" id="buildDetail"></div>
+
+  <div class="actions">
+    <a href="{% url 'coamplification_graph' %}">Choose different projects</a>
+  </div>
+</div>
+
+<script>
+(function () {
+  var stateEl = document.getElementById('buildState');
+  var detailEl = document.getElementById('buildDetail');
+  var spinner = document.getElementById('buildSpinner');
+  var statusUrl = "{% url 'coamp_build_status' %}";
+  var pollMs = 3000;
+
+  function minutes(seconds) {
+    if (seconds < 60) return seconds + ' s';
+    return Math.floor(seconds / 60) + ' min ' + (seconds % 60) + ' s';
+  }
+
+  function fail(message) {
+    spinner.hidden = true;
+    stateEl.textContent = 'The graph could not be built.';
+    stateEl.classList.add('failed');
+    detailEl.textContent = message || '';
+  }
+
+  function poll() {
+    fetch(statusUrl, {credentials: 'same-origin', headers: {'Accept': 'application/json'}})
+      .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, body: j}; }); })
+      .then(function (res) {
+        if (!res.ok) { fail(res.body.error); return; }
+        var s = res.body;
+        if (s.state === 'done') {
+          stateEl.textContent = 'Done. Opening the graph…';
+          window.location.reload();
+          return;
+        }
+        if (s.state === 'failed') { fail(s.error); return; }
+        if (s.state === 'queued') {
+          stateEl.textContent = 'Waiting for a build slot…';
+          detailEl.textContent = s.queued_ahead
+            ? s.queued_ahead + ' other graph' + (s.queued_ahead === 1 ? '' : 's') + ' ahead of this one.'
+            : (s.running.length ? s.running.length + ' graph' + (s.running.length === 1 ? '' : 's') + ' building now.' : '');
+        } else {
+          stateEl.textContent = 'Building…';
+          detailEl.textContent = 'Running for ' + minutes(s.elapsed_seconds) + '. Large projects take a few minutes.';
+        }
+        setTimeout(poll, pollMs);
+      })
+      .catch(function () { setTimeout(poll, pollMs * 2); });
+  }
+  setTimeout(poll, pollMs);
+})();
+</script>
+{% endblock %}

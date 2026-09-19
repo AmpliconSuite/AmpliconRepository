@@ -6263,12 +6263,23 @@ def coamplification_graph(request):
     if not useremail:
         useremail = username
 
-    # Get all projects user has access to
-    all_projects = get_projects_close_cursor(combine(NOT_DELETED_QUERY, **{"$or": [
+    # Get all projects user has access to.  Without their payload: the two
+    # facts this page needs from ``runs`` are on the index manifest, and
+    # reading them from the documents cost 71 MiB and 3.4 s per page view on
+    # prod (43 projects, 2026-09-19) for a page that renders 0.5 MiB of them.
+    #
+    # LIVE, not merely not-deleted: NOT_DELETED_QUERY also matches documents
+    # with delete=False, current=False -- old versions from before the version
+    # chain existed, which the index does not cover and which listed as a
+    # second row with the same name.  On prod 2026-09-19 all 43 rows a public
+    # user sees are LIVE, so this changes nothing there; on dev 18 of a
+    # superuser's 70 rows were those leftovers, each costing a runs read.
+    all_projects = get_projects_close_cursor(status_query(LIVE, **{"$or": [
         {"project_members": username},
         {"project_members": useremail},
         {"private": {"$in": [False, "public", "hidden_public"]}}
-    ]}))
+    ]}), COAMP_LISTING_PROJECTION)
+    summaries = _coamp_summaries_for(all_projects)
 
     # Filter out mm10, Unknown, and Multiple reference genome projects
     # AND add reference_class
@@ -6276,29 +6287,55 @@ def coamplification_graph(request):
     filtered_projects = []
     for proj in all_projects:
         prepare_project_linkid(proj)
-        if 'runs' in proj and proj['runs']:
-            ref_genome = reference_genome_from_project(proj['runs'])
-            if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
-                # Check if the project has at least one ecDNA amplicon
-                has_ecdna = False
-                for sample_data in proj['runs'].values():
-                    if isinstance(sample_data, list):
-                        for entry in sample_data:
-                            if isinstance(entry, dict) and entry.get('Classification') == 'ecDNA':
-                                has_ecdna = True
-                                break
-                    if has_ecdna:
-                        break
-                if not has_ecdna:
-                    continue
-                # Add reference genome and class to project object
-                proj['reference_genome'] = ref_genome
-                proj['reference_class'] = get_reference_class(ref_genome)
-                # Add formatted visibility
-                proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
-                filtered_projects.append(proj)
+        summary = summaries[proj['_id']]
+        ref_genome = summary['reference_genome']
+        if ref_genome not in ['mm10', 'Unknown', 'Multiple']:
+            # Check if the project has at least one ecDNA amplicon
+            if not summary['ecdna_sample_count']:
+                continue
+            # Add reference genome and class to project object
+            proj['reference_genome'] = ref_genome
+            proj['reference_class'] = get_reference_class(ref_genome)
+            # Add formatted visibility
+            proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
+            filtered_projects.append(proj)
 
     return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
+
+
+# What the co-amplification pages read off a project document: the picker's
+# columns, plus what get_one_project_sans_runs's lookup chain touches.  An
+# inclusion list rather than "everything but the payload": measured on dev
+# 2026-09-19, excluding runs and sample_data still returned 7.4 MB for a
+# superuser's 46 rows in 340 ms, against 9.8 KB in 100 ms for these.
+COAMP_LISTING_PROJECTION = {
+    'project_name': 1, 'description': 1, 'private': 1, 'sample_count': 1,
+    'project_members': 1, 'alias_name': 1,
+    'delete': 1, 'current': 1, 'linkid': 1, 'redirect_to_project': 1,
+}
+
+
+def _coamp_summaries_for(projects):
+    """One co-amplification summary per project, by ``_id``.
+
+    From the manifest where it has one, and computed from the document's
+    ``runs`` where it does not -- a project indexed before the summary existed,
+    or one the index has not caught up with.  The fallback reads only ``runs``
+    and only for those projects, so a fully indexed deployment never reads a
+    payload here, and a partially indexed one reads exactly the shortfall.
+    """
+    from .feature_index import coamp_summaries, coamp_summary_for_project
+    ids = [proj['_id'] for proj in projects]
+    summaries = coamp_summaries(ids)
+    missing = [pid for pid in ids if pid not in summaries]
+    if missing:
+        logging.info("[PERF] co-amplification summary read from runs for %d of %d projects",
+                     len(missing), len(ids))
+        for doc in collection_handle.find({'_id': {'$in': missing}}, {'runs': 1}):
+            summaries[doc['_id']] = coamp_summary_for_project(doc)
+        for pid in missing:
+            summaries.setdefault(pid, coamp_summary_for_project({}))
+    return summaries
 
 
 def get_projects_metadata(project_list):
@@ -6310,30 +6347,36 @@ def get_projects_metadata(project_list):
         dict: {project_name: [total_samples, ecdna_samples]}
     """
     samples_per_project = {}
-    
+    for project_name, summary in _coamp_summaries_by_name(project_list).items():
+        samples_per_project[project_name] = [summary['sample_count'], summary['ecdna_sample_count']]
+    return samples_per_project
+
+
+def _coamp_summaries_by_name(project_list):
+    """Summaries keyed the way the visualizer keys them: by the selected id.
+
+    ``get_one_project`` resolves an id or a name; the selection holds ids, so
+    they are resolved without the payload and summarised through the manifest.
+    A selection that resolves to nothing gets an empty summary, which is what
+    the callers reported for it before (``[0, 0]``, ``Unknown``).
+    """
+    # Not through validate_project: that is the key-spelling repair hook, and
+    # it ends by re-reading the project in full.  The concat path still runs
+    # it on a cache miss, which is where a repair would be needed.
+    resolved = {}
     for project_name in project_list:
         try:
-            project = validate_project(get_one_project(project_name), project_name)
-            
-            total_samples = len(project['runs'])
-            ecdna_samples = 0
-            samples_per_project[project_name] = [total_samples, ecdna_samples]
-            
-            # Count ecDNA samples by checking Classification field
-            for sample_data in project['runs'].values():
-                if isinstance(sample_data, list) and sample_data:
-                    # Check if any entry in the sample has ecDNA classification
-                    for entry in sample_data:
-                        if isinstance(entry, dict) and str(entry.get('Classification') or '').lower() == 'ecdna':
-                            ecdna_samples += 1
-                            break  # Count each sample once
-            
-            samples_per_project[project_name] = [total_samples, ecdna_samples]
+            project = get_one_project_sans_runs(project_name, COAMP_LISTING_PROJECTION)
         except Exception as e:
             logging.warning(f"Could not get metadata for project {project_name}: {e}")
-            samples_per_project[project_name] = [0, 0]
-    
-    return samples_per_project
+            continue
+        if project is not None:
+            resolved[project_name] = project
+    summaries = _coamp_summaries_for(list(resolved.values()))
+    from .feature_index import coamp_summary_for_project
+    empty = coamp_summary_for_project({})
+    return {name: summaries.get(resolved[name]['_id'], empty) if name in resolved else empty
+            for name in project_list}
 
 
 def get_reference_genomes(project_list):
@@ -6344,16 +6387,10 @@ def get_reference_genomes(project_list):
         list: Unique reference genome names
     """
     ref_genomes = set()
-    
-    for project_name in project_list:
-        try:
-            project = validate_project(get_one_project(project_name), project_name)
-            ref_genome = reference_genome_from_project(project['runs'])
-            if ref_genome and ref_genome not in ['Unknown', 'Multiple']:
-                ref_genomes.add(ref_genome)
-        except Exception as e:
-            logging.warning(f"Could not get reference genome for project {project_name}: {e}")
-    
+    for summary in _coamp_summaries_by_name(project_list).values():
+        ref_genome = summary['reference_genome']
+        if ref_genome and ref_genome not in ['Unknown', 'Multiple']:
+            ref_genomes.add(ref_genome)
     return list(ref_genomes) if ref_genomes else ["Unknown"]
 
 
@@ -6456,42 +6493,35 @@ def visualizer(request):
             'cached': True
         })
     else:
-        logging.info("Graph cache miss. Loading and concatenating projects...")
-        # combine selected projects
-        CONCAT_START = time.time()
-        projects_df, projects_info = concat_projects(selected_projects)
-        CONCAT_END = time.time()
-        logging.error("----- DataFrame concatenation time: " + str(CONCAT_END - CONCAT_START) + " seconds -----")
-        # If no data, redirect back
-        if projects_df.empty:
-            messages.error(request, "No valid data found in selected projects.")
-            return redirect('coamplification_graph')
-
-        # construct graph and load into neo4j - this returns the Graph object
-        # Pass project_ids for caching support
-        IMPORT_START = time.time()
-        graph = load_graph(projects_df, project_ids=selected_projects)
-        IMPORT_END = time.time()
-        logging.error("----- NEO4J load_graph time: " + str(IMPORT_END - IMPORT_START) + " seconds -----")
-        
-        # Cache the graph object in session for CSV download
-        # We can't serialize the full Graph object, so we'll store a flag indicating it's available
-        # The download function can reconstruct it quickly from the cached projects_df
-        request.session['graph_available'] = True
-        request.session['graph_timestamp'] = time.time()
-
-        # Get reference genomes information for display
-        ref_genomes = projects_df[
-            'Reference_version'].unique().tolist() if 'Reference_version' in projects_df.columns else ["Unknown"]
-
-        return render(request, 'pages/visualizer.html', {
-            'test_size': len(projects_df),
-            'diff': CONCAT_END - CONCAT_START,
-            'import_time': IMPORT_END - CONCAT_END,
-            'reference_genomes': ref_genomes,
-            'projects_stats': projects_info,
-            'cached': False
+        # Not built here.  The build runs on a background thread, once per
+        # graph and at most a few site-wide (coamp_build.py); this request
+        # renders a page that polls until it is done and then reloads into
+        # the cache-hit branch above.
+        from .coamp_build import request_build
+        logging.info("Graph cache miss. Queueing a build for %s", cache_key)
+        build = request_build(selected_projects, cache_key=cache_key)
+        projects_info = get_projects_metadata(selected_projects)
+        request.session['graph_available'] = False
+        return render(request, 'pages/visualizer_building.html', {
+            'build_state': build['state'],
+            'project_count': len(selected_projects),
+            'sample_count': sum(info[0] for info in projects_info.values()),
+            'ecdna_sample_count': sum(info[1] for info in projects_info.values()),
         })
+
+
+def coamp_build_status(request):
+    """The waiting page's poll: the state of the build for the session's
+    selection.  ``done`` tells the page to reload; ``failed`` carries the
+    reason."""
+    from .coamp_build import build_status
+    cache_key = request.session.get('active_cache_key')
+    if not cache_key:
+        return JsonResponse({'error': 'No graph selected.'}, status=400)
+    status = build_status(cache_key)
+    if status is None:
+        return JsonResponse({'error': 'No build recorded for this selection.'}, status=404)
+    return JsonResponse(status)
 
 
 @login_required
@@ -6692,9 +6722,8 @@ def download_coamp_edges(request):
     Download the complete co-amplification graph edges as a CSV file.
     Uses the already-constructed graph to avoid regenerating it.
     """
-    import tempfile
     from .coamp_graph import Graph
-    
+
     # Check if graph was already constructed
     graph_available = request.session.get('graph_available', False)
     selected_projects = request.session.get('selected_projects', [])
@@ -6708,88 +6737,60 @@ def download_coamp_edges(request):
         return redirect('visualizer')
     
     try:
-        # We need to reconstruct the graph because we can't serialize it in the session
-        # But this is unavoidable - the Graph object contains complex data structures
-        # that can't be efficiently cached in Django sessions
-        logging.info(f"Reconstructing graph from {len(selected_projects)} projects for CSV download")
-        projects_df, _ = concat_projects(selected_projects)
-        
-        if projects_df.empty:
-            messages.error(request, "No valid data found in selected projects.")
-            return redirect('coamplification_graph')
-
-        # Construct the graph (this is fast compared to Neo4j import)
-        logging.info(f"Constructing graph with {len(projects_df)} rows")
-        graph = Graph(projects_df)
-        
-        # Get edges dataframe (without sample ID to keep file size manageable)
-        # Set include_sample_ids=True if you want to include sample ID columns
+        from .coamp_edges import open_edges
+        from .neo4j_utils import generate_cache_key
         include_sample_ids = request.GET.get('include_samples', 'false').lower() == 'true'
-        edges_df = graph.get_edges_dataframe(include_sample_ids=include_sample_ids)
-        
-        if edges_df.empty:
-            messages.error(request, "No edges found in the graph.")
-            return redirect('visualizer')
-        
-        logging.info(f"Generated dataframe with {len(edges_df)} edges")
-        
-        # Create a temporary file to write the CSV
-        temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', newline='')
-        temp_path = temp_file.name
-        
-        try:
-            # Write dataframe to CSV
-            edges_df.to_csv(temp_path, index=False)
-            temp_file.close()
-            
-            # Open file for reading in binary mode for streaming
-            file_handle = open(temp_path, 'rb')
-            
-            # Create streaming response with iterator that will clean up after
-            def file_iterator(file_obj, chunk_size=8192):
-                """Generator to read file in chunks and clean up after"""
-                try:
-                    while True:
-                        chunk = file_obj.read(chunk_size)
-                        if not chunk:
-                            break
-                        yield chunk
-                finally:
-                    file_obj.close()
-                    # Clean up temp file after streaming
-                    try:
-                        os.remove(temp_path)
-                        logging.info(f"Cleaned up temporary file: {temp_path}")
-                    except Exception as e:
-                        logging.warning(f"Failed to delete temp file {temp_path}: {e}")
-            
-            # Create the streaming response
-            response = StreamingHttpResponse(
-                file_iterator(file_handle),
-                content_type='text/csv'
-            )
-            
-            # Generate filename with timestamp
-            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f'coamplification_edges_{timestamp}.csv'
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            
-            logging.info(f"Starting CSV download: {filename}")
-            return response
-            
-        except Exception as e:
-            # Clean up temp file if error occurs before streaming starts
+        cache_key = generate_cache_key(selected_projects)
+
+        file_handle = open_edges(cache_key, include_sample_ids)
+        if file_handle is None:
+            # The graph predates the saved CSV (or the files were lost).  Build
+            # it once more, the old way, and save what this should have found.
+            logging.info(f"[PERF] co-amplification edges not saved for {cache_key}; "
+                         f"reconstructing graph from {len(selected_projects)} projects for CSV download")
+            projects_df, _ = concat_projects(selected_projects)
+            if projects_df.empty:
+                messages.error(request, "No valid data found in selected projects.")
+                return redirect('coamplification_graph')
+            graph = Graph(projects_df)
+            if _save_coamp_edges(cache_key, graph) is None:
+                messages.error(request, "No edges found in the graph.")
+                return redirect('visualizer')
+            file_handle = open_edges(cache_key, include_sample_ids)
+
+        def file_iterator(file_obj, chunk_size=64 * 1024):
             try:
-                temp_file.close()
-                os.remove(temp_path)
-            except:
-                pass
-            raise e
-            
+                while True:
+                    chunk = file_obj.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                file_obj.close()
+
+        response = StreamingHttpResponse(file_iterator(file_handle), content_type='text/csv')
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'coamplification_edges_{timestamp}.csv'
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        logging.info(f"Starting CSV download: {filename}")
+        return response
+
     except Exception as e:
         logging.exception(f"Error generating co-amplification edges CSV: {e}")
         messages.error(request, f"Error generating CSV file: {str(e)}")
         return redirect('visualizer')
+
+
+def _save_coamp_edges(cache_key, graph):
+    """Save the edge CSV for a freshly built graph.  Never fails the build:
+    a graph without its CSV is served by the download's rebuild fallback,
+    where a build that failed because of the CSV would serve nothing."""
+    from .coamp_edges import save_edges
+    try:
+        return save_edges(cache_key, graph)
+    except Exception:
+        logging.exception("could not save co-amplification edges for %s", cache_key)
+        return None
 
 
 def search_results(request):

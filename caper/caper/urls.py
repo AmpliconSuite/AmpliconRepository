@@ -45,6 +45,7 @@ urlpatterns += [
     path('coamplification-graph/', views.coamplification_graph, name='coamplification_graph'),
     path('coamplification-graph/visualizer/', views.visualizer, name='visualizer'),
     path('coamplification-graph/overview/', views.coamp_overview, name='coamp_overview'),
+    path('coamplification-graph/build-status/', views.coamp_build_status, name='coamp_build_status'),
     path('coamplification-graph/download-edges/', views.download_coamp_edges, name='download_coamp_edges'),
     path('create-project/', views.create_project, name='create_project'),
     path('create-empty-project/', views.create_empty_project, name='create_empty_project'),
