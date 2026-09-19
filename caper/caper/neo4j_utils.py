@@ -485,6 +485,7 @@ def _clear_cache_keys(session, cache_keys):
     orphaned in Neo4j, where they are invisible to the cache listing but still
     matched by every subsequent query against that cache_key.
     """
+    from .coamp_edges import remove_edges
     for cache_key in cache_keys:
         session.run("""
             MATCH (m:GraphMetadata {cache_key: $cache_key})
@@ -496,6 +497,8 @@ def _clear_cache_keys(session, cache_keys):
             DETACH DELETE n
             """, cache_key=cache_key
         )
+        # The edge CSV was written from this graph; it goes with it.
+        remove_edges(cache_key)
         print(f"Cleared graph cache for cache_key: {cache_key}")
 
 

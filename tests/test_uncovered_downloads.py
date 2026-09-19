@@ -114,6 +114,13 @@ def coamp_project(mongo_collection, test_user):
         mongo_collection.delete_one({'_id': inserted})
 
 
+@pytest.fixture(autouse=True)
+def edges_dir(tmp_path, monkeypatch):
+    """Every test writes its edge CSVs under its own directory."""
+    monkeypatch.setenv('COAMP_EDGES_DIR', str(tmp_path / 'coamp_edges'))
+    return tmp_path / 'coamp_edges'
+
+
 def _visualizer_request(request_factory, test_user, session, query=''):
     req = request_factory.get('/coamplification-graph/download-edges/' + query)
     req.user = test_user
@@ -185,3 +192,77 @@ def test_edge_download_can_include_sample_ids(request_factory, test_user, coamp_
     rows = list(csv.DictReader(io.StringIO(_download_bytes(resp).decode())))
     assert rows
     assert {'gene1_sample_ids', 'gene2_sample_ids'} <= set(rows[0]), list(rows[0].keys())
+
+
+# ---------------------------------------------------------------------------
+# The CSV is written when the graph is built, and the download streams it
+# ---------------------------------------------------------------------------
+
+def _download_rows(resp):
+    return list(csv.DictReader(io.StringIO(_download_bytes(resp).decode())))
+
+
+@pytest.mark.integration
+def test_edge_download_serves_the_saved_csv_without_rebuilding(
+        request_factory, test_user, coamp_project, edges_dir, monkeypatch):
+    """Build once (the fallback does it), then the next download must not
+    touch a project document at all."""
+    from caper import views
+    from caper.coamp_edges import edges_path
+    from caper.neo4j_utils import generate_cache_key
+
+    session = {'selected_projects': [coamp_project], 'graph_available': True}
+    first = views.download_coamp_edges(_visualizer_request(request_factory, test_user, session))
+    assert first.status_code == 200
+    first_rows = _download_rows(first)
+    key = generate_cache_key([coamp_project])
+    assert edges_path(key, False).startswith(str(edges_dir))
+    assert {p.name for p in edges_dir.iterdir()} == {f'{key}.edges.csv.gz', f'{key}.with_samples.csv.gz'}
+
+    def no_rebuild(*a, **k):
+        raise AssertionError('the download rebuilt the graph with a CSV on disk')
+    monkeypatch.setattr(views, 'concat_projects', no_rebuild)
+
+    again = views.download_coamp_edges(_visualizer_request(request_factory, test_user, session))
+    assert again.status_code == 200
+    assert _download_rows(again) == first_rows
+    with_ids = views.download_coamp_edges(
+        _visualizer_request(request_factory, test_user, session, query='?include_samples=true'))
+    rows = _download_rows(with_ids)
+    assert {'gene1_sample_ids', 'gene2_sample_ids', 'shared_sample_ids'} <= set(rows[0])
+    assert [{k: v for k, v in r.items() if not k.endswith('_sample_ids')} for r in rows] == first_rows, \
+        'the two variants disagree on the edges'
+
+
+@pytest.mark.integration
+def test_clearing_the_graph_cache_removes_its_csv(coamp_project, edges_dir, monkeypatch):
+    """The files are keyed like the neo4j graph and go when it goes, so a
+    rebuilt project can never serve a CSV from its previous data."""
+    from caper.coamp_edges import save_edges, open_edges
+    from caper.coamp_graph import Graph
+    from caper.neo4j_utils import _clear_cache_keys
+    from caper.views import concat_projects
+
+    key = 'pytest-clear-key'
+    projects_df, _ = concat_projects([coamp_project])
+    assert save_edges(key, Graph(projects_df))
+    assert open_edges(key, False) is not None
+
+    class _Session:
+        def run(self, *a, **k):
+            return None
+    _clear_cache_keys(_Session(), [key])
+    assert open_edges(key, False) is None and open_edges(key, True) is None
+    _clear_cache_keys(_Session(), [key])  # absent is fine
+
+
+def test_a_graph_with_no_edges_saves_nothing(edges_dir):
+    from caper.coamp_edges import save_edges, open_edges
+
+    class _Empty:
+        def get_edges_dataframe(self, include_sample_ids=False):
+            import pandas as pd
+            return pd.DataFrame()
+    assert save_edges('empty', _Empty()) is None
+    assert open_edges('empty', False) is None
+    assert not edges_dir.exists() or not any(edges_dir.iterdir())
