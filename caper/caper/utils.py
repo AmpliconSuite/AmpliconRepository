@@ -1602,15 +1602,18 @@ def create_user_list(string, current_user, add_current_user=True):
     return user_list
 
 
-def get_projects_close_cursor(query):
+def get_projects_close_cursor(query, projection=None):
     """
     Querys the mongo database and closes the cursor after query is complete. 
     Returns a list of projects of the query with linkid set.
 
+    ``projection`` is passed straight to ``find``; a caller that does not need
+    ``runs`` should say so, since that field is most of every large document.
+
     A cursor is a pointer to the result set of a query in MongoDb
     https://stackoverflow.com/questions/36766956/what-is-a-cursor-in-mongodb
     """
-    with collection_handle.find(query) as cursor:
+    with collection_handle.find(query, projection) as cursor:
         # Get projects and set linkid in one pass
         projs = []
         for proj in cursor:
