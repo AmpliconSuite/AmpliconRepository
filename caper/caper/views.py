@@ -6267,7 +6267,14 @@ def coamplification_graph(request):
     # facts this page needs from ``runs`` are on the index manifest, and
     # reading them from the documents cost 71 MiB and 3.4 s per page view on
     # prod (43 projects, 2026-09-19) for a page that renders 0.5 MiB of them.
-    all_projects = get_projects_close_cursor(combine(NOT_DELETED_QUERY, **{"$or": [
+    #
+    # LIVE, not merely not-deleted: NOT_DELETED_QUERY also matches documents
+    # with delete=False, current=False -- old versions from before the version
+    # chain existed, which the index does not cover and which listed as a
+    # second row with the same name.  On prod 2026-09-19 all 43 rows a public
+    # user sees are LIVE, so this changes nothing there; on dev 18 of a
+    # superuser's 70 rows were those leftovers, each costing a runs read.
+    all_projects = get_projects_close_cursor(status_query(LIVE, **{"$or": [
         {"project_members": username},
         {"project_members": useremail},
         {"private": {"$in": [False, "public", "hidden_public"]}}
