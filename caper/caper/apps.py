@@ -196,7 +196,15 @@ class CaperConfig(AppConfig):
                 logger.info("✓ Index 'idx_project_version_chain' ensured")
             except Exception as e:
                 logger.warning(f"Could not create index 'idx_project_version_chain': {str(e)}")
-                
+
+            # Finished co-amplification build records expire on their own.
+            try:
+                from .coamp_build import ensure_indexes as ensure_coamp_build_indexes
+                ensure_coamp_build_indexes()
+                logger.info("✓ Index 'ix_finished_ttl' on coamp_builds ensured")
+            except Exception as e:
+                logger.warning(f"Could not create index 'ix_finished_ttl' on coamp_builds: {str(e)}")
+
         except Exception as e:
             # Log but don't crash the application if index creation fails
             logger.error(f"Error in ensure_indexes: {str(e)}", exc_info=True)

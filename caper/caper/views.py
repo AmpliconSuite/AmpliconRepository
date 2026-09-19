@@ -6479,43 +6479,35 @@ def visualizer(request):
             'cached': True
         })
     else:
-        logging.info("Graph cache miss. Loading and concatenating projects...")
-        # combine selected projects
-        CONCAT_START = time.time()
-        projects_df, projects_info = concat_projects(selected_projects)
-        CONCAT_END = time.time()
-        logging.error("----- DataFrame concatenation time: " + str(CONCAT_END - CONCAT_START) + " seconds -----")
-        # If no data, redirect back
-        if projects_df.empty:
-            messages.error(request, "No valid data found in selected projects.")
-            return redirect('coamplification_graph')
-
-        # construct graph and load into neo4j - this returns the Graph object
-        # Pass project_ids for caching support
-        IMPORT_START = time.time()
-        graph = load_graph(projects_df, project_ids=selected_projects)
-        IMPORT_END = time.time()
-        logging.error("----- NEO4J load_graph time: " + str(IMPORT_END - IMPORT_START) + " seconds -----")
-
-        # The edge CSV is fully determined now; write it so the download
-        # never has to rebuild this graph to produce it.
-        _save_coamp_edges(cache_key, graph)
-
-        request.session['graph_available'] = True
-        request.session['graph_timestamp'] = time.time()
-
-        # Get reference genomes information for display
-        ref_genomes = projects_df[
-            'Reference_version'].unique().tolist() if 'Reference_version' in projects_df.columns else ["Unknown"]
-
-        return render(request, 'pages/visualizer.html', {
-            'test_size': len(projects_df),
-            'diff': CONCAT_END - CONCAT_START,
-            'import_time': IMPORT_END - CONCAT_END,
-            'reference_genomes': ref_genomes,
-            'projects_stats': projects_info,
-            'cached': False
+        # Not built here.  The build runs on a background thread, once per
+        # graph and at most a few site-wide (coamp_build.py); this request
+        # renders a page that polls until it is done and then reloads into
+        # the cache-hit branch above.
+        from .coamp_build import request_build
+        logging.info("Graph cache miss. Queueing a build for %s", cache_key)
+        build = request_build(selected_projects, cache_key=cache_key)
+        projects_info = get_projects_metadata(selected_projects)
+        request.session['graph_available'] = False
+        return render(request, 'pages/visualizer_building.html', {
+            'build_state': build['state'],
+            'project_count': len(selected_projects),
+            'sample_count': sum(info[0] for info in projects_info.values()),
+            'ecdna_sample_count': sum(info[1] for info in projects_info.values()),
         })
+
+
+def coamp_build_status(request):
+    """The waiting page's poll: the state of the build for the session's
+    selection.  ``done`` tells the page to reload; ``failed`` carries the
+    reason."""
+    from .coamp_build import build_status
+    cache_key = request.session.get('active_cache_key')
+    if not cache_key:
+        return JsonResponse({'error': 'No graph selected.'}, status=400)
+    status = build_status(cache_key)
+    if status is None:
+        return JsonResponse({'error': 'No build recorded for this selection.'}, status=404)
+    return JsonResponse(status)
 
 
 @login_required
