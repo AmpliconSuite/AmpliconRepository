@@ -6202,18 +6202,19 @@ def validate_reference_compatibility(project_list):
     ref_classes = set()
     ref_genomes_by_class = {}
 
-    for project_name in project_list:
-        project = get_one_project(project_name)
-        if not project or 'runs' not in project:
+    # From the manifest summary, not the documents: this runs on every
+    # selection POST, and read every selected project in full before.
+    for project_name, (project, summary) in _coamp_projects_by_name(project_list).items():
+        if project is None:
             continue
 
-        ref_genome = reference_genome_from_project(project['runs'])
+        ref_genome = summary['reference_genome']
         ref_class = get_reference_class(ref_genome)
 
         if not ref_class:
             return {
                 'valid': False,
-                'error': f'Project "{project_name}" has unsupported reference genome: {ref_genome}'
+                'error': f'Project "{project["project_name"]}" has unsupported reference genome: {ref_genome}'
             }
 
         ref_classes.add(ref_class)
@@ -6347,36 +6348,45 @@ def get_projects_metadata(project_list):
         dict: {project_name: [total_samples, ecdna_samples]}
     """
     samples_per_project = {}
-    for project_name, summary in _coamp_summaries_by_name(project_list).items():
-        samples_per_project[project_name] = [summary['sample_count'], summary['ecdna_sample_count']]
+    for selected, (project, summary) in _coamp_projects_by_name(project_list).items():
+        # Keyed by display name: the visualizer lists these.  The selection
+        # itself holds ids (or, from older sessions and bookmarks, names).
+        label = project['project_name'] if project is not None else selected
+        samples_per_project[label] = [summary['sample_count'], summary['ecdna_sample_count']]
     return samples_per_project
 
 
 def _coamp_summaries_by_name(project_list):
-    """Summaries keyed the way the visualizer keys them: by the selected id.
+    """``{selected: summary}`` for each entry of a selection."""
+    return {selected: summary for selected, (_, summary) in _coamp_projects_by_name(project_list).items()}
 
-    ``get_one_project`` resolves an id or a name; the selection holds ids, so
-    they are resolved without the payload and summarised through the manifest.
-    A selection that resolves to nothing gets an empty summary, which is what
-    the callers reported for it before (``[0, 0]``, ``Unknown``).
+
+def _coamp_projects_by_name(project_list):
+    """``{selected: (project or None, summary)}`` for each entry of a selection.
+
+    ``get_one_project_sans_runs`` resolves an id or a name, and the selection
+    has held both -- ids since the picker was changed to submit them, names
+    from sessions and bookmarks before that.  Each is resolved without the
+    payload and summarised through the manifest.  A selection that resolves
+    to nothing gets ``(None, empty summary)``, which is what the callers
+    reported for it before (``[0, 0]``, ``Unknown``).
     """
     # Not through validate_project: that is the key-spelling repair hook, and
     # it ends by re-reading the project in full.  The concat path still runs
     # it on a cache miss, which is where a repair would be needed.
-    resolved = {}
-    for project_name in project_list:
-        try:
-            project = get_one_project_sans_runs(project_name, COAMP_LISTING_PROJECTION)
-        except Exception as e:
-            logging.warning(f"Could not get metadata for project {project_name}: {e}")
-            continue
-        if project is not None:
-            resolved[project_name] = project
-    summaries = _coamp_summaries_for(list(resolved.values()))
     from .feature_index import coamp_summary_for_project
+    resolved = {}
+    for selected in project_list:
+        try:
+            project = get_one_project_sans_runs(selected, COAMP_LISTING_PROJECTION)
+        except Exception as e:
+            logging.warning(f"Could not get metadata for project {selected}: {e}")
+            project = None
+        resolved[selected] = project
+    summaries = _coamp_summaries_for([p for p in resolved.values() if p is not None])
     empty = coamp_summary_for_project({})
-    return {name: summaries.get(resolved[name]['_id'], empty) if name in resolved else empty
-            for name in project_list}
+    return {selected: (project, summaries.get(project['_id'], empty) if project is not None else empty)
+            for selected, project in resolved.items()}
 
 
 def get_reference_genomes(project_list):

@@ -168,10 +168,28 @@ def test_landing_page_lists_the_project_without_reading_runs(
 
 @pytest.mark.integration
 def test_visualizer_metadata_comes_from_the_manifest(indexed_project, no_runs_reads):
-    from caper.views import get_projects_metadata, get_reference_genomes
+    from caper.views import (get_projects_metadata, get_reference_genomes,
+                             validate_reference_compatibility)
     pid = str(indexed_project)
-    assert get_projects_metadata([pid]) == {pid: [3, 2]}
+    # Keyed by display name: the visualizer lists these, and the selection
+    # holds ids (or names, from older sessions).
+    assert get_projects_metadata([pid]) == {'pytest coamp summary': [3, 2]}
+    assert get_projects_metadata(['pytest coamp summary']) == {'pytest coamp summary': [3, 2]}
+    assert get_projects_metadata([pid, 'no such project']) == {
+        'pytest coamp summary': [3, 2], 'no such project': [0, 0]}
     assert get_reference_genomes([pid]) == ['GRCh38']
+    assert validate_reference_compatibility([pid]) == {'valid': True, 'error': ''}
+
+
+def test_the_picker_submits_ids_not_names():
+    """Graphs are cached and invalidated by project id.  The picker submitted
+    names until 2026-09-19, so clear_graph_cache_for_project(id) never matched
+    a graph built from the UI, and two projects sharing a name shared a key."""
+    with open('caper/templates/pages/coamplification_graph.html', encoding='utf-8') as fh:
+        template = fh.read()
+    import re
+    assert re.search(r'name="selected_projects"\s+value="\{\{ project\.linkid \}\}"', template)
+    assert 'value="{{ project.project_name }}"' not in template
 
 
 @pytest.mark.integration
