@@ -6303,9 +6303,16 @@ def coamplification_graph(request):
     return render(request, 'pages/coamplification_graph.html', {'all_projects': filtered_projects})
 
 
-# The co-amplification pages read project documents only for what the index
-# manifest already summarises, so none of them needs the payload fields.
-COAMP_LISTING_PROJECTION = {'runs': 0, 'sample_data': 0}
+# What the co-amplification pages read off a project document: the picker's
+# columns, plus what get_one_project_sans_runs's lookup chain touches.  An
+# inclusion list rather than "everything but the payload": measured on dev
+# 2026-09-19, excluding runs and sample_data still returned 7.4 MB for a
+# superuser's 46 rows in 340 ms, against 9.8 KB in 100 ms for these.
+COAMP_LISTING_PROJECTION = {
+    'project_name': 1, 'description': 1, 'private': 1, 'sample_count': 1,
+    'project_members': 1, 'alias_name': 1,
+    'delete': 1, 'current': 1, 'linkid': 1, 'redirect_to_project': 1,
+}
 
 
 def _coamp_summaries_for(projects):

@@ -317,6 +317,21 @@ def fetch_overview(cache_key=None, limit=OVERVIEW_LIMIT):
 
 
 # CREATE ROUTE with csrf_exempt (optional?)
+def _neo4j_node(node):
+    """A node record as the import wants it: no per-graph working data, sets
+    as lists, location as strings."""
+    out = {k: (list(v) if isinstance(v, set) else v)
+           for k, v in node.items() if k not in ('features', 'intervals')}
+    if 'location' in out:
+        out['location'] = [str(i) for i in out['location']]
+    return out
+
+
+def _neo4j_edge(edge):
+    return {k: (list(v) if isinstance(v, set) else v)
+            for k, v in edge.items() if k != 'p_d_D'}
+
+
 def load_graph(dataset=None, project_ids=None, force_reload=False):
     """
     Load a graph into Neo4j from a dataset. If project_ids are provided,
@@ -358,21 +373,11 @@ def load_graph(dataset=None, project_ids=None, force_reload=False):
         print("ERROR: No nodes created!")
         return JsonResponse({"error": "Graph construction failed - no nodes created"}), 400
 
-    # reformat for neo4j
-    for node in nodes:
-        del node['features']
-        del node['intervals']
-        for k, v in node.items():
-            if isinstance(v, set):
-                node[k] = list(v)
-        if 'location' in node:
-            node['location'] = [str(i) for i in node['location']]
-
-    for edge in edges:
-        del edge['p_d_D']
-        for k, v in edge.items():
-            if isinstance(v, set):
-                edge[k] = list(v)
+    # reformat for neo4j -- on copies.  The Graph's own records keep their
+    # intervals, features and p_d_D: get_edges_dataframe reads them, and the
+    # edge CSV is written from this same object after the import.
+    nodes = [_neo4j_node(node) for node in nodes]
+    edges = [_neo4j_edge(edge) for edge in edges]
 
     CONSTRUCT_TIME = time.process_time()
 

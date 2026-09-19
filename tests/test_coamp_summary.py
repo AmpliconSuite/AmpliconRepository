@@ -119,7 +119,12 @@ class _NoRuns:
         self._project_id = project_id
 
     def find(self, query, projection=None, *args, **kwargs):
-        reads_runs = projection is None or projection.get('runs') != 0
+        if projection is None:
+            reads_runs = True
+        elif any(v == 0 for v in projection.values()):
+            reads_runs = projection.get('runs') != 0          # exclusion list
+        else:
+            reads_runs = projection.get('runs') == 1          # inclusion list
         if reads_runs:
             wanted = query.get('_id')
             ids = wanted.get('$in', []) if isinstance(wanted, dict) else [wanted]

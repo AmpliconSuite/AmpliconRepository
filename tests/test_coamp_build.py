@@ -2,8 +2,7 @@
 at most MAX_CONCURRENT at a time.  See caper/coamp_build.py.
 
 Every test here runs against a scratch collection swapped in for
-``builds_handle``, and captures thread-pool submissions instead of running
-them, so the queueing logic is exercised on the database (the slot cap is an
+``builds_handle``, and captures process launches instead of performing them, so the queueing logic is exercised on the database (the slot cap is an
 atomic array update whose operator support is the thing to prove) without
 building a graph or touching neo4j.
 """
@@ -29,14 +28,14 @@ def builds(monkeypatch):
 
 @pytest.fixture
 def submitted(monkeypatch):
-    """Capture what would have gone to the thread pool."""
-    from caper import background_tasks
+    """Capture the builds that would have been launched as processes."""
+    from caper import coamp_build
     calls = []
 
-    class _Executor:
-        def submit(self, fn, *args, task_label=None, **kwargs):
-            calls.append((fn, args, task_label))
-    monkeypatch.setattr(background_tasks, '_thread_executor', _Executor())
+    def fake_launch(cache_key):
+        calls.append(cache_key)
+        return 4242
+    monkeypatch.setattr(coamp_build, '_launch', fake_launch)
     return calls
 
 
@@ -55,14 +54,13 @@ def _running(builds):
 
 @pytest.mark.integration
 def test_a_request_is_recorded_and_started(builds, submitted, cap):
-    from caper.coamp_build import request_build, build_status, RUNNING, run_build
+    from caper.coamp_build import request_build, build_status, RUNNING
 
     doc = request_build(['p1'], cache_key='k1')
     assert doc['state'] == RUNNING and doc['project_ids'] == ['p1']
     assert _running(builds) == ['k1']
-    assert len(submitted) == 1
-    fn, args, label = submitted[0]
-    assert fn is run_build and args == ('k1', ['p1']) and label == 'coamp_graph_build'
+    assert submitted == ['k1']
+    assert builds.find_one({'_id': 'k1'})['build_pid'] == 4242
     status = build_status('k1')
     assert status['state'] == RUNNING and status['queued_ahead'] == 0 and status['running'] == ['k1']
 
@@ -88,7 +86,7 @@ def test_builds_beyond_the_cap_queue_and_are_promoted_on_release(builds, submitt
     assert _running(builds) == ['a', 'b']
     assert build_status('c')['state'] == QUEUED
     assert build_status('c')['queued_ahead'] == 0
-    assert [call[1][0] for call in submitted] == ['a', 'b']
+    assert submitted == ['a', 'b']
 
     # A fourth queues behind c.
     request_build(['d'], cache_key='d')
@@ -202,7 +200,7 @@ def test_visualizer_renders_the_waiting_page_on_a_cache_miss(builds, submitted, 
     assert request.session['graph_available'] is False
     key = request.session['active_cache_key']
     assert builds.find_one({'_id': key})['project_ids'] == ['p1', 'p2']
-    assert [call[1][0] for call in submitted] == [key]
+    assert submitted == [key]
 
 
 @pytest.mark.integration
@@ -222,3 +220,24 @@ def test_build_status_endpoint_reports_the_sessions_build(builds, submitted, cap
     assert coamp_build_status(request).status_code == 400
     request.session = {'active_cache_key': 'never-requested'}
     assert coamp_build_status(request).status_code == 404
+
+
+@pytest.mark.integration
+def test_a_launch_failure_fails_the_build_and_frees_the_slot(builds, cap, monkeypatch):
+    from caper import coamp_build
+    from caper.coamp_build import request_build, build_status, FAILED
+
+    def broken(cache_key):
+        raise OSError('no such file: manage.py')
+    monkeypatch.setattr(coamp_build, '_launch', broken)
+
+    request_build(['p'], cache_key='unlaunchable')
+    status = build_status('unlaunchable')
+    assert status['state'] == FAILED and 'could not be started' in status['error']
+    assert _running(builds) == []
+
+
+def test_the_build_command_exists():
+    """The launcher runs `manage.py coamp_build`; the command must resolve."""
+    from django.core.management import get_commands
+    assert get_commands().get('coamp_build') == 'caper'

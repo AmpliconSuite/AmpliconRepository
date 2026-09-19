@@ -266,3 +266,49 @@ def test_a_graph_with_no_edges_saves_nothing(edges_dir):
     assert save_edges('empty', _Empty()) is None
     assert open_edges('empty', False) is None
     assert not edges_dir.exists() or not any(edges_dir.iterdir())
+
+
+@pytest.mark.integration
+def test_load_graph_leaves_the_graph_able_to_export_its_edges(coamp_project, monkeypatch):
+    """load_graph reshaped the Graph's own records for the neo4j import --
+    dropping intervals, features and p_d_D -- which was harmless while the
+    CSV was always exported from a fresh Graph, and broke the first saved
+    export (KeyError: 'intervals', dev 2026-09-19).  The import must work
+    on copies."""
+    import pandas as pd
+    from caper import neo4j_utils
+    from caper.coamp_graph import Graph
+    from caper.views import concat_projects
+
+    sent = {}
+
+    class _Result:
+        def single(self):
+            return None
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def run(self, query, **params):
+            for name in ('nodes', 'edges'):
+                if name in params:
+                    sent[name] = params[name]
+            return _Result()
+
+    class _Driver:
+        def session(self):
+            return _Session()
+
+    monkeypatch.setattr(neo4j_utils, 'get_driver', lambda: _Driver())
+    projects_df, _ = concat_projects([coamp_project])
+    graph = neo4j_utils.load_graph(projects_df, project_ids=[coamp_project])
+
+    assert sent['nodes'] and all('intervals' not in n and 'features' not in n for n in sent['nodes'])
+    assert sent['edges'] and all('p_d_D' not in e for e in sent['edges'])
+    exported = graph.get_edges_dataframe(include_sample_ids=True)
+    fresh = Graph(projects_df).get_edges_dataframe(include_sample_ids=True)
+    pd.testing.assert_frame_equal(exported, fresh)

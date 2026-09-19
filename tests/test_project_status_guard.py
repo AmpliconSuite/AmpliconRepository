@@ -170,6 +170,11 @@ ALLOWED = {
      "{'project_name': 1, 'delete': 1, 'current': 1,"):
         "projection listing fields to fetch, not a filter.  The filter itself "
         "is MISSING_CURRENT_QUERY, named in project_status.py",
+    (os.path.join('caper', 'caper', 'views.py'),
+     "'delete': 1, 'current': 1, 'linkid': 1, 'redirect_to_project': 1,"):
+        "projection listing fields to fetch, not a filter: the co-amplification "
+        "picker's inclusion list, which must carry what "
+        "get_one_project_sans_runs's lookup chain touches",
 
     # -- writing the flag that was never there ---------------------------
     # The backfill exists to give the documents with no 'current' field the

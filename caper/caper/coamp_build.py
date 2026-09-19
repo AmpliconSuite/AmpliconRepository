@@ -13,8 +13,13 @@ incident being fixed.
 Three properties, each carried by one Mongo document shape:
 
 * **The request returns at once.**  The visualizer records a build and renders
-  a waiting page that polls; the build runs on the worker's
-  ``BackgroundTaskTracker`` thread pool, where uploads already run.
+  a waiting page that polls; the build runs as its own process
+  (``manage.py coamp_build <key>``), not a thread of the worker.  A thread
+  shares the worker's GIL -- the request that started one took 6.8 s to
+  render its waiting page on dev -- and leaves the worker holding the
+  build's peak memory as its floor (gunicorn_config.py measures that at
+  2 GiB).  A process contends with nothing and gives it all back on exit,
+  and a worker recycled mid-build does not take the build with it.
 * **One build per graph.**  The build document's ``_id`` is the graph's
   ``cache_key``, so two people asking for the same graph share one build; the
   second sees the first's progress.
@@ -34,6 +39,8 @@ is past.  The user is told to try again; nothing is retried on their behalf.
 import datetime
 import logging
 import os
+import subprocess
+import sys
 
 import pymongo
 from pymongo import ReturnDocument
@@ -102,10 +109,16 @@ def request_build(project_ids, cache_key=None):
 
 
 def build_status(cache_key):
-    """What the waiting page shows.  ``None`` if no build was ever recorded."""
+    """What the waiting page shows.  ``None`` if no build was ever recorded.
+
+    Also the safety net for promotion: if the process that should have
+    started the next queued build never did, the next poll does."""
     doc = builds_handle.find_one({'_id': cache_key})
     if doc is None:
         return None
+    if doc['state'] == QUEUED:
+        start_pending()
+        doc = builds_handle.find_one({'_id': cache_key}) or doc
     now = _now()
     state = doc['state']
     error = doc.get('error')
@@ -113,8 +126,7 @@ def build_status(cache_key):
         state, error = FAILED, INTERRUPTED_MESSAGE
     queued_ahead = 0
     if state == QUEUED:
-        queued_ahead = builds_handle.count_documents(
-            {'state': QUEUED, 'requested_at': {'$lt': doc['requested_at']}})
+        queued_ahead = _queue_order().index(cache_key)
     since = doc.get('started_at') or doc.get('requested_at') or now
     return {
         'cache_key': cache_key,
@@ -129,6 +141,13 @@ def build_status(cache_key):
 # ---------------------------------------------------------------------------
 # Slots and promotion
 # ---------------------------------------------------------------------------
+
+def _queue_order():
+    """Queued keys, oldest first.  ``_id`` breaks ties: BSON dates are whole
+    milliseconds, and two requests in one millisecond happen."""
+    return [doc['_id'] for doc in builds_handle.find(
+        {'state': QUEUED}, {'_id': 1}, sort=[('requested_at', 1), ('_id', 1)])]
+
 
 def _slots():
     doc = builds_handle.find_one({'_id': SLOTS_ID})
@@ -164,27 +183,44 @@ def _release_slot(key):
     builds_handle.update_one({'_id': SLOTS_ID}, {'$pull': {'running': {'key': key}}})
 
 
-def start_pending():
-    """Promote queued builds into free slots and run them here.
+def _launch(cache_key):
+    """Start the build process for a claimed slot.  Returns its pid.
 
-    Every worker calls this -- after recording a request, and after finishing
-    a build -- so a queued build is picked up by whichever worker next has a
-    reason to look, without a scheduler process.  Returns the keys started.
+    Detached into its own session so that gunicorn recycling a worker does
+    not signal it; a container stop still ends it, and the lease covers that.
+    stdout and stderr are inherited, so the build's log lines land where the
+    workers' do.  S3_STATIC_FILES is unset for it so the app's ready() hook
+    does not start a static-file sync per build.
     """
-    from .background_tasks import _thread_executor
+    manage = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'manage.py')
+    env = {k: v for k, v in os.environ.items() if k != 'S3_STATIC_FILES'}
+    process = subprocess.Popen([sys.executable, manage, 'coamp_build', cache_key],
+                               cwd=os.path.dirname(manage), env=env,
+                               start_new_session=True)
+    return process.pid
+
+
+def start_pending():
+    """Promote queued builds into free slots and launch them.
+
+    Every worker calls this -- after recording a request, on each status
+    poll, and a build process calls it as it finishes -- so a queued build is
+    picked up by whichever process next has a reason to look, without a
+    scheduler.  Returns the keys started.
+    """
     started = []
     while True:
         now = _now()
         _slots()
-        candidate = builds_handle.find_one({'state': QUEUED}, sort=[('requested_at', 1)])
-        if candidate is None:
+        order = _queue_order()
+        if not order:
             break
-        key = candidate['_id']
+        key = order[0]
         if not _take_slot(key, now):
             break
         claimed = builds_handle.find_one_and_update(
             {'_id': key, 'state': QUEUED},
-            {'$set': {'state': RUNNING, 'started_at': now, 'worker_pid': os.getpid(),
+            {'$set': {'state': RUNNING, 'started_at': now,
                       'lease_until': now + datetime.timedelta(seconds=LEASE_SECONDS)}},
             return_document=ReturnDocument.AFTER)
         if claimed is None:
@@ -192,8 +228,16 @@ def start_pending():
             # slot we took is for a build we are not running.
             _release_slot(key)
             continue
-        _thread_executor.submit(run_build, key, claimed['project_ids'],
-                                task_label='coamp_graph_build')
+        try:
+            pid = _launch(key)
+        except Exception as e:
+            logging.exception("could not launch the co-amplification build for %s", key)
+            builds_handle.update_one({'_id': key}, {'$set': {
+                'state': FAILED, 'finished_at': _now(),
+                'error': f'The build could not be started: {type(e).__name__}: {e}'}})
+            _release_slot(key)
+            continue
+        builds_handle.update_one({'_id': key}, {'$set': {'build_pid': pid}})
         started.append(key)
     return started
 
@@ -204,7 +248,8 @@ def start_pending():
 
 def run_build(cache_key, project_ids):
     """concat -> Graph -> neo4j -> edge CSV, then release the slot and start
-    whatever is queued.  Imports are deferred: views imports this module."""
+    whatever is queued.  Runs in the build process (the management command);
+    imports are deferred because views imports this module."""
     from .views import concat_projects, _save_coamp_edges
     from .neo4j_utils import load_graph
     started = _now()
