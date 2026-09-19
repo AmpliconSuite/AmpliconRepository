@@ -251,10 +251,16 @@ def run_build(cache_key, project_ids):
     whatever is queued.  Runs in the build process (the management command);
     imports are deferred because views imports this module."""
     from .views import concat_projects, _save_coamp_edges
-    from .neo4j_utils import load_graph
+    from .neo4j_utils import load_graph, sweep_stale_method_graphs
     started = _now()
     error = None
     try:
+        # Graphs built by an earlier method can never be hit again; this is
+        # the off-request place to reclaim them.  Never fails the build.
+        try:
+            sweep_stale_method_graphs()
+        except Exception:
+            logging.exception("could not sweep stale-method graphs")
         projects_df, _ = concat_projects(project_ids)
         if projects_df.empty:
             error = 'No valid data found in selected projects.'

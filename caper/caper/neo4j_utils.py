@@ -4,7 +4,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
-from .coamp_graph import Graph
+from .coamp_graph import Graph, METHOD_HASH
 
 import pandas as pd
 import datetime
@@ -44,26 +44,58 @@ def get_driver():
 
 def generate_cache_key(project_ids):
     """
-    Generate a unique cache key from a list of project IDs.
-    Uses sorted concatenated string, or hash if too long.
-    
+    The key a graph is cached under: the selected project ids, then the hash of
+    the method that built it.
+
+    The ids part is the sorted ids joined with '_', or their SHA256 if that is
+    over 100 characters.  The method part is coamp_graph.METHOD_HASH -- the
+    statistics code, the gene annotation and the statistics dependencies -- so
+    a change to any of them changes every key and no cached graph or edge CSV
+    built by the old method can be hit again.  Keys from an older method are
+    swept by ``sweep_stale_method_graphs``.
+
     Parameters:
         project_ids (list): List of project IDs (can be strings or ObjectIds)
-    
+
     Returns:
         str: Cache key for the project combination
     """
-    # Convert all IDs to strings and sort them
     sorted_ids = sorted([str(pid) for pid in project_ids])
     concatenated = "_".join(sorted_ids)
-    
-    # If the concatenated string is too long (>100 chars), use hash
     if len(concatenated) > 100:
-        # Use SHA256 hash for consistent, collision-resistant key
-        hash_obj = hashlib.sha256(concatenated.encode('utf-8'))
-        return hash_obj.hexdigest()
-    
-    return concatenated
+        concatenated = hashlib.sha256(concatenated.encode('utf-8')).hexdigest()
+    return f"{concatenated}.{METHOD_HASH}"
+
+
+def is_current_method_key(cache_key):
+    return isinstance(cache_key, str) and cache_key.endswith(f".{METHOD_HASH}")
+
+
+def sweep_stale_method_graphs():
+    """Drop every cached graph (and its CSV) whose key was made by another
+    method hash.  Returns the keys removed.
+
+    Called from the build process, not a request: on prod on 2026-09-19 the
+    cache held 24 graphs and 6.08 M relationships, and the first deploy that
+    changes the method orphans all of them at once.  The build process is
+    already off the request path and already talking to neo4j.
+    """
+    driver = get_driver()
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (m:GraphMetadata) RETURN collect(DISTINCT m.cache_key) AS keys
+            """)
+        keys = set(result.single()['keys'] or [])
+        result = session.run("""
+            MATCH (n:Node) WHERE n.cache_key IS NOT NULL
+            RETURN collect(DISTINCT n.cache_key) AS keys
+            """)
+        keys.update(result.single()['keys'] or [])
+        stale = sorted(k for k in keys if not is_current_method_key(k))
+        if stale:
+            _clear_cache_keys(session, stale)
+            logging.info("[CACHE] swept %d cached graph(s) built by an earlier method", len(stale))
+    return stale
 
 
 def check_cached_graph(project_ids):
@@ -575,11 +607,13 @@ def clear_graph_cache_for_project(project_id):
         )
         cache_keys = result.single()['keys'] or []
 
-        # A single-project graph is keyed by the bare project ID (see
-        # generate_cache_key), so it can be cleaned up even if its metadata node
-        # is missing.
-        if project_id not in cache_keys:
-            cache_keys.append(project_id)
+        # A single-project graph's key is derivable from the id alone (see
+        # generate_cache_key), so it can be cleaned up even if its metadata
+        # node is missing; the bare id is the form keys had before the method
+        # hash was appended.
+        for key in (generate_cache_key([project_id]), project_id):
+            if key not in cache_keys:
+                cache_keys.append(key)
 
         _clear_cache_keys(session, cache_keys)
         print(f"Cleared {len(cache_keys)} graph cache entry/entries for project {project_id}")
@@ -701,6 +735,7 @@ def list_cached_graphs():
                 'recorded_edge_count': record['edge_count'],
                 'size_bytes': stats['size_bytes'],
                 'orphaned': False,
+                'stale_method': not is_current_method_key(record['cache_key']),
             })
 
         # Whatever is left in `measured` has graph data but no metadata node.
@@ -713,6 +748,7 @@ def list_cached_graphs():
                 'edge_count': stats['edge_count'],
                 'recorded_node_count': None,
                 'recorded_edge_count': None,
+                'stale_method': not is_current_method_key(cache_key),
                 'size_bytes': stats['size_bytes'],
                 'orphaned': True,
             })

@@ -83,6 +83,7 @@
                             <td>
                                 <code style="font-size:0.8em;">{{ cache.cache_key|truncatechars:40 }}</code>
                                 {% if cache.orphaned %}<span class="badge badge-warning" title="No metadata entry - unreachable but still stored">orphaned</span>{% endif %}
+                                {% if cache.stale_method %}<span class="badge badge-secondary" title="Built by an earlier version of the statistics - unreachable; swept by the next graph build">stale method</span>{% endif %}
                             </td>
                             <td style="font-size:0.9em;">{{ cache.project_ids|join:", "|truncatechars:100 }}</td>
                             <td>{% if cache.timestamp %}{{ cache.timestamp|date:"M d, Y H:i" }}{% else %}&mdash;{% endif %}</td>

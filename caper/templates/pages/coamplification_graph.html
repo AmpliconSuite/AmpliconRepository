@@ -197,7 +197,7 @@
                             <input type="checkbox" class="project-checkbox"
                                    id="project_{{ forloop.counter }}"
                                    name="selected_projects"
-                                   value="{{ project.project_name }}">
+                                   value="{{ project.linkid }}">
                         </td>
                         <td><a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
                         <td>{{ project.description }}</td>
