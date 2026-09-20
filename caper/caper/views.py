@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 from .background_tasks import _thread_executor, get_background_task_status
 from . import version_purge
+from .canonical import project_canonical_url, sample_canonical_url
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -1128,6 +1129,8 @@ def project_page(request, project_name, message=''):
         'debug_delete_flag': debug_delete_flag,  # DEBUG: display delete flag
         'debug_current_flag': debug_current_flag,  # DEBUG: display current flag
         'visibility_display': format_visibility_for_display(project.get('private', True)),  # Formatted visibility
+        # Superseded linkids render this same page; file it under the head.
+        'CANONICAL_URL': project_canonical_url(collection_handle, project),
     })
 
 
@@ -2016,6 +2019,7 @@ def sample_page(request, project_name, sample_name):
                    'reference_versions': json.dumps(reference_version),
                    'ec3d_available': ec3d_available,  # New context variable
                    'ecDNA_context': ecDNA_context,  # Add ecDNA_context dictionary
+                   'CANONICAL_URL': sample_canonical_url(collection_handle, project, sample_name),
         }
     )
 
