@@ -8,6 +8,7 @@
     <meta name="keywords" content="{% block meta_keywords %}amplicon architect, ecDNA, cancer, bioinformatics, genomics, extrachromosomal dna, double minute, oncogene amplification, ampliconarchitect, bfb, breakage fusion bridge{% endblock %}">
     <meta name="description" content="{% block meta_description %}A community-accessible repository for focal amplification calls in tumor samples {% endblock %}">
     <link rel="icon" type="image/x-icon" href="{% static 'img/favicon.ico' %}">
+    {% if CANONICAL_URL %}<link rel="canonical" href="{{ CANONICAL_URL }}">{% endif %}
 
     <title>{% block meta_title %}{% endblock %}{% if settings.SITE_TITLE %} | {{ settings.SITE_TITLE }}{% endif %}</title>
 

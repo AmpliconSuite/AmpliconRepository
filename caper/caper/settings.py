@@ -555,6 +555,8 @@ TEMPLATES = [
                 "caper.context_processor.server_identification_banner",
                 "caper.context_processor.shutdown_mode",
                 "caper.context_processor.registration_mode",
+                # <link rel="canonical"> on every page; see caper/canonical.py.
+                "caper.canonical.canonical_url_context",
 
             ],
             "loaders": [

@@ -600,6 +600,17 @@ crawl-permitting `robots.txt`. The removal has two stages and the order matters:
 Doing stage 2 first would stop Google re-fetching those pages and therefore stop
 it ever seeing the noindex, leaving the URLs in the index indefinitely.
 
+### Canonical URLs
+
+Every page carries `<link rel="canonical">`, built from `SITE_URL` (never from
+the request's own host) with the query string dropped; project and sample pages
+name the head of the project's version chain whichever `linkid` was asked for.
+That is what tells a search engine that `www.`, the apex, a superseded `linkid`
+and `?display_all_chr=1` are one page. Set `SITE_URL` to the address the
+deployment should be known by. A deployment with `DEV_GATE_ENABLED` emits no
+canonical at all, since every response there is already `noindex`. See
+`caper/caper/canonical.py`.
+
 # Logging in as admin <a name="admin-logging"></a> 
  - Please see the [wiki page on admin login](https://github.com/mesirovlab/AmpliconRepository/wiki/Becoming-Admin-on-a-development-server).
 
