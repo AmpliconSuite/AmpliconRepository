@@ -216,6 +216,22 @@ purges the GridFS payload, so clearing the markers would leave a version that
 resolves by URL and has no data behind it. Such a version is already visible in
 the history table, marked as deleted.
 
+### Shutdown mode during a deploy
+The deploy runbooks in the
+[wiki](https://github.com/AmpliconSuite/AmpliconRepository/wiki) open by
+enabling shutdown mode and close by disabling it. Without a browser session,
+use `shutdown_mode.py` from the server's checkout, which the container mounts
+at `/srv`:
+```bash
+docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev status
+docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev on     # refuses while tasks run
+docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev wait   # blocks until none run
+docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev off
+```
+On prod the container is `amplicon-prod` and the database `caper`; `on` and
+`off` there are prod writes. Its docstring explains why "no running tasks" means
+no task younger than about an hour.
+
 ### Do NOT commit
 - `caper/caper.sqlite3`
 - `caper/config.sh` / `.env`
