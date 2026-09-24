@@ -4009,7 +4009,27 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
         # (handled by _process_and_aggregate_files)
 
 
-def edit_project_into_new_version(request, project_name, project, form_dict, form, metadata_file, 
+def drop_prefilled_versions(form_data, old_project):
+    """Reset version fields the user left at the edit page's pre-filled value.
+
+    The edit page pre-fills AA/AC/AS-p versions with the old version's stored
+    values, and build_project_document() treats any non-NA form value as typed
+    by the user, unioning it with what the new data holds. When the upload
+    replaces the project, those values describe data that is gone, so a
+    project re-run with a newer tool would keep listing the old version too.
+
+    Append and reaggregate keep the old samples, so the carried value still
+    describes some of the data; only replace calls this. A value the user
+    actually changed is kept.
+    """
+    for key in ('AA_version', 'AC_version', 'ASP_version'):
+        submitted = str(form_data.get(key, '') or '').strip()
+        prefilled = str(old_project.get(key, '') or '').strip()
+        if submitted and submitted == prefilled:
+            form_data[key] = 'NA'
+
+
+def edit_project_into_new_version(request, project_name, project, form_dict, form, metadata_file,
                                    samples_to_remove, remap_sample_names, file_fps, temp_proj_id, 
                                    project_data_path, reaggregate_project=False):
     """
@@ -4175,6 +4195,8 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             # mutated, so form_data would otherwise carry the original empty string.
             # Sync the alias explicitly so the background thread gets the right value.
             form_data['alias'] = form_dict.get('alias', '')
+            if replace_project:
+                drop_prefilled_versions(form_data, project)
 
             logging.info(f"EditProject - start background thread to _process_edit_and_notify")
             _thread_executor.submit(

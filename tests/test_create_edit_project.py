@@ -1168,6 +1168,88 @@ def test_alias_propagates_to_new_version_on_reaggregate(
             _cleanup_project(mongo_collection, pid)
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize('mode, expected_ac', [('replace', 'NA'), ('append', '1.3.3')])
+def test_prefilled_versions_dropped_only_on_replace(
+        request_factory, test_user, mongo_collection, mode, expected_ac):
+    """
+    The edit page pre-fills the version fields with the old version's values.
+    Submitted unchanged with a replacement archive, they must not reach the new
+    version, or it lists tool versions its data does not contain. Append keeps
+    the old samples, so it keeps the value.
+    """
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from unittest.mock import MagicMock, patch
+    from caper.views import edit_project_page
+
+    doc = {
+        'project_name': 'PrefilledVersionTest',
+        'creator': test_user.username,
+        'private': 'private',
+        'delete': False,
+        'current': True,
+        'FINISHED?': True,
+        'previous_versions': [],
+        'runs': {'run1': [{'Sample_name': 'Sample_001', 'Classification': 'No amp/Del', 'Features': []}]},
+        'project_members': [test_user.username, test_user.email],
+        'views': 0,
+        'downloads': 0,
+        'date': '2024-01-01',
+        'sample_count': 1,
+        'AA_version': '1.5.r2',
+        'AC_version': '1.3.3',
+        'ASP_version': '1.3.9',
+    }
+    result = mongo_collection.insert_one(doc)
+    project_id = str(result.inserted_id)
+    mongo_collection.update_one(
+        {'_id': result.inserted_id},
+        {'$set': {'linkid': project_id}}
+    )
+
+    captured = {}
+    placeholder_ids = []
+
+    def _fake_submit(fn, *args, **kwargs):
+        captured['form_data'] = args[4]
+        placeholder_ids.append(args[1])
+        return MagicMock()
+
+    try:
+        data = {
+            'project_name': 'PrefilledVersionTest',
+            'description': 'Pre-filled version test',
+            'private': 'private',
+            'publication_link': '',
+            'project_members': '',
+            'alias': '',
+            'remap_sample_names': 'false',
+            'project_mode': mode,
+            'accept_license': 'on',
+            # Exactly what the edit page pre-fills, except AA, which the user edited.
+            'AA_version': '1.6.0',
+            'AC_version': '1.3.3',
+            'ASP_version': '1.3.9',
+            'document': SimpleUploadedFile('new.tar.gz', b'not aggregated in this test'),
+        }
+        request = request_factory.post(f'/project/{project_id}/edit', data=data)
+        request.user = test_user
+
+        with patch('caper.views._thread_executor') as mock_executor:
+            mock_executor.submit.side_effect = _fake_submit
+            edit_project_page(request, project_name=project_id)
+
+        assert 'form_data' in captured, 'the edit did not start a new version'
+        form_data = captured['form_data']
+        assert form_data.get('AC_version') == expected_ac
+        assert form_data.get('ASP_version') == ('NA' if mode == 'replace' else '1.3.9')
+        assert form_data.get('AA_version') == '1.6.0', 'a value the user changed must survive'
+
+    finally:
+        for pid in [project_id] + placeholder_ids:
+            _cleanup_project(mongo_collection, pid)
+
+
 @pytest.mark.slow
 @pytest.mark.integration
 def test_metadata_xlsx_applied_on_create(

@@ -78,3 +78,39 @@ def test_classify_ac_version_unidentified():
     # None, empty, and placeholder/garbage strings with no parseable version.
     for value in (None, '', 'NA', 'None', 'Not Provided', 'unknown'):
         assert classify_ac_version(value) == AC_VERSION_UNIDENTIFIED, value
+
+
+def test_replace_drops_versions_left_at_prefilled_value():
+    from caper.views import drop_prefilled_versions
+
+    old_project = {'AA_version': '1.5.r2', 'AC_version': '1.3.3', 'ASP_version': '1.3.9'}
+    form_data = {'AA_version': '1.5.r2', 'AC_version': '1.3.3', 'ASP_version': '1.3.9'}
+
+    drop_prefilled_versions(form_data, old_project)
+
+    assert form_data == {'AA_version': 'NA', 'AC_version': 'NA', 'ASP_version': 'NA'}
+
+
+def test_replace_keeps_versions_the_user_changed():
+    from caper.views import drop_prefilled_versions
+
+    old_project = {'AA_version': '1.5.r2', 'AC_version': '1.3.3'}
+    form_data = {'AA_version': '1.5.r2', 'AC_version': '2.0.0', 'ASP_version': 'NA'}
+
+    drop_prefilled_versions(form_data, old_project)
+
+    assert form_data == {'AA_version': 'NA', 'AC_version': '2.0.0', 'ASP_version': 'NA'}
+
+
+def test_replaced_project_reports_only_the_new_data_versions():
+    from caper.views import drop_prefilled_versions, get_tool_versions
+
+    old_project = {'AC_version': '1.3.3'}
+    form_data = {'AC_version': '1.3.3'}
+    drop_prefilled_versions(form_data, old_project)
+
+    # build_project_document pre-seeds only non-NA form values.
+    project = {k: v for k, v in form_data.items() if v.upper() != 'NA'}
+    get_tool_versions(project, {'s1': [{'AmpliconClassifier version': '2.0.0'}]})
+
+    assert project['AC_version'] == '2.0.0'
