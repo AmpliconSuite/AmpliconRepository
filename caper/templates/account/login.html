@@ -95,4 +95,29 @@
   </div>
 </div>
 
+<script>
+  // One submit per page load.  Logging in rotates the CSRF token, so a second
+  // POST of this form -- a second tap, or a phone's password autofill
+  // submitting it while the redirect loads -- carries the stale token and gets
+  // a 403 even though the first POST logged the user in.  Seen on prod
+  // 2026-09-24: 302 on the login POST, then a 403 on a repeat 1.3 s later.
+  (function () {
+    var form = document.querySelector('form.login');
+    var button = form.querySelector('button[type="submit"]');
+    form.addEventListener('submit', function (event) {
+      if (form.dataset.submitted) {
+        event.preventDefault();
+        return;
+      }
+      form.dataset.submitted = 'true';
+      button.disabled = true;
+    });
+    // Back-button restores from the bfcache keep the disabled state; undo it.
+    window.addEventListener('pageshow', function () {
+      delete form.dataset.submitted;
+      button.disabled = false;
+    });
+  })();
+</script>
+
 {% endblock %}
