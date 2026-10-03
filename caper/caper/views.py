@@ -92,7 +92,7 @@ from .utils import (
     replace_space_to_underscore, sample_data_from_feature_list,
     get_all_alias, get_projects_close_cursor, create_user_list,
     preprocess_sample_data, validate_project, replace_underscore_keys,
-    get_latest_project_version, flatten, classify_ac_version,
+    get_latest_project_version, flatten, classify_ac_version, project_members_of,
     delete_gridfs_file,
     AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
@@ -612,6 +612,10 @@ def reference_genome_from_sample(sample_data):
 
 
 def is_user_a_project_member(project, request):
+    # Anonymous first, before project_members_of() can cost a query: crawlers
+    # reach old versions too.
+    if not getattr(getattr(request, 'user', None), 'is_authenticated', False):
+        return False
     try:
         current_user_email = request.user.email
         current_user_username = request.user.username
@@ -621,9 +625,10 @@ def is_user_a_project_member(project, request):
         current_user_email = 0
         current_user_username = 0
 
-    if current_user_username in project['project_members']:
+    members = project_members_of(project)
+    if current_user_username in members:
         return True
-    if current_user_email in project['project_members']:
+    if current_user_email in members:
         return True
     return False
 
@@ -4322,13 +4327,12 @@ def _render_old_version_edit(request, project, head, form=None):
     if form is None:
         form = OldVersionEditForm(initial={
             'description': project.get('description', ''),
-            'publication_link': project.get('publication_link') or '',
             **{key: project.get(key, 'NA') for key in OLD_VERSION_TOOL_FIELDS},
         })
     tools = project.get('Reconstruction_tools')
-    shown_fields = ['description', 'publication_link', 'AC_version']
+    shown_fields = ['description', 'AC_version']
     if not tools or 'AmpliconArchitect' in tools:
-        shown_fields[2:2] = ['ASP_version', 'AA_version']
+        shown_fields[1:1] = ['ASP_version', 'AA_version']
     if tools and 'CoRAL' in tools:
         shown_fields.append('CoRAL_version')
     return render(request, "pages/edit_project_version.html", {
@@ -4340,7 +4344,7 @@ def _render_old_version_edit(request, project, head, form=None):
 
 
 def edit_old_version(request, project, head):
-    """Correct an old version's description, publication link and tool versions.
+    """Correct an old version's description and tool versions.
 
     Written to that version's document alone. Nothing else holds a copy that a
     reader uses: the history table reads each version's own document, and the
@@ -4364,8 +4368,7 @@ def edit_old_version(request, project, head):
     if not form.is_valid():
         return _render_old_version_edit(request, project, head, form)
 
-    submitted = {'description': form.cleaned_data['description'],
-                 'publication_link': form.cleaned_data['publication_link']}
+    submitted = {'description': form.cleaned_data['description']}
     for key in OLD_VERSION_TOOL_FIELDS:
         if key in request.POST:
             submitted[key] = form.cleaned_data[key].strip() or 'NA'
@@ -5677,6 +5680,11 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
 
 def create_project(request):
     if request.method == "POST":
+        # The page offers the form only to signed-in users, but nothing stopped
+        # the POST itself: an anonymous one made a project with creator '' and
+        # no members, which nobody could then edit, delete or (if private) see.
+        if not request.user.is_authenticated:
+            return HttpResponse("Sign in to create a project.", status=403)
         ## preprocess request
         # request = preprocess(request)
         logging.info(f"Starting create project")

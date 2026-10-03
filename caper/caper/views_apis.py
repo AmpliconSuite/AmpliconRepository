@@ -41,7 +41,7 @@ from .api_errors import API_V1_PREFIX
 from .utils import (
     collection_handle, get_one_project, get_one_project_sans_runs, form_to_dict,
     get_latest_project_version, normalize_visibility_field, is_project_private,
-    fs_handle, PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES,
+    fs_handle, PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES, project_members_of,
 )
 from .project_version_cleanup import retarget_deleted_version_tombstones
 from .extra_metadata import *
@@ -512,7 +512,8 @@ def _user_can_access_project(project, user):
         return True
     if user is None:
         return False
-    members = project.get('project_members', [])
+    # The current version's list, for an old version too: membership is chain-level.
+    members = project_members_of(project)
     return user.username in members or (user.email and user.email in members)
 
 

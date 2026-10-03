@@ -1,16 +1,17 @@
-"""Editing an old version of a project: its description, link and tool versions.
+"""Editing an old version of a project: its description and tool versions.
 
 Before this, GET /project/<old>/edit redirected to the current version and
 nothing stopped a POST, which ran the full edit on the old document -- clearing
 its alias, rewriting its members and date, or making a new version out of it.
 
 The rules held here:
-  * an old version's own description, publication link and tool versions can
-    be corrected, and nothing else on it or on any other version moves;
-  * edit permission comes from the current version, not the old document's
-    stale copy of project_members;
+  * an old version's own description and tool versions can be corrected, and
+    nothing else on it or on any other version moves;
+  * membership is chain-level: every check on an old version reads the current
+    version's project_members, not the old document's frozen copy;
   * anything that needs a new version is refused on an old version, and so is
-    any edit at all to an old version whose project is deleted.
+    any edit at all to an old version whose project is deleted;
+  * creating a project needs a signed-in user.
 """
 import pytest
 from bson.objectid import ObjectId
@@ -105,7 +106,6 @@ def _post(request_factory, user, doc_id, data):
 
 
 EDIT = {'description': 'corrected description',
-        'publication_link': 'https://doi.org/10.1000/xyz',
         'ASP_version': '1.3.5', 'AA_version': '1.3.r9', 'AC_version': '1.1.2'}
 
 
@@ -133,7 +133,7 @@ def test_post_changes_only_the_old_versions_own_fields(
     after_old = mongo_collection.find_one({'_id': old_id})
     changed = {k for k in set(before_old) | set(after_old)
                if before_old.get(k) != after_old.get(k)}
-    assert changed == {'description', 'publication_link', 'AA_version'}
+    assert changed == {'description', 'AA_version'}
     assert after_old['AA_version'] == '1.3.r9'
     assert after_old['description'] == 'corrected description'
     assert mongo_collection.find_one({'_id': head_id}) == before_head
@@ -174,7 +174,7 @@ def test_no_change_writes_nothing(
     from caper.views import audit_log_handle
     old_id, _ = make_chain()
     before = mongo_collection.find_one({'_id': old_id})
-    data = {'description': 'old description', 'publication_link': '',
+    data = {'description': 'old description',
             'ASP_version': '1.3.5', 'AA_version': '1.3.r8', 'AC_version': '1.1.2'}
     request, _ = _post(request_factory, test_user, old_id, data)
     assert mongo_collection.find_one({'_id': old_id}) == before
@@ -252,3 +252,106 @@ def test_project_page_offers_edit_on_an_old_version_to_members_only(
         request.user = user
         html = project_page(request, str(old_id)).content.decode()
         assert (edit_url in html) is expected, user.username
+
+
+def test_a_chain_level_field_posted_to_an_old_version_is_not_written(
+        request_factory, test_user, make_chain, mongo_collection, no_s3):
+    """publication_link, like members and visibility, belongs to the project."""
+    old_id, _ = make_chain()
+    _post(request_factory, test_user, old_id,
+          dict(EDIT, publication_link='https://doi.org/10.1000/xyz',
+               project_members='someone_else', private='public', project_name='Renamed'))
+    doc = mongo_collection.find_one({'_id': old_id})
+    assert doc['publication_link'] == '' and doc['private'] == 'private'
+    assert doc['project_name'] == 'OldVersionEditTest'
+    assert doc['project_members'] == [test_user.username]
+
+
+# ---------------------------------------------------------------------------
+# Membership is chain-level
+# ---------------------------------------------------------------------------
+
+def _request_as(request_factory, user, path='/'):
+    request = _with_messages(request_factory.get(path))
+    request.user = user
+    return request
+
+
+def test_member_added_later_is_a_member_of_old_versions(
+        request_factory, test_user, non_member_user, make_chain, mongo_collection):
+    from caper.views import is_user_a_project_member, project_page
+    old_id, _ = make_chain(old_members=[test_user.username],
+                           head_members=[test_user.username, non_member_user.username])
+    old = mongo_collection.find_one({'_id': old_id})
+    request = _request_as(request_factory, non_member_user, f'/project/{old_id}')
+    assert is_user_a_project_member(old, request)
+    assert project_page(request, str(old_id)).status_code == 200
+
+
+def test_member_removed_later_is_not_a_member_of_old_versions(
+        request_factory, test_user, non_member_user, make_chain, mongo_collection):
+    from django.http import Http404
+    from caper.views import is_user_a_project_member, project_page
+    old_id, _ = make_chain(old_members=[test_user.username, non_member_user.username],
+                           head_members=[test_user.username])
+    old = mongo_collection.find_one({'_id': old_id})
+    request = _request_as(request_factory, non_member_user, f'/project/{old_id}')
+    assert not is_user_a_project_member(old, request)
+    with pytest.raises(Http404):
+        project_page(request, str(old_id))
+
+
+def test_the_current_version_answers_from_its_own_list(
+        request_factory, test_user, non_member_user, make_chain, mongo_collection):
+    from caper.views import is_user_a_project_member
+    _, head_id = make_chain(old_members=[non_member_user.username],
+                            head_members=[test_user.username])
+    head = mongo_collection.find_one({'_id': head_id})
+    assert is_user_a_project_member(head, _request_as(request_factory, test_user))
+    assert not is_user_a_project_member(head, _request_as(request_factory, non_member_user))
+
+
+def test_anonymous_is_never_a_member_and_costs_no_chain_lookup(
+        request_factory, make_chain, mongo_collection, monkeypatch):
+    from django.contrib.auth.models import AnonymousUser
+    from caper import views
+    old_id, _ = make_chain()
+    old = mongo_collection.find_one({'_id': old_id})
+    monkeypatch.setattr(views, 'project_members_of',
+                        lambda project: pytest.fail('looked up the chain for an anonymous visitor'))
+    assert not views.is_user_a_project_member(old, _request_as(request_factory, AnonymousUser()))
+
+
+@pytest.mark.parametrize('added_later', [True, False])
+def test_the_api_reads_membership_from_the_current_version_too(
+        test_user, non_member_user, make_chain, mongo_collection, added_later):
+    """/api/v1/ resolves old version ids as well, through its own access check."""
+    from caper.views_apis import _user_can_access_project
+    if added_later:
+        old_id, _ = make_chain(old_members=[test_user.username],
+                               head_members=[test_user.username, non_member_user.username])
+    else:
+        old_id, _ = make_chain(old_members=[test_user.username, non_member_user.username],
+                               head_members=[test_user.username])
+    old = mongo_collection.find_one({'_id': old_id})
+    assert _user_can_access_project(old, non_member_user) is added_later
+
+
+# ---------------------------------------------------------------------------
+# Creating a project needs a signed-in user
+# ---------------------------------------------------------------------------
+
+def test_anonymous_create_project_post_is_refused(request_factory, mongo_collection):
+    from django.contrib.auth.models import AnonymousUser
+    from conftest import DATASET_SMALL_TAR
+    from caper.views import create_project
+    before = mongo_collection.count_documents({})
+    with open(DATASET_SMALL_TAR, 'rb') as fh:
+        request = request_factory.post('/create-project/', data={
+            'project_name': 'AnonymousCreateTest', 'description': 'x', 'private': 'private',
+            'publication_link': '', 'project_members': '', 'alias': '',
+            'accept_license': 'on', 'document': fh})
+    request.user = AnonymousUser()
+    response = create_project(request)
+    assert response.status_code == 403
+    assert mongo_collection.count_documents({}) == before

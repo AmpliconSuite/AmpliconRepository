@@ -30,7 +30,9 @@ from .project_status import (
     STATUS_FLAG_FIELDS,
     project_runs,
     LIVE,
+    SUPERSEDED,
     TOMBSTONE,
+    classify as classify_status,
     combine,
     is_tombstone,
     iter_lineage_references,
@@ -1392,6 +1394,33 @@ def get_latest_project_version(project):
 
     prepare_project_linkid(current)
     return current
+
+# What reading a chain's membership needs from each member.
+_MEMBERSHIP_PROJECTION = dict(lineage.POINTER_PROJECTION, project_members=1)
+
+
+def project_members_of(project):
+    """The project's member list, read from the current version.
+
+    Membership is chain-level (project_fields.CHAIN_LEVEL): a member of the
+    project is a member of every version. Each version stores its own copy, but
+    an edit writes only the current version, so an old version's copy is frozen
+    at the moment it was superseded. On prod on 2026-10-03, 22 of 88 superseded
+    versions with a live head had a different list, and in all 22 the head named
+    someone the old copy did not: people added later could not open the
+    project's older private versions.
+
+    The site's is_user_a_project_member() and the API's access check both read
+    this, so the two cannot answer differently for the same old version.
+    """
+    if classify_status(project) == SUPERSEDED:
+        members = lineage.chain_members(collection_handle, project, _MEMBERSHIP_PROJECTION)
+        if members and not lineage.is_head(project, members):
+            head = lineage.head(members)
+            if head is not None:
+                return head.get('project_members') or []
+    return project.get('project_members') or []
+
 
 def get_one_project_sans_runs(project_name_or_uuid, projection=None):
     """
