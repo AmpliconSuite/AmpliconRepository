@@ -874,6 +874,9 @@
            }
            </script>
         {%  endif %}</h2>
+        {% elif old_version_may_edit %}
+            <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit this version's description and tool versions"><i class="fas fa-edit" style="font-size: 24px"></i></a></h2>
+        {% else %}</h2>
         {% endif %}
 
         <br>

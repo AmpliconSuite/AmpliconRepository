@@ -121,6 +121,26 @@ class UpdateForm(forms.ModelForm):
         self.fields['CoRAL_version'].widget.attrs.update({'placeholder': 'Optional: List of CoRAL versions used in this project separated by spaces or commas'})
 
 
+class OldVersionEditForm(forms.Form):
+    """The fields a superseded version may still have corrected.
+
+    Each one describes that version alone. Title, visibility, members and alias
+    belong to the project as a whole and are edited on the current version;
+    samples and data cannot change without making a new version, and a new
+    version made from an old one would fork the history.
+    """
+    description = forms.CharField(max_length=1000, required=False, widget=forms.Textarea(attrs={'rows': 4}))
+    publication_link = forms.CharField(max_length=1000, required=False)
+    ASP_version = forms.CharField(max_length=1000, required=False, label="AmpliconSuite-pipeline version(s)")
+    AA_version = forms.CharField(max_length=1000, required=False, label="AmpliconArchitect version(s)")
+    AC_version = forms.CharField(max_length=1000, required=False, label="AmpliconClassifier version(s)")
+    CoRAL_version = forms.CharField(max_length=1000, required=False, label="CoRAL version(s)")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['publication_link'].widget.attrs.update({'placeholder': 'Optional: Provide a PMID or link to a publication'})
+
+
 class FeaturedProjectForm(forms.ModelForm):
     class Meta:
         model = FeaturedProjectUpdate
