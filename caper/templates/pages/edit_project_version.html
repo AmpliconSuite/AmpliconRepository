@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% load crispy_forms_tags %}
+
+{% block main %}
+
+<h1>Editing an older version of '{{ project.project_name }}'</h1>
+
+<div class="alert alert-info" role="alert">
+    This is the version from <b>{{ project.date }}</b>. Changes here apply to this version only;
+    the <a href="{% url 'project_page' project_name=head_id %}">current version</a> is not affected.
+    Title, visibility, members, publication link and samples can only be changed on the
+    <a href="{% url 'edit_project_page' project_name=head_id %}">current version</a>.
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    {% for field in fields %}
+        {{ field | as_crispy_field }}
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a class="btn btn-secondary" href="{% url 'project_page' project_name=project.linkid %}">Cancel</a>
+</form>
+
+{% endblock %}

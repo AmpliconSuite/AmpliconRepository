@@ -74,7 +74,7 @@ from django.conf import settings
 from django.db.models import Q
 
 # from .models import File
-from .forms import RunForm, UpdateForm, UserPreferencesForm, DownloadCaptchaForm
+from .forms import RunForm, UpdateForm, OldVersionEditForm, UserPreferencesForm, DownloadCaptchaForm
 from .download_gate import (
     download_gate, grant_download_pass, internal_download_headers,
     is_download_path, may_download, pass_duration_label,
@@ -92,7 +92,7 @@ from .utils import (
     replace_space_to_underscore, sample_data_from_feature_list,
     get_all_alias, get_projects_close_cursor, create_user_list,
     preprocess_sample_data, validate_project, replace_underscore_keys,
-    get_latest_project_version, flatten, classify_ac_version,
+    get_latest_project_version, flatten, classify_ac_version, project_members_of,
     delete_gridfs_file,
     AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
@@ -112,6 +112,7 @@ from .project_status import (
     TOMBSTONE_MARKER_FIELDS,
     SUPERSEDED,
     TOMBSTONE,
+    classify as classify_status,
     combine,
     status_after,
     status_flags,
@@ -611,6 +612,10 @@ def reference_genome_from_sample(sample_data):
 
 
 def is_user_a_project_member(project, request):
+    # Anonymous first, before project_members_of() can cost a query: crawlers
+    # reach old versions too.
+    if not getattr(getattr(request, 'user', None), 'is_authenticated', False):
+        return False
     try:
         current_user_email = request.user.email
         current_user_username = request.user.username
@@ -620,9 +625,10 @@ def is_user_a_project_member(project, request):
         current_user_email = 0
         current_user_username = 0
 
-    if current_user_username in project['project_members']:
+    members = project_members_of(project)
+    if current_user_username in members:
         return True
-    if current_user_email in project['project_members']:
+    if current_user_email in members:
         return True
     return False
 
@@ -979,7 +985,16 @@ def project_page(request, project_name, message=''):
     )
 
     set_project_edit_OK_flag(project, request)
-    
+
+    # Old versions get their own edit form, with permission taken from the
+    # current version. Signed-in users only, so anonymous traffic to old
+    # versions pays no extra query.
+    old_version_may_edit = False
+    if viewing_old_project and getattr(getattr(request, 'user', None), 'is_authenticated', False):
+        old_version_head = editable_old_version_head(project)
+        old_version_may_edit = (old_version_head is not None
+                                and may_edit_old_version(old_version_head, request))
+
     # Check if user is actually a project member (for subscription checkbox visibility)
     is_project_member = is_user_a_project_member(project, request)
 
@@ -1123,6 +1138,7 @@ def project_page(request, project_name, message=''):
         'is_project_member': is_project_member,  # Pass actual membership status for subscription UI
         'proj_id': project_name,
         'viewing_old_project': viewing_old_project,
+        'old_version_may_edit': old_version_may_edit,
         'has_outdated_ac': has_outdated_ac,  # Strong warning: pre-v2 AmpliconClassifier results
         'ac_version_unidentified': ac_version_unidentified,  # Soft warning: AC version unknown
         'is_empty_project': is_empty_project,  # Pass this flag to the template
@@ -4254,6 +4270,140 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
     return None  # Indicate no new version was created
 
 
+# What a chain-head lookup needs to read: the pointers, the status flags, and
+# the two fields edit permission is decided on.
+_HEAD_PROJECTION = dict(
+    lineage.POINTER_PROJECTION,
+    **{field: 1 for field in STATUS_FLAG_FIELDS},
+    project_members=1, private=1)
+
+# The version fields an old version's form can carry. AA/AS-p are only rendered
+# for AmpliconArchitect projects and CoRAL only for CoRAL ones, as on the main
+# edit page, so a field absent from the POST is left as stored, not cleared.
+OLD_VERSION_TOOL_FIELDS = ('ASP_version', 'AA_version', 'AC_version', 'CoRAL_version')
+
+
+def chain_head_if_not_head(project):
+    """The current version of *project*'s chain, or None if *project* is it.
+
+    None too for a document with no chain, which has no other version to be
+    behind.
+    """
+    members = lineage.chain_members(collection_handle, project, _HEAD_PROJECTION)
+    if not members or lineage.is_head(project, members):
+        return None
+    return lineage.head(members)
+
+
+def editable_old_version_head(project):
+    """The live head *project* is an old version of, or None.
+
+    Only a plain superseded version of a live project qualifies. A tombstone
+    has no payload left to describe, and the old versions of a deleted project
+    are not something to keep curating.
+    """
+    if project is None or classify_status(project) != SUPERSEDED:
+        return None
+    head = chain_head_if_not_head(project)
+    if head is None or classify_status(head) != LIVE:
+        return None
+    return head
+
+
+def may_edit_old_version(head, request):
+    """Edit permission for an old version, decided on the current version.
+
+    The old document's own project_members is a copy taken when it was
+    superseded, so someone removed from the project since would still be on it.
+    """
+    if not getattr(request.user, 'is_authenticated', False):
+        return False
+    is_admin = getattr(request.user, 'is_staff', False)
+    visibility = normalize_visibility_field(head.get('private', 'private'))
+    return is_user_a_project_member(head, request) or (is_admin and is_project_public(visibility))
+
+
+def _render_old_version_edit(request, project, head, form=None):
+    if form is None:
+        form = OldVersionEditForm(initial={
+            'description': project.get('description', ''),
+            **{key: project.get(key, 'NA') for key in OLD_VERSION_TOOL_FIELDS},
+        })
+    tools = project.get('Reconstruction_tools')
+    shown_fields = ['description', 'AC_version']
+    if not tools or 'AmpliconArchitect' in tools:
+        shown_fields[1:1] = ['ASP_version', 'AA_version']
+    if tools and 'CoRAL' in tools:
+        shown_fields.append('CoRAL_version')
+    return render(request, "pages/edit_project_version.html", {
+        'project': project,
+        'head_id': str(head['_id']),
+        'form': form,
+        'fields': [form[name] for name in shown_fields],
+    })
+
+
+def edit_old_version(request, project, head):
+    """Correct an old version's description and tool versions.
+
+    Written to that version's document alone. Nothing else holds a copy that a
+    reader uses: the history table reads each version's own document, and the
+    search and sample indexes carry neither field. The copies in other
+    versions' previous_versions[] arrays are left alone; the history reader
+    stopped trusting them because they were often missing or 'NA' anyway.
+    """
+    linkid = str(project['_id'])
+    needs_new_version = (
+        request.FILES
+        or request.POST.getlist('samples_to_remove')
+        or request.POST.get('project_mode')
+        or request.POST.get('reaggregate_project') == 'on'
+        or request.POST.get('remap_sample_names', 'false').lower() == 'true')
+    if needs_new_version:
+        # A new version made from an old one would fork the history.
+        messages.error(request, "Samples and data can only be changed on the current version of a project.")
+        return redirect('edit_project_page', project_name=linkid)
+
+    form = OldVersionEditForm(request.POST)
+    if not form.is_valid():
+        return _render_old_version_edit(request, project, head, form)
+
+    submitted = {'description': form.cleaned_data['description']}
+    for key in OLD_VERSION_TOOL_FIELDS:
+        if key in request.POST:
+            submitted[key] = form.cleaned_data[key].strip() or 'NA'
+    changes = {key: value for key, value in submitted.items()
+               if value != (project.get(key) or ('NA' if key in OLD_VERSION_TOOL_FIELDS else ''))}
+    if not changes:
+        messages.info(request, "No changes to save.")
+        return redirect('project_page', project_name=linkid)
+
+    # Filtered on status as well as id, so a version deleted while the form was
+    # open is not written to.
+    result = collection_handle.update_one(
+        status_query(SUPERSEDED, _id=project['_id']), {'$set': changes})
+    if result.matched_count == 0:
+        messages.error(request, "This version changed while you were editing it, so nothing was saved.")
+        return redirect('project_page', project_name=linkid)
+
+    updated = dict(project, **changes)
+    log_project_audit_event(
+        user=request.user,
+        project_uuid=linkid,
+        project_name=project.get('project_name'),
+        is_new_version=False,
+        aa_version=updated.get('AA_version', 'NA'),
+        ac_version=updated.get('AC_version', 'NA'),
+        asp_version=updated.get('ASP_version', 'NA'),
+        s3_uri=_get_project_s3_uri(linkid),
+        event_type=AUDIT_EVENT_EDIT_NO_VERSION,
+        sample_count=len(project.get('runs') or {}),
+    )
+    logging.info(f"Edited old version {linkid} of project {head['_id']}: {sorted(changes)}")
+    messages.success(request, "Saved. Only this version was changed.")
+    return redirect('project_page', project_name=linkid)
+
+
 def edit_project_page(request, project_name):
     if request.method == "GET":
         project = get_one_project(project_name)
@@ -4262,6 +4412,11 @@ def edit_project_page(request, project_name):
         # this dereferenced it and turned the same URL into a 500.
         if project is None:
             raise Http404("Project not found")
+        old_version_head = editable_old_version_head(project)
+        if old_version_head is not None:
+            if not may_edit_old_version(old_version_head, request):
+                return HttpResponse("Project does not exist")
+            return _render_old_version_edit(request, project, old_version_head)
         is_admin = getattr(request.user, 'is_staff', False)
         visibility = normalize_visibility_field(project.get('private', 'private'))
         if not (is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility))):
@@ -4282,7 +4437,23 @@ def edit_project_page(request, project_name):
         print(f'Remap sample names with sample_name_alias: {remap_sample_names}')
 
         project = get_one_project(project_name)
-        
+        if project is None:
+            raise Http404("Project not found")
+
+        # Before anything below writes: the alias handling clears alias_name on
+        # whatever document this is, and the full edit either rewrites it in
+        # place or makes a new version from it -- a fork, when it is not the
+        # current version. The GET handler redirected old versions away, but
+        # nothing stopped a POST.
+        old_version_head = editable_old_version_head(project)
+        if old_version_head is not None:
+            if not may_edit_old_version(old_version_head, request):
+                return HttpResponse("Project does not exist")
+            return edit_old_version(request, project, old_version_head)
+        if chain_head_if_not_head(project) is not None:
+            messages.error(request, "Only the current version of this project can be edited.")
+            return redirect('project_page', project_name=project_name)
+
         old_alias_name = None
         if 'alias_name' in project:
             old_alias_name = project['alias_name']
@@ -5509,6 +5680,11 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
 
 def create_project(request):
     if request.method == "POST":
+        # The page offers the form only to signed-in users, but nothing stopped
+        # the POST itself: an anonymous one made a project with creator '' and
+        # no members, which nobody could then edit, delete or (if private) see.
+        if not request.user.is_authenticated:
+            return HttpResponse("Sign in to create a project.", status=403)
         ## preprocess request
         # request = preprocess(request)
         logging.info(f"Starting create project")
