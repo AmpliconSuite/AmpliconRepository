@@ -1920,12 +1920,28 @@ _PAYLOAD_DESCRIBING_ENTRY = {
 }
 
 
-def _latest_payload_entry(matched_uuids):
-    """The newest entry that can meaningfully be compared to a live document."""
+def _latest_payload_entry(matched_uuids, document):
+    """The newest entry that can meaningfully be compared to *document*.
+
+    The search spans the chain because a new version's event can be filed under
+    the version it replaced. An ``edit_no_version`` event filed under a
+    *different* version is excluded: it is a correction to that version's own
+    fields, made after it was superseded, and says nothing about *document*'s
+    payload. Since old versions became editable, such an event is usually the
+    newest in its chain, and comparing the current version against it reported
+    its own tool versions and sample count as mismatches -- reproduced on dev
+    2026-10-07, where a 4-sample project was checked against its 1-sample old
+    version. Measured on prod the same day, no chain's validation read another
+    version's event yet, so this changes no existing verdict.
+    """
+    from .views import AUDIT_EVENT_EDIT_NO_VERSION
     if not matched_uuids:
         return None
+    own = [str(document['_id'])] + ([str(document['linkid'])] if document.get('linkid') else [])
     return audit_log_handle.find_one(
-        {'project_uuid': {'$in': matched_uuids}, **_PAYLOAD_DESCRIBING_ENTRY},
+        {'project_uuid': {'$in': matched_uuids}, **_PAYLOAD_DESCRIBING_ENTRY,
+         '$or': [{'event_type': {'$ne': AUDIT_EVENT_EDIT_NO_VERSION}},
+                 {'project_uuid': {'$in': own}}]},
         sort=[('timestamp', -1)])
 
 
@@ -2014,7 +2030,7 @@ def _get_audit_log_context(request):
             # this column would be a worse answer than the one it replaced.
             # "Does the log agree with the document?" can only be asked of an
             # entry that describes a payload.
-            latest_entry = _latest_payload_entry(matched_uuids)
+            latest_entry = _latest_payload_entry(matched_uuids, proj)
             latest_any = _latest_entry_of_any_kind(matched_uuids)
 
             if latest_entry:
@@ -2166,7 +2182,7 @@ def admin_audit_log_validate(request):
         # ── 2. Find the most recent audit-log entry for this project ──────────
         matched_uuids, _ = get_project_version_chain_for_document(project)
 
-        latest_entry = _latest_payload_entry(matched_uuids)
+        latest_entry = _latest_payload_entry(matched_uuids, project)
 
         if latest_entry is None:
             return JsonResponse({'error': 'No audit log entries found for this project'}, status=404)

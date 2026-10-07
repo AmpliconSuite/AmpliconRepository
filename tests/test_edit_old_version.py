@@ -159,6 +159,32 @@ def test_an_audit_event_names_the_old_version(
     assert event['AA_version'] == '1.3.r9'
 
 
+def test_the_audit_page_does_not_check_the_current_version_against_an_old_versions_edit(
+        request_factory, test_user, make_chain, mongo_collection, no_s3):
+    import datetime
+    from caper.utils import get_project_version_chain_for_document
+    from caper.views import audit_log_handle
+    from caper.views_admin import _latest_payload_entry, _run_audit_checks
+    old_id, head_id = make_chain()
+    audit_log_handle.insert_one({
+        'timestamp': datetime.datetime.utcnow() - datetime.timedelta(days=1),
+        'project_uuid': str(head_id), 'event_type': 'edit_new_version',
+        'AA_version': '1.5.r1', 'AC_version': '2.0.0', 'ASP_version': '1.5.0',
+        'sample_count': 0})
+    _post(request_factory, test_user, old_id, EDIT)
+
+    head = mongo_collection.find_one({'_id': head_id})
+    chain, _ = get_project_version_chain_for_document(head)
+    entry = _latest_payload_entry(chain, head)
+    assert entry['project_uuid'] == str(head_id)
+    assert not _run_audit_checks(head, entry)['any_mismatch']
+
+    # The old version is still checked against its own correction.
+    old = mongo_collection.find_one({'_id': old_id})
+    entry = _latest_payload_entry(chain, old)
+    assert entry['project_uuid'] == str(old_id) and entry['AA_version'] == '1.3.r9'
+
+
 def test_blank_version_becomes_NA_and_an_absent_field_is_untouched(
         request_factory, test_user, make_chain, mongo_collection, no_s3):
     old_id, _ = make_chain(old_extra={'CoRAL_version': '1.0.0'})
