@@ -1,0 +1,170 @@
+{% comment %}
+The upload overlay and the XMLHttpRequest submit behind it, shared by the
+create and edit project pages. Include with upload_overlay_title, then call
+ProjectUploadSubmit.attach(form, {alertBox, beforeSubmit}).
+
+A native submit cannot report progress, and when the browser stopped one the
+page stayed up under an overlay that nothing took down. The body is
+new FormData(form): the same fields, in the same order, that a native submit
+sends, so the views see no difference apart from the X-Requested-With header
+(see _redirect_as_json_for_xhr).
+{% endcomment %}
+<div id="upload-overlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:flex-start;">
+  <div style="background:white; max-width:500px; width:100%; box-sizing:border-box; margin:auto; margin-top:30px; padding:40px 30px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2); font-size:1.5em; text-align:center;">
+    {{ upload_overlay_title }}<br><br>
+    <span class="uk-spinner" uk-spinner="ratio:2"></span>
+    <progress id="upload-overlay-progress" class="uk-progress" value="0" max="100" style="margin-top:20px;"></progress>
+    <div id="upload-overlay-status" style="font-size:0.6em; min-height:1.5em;"></div>
+    <button type="button" id="upload-overlay-cancel" class="uk-button uk-button-default" style="margin-top:15px;">Cancel upload</button>
+  </div>
+</div>
+
+<script>
+const ProjectUploadSubmit = (function () {
+    const overlay = document.getElementById('upload-overlay');
+    const bar = document.getElementById('upload-overlay-progress');
+    const status = document.getElementById('upload-overlay-status');
+    const cancelBtn = document.getElementById('upload-overlay-cancel');
+    let inFlight = null;
+    let bodySent = false;
+
+    function mb(bytes) {
+        return (bytes / 1048576).toFixed(1);
+    }
+
+    // Leaving the page mid-upload abandons it, so ask first. Not once the body
+    // has gone: the server finishes the job whether or not this page stays.
+    function warnBeforeLeaving(event) {
+        event.preventDefault();
+        event.returnValue = '';
+    }
+
+    function finish() {
+        inFlight = null;
+        window.removeEventListener('beforeunload', warnBeforeLeaving);
+        overlay.style.display = 'none';
+    }
+
+    // textContent throughout: the lines can carry text from the server.
+    function report(alertBox, kind, lines) {
+        const div = document.createElement('div');
+        div.className = 'alert alert-' + kind;
+        div.setAttribute('role', 'alert');
+        lines.forEach(function (line, i) {
+            if (i) div.appendChild(document.createElement('br'));
+            div.appendChild(document.createTextNode(line));
+        });
+        alertBox.replaceChildren(div);
+        alertBox.scrollIntoView({block: 'start'});
+    }
+
+    // An invalid form comes back as the page re-rendered with its errors. Show
+    // those errors here instead of swapping the page, so the files already
+    // chosen stay chosen.
+    function errorsIn(html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const lines = [];
+        doc.querySelectorAll('.invalid-feedback[id^="error_"]').forEach(function (el) {
+            const fieldId = el.id.replace(/^error_\d+_/, '');
+            const label = doc.querySelector('label[for="' + fieldId + '"]');
+            const name = label ? label.textContent.replace(/[*.:\s]+$/, '').trim() : fieldId.replace(/^id_/, '');
+            lines.push(name + ': ' + el.textContent.trim());
+        });
+        doc.querySelectorAll('.alert-danger').forEach(function (el) {
+            if (el.style.display !== 'none' && el.textContent.trim()) lines.push(el.textContent.trim());
+        });
+        return lines;
+    }
+
+    function onResponse(xhr, alertBox) {
+        let data = null;
+        if ((xhr.getResponseHeader('Content-Type') || '').startsWith('application/json')) {
+            try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
+        }
+        if (data && data.redirect) {
+            // The overlay stays up until the next page replaces this one.
+            window.removeEventListener('beforeunload', warnBeforeLeaving);
+            status.textContent = 'Done. Opening the project…';
+            window.location.assign(data.redirect);
+            return;
+        }
+        finish();
+        const errors = errorsIn(xhr.responseText);
+        if (errors.length) {
+            report(alertBox, 'danger', ['The project was not saved:'].concat(errors));
+            return;
+        }
+        const lines = ['The server answered with an error (HTTP ' + xhr.status + ').'];
+        if ((xhr.getResponseHeader('Content-Type') || '').startsWith('text/plain') && xhr.responseText.length < 500) {
+            lines.push(xhr.responseText);
+        }
+        lines.push('Open the project page to see whether anything was saved before trying again.');
+        report(alertBox, 'danger', lines);
+    }
+
+    function send(form, alertBox) {
+        const xhr = new XMLHttpRequest();
+        inFlight = xhr;
+        bodySent = false;
+
+        bar.value = 0;
+        status.textContent = 'Starting upload…';
+        cancelBtn.hidden = false;
+        overlay.style.display = 'flex';
+        window.addEventListener('beforeunload', warnBeforeLeaving);
+
+        xhr.upload.addEventListener('progress', function (event) {
+            if (!event.lengthComputable) return;
+            const percent = Math.floor(100 * event.loaded / event.total);
+            bar.value = percent;
+            status.textContent = 'Uploaded ' + mb(event.loaded) + ' of ' + mb(event.total) + ' MB (' + percent + '%)';
+        });
+        // Cancelling now would not stop the server, so stop offering it.
+        xhr.upload.addEventListener('load', function () {
+            bodySent = true;
+            bar.value = 100;
+            cancelBtn.hidden = true;
+            window.removeEventListener('beforeunload', warnBeforeLeaving);
+            status.textContent = 'Upload complete. Waiting for the server…';
+        });
+        xhr.addEventListener('load', function () { onResponse(xhr, alertBox); });
+        xhr.addEventListener('error', function () {
+            finish();
+            report(alertBox, 'danger', bodySent
+                ? ['The connection to the server was lost after the upload finished.',
+                   'Open the project page to see whether the change was saved before trying again.']
+                : ['The upload did not finish: the connection to the server was lost. Nothing was saved.']);
+        });
+        xhr.addEventListener('abort', function () {
+            finish();
+            report(alertBox, 'info', ['Upload cancelled. Nothing was saved.']);
+        });
+
+        xhr.open('POST', form.action);
+        // Asks the view to answer a redirect with its URL; see _redirect_as_json_for_xhr.
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        xhr.send(new FormData(form));
+    }
+
+    function attach(form, options) {
+        cancelBtn.addEventListener('click', function () {
+            if (inFlight && !bodySent) inFlight.abort();
+        });
+        // The submit event fires only once the browser's own required-field
+        // checks pass, for the Submit button and for Enter in a text field.
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            if (inFlight) return;
+            if (options.beforeSubmit && !options.beforeSubmit()) return;
+            send(form, options.alertBox);
+        });
+        // Back from the project page can restore this page from the
+        // back/forward cache exactly as it was left: under the overlay.
+        window.addEventListener('pageshow', function (event) {
+            if (event.persisted) finish();
+        });
+    }
+
+    return {attach: attach};
+})();
+</script>

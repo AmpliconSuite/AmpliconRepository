@@ -9,6 +9,8 @@ submit. Nothing behind it did:
   * create_empty_project never looked at the box at all; its button submits
     with form.submit(), which skips the browser's required-field check.
 """
+import json
+
 import pytest
 from bson.objectid import ObjectId
 
@@ -139,3 +141,35 @@ def test_create_empty_requires_the_license(
     finally:
         for doc in mongo_collection.find({'project_name': name}, {'_id': 1}):
             _cleanup_project(mongo_collection, str(doc['_id']))
+
+
+# The pages submit with XMLHttpRequest. XHR would follow a redirect itself, so
+# the view hands back the URL as JSON; an invalid form is still the 400 page,
+# whose errors the script shows in place.
+XHR = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest'}
+
+
+def test_xhr_edit_answers_a_redirect_with_its_url(
+        request_factory, test_user, mongo_collection, live_project, no_s3):
+    from caper.views import edit_project_page
+    request = _with_messages(request_factory.post(
+        f'/project/{live_project}/edit', data=dict(EDIT, accept_license='on'), **XHR))
+    request.user = test_user
+    response = edit_project_page(request, project_name=str(live_project))
+    assert response.status_code == 200
+    assert response['Content-Type'] == 'application/json'
+    assert json.loads(response.content) == {'redirect': f'/project/{live_project}'}
+    assert mongo_collection.find_one({'_id': live_project})['description'] == 'after'
+
+
+def test_xhr_edit_without_license_is_still_the_400_page(
+        request_factory, test_user, mongo_collection, live_project):
+    from caper.views import edit_project_page
+    before = mongo_collection.find_one({'_id': live_project})
+    request = _with_messages(request_factory.post(
+        f'/project/{live_project}/edit', data=EDIT, **XHR))
+    request.user = test_user
+    response = edit_project_page(request, project_name=str(live_project))
+    assert response.status_code == 400
+    assert 'id="error_1_id_accept_license"' in response.content.decode()
+    assert mongo_collection.find_one({'_id': live_project}) == before

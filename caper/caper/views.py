@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import gc
+import functools
 import inspect
 import traceback
 import json
@@ -4404,6 +4405,24 @@ def edit_old_version(request, project, head):
     return redirect('project_page', project_name=linkid)
 
 
+def _redirect_as_json_for_xhr(view):
+    """The create and edit pages submit with XMLHttpRequest so they can show
+    upload progress and report a failed upload. XHR follows a redirect on its
+    own, so the browser would fetch the project page -- and use up its flash
+    messages -- inside a request the script then discards. Hand the script the
+    URL instead and let it navigate."""
+    @functools.wraps(view)
+    def wrapped(request, *args, **kwargs):
+        response = view(request, *args, **kwargs)
+        if (request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+                and response.status_code in (301, 302, 303, 307, 308)
+                and response.has_header('Location')):
+            return JsonResponse({'redirect': response['Location']})
+        return response
+    return wrapped
+
+
+@_redirect_as_json_for_xhr
 def edit_project_page(request, project_name):
     if request.method == "GET":
         project = get_one_project(project_name)
@@ -5694,6 +5713,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                 logging.error(f"Failed to write audit log for project {temp_proj_id}: {audit_exc}")
 
 
+@_redirect_as_json_for_xhr
 def create_project(request):
     if request.method == "POST":
         # The page offers the form only to signed-in users, but nothing stopped

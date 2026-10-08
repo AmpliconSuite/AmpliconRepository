@@ -333,7 +333,7 @@
     id="remove-upload-btn"
   />
 
-  <button id="createProjectBtn" class="uk-button uk-button-primary" onClick="uploadFiles();" disabled>
+  <button id="createProjectBtn" class="uk-button uk-button-primary" disabled>
     Submit
   </button>
   <button type="button" id="createEmptyProjectBtn" class="uk-button uk-button-secondary" onClick="createEmptyProject();" disabled>
@@ -355,14 +355,7 @@
 <p>Sign in to Upload Files</p>
 {% endif %}
 
-<!-- Overlay for upload progress -->
-<div id="upload-overlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:flex-start;">
-  <div style="background:white; max-width:500px; width:100%; box-sizing:border-box; margin:auto; margin-top:30px; padding:40px 30px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2); font-size:1.5em; text-align:center;">
-    Project creation in progress<br><br>
-    <br/>
-      <span class="uk-spinner" uk-spinner="ratio:2"></span>
-  </div>
-</div>
+{% include "includes/project_upload_submit.html" with upload_overlay_title="Project creation in progress" %}
 
 <script>
  const uploadForm = document.getElementById('upload-form');
@@ -370,7 +363,6 @@
     const alertBox = document.getElementById('alert-box');
     const csrf = document.getElementsByName('csrfmiddlewaretoken');
     const fileList = document.getElementById('file-list');
-    const fd = new FormData();
     let filesArray = [];
   
     function addFilename(filename) {
@@ -471,94 +463,16 @@
       });
     }
 
-    function showUploadOverlay() {
-      document.getElementById('upload-overlay').style.display = 'flex';
-    }
-
-    function hideUploadOverlay() {
-      document.getElementById('upload-overlay').style.display = 'none';
-    }
-  
-    function uploadFiles() {
-      if (!validateFiles()) {
-        alert("Please select a .tar.gz or .zip file before submitting.");
-        return;
+    ProjectUploadSubmit.attach(uploadForm, {
+      alertBox: alertBox,
+      beforeSubmit: function () {
+        if (!validateFiles()) {
+          alert("Please select a .tar.gz or .zip file before submitting.");
+          return false;
+        }
+        return true;
       }
-
-      if (!validateForm()) {
-        return;
-      }  
-        
-      showUploadOverlay();
-      const fd = new FormData();
-      fd.append('csrfmiddlewaretoken', csrf[0].value);
-  
-      filesArray.forEach(file => {
-        fd.append('document', file);
-      });
-      
-      // Add metadata file if selected
-      const metadataFileInput = document.getElementById('metadataFileInput');
-      if (metadataFileInput && metadataFileInput.files.length > 0) {
-        const metadataFile = metadataFileInput.files[0];
-        fd.append('metadataFile', metadataFile);
-      }
-      
-      // Add the remap_sample_names checkbox value if checked
-      const remapCheckbox = document.getElementById('remapSampleNamesCheckbox');
-      if (remapCheckbox && remapCheckbox.checked) {
-        fd.append('remap_sample_names', 'true');
-      }
-  
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', uploadForm.action, true);
-      xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
-  
-      alertBox.innerHTML = `<div class="alert alert-info" role="alert">
-        Uploading ... Will redirect automatically in a few seconds. 
-          </div>`;
-      
-      xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-              const percent = Math.round((event.loaded / event.total) * 100);
-              document.getElementById('js-progressbar').value = percent;
-              document.getElementById('js-progressbar').hidden = false;
-          }
-      });
-  
-      xhr.onload = function () {
-          hideUploadOverlay();
-          if (xhr.status >= 200 && xhr.status < 300) {
-              alertBox.innerHTML = `<div class="alert alert-success" role="alert">
-                                      Successfully uploaded file(s)
-                                    </div>`;
-              document.getElementById('js-progressbar').hidden = true;
-              clearFileInput(); // Clear the input after successful upload
-          } else {
-              alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
-                                      Something went wrong with the upload.
-                                    </div>`;
-          }
-      };
-  
-      xhr.onerror = function () {
-          hideUploadOverlay();
-          alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
-                                  Something went wrong with the upload.
-                                </div>`;
-      };
-  
-     //xhr.send(fd);
-    }
-
-    function validateForm() {
-      // Add form validation logic here
-      if (!uploadForm.checkValidity()) {
-        uploadForm.reportValidity();
-        return false;
-      }
-      return true;
-    }
+    });
 
     function validateFiles() {
       return filesArray.length > 0; // Ensure at least one valid file is selected
