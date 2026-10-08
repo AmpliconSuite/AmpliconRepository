@@ -336,7 +336,7 @@
   <button id="createProjectBtn" class="uk-button uk-button-primary" onClick="uploadFiles();" disabled>
     Submit
   </button>
-  <button id="createEmptyProjectBtn" class="uk-button uk-button-secondary" onClick="createEmptyProject();" disabled>
+  <button type="button" id="createEmptyProjectBtn" class="uk-button uk-button-secondary" onClick="createEmptyProject();" disabled>
     Create Empty Project
   </button>  
 </form>
@@ -565,19 +565,18 @@
     }
 
     function createEmptyProject() {
+      // uploadForm.submit() skips the browser's required-field checks (the
+      // license box, name, description), so run them first. The button is
+      // type="button": as a submit button it also submitted the form natively,
+      // which was the only thing that worked -- this function used to throw
+      // on a lookup of an element id that does not exist.
+      if (!uploadForm.reportValidity()) {
+        return false;
+      }
       const originalAction = uploadForm.action;
       uploadForm.action = "{% url 'create_empty_project' %}";
-      if (!document.getElementById('id_project_name').value) {
-        alert("Please enter a project name");
-        return false;
-     }
-      if (!document.getElementById('id_project_description').value) {
-        alert("Please enter a project description");
-        return false;
-     }
-      // Submit the form
       uploadForm.submit();
-      
+
       // Reset the form's action (optional, helps if the user returns to this page)
       setTimeout(() => {
         uploadForm.action = originalAction;

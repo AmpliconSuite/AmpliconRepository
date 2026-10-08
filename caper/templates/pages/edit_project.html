@@ -568,7 +568,7 @@
           id="remove-upload-btn"
         />
 
-        <button id="createProjectBtn" class="uk-button uk-button-primary" onClick="uploadFiles();">
+        <button id="createProjectBtn" class="uk-button uk-button-primary" onClick="uploadFiles();" disabled>
           Submit
         </button>
       </form>
@@ -916,6 +916,18 @@
         });
         }
         
+    // Submit stays disabled until the license box is ticked, as on the create
+    // page. Re-run on pageshow: a page restored from the back/forward cache
+    // keeps its ticked state but runs no DOMContentLoaded.
+    const licenseBox = document.getElementById('id_accept_license');
+    const submitBtn = document.getElementById('createProjectBtn');
+    function syncSubmitToLicense() {
+        if (licenseBox && submitBtn) submitBtn.disabled = !licenseBox.checked;
+    }
+    if (licenseBox) licenseBox.addEventListener('change', syncSubmitToLicense);
+    window.addEventListener('pageshow', syncSubmitToLicense);
+    syncSubmitToLicense();
+
             const sampleCheckboxes = document.querySelectorAll('.sample-checkbox');
     const fileInput = document.getElementById('fileuploadfield');
     const metadataInput = document.getElementById('metadataFileInput');
