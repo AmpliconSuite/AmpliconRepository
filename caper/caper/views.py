@@ -4206,9 +4206,9 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             for key, value in form_data.items():
                 if isinstance(value, list) and len(value) == 1:
                     form_data[key] = value[0]
-            # edit_project_page may have transferred the old alias into form.data
-            # (when the user left the alias field blank) but request.POST is never
-            # mutated, so form_data would otherwise carry the original empty string.
+            # edit_project_page puts the old alias into form_dict when the user
+            # left the alias field blank; request.POST still carries the empty
+            # string.
             # Sync the alias explicitly so the background thread gets the right value.
             form_data['alias'] = form_dict.get('alias', '')
             if replace_project:
@@ -4466,20 +4466,27 @@ def edit_project_page(request, project_name):
             return HttpResponse("Project does not exist")
         
         form = UpdateForm(request.POST, request.FILES)
-        
+
+        # Before anything is written. Without it an unticked license box reached
+        # form_to_dict(), whose form.save() raised ValueError -- a 500, after
+        # the alias handoff below had already cleared the project's alias.
+        if not form.is_valid():
+            return _render_edit_project_page(request, project, form, status=400)
+
         ## give the new project the old project alias.
-        if form.data['alias'] == '':
-            if old_alias_name:
-                mutable_data = form.data.copy()  # Make a mutable copy of the form's data
-                mutable_data['alias'] = old_alias_name  # Set the alias to the new value
-                form.data = mutable_data
-                ## update old project so its alias is set to None, and the alias is set to the new project
-                query = {'_id': ObjectId(project_name)}
-                new_val = { "$set": {'alias_name' : None}}
-                collection_handle.update_one(query, new_val)
-        
+        inherit_alias = not form.cleaned_data.get('alias') and bool(old_alias_name)
+        if inherit_alias:
+            ## update old project so its alias is set to None, and the alias is set to the new project
+            query = {'_id': ObjectId(project_name)}
+            new_val = { "$set": {'alias_name' : None}}
+            collection_handle.update_one(query, new_val)
+
         ## new project information is stored in form_dict
         form_dict = form_to_dict(form)
+        # Set here, not in form.data: the form is already validated, and
+        # form.save() returns the instance built from what was submitted.
+        if inherit_alias:
+            form_dict['alias'] = old_alias_name
         
         # Build project member list. Avoid auto-adding admins editing public projects when they are not members.
         is_member = is_user_a_project_member(project, request)
@@ -4568,16 +4575,6 @@ def edit_project_page(request, project_name):
         # get method handling
         project = get_one_project(project_name)
 
-        sample_names = set()
-        for features in project.get('runs', {}).values():
-            if features and isinstance(features, list):
-                for feature in features:
-                    if isinstance(feature, dict) and 'Sample_name' in feature:
-                        sample_names.add(feature['Sample_name'])
-                        break  # All features in a list have the same sample name
-        sample_names = sorted(sample_names)
-
-        is_empty_project = project_is_empty(project)
         prev_versions, prev_ver_msg = previous_versions(project)
         if prev_ver_msg:
             messages.error(request, "Redirected to latest version, editing of old versions not allowed. ")
@@ -4611,16 +4608,29 @@ def edit_project_page(request, project_name):
                                    "AC_version": ACVersion,
                                    "CoRAL_version": CoRALVersion })
 
-    _metadata_context = get_metadata_remap_edit_context(project)
+    return _render_edit_project_page(request, project, form)
+
+
+def _render_edit_project_page(request, project, form, status=200):
+    """The edit page for *project*, around *form* -- unbound on GET, or the
+    bound one a POST failed to validate, so its errors and entries show."""
+    sample_names = set()
+    for features in project.get('runs', {}).values():
+        if features and isinstance(features, list):
+            for feature in features:
+                if isinstance(feature, dict) and 'Sample_name' in feature:
+                    sample_names.add(feature['Sample_name'])
+                    break  # All features in a list have the same sample name
+    sample_names = sorted(sample_names)
 
     return render(request, "pages/edit_project.html",
                   {'project': project,
                    'run': form,
-                     'sample_names': sample_names,
-                   'all_alias' :json.dumps(get_all_alias()),
-                   "is_empty_project": is_empty_project,
-                   **_metadata_context,
-                   })
+                   'sample_names': sample_names,
+                   'all_alias': json.dumps(get_all_alias()),
+                   "is_empty_project": project_is_empty(project),
+                   **get_metadata_remap_edit_context(project),
+                   }, status=status)
 
 
 def clear_tmp(folder = 'tmp/'):
@@ -5048,6 +5058,12 @@ def create_empty_project(request):
         if not project_name:
             messages.error(request, "Project name is required")
             return redirect('profile')
+        # The page only enables this button once the box is ticked, and that
+        # JS was the whole of the check: the button submits with form.submit(),
+        # which skips the browser's own required-field validation.
+        if request.POST.get('accept_license') != 'on':
+            messages.error(request, "Please accept the license agreement to create a project.")
+            return redirect('create_project')
 
         # Get current user info
         creator = get_current_user(request)
@@ -5690,7 +5706,10 @@ def create_project(request):
         logging.info(f"Starting create project")
         form = RunForm(request.POST)
         if not form.is_valid():
-            raise Http404()
+            # An unticked license box, most often. This was a bare 404.
+            return render(request, 'pages/create_project.html',
+                          {'run': form, 'all_alias': json.dumps(get_all_alias())},
+                          status=400)
         
         # Get the remap_sample_names parameter from POST request
         remap_sample_names = request.POST.get('remap_sample_names', 'false').lower() == 'true'
