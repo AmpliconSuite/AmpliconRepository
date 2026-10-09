@@ -568,7 +568,7 @@
           id="remove-upload-btn"
         />
 
-        <button id="createProjectBtn" class="uk-button uk-button-primary" onClick="uploadFiles();">
+        <button id="createProjectBtn" class="uk-button uk-button-primary" disabled>
           Submit
         </button>
       </form>
@@ -577,15 +577,7 @@
     <h1>Please sign in to edit projects</h1>
 {% endif %}
 
-<!-- Overlay for upload progress -->
-<div id="upload-overlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:flex-start;">
-  <div style="background:white; max-width:500px; width:100%; box-sizing:border-box; margin:auto; margin-top:30px; padding:40px 30px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2); font-size:1.5em; text-align:center;">
-    Project update in progress<br><br>
-      
-    <br/>
-      <span class="uk-spinner" uk-spinner="ratio:2"></span>
-  </div>
-</div>
+{% include "includes/project_upload_submit.html" with upload_overlay_title="Project update in progress" %}
 
 <script>
     const uploadForm = document.getElementById('upload-form');
@@ -594,7 +586,6 @@
     const alertBox = document.getElementById('alert-box');
     const csrf = document.getElementsByName('csrfmiddlewaretoken');
     const fileList = document.getElementById('file-list');
-    const fd = new FormData();
     let filesArray = [];
 
     fileDropArea.addEventListener('dragover', (event) => {
@@ -711,103 +702,8 @@
       });
     }
 
-    function showUploadOverlay() {
-        const licenseCheckbox = document.getElementById('id_accept_license');
-        if (licenseCheckbox && !licenseCheckbox.checked) {
-            return; // Exit without showing overlay - form validation will show the error
-        } else {
-            document.getElementById('upload-overlay').style.display = 'flex';
-        }
-    }
+    ProjectUploadSubmit.attach(uploadForm, {alertBox: alertBox});
 
-    function hideUploadOverlay() {
-      document.getElementById('upload-overlay').style.display = 'none';
-    }
-  
-    function uploadFiles() {
-      
-      showUploadOverlay();
-      
-      const fd = new FormData();
-      fd.append('csrfmiddlewaretoken', csrf[0].value);
-  
-      filesArray.forEach(file => {
-        fd.append('document', file);
-      });
-
-      const metadataFileInput = document.getElementById('metadataFileInput');
-
-      if (metadataFileInput.files.length > 0) {
-        const metadataFile = metadataFileInput.files[0];
-        console.log('hello');
-        fd.append('metadataFile', metadataFile);
-      };
-      
-      // Add the replace_project / reaggregate_project value from the radio buttons
-      const selectedMode = document.querySelector('input[name="project_mode"]:checked');
-      if (selectedMode) {
-        if (selectedMode.value === 'replace') {
-          fd.append('replace_project', 'on');
-        } else if (selectedMode.value === 'reaggregate') {
-          fd.append('reaggregate_project', 'on');
-        }
-        // 'append' needs no extra flag
-      }
-
-      // Add the remap_sample_names checkbox value if checked (from new metadata or old metadata)
-      const remapCheckbox = document.getElementById('remapSampleNamesCheckbox');
-      const remapOldCheckbox = document.getElementById('remapFromOldMetadataCheckbox');
-      if ((remapCheckbox && remapCheckbox.checked) || (remapOldCheckbox && remapOldCheckbox.checked)) {
-        fd.append('remap_sample_names', 'true');
-      }
-
-      // Add the retain_old_metadata checkbox value if checked
-      const retainMetaCb = document.getElementById('retainOldMetadataCheckbox');
-      if (retainMetaCb && retainMetaCb.checked) {
-        fd.append('retain_old_metadata', 'true');
-      }
-
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', uploadForm.action, true);
-      xhr.setRequestHeader('X-CSRFToken', csrf[0].value);
-  
-      alertBox.innerHTML = `<div class="alert alert-info" role="alert">
-        Uploading ... Will redirect automatically in a few seconds. 
-          </div>`;
-      
-      xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-              const percent = Math.round((event.loaded / event.total) * 100);
-              document.getElementById('js-progressbar').value = percent;
-              document.getElementById('js-progressbar').hidden = false;
-          }
-      });
-  
-      xhr.onload = function () {
-          hideUploadOverlay();
-          if (xhr.status >= 200 && xhr.status < 300) {
-              alertBox.innerHTML = `<div class="alert alert-success" role="alert">
-                                      Successfully uploaded file(s)
-                                    </div>`;
-              document.getElementById('js-progressbar').hidden = true;
-              clearFileInput(); // Clear the input after successful upload
-          } else {
-              alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
-                                      Something went wrong with the upload.
-                                    </div>`;
-          }
-      };
-  
-      xhr.onerror = function () {
-          hideUploadOverlay();
-          alertBox.innerHTML = `<div class="alert alert-danger" role="alert">
-                                  Something went wrong with the upload.
-                                </div>`;
-      };
-  
-     //xhr.send(fd);
-    }
-    
     // True when the boxes ticked cover every sample the project has. There is
     // always at least one checkbox when this block renders, but the guard keeps
     // "none of none" from counting as "all of them".
@@ -1213,6 +1109,7 @@
         const $fileInput        = $('#fileuploadfield');
         const $submitButton     = $('#createProjectBtn');
         const $modeError        = $('#replace-mode-error');
+        const $licenseCb        = $('#id_accept_license');
         const $fileUploadSection = $('#file-upload-section');
         const projectIsEmpty = {% if is_empty_project %}true{% else %}false{% endif %};
 
@@ -1279,6 +1176,13 @@
             const confirmed     = $confirmCb.is(':checked');
             const filesUploaded = $fileInput[0] && $fileInput[0].files.length > 0;
 
+            // The license first, for every mode: this function is the only
+            // thing that sets the button, and it runs after page load.
+            if (!$licenseCb.is(':checked')) {
+                $submitButton.prop('disabled', true);
+                $submitButton.attr('title', 'Please accept the license before submitting.');
+                return;
+            }
             // Re-aggregate needs no files — always allow submit
             if (isReaggregate) {
                 $submitButton.prop('disabled', false);
@@ -1311,6 +1215,10 @@
         $replaceRadio.on('change', updateReplaceUI);
         $reaggregateRadio.on('change', updateReplaceUI);
         $confirmCb.on('change', enforceSubmitButton);
+        $licenseCb.on('change', enforceSubmitButton);
+        // A page restored from the back/forward cache keeps its ticked boxes
+        // but runs none of this again.
+        $(window).on('pageshow', enforceSubmitButton);
         $fileInput.on('change', function() {
             updateReplaceUI();
             // If files have just been added and no mode chosen, open accordion and highlight the choice
