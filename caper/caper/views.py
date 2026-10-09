@@ -4764,6 +4764,13 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                     for k in FEATURE_FILE_KEYS:
                         if k not in feature:
                             continue
+                        # The aggregator writes "Not Provided" for an artifact
+                        # the run did not produce, e.g. cycles images when only
+                        # the cycles text was generated.  Opening that as a
+                        # path failed and logged a warning for every feature.
+                        if isinstance(feature[k], (str, type(None))) and feature[k] in _MISSING_FILE_SENTINELS:
+                            feature[k] = "Not Provided"
+                            continue
                         id_var = "Not Provided"
                         try:
                             path_var = feature[k]
