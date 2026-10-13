@@ -948,7 +948,7 @@ class ProjectDownloadView(APIView):
     Local-storage deployments: streams the file from GridFS.
 
     curl example (follow redirect with -L):
-        curl -L -O https://ampliconrepository.org/api/v1/projects/<id>/download/ \\
+        curl -L -o project.tar.gz https://ampliconrepository.org/api/v1/projects/<id>/download/ \\
              -H "Authorization: Token <your-token>"
     """
     permission_classes = []
@@ -1083,7 +1083,7 @@ class ProjectBatchDownloadView(APIView):
         "skipped": ["<id_not_found_or_inaccessible>", ...]
       }
 
-    The caller then fetches each download_url individually (curl -L -O ...).
+    The caller then fetches each download_url individually (curl -L -o <id>.tar.gz ...).
     IDs that do not exist, have no archive, or are inaccessible to the caller
     are silently placed in "skipped".
 
