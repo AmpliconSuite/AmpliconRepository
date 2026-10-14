@@ -77,6 +77,11 @@ IN_SCOPE = {'$or': [STATUS_QUERIES[LIVE], STATUS_QUERIES[SUPERSEDED]]}
 DELETE_SECONDS_PER_GIB = 96.4
 DELETE_SECONDS_PER_FILE = 0.035
 
+# On caper-dev (2026-10-14) one update repointing 480 features of a 1,411-sample
+# document was refused with "Operation terminated due to low available memory";
+# 320 had gone through. A sample's changes are split into updates this size.
+MAX_CHANGES_PER_UPDATE = 100
+
 
 # ---------------------------------------------------------------------------
 # Planning
@@ -219,26 +224,32 @@ def _write_line(handle, record):
 
 
 def rewrite_sample(projects, doc_id, run_key, groups, undo):
-    """One guarded update for one sample. Returns True when it was applied.
+    """Guarded updates for one sample. Returns True when every one was applied.
 
-    The filter names every old id being replaced, so a sample changed since it
-    was read is skipped, not overwritten. The intent is written before the
-    write and the outcome after, so the record is right whichever happens.
+    The changes go in batches of at most MAX_CHANGES_PER_UPDATE. Each batch's
+    filter names every old id it replaces, so a sample changed since it was read
+    is skipped, not overwritten, and the batches after a missed one are not
+    tried. Each batch writes its intent before the write and its outcome after,
+    so the record is right whichever happens.
     """
     changes = [(g['key'], i, old, g['keeper']) for g in groups for i, old in g['changes']]
-    query = {'_id': doc_id}
-    update = {}
-    for key, index, old, keeper in changes:
-        query[_path(run_key, index, key)] = old
-        update[_path(run_key, index, key)] = keeper
-    for key, index, old, keeper in changes:
-        _write_line(undo, {'op': 'repoint', 'doc': str(doc_id), 'run_key': run_key, 'index': index,
-                           'key': key, 'old': str(old), 'keeper': str(keeper)})
-    result = projects.update_one(query, {'$set': update})
-    applied = result.matched_count == 1 and result.modified_count == 1
-    _write_line(undo, {'op': 'applied' if applied else 'missed', 'doc': str(doc_id),
-                       'run_key': run_key, 'changes': len(changes)})
-    return applied
+    for start in range(0, len(changes), MAX_CHANGES_PER_UPDATE):
+        batch = changes[start:start + MAX_CHANGES_PER_UPDATE]
+        query = {'_id': doc_id}
+        update = {}
+        for key, index, old, keeper in batch:
+            query[_path(run_key, index, key)] = old
+            update[_path(run_key, index, key)] = keeper
+        for key, index, old, keeper in batch:
+            _write_line(undo, {'op': 'repoint', 'doc': str(doc_id), 'run_key': run_key, 'index': index,
+                               'key': key, 'old': str(old), 'keeper': str(keeper)})
+        result = projects.update_one(query, {'$set': update})
+        applied = result.matched_count == 1 and result.modified_count == 1
+        _write_line(undo, {'op': 'applied' if applied else 'missed', 'doc': str(doc_id),
+                           'run_key': run_key, 'changes': len(batch)})
+        if not applied:
+            return False
+    return True
 
 
 def read_undo(path):

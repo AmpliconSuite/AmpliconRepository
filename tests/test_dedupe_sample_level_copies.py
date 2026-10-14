@@ -236,6 +236,33 @@ def test_a_sample_changed_underneath_is_skipped_not_overwritten(db, tmp_path):
     assert dd.read_undo(tmp_path / 'u.jsonl') == []          # a missed sample is not undone
 
 
+def test_a_large_sample_is_rewritten_in_batches(db, tmp_path, monkeypatch):
+    monkeypatch.setattr(dd, 'MAX_CHANGES_PER_UPDATE', 3)
+    pid, ids = _project(db)
+    before = db['projects'].find_one({'_id': pid})['runs']
+    applied, undo_path = _rewrite(db, pid, tmp_path)
+
+    outcomes = [json.loads(line) for line in open(undo_path) if '"repoint"' not in line]
+    assert applied and [o['changes'] for o in outcomes] == [3, 3, 2]
+    assert {f['CNV_BED_file'] for f in db['projects'].find_one({'_id': pid})['runs']['sample_1']} == {ids['cnv'][0]}
+    assert dd.rollback(db['projects'], db['fs.files'], dd.read_undo(undo_path)) == (8, 0)
+    assert db['projects'].find_one({'_id': pid})['runs'] == before
+
+
+def test_a_batch_that_misses_stops_the_sample(db, tmp_path, monkeypatch):
+    monkeypatch.setattr(dd, 'MAX_CHANGES_PER_UPDATE', 3)
+    pid, _ids = _project(db)
+    groups = dd.plan_document(db['projects'].find_one({'_id': pid}))
+    last_key, (last_index, _old) = groups[-1]['key'], groups[-1]['changes'][-1]
+    db['projects'].update_one({'_id': pid}, {'$set': {f'runs.sample_1.{last_index}.{last_key}': ObjectId()}})
+    with open(tmp_path / 'u.jsonl', 'x') as undo:
+        assert not dd.rewrite_sample(db['projects'], pid, 'sample_1', groups, undo)
+
+    outcomes = [json.loads(line)['op'] for line in open(tmp_path / 'u.jsonl') if '"repoint"' not in line]
+    assert outcomes == ['applied', 'applied', 'missed']
+    assert len(dd.read_undo(tmp_path / 'u.jsonl')) == 6       # only the applied batches
+
+
 def test_rollback_restores_exactly(db, tmp_path):
     pid, _ids = _project(db)
     before = db['projects'].find_one({'_id': pid})['runs']
