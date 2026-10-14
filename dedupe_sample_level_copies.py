@@ -165,21 +165,33 @@ def prove_identical(files, bucket, key, ids):
     return True, method, None
 
 
+def named_ids(doc):
+    """Every GridFS id *doc* names, wherever in the document it is.
+
+    The whole document, not just ``runs`` and ``tarfile``: on caper-dev
+    (2026-10-14) a 2023 document's top-level ``features_list`` repeated its
+    feature rows and named 9,036 old ids after ``runs`` had stopped naming them.
+    A check confined to ``runs`` called those files deletable.
+    """
+    found = set(iter_gridfs_file_ids(doc))
+    found.update(i for i in (doc.get(PENDING_PAYLOAD_KEY) or []) if isinstance(i, ObjectId))
+    return found
+
+
 def freed_ids(doc, proven_groups):
     """Ids the document would name no longer once *proven_groups* are applied.
 
     Computed on a copy rather than per group: the two directory aliases name the
-    same files, and an id one key gives up can still be named under another.
+    same files, and an id one key gives up can still be named under another --
+    or elsewhere in the document entirely.
     """
     import copy
-    runs = copy.deepcopy(doc.get('runs') or {})
-    before = set(iter_gridfs_file_ids({'runs': runs}))
+    after_doc = copy.deepcopy(doc)
+    runs = after_doc.get('runs') or {}
     for g in proven_groups:
         for index, _old in g['changes']:
             runs[g['run_key']][index][g['key']] = g['keeper']
-    after = set(iter_gridfs_file_ids({'runs': runs}))
-    after.update(iter_gridfs_file_ids({'tarfile': doc.get('tarfile')}))
-    return before - after
+    return named_ids(doc) - named_ids(after_doc)
 
 
 def named_by_other_documents(projects, candidates):
@@ -191,11 +203,9 @@ def named_by_other_documents(projects, candidates):
     """
     owners = {}
     progress = Progress('checking documents for shared ids', projects.estimated_document_count())
-    for done, doc in enumerate(projects.find({}, {'runs': 1, 'tarfile': 1, PENDING_PAYLOAD_KEY: 1}), 1):
+    for done, doc in enumerate(projects.find({}), 1):
         progress.tick(done)
-        found = set(iter_gridfs_file_ids({'runs': doc.get('runs'), 'tarfile': doc.get('tarfile')}))
-        found.update(i for i in (doc.get(PENDING_PAYLOAD_KEY) or []) if isinstance(i, ObjectId))
-        for file_id in found & candidates:
+        for file_id in named_ids(doc) & candidates:
             owners.setdefault(file_id, set()).add(doc['_id'])
     return {i: sorted(map(str, d)) for i, d in owners.items() if len(d) > 1}
 
@@ -294,10 +304,8 @@ def delete_candidates(projects, files, repoints):
     for record in repoints:
         expected[ObjectId(record['old'])] = ObjectId(record['doc'])
     still_named = set()
-    for doc in projects.find({}, {'runs': 1, 'tarfile': 1, PENDING_PAYLOAD_KEY: 1}):
-        found = set(iter_gridfs_file_ids({'runs': doc.get('runs'), 'tarfile': doc.get('tarfile')}))
-        found.update(i for i in (doc.get(PENDING_PAYLOAD_KEY) or []) if isinstance(i, ObjectId))
-        still_named |= found & set(expected)
+    for doc in projects.find({}):
+        still_named |= named_ids(doc) & set(expected)
     safe, refused = [], {}
     rows = {r['_id']: r for r in files.find({'_id': {'$in': list(expected)}},
                                             {'length': 1, 'metadata.project_id': 1})}

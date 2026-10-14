@@ -137,6 +137,13 @@ def test_an_id_still_named_under_another_key_is_not_freed():
     assert dd.freed_ids(doc, groups) == set()
 
 
+def test_an_id_still_named_outside_runs_is_not_freed():
+    keep, old = ObjectId(), ObjectId()
+    doc = {'runs': {'s': [{'CNV_BED_file': keep}, {'CNV_BED_file': old}]},
+           'features_list': [{'CNV_BED_file': old}]}
+    assert dd.freed_ids(doc, dd.plan_document(doc)) == set()
+
+
 # ---------------------------------------------------------------------------
 # Proof of identity
 # ---------------------------------------------------------------------------
@@ -313,6 +320,19 @@ def test_delete_refuses_a_backlink_to_another_document(db, tmp_path):
 
     safe, refused = dd.delete_candidates(db['projects'], db['fs.files'], dd.read_undo(undo_path))
     assert refused[str(ids['meta'][1])] == 'backlink names another document'
+
+
+def test_delete_refuses_a_copy_the_same_document_names_outside_runs(db, tmp_path):
+    """caper-dev, 2026-10-14: a 2023 document's top-level features_list repeated
+    its feature rows, so 9,036 old ids stayed named after runs was rewritten."""
+    pid, ids = _project(db)
+    _applied, undo_path = _rewrite(db, pid, tmp_path)
+    db['projects'].update_one({'_id': pid},
+                              {'$set': {'features_list': [{'CNV_BED_file': ids['cnv'][1]}]}})
+
+    safe, refused = dd.delete_candidates(db['projects'], db['fs.files'], dd.read_undo(undo_path))
+    assert ids['cnv'][1] not in {i for i, _n in safe}
+    assert refused[str(ids['cnv'][1])] == 'still named by a document'
 
 
 # ---------------------------------------------------------------------------
