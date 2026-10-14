@@ -33,6 +33,13 @@ gunicorn's ``post_fork`` hook -- not from ``AppConfig.ready()``, which under
 ``preload_app = True`` runs in the master, whose threads do not survive the
 fork. Every worker calls it, so each pending purge is claimed atomically and
 only one worker takes it.
+
+**The S3 copy goes too.** A project's archive also lives in S3, at
+``<id>/<id>.tar.gz``, as a download cache that ``project_download`` fills from
+GridFS on first download. Only the admin permanent delete removed it, so every
+version deleted from history left its archive behind: all six TOMBSTONEs on
+prod had one on 2026-10-14 (2.1 GiB). The archive is removed after the GridFS
+purge, by the same task.
 """
 
 import datetime
@@ -106,6 +113,43 @@ def _release_claim(victim_id):
         logging.exception("Could not release the purge claim on %s", victim_id)
 
 
+def _s3_client():
+    import boto3
+    from django.conf import settings
+    return boto3.Session(profile_name=settings.AWS_PROFILE_NAME).client('s3')
+
+
+def delete_s3_archive(victim_id):
+    """Remove the deleted version's S3 archive. Returns True, False or None.
+
+    True when it was deleted, False when there was none, None when this
+    deployment does not use S3 or the attempt failed (logged, never raised: the
+    GridFS purge is the part that must finish). The bucket is versioned, so the
+    delete leaves a marker and the bytes expire 90 days later; checking first
+    keeps a version that never had an archive from adding a marker for nothing.
+    """
+    from django.conf import settings
+    if not getattr(settings, 'USE_S3_DOWNLOADS', False):
+        return None
+    key = f'{settings.S3_DOWNLOADS_BUCKET_PATH}{victim_id}/{victim_id}.tar.gz'
+    try:
+        client = _s3_client()
+        try:
+            client.head_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=key)
+        except Exception as missing:
+            code = str(getattr(missing, 'response', {}).get('Error', {}).get('Code', ''))
+            if code in ('404', 'NoSuchKey', 'NotFound'):
+                return False
+            raise
+        client.delete_object(Bucket=settings.S3_DOWNLOADS_BUCKET, Key=key)
+        logging.info("Deleted the S3 archive %s of deleted version %s", key, victim_id)
+        return True
+    except Exception:
+        logging.exception("Could not delete the S3 archive %s of deleted version %s",
+                          key, victim_id)
+        return None
+
+
 def _run(victim_id, file_ids, delete_event, outcome, confirm_extra):
     """Delete the payload, clear the pending list, then confirm the event.
 
@@ -127,12 +171,14 @@ def _run(victim_id, file_ids, delete_event, outcome, confirm_extra):
     _release_claim(victim_id)
     logging.info("Purged %d GridFS file(s) of deleted version %s",
                  deleted, victim_id)
+    s3_deleted = delete_s3_archive(victim_id)
 
     if delete_event is not None:
         from .utils import audit_log_handle
         provenance.confirm(audit_log_handle, delete_event,
                            outcome=outcome,
                            gridfs_files_purged=deleted,
+                           s3_archive_deleted=s3_deleted,
                            **(confirm_extra or {}))
     return deleted
 
@@ -146,10 +192,13 @@ def start(victim_id, file_ids, delete_event=None, outcome=None, **confirm_extra)
     """
     file_ids = list(file_ids or ())
     if not file_ids:
+        # No GridFS payload, but an archive may still be in S3.
+        s3_deleted = delete_s3_archive(victim_id)
         if delete_event is not None:
             from .utils import audit_log_handle
             provenance.confirm(audit_log_handle, delete_event, outcome=outcome,
-                               gridfs_files_purged=0, **confirm_extra)
+                               gridfs_files_purged=0,
+                               s3_archive_deleted=s3_deleted, **confirm_extra)
         return None
     return _thread_executor.submit(
         _run, victim_id, file_ids, delete_event, outcome, confirm_extra,
