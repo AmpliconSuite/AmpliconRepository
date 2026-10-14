@@ -888,6 +888,58 @@ def no_access_response(request):
     return redirect('/accounts/login/?' + urlencode({'next': request.get_full_path()}))
 
 
+def project_access_refusal(request, project):
+    """What a project's pages answer a visitor who may not see it, or ``None``.
+
+    The rule the project, sample and feature pages apply: a private project is
+    for its members, a hidden_public one for anyone holding the link.  The
+    download routes call this so that a file answers a visitor exactly as the
+    page that links to it does.  Until 2026-10-14 six of them checked nothing,
+    and a signed-in non-member could download a private project's archive, its
+    sample zips and any of its files.
+    """
+    visibility = normalize_visibility_field(project.get('private', 'private'))
+    if (is_project_private(visibility) and not is_project_hidden_public(visibility)
+            and not is_user_a_project_member(project, request)):
+        return no_access_response(request)
+    return None
+
+
+# The fields each per-feature file route may serve, both spellings: documents
+# written before the underscore rewrite still carry the spaced forms.
+_ROUTE_FILE_KEYS = {
+    'bed': ('Feature_BED_file',),
+    'pdf': ('AA_PDF_file', 'Graph_PDF_file', 'Cycles_PDF_file'),
+    'png': ('AA_PNG_file', 'Graph_PNG_file', 'Cycles_PNG_file'),
+}
+
+
+def sample_file_or_refusal(request, project_name, sample_name, file_id, kind):
+    """``(None, ObjectId)`` for a file this visitor may fetch, else ``(response, None)``.
+
+    The per-feature file routes take a GridFS id from the URL and used to serve
+    it whatever project the URL named, so any id from any project came back.
+    Now the id must be one the named sample's rows hold under a field of this
+    *kind*, and the project must be one the visitor may see.
+    """
+    if file_id in _MISSING_FILE_SENTINELS or not ObjectId.is_valid(str(file_id)):
+        raise Http404(f"No {kind.upper()} available")
+    project, rows = get_one_sample_rows(project_name, sample_name)
+    if project is None or not rows:
+        raise Http404("Project not found")
+    refusal = project_access_refusal(request, project)
+    if refusal is not None:
+        return refusal, None
+    wanted = str(file_id)
+    keys = _ROUTE_FILE_KEYS[kind]
+    for row in rows:
+        for key in keys:
+            for spelling in (key, key.replace('_', ' ')):
+                if str(row.get(spelling)) == wanted:
+                    return None, ObjectId(wanted)
+    raise Http404(f"No {kind.upper()} available")
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -1227,6 +1279,9 @@ def project_download(request, project_name):
     project = get_one_project(project_name)
     if project is None:
         raise Http404(f"Project {project_name!r} not found")
+    refusal = project_access_refusal(request, project)
+    if refusal is not None:
+        return refusal
     update_project_download_count(project, project_name)
     # get the 'real_project_name' since we might have gotten  here with either the name or the project id passed in
     try:
@@ -1861,6 +1916,11 @@ def sample_metadata_download(request, project_name, sample_name):
     # to return ~1KB of JSON, and made up 35% of the crawl that wedged the site
     # on 2026-08-09.
     project, sample_data = get_one_sample_rows(project_name, sample_name)
+    if project is None or not sample_data:
+        raise Http404("Sample not found")
+    refusal = project_access_refusal(request, project)
+    if refusal is not None:
+        return refusal
     sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
     extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
     try:
@@ -2414,6 +2474,11 @@ def sample_download(request, project_name, sample_name):
     crawl at ~110 req/min wedged all nine workers on 2026-08-09.
     """
     project, sample_data, _, _ = get_one_sample(project_name, sample_name)
+    if project is None or not sample_data:
+        raise Http404("Sample not found")
+    refusal = project_access_refusal(request, project)
+    if refusal is not None:
+        return refusal
 
     # Process the sample data
     sample_data_path, _ = process_sample_data(project, sample_name, sample_data)
@@ -2812,9 +2877,11 @@ _MISSING_FILE_SENTINELS = {'Not Provided', 'not provided', '', None}
 
 @download_gate
 def feature_download(request, project_name, sample_name, feature_name, feature_id):
-    if feature_id in _MISSING_FILE_SENTINELS:
-        raise Http404(f"No file available for feature {feature_name!r}")
-    bed_file = fs_handle.get(ObjectId(feature_id)).read()
+    refusal, file_id = sample_file_or_refusal(request, project_name, sample_name,
+                                              feature_id, 'bed')
+    if refusal is not None:
+        return refusal
+    bed_file = fs_handle.get(file_id).read()
     response = HttpResponse(bed_file, content_type='application/caper.bed+csv')
     response['Content-Disposition'] = f'attachment; filename="{feature_name}.bed"'
     return response
@@ -2822,9 +2889,11 @@ def feature_download(request, project_name, sample_name, feature_name, feature_i
 
 @download_gate
 def pdf_download(request, project_name, sample_name, feature_name, feature_id):
-    if feature_id in _MISSING_FILE_SENTINELS:
-        raise Http404(f"No PDF available for feature {feature_name!r}")
-    img_file = fs_handle.get(ObjectId(feature_id)).read()
+    refusal, file_id = sample_file_or_refusal(request, project_name, sample_name,
+                                              feature_id, 'pdf')
+    if refusal is not None:
+        return refusal
+    img_file = fs_handle.get(file_id).read()
     response = HttpResponse(img_file, content_type='application/pdf')
     response['Content-Disposition'] = f'inline; filename="{feature_name}.pdf"'
     return response
@@ -2834,9 +2903,11 @@ def png_download(request, project_name, sample_name, feature_name, feature_id):
     # NOT gated: the sample page embeds these as <img> sources, so a redirect to
     # the challenge page would break the rendered page rather than protect it.
     # Feature PNGs are also the cheapest of the download routes.
-    if feature_id in _MISSING_FILE_SENTINELS:
-        raise Http404(f"No PNG available for feature {feature_name!r}")
-    img_file = fs_handle.get(ObjectId(feature_id)).read()
+    refusal, file_id = sample_file_or_refusal(request, project_name, sample_name,
+                                              feature_id, 'png')
+    if refusal is not None:
+        return refusal
+    img_file = fs_handle.get(file_id).read()
     response = HttpResponse(img_file, content_type='image/png')
     response['Content-Disposition'] = f'inline; filename="{feature_name}.png"'
     return response
