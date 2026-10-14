@@ -185,7 +185,9 @@ def named_by_other_documents(projects, candidates):
     script's to free.
     """
     owners = {}
-    for doc in projects.find({}, {'runs': 1, 'tarfile': 1, PENDING_PAYLOAD_KEY: 1}):
+    progress = Progress('checking documents for shared ids', projects.estimated_document_count())
+    for done, doc in enumerate(projects.find({}, {'runs': 1, 'tarfile': 1, PENDING_PAYLOAD_KEY: 1}), 1):
+        progress.tick(done)
         found = set(iter_gridfs_file_ids({'runs': doc.get('runs'), 'tarfile': doc.get('tarfile')}))
         found.update(i for i in (doc.get(PENDING_PAYLOAD_KEY) or []) if isinstance(i, ObjectId))
         for file_id in found & candidates:
@@ -344,6 +346,27 @@ def gib(n):
     return f'{n / 2**30:,.2f} GiB'
 
 
+class Progress:
+    """A timestamped line at most every ``every`` seconds, so a long run can be
+    watched (and a stalled one noticed) from its log."""
+
+    def __init__(self, label, total, every=30.0):
+        self.label, self.total, self.every = label, total, every
+        self.started = self.last = time.time()
+
+    def tick(self, done, extra='', force=False):
+        now = time.time()
+        if not force and now - self.last < self.every:
+            return
+        self.last = now
+        elapsed = now - self.started
+        eta = ''
+        if 0 < done < self.total:
+            eta = f', about {elapsed / done * (self.total - done) / 60:,.1f} min left'
+        print(f'  [{datetime.datetime.utcnow():%H:%M:%S}] {self.label}: {done:,}/{self.total:,}'
+              f'{", " + extra if extra else ""} ({elapsed / 60:,.1f} min{eta})')
+
+
 def run_plan(db, args):
     """Plan, prove and (on rewrite --execute) apply. Prints the report."""
     import gridfs
@@ -353,13 +376,16 @@ def run_plan(db, args):
           + (f', limited to {args.limit}' if args.limit else ''))
 
     plans, candidates = [], set()
-    for doc_id in doc_ids:
+    progress = Progress('planning documents', len(doc_ids))
+    for done, doc_id in enumerate(doc_ids, 1):
         doc = projects.find_one({'_id': doc_id}, {'runs': 1, 'project_name': 1, 'tarfile': 1})
         groups = plan_document(doc)
         if groups:
             plans.append((doc_id, doc, groups))
             for g in groups:
                 candidates |= g['ids']
+        progress.tick(done, f'{len(plans):,} with copies, {len(candidates):,} ids')
+    print(f'documents with copies: {len(plans):,}; checking {len(candidates):,} ids against every document')
     shared = named_by_other_documents(projects, candidates) if candidates else {}
     print(f'ids in groups: {len(candidates):,}; named by more than one document: {len(shared)}')
     if shared:
@@ -375,6 +401,7 @@ def run_plan(db, args):
                   files=0, bytes=0, samples_applied=0, samples_missed=0, read_bytes=0)
     skipped = []
     started = time.time()
+    progress = Progress('proving groups', sum(len(groups) for _d, _doc, groups in plans))
     for doc_id, doc, groups in plans:
         by_sample = {}
         proven_groups = []
@@ -395,6 +422,8 @@ def run_plan(db, args):
             if g['skip'] is not None:
                 totals['skipped'] += 1
                 skipped.append((str(doc_id), g['run_key'], g['key'], g['skip']))
+            progress.tick(totals['groups'], f"{gib(totals['read_bytes'])} read, "
+                                            f"{totals['skipped']:,} skipped")
         freed = freed_ids(doc, proven_groups)
         totals['files'] += len(freed)
         totals['bytes'] += sum(r['length'] for r in files.find({'_id': {'$in': list(freed)}}, {'length': 1}))
@@ -445,6 +474,7 @@ def run_delete(db, args):
         print('\nNothing was deleted.')
         return
     started, deleted = time.time(), 0
+    progress = Progress('deleting files', len(todo))
     with open(args.delete_log, 'a') as log:
         for file_id, length in todo:
             if args.budget_seconds and time.time() - started > args.budget_seconds:
@@ -454,6 +484,7 @@ def run_delete(db, args):
             _write_line(log, {'op': 'deleted', 'id': str(file_id), 'length': length,
                               'at': datetime.datetime.utcnow().isoformat()})
             deleted += 1
+            progress.tick(deleted)
     print(f'DELETED {deleted:,} file(s) in {time.time() - started:,.1f} s')
 
 
@@ -469,6 +500,9 @@ def main(argv=None):
     parser.add_argument('--delete-log')
     parser.add_argument('--budget-seconds', type=float)
     args = parser.parse_args(argv)
+    # Runs on a server go to a log file, where stdout is block-buffered: a
+    # report that has run for an hour would otherwise show an empty log.
+    sys.stdout.reconfigure(line_buffering=True)
 
     if args.phase in ('rewrite', 'rollback', 'delete') and not args.undo_file:
         parser.error(f'--phase {args.phase} needs --undo-file')
