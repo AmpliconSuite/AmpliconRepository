@@ -30,12 +30,26 @@ BED = b"chr8\t127700000\t128800000\tecDNA_1\n"
 
 
 @pytest.fixture
-def bed_in_gridfs():
+def bed_in_gridfs(mongo_collection):
+    """A public project whose sample ``s`` names one BED.
+
+    The route serves only an id the named sample holds (test_download_access),
+    so the file needs a project around it; a bare GridFS id is a 404 now.
+    """
+    from bson.objectid import ObjectId
     from caper.views import fs_handle
     file_id = fs_handle.put(BED, filename='pytest_feature.bed')
+    project_id = ObjectId()
+    mongo_collection.insert_one({
+        '_id': project_id, 'project_name': f'pytest-bed-{project_id}',
+        'private': 'public', 'delete': False, 'current': True,
+        'runs': {'s': [{'Sample_name': 's', 'Feature_ID': 'ecDNA_1',
+                        'Feature_BED_file': file_id}]},
+    })
     try:
-        yield str(file_id)
+        yield str(project_id), str(file_id)
     finally:
+        mongo_collection.delete_one({'_id': project_id})
         fs_handle.delete(file_id)
 
 
@@ -44,11 +58,12 @@ def test_feature_download_returns_the_bed_as_an_attachment(
         request_factory, test_user, bed_in_gridfs):
     from caper.views import feature_download
 
+    project_id, file_id = bed_in_gridfs
     req = request_factory.get(
-        f'/project/p/sample/s/feature/ecDNA_1/download/{bed_in_gridfs}')
+        f'/project/{project_id}/sample/s/feature/ecDNA_1/download/{file_id}')
     req.user = test_user
-    resp = feature_download(req, project_name='p', sample_name='s',
-                            feature_name='ecDNA_1', feature_id=bed_in_gridfs)
+    resp = feature_download(req, project_name=project_id, sample_name='s',
+                            feature_name='ecDNA_1', feature_id=file_id)
 
     assert resp.status_code == 200
     assert _download_bytes(resp) == BED, 'the bytes served are not the file stored'
