@@ -4811,6 +4811,18 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         # discarded, because nothing would ever reference — or delete — them.
         uploaded_file_ids = []
 
+        # run.json has one row per feature and repeats the sample's columns on
+        # every row, so the sample-level files (CNV BED, metadata JSONs, the
+        # reconstruction directory) are named once per feature.  Each
+        # (sample, key, path) is stored once and its id reused; storing it per
+        # feature made 137.4 of the 185.5 GiB that prod's documents name repeat
+        # copies (measured 2026-10-14).  The key is part of the cache key so every file's
+        # backlink names the field it was stored for.  Only successes are
+        # cached: a failed put is retried by the next feature naming the path.
+        stored_ids = {}
+        files_written = 0
+        bytes_written = 0
+
         gfs_start_time = time.time()
         # get cnv, image, bed files
         for sample, features in runs.items():
@@ -4838,13 +4850,19 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         id_var = "Not Provided"
                         try:
                             path_var = feature[k]
-                            with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
-                                id_var = put_with_backlink(
-                                    fs_handle, file_var, project_id=project_id,
-                                    sample_name=sample, feature_key=k)
-                            uploaded_file_ids.append(id_var)
-                            # Explicitly delete the file data reference
-                            del path_var
+                            cache_key = (sample, k, path_var)
+                            if cache_key in stored_ids:
+                                id_var = stored_ids[cache_key]
+                            else:
+                                with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
+                                    file_size = os.fstat(file_var.fileno()).st_size
+                                    id_var = put_with_backlink(
+                                        fs_handle, file_var, project_id=project_id,
+                                        sample_name=sample, feature_key=k)
+                                uploaded_file_ids.append(id_var)
+                                stored_ids[cache_key] = id_var
+                                files_written += 1
+                                bytes_written += file_size
                         except Exception as upload_error:
                             # Previously a bare `except:` that silently recorded
                             # "Not Provided".  A missing artifact left no trace at
@@ -4905,23 +4923,32 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                                         break
                                 except OSError:
                                     continue
-                        if os.path.isdir(full_path):
+                        cache_key = (sample, directory_key, path_var)
+                        if cache_key in stored_ids:
+                            id_var = stored_ids[cache_key]
+                        elif os.path.isdir(full_path):
                             dir_name = os.path.basename(path_var.rstrip('/'))
                             archive_name = f'{dir_name}.tar.gz'
                             buf = io.BytesIO()
                             with tarfile.open(fileobj=buf, mode='w:gz') as tar:
                                 tar.add(full_path, arcname=dir_name)
                             buf.seek(0)
+                            file_size = buf.getbuffer().nbytes
                             id_var = put_with_backlink(
                                 fs_handle, buf, filename=archive_name,
                                 project_id=project_id, sample_name=sample,
                                 feature_key=directory_key)
                         else:
                             with open(full_path, 'rb') as file_var:
+                                file_size = os.fstat(file_var.fileno()).st_size
                                 id_var = put_with_backlink(
                                     fs_handle, file_var, project_id=project_id,
                                     sample_name=sample, feature_key=directory_key)
-                        uploaded_file_ids.append(id_var)
+                        if cache_key not in stored_ids:
+                            uploaded_file_ids.append(id_var)
+                            stored_ids[cache_key] = id_var
+                            files_written += 1
+                            bytes_written += file_size
                     except Exception as upload_error:
                         if isinstance(id_var, ObjectId):
                             discard_unrecorded_gridfs_files(delete_gridfs_file, [id_var])
@@ -4936,7 +4963,14 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         feature['AA directory'] = id_var
 
         gfs_end_time = time.time()
-        logging.info(f"Putting files in GridFS took {gfs_end_time - gfs_start_time:.4f}s")
+        # Files, MiB and s/MiB, so a change in write speed shows up as a number
+        # (report_upload_rates.py reads the same figures from fs.files
+        # for every past upload).
+        gfs_seconds = gfs_end_time - gfs_start_time
+        mib_written = bytes_written / 2**20
+        rate = f"{gfs_seconds / mib_written:.3f} s/MiB" if mib_written else "n/a s/MiB"
+        logging.info(f"Putting files in GridFS took {gfs_seconds:.1f}s: "
+                     f"{files_written:,} files, {mib_written:,.1f} MiB, {rate}")
         logging.info("All features processed. Updating project in database...")
 
         # Now update the project with the updated runs

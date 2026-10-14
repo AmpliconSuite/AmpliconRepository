@@ -262,12 +262,19 @@ def discard_unrecorded_gridfs_files(delete_file, file_ids):
     can be a whole directory tarball, large enough that an unbatched delete
     times out.
 
+    An id listed twice is deleted once: one GridFS file can stand for several
+    features, and a second delete of it would fail and be counted as a miss.
+
     Returns the number of files actually deleted.
     """
     deleted = 0
+    seen = set()
     for file_id in (file_ids or ()):
         if file_id is None or not isinstance(file_id, ObjectId):
             continue
+        if file_id in seen:
+            continue
+        seen.add(file_id)
         try:
             delete_file(file_id)
             deleted += 1
