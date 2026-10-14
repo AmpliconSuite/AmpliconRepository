@@ -78,6 +78,9 @@ def purge_env(monkeypatch):
 
     monkeypatch.setattr(version_purge._thread_executor, 'submit', fake_submit)
     state['collection'] = collection
+    # No test here may reach the real bucket: prod, dev and laptops share it.
+    from django.conf import settings
+    monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', False, raising=False)
     return state
 
 
@@ -118,7 +121,8 @@ def test_the_purge_deletes_clears_the_pending_list_and_confirms(purge_env):
 
     assert purge_env['deleted'] == ids
     assert purge_env['confirmed'] == [('event-1', {'outcome': 'tombstoned_in_place',
-                                                   'gridfs_files_purged': 2})]
+                                                   'gridfs_files_purged': 2,
+                                                   's3_archive_deleted': None})]
     pulled = [i for _q, u in purge_env['collection'].updates if '$pull' in u
               for i in u['$pull'][PENDING_PAYLOAD_KEY]['$in']]
     assert pulled == ids
@@ -132,7 +136,8 @@ def test_a_version_with_no_payload_still_confirms_its_event(purge_env):
 
     assert purge_env['submitted'] == []
     assert purge_env['confirmed'] == [('event-2', {'outcome': 'chain_emptied',
-                                                   'gridfs_files_purged': 0})]
+                                                   'gridfs_files_purged': 0,
+                                                   's3_archive_deleted': None})]
 
 
 def test_the_event_is_confirmed_after_the_files_are_gone(purge_env):
@@ -278,3 +283,97 @@ def test_the_claim_is_only_released_when_the_purge_is_done(purge_env, monkeypatc
     updates = purge_env['collection'].updates
     releases = [n for n, (_q, u) in enumerate(updates) if '$unset' in u]
     assert releases == [len(updates) - 1]
+
+
+# ---------------------------------------------------------------------------
+# The S3 copy of the archive
+# ---------------------------------------------------------------------------
+
+class FakeS3:
+    """Records calls; head_object raises a 404 for keys it does not hold."""
+
+    def __init__(self, keys=(), fail=False):
+        self.keys = set(keys)
+        self.fail = fail
+        self.deleted = []
+
+    def head_object(self, Bucket, Key):
+        if self.fail:
+            raise RuntimeError('S3 is down')
+        if Key not in self.keys:
+            error = Exception('Not Found')
+            error.response = {'Error': {'Code': '404'}}
+            raise error
+        return {}
+
+    def delete_object(self, Bucket, Key):
+        self.deleted.append((Bucket, Key))
+        self.keys.discard(Key)
+
+
+@pytest.fixture
+def s3_on(purge_env, monkeypatch):
+    from django.conf import settings
+    monkeypatch.setattr(settings, 'USE_S3_DOWNLOADS', True, raising=False)
+    monkeypatch.setattr(settings, 'S3_DOWNLOADS_BUCKET', 'test-bucket', raising=False)
+    monkeypatch.setattr(settings, 'S3_DOWNLOADS_BUCKET_PATH', '', raising=False)
+
+    def install(fake):
+        monkeypatch.setattr(version_purge, '_s3_client', lambda: fake)
+        return fake
+    return install
+
+
+def test_the_purge_also_deletes_the_s3_archive(purge_env, s3_on):
+    """Six prod tombstones kept theirs (2.1 GiB, 2026-10-14) because only the
+    admin permanent delete removed it."""
+    victim_id = str(ObjectId())
+    key = f'{victim_id}/{victim_id}.tar.gz'
+    fake = s3_on(FakeS3({key, 'someone/else.tar.gz'}))
+
+    version_purge.start(victim_id, [ObjectId()], 'event-s3', outcome='tombstoned_in_place')
+
+    assert fake.deleted == [('test-bucket', key)]
+    assert purge_env['confirmed'][0][1]['s3_archive_deleted'] is True
+
+
+def test_a_version_with_no_gridfs_payload_still_loses_its_archive(purge_env, s3_on):
+    victim_id = str(ObjectId())
+    key = f'{victim_id}/{victim_id}.tar.gz'
+    fake = s3_on(FakeS3({key}))
+
+    version_purge.start(victim_id, [], 'event-empty', outcome='chain_emptied')
+
+    assert fake.deleted == [('test-bucket', key)]
+    assert purge_env['confirmed'][0][1]['s3_archive_deleted'] is True
+
+
+def test_no_archive_means_no_delete_marker(purge_env, s3_on):
+    """The bucket is versioned: deleting a key that is not there still writes a
+    delete marker, so the purge looks before it deletes."""
+    fake = s3_on(FakeS3())
+
+    version_purge.start(str(ObjectId()), [ObjectId()], 'event-none', outcome='tombstoned_in_place')
+
+    assert fake.deleted == []
+    assert purge_env['confirmed'][0][1]['s3_archive_deleted'] is False
+
+
+def test_an_s3_failure_does_not_stop_the_purge(purge_env, s3_on):
+    ids = [ObjectId(), ObjectId()]
+    s3_on(FakeS3(fail=True))
+
+    version_purge.start(str(ObjectId()), ids, 'event-fail', outcome='tombstoned_in_place')
+
+    assert purge_env['deleted'] == ids
+    assert purge_env['confirmed'][0][1]['s3_archive_deleted'] is None
+
+
+def test_without_s3_the_bucket_is_never_touched(purge_env, monkeypatch):
+    def refuse():
+        raise AssertionError('a deployment without S3 reached for the shared bucket')
+    monkeypatch.setattr(version_purge, '_s3_client', refuse)
+
+    version_purge.start(str(ObjectId()), [ObjectId()], 'event-local', outcome='tombstoned_in_place')
+
+    assert purge_env['confirmed'][0][1]['s3_archive_deleted'] is None
