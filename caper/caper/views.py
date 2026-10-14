@@ -78,7 +78,7 @@ from django.db.models import Q
 from .forms import RunForm, UpdateForm, OldVersionEditForm, UserPreferencesForm, DownloadCaptchaForm
 from .download_gate import (
     download_gate, grant_download_pass, internal_download_headers,
-    is_download_path, may_download, pass_duration_label,
+    is_download_path, is_internal_call, may_download, pass_duration_label,
 )
 
 # Import utils functions
@@ -1279,7 +1279,12 @@ def project_download(request, project_name):
     project = get_one_project(project_name)
     if project is None:
         raise Http404(f"Project {project_name!r} not found")
-    refusal = project_access_refusal(request, project)
+    # Editing a project into a new version, and adding samples through the
+    # API, fetch the old archive from this route with no session, only the
+    # internal token (download_gate.is_internal_call).  Refusing that request
+    # hands the aggregator a login page, and the new version fails: every edit
+    # of a private project did, from v4.4.3 until this exemption.
+    refusal = None if is_internal_call(request) else project_access_refusal(request, project)
     if refusal is not None:
         return refusal
     update_project_download_count(project, project_name)

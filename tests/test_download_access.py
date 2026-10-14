@@ -214,3 +214,28 @@ def test_project_download_follows_the_page_rule(make_project, request_factory, m
         assert status in (302, 404) and not counted
     else:
         assert counted == [pid]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('token,refused', [('valid', False), ('forged', True), (None, True)])
+def test_the_servers_own_archive_fetch_is_served(make_project, request_factory, monkeypatch,
+                                                 token, refused):
+    """Editing a private project re-aggregates its old archive, fetched from
+    project_download with no session and only the internal token. Refusing it
+    gave the aggregator a login page, and every such edit failed (2026-10-14)."""
+    import caper.views as views
+    from caper.download_gate import _INTERNAL_META_KEY, _internal_token
+    counted = []
+    monkeypatch.setattr(views, 'update_project_download_count',
+                        lambda project, name: counted.append(name))
+    pid, _ = make_project('private')
+    req = request_factory.get(f'/project/{pid}/download', REMOTE_ADDR='127.0.0.1')
+    req.user = _Anon()
+    req.session = {}
+    if token:
+        req.META[_INTERNAL_META_KEY] = _internal_token() if token == 'valid' else 'a' * 64
+    status = _call(views.project_download, req, pid)
+    if refused:
+        assert status in (302, 404) and not counted
+    else:
+        assert counted == [pid]
