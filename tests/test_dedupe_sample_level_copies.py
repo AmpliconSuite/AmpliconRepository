@@ -335,6 +335,25 @@ def test_delete_refuses_a_copy_the_same_document_names_outside_runs(db, tmp_path
     assert refused[str(ids['cnv'][1])] == 'still named by a document'
 
 
+def test_the_report_does_not_count_a_copy_the_document_names_outside_runs(db, monkeypatch):
+    """prod, 2026-10-15: the report counted 60 ids as freed that a legacy
+    features_list still named; the delete phase would have refused them."""
+    import gridfs as gridfs_module
+    from types import SimpleNamespace
+    pid, ids = _project(db)
+    db['projects'].update_one({'_id': pid},
+                              {'$set': {'features_list': [{'CNV_BED_file': ids['cnv'][1]}]}})
+    bucket = db.fs()
+    monkeypatch.setattr(gridfs_module, 'GridFS', lambda *_a, **_k: bucket)
+    args = SimpleNamespace(phase='report', execute=False, only=[str(pid)], limit=None, undo_file=None)
+
+    totals = dd.run_plan(db, args)
+
+    # cnv, meta and the shared directory each free two copies: 6, less the one
+    # features_list still names.
+    assert totals['files'] == 5
+
+
 # ---------------------------------------------------------------------------
 # The command line's own guards
 # ---------------------------------------------------------------------------
