@@ -443,7 +443,10 @@ def run_plan(db, args):
                 skipped.append((str(doc_id), g['run_key'], g['key'], g['skip']))
             progress.tick(totals['groups'], f"{gib(totals['read_bytes'])} read, "
                                             f"{totals['skipped']:,} skipped")
-        freed = freed_ids(doc, proven_groups)
+        # The whole document, not the runs/tarfile projection above: a legacy
+        # top-level features_list can still name an old id (prod, 2026-10-15: 60
+        # ids in two documents), and the delete phase will refuse those.
+        freed = freed_ids(projects.find_one({'_id': doc_id}), proven_groups)
         totals['files'] += len(freed)
         totals['bytes'] += sum(r['length'] for r in files.find({'_id': {'$in': list(freed)}}, {'length': 1}))
         if undo is not None and by_sample:
