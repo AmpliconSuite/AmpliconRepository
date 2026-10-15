@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+{% comment %}
+Rendered by django-allauth when one of its rate limits fires (signup, password
+reset, email and password changes; see ACCOUNT_RATE_LIMITS). allauth looks for
+this file at the top of the template directory. Without it the limit raised
+TemplateDoesNotExist and the visitor got a 500 instead of a 429.
+
+Standalone on purpose: it is served to whoever is sending too many requests, so
+it does no database work and loads nothing.
+{% endcomment %}
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>Too many requests | AmpliconRepository</title>
+    <style>
+        body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #212529;
+               max-width: 600px; margin: 80px auto; padding: 0 20px; line-height: 1.5; }
+        h1 { font-size: 1.5rem; }
+    </style>
+</head>
+<body>
+    <h1>Too many requests</h1>
+    <p>This action has been tried too many times in a short period. Please wait a minute and try again.</p>
+    <p><a href="/">Return to AmpliconRepository</a></p>
+</body>
+</html>
