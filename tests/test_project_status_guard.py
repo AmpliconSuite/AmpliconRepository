@@ -137,6 +137,9 @@ ALLOWED = {
         "printed remediation advice",
 
     # -- projections and control flow, not filters -----------------------
+    ('dedupe_sample_level_copies.py',
+     "if args.phase in ('rewrite', 'rollback', 'delete') and not args.undo_file:"):
+        "the script's --phase names, not a status field",
     ('backfill_project_status.py',
      "'version_chain_id': 1, 'delete': 1,"):
         "projection, not a filter: the chain builder reads status only to tell "
