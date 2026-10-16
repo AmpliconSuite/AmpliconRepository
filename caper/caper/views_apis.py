@@ -1479,6 +1479,9 @@ class FeatureSearchView(APIView):
                 description='Comma-delimited subset of the row fields to return.'),
             OpenApiParameter('limit', int, OpenApiParameter.QUERY, required=False,
                 description=f'Rows per page, 1-{api_features.MAX_LIMIT}, default {api_features.DEFAULT_LIMIT}.'),
+            OpenApiParameter('page_size', int, OpenApiParameter.QUERY, required=False,
+                description='Same as limit; accepted because it is the usual name. '
+                            'Sending both with different values is a 400.'),
             OpenApiParameter('cursor', str, OpenApiParameter.QUERY, required=False,
                 description='Opaque cursor from a previous response\'s next_cursor.'),
             OpenApiParameter('count_only', bool, OpenApiParameter.QUERY, required=False,
@@ -1540,6 +1543,9 @@ class FeatureSamplesView(APIView):
             OpenApiParameter('limit', int, OpenApiParameter.QUERY, required=False,
                 description=f'Samples per page, 1-{api_features.MAX_LIMIT}, '
                             f'default {api_features.DEFAULT_LIMIT}.'),
+            OpenApiParameter('page_size', int, OpenApiParameter.QUERY, required=False,
+                description='Same as limit; accepted because it is the usual name. '
+                            'Sending both with different values is a 400.'),
             OpenApiParameter('cursor', str, OpenApiParameter.QUERY, required=False,
                 description='Opaque cursor from a previous response\'s next_cursor.'),
         ],

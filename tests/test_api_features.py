@@ -492,6 +492,57 @@ def test_an_unknown_parameter_is_refused(corpus):
     assert 'nonsense_parameter' in resp.data['error']
 
 
+def test_a_referrer_tracking_tag_is_ignored(corpus):
+    """ChatGPT appends ``utm_source=chatgpt.com`` to every link it opens.
+
+    That is how a ChatGPT-built feature query reached prod on 2026-10-16 and
+    got a 400. The tag must not change the answer, and the refusal must still
+    fire for anything else unknown in the same query.
+    """
+    plain = _scoped(corpus, 'gene_any=MYC&count_only=true')
+    tagged = _scoped(corpus, 'gene_any=MYC&count_only=true'
+                             '&utm_source=chatgpt.com&utm_medium=referral')
+    assert plain.status_code == tagged.status_code == 200, tagged.data
+    assert tagged.data == plain.data
+
+    mixed = _scoped(corpus, 'utm_source=chatgpt.com&nonsense_parameter=xyz')
+    assert mixed.status_code == 400
+    assert 'nonsense_parameter' in mixed.data['error']
+    assert 'utm_source' not in mixed.data['error']
+
+
+def test_a_tracking_tag_is_ignored_on_feature_samples(corpus):
+    resp = _samples('?project_id=%s&gene_any=MYC&utm_source=chatgpt.com'
+                    % corpus['public'])
+    assert resp.status_code == 200, resp.data
+
+
+def test_page_size_is_limit(corpus):
+    """Agents guess DRF's ``page_size``; prod refused it 15 times in Oct 2026."""
+    by_limit = _scoped(corpus, 'limit=2&fields=feature_id')
+    by_page_size = _scoped(corpus, 'page_size=2&fields=feature_id')
+    assert by_limit.status_code == by_page_size.status_code == 200
+    assert len(by_page_size.data['results']) == 2
+    assert by_page_size.data == by_limit.data
+
+    samples = _samples('?project_id=%s&page_size=1' % corpus['public'])
+    assert samples.status_code == 200, samples.data
+    assert len(samples.data['results']) == 1
+
+
+def test_page_size_and_limit_must_agree(corpus):
+    assert _scoped(corpus, 'limit=2&page_size=2').status_code == 200
+    resp = _scoped(corpus, 'limit=2&page_size=3')
+    assert resp.status_code == 400
+    assert resp.data['code'] == 'invalid_parameter'
+
+
+def test_an_out_of_range_page_size_is_named_as_sent(corpus):
+    resp = _scoped(corpus, 'page_size=100000')
+    assert resp.status_code == 400
+    assert "'page_size'" in resp.data['error']
+
+
 def test_the_legacy_tissue_alias_still_answers(corpus):
     """``tissue`` was the original name and is still accepted.
 

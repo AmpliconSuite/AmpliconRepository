@@ -114,7 +114,12 @@ ACCEPTED_PARAMS = frozenset({
 # Measured on prod 2026-09-08: ``?tissue_of_origin=lung`` returned 37,795 -- the
 # whole corpus -- where ``?tissue=lung`` returned 467.  The facet name is now the
 # parameter name; ``tissue`` stays accepted so existing callers keep working.
-PARAM_ALIASES = {'tissue': 'tissue_of_origin'}
+#
+# ``page_size`` is DRF's name for a page length, and agents guess it: prod's ALB
+# logs carry 15 ``page_size`` requests refused between 2026-10-01 and 10-10,
+# from 12 addresses in Google's agent-fetcher ranges.  A page length can only
+# shorten an answer, never widen it, so it is an alias of ``limit``.
+PARAM_ALIASES = {'tissue': 'tissue_of_origin', 'page_size': 'limit'}
 
 # ``/features/samples/`` takes every filter ``/features/`` takes and answers at
 # a different granularity, so its parameter set is derived from that one rather
@@ -122,17 +127,28 @@ PARAM_ALIASES = {'tissue': 'tissue_of_origin'}
 # ``fields`` and ``count_only`` are row-shaped and have no meaning on a sample.
 SAMPLE_ACCEPTED_PARAMS = (ACCEPTED_PARAMS - {'fields', 'count_only'})
 
+# Campaign tags a referrer appends to every link it hands out.  ChatGPT adds
+# ``utm_source=chatgpt.com``: prod's ALB logs carry 15 such API requests
+# between 2026-09-15 and 2026-10-02, all to /projects/ routes, which ignore
+# unknown parameters.  The first one sent to /features/ was refused with a 400.
+# A tag never narrows a query, so ignoring it cannot widen an answer, which is
+# what the refusal above exists to prevent.
+IGNORED_PARAM_PREFIXES = ('utm_',)
+
 
 def reject_unknown_params(params, accepted=None):
     """400 on any parameter this endpoint does not implement.
 
     Returns the parameter names folded through PARAM_ALIASES, so the caller of
-    this function reads canonical names only.
+    this function reads canonical names only.  Referrer tracking tags
+    (IGNORED_PARAM_PREFIXES) are neither refused nor returned.
     """
     accepted = ACCEPTED_PARAMS if accepted is None else accepted
     seen = {}
     unknown = []
     for name in params.keys():
+        if name.startswith(IGNORED_PARAM_PREFIXES):
+            continue
         canonical = PARAM_ALIASES.get(name, name)
         if canonical not in accepted:
             unknown.append(name)
@@ -195,21 +211,40 @@ def parse_csv(value):
     return [part.strip() for part in str(value).split(',') if part.strip()]
 
 
-def parse_limit(value):
+def parse_limit(value, name='limit'):
     if value is None or str(value).strip() == '':
         return DEFAULT_LIMIT
     try:
         limit = int(value)
     except (TypeError, ValueError):
         raise FeatureQueryError(
-            f"'limit' must be a whole number, not {value!r}.", 'invalid_parameter')
+            f"'{name}' must be a whole number, not {value!r}.", 'invalid_parameter')
     if limit < 1:
-        raise FeatureQueryError("'limit' must be at least 1.", 'invalid_parameter')
+        raise FeatureQueryError(f"'{name}' must be at least 1.", 'invalid_parameter')
     if limit > MAX_LIMIT:
         raise FeatureQueryError(
-            f"'limit' may not exceed {MAX_LIMIT}; use 'cursor' to page.",
+            f"'{name}' may not exceed {MAX_LIMIT}; use 'cursor' to page.",
             'invalid_parameter')
     return limit
+
+
+def limit_from_params(params):
+    """The page length, from ``limit`` or its alias ``page_size``.
+
+    Both at once with different values is a 400: either reading of it would be
+    a guess about which one the caller meant.
+    """
+    given = {name: params.get(name) for name in ('limit', 'page_size')
+             if params.get(name) is not None}
+    if len(set(given.values())) > 1:
+        raise FeatureQueryError(
+            "'limit' and 'page_size' are the same parameter and disagree "
+            f"({given['limit']!r} against {given['page_size']!r}); send one.",
+            'invalid_parameter')
+    if not given:
+        return parse_limit(None)
+    name = 'limit' if 'limit' in given else 'page_size'
+    return parse_limit(given[name], name)
 
 
 def encode_cursor(object_id):
@@ -801,7 +836,7 @@ def search_feature_samples(params, user, request=None):
             "'same_amp' narrows an AND gene query and only means something "
             "with 'gene_all'.", 'invalid_parameter')
 
-    limit = parse_limit(params.get('limit'))
+    limit = limit_from_params(params)
     after = decode_key_cursor(params.get('cursor'))
 
     base = non_gene_clauses(**filters_from_params(params, user))
@@ -889,7 +924,7 @@ def search_features(params, user, request=None):
             "'same_amp' narrows an AND gene query and only means something "
             "with 'gene_all'.", 'invalid_parameter')
 
-    limit = parse_limit(params.get('limit'))
+    limit = limit_from_params(params)
     fields = parse_fields(params.get('fields'))
     count_only = parse_bool(params.get('count_only'), 'count_only')
     after = decode_cursor(params.get('cursor'))
