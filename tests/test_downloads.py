@@ -436,3 +436,21 @@ def test_sample_metadata_download_matches_the_page(
     resp = _metadata_download(monkeypatch, request_factory, test_user, row)
     assert json.loads(resp.content) == dict(views.get_sample_metadata([row])) == {
         'sample_type': 'cell line', 'tissue_of_origin': 'urinary tract'}
+
+
+def test_sample_metadata_download_is_strict_json(
+        monkeypatch, request_factory, test_user):
+    """An empty CSV cell arrives as float NaN and must be written as null.
+
+    json.dumps writes a bare NaN, which JSON.parse and jq refuse. Seen on a
+    CCLE sample on dev, 2026-10-16 ("alias": NaN).
+    """
+    import json
+    resp = _metadata_download(monkeypatch, request_factory, test_user,
+                              {'Sample_metadata_JSON': 'Not Provided',
+                               'extra_metadata_from_csv': {'alias': float('nan'),
+                                                           'sex': 'Male'}})
+    body = resp.content.decode()
+    assert 'NaN' not in body
+    assert json.loads(body, parse_constant=lambda c: pytest.fail(c)) == \
+        {'alias': None, 'sex': 'Male'}
