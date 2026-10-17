@@ -448,3 +448,150 @@ def test_email_password_login_form_works(page, base_url):
             User.objects.filter(username=username).delete()
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Download buttons: click each one as a user would, check what arrives, and
+# time it.  Asked for after a sample zip froze Chrome on prod 2026-10-16 while
+# the server had sent all 33 MB of it -- a server-side test could not have
+# told those apart, a browser can.
+#
+# Writes download counters on the server under test, so point it at a laptop
+# or dev, not production.  Target a particular project with
+# BROWSER_DOWNLOAD_PROJECT=<id>; the per-download budget is
+# BROWSER_DOWNLOAD_BUDGET_S (default 120).  Run with -s to see the timings.
+# ---------------------------------------------------------------------------
+
+def _download_target(public_project_id):
+    return os.environ.get('BROWSER_DOWNLOAD_PROJECT') or public_project_id
+
+
+def _check_payload(name, data):
+    """What arrived must be the file, not an error or a challenge page."""
+    import io
+    import json
+    import zipfile
+    assert data, f'{name}: empty download'
+    head = data[:200].lstrip().lower()
+    assert not head.startswith((b'<!doctype', b'<html')), \
+        f'{name}: an HTML page arrived instead of the file'
+    if name.endswith('.zip') or data[:2] == b'PK':
+        bad = zipfile.ZipFile(io.BytesIO(data)).testzip()
+        assert bad is None, f'{name}: corrupt member {bad}'
+    elif name.endswith('.tar.gz') or data[:2] == b'\x1f\x8b':
+        import gzip
+        gzip.decompress(data)
+    elif name.endswith('.json'):
+        json.loads(data)
+
+
+def _timed_download(page, click, label, timings, budget):
+    import time
+    seen = []
+    record = lambda r: seen.append(f'{r.status} {r.url}')
+    page.on('response', record)
+    t0 = time.perf_counter()
+    try:
+        with page.expect_download(timeout=budget * 1000) as info:
+            click()
+        download = info.value
+    except Exception as exc:
+        pytest.fail(f'{label}: no download within {budget}s ({type(exc).__name__}); '
+                    f'page is at {page.url}; last responses: {seen[-5:]}')
+    finally:
+        page.remove_listener('response', record)
+    path = download.path()            # blocks until the file is complete
+    elapsed = time.perf_counter() - t0
+    assert download.failure() is None, f'{label}: {download.failure()}'
+    with open(path, 'rb') as handle:
+        data = handle.read()
+    _check_payload(download.suggested_filename, data)
+    timings.append((label, download.suggested_filename, len(data), elapsed))
+    assert elapsed < budget, f'{label}: {elapsed:.1f}s is over the {budget}s budget'
+
+
+def _timed_inline(page, base_url, link, label, timings, budget):
+    """PNG and PDF links are served inline, not as attachments.
+
+    Fetched through the page's own session instead of clicked: headless
+    Chromium has no PDF viewer, so a clicked PDF neither stays in the tab nor
+    arrives as a download, and its body cannot be read afterwards.  The URL is
+    still the one the page links to.
+    """
+    import time
+    href = link.get_attribute('href')
+    t0 = time.perf_counter()
+    response = page.request.get(base_url.rstrip('/') + href, timeout=budget * 1000)
+    body = response.body()
+    elapsed = time.perf_counter() - t0
+    assert response.status == 200, f'{label}: HTTP {response.status} for {href}'
+    ctype = response.headers.get('content-type', '')
+    assert ctype.startswith(('image/', 'application/pdf')), f'{label}: {ctype}'
+    assert body, f'{label}: empty body'
+    timings.append((label, href.rsplit('/', 4)[-4], len(body), elapsed))
+
+
+def _report(title, timings):
+    print(f'\n{title}')
+    for label, name, size, elapsed in timings:
+        print(f'  {label:<22} {elapsed:7.2f}s {size / 2**20:9.2f} MiB  {name}')
+
+
+@pytest.mark.browser
+@pytest.mark.slow
+def test_sample_page_download_buttons(authenticated_page, base_url, public_project_id):
+    page = authenticated_page
+    budget = float(os.environ.get('BROWSER_DOWNLOAD_BUDGET_S', '120'))
+    project = _download_target(public_project_id)
+    sample = os.environ.get('BROWSER_DOWNLOAD_SAMPLE')
+    if not sample:
+        # The first sample with amplicon features, so the per-feature BED, PDF
+        # and PNG links are on its page; column 2 of the table is Features.
+        page.goto(f'{base_url}/project/{project}')
+        page.wait_for_load_state('domcontentloaded')
+        sample = page.evaluate("""() => {
+            for (const tr of document.querySelectorAll('tbody tr')) {
+                const cells = tr.querySelectorAll('td');
+                const link = cells[0] && cells[0].querySelector('a[href*="/sample/"]');
+                if (link && parseInt(cells[1].textContent, 10) > 0)
+                    return link.textContent.trim();
+            }
+            return null;
+        }""")
+        assert sample, 'no sample with features on the project page'
+    page.goto(f'{base_url}/project/{project}/sample/{sample}')
+    page.wait_for_load_state('domcontentloaded')
+
+    timings = []
+    _timed_download(page, lambda: page.get_by_role('link', name='Download Sample Data').click(),
+                    'sample zip', timings, budget)
+    _timed_download(page, lambda: page.get_by_role('link', name='Download Metadata').click(),
+                    'sample metadata', timings, budget)
+    bed = page.get_by_role('link', name='BED', exact=True).first
+    if bed.count():
+        _timed_download(page, bed.click, 'feature BED', timings, budget)
+    for kind in ('PDF', 'PNG'):
+        link = page.get_by_role('link', name=kind, exact=True).first
+        if link.count():
+            _timed_inline(page, base_url, link, f'feature {kind}', timings, budget)
+    _report(f'sample downloads, {page.url}', timings)
+    assert len(timings) >= 2
+
+
+@pytest.mark.browser
+@pytest.mark.slow
+def test_project_page_download_buttons(authenticated_page, base_url, public_project_id):
+    page = authenticated_page
+    budget = float(os.environ.get('BROWSER_DOWNLOAD_BUDGET_S', '120'))
+    project = _download_target(public_project_id)
+    page.goto(f'{base_url}/project/{project}')
+    page.wait_for_load_state('domcontentloaded')
+
+    timings = []
+    for handler, label in (('downloadSummaryTable', 'project summary'),
+                           ('downloadMetadata', 'project metadata'),
+                           ('downloadAndReload', 'project archive')):
+        button = page.locator(f'[onclick^="{handler}("]').first
+        assert button.count(), f'no {label} button'
+        _timed_download(page, button.click, label, timings, budget)
+    _report(f'project downloads, {page.url}', timings)
