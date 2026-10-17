@@ -380,3 +380,59 @@ def test_sample_metadata_download_refuses_unverified_visitor(
 
     assert resp.status_code == 302
     assert resp['Location'] == '/downloads/verify'
+
+
+def _metadata_download(monkeypatch, request_factory, test_user, row):
+    """Call sample_metadata_download on one hand-built row, no database."""
+    import caper.views as views
+    monkeypatch.setattr(views, 'get_one_sample_rows',
+                        lambda project_name, sample_name: ({'_id': 'p'}, [row]))
+    monkeypatch.setattr(views, 'project_access_refusal', lambda request, project: None)
+    req = request_factory.get('/project/p/sample/S1/download_metadata')
+    req.user = test_user
+    return views.sample_metadata_download(req, project_name='p', sample_name='S1')
+
+
+def test_sample_metadata_download_without_json_serves_csv_extras(
+        monkeypatch, request_factory, test_user):
+    """'Not Provided' in place of a JSON id must not give an empty page.
+
+    The route read the id itself and answered every failure with an empty 200,
+    so a sample with no metadata JSON -- 7,838 of 15,707 on caper-dev, CCLE's
+    all among them -- downloaded nothing and left the browser on a blank tab.
+    """
+    import json
+    extras = {'tissue_of_origin': 'urinary tract', 'depmap_id': 'ACH-000001'}
+    resp = _metadata_download(monkeypatch, request_factory, test_user,
+                              {'Sample_metadata_JSON': 'Not Provided',
+                               'extra_metadata_from_csv': extras})
+    assert resp.status_code == 200
+    assert 'attachment' in resp['Content-Disposition']
+    assert json.loads(resp.content) == extras
+
+
+def test_sample_metadata_download_with_nothing_recorded_is_404(
+        monkeypatch, request_factory, test_user):
+    from django.http import Http404
+    with pytest.raises(Http404):
+        _metadata_download(monkeypatch, request_factory, test_user,
+                           {'Sample_metadata_JSON': 'Not Provided'})
+
+
+def test_sample_metadata_download_matches_the_page(
+        monkeypatch, request_factory, test_user):
+    """The download is what the page's metadata table shows, extras winning."""
+    import json
+    import caper.views as views
+    stored = {'sample_type': 'cell line', 'tissue_of_origin': 'unknown'}
+
+    class _File:
+        def read(self):
+            return json.dumps(stored).encode()
+
+    monkeypatch.setattr(views.fs_handle, 'get', lambda oid: _File())
+    row = {'Sample_metadata_JSON': str(ObjectId()),
+           'extra_metadata_from_csv': {'tissue_of_origin': 'urinary tract'}}
+    resp = _metadata_download(monkeypatch, request_factory, test_user, row)
+    assert json.loads(resp.content) == dict(views.get_sample_metadata([row])) == {
+        'sample_type': 'cell line', 'tissue_of_origin': 'urinary tract'}

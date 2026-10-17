@@ -1895,13 +1895,21 @@ def igv_features_creation(locations):
 
 
 def get_sample_metadata(sample_data):
-    try:
-        sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
-        sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
-        sample_metadata = json.loads(sample_metadata.decode())
-    except Exception as e:
-        # logging.exception(e)
-        sample_metadata = defaultdict(str)
+    """A sample's metadata: its GridFS JSON, overlaid with the CSV extras.
+
+    The sample page's table, the sample zip and the metadata download all read
+    this, so they agree. Many samples carry 'Not Provided' instead of a JSON id
+    (7,838 of 15,707 live samples on caper-dev, 2026-10-16); they get the
+    extras alone, or an empty dict.
+    """
+    sample_metadata_id = sample_data[0].get('Sample_metadata_JSON')
+    sample_metadata = defaultdict(str)
+    if sample_metadata_id not in _MISSING_FILE_SENTINELS:
+        try:
+            raw = fs_handle.get(ObjectId(sample_metadata_id)).read()
+            sample_metadata = json.loads(raw.decode())
+        except Exception as e:
+            logging.warning(f"Could not read Sample_metadata_JSON {sample_metadata_id!r}: {e}")
     try:
         # Add metadata from the `extra_metadata_from_csv` field
         extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
@@ -1926,21 +1934,14 @@ def sample_metadata_download(request, project_name, sample_name):
     refusal = project_access_refusal(request, project)
     if refusal is not None:
         return refusal
-    sample_metadata_id = sample_data[0]['Sample_metadata_JSON']
-    extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
-    try:
-        sample_metadata = fs_handle.get(ObjectId(sample_metadata_id)).read()
-        ##combining
-        combination = json.dumps({**json.loads(sample_metadata), **extra_metadata}, indent=2).encode('utf-8')
-        response = HttpResponse(combination)
-        response['Content-Type'] = 'application/json'
-        response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
-        # clear_tmp()
-        return response
-
-    except Exception as e:
-        logging.exception(e)
-        return HttpResponse()
+    sample_metadata = get_sample_metadata(sample_data)
+    if not sample_metadata:
+        # The page hides the button in this case; this answers a direct link.
+        raise Http404("No metadata recorded for this sample")
+    response = HttpResponse(json.dumps(sample_metadata, indent=2).encode('utf-8'),
+                            content_type='application/json')
+    response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
+    return response
 
 def download_verify(request):
     """Human-verification challenge shown before an anonymous download.
