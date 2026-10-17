@@ -1582,14 +1582,22 @@ def validate_project(project, project_name):
                 break
         if update:
             break
+    # Hand back the rewritten runs, which is what #181 needed (a sample opened
+    # right after creation looked up underscore keys in the space-keyed copy
+    # still in memory).  Not by re-reading the document: that fetched it a
+    # second time on every page load whether or not anything was rewritten --
+    # 0.6-0.7 s for HMF's 15 MB document, measured on dev 2026-10-16, when 6
+    # of 213 documents on prod would be rewritten at all -- and a re-read can
+    # be served by a replica that has not yet seen this write.
     if update and runs is not None:
         new_values = {"$set": {
             'runs': runs
         }}
         query = combine(NOT_DELETED_QUERY, _id=project['_id'])
         collection_handle.update_one(query, new_values)
+        project['runs'] = runs
 
-    return get_one_project(project_name)
+    return project
 
 
 def prepare_project_linkid(project):

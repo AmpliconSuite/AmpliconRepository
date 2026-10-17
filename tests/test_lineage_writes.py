@@ -1079,6 +1079,44 @@ def test_validate_project_does_not_raise_on_an_emptied_project():
     validate_project(tombstone, str(tombstone['_id']))
 
 
+def test_validate_project_does_not_fetch_the_document_again(monkeypatch):
+    """It re-read the whole document on every project page load.
+
+    For HMF's 15 MB document that second fetch was 0.6-0.7 s (dev,
+    2026-10-16), and 207 of 213 documents on prod need no rewrite at all.
+    """
+    from caper import utils
+
+    def no_second_fetch(*args, **kwargs):
+        raise AssertionError('validate_project fetched the document again')
+    monkeypatch.setattr(utils, 'get_one_project', no_second_fetch)
+
+    project = {'_id': ObjectId(), 'runs': {'sample_1': [{'Sample_name': 'GBM39',
+                                                          'Feature_ID': 'f1'}]}}
+    assert utils.validate_project(project, str(project['_id'])) is project
+
+
+def test_validate_project_hands_back_the_runs_it_rewrote(monkeypatch):
+    """#181: a sample opened right after creation needs the underscore keys.
+
+    The rewrite goes to the database and must also be what the caller gets,
+    without depending on a re-read that a replica may answer stale.
+    """
+    from caper import utils
+
+    writes = []
+    monkeypatch.setattr(utils.collection_handle, 'update_one',
+                        lambda query, update: writes.append(update))
+    monkeypatch.setattr(utils, 'get_one_project', lambda *a, **k: None)
+
+    project = {'_id': ObjectId(), 'runs': {'sample_1': [{'Sample name': 12,
+                                                          'AA directory': 'x'}]}}
+    result = utils.validate_project(project, str(project['_id']))
+
+    assert result['runs'] == {'sample_1': [{'Sample_name': '12', 'AA_directory': 'x'}]}
+    assert writes == [{'$set': {'runs': result['runs']}}]
+
+
 def test_project_runs_is_one_accessor_shared_by_its_readers():
     """site_stats and utils must not grow a second spelling between them."""
     from caper.project_status import project_runs
