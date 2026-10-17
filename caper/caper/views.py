@@ -1921,6 +1921,17 @@ def get_sample_metadata(sample_data):
 
     return sample_metadata
 
+def sample_metadata_json(sample_metadata):
+    """Serialise sample metadata as strict JSON.
+
+    The CSV extras come through pandas, so an empty cell is a float NaN, which
+    json.dumps writes as a bare NaN -- valid Python, invalid JSON, refused by
+    JSON.parse and jq. A missing value is written as null instead.
+    """
+    clean = {k: None if isinstance(v, float) and v != v else v
+             for k, v in sample_metadata.items()}
+    return json.dumps(clean, indent=2, allow_nan=False)
+
 @download_gate
 def sample_metadata_download(request, project_name, sample_name):
     # get_one_sample_rows() instead of get_one_sample(): this route renders no
@@ -1938,7 +1949,7 @@ def sample_metadata_download(request, project_name, sample_name):
     if not sample_metadata:
         # The page hides the button in this case; this answers a direct link.
         raise Http404("No metadata recorded for this sample")
-    response = HttpResponse(json.dumps(sample_metadata, indent=2).encode('utf-8'),
+    response = HttpResponse(sample_metadata_json(sample_metadata).encode('utf-8'),
                             content_type='application/json')
     response['Content-Disposition'] = f'attachment; filename={sample_name}.json'
     return response
@@ -2282,7 +2293,7 @@ def process_sample_data(project, sample_name, sample_data, output_dir=None,
     try:
         sample_metadata = get_sample_metadata(sample_data)
         with open(f'{sample_data_path}/{sample_name}_sample_metadata.json', 'w') as metadata_file:
-            json.dump(sample_metadata, metadata_file, indent=2)
+            metadata_file.write(sample_metadata_json(sample_metadata))
         metadata_file_path = f"{sample_name}_sample_metadata.json"
     except Exception as e:
         logging.exception(e)
