@@ -44,6 +44,7 @@ has no way to tell a real zero from a broken index.
 import base64
 import binascii
 import logging
+import re
 from urllib.parse import quote
 
 from bson.objectid import ObjectId
@@ -135,9 +136,34 @@ SAMPLE_ACCEPTED_PARAMS = (ACCEPTED_PARAMS - {'fields', 'count_only'})
 # what the refusal above exists to prevent.
 IGNORED_PARAM_PREFIXES = ('utm_',)
 
+# A whole query string percent-encoded into one value: ChatGPT handed out
+# ``?gene_any=EGFR%26classification%3DecDNA%26cancer_type%3DGlioblastoma`` on
+# 2026-10-16, which decodes to one gene named "EGFR&classification=ecDNA&..."
+# and answered 200 with count 0 -- a confident "none" for a question that was
+# never asked.  A bare ``&`` is not the signal: a real project is named
+# "COLO320 DM & HSR hg38" (9 requests 2026-09-15..10-15).  Nor is ``=``:
+# cursors are base64 and end in it (all 48 encoded ``=`` in that month).  An
+# ``&`` followed by one of this API's own parameter names and ``=`` is.
+_PACKED_PARAM = re.compile(r'&\s*([A-Za-z_]+)=')
+
+
+def _reject_packed_value(name, value):
+    for match in _PACKED_PARAM.finditer(str(value)):
+        packed = match.group(1)
+        if (packed in ACCEPTED_PARAMS or packed in PARAM_ALIASES
+                or packed.startswith(IGNORED_PARAM_PREFIXES)):
+            raise FeatureQueryError(
+                f"'{name}' is {value!r}, which is several parameters encoded "
+                "into one value: the '&' and '=' between them arrived as %26 "
+                "and %3D. Send them unencoded: "
+                f"?{name}={value}.", 'invalid_parameter')
+
 
 def reject_unknown_params(params, accepted=None):
     """400 on any parameter this endpoint does not implement.
+
+    Also 400 on a value that carries further parameters inside it
+    (_PACKED_PARAM), which would otherwise filter on a name nothing matches.
 
     Returns the parameter names folded through PARAM_ALIASES, so the caller of
     this function reads canonical names only.  Referrer tracking tags
@@ -160,6 +186,10 @@ def reject_unknown_params(params, accepted=None):
             % (', '.join(repr(u) for u in sorted(unknown)),
                ', '.join(sorted(accepted))),
             'invalid_parameter')
+    for name in seen.values():
+        values = params.getlist(name) if hasattr(params, 'getlist') else [params[name]]
+        for value in values:
+            _reject_packed_value(name, value)
     return seen
 
 

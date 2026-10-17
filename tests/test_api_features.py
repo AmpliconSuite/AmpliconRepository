@@ -517,6 +517,46 @@ def test_a_tracking_tag_is_ignored_on_feature_samples(corpus):
     assert resp.status_code == 200, resp.data
 
 
+def test_a_query_packed_into_one_value_is_refused(corpus):
+    """ChatGPT handed out this link on 2026-10-16; prod answered count 0."""
+    resp = _scoped(corpus, 'gene_any=MYC%26classification%3DecDNA'
+                           '%26utm_source%3Dchatgpt.com')
+    assert resp.status_code == 400, resp.data
+    assert resp.data['code'] == 'invalid_parameter'
+    assert "'gene_any'" in resp.data['error']
+    assert '?gene_any=MYC&classification=ecDNA' in resp.data['error']
+
+    unpacked = _scoped(corpus, 'gene_any=MYC&classification=ecDNA&count_only=true')
+    assert unpacked.status_code == 200, unpacked.data
+
+
+def test_an_ampersand_in_a_value_is_not_a_packed_query(corpus):
+    """A real prod project is named "COLO320 DM & HSR hg38"."""
+    resp = _get('?project_name=COLO320%20DM%20%26%20HSR%20hg38&count_only=true')
+    assert resp.status_code == 200, resp.data
+    resp = _scoped(corpus, 'gene_any=MYC%26EGFR&count_only=true')
+    assert resp.status_code == 200, resp.data
+
+
+def test_a_padded_cursor_is_not_a_packed_query():
+    """Every encoded '=' on prod in 2026-09-15..10-15 (48) was the base64
+    padding of a /features/samples/ cursor, sent as %3D.  This one is from
+    those logs; the corpus is too small to page into a padded cursor."""
+    from django.http import QueryDict
+    from caper.api_features import reject_unknown_params, SAMPLE_ACCEPTED_PARAMS
+    params = QueryDict('limit=500&cursor='
+                       'NmE1YTdlZGM2YjgzYTE3YWM5NTg3NjFlOkRPMjM1NTAtU1A1MDE4MQ%3D%3D')
+    assert params['cursor'].endswith('==')
+    reject_unknown_params(params, SAMPLE_ACCEPTED_PARAMS)
+
+
+def test_a_packed_query_is_refused_on_feature_samples(corpus):
+    resp = _samples('?project_id=%s&gene_any=MYC%%26classification%%3DecDNA'
+                    % corpus['public'])
+    assert resp.status_code == 400, resp.data
+    assert resp.data['code'] == 'invalid_parameter'
+
+
 def test_page_size_is_limit(corpus):
     """Agents guess DRF's ``page_size``; prod refused it 15 times in Oct 2026."""
     by_limit = _scoped(corpus, 'limit=2&fields=feature_id')
