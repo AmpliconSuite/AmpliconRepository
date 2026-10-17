@@ -188,7 +188,9 @@
         sets the expectation before the click.
         {% endcomment %}
         <a href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download" style="color: white; margin-bottom: 8px;" class="btn btn-primary">Download Sample Data</a>
+        {% if sample_metadata %}
         <a class="btn btn-primary" href="/project/{{ project.linkid }}/sample/{{ sample_name }}/download_metadata" style="color: white; margin-bottom: 8px;">Download Metadata</a>
+        {% endif %}
         {% if not user.is_authenticated %}
         {% comment %}
         The parent column is text-align:right, so an unconstrained paragraph
