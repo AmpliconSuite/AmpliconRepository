@@ -164,6 +164,8 @@ urlpatterns += [
     path('sitemap.xml', sitemap_view,
          {'sitemaps': {'all': HttpsDisplayableSitemap}}, name='sitemap'),
     path('loading/', views.loading),
+    # Shadows Mezzanine's CMS search, which crashes here; see the view.
+    path('search/', views.mezzanine_search, name='search'),
     path('search_results/', views.search_results, name='search_results'),
     path('ec3d/<str:sample_name>/', views.ec3d_visualization, name='ec3d_visualization'),
     path('url-timing-test/', views.url_timing_test, name='url_timing_test'),

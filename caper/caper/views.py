@@ -6490,6 +6490,19 @@ def llms_txt(request):
         return HttpResponse(handle.read(), content_type='text/plain; charset=utf-8')
 
 
+def mezzanine_search(request):
+    """
+    Answer Mezzanine's /search/ with a 404.
+
+    ``mezzanine.urls`` mounts a search over CMS pages and blog posts there. The
+    blog app is not installed, so every request raised ImproperlyConfigured
+    and returned a 500 (two on prod 2026-10-20, both from a path scanner).
+    This site's search is /search_results/, which takes form POSTs, so there
+    is nothing to redirect to.
+    """
+    raise Http404("No such page")
+
+
 def robots(request):
     """
     View for robots.txt.
