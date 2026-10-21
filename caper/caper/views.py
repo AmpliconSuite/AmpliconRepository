@@ -7186,14 +7186,21 @@ def _save_coamp_edges(cache_key, graph):
         return None
 
 
+def _search_field(value):
+    # Every search field ends up in a MongoDB $regex, and the server rejects a
+    # pattern containing a NUL byte -- an unhandled 500 per request. No real
+    # query has one (scanners send them), so drop it and search the rest.
+    return value.replace("\x00", "").strip()
+
+
 def search_results(request):
     """Handles user queries and renders search results."""
 
     if request.method == "POST":
         # Extract search parameters from POST request
-        gene_search = request.POST.get("genequery", "").strip()
-        project_name = request.POST.get("project_name", "").strip()
-        classifications_list = request.POST.getlist("classquery")  # Get multiple selections
+        gene_search = _search_field(request.POST.get("genequery", ""))
+        project_name = _search_field(request.POST.get("project_name", ""))
+        classifications_list = [_search_field(c) for c in request.POST.getlist("classquery")]  # Get multiple selections
         # Separate the "no-amp" pseudo-classification from the real amplicon classes
         include_no_amp = "no-amp" in classifications_list
         amp_classifications_list = [c for c in classifications_list if c.lower() != "no-amp"]
@@ -7223,9 +7230,9 @@ def search_results(request):
             # Partial amp selection (or only no-amp): join selected amp types.
             # Empty string when only no-amp is checked; search.py handles that case.
             classifications = "|".join(amp_classifications_list)
-        sample_name = request.POST.get("metadata_sample_name", "").strip()
-        sample_type = request.POST.get("metadata_sample_type", "").strip()
-        cancer_tissue = request.POST.get("metadata_cancer_tissue", "").strip()
+        sample_name = _search_field(request.POST.get("metadata_sample_name", ""))
+        sample_type = _search_field(request.POST.get("metadata_sample_type", ""))
+        cancer_tissue = _search_field(request.POST.get("metadata_cancer_tissue", ""))
 
         # Build user_query dict so the template can re-populate the search form.
         # Use the ORIGINAL user selections (not the internally-processed values) so
