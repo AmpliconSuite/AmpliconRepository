@@ -558,10 +558,11 @@ class TestLlmsTxtDescribesTheRealApi:
         against the code above.  Everything else in backticks -- a sample name,
         a gene, a metadata spelling -- is a claim that the corpus contains that
         value, and nothing in this repository can settle it: the test database
-        is seeded, not real.  The three exemptions are names of things that are
-        not corpus values at all.
+        is seeded, not real.  The exemptions are names of things that are not
+        corpus values at all; ``AC_version`` is a project field that breaks the
+        lowercase convention.
         """
-        not_data = {'Retry-After', 'GRCh37', 'GRCh38'}
+        not_data = {'Retry-After', 'GRCh37', 'GRCh38', 'AC_version'}
         inline = re.sub(r'```.*?```', '\n', body, flags=re.S)
         claims = set()
         for span in re.findall(r'`([^`\n]+)`', inline):
