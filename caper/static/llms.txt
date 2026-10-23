@@ -45,6 +45,13 @@ into one or more **features** — `ecDNA`, `BFB`, `Complex-non-cyclic`,
 `Linear`, `FAN`, `Virus` — and one amplicon can hold several: two distinct
 ecDNA, or an ecDNA and a BFB side by side.
 
+Do not combine classifications made before and after AmpliconClassifier 2.0.0.
+That release added `FAN` (focal amplification in neochromosome; see the
+[FAN primer](https://github.com/AmpliconSuite/AmpliconClassifier/blob/main/docs/fan_primer.md)),
+and many amplicons it calls `FAN` were called `ecDNA` by earlier versions, so
+ecDNA rates from the two are not comparable. Each project's `AC_version` in
+`/api/v1/projects/` says which version classified it.
+
 **A row in this API is one feature.** Its `feature_id` says which —
 `GBM39EC_amplicon1_ecDNA_1` is sample, amplicon, feature — and it carries the
 feature's classification, its genes and oncogenes, its genomic `locations`,
