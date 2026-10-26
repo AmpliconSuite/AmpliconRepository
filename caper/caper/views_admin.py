@@ -42,7 +42,7 @@ from .utils import (
     check_if_db_field_exists, get_date_short,
     form_to_dict, get_date, db_handle, db_handle_primary, format_visibility_for_display,
     get_project_version_chain_for_document, normalize_visibility_field, is_project_private,
-    PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES,
+    PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES, is_macos_metadata_file,
 )
 from .project_version_cleanup import (
     delete_gridfs_payload_for_project, delete_payload_within_deadline,
@@ -1791,7 +1791,7 @@ def admin_project_files_report(request):
         if os.path.exists(local_project_path):
             for root, dirs, files in os.walk(local_project_path):
                 for file in files:
-                    if file_pattern in file:
+                    if file_pattern in file and not is_macos_metadata_file(file):
                         abs_path = os.path.abspath(os.path.join(root, file))
                         report['local_ecDNA_files'].append(abs_path)
         
@@ -1804,7 +1804,7 @@ def admin_project_files_report(request):
                     if 'Contents' in page:
                         for obj in page['Contents']:
                             key = obj['Key']
-                            if file_pattern in key:
+                            if file_pattern in key and not is_macos_metadata_file(key):
                                 # Get relative path (remove project prefix)
                                 relative_key = key[len(s3_project_prefix):]
                                 report['s3_ecDNA_files'].append(relative_key)
@@ -1816,7 +1816,8 @@ def admin_project_files_report(request):
             try:
                 tar_contents = list_project_tar_contents(project_id)
                 # Filter for files containing the pattern
-                ecDNA_files = [f for f in tar_contents if file_pattern in f]
+                ecDNA_files = [f for f in tar_contents
+                               if file_pattern in f and not is_macos_metadata_file(f)]
                 report['gridfs_ecDNA_files'] = ecDNA_files
             except Exception as e:
                 logger.error(f"Failed to list GridFS tar contents for project {project_id}: {e}")
