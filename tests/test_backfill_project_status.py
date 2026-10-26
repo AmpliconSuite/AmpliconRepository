@@ -762,7 +762,7 @@ def test_chain_visibility_plans_only_the_versions_that_disagree(projects):
     behind = _visibility_chain(projects, ['private', 'public', 'public'])
     _visibility_chain(projects, ['private', 'private'])
 
-    plan = plan_chain_visibility(projects)
+    plan = plan_chain_visibility(projects)[0]
     assert [(doc['_id'], stored, wanted) for doc, stored, wanted, _h in plan] == \
         [(behind[0], 'private', 'public')]
 
@@ -773,11 +773,11 @@ def test_chain_visibility_writes_and_the_undo_restores(projects):
     undo = io.StringIO()
 
     written, skipped = apply_chain_visibility(
-        projects, plan_chain_visibility(projects), execute=True, rollback=undo)
+        projects, plan_chain_visibility(projects)[0], execute=True, rollback=undo)
 
     assert (written, skipped) == (3, 0)
     assert [get(projects, i)['private'] for i in ids] == ['public'] * 4
-    assert plan_chain_visibility(projects) == []
+    assert plan_chain_visibility(projects) == ([], [])
     for line in undo.getvalue().splitlines():
         entry = json.loads(line)
         projects.update_one({'_id': ObjectId(entry['_id'])}, {'$set': entry['fields']})
@@ -786,7 +786,7 @@ def test_chain_visibility_writes_and_the_undo_restores(projects):
 
 def test_chain_visibility_skips_when_the_head_changed_after_the_plan(projects):
     ids = _visibility_chain(projects, ['private', 'public'])
-    plan = plan_chain_visibility(projects)
+    plan = plan_chain_visibility(projects)[0]
     projects.update_one({'_id': ids[-1]}, {'$set': {'private': 'private'}})
 
     written, skipped = apply_chain_visibility(projects, plan, execute=True)
@@ -797,5 +797,17 @@ def test_chain_visibility_skips_when_the_head_changed_after_the_plan(projects):
 
 def test_chain_visibility_reports_without_writing(projects):
     ids = _visibility_chain(projects, ['private', 'public'])
-    apply_chain_visibility(projects, plan_chain_visibility(projects), execute=False)
+    apply_chain_visibility(projects, plan_chain_visibility(projects)[0], execute=False)
     assert get(projects, ids[0])['private'] == 'private'
+
+
+def test_chain_visibility_holds_states_a_person_should_look_at(projects):
+    detached = _visibility_chain(projects, ['private', 'public'])
+    projects.update_one({'_id': detached[0]}, {'$set': {'delete': False, 'current': False}})
+    headless = _visibility_chain(projects, ['private', 'public'])
+    projects.update_one({'_id': headless[-1]}, {'$set': {'delete': True, 'current': False}})
+
+    plan, held = plan_chain_visibility(projects)
+
+    assert plan == []
+    assert sorted(doc['_id'] for doc, _head in held) == sorted([detached[0], headless[0]])

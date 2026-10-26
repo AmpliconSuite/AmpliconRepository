@@ -711,8 +711,11 @@ def plan_chain_visibility(projects):
     more open head); on dev there were 2, plus one test chain. The application now keeps the chain
     in step, and this pass brings the existing data up to that rule.
 
-    Every member of a pointered chain other than the head is planned,
-    tombstones included, because that is what the application writes. A chain
+    The same population the application writes: chains whose head is LIVE,
+    and within them the members that are SUPERSEDED or TOMBSTONE. A
+    soft-deleted or DETACHED member, or a chain with no LIVE head, is returned
+    in *held* for a person to look at, not opened automatically (dev had two
+    such chains on 2026-10-26, prod none). A chain
     without pointers is left alone: its membership is the previous_versions[]
     guess, and a guess is no basis for opening a version. Neither database had
     one on 2026-10-26.
@@ -723,7 +726,7 @@ def plan_chain_visibility(projects):
     for doc in docs:
         if lineage.has_pointers(doc):
             chains.setdefault(doc['version_chain_id'], []).append(doc)
-    plan = []
+    plan, held = [], []
     for members in chains.values():
         members.sort(key=lineage._ordinal)
         head = lineage.head(members)
@@ -733,10 +736,14 @@ def plan_chain_visibility(projects):
         for doc in members:
             if doc['_id'] == head['_id']:
                 continue
-            if normalize_visibility_field(doc.get('private')) != wanted:
+            if normalize_visibility_field(doc.get('private')) == wanted:
+                continue
+            if classify(head) != LIVE or classify(doc) not in (SUPERSEDED, TOMBSTONE):
+                held.append((doc, head))
+            else:
                 plan.append((doc, doc.get('private'), wanted, head))
     plan.sort(key=lambda entry: entry[0]['_id'])
-    return plan
+    return plan, held
 
 
 def apply_chain_visibility(projects, plan, execute, rollback=None):
@@ -976,7 +983,11 @@ def main():
         print('=' * 78)
         print("chain_visibility -- old versions the project's visibility has left behind")
         print('=' * 78)
-        plan = plan_chain_visibility(projects)
+        plan, held = plan_chain_visibility(projects)
+        for doc, head in held:
+            print('  %s  v%-3s %-36s  HELD -- %s version, %s head; left for a person' % (
+                doc['_id'], doc.get('version_ordinal'), (head.get('project_name') or '?')[:36],
+                classify(doc), classify(head)))
         if not plan:
             print('  nothing to do')
         else:

@@ -38,7 +38,9 @@ from collections import namedtuple
 
 from bson import ObjectId
 
-from .project_status import TOMBSTONE_MARKER_FIELDS, is_tombstone
+from .project_status import (LIVE, STATUS_QUERIES, SUPERSEDED, TOMBSTONE,
+                             TOMBSTONE_MARKER_FIELDS, classify, combine,
+                             is_tombstone)
 from .visibility import normalize_visibility_field
 
 # The pointer fields, plus every field the functions below ask a question of. A
@@ -428,14 +430,18 @@ def sync_chain_visibility(collection, head_id, visibility=None):
     moments ago. A caller that has the value in hand passes it as
     *visibility*; otherwise the head's stored value is used.
 
-    Tombstones are included. A tombstone stores the visibility it inherited
-    when it was made, and a stale copy should not be left behind there either.
+    Only a LIVE head propagates, and only onto members that are SUPERSEDED or
+    TOMBSTONE (a tombstone keeps the visibility it inherited, which should not
+    go stale either). A soft-deleted or DETACHED member is a state that wants
+    a person to look at it before anything about it becomes more public.
+    Dev had one of each on 2026-10-26; prod had none.
     Returns the number of documents changed. A chain without pointers falls
     back to ``previous_versions[]``, the same way the history readers do.
     """
     doc = collection.find_one({'_id': head_id},
-                              dict(POINTER_PROJECTION, previous_versions=1, private=1))
-    if doc is None:
+                              dict(POINTER_PROJECTION, previous_versions=1, private=1,
+                                   delete=1, current=1))
+    if doc is None or classify(doc) != LIVE:
         return 0
     if visibility is None:
         if 'private' not in doc:
@@ -460,7 +466,8 @@ def sync_chain_visibility(collection, head_id, visibility=None):
     if not others:
         return 0
     result = collection.update_many(
-        {'_id': {'$in': others}, 'private': {'$ne': visibility}},
+        combine({'$or': [dict(STATUS_QUERIES[SUPERSEDED]), dict(STATUS_QUERIES[TOMBSTONE])]},
+                _id={'$in': others}, private={'$ne': visibility}),
         {'$set': {'private': visibility}})
     if result.modified_count:
         logging.info('lineage: visibility %r written to %d older version(s) of %s',

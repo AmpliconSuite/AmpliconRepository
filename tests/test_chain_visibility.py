@@ -101,6 +101,27 @@ def test_other_projects_are_left_alone(mongo_collection, chains):
 
 
 @pytest.mark.integration
+def test_soft_deleted_and_detached_members_are_left_alone(mongo_collection, chains):
+    from caper.lineage import sync_chain_visibility
+    ids = chains(['private', 'private', 'private', 'public'])
+    mongo_collection.update_one({'_id': ids[0]}, {'$set': {'delete': True, 'current': True}})
+    mongo_collection.update_one({'_id': ids[1]}, {'$set': {'delete': False, 'current': False}})
+
+    assert sync_chain_visibility(mongo_collection, ids[-1]) == 1
+    assert _visibility(mongo_collection, ids) == ['private', 'private', 'public', 'public']
+
+
+@pytest.mark.integration
+def test_a_head_that_is_not_live_propagates_nothing(mongo_collection, chains):
+    from caper.lineage import sync_chain_visibility
+    ids = chains(['private', 'public'])
+    mongo_collection.update_one({'_id': ids[-1]}, {'$set': {'delete': True, 'current': True}})
+
+    assert sync_chain_visibility(mongo_collection, ids[-1]) == 0
+    assert _visibility(mongo_collection, ids) == ['private', 'public']
+
+
+@pytest.mark.integration
 def test_an_unpointered_chain_falls_back_to_previous_versions(mongo_collection):
     from caper.lineage import sync_chain_visibility
     old = mongo_collection.insert_one({'project_name': 'ChainVisibilityLegacy',
