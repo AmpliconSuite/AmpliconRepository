@@ -90,6 +90,15 @@ ALLOWED = {
      "stored = doc.get('private')"):
         "plan_visibility is the pass that rewrites the legacy booleans; "
         "seeing the raw value is the whole point of it.",
+    ('backfill_project_status.py',
+     "plan.append((doc, doc.get('private'), wanted, head))"):
+        "plan_chain_visibility keeps the stored value as-is for the undo record "
+        "and the write precondition; the comparison beside it is normalised.",
+    ('backfill_project_status.py',
+     "if projects.count_documents(combine({'private': head.get('private')}, "
+     "_id=head['_id'])) != 1:"):
+        "A precondition that the head still holds exactly the stored value the "
+        "plan copied, so it has to match the raw encoding.",
 }
 
 # Whole files exempt, with the reason. These are the scripts whose subject *is*

@@ -20,6 +20,8 @@ from pymongo import MongoClient
 from caper.project_status import (
     DETACHED, LIVE as LIVE_LABEL, SOFT_DELETED, SUPERSEDED, classify)
 from backfill_project_status import (
+    apply_chain_visibility,
+    plan_chain_visibility,
     apply_history,
     plan_history,
     apply_current,
@@ -734,3 +736,78 @@ def test_history_repair_never_removes_an_entry(projects):
     plan = plan_history(projects)
     assert plan == []
     assert len(get(projects, head)['previous_versions']) == 2
+
+
+# ---------------------------------------------------------------------------
+# Pass 6 -- old versions the project's visibility left behind
+# ---------------------------------------------------------------------------
+
+def _visibility_chain(projects, visibilities):
+    """A pointered chain, oldest first, the last member the head."""
+    ids = [ObjectId() for _ in visibilities]
+    docs = []
+    for n, (_id, vis) in enumerate(zip(ids, visibilities)):
+        head = n == len(ids) - 1
+        docs.append({'_id': _id, 'project_name': 'vis', 'private': vis,
+                     'delete': not head, 'current': head,
+                     'version_chain_id': ids[0], 'version_ordinal': n + 1,
+                     'is_latest': head,
+                     'previous_version_id': ids[n - 1] if n else None,
+                     'next_version_id': None if head else ids[n + 1]})
+    projects.insert_many(docs)
+    return ids
+
+
+def test_chain_visibility_plans_only_the_versions_that_disagree(projects):
+    behind = _visibility_chain(projects, ['private', 'public', 'public'])
+    _visibility_chain(projects, ['private', 'private'])
+
+    plan = plan_chain_visibility(projects)[0]
+    assert [(doc['_id'], stored, wanted) for doc, stored, wanted, _h in plan] == \
+        [(behind[0], 'private', 'public')]
+
+
+def test_chain_visibility_writes_and_the_undo_restores(projects):
+    ids = _visibility_chain(projects, ['private', 'hidden_public', True, 'public'])
+    import io
+    undo = io.StringIO()
+
+    written, skipped = apply_chain_visibility(
+        projects, plan_chain_visibility(projects)[0], execute=True, rollback=undo)
+
+    assert (written, skipped) == (3, 0)
+    assert [get(projects, i)['private'] for i in ids] == ['public'] * 4
+    assert plan_chain_visibility(projects) == ([], [])
+    for line in undo.getvalue().splitlines():
+        entry = json.loads(line)
+        projects.update_one({'_id': ObjectId(entry['_id'])}, {'$set': entry['fields']})
+    assert [get(projects, i)['private'] for i in ids] == ['private', 'hidden_public', True, 'public']
+
+
+def test_chain_visibility_skips_when_the_head_changed_after_the_plan(projects):
+    ids = _visibility_chain(projects, ['private', 'public'])
+    plan = plan_chain_visibility(projects)[0]
+    projects.update_one({'_id': ids[-1]}, {'$set': {'private': 'private'}})
+
+    written, skipped = apply_chain_visibility(projects, plan, execute=True)
+
+    assert (written, skipped) == (0, 1)
+    assert get(projects, ids[0])['private'] == 'private'
+
+
+def test_chain_visibility_reports_without_writing(projects):
+    ids = _visibility_chain(projects, ['private', 'public'])
+    apply_chain_visibility(projects, plan_chain_visibility(projects)[0], execute=False)
+    assert get(projects, ids[0])['private'] == 'private'
+
+
+def test_chain_visibility_holds_states_a_person_should_look_at(projects):
+    detached = _visibility_chain(projects, ['private', 'public'])
+    projects.update_one({'_id': detached[0]}, {'$set': {'delete': False, 'current': False}})
+    headless = _visibility_chain(projects, ['private', 'public'])
+    projects.update_one({'_id': headless[-1]}, {'$set': {'delete': True, 'current': False}})
+
+    plan, held = plan_chain_visibility(projects)
+
+    assert plan == []
+    assert sorted(doc['_id'] for doc, _head in held) == sorted([detached[0], headless[0]])
