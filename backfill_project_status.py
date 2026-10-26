@@ -4,7 +4,7 @@ backfill_project_status.py
 
 One-time corrections to the projects collection, each of which repairs
 documents the application can no longer read correctly.  Five passes, run in
-order: current, lineage, pointers, status, visibility.  The two that started
+order: current, lineage, pointers, status, visibility, chain_visibility.  The two that started
 this file:
 
   current   A project deleted before the 'current' flag existed has
@@ -74,6 +74,7 @@ from caper.project_status import (            # noqa: E402
     iter_previous_versions,
     status_flags,
 )
+from caper import lineage                      # noqa: E402
 from caper.visibility import (               # noqa: E402
     VISIBILITY_VALUES,
     normalize_visibility_field,
@@ -695,6 +696,78 @@ def apply_visibility(projects, plan, execute, rollback=None):
     return written, skipped
 
 
+# ---------------------------------------------------------------------------
+# Pass 6 -- old versions whose visibility the project has since changed
+# ---------------------------------------------------------------------------
+
+def plan_chain_visibility(projects):
+    """(doc, stored, head visibility, head) for every version that disagrees
+    with the current version of its project.
+
+    Visibility belongs to the project (``private`` is CHAIN_LEVEL), but until
+    lineage.sync_chain_visibility() an edit or a new upload wrote only the
+    head, so each change left the older versions with the old setting. On prod
+    on 2026-10-26 there were 22 (19 private, 3 hidden_public, each against a
+    more open head); on dev there were 2, plus one test chain. The application now keeps the chain
+    in step, and this pass brings the existing data up to that rule.
+
+    Every member of a pointered chain other than the head is planned,
+    tombstones included, because that is what the application writes. A chain
+    without pointers is left alone: its membership is the previous_versions[]
+    guess, and a guess is no basis for opening a version. Neither database had
+    one on 2026-10-26.
+    """
+    docs = list(projects.find({}, dict(lineage.POINTER_PROJECTION, private=1,
+                                       project_name=1, delete=1, current=1)))
+    chains = {}
+    for doc in docs:
+        if lineage.has_pointers(doc):
+            chains.setdefault(doc['version_chain_id'], []).append(doc)
+    plan = []
+    for members in chains.values():
+        members.sort(key=lineage._ordinal)
+        head = lineage.head(members)
+        if head is None or 'private' not in head:
+            continue
+        wanted = normalize_visibility_field(head.get('private'))
+        for doc in members:
+            if doc['_id'] == head['_id']:
+                continue
+            if normalize_visibility_field(doc.get('private')) != wanted:
+                plan.append((doc, doc.get('private'), wanted, head))
+    plan.sort(key=lambda entry: entry[0]['_id'])
+    return plan
+
+
+def apply_chain_visibility(projects, plan, execute, rollback=None):
+    written = skipped = 0
+    for doc, stored, wanted, head in plan:
+        print('  %s  v%-3s %-36s  %r -> %r  (head %s v%s)' % (
+            doc['_id'], doc.get('version_ordinal'), (head.get('project_name') or '?')[:36],
+            stored, wanted, head['_id'], head.get('version_ordinal')))
+        if not execute:
+            continue
+        record(rollback, doc['_id'], '$set', {'private': stored})
+        # Preconditioned on both ends: this version still holds what the plan
+        # saw, and the head still holds what is being copied. A project whose
+        # visibility was edited between the report and the write is skipped,
+        # not set to a value its owner has just changed.
+        if projects.count_documents(combine({'private': head.get('private')},
+                                            _id=head['_id'])) != 1:
+            skipped += 1
+            print('      SKIPPED -- the head changed since the plan was built')
+            continue
+        result = projects.update_one(
+            combine({'private': stored}, _id=doc['_id']),
+            {'$set': {'private': wanted}})
+        if result.modified_count:
+            written += 1
+        else:
+            skipped += 1
+            print('      SKIPPED -- changed since the plan was built')
+    return written, skipped
+
+
 def take(plan, limit):
     """The first *limit* entries of a plan, saying how many are held back.
 
@@ -739,8 +812,8 @@ def main():
                         help='Actually write. Without it the script only reports.')
     parser.add_argument('--only',
                         choices=['current', 'lineage', 'pointers', 'history',
-                                 'status', 'visibility'],
-                        help='Run one pass instead of all five.')
+                                 'status', 'visibility', 'chain_visibility'],
+                        help='Run one pass instead of all six.')
     parser.add_argument('--limit', type=int, metavar='N',
                         help='Act on only the first N documents of each pass, '
                              'in _id order. The report still counts them all, '
@@ -895,6 +968,22 @@ def main():
             print('  %d document(s) with a boolean visibility\n' % len(plan))
             plan = take(plan, args.limit)
             written, skipped = apply_visibility(projects, plan, args.execute, rollback)
+            totals['written'] += written
+            totals['skipped'] += skipped
+        print('')
+
+    if args.only in (None, 'chain_visibility'):
+        print('=' * 78)
+        print("chain_visibility -- old versions the project's visibility has left behind")
+        print('=' * 78)
+        plan = plan_chain_visibility(projects)
+        if not plan:
+            print('  nothing to do')
+        else:
+            heads = {head['_id'] for _d, _s, _w, head in plan}
+            print('  %d version(s) in %d project(s)\n' % (len(plan), len(heads)))
+            plan = take(plan, args.limit)
+            written, skipped = apply_chain_visibility(projects, plan, args.execute, rollback)
             totals['written'] += written
             totals['skipped'] += skipped
         print('')

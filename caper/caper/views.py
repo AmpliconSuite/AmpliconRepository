@@ -3864,6 +3864,11 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
 
         if form.is_valid():
             collection_handle.update_one(query, new_val)
+            # Visibility is the project's, not this version's: older versions
+            # must not keep a setting the owner has just changed.
+            lineage.sync_chain_visibility(
+                collection_handle_primary, query['_id'],
+                normalize_visibility_field(form_dict['private']))
 
             # Update site statistics -------------------------------------------
             # Determine whether any samples were actually removed.
@@ -5044,6 +5049,11 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
             }
         }
         collection_handle.update_one(query, finish_flag)
+        # The version is complete, so its visibility is now the project's.
+        # Here rather than where the version joins its chain, because a failed
+        # upload is rolled back after that point and must not leave its
+        # visibility on the versions it was rolled back to.
+        lineage.sync_chain_visibility(collection_handle_primary, query['_id'])
         logging.info("Finished extracting from tar and updating database")
         
        
@@ -5367,6 +5377,10 @@ def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
     # placeholder.
     lineage.link_new_version(collection_handle, project_id,
                              project.get('previous_versions'))
+    # Nothing is extracted for an empty version, so it is complete here and
+    # its visibility is the project's (see extract_project_files).
+    lineage.sync_chain_visibility(collection_handle_primary, project_id,
+                                  normalize_visibility_field(project['private']))
 
     if oldFeatured:
         project['featured'] = True

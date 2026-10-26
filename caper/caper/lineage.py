@@ -39,6 +39,7 @@ from collections import namedtuple
 from bson import ObjectId
 
 from .project_status import TOMBSTONE_MARKER_FIELDS, is_tombstone
+from .visibility import normalize_visibility_field
 
 # The pointer fields, plus every field the functions below ask a question of. A
 # project document averages 690 KB on production; a caller that only needs to
@@ -410,6 +411,61 @@ def unlink_new_version(collection, new_id):
             {'_id': predecessor_id},
             {'$set': {'next_version_id': None, 'is_latest': True}})
     return {'unlinked': new_id, 'restored_head': predecessor_id}
+
+
+def sync_chain_visibility(collection, head_id, visibility=None):
+    """Write the head's visibility onto every other version of its project.
+
+    Visibility belongs to the project, not to one version (``private`` is
+    ``CHAIN_LEVEL`` in ``project_fields``). Every version stores its own copy,
+    though, every access check reads that copy, and an edit or a new upload
+    writes only the head, so each change of visibility left the older
+    versions with the setting they had when they were superseded. On prod on
+    2026-10-26, 22 old versions in 11 projects disagreed with their head.
+
+    *collection* should be the PRIMARY handle. The default handle reads from a
+    replica, which may not yet have the pointers or the visibility written
+    moments ago. A caller that has the value in hand passes it as
+    *visibility*; otherwise the head's stored value is used.
+
+    Tombstones are included. A tombstone stores the visibility it inherited
+    when it was made, and a stale copy should not be left behind there either.
+    Returns the number of documents changed. A chain without pointers falls
+    back to ``previous_versions[]``, the same way the history readers do.
+    """
+    doc = collection.find_one({'_id': head_id},
+                              dict(POINTER_PROJECTION, previous_versions=1, private=1))
+    if doc is None:
+        return 0
+    if visibility is None:
+        if 'private' not in doc:
+            return 0
+        visibility = normalize_visibility_field(doc.get('private'))
+    if has_pointers(doc):
+        members = chain_members(collection, doc, POINTER_PROJECTION) or []
+        if not is_head(doc, members):
+            # Only the current version decides. An old version reaching here
+            # is a caller bug; refusing it keeps an old copy from overwriting
+            # the project's real setting.
+            logging.warning('lineage: %s is not the head of its chain; '
+                            'visibility not propagated', head_id)
+            return 0
+        others = [m['_id'] for m in members if m['_id'] != head_id]
+    else:
+        others = []
+        for entry in doc.get('previous_versions') or []:
+            linkid = entry.get('linkid') if isinstance(entry, dict) else entry
+            if linkid and ObjectId.is_valid(str(linkid)) and str(linkid) != str(head_id):
+                others.append(ObjectId(str(linkid)))
+    if not others:
+        return 0
+    result = collection.update_many(
+        {'_id': {'$in': others}, 'private': {'$ne': visibility}},
+        {'$set': {'private': visibility}})
+    if result.modified_count:
+        logging.info('lineage: visibility %r written to %d older version(s) of %s',
+                     visibility, result.modified_count, head_id)
+    return result.modified_count
 
 
 DeletionPlan = namedtuple(
