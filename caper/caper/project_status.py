@@ -307,6 +307,26 @@ therefore to the admin restore page, and missed by ``HEAD_VERSION_QUERY``.
 Used by ``backfill_project_status.py`` to find them; nothing in the application
 should need it, and its population should only ever shrink."""
 
+OPENABLE_WITH_PAYLOAD_QUERY = {'$or': [dict(NOT_DELETED_QUERY),
+                                       dict(STATUS_QUERIES[SUPERSEDED])]}
+"""The documents a project page can open that still hold their own archive:
+whatever the resolver's first steps reach (``NOT_DELETED_QUERY``) plus the
+superseded versions it falls back to, without tombstones.
+
+For writing values *derived from the document's own archive* back onto it --
+``ecDNA_context``, ``sample_data``, ``aggregate_df``.  Those writes used to be
+gated on ``NOT_DELETED_QUERY``, which was written in 2023, before versions
+existed. Versioning arrived in April 2024 and marked every earlier version
+``delete: True``. From then on the gate matched no old version, and the update
+quietly matched nothing. An old version that was superseded before a derived
+field existed could never store it. The project page rebuilt it from the
+archive on every visit and then discarded it. On prod, the old CCLE version
+(6580f373, 507 MiB archive) took a median 14.5 s per page view over
+2026-10-19..25, and 9 of its 24 visitors gave up.
+
+Tombstones are excluded because their archive has been purged and there is
+nothing to derive from."""
+
 HEAD_VERSION_QUERY = {'current': _STATUS_FLAGS[LIVE]['current']}
 """``{'current': True}`` -- the head of a chain regardless of delete state, so
 ``LIVE`` and ``SOFT_DELETED`` together.

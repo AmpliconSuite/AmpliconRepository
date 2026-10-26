@@ -24,6 +24,7 @@ import tarfile
 from .project_status import (
     HEAD_VERSION_QUERY,
     NOT_DELETED_QUERY,
+    OPENABLE_WITH_PAYLOAD_QUERY,
     PRIOR_VERSION_QUERY,
     DELETE_FLAG_QUERY,
     STATUS_QUERIES,
@@ -812,8 +813,10 @@ def initialize_ecDNA_context(project):
             logging.error(f"Error reading tarfile for ecDNA_context: {e}")
             logging.exception("Full traceback:")
 
-    # Update the project in the database
-    query = combine(NOT_DELETED_QUERY, _id=project['_id'])
+    # Update the project in the database. Old versions too: this is derived
+    # from this version's own archive, and a superseded version that cannot
+    # store it re-reads the whole archive on every visit.
+    query = combine(OPENABLE_WITH_PAYLOAD_QUERY, _id=project['_id'])
     new_values = {"$set": {'ecDNA_context': ecDNA_context}}
     collection_handle.update_one(query, new_values)
 
