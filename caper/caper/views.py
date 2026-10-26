@@ -105,6 +105,7 @@ from .project_status import (
     DELETE_FLAG_QUERY,
     LIVE,
     NOT_DELETED_QUERY,
+    OPENABLE_WITH_PAYLOAD_QUERY,
     SOFT_DELETED,
     is_empty_project as project_is_empty,
     project_runs,
@@ -1084,7 +1085,8 @@ def project_page(request, project_name, message=''):
                                 'reference_genome' : reference_genome,
                                 'aggregate_df' : aggregate_save_fp,
                                 'metadata_stored': 'Yes'}}
-        query = combine(NOT_DELETED_QUERY, _id=project['_id'])
+        # Old versions too; see OPENABLE_WITH_PAYLOAD_QUERY.
+        query = combine(OPENABLE_WITH_PAYLOAD_QUERY, _id=project['_id'])
 
         logging.debug('Inserting Now')
         collection_handle.update_one(query, new_values)
