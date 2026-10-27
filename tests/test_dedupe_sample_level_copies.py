@@ -8,12 +8,12 @@ uniquely-prefixed collections inside DB_NAME, dropped afterwards -- a
 least-privilege user cannot create or drop a database.
 """
 
+import gzip
 import io
 import json
 import os
 import sys
 import tarfile
-import time
 import uuid
 
 import gridfs
@@ -64,12 +64,14 @@ def _put(db, data, project_id, key, filename='f', md5=None):
 def _tar(name, content, mtime):
     """A gzipped tar of one file; same content, different gzip/tar times."""
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode='w:gz') as tar:
-        info = tarfile.TarInfo(f'{name}/graph.txt')
-        info.size = len(content)
-        info.mtime = mtime
-        tar.addfile(info, io.BytesIO(content))
-    time.sleep(1.1)        # gzip stamps whole seconds
+    # The gzip header's timestamp is set explicitly; tarfile's 'w:gz' stamps the
+    # wall clock in whole seconds, which needed a 1.1 s sleep per archive.
+    with gzip.GzipFile(fileobj=buf, mode='wb', mtime=mtime) as gz:
+        with tarfile.open(fileobj=gz, mode='w') as tar:
+            info = tarfile.TarInfo(f'{name}/graph.txt')
+            info.size = len(content)
+            info.mtime = mtime
+            tar.addfile(info, io.BytesIO(content))
     return buf.getvalue()
 
 

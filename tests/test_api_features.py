@@ -966,11 +966,19 @@ def test_grouped_samples_report_their_amplicon_count(corpus):
 
 
 def test_grouped_samples_page_exactly_once(corpus):
-    """No sample repeated, none skipped, and the walk ends."""
-    total = _samples('?limit=500').data['count']
+    """No sample repeated, none skipped, and the walk ends.
+
+    Scoped to the corpus's 'Pub' project: five samples, one of them (S2) with
+    two rows, so a page of two has to group across a row boundary.  Walking the
+    whole index instead took 20 s locally and far longer on dev's 8,398 public
+    samples (2026-10-26), and the extra pages tested nothing more.
+    """
+    scope = 'project_id=%s' % corpus['public']
+    total = _samples('?%s&limit=500' % scope).data['count']
+    assert total == 5
     seen, cursor, pages = [], None, 0
     while True:
-        qs = 'limit=2'
+        qs = '%s&limit=2' % scope
         if cursor:
             qs += '&cursor=%s' % cursor
         resp = _samples('?' + qs)
