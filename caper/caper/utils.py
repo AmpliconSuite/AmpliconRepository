@@ -737,6 +737,21 @@ def get_one_sample(project_name, sample_name):
     return project, rows, prev_sample, next_sample
 
 
+def is_macos_metadata_file(path):
+    """True for the AppleDouble files macOS adds when it archives a folder.
+
+    Finder and macOS ``tar`` write a ``._<name>`` sidecar next to each file, and
+    zips made on a Mac carry them under ``__MACOSX/``. A sidecar holds extended
+    attributes, not the file's content, but it keeps the file's suffix, so any
+    lookup by name finds it too. The 2025-02-18 CCLE archive on dev carries
+    ``._ccle_hg38_ecDNA_context_calls.tsv`` beside the real file; reading it as
+    UTF-8 failed and logged an ERROR on the project's first page view
+    (measured 2026-10-26).
+    """
+    parts = str(path).replace('\\', '/').rstrip('/').split('/')
+    return parts[-1].startswith('._') or '__MACOSX' in parts
+
+
 def initialize_ecDNA_context(project):
     """
     Check for and initialize the ecDNA_context dictionary in a project.
@@ -774,7 +789,9 @@ def initialize_ecDNA_context(project):
             # Open tar file and look for ecDNA_context_calls.tsv files
             with tarfile.open(fileobj=tar_gridfs_file, mode='r:gz') as tar:
                 # Find all members ending with ecDNA_context_calls.tsv
-                context_files = [m for m in tar.getmembers() if m.name.endswith('ecDNA_context_calls.tsv')]
+                context_files = [m for m in tar.getmembers()
+                                 if m.name.endswith('ecDNA_context_calls.tsv')
+                                 and not is_macos_metadata_file(m.name)]
 
                 logging.info(f"Found {len(context_files)} ecDNA_context_calls.tsv file(s) in project tar")
 
