@@ -49,7 +49,8 @@ XLSX_FILE = DATASET_SMALL_XLSX
 # Aggregation polling
 # ---------------------------------------------------------------------------
 POLL_TIMEOUT  = 300  # seconds to wait for background aggregation
-POLL_INTERVAL = 5    # polling frequency in seconds
+POLL_INTERVAL = 0.25 # aggregation of the test datasets finishes in about a second;
+                     # at 5 s every project creation rounded up to 5 s or 10 s
 
 
 # ---------------------------------------------------------------------------
