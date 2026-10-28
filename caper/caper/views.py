@@ -138,6 +138,7 @@ from .neo4j_utils import (load_graph, fetch_subgraph, fetch_overview,
 # Import search function
 from .search import (
     perform_search,
+    find_projects_by_name,
     is_literal_search_term,
     quote_search_term,
 )
@@ -7216,6 +7217,18 @@ def search_results(request):
         # Extract search parameters from POST request
         gene_search = _search_field(request.POST.get("genequery", ""))
         project_name = _search_field(request.POST.get("project_name", ""))
+
+        # The home page's Projects scope asks which projects match a name, so it
+        # gets projects back. It used to get every feature row of every
+        # matching project, which both buried the answer and was the most
+        # expensive way to compute it. Only that form posts scope; the
+        # advanced form never does, so it still searches samples by project.
+        if _search_field(request.POST.get("scope", "")) == "project_name":
+            return render(request, "pages/project_search_results.html", {
+                "project_query": project_name,
+                "projects": find_projects_by_name(project_name, request.user),
+            })
+
         classifications_list = [_search_field(c) for c in request.POST.getlist("classquery")]  # Get multiple selections
         # Separate the "no-amp" pseudo-classification from the real amplicon classes
         include_no_amp = "no-amp" in classifications_list
