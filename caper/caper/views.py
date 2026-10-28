@@ -5009,10 +5009,10 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         query = {'_id': ObjectId(project_id)}
         if extra_metadata_filepath:
             runs = process_metadata_no_request(replace_underscore_keys(runs), file_path=extra_metadata_filepath, old_extra_metadata = old_extra_metadata, remap_name_to_alias=remap_names_to_alias)
-            parent_dir = os.path.dirname(extra_metadata_filepath)
-
-            if os.path.exists(parent_dir):
-                shutil.rmtree(parent_dir)
+            # The metadata file is saved inside tmp/<project_id>/, so remove
+            # only the file: removing its directory took the project's
+            # extracted results and archive with it.
+            _remove_file(extra_metadata_filepath)
         else:
             runs = process_metadata_no_request(replace_underscore_keys(runs), old_extra_metadata = old_extra_metadata, remap_name_to_alias=remap_names_to_alias )
 
