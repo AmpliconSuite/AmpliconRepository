@@ -3,6 +3,7 @@
 {% block meta_title %}Project search{% endblock %}
 
 {% block extra_css %}
+{% include 'includes/loading_spinner_css.html' %}
 <style>
     .ps-head {
         display: flex;
@@ -33,6 +34,10 @@
         overflow-wrap: anywhere;
         font-weight: 600;
     }
+    .ps-name .home-pub {
+        margin-left: 0.45em;
+        font-weight: normal;
+    }
     .ps-description {
         white-space: normal;
         overflow-wrap: anywhere;
@@ -42,9 +47,6 @@
     .ps-date {
         white-space: nowrap;
         font-variant-numeric: tabular-nums;
-    }
-    .ps-num {
-        text-align: right;
     }
     .ps-visibility {
         display: inline-block;
@@ -58,9 +60,6 @@
     .ps-visibility.is-restricted {
         background-color: #bbbbbb;
         color: white;
-    }
-    .ps-download {
-        text-align: center;
     }
     .ps-download a {
         display: inline-block;
@@ -79,13 +78,14 @@
         {% comment %}
         The feature-level answer is still one click away: the same name posted
         without a scope is the search this page replaced, every feature row of
-        every matching project.
+        every matching project.  That page can take a while on a broad match,
+        so the button says it is working rather than looking ignored.
         {% endcomment %}
         {% if projects %}
-        <form method="POST" action="{% url 'search_results' %}">
+        <form method="POST" action="{% url 'search_results' %}" id="ps-sample-search">
             {% csrf_token %}
             <input type="hidden" name="project_name" value="{{ project_query }}">
-            <button type="submit" class="btn btn-sm btn-outline-secondary">Show their samples instead</button>
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Search the samples</button>
         </form>
         {% endif %}
         <a class="btn btn-sm btn-outline-primary" href="{% url 'index' %}">New search</a>
@@ -99,10 +99,10 @@
             <tr>
                 <th style="width:24%">Project</th>
                 <th>Description</th>
-                <th class="ps-num">Samples</th>
+                <th>Samples</th>
                 <th>Visibility</th>
                 <th style="width:110px">Updated</th>
-                <th class="ps-download">Download</th>
+                <th>Download</th>
             </tr>
         </thead>
         <tbody>
@@ -147,6 +147,19 @@
 {% block extra_js %}
 <script>
     $(document).ready(function () {
+        // A pageshow from the back/forward cache restores the button as it
+        // was left -- disabled and spinning -- so put it back each time.
+        var sampleSearch = $('#ps-sample-search');
+        var sampleButton = sampleSearch.find('button');
+        var sampleLabel = sampleButton.html();
+        sampleSearch.on('submit', function () {
+            sampleButton.prop('disabled', true)
+                .html('<span class="loading-spinner" aria-hidden="true"></span>Loading samples&hellip;');
+        });
+        $(window).on('pageshow', function () {
+            sampleButton.prop('disabled', false).html(sampleLabel);
+        });
+
         var table = $('#projectSearchTable');
         if (!table.length) { return; }
 
@@ -174,10 +187,13 @@
             order: [[0, 'asc']],
             pageLength: 25,
             lengthMenu: [10, 25, 50, 100],
+            // dt-right / dt-center rather than a class of our own: DataTables'
+            // stylesheet left-aligns every header with a more specific rule,
+            // which left "Download" 20px off the icons beneath it.
             columnDefs: [
-                { targets: 2, type: 'num' },
+                { targets: 2, type: 'num', className: 'dt-right' },
                 { targets: 4, type: 'num' },
-                { targets: 5, orderable: false, searchable: false }
+                { targets: 5, orderable: false, searchable: false, className: 'dt-center' }
             ],
             language: {
                 info: "Showing _START_ to _END_ of <b>_TOTAL_</b> projects",

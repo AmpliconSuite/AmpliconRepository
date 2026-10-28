@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 
 {% block extra_css %}
+{% include 'includes/loading_spinner_css.html' %}
 <style>
     .search-container {
         display: flex;
@@ -1183,7 +1184,7 @@
             <!-- Public Projects Tab -->
             <div class="tab-pane" id="projects-tab">
                 <div class="gs-table-wrap">
-                <div class="gs-table-placeholder" aria-hidden="true">Loading results&hellip;</div>
+                <div class="gs-table-placeholder" aria-hidden="true"><span class="loading-spinner"></span>Loading projects&hellip;</div>
                 <div class="gs-table-inner">
                 <table class="table">
                     <thead>
@@ -1220,7 +1221,7 @@
                 </div>
 
                 <div class="gs-table-wrap">
-                <div class="gs-table-placeholder" aria-hidden="true">Loading results&hellip;</div>
+                <div class="gs-table-placeholder" aria-hidden="true"><span class="loading-spinner"></span>Loading samples&hellip;</div>
                 <div class="gs-table-inner">
                 <table class="table" id="public-samples-table">
                     <thead>
@@ -1237,6 +1238,7 @@
                         </tr>
                     </thead>
                     <tbody>
+                        {% spaceless %}
                         {% for sample in public_sample_data %}
                         <tr>
                             <td>
@@ -1254,6 +1256,7 @@
                             <td>{{ sample.Tissue_of_origin}}</td>
                         </tr>
                         {% endfor %}
+                        {% endspaceless %}
                     </tbody>
                 </table>
                 </div>
@@ -1264,7 +1267,7 @@
             <!-- Private Projects Tab -->
             <div class="tab-pane" id="private-projects-tab">
                 <div class="gs-table-wrap">
-                <div class="gs-table-placeholder" aria-hidden="true">Loading results&hellip;</div>
+                <div class="gs-table-placeholder" aria-hidden="true"><span class="loading-spinner"></span>Loading projects&hellip;</div>
                 <div class="gs-table-inner">
                 <table class="table">
                     <thead>
@@ -1302,7 +1305,7 @@
                 </div>
 
                 <div class="gs-table-wrap">
-                <div class="gs-table-placeholder" aria-hidden="true">Loading results&hellip;</div>
+                <div class="gs-table-placeholder" aria-hidden="true"><span class="loading-spinner"></span>Loading samples&hellip;</div>
                 <div class="gs-table-inner">
                 <table class="table" id="private-samples-table">
                     <thead>
@@ -1319,6 +1322,7 @@
                         </tr>
                     </thead>
                     <tbody>
+                        {% spaceless %}
                         {% for sample in private_sample_data %}
                         <tr>
                             <td>
@@ -1336,6 +1340,7 @@
                             <td>{{ sample.Tissue_of_origin}}</td>
                         </tr>
                         {% endfor %}
+                        {% endspaceless %}
                     </tbody>
                 </table>
                 </div>

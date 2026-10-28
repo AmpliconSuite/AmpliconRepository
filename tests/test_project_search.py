@@ -93,10 +93,26 @@ def test_no_match_says_so(request_factory, test_user, projects):
 
 @pytest.mark.integration
 def test_without_scope_still_searches_samples(request_factory, test_user, projects):
-    """The advanced form, and the "show their samples" button, post no scope."""
+    """The advanced form, and the "Search the samples" button, post no scope."""
     html = _search(request_factory, test_user, {'project_name': TAG})
     assert 'id="projectSearchTable"' not in html
     assert 'public-samples-table' in html
+
+
+@pytest.mark.integration
+def test_sample_rows_carry_no_whitespace_between_tags(request_factory, test_user, projects):
+    """The indentation between row tags was most of a big result page.
+
+    Measured on dev 2026-10-28, a search returning 19,634 feature rows carried
+    7.8 MB of it inside the samples table, and building the table took about
+    98 s in Chromium with it against about 16 s without.
+    """
+    import re
+    html = _search(request_factory, test_user, {'project_name': TAG})
+    start = html.index('<tbody', html.index('id="public-samples-table"'))
+    body = html[start:html.index('</tbody>', start)]
+    assert body.count('<tr') == 3   # the public project's samples; the rest are on the private tab
+    assert not re.search(r'>\s+<', body.split('>', 1)[1])
 
 
 @pytest.mark.integration
