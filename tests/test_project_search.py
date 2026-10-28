@@ -74,6 +74,18 @@ def test_projects_scope_lists_projects_not_samples(request_factory, test_user, p
 
 
 @pytest.mark.integration
+def test_search_box_holds_the_query_and_reruns_the_project_search(request_factory, test_user, projects):
+    """The box at the top is a new project search, prefilled with this one."""
+    import re
+    html = _search(request_factory, test_user, {'scope': 'project_name', 'project_name': TAG})
+    form = re.search(r'<form class="ps-search".*?</form>', html, re.S).group(0)
+    assert 'name="scope" value="project_name"' in form
+    assert re.search(r'<input[^>]*name="project_name"[^>]*value="%s"' % TAG, form)
+    assert '<b>3</b> projects match &ldquo;' in html
+    assert 'Search the samples in these 3 projects' in html
+
+
+@pytest.mark.integration
 def test_anonymous_sees_only_public(request_factory, projects):
     from django.contrib.auth.models import AnonymousUser
     html = _search(request_factory, AnonymousUser(), {'scope': 'project_name', 'project_name': TAG})
@@ -88,7 +100,8 @@ def test_no_match_says_so(request_factory, test_user, projects):
     html = _search(request_factory, test_user,
                    {'scope': 'project_name', 'project_name': TAG + '_nothing_has_this'})
     assert 'id="projectSearchTable"' not in html
-    assert 'No projects you can see match' in html
+    assert 'Nothing found' in html
+    assert 'id="ps-sample-search"' not in html
 
 
 @pytest.mark.integration

@@ -5,25 +5,43 @@
 {% block extra_css %}
 {% include 'includes/loading_spinner_css.html' %}
 <style>
-    .ps-head {
+    .ps-search {
+        margin: 24px 0 6px;
+    }
+    .ps-search label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+    .ps-search-row {
+        display: flex;
+        gap: 8px;
+        max-width: 640px;
+    }
+    .ps-search-row input {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    .ps-hint {
+        margin: 6px 0 0;
+        font-size: 13px;
+        color: #6b7075;
+    }
+    .ps-summary {
         display: flex;
         flex-wrap: wrap;
-        align-items: baseline;
+        align-items: center;
         justify-content: space-between;
         gap: 8px 20px;
-        margin: 24px 0 12px;
+        margin: 22px 0 10px;
+        padding-top: 14px;
+        border-top: 1px solid #e3e6ea;
     }
-    .ps-head h2 {
+    .ps-summary p {
         margin: 0;
-        font-size: 1.5rem;
+        font-size: 1.05rem;
     }
-    .ps-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: center;
-    }
-    .ps-actions form {
+    .ps-summary form {
         margin: 0;
     }
     #projectSearchTable td {
@@ -69,27 +87,51 @@
 {% endblock %}
 
 {% block main %}
-<div class="ps-head">
-    <h2>
-        {% if project_query %}Projects matching &ldquo;{{ project_query }}&rdquo;{% else %}All projects{% endif %}
-        <span class="badge badge-primary">{{ projects|length }}</span>
-    </h2>
-    <div class="ps-actions">
-        {% comment %}
-        The feature-level answer is still one click away: the same name posted
-        without a scope is the search this page replaced, every feature row of
-        every matching project.  That page can take a while on a broad match,
-        so the button says it is working rather than looking ignored.
-        {% endcomment %}
-        {% if projects %}
-        <form method="POST" action="{% url 'search_results' %}" id="ps-sample-search">
-            {% csrf_token %}
-            <input type="hidden" name="project_name" value="{{ project_query }}">
-            <button type="submit" class="btn btn-sm btn-outline-secondary">Search the samples</button>
-        </form>
-        {% endif %}
-        <a class="btn btn-sm btn-outline-primary" href="{% url 'index' %}">New search</a>
+{% comment %}
+The search box is the page's only text input, and it re-runs the search: it
+holds the query that produced this list, so changing it and pressing Enter
+does what a visitor expects of a box at the top of a results page. There is
+deliberately no DataTables filter box as well. Next to a search box it reads
+as a second way to search, it matches differently (plain substring, none of
+the * and & | operators), and a name search rarely returns enough projects to
+need narrowing.
+{% endcomment %}
+<form class="ps-search" method="POST" action="{% url 'search_results' %}" role="search">
+    {% csrf_token %}
+    <input type="hidden" name="scope" value="project_name">
+    <label for="ps-query">Search projects by name</label>
+    <div class="ps-search-row">
+        <input type="search" class="form-control" id="ps-query" name="project_name"
+               value="{{ project_query }}" placeholder="Find a project by name" autocomplete="off">
+        <button type="submit" class="btn btn-primary">Search</button>
     </div>
+    <p class="ps-hint">
+        Matches anywhere in the name. <code>GBM*</code> starts with GBM; <code>&amp;</code> or <code>|</code> combine terms.
+        Looking for a gene, sample or cancer type? <a href="{% url 'index' %}">Search from the home page</a>.
+    </p>
+</form>
+
+<div class="ps-summary">
+    <p>
+        {% if project_query %}
+        <b>{{ projects|length }}</b> project{{ projects|length|pluralize }} match{{ projects|length|pluralize:"es," }} &ldquo;{{ project_query }}&rdquo;
+        {% else %}
+        All <b>{{ projects|length }}</b> project{{ projects|length|pluralize }} you can see
+        {% endif %}
+    </p>
+    {% comment %}
+    The feature-level answer is still one click away: the same name posted
+    without a scope is the search this page replaced, every feature row of
+    every matching project.  That page can take a while on a broad match,
+    so the button says it is working rather than looking ignored.
+    {% endcomment %}
+    {% if projects %}
+    <form method="POST" action="{% url 'search_results' %}" id="ps-sample-search">
+        {% csrf_token %}
+        <input type="hidden" name="project_name" value="{{ project_query }}">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Search the samples in {% if projects|length == 1 %}this project{% else %}these {{ projects|length }} projects{% endif %}</button>
+    </form>
+    {% endif %}
 </div>
 
 {% if projects %}
@@ -136,10 +178,8 @@
     </table>
 </div>
 {% else %}
-<p style="margin: 40px 0; color: #666;">
-    No projects you can see match{% if project_query %} &ldquo;{{ project_query }}&rdquo;{% endif %}.
-    Searches match anywhere in the name; <code>*</code> anchors (<code>GBM*</code> starts with GBM),
-    and <code>&amp;</code> or <code>|</code> combine terms.
+<p style="margin: 30px 0; color: #666;">
+    Nothing found. Try a shorter part of the name, or clear the box to list every project.
 </p>
 {% endif %}
 {% endblock %}
@@ -183,10 +223,15 @@
                 + '-' + (day.length < 2 ? '0' + day : day));
         });
 
+        // Table, info and pager only: the search box above is the way to narrow
+        // the list. Paging appears only when there is more than a page.
+        var pageLength = 25;
+        var paged = table.find('tbody tr').length > pageLength;
         table.DataTable({
             order: [[0, 'asc']],
-            pageLength: 25,
-            lengthMenu: [10, 25, 50, 100],
+            dom: paged ? 'rtip' : 'rt',
+            paging: paged,
+            pageLength: pageLength,
             // dt-right / dt-center rather than a class of our own: DataTables'
             // stylesheet left-aligns every header with a more specific rule,
             // which left "Download" 20px off the icons beneath it.
@@ -198,8 +243,6 @@
             language: {
                 info: "Showing _START_ to _END_ of <b>_TOTAL_</b> projects",
                 infoEmpty: "No projects to show",
-                infoFiltered: " (filtered from _MAX_)",
-                zeroRecords: "No projects match that filter",
                 paginate: { previous: "← Prev", next: "Next →" }
             }
         });
