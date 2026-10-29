@@ -381,7 +381,65 @@ def perform_search(genequery=None,
         "public_sample_data": public_sample_data,
         "private_sample_data": private_sample_data
     }
-    
+
+
+# The fields a project list shows. Counting samples is done by the server off
+# sample_data, which holds one entry per sample, so neither runs nor sample_data
+# leaves the database: those two are nearly all of a project document's bytes.
+# On caper-dev, measured 2026-10-28, len(sample_data) equals len(runs) and the
+# stored sample_count on all 35 current documents, except one empty project
+# that has no stored count.
+PROJECT_LIST_PROJECTION = {
+    'project_name': 1,
+    'description': 1,
+    'date': 1,
+    'private': 1,
+    'publication_link': 1,
+    'Reconstruction_tools': 1,
+    'stored_sample_count': '$sample_count',
+    'listed_sample_count': {'$cond': [{'$isArray': '$sample_data'},
+                                      {'$size': '$sample_data'}, None]},
+}
+
+
+def find_projects_by_name(project_name, user):
+    """The projects a name search matches, without any of their samples.
+
+    Same visibility as ``perform_search``: every LIVE public project, plus the
+    restricted ones ``user`` is a member of. An empty name matches every one of
+    them. Returns one list, sorted by name, each project carrying
+    ``visibility_display`` and ``sample_count_display``.
+    """
+    name_query = build_project_name_query(project_name) if project_name else None
+
+    queries = [status_query(LIVE, private={'$in': PUBLIC_QUERY_VALUES})]
+    if user.is_authenticated:
+        queries.append(status_query(
+            LIVE,
+            private={'$in': RESTRICTED_QUERY_VALUES},
+            **{"$or": [{"project_members": user.username},
+                       {"project_members": user.email or user.username}]}))
+
+    projects = []
+    for query in queries:
+        _apply_project_name_query(query, name_query)
+        projects.extend(collection_handle.aggregate([
+            {'$match': query},
+            {'$project': PROJECT_LIST_PROJECTION},
+        ]))
+
+    for proj in projects:
+        prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
+        count = proj.pop('listed_sample_count', None)
+        if count is None:
+            count = proj.get('stored_sample_count') or 0
+        proj.pop('stored_sample_count', None)
+        proj['sample_count_display'] = count
+
+    projects.sort(key=lambda proj: (str(proj.get('project_name') or '').lower(), str(proj['_id'])))
+    return projects
+
     
 def collect_metadata_samples(sample_data, metadata_to_find):
     """

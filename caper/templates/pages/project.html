@@ -1315,8 +1315,9 @@ paged.
         cursor: default;
     }
 </style>
+{% include 'includes/loading_spinner_css.html' %}
 <div id="samples-table-wrap">
-<div class="samples-table-placeholder" aria-hidden="true">Loading samples...</div>
+<div class="samples-table-placeholder" aria-hidden="true"><span class="loading-spinner"></span>Loading samples&hellip;</div>
 <div class="table-responsive">
     <table id='myTable1' class="table table-hover table-sm stripe no-border">
         <thead>

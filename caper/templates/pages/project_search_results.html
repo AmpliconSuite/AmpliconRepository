@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+
+{% block meta_title %}Project search{% endblock %}
+
+{% block extra_css %}
+{% include 'includes/loading_spinner_css.html' %}
+<style>
+    .ps-search {
+        margin: 24px 0 6px;
+    }
+    .ps-search label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+    .ps-search-row {
+        display: flex;
+        gap: 8px;
+        max-width: 640px;
+    }
+    .ps-search-row input {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    .ps-hint {
+        margin: 6px 0 0;
+        font-size: 13px;
+        color: #6b7075;
+    }
+    .ps-summary {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px 20px;
+        margin: 22px 0 10px;
+        padding-top: 14px;
+        border-top: 1px solid #e3e6ea;
+    }
+    .ps-summary p {
+        margin: 0;
+        font-size: 1.05rem;
+    }
+    .ps-summary form {
+        margin: 0;
+    }
+    #projectSearchTable td {
+        vertical-align: top;
+    }
+    .ps-name {
+        white-space: normal;
+        overflow-wrap: anywhere;
+        font-weight: 600;
+    }
+    .ps-name .home-pub {
+        margin-left: 0.45em;
+        font-weight: normal;
+    }
+    .ps-description {
+        white-space: normal;
+        overflow-wrap: anywhere;
+        color: #4a4d52;
+    }
+    .ps-num,
+    .ps-date {
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+    .ps-visibility {
+        display: inline-block;
+        padding: 1px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+        white-space: nowrap;
+        background-color: #e6effb;
+        color: #1f4f8f;
+    }
+    .ps-visibility.is-restricted {
+        background-color: #bbbbbb;
+        color: white;
+    }
+    .ps-download a {
+        display: inline-block;
+        padding: 2px 6px;
+    }
+</style>
+{% endblock %}
+
+{% block main %}
+{% comment %}
+The search box is the page's only text input, and it re-runs the search: it
+holds the query that produced this list, so changing it and pressing Enter
+does what a visitor expects of a box at the top of a results page. There is
+deliberately no DataTables filter box as well. Next to a search box it reads
+as a second way to search, and a name search rarely returns enough projects
+to need narrowing.
+{% endcomment %}
+<form class="ps-search" method="POST" action="{% url 'search_results' %}" role="search">
+    {% csrf_token %}
+    <input type="hidden" name="scope" value="project_name">
+    <label for="ps-query">Search projects by name</label>
+    <div class="ps-search-row">
+        <input type="search" class="form-control" id="ps-query" name="project_name"
+               value="{{ project_query }}" placeholder="Find a project by name" autocomplete="off">
+        <button type="submit" class="btn btn-primary">Search</button>
+    </div>
+    <p class="ps-hint">
+        Matches any part of the name. Looking for a gene, sample or cancer type? <a href="{% url 'index' %}">Search from the home page</a>.
+    </p>
+</form>
+
+<div class="ps-summary">
+    <p>
+        {% if project_query %}
+        <b>{{ projects|length }}</b> project{{ projects|length|pluralize }} match{{ projects|length|pluralize:"es," }} &ldquo;{{ project_query }}&rdquo;
+        {% else %}
+        All <b>{{ projects|length }}</b> project{{ projects|length|pluralize }} you can see
+        {% endif %}
+    </p>
+    {% comment %}
+    The feature-level answer is still one click away: the same name posted
+    without a scope is the search this page replaced, every feature row of
+    every matching project.  That page can take a while on a broad match,
+    so the button says it is working rather than looking ignored.
+    {% endcomment %}
+    {% if projects %}
+    <form method="POST" action="{% url 'search_results' %}" id="ps-sample-search">
+        {% csrf_token %}
+        <input type="hidden" name="project_name" value="{{ project_query }}">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Search the samples in {% if projects|length == 1 %}this project{% else %}these {{ projects|length }} projects{% endif %}</button>
+    </form>
+    {% endif %}
+</div>
+
+{% if projects %}
+<div class="table-responsive">
+    <table id="projectSearchTable" class="table table-hover table-sm stripe no-border" style="width:100%">
+        <thead>
+            <tr>
+                <th style="width:24%">Project</th>
+                <th>Description</th>
+                <th>Samples</th>
+                <th>Visibility</th>
+                <th style="width:110px">Updated</th>
+                <th>Download</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for project in projects %}
+            <tr>
+                <td class="ps-name">
+                    <a target="_blank" href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% include 'includes/project_publication_link.html' %}
+                </td>
+                <td class="ps-description" title="{{ project.description }}">{{ project.description|truncatechars:200 }}</td>
+                <td class="ps-num">{{ project.sample_count_display }}</td>
+                <td>
+                    {% if project.visibility_display == 'Private' %}
+                    <span class="ps-visibility is-restricted" title="Visible only to project members">Private</span>
+                    {% elif project.visibility_display == 'Hidden Public' %}
+                    <span class="ps-visibility is-restricted" title="Unlisted: anyone with the link can view this project, but it is not listed publicly">Unlisted</span>
+                    {% else %}
+                    <span class="ps-visibility">Public</span>
+                    {% endif %}
+                </td>
+                <td class="ps-date">{{ project.date }}</td>
+                <td class="ps-download">
+                    <a href="{% url 'project_download' project_name=project.linkid %}" rel="nofollow"
+                       title="Download the whole project as a .tar.gz archive. Large projects run to several GB."
+                       aria-label="Download {{ project.project_name }} as a .tar.gz archive">
+                        <i class="fas fa-download" aria-hidden="true"></i>
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p style="margin: 30px 0; color: #666;">
+    Nothing found. Try a shorter part of the name, or clear the box to list every project.
+</p>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        // A pageshow from the back/forward cache restores the button as it
+        // was left -- disabled and spinning -- so put it back each time.
+        var sampleSearch = $('#ps-sample-search');
+        var sampleButton = sampleSearch.find('button');
+        var sampleLabel = sampleButton.html();
+        sampleSearch.on('submit', function () {
+            sampleButton.prop('disabled', true)
+                .html('<span class="loading-spinner" aria-hidden="true"></span>Loading samples&hellip;');
+        });
+        $(window).on('pageshow', function () {
+            sampleButton.prop('disabled', false).html(sampleLabel);
+        });
+
+        var table = $('#projectSearchTable');
+        if (!table.length) { return; }
+
+        // Stored dates are UTC strings; show the local calendar date and sort
+        // on the full timestamp, as the home page table does.
+        table.find('td.ps-date').each(function () {
+            var cell = $(this);
+            var raw = cell.text().trim();
+            var parsed = Date.parse(raw);
+            if (isNaN(parsed)) {
+                cell.attr('data-order', 0);
+                return;
+            }
+            cell.attr('data-order', parsed);
+            var utcDate = new Date(parsed);
+            var local = new Date(utcDate.getTime() - utcDate.getTimezoneOffset() * 60000);
+            var month = String(local.getMonth() + 1);
+            var day = String(local.getDate());
+            cell.attr('title', local.toLocaleString());
+            cell.text(local.getFullYear() + '-' + (month.length < 2 ? '0' + month : month)
+                + '-' + (day.length < 2 ? '0' + day : day));
+        });
+
+        // Table, info and pager only: the search box above is the way to narrow
+        // the list. Paging appears only when there is more than a page.
+        var pageLength = 25;
+        var paged = table.find('tbody tr').length > pageLength;
+        table.DataTable({
+            order: [[0, 'asc']],
+            dom: paged ? 'rtip' : 'rt',
+            paging: paged,
+            pageLength: pageLength,
+            // dt-right / dt-center rather than a class of our own: DataTables'
+            // stylesheet left-aligns every header with a more specific rule,
+            // which left "Download" 20px off the icons beneath it.
+            columnDefs: [
+                { targets: 2, type: 'num', className: 'dt-right' },
+                { targets: 4, type: 'num' },
+                { targets: 5, orderable: false, searchable: false, className: 'dt-center' }
+            ],
+            language: {
+                info: "Showing _START_ to _END_ of <b>_TOTAL_</b> projects",
+                infoEmpty: "No projects to show",
+                paginate: { previous: "← Prev", next: "Next →" }
+            }
+        });
+    });
+</script>
+{% endblock %}
