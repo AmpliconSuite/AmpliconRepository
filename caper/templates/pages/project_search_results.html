@@ -92,9 +92,8 @@ The search box is the page's only text input, and it re-runs the search: it
 holds the query that produced this list, so changing it and pressing Enter
 does what a visitor expects of a box at the top of a results page. There is
 deliberately no DataTables filter box as well. Next to a search box it reads
-as a second way to search, it matches differently (plain substring, none of
-the * and & | operators), and a name search rarely returns enough projects to
-need narrowing.
+as a second way to search, and a name search rarely returns enough projects
+to need narrowing.
 {% endcomment %}
 <form class="ps-search" method="POST" action="{% url 'search_results' %}" role="search">
     {% csrf_token %}
@@ -106,8 +105,7 @@ need narrowing.
         <button type="submit" class="btn btn-primary">Search</button>
     </div>
     <p class="ps-hint">
-        Matches anywhere in the name. <code>GBM*</code> starts with GBM; <code>&amp;</code> or <code>|</code> combine terms.
-        Looking for a gene, sample or cancer type? <a href="{% url 'index' %}">Search from the home page</a>.
+        Matches any part of the name. Looking for a gene, sample or cancer type? <a href="{% url 'index' %}">Search from the home page</a>.
     </p>
 </form>
 
