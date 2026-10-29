@@ -67,6 +67,17 @@ def test_rows_survive_the_shapes_old_documents_hold():
     json.loads(json.dumps(row, allow_nan=False))
 
 
+def test_quoted_gene_names_are_unquoted():
+    """Every gene of HMF on dev is stored as "'ERBB2'" (measured 2026-10-29)."""
+    runs = {'S1': [{'Sample_name': 'S1', 'Classification': 'ecDNA',
+                    'All_genes': ["'ERBB2'", "'GRB7'"], 'Oncogenes': ["'ERBB2'"]}]}
+    sample_data = [{'Sample_name': 'S1', 'Features': 1, 'Oncogenes': ["'ERBB2'"],
+                    'Classifications': ['ecDNA'], 'Classifications_counted': ['ecDNA']}]
+    [row] = sample_table_rows(sample_data, runs)
+    assert row['g'] == 'ERBB2 GRB7'
+    assert row['o'] == 'ERBB2'
+
+
 def test_bar_names_and_counts_are_the_rows_classifications():
     """A click on a bar must list exactly the samples that bar counted.
 

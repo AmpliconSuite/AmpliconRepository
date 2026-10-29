@@ -17,17 +17,24 @@ the median is zero genes -- so the cost sits in a few heavily amplified ones.
 import math
 
 from .summarybar import canonical_classification
+from .utils import flatten
 
 
 def _strings(value):
-    """A feature field as a list of strings, whatever shape it was stored in."""
+    """A feature field as a list of strings, whatever shape it was stored in.
+
+    Some documents hold each gene wrapped in its own quotes -- every gene of the
+    HMF project on dev is ``"'ERBB2'"``, measured 2026-10-29 -- which an exact
+    gene match would never find. ``flatten`` is what strips those quotes from
+    the oncogene lists, so the gene lists go through it too.
+    """
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return []
     if isinstance(value, str):
-        return [value] if value else []
-    if isinstance(value, (list, tuple, set)):
-        return [v for v in value if isinstance(v, str) and v]
-    return []
+        value = [value]
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    return flatten([v for v in value if isinstance(v, str)], sort=False)
 
 
 def sample_table_rows(sample_data, runs):
