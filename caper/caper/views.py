@@ -148,6 +148,7 @@ import shutil
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.summarybar as summarybar
+from .sample_table import sample_table_rows
 from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import TemporaryUploadedFile
 
@@ -1182,6 +1183,7 @@ def project_page(request, project_name, message=''):
         'project': project,
         'metadata_summary': metadata_summary,
         'sample_data': sample_data,
+        'sample_table_rows': sample_table_rows(sample_data, samples),
         'reference_genome': reference_genome,
         'stackedbar_graph': stacked_bar_plot,
         'summarybar': pc_fig,
