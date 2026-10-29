@@ -26,6 +26,7 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework import status
 
+from .email_contact import contact_context, reply_to
 from .project_status import LIVE, classify, iter_previous_versions, status_query
 from . import lineage
 
@@ -418,6 +419,7 @@ class ProjectFileAddView(APIView):
         form_dict['project_name'] = project.get('project_name', project_uuid)
         form_dict['project_id'] = project_uuid
         form_dict['alert_message'] = alert_message
+        form_dict.update(contact_context())
 
         html_message = render_to_string('contacts/project_api_file_added.html', form_dict)
         plain_message = strip_tags(html_message)
@@ -428,7 +430,7 @@ class ProjectFileAddView(APIView):
             html_message,
             settings.EMAIL_HOST_USER,
             [user.email],
-            reply_to=[settings.EMAIL_HOST_USER]
+            reply_to=reply_to()
         )
         email.content_subtype = "html"
         email.send(fail_silently=False)
@@ -629,7 +631,9 @@ def _project_to_dict(project, members=None, coverage=None):
         'aggregator_version': project.get('aggregator_version', ''),
         'reconstruction_tools': project.get('Reconstruction_tools', ''),
         'CoRAL_version':      project.get('CoRAL_version', ''),
-        'oncogenes':          project.get('Oncogenes', []),
+        # Sorted on the way out as well as on the way in: documents uploaded
+        # before #677 hold these lists in whatever order a set gave them.
+        'oncogenes':          sorted(project.get('Oncogenes') or [], key=str),
         'classifications':    _canonical_classifications(project),
         'version':            version,
         'version_count':      version_count,

@@ -14,6 +14,7 @@ from urllib.parse import quote
 from .background_tasks import _thread_executor, get_background_task_status
 from . import version_purge
 from .canonical import project_canonical_url, sample_canonical_url
+from .email_contact import contact_footer_text, reply_to
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -218,8 +219,10 @@ def samples_to_dict(form_file):
 
 
 
+# Sorted, not list(set): a set's order changes with the process's hash seed, so
+# two uploads of the same data stored the lists in different orders (#677).
 def get_project_oncogenes(runs):
-    return list({
+    return sorted({
         gene.strip().replace("'", '')
         for sample in runs
         for feature in runs[sample]
@@ -230,7 +233,7 @@ def get_project_oncogenes(runs):
 
 
 def get_project_classifications(runs):
-    return list({
+    return sorted({
         feature['Classification'].upper()
         for sample in runs
         for feature in runs[sample]
@@ -2568,13 +2571,15 @@ This link will expire in 7 days.
 Best regards,
 {settings.SITE_TITLE} Team
 {settings.SITE_URL}
+
+{contact_footer_text()}
 """
         email = EmailMessage(
             subject,
             email_body,
             settings.EMAIL_HOST_USER,
             [user_email],
-            reply_to=[settings.EMAIL_HOST_USER]
+            reply_to=reply_to()
         )
         email.send(fail_silently=False)
 

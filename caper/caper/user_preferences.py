@@ -1,6 +1,7 @@
 import logging
 
 from bson.objectid import ObjectId
+from .email_contact import contact_context, reply_to
 from .utils import get_collection_handle, db_handle
 from .forms import UserPreferencesForm
 from django.contrib.auth import get_user_model
@@ -132,6 +133,7 @@ def send_project_membership_changed_email(subject, template, to_email, sharing_u
     form_dict['sharing_user_email'] = sharing_user_email
     form_dict['project_name'] = project_name
     form_dict['project_id'] = project_id
+    form_dict.update(contact_context())
 
     html_message = render_to_string(template, form_dict)
     plain_message = strip_tags(html_message)
@@ -142,7 +144,7 @@ def send_project_membership_changed_email(subject, template, to_email, sharing_u
         html_message,
         settings.EMAIL_HOST_USER_SECRET,
         [to_email],
-        reply_to=[settings.EMAIL_HOST_USER_SECRET]
+        reply_to=reply_to()
     )
     email.content_subtype = "html"
     email.send(fail_silently=False)
@@ -175,7 +177,8 @@ def notify_subscribers_of_project_update(old_project, new_project_id, new_sample
         'SITE_URL': settings.SITE_URL,
         'project_name': project_name,
         'new_project_id': str(new_project_id),
-        'sample_count': new_sample_count
+        'sample_count': new_sample_count,
+        **contact_context(),
     }
     
     subject = f"Project {project_name} on {settings.SITE_TITLE} has been updated"
@@ -204,7 +207,7 @@ def notify_subscribers_of_project_update(old_project, new_project_id, new_sample
                 html_message,
                 settings.EMAIL_HOST_USER_SECRET,
                 [subscriber_email],
-                reply_to=[settings.EMAIL_HOST_USER_SECRET]
+                reply_to=reply_to()
             )
             email.content_subtype = "html"
             email.send(fail_silently=False)

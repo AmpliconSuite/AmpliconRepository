@@ -61,7 +61,9 @@ def _canonical_classifications(project):
         if canonical not in seen:
             seen.add(canonical)
             out.append(canonical)
-    return out
+    # Stored in set order before #677, so the order carried no meaning.
+    # Case-folded so ecDNA sorts among the others rather than after them.
+    return sorted(out, key=lambda value: str(value).lower())
 
 
 # The values a caller may filter on.  Both the canonical spellings and every

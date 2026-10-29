@@ -195,6 +195,13 @@ EMAIL_USE_TLS = True #new
 # up in a spam folder or refused outright.
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER or 'webmaster@localhost'
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+# Where a reply to the site's mail, or a question about it, should go.  The
+# sending account is not one anybody answers from, so the notifications set
+# Reply-To to this address and close with it and the issue tracker
+# (caper/email_contact.py).
+SITE_CONTACT_EMAIL = os.getenv('SITE_CONTACT_EMAIL', default='jluebeck@ucsd.edu')
+SITE_ISSUES_URL = 'https://github.com/AmpliconSuite/AmpliconRepository/issues'
 SITE_URL = os.environ.get("SITE_URL", default="http://127.0.0.1:8000/")
 
 SERVER_IDENTIFICATION_BANNER=os.getenv('SERVER_IDENTIFICATION_BANNER', default=None)

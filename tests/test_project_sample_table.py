@@ -160,3 +160,27 @@ def test_template_draws_the_table_from_the_rows():
     assert "on('plotly_click'" in source
     # The filtered download reads the sample name from the row data now.
     assert 'this.data().n' in source
+    # A gene match outside the oncogene column is labelled as such.
+    assert "'And non-oncogene: '" in source
+
+
+def test_oncogenes_are_listed_alphabetically():
+    sample_data = [{'Sample_name': 'S1', 'Features': 1, 'Oncogenes': ['MYC', 'ERBB2', 'CCND1'],
+                    'Classifications': ['ecDNA'], 'Classifications_counted': ['ecDNA']}]
+    [row] = sample_table_rows(sample_data, {})
+    assert row['o'] == 'CCND1, ERBB2, MYC'
+
+
+def test_project_level_lists_are_sorted():
+    """#677: list(set) stored these in hash-seed order, different per upload."""
+    from caper.classifications import _canonical_classifications
+    from caper.views import get_project_classifications, get_project_oncogenes
+
+    runs = {'S1': [{'Oncogenes': ['MYC', "'ERBB2'"], 'Classification': 'ecDNA'},
+                   {'Oncogenes': ['CCND1'], 'Classification': 'BFB'}],
+            'S2': [{'Oncogenes': [], 'Classification': 'Linear'}]}
+    assert get_project_oncogenes(runs) == ['CCND1', 'ERBB2', 'MYC']
+    assert get_project_classifications(runs) == ['BFB', 'ECDNA', 'LINEAR']
+    # A document written before the fix: the API sorts it on the way out.
+    assert _canonical_classifications({'Classification': ['LINEAR', 'ECDNA', 'BFB']}) == \
+        ['BFB', 'ecDNA', 'Linear']

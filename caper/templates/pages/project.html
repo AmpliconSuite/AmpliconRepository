@@ -144,7 +144,8 @@
                 if (!extra.length) { return; }
                 var shown = extra.slice(0, 6).map(escapeHtml).join(', ');
                 if (extra.length > 6) { shown += ' and ' + (extra.length - 6) + ' more'; }
-                cell.append('<span class="also-genes">Also amplified: ' + shown + '</span>');
+                var label = extra.length === 1 ? 'And non-oncogene: ' : 'And non-oncogenes: ';
+                cell.append('<span class="also-genes">' + label + shown + '</span>');
             });
         });
 

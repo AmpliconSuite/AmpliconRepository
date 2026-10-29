@@ -71,7 +71,10 @@ def sample_table_rows(sample_data, runs):
         rows.append({
             'n': name,
             'f': int(features),
-            'o': ', '.join(_strings(sample.get('Oncogenes'))),
+            # Stored sorted on dev and locally (0 of 3,543 and 0 of 1,561
+            # lists out of order, 2026-10-29); sorting here costs nothing and
+            # does not depend on every past writer having done it.
+            'o': ', '.join(sorted(_strings(sample.get('Oncogenes')))),
             'c': ', '.join(_strings(sample.get('Classifications_counted'))),
             'k': classes,
             'g': ' '.join(sorted(genes_by_sample.get(name, ()))),
