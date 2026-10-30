@@ -15,6 +15,8 @@ from .background_tasks import _thread_executor, get_background_task_status
 from . import version_purge
 from .canonical import project_canonical_url, sample_canonical_url
 from .email_contact import contact_footer_text, reply_to
+from .gene_ids import gene_resolution_notes, suggest_genes
+from .feature_index import gene_term_clause
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -7284,8 +7286,20 @@ def search_results(request):
             "search_submitted": True,
         }
 
+        # What each gene term means (gene_ids.resolve_gene_term). A term that
+        # names several genes, or nothing AmpliconSuite annotates, is not
+        # searched: the page says which genes it could mean, and the visitor
+        # picks one (Jens, 2026-10-29). The others are searched by Gene ID.
+        gene_notes = gene_resolution_notes(
+            gene_search, resolve=lambda term: gene_term_clause(term)[1])
+        if any(note['outcome'] in ('ambiguous', 'not_tracked') for note in gene_notes):
+            results = {'public_projects': [], 'private_projects': [],
+                       'public_sample_data': [], 'private_sample_data': []}
+        else:
+            results = None
+
         # Delegate to the shared search helper
-        results = perform_search(
+        results = results or perform_search(
             genequery=gene_search.upper() if gene_search else None,
             project_name=project_name.upper() if project_name else None,
             classquery=classifications.upper() if classifications else None,
@@ -7358,6 +7372,7 @@ def search_results(request):
             "private_projects_count": private_projects_count,
             "public_samples_count": public_samples_count,
             "private_samples_count": private_samples_count,
+            "gene_notes": gene_notes,
         })
 
     else:
@@ -7409,6 +7424,17 @@ def check_ec3d_available(project_name, sample_name):
     logging.debug(f"ec3d_path is {ec3d_path}")
 
     return os.path.exists(ec3d_path)
+
+
+def gene_suggest(request):
+    """Autocomplete for the gene search boxes: ``GET ?q=`` -> up to 10 genes.
+
+    Answered from the gene map held in memory (gene_ids.suggest_genes), so it
+    costs no database query. Suggestions begin at 3 characters; below that only
+    an exact name is offered (AR, ALK). Public: gene names are not private.
+    """
+    query = request.GET.get('q', '')[:64]
+    return JsonResponse({'query': query, 'suggestions': suggest_genes(query)})
 
 
 @login_required

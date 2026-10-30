@@ -1390,9 +1390,13 @@ def _api_v1_paths():
 # are not the same unit and the description has to say which one it is counting.
 _SHARED_FEATURE_FILTERS = [
     OpenApiParameter('gene_any', str, OpenApiParameter.QUERY, required=False,
-        description='Comma-delimited gene symbols; matches rows carrying ANY of them.'),
+        description='Comma-delimited gene names: NCBI symbols, aliases, former '
+                    'names or NCBI Gene IDs, each resolved to one gene; matches '
+                    'rows carrying ANY of them. An ambiguous name or one '
+                    'AmpliconSuite does not annotate is a 400.'),
     OpenApiParameter('gene_all', str, OpenApiParameter.QUERY, required=False,
-        description='Comma-delimited gene symbols; matches samples carrying ALL of them.'),
+        description='Comma-delimited gene names, resolved as for gene_any; '
+                    'matches samples carrying ALL of them.'),
     OpenApiParameter('same_amp', bool, OpenApiParameter.QUERY, required=False,
         description='Narrow gene_all from same-sample to a single focal amplification.'),
     OpenApiParameter('classification', str, OpenApiParameter.QUERY, required=False,
@@ -1471,13 +1475,19 @@ class FeatureSearchView(APIView):
             'Gene operators are in the parameter name, not the value: '
             '`gene_any` is OR, `gene_all` is AND, and supplying both ANDs the '
             'two clauses. `gene_all` means "in the same sample"; add '
-            '`same_amp=true` to require one focal amplification. Gene symbols '
-            'are matched whole and case-insensitively -- there are no '
-            'wildcards, because a partial symbol conflates real genes.\n\n'
-            'Results carry a `reference_builds` breakdown. Gene symbols are '
-            'build-dependent and the corpus holds both vocabularies, so a '
-            'result of {"hg38": 56, "hg19": 0} means the gene may exist under '
-            'another name in the hg19 projects.'),
+            '`same_amp=true` to require one focal amplification. Each gene '
+            'term is resolved to an NCBI Gene ID -- a symbol, alias, former '
+            'name or ID, matched whole and case-insensitively -- so a gene is '
+            'found under every name AmpliconSuite gave it: C17orf37 in hg19 '
+            'results and MIEN1 in hg38 ones are both Gene 84299. A name that '
+            'is a gene\'s current symbol means that gene; a name with no '
+            'single meaning is a 400 (`ambiguous_gene`) listing the '
+            'candidates, and one AmpliconSuite does not annotate is a 400 '
+            '(`gene_not_tracked`). There are no wildcards, because a partial '
+            'symbol conflates real genes.\n\n'
+            'Responses that name genes carry `gene_terms`, saying what each '
+            'term was taken to mean, and each row carries `gene_ids`. Results '
+            'also carry a `reference_builds` breakdown.'),
         parameters=_SHARED_FEATURE_FILTERS + [
             OpenApiParameter('fields', str, OpenApiParameter.QUERY, required=False,
                 description='Comma-delimited subset of the row fields to return.'),
@@ -1507,7 +1517,17 @@ class FeatureSearchView(APIView):
             body = api_features.search_features(request.query_params, user, request)
         except api_features.FeatureQueryError as exc:
             return api_error(exc.message, exc.code, exc.status_code)
+        _add_gene_terms(body, request.query_params)
         return Response(body)
+
+
+def _add_gene_terms(body, params):
+    """Say what each gene term was taken to mean: its Gene ID and symbol.
+
+    Only when the request named genes.  Additive: existing keys are unchanged.
+    """
+    if params.get('gene_any') or params.get('gene_all'):
+        body['gene_terms'] = api_features.gene_terms_report(params)
 
 
 # ── GET /api/v1/features/samples/ ────────────────────────────────────────────
@@ -1569,6 +1589,7 @@ class FeatureSamplesView(APIView):
                 request.query_params, user, request)
         except api_features.FeatureQueryError as exc:
             return api_error(exc.message, exc.code, exc.status_code)
+        _add_gene_terms(body, request.query_params)
         return Response(body)
 
 

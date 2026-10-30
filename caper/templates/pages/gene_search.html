@@ -1155,6 +1155,43 @@
     <!-- Results (Right) -->
 {% if not landing %}
     <div class="results-container" >
+        {% if gene_notes %}
+        {# What each gene term was taken to mean; see gene_ids.gene_resolution_notes. #}
+        <div class="gene-notes" id="gene-notes">
+            {% for note in gene_notes %}
+            <div class="gene-note gene-note-{{ note.outcome }}">
+                {% if note.outcome == 'gene' %}
+                    {% if note.gene.matched %}<b>{{ note.term }}</b> &rarr; {% endif %}
+                    <b>{{ note.gene.symbol }}</b>
+                    <span class="gene-note-id">NCBI Gene <a href="https://www.ncbi.nlm.nih.gov/gene/{{ note.gene.gene_id|stringformat:"d" }}" target="_blank" rel="noopener">{{ note.gene.gene_id|stringformat:"d" }}</a></span>
+                    {% if note.gene.status == 'withdrawn' %}<span class="gene-note-withdrawn">withdrawn from NCBI Gene</span>{% endif %}
+                    {% if note.gene.note %}<span class="gene-note-names">&middot; {{ note.gene.note }}</span>{% endif %}
+                    {% for other in note.also_alias_of %}
+                    <div class="gene-note-also">{{ note.term }} is also an alias of
+                        <button type="button" class="gene-pick" data-term="{{ note.term }}" data-symbol="{{ other.symbol }}">{{ other.symbol }}</button>
+                        <span class="gene-note-full">{{ other.full_name }}</span></div>
+                    {% endfor %}
+                {% elif note.outcome == 'ambiguous' %}
+                    <div><b>{{ note.term }}</b> could mean several genes. Pick one:</div>
+                    <div class="gene-pick-list">
+                    {% for c in note.candidates %}
+                        <button type="button" class="gene-pick" data-term="{{ note.term }}" data-symbol="{{ c.symbol }}">
+                            <b>{{ c.symbol }}</b> <span class="gene-note-full">{{ c.full_name }}</span>
+                            <span class="gene-note-id">Gene {{ c.gene_id|stringformat:"d" }}{% if c.matched_label %}, {{ c.matched_label }} {{ note.term }}{% endif %}</span>
+                        </button>
+                    {% endfor %}
+                    </div>
+                {% elif note.outcome == 'non_human_name' %}
+                    <b>{{ note.term }}</b> is not a human gene AmpliconSuite tracks; showing results that name it in other species.
+                {% elif note.outcome == 'name_only' %}
+                    <b>{{ note.term }}</b> has no NCBI Gene record; matched by name only.
+                {% else %}
+                    <b>{{ note.term }}</b> is not tracked by AmpliconSuite annotations.
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
         <ul class="nav nav-tabs" id="search-result-tabs">
             <li class="nav-item">
                 <a class="nav-link" href="#projects-tab" data-bs-toggle="tab">
@@ -1352,4 +1389,37 @@
 {% endif %}
 </div>
 {% csrf_token %}
+
+<style>
+    .gene-notes { margin: 0 0 12px; display: flex; flex-direction: column; gap: 6px; }
+    .gene-note { padding: 8px 12px; border-radius: 6px; background: #f3f6fa; border: 1px solid #d8e0ea; font-size: 0.95em; }
+    .gene-note-ambiguous, .gene-note-not_tracked { background: #fff8e6; border-color: #f0d79a; }
+    .gene-note-id, .gene-note-names, .gene-note-full { color: #555; font-size: 0.9em; }
+    .gene-note-withdrawn { color: #8a4b00; font-size: 0.9em; margin-left: 4px; }
+    .gene-pick-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .gene-pick { border: 1px solid #9fb3c8; background: #fff; border-radius: 4px; padding: 2px 8px; cursor: pointer; text-align: left; }
+    .gene-pick:hover, .gene-pick:focus { background: #e8f0fb; }
+</style>
+{% include 'includes/gene_autocomplete.html' %}
+<script>
+(function () {
+    var box = document.getElementById('genequery');
+    if (box) { GeneAutocomplete.attach(box); }
+})();
+// A pick replaces the term it answers in the gene box and searches again.
+document.querySelectorAll('.gene-pick').forEach(function (button) {
+    button.addEventListener('click', function () {
+        var input = document.getElementById('genequery');
+        var form = document.getElementById('searchForm');
+        if (!input || !form) { return; }
+        var term = button.dataset.term, symbol = button.dataset.symbol;
+        var separator = input.value.indexOf('&') >= 0 ? '&' : (input.value.indexOf('|') >= 0 ? '|' : null);
+        var parts = separator ? input.value.split(separator) : [input.value];
+        input.value = parts.map(function (part) {
+            return part.trim().toUpperCase() === term.toUpperCase() ? symbol : part.trim();
+        }).join(separator || '');
+        form.submit();
+    });
+});
+</script>
 {% endblock %}

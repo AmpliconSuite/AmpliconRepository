@@ -44,6 +44,7 @@ from bson.objectid import ObjectId
 
 from .feature_index import (
     feature_index_handle,
+    gene_term_clause,
     index_access_filter,
     search_names_handle,
 )
@@ -70,17 +71,25 @@ def can_serve(extra_metadata=None, **_ignored):
 def _gene_clause(term):
     """One gene term as a query clause, wildcards included.
 
-    Mirrors ``_gene_matches``: a term containing ``*`` is an anchored regex,
-    anything else is an equality match against the upper-cased array. The array
-    is upper-cased at index time and the term is upper-cased here, which is what
-    makes the comparison case-insensitive without a regex -- and a regex is what
-    would cost the index.
+    A term naming one gene matches that gene's NCBI Gene ID, so it finds the
+    gene under every name AC used for it -- C17orf37 in hg19 rows and MIEN1 in
+    hg38 rows are both 84299 (``gene_ids.resolve_gene_term``).  This is a
+    deliberate difference from the document-scanning path, which still matches
+    the spelling: the swap that made the two paths interchangeable is done, and
+    resolving names is the improvement that was to come after it.
+
+    Anything that does not resolve to one gene -- an AC name with no Gene ID,
+    a name found only in non-human results, or text the search page should
+    have stopped as ambiguous or untracked -- is matched on its spelling,
+    upper-cased, as before (``feature_index.gene_term_clause``).  A term containing ``*``
+    is an anchored regex on the spelling (wildcards stay name-based).
     """
     upper = term.upper()
     pattern = wildcard_to_regex(upper)
     if pattern:
         return {'genes': {'$regex': pattern}}
-    return {'genes': upper}
+    clause, _resolution = gene_term_clause(term)
+    return clause or {'genes': upper}
 
 
 def _gene_query(genequery):

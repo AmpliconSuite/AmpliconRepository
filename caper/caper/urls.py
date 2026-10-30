@@ -171,6 +171,7 @@ urlpatterns += [
     path('ec3d/<str:sample_name>/', views.ec3d_visualization, name='ec3d_visualization'),
     path('url-timing-test/', views.url_timing_test, name='url_timing_test'),
     path('api/username-autocomplete/', views.username_autocomplete, name='username_autocomplete'),
+    path('api/gene-suggest/', views.gene_suggest, name='gene_suggest'),
 
 ]
 

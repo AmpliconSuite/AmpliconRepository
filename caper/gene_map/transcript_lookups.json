@@ -1,0 +1,4952 @@
+{
+ "NM_000029": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   183
+  ],
+  "via": "gene_accn"
+ },
+ "NM_000034": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   226
+  ],
+  "via": "gene_accn"
+ },
+ "NM_000060": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   686
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_000114": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1908
+  ],
+  "via": "gene_accn"
+ },
+ "NM_000695": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   222
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001001435": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9560
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001001561": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   26088
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001001709": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   401535
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001001716": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   4793
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001001791": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   414236
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001002840": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54441
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001004306": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   339184
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001004326": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   440044
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001004330": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   440107
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001005159": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51460
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001005222": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   390053
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001005409": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10291
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001005611": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1896
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001005852": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   246126
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001007023": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1734
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001007249": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NM_001008271": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   642658,
+   100129885
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001008494": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   91464
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001008699": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   3566
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001009567": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   4360
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001010845": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   123876
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001010865": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   197342
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001010878": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283951
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001010907": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   389766
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001010911": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   399726
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001012419": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441425
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001012421": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441430
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001012706": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283551
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001012715": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   414318
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001012961": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23334
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001012983": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   387071
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001012990": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   392509
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001013442": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   255324
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001013674": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   400757
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001013692": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   401940
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001013717": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441108
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001013739": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   442578
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001014830": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   196913
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001015070": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   548594
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001017389": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   445329
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001017406": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   64766
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001017436": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441519
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001017986": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2210
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001024452": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441509
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001024603": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   154872
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001025190": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   401827
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001025202": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   442582
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001025232": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   574016
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001029887": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   391723
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001029964": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   440307
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001029996": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   200373
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001030050": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   354
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001031807": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   390598
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001033019": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   613211
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001033517": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   619189
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001033556": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5495
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001036646": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   11147
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001037133": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   4897
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001037498": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   245915
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001037533": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54856
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001039380": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   220979
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001039517": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284618
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001039616": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   399473
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001039654": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   162972
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001039783": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   114112
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001039884": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   664701
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001039905": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   644809
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001039916": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   171017
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001040065": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   647060
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001040282": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   654341
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001040438": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   50854
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001042389": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   26095
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001042429": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283742
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001042511": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51123
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001042680": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   126321
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001042758": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23380
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001045479": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   645922
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001045480": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   654348
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001048251": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   123920
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001077493": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   4791
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001077528": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   286151
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001077685": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   653268
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001077686": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   119016,
+   728404
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001079527": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   653316
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001079529": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   202134
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001079538": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   728242
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080113": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   650662
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080398": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23392
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080400": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   729359
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080402": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   729440
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080405": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   729767
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080420": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   85358
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080427": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80731
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080443": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   146909
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080447": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   164714
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080455": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   341880
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080473": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   388931
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080484": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   85452
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080486": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   390243
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080490": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   123745
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080519": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   57597
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080520": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   644168
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080530": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   92017
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080542": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   85302
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001080835": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   643905
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001081472": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   64173,
+   100505741
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001082488": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   728635
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001085386": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   58160
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001085398": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100038246
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001097592": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   653219,
+   653220
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001097597": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   653067
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001097616": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51463,
+   728932
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001098805": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   728747
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001098808": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   445577
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001098843": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NM_001099279": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   349334,
+   100036519
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001099412": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   7994
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001099435": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   442590
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001099653": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55199
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001099854": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   729528
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001100114": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   645425
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001100417": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55148
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001100817": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   728929
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001100879": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   400410
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001101337": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   152118
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001101341": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   253970
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001101401": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   646643
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001101419": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84215
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001102658": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   196993
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001102663": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284565
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001103169": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   126767
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001105517": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   339521
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001105572": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   391013
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001105662": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   391627
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001113382": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   90342
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001113434": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   339263
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001114329": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2911
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001123040": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   646450
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001123228": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   645843
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001124756": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80336
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001126123": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55556
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001127179": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   4647
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001127386": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   728410
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001127387": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   653543
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001127388": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   653544
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001127464": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84627
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001127489": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   486
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001127656": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8048
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001129897": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51203
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001129907": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   401136
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001130025": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   285966
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001130059": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   11016
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001130686": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2982
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001134233": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284677
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001135086": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   360226
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001135180": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51304
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001135581": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   6509
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001135704": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   79777
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001135914": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   375616
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001136533": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   347442
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001136572": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441317
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001137556": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100132929
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001142303": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2206
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001142600": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   115019
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001142705": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10944
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001142795": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   163486
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001142964": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   79640
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001143946": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2621
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001145027": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   342615,
+   100506736
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001145029": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   374860
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001145045": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   729288
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001145063": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   389523
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001145121": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   401285
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001145129": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   651302
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001145248": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   728262
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001145249": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100132403
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001145441": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441250
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001145531": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   285941
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001145553": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   401082
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001146181": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   649330
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001146186": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5178
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001159330": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   201176
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001161808": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   347088
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001164315": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   375248
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001164447": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441328
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001164448": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441327
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001164449": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   728753
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001164450": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441324
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001164451": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441326
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001164452": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   645651
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001164453": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   728430
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001164455": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441315
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001164456": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441314
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001166217": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   151507
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001166241": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10669
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001166478": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   403339
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001170726": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56834
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001170939": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51477
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001170957": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23293
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001171642": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   140469
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001171992": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   221416
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001173488": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55922
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001177483": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10529
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001177611": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51550
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001177702": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   11020
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001177876": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5122
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001185058": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8996
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001190450": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1008
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001190722": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   3551
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001190829": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   730087
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001214": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   750
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001242412": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   57491
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001242473": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   388276
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001242704": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   201181
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001242907": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100506888
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001243531": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100505679
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001244910": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2210
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001271829": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100129385
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001278205": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51182
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001278502": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   727684
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001282301": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   729159
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001289773": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100873985
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001289933": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   101927655
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001290104": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   7783
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001293167": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   101927423
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001293171": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   103344718
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001302646": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   399948
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001302862": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5003
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001317839": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   132332
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001318534": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   282890
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001320453": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10485
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001348075": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   259283
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001354366": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   107983955
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001355251": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   205251
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001355389": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   414235
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001364665": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   105378803
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_001366129": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54499
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001369716": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   157695
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001630": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   728113
+  ],
+  "via": "gene_accn"
+ },
+ "NM_001703": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   576
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_002284": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   3892
+  ],
+  "via": "gene_accn"
+ },
+ "NM_002650": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5297
+  ],
+  "via": "gene_accn"
+ },
+ "NM_002702": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5463
+  ],
+  "via": "gene_accn"
+ },
+ "NM_003166": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   6818
+  ],
+  "via": "gene_accn"
+ },
+ "NM_003777": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8701
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_003926": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   53615
+  ],
+  "via": "gene_accn"
+ },
+ "NM_003951": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9016
+  ],
+  "via": "gene_accn"
+ },
+ "NM_003961": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9028
+  ],
+  "via": "gene_accn"
+ },
+ "NM_004033": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   309
+  ],
+  "via": "gene_accn"
+ },
+ "NM_004080": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1607
+  ],
+  "via": "gene_accn"
+ },
+ "NM_004105": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2202
+  ],
+  "via": "gene_accn"
+ },
+ "NM_004241": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   221037
+  ],
+  "via": "gene_accn"
+ },
+ "NM_004576": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5521
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_004610": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   6953
+  ],
+  "via": "gene_accn"
+ },
+ "NM_004651": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8237
+  ],
+  "via": "gene_accn"
+ },
+ "NM_004709": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9142
+  ],
+  "via": "gene_accn"
+ },
+ "NM_004745": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9228
+  ],
+  "via": "gene_accn"
+ },
+ "NM_004847": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   199
+  ],
+  "via": "gene_accn"
+ },
+ "NM_004858": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9498
+  ],
+  "via": "gene_accn"
+ },
+ "NM_004909": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NM_004955": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2030
+  ],
+  "via": "gene_accn"
+ },
+ "NM_005042": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5555
+  ],
+  "via": "gene_accn"
+ },
+ "NM_005209": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1412
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_005501": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   3675
+  ],
+  "via": "gene_accn"
+ },
+ "NM_005719": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10094
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_005750": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10141
+  ],
+  "via": "gene_accn"
+ },
+ "NM_005771": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10170
+  ],
+  "via": "gene_accn"
+ },
+ "NM_005867": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10281
+  ],
+  "via": "gene_accn"
+ },
+ "NM_006193": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5078
+  ],
+  "via": "gene_accn"
+ },
+ "NM_006211": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5179
+  ],
+  "via": "gene_accn"
+ },
+ "NM_006250": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5554
+  ],
+  "via": "gene_accn"
+ },
+ "NM_006365": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10485
+  ],
+  "via": "gene_accn"
+ },
+ "NM_006542": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10638
+  ],
+  "via": "gene_accn"
+ },
+ "NM_006605": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10739
+  ],
+  "via": "gene_accn"
+ },
+ "NM_006674": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10866
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_006792": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10934
+  ],
+  "via": "gene_accn"
+ },
+ "NM_006847": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   11006
+  ],
+  "via": "gene_accn"
+ },
+ "NM_007105": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5003
+  ],
+  "via": "gene_accn"
+ },
+ "NM_007273": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   11331
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_007323": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9372
+  ],
+  "via": "gene_accn"
+ },
+ "NM_007354": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23434
+  ],
+  "via": "gene_accn"
+ },
+ "NM_012159": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   26223
+  ],
+  "via": "gene_accn"
+ },
+ "NM_013310": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   29798
+  ],
+  "via": "gene_accn"
+ },
+ "NM_013407": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1725
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_014404": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   27091
+  ],
+  "via": "gene_accn"
+ },
+ "NM_014428": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   27134
+  ],
+  "via": "gene_accn"
+ },
+ "NM_014554": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   29843
+  ],
+  "via": "gene_accn"
+ },
+ "NM_014577": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23774
+  ],
+  "via": "gene_accn"
+ },
+ "NM_014731": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9762
+  ],
+  "via": "gene_accn"
+ },
+ "NM_014987": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   22997
+  ],
+  "via": "gene_accn"
+ },
+ "NM_015048": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23067
+  ],
+  "via": "gene_accn"
+ },
+ "NM_015053": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8497
+  ],
+  "via": "gene_accn"
+ },
+ "NM_015432": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   25894
+  ],
+  "via": "gene_accn"
+ },
+ "NM_015455": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   57472
+  ],
+  "via": "gene_accn"
+ },
+ "NM_015549": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   26030
+  ],
+  "via": "gene_accn"
+ },
+ "NM_015594": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   26083
+  ],
+  "via": "gene_accn"
+ },
+ "NM_015609": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   26099
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_015652": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84458
+  ],
+  "via": "gene_accn"
+ },
+ "NM_015831": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   43
+  ],
+  "via": "gene_accn"
+ },
+ "NM_015872": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NM_015899": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51054
+  ],
+  "via": "gene_accn"
+ },
+ "NM_015947": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51008
+  ],
+  "via": "gene_accn"
+ },
+ "NM_016372": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   131601
+  ],
+  "via": "gene_accn"
+ },
+ "NM_016413": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1361
+  ],
+  "via": "gene_accn"
+ },
+ "NM_016591": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51301
+  ],
+  "via": "gene_accn"
+ },
+ "NM_016601": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51305
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_017418": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   50514
+  ],
+  "via": "gene_accn"
+ },
+ "NM_017600": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55592
+  ],
+  "via": "gene_accn"
+ },
+ "NM_017639": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54798
+  ],
+  "via": "gene_accn"
+ },
+ "NM_017809": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56001
+  ],
+  "via": "gene_accn"
+ },
+ "NM_017949": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   404093
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_018148": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55180
+  ],
+  "via": "gene_accn"
+ },
+ "NM_018165": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55193
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_018172": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55199
+  ],
+  "via": "gene_accn"
+ },
+ "NM_018186": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55732
+  ],
+  "via": "gene_accn"
+ },
+ "NM_018232": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   387680
+  ],
+  "via": "gene_accn"
+ },
+ "NM_018280": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55267
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_018293": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55279
+  ],
+  "via": "gene_accn"
+ },
+ "NM_019602": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56244
+  ],
+  "via": "gene_accn"
+ },
+ "NM_019607": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56260
+  ],
+  "via": "gene_accn"
+ },
+ "NM_019862": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   4363
+  ],
+  "via": "gene_accn"
+ },
+ "NM_020040": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56604
+  ],
+  "via": "gene_accn"
+ },
+ "NM_020113": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56
+  ],
+  "via": "gene_accn"
+ },
+ "NM_020218": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56970
+  ],
+  "via": "gene_accn"
+ },
+ "NM_020229": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56981
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_020373": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   57101
+  ],
+  "via": "gene_accn"
+ },
+ "NM_020411": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9503,
+   653067
+  ],
+  "via": "gene_accn"
+ },
+ "NM_020731": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   57491
+  ],
+  "via": "gene_accn"
+ },
+ "NM_020794": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   57554
+  ],
+  "via": "gene_accn"
+ },
+ "NM_020876": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   57636
+  ],
+  "via": "gene_accn"
+ },
+ "NM_021251": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   11132
+  ],
+  "via": "gene_accn"
+ },
+ "NM_021735": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1185
+  ],
+  "via": "gene_accn"
+ },
+ "NM_022062": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   63876
+  ],
+  "via": "gene_accn"
+ },
+ "NM_022375": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NM_022466": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NM_022561": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2688
+  ],
+  "via": "gene_accn"
+ },
+ "NM_022574": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   64599
+  ],
+  "via": "gene_accn"
+ },
+ "NM_022905": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   64927
+  ],
+  "via": "gene_accn"
+ },
+ "NM_022906": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   64940
+  ],
+  "via": "gene_accn"
+ },
+ "NM_023076": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   64718
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_024554": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   79605
+  ],
+  "via": "gene_accn"
+ },
+ "NM_024563": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   4883
+  ],
+  "via": "gene_accn"
+ },
+ "NM_024688": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   79741
+  ],
+  "via": "gene_accn"
+ },
+ "NM_024784": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   79842
+  ],
+  "via": "gene_accn"
+ },
+ "NM_024866": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   79924
+  ],
+  "via": "gene_accn"
+ },
+ "NM_024886": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   79946
+  ],
+  "via": "gene_accn"
+ },
+ "NM_025031": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80099
+  ],
+  "via": "gene_accn"
+ },
+ "NM_025041": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80111
+  ],
+  "via": "gene_accn"
+ },
+ "NM_025090": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   57602
+  ],
+  "via": "gene_accn"
+ },
+ "NM_030672": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   79822
+  ],
+  "via": "gene_accn"
+ },
+ "NM_030800": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   81556
+  ],
+  "via": "gene_accn"
+ },
+ "NM_030881": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10521
+  ],
+  "via": "gene_accn"
+ },
+ "NM_030884": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   4134
+  ],
+  "via": "gene_accn"
+ },
+ "NM_030980": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   81875
+  ],
+  "via": "gene_accn"
+ },
+ "NM_031204": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51475
+  ],
+  "via": "gene_accn"
+ },
+ "NM_031271": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56154
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_031413": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   27443
+  ],
+  "via": "gene_accn"
+ },
+ "NM_031456": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10517
+  ],
+  "via": "gene_accn"
+ },
+ "NM_031914": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   83851
+  ],
+  "via": "gene_accn"
+ },
+ "NM_031953": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   83891
+  ],
+  "via": "gene_accn"
+ },
+ "NM_032021": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   143872
+  ],
+  "via": "gene_accn"
+ },
+ "NM_032030": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   387316
+  ],
+  "via": "gene_accn"
+ },
+ "NM_032165": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84125
+  ],
+  "via": "gene_accn"
+ },
+ "NM_032374": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84334
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_032379": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54843
+  ],
+  "via": "gene_accn"
+ },
+ "NM_032441": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NM_032560": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55671
+  ],
+  "via": "gene_accn"
+ },
+ "NM_032573": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84660
+  ],
+  "via": "gene_accn"
+ },
+ "NM_032576": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NM_032821": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54768
+  ],
+  "via": "gene_accn"
+ },
+ "NM_032937": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   85026
+  ],
+  "via": "gene_accn"
+ },
+ "NM_032945": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8771
+  ],
+  "via": "gene_accn"
+ },
+ "NM_032967": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   27328
+  ],
+  "via": "gene_accn"
+ },
+ "NM_032995": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   50649
+  ],
+  "via": "gene_accn"
+ },
+ "NM_033069": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54438
+  ],
+  "via": "gene_accn"
+ },
+ "NM_033104": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   85439
+  ],
+  "via": "gene_accn"
+ },
+ "NM_033178": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   22947
+  ],
+  "via": "gene_accn"
+ },
+ "NM_033220": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9830
+  ],
+  "via": "gene_accn"
+ },
+ "NM_033297": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   91662
+  ],
+  "via": "gene_accn"
+ },
+ "NM_033341": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   112401
+  ],
+  "via": "gene_accn"
+ },
+ "NM_033535": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   26234
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_033557": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   90522
+  ],
+  "via": "gene_accn"
+ },
+ "NM_033669": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   3688
+  ],
+  "via": "gene_accn"
+ },
+ "NM_052952": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   116093
+  ],
+  "via": "gene_accn"
+ },
+ "NM_052996": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   11105
+  ],
+  "via": "gene_accn"
+ },
+ "NM_080392": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8073
+  ],
+  "via": "gene_accn"
+ },
+ "NM_080592": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51374
+  ],
+  "via": "gene_accn"
+ },
+ "NM_080653": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   90423
+  ],
+  "via": "gene_accn"
+ },
+ "NM_080731": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   25900
+  ],
+  "via": "gene_accn"
+ },
+ "NM_080923": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5788
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_130445": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80781
+  ],
+  "via": "gene_accn"
+ },
+ "NM_130844": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51741
+  ],
+  "via": "gene_accn"
+ },
+ "NM_133279": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2204
+  ],
+  "via": "gene_accn"
+ },
+ "NM_133489": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   65012
+  ],
+  "via": "gene_accn"
+ },
+ "NM_133650": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23345
+  ],
+  "via": "gene_accn"
+ },
+ "NM_134447": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8725
+  ],
+  "via": "gene_accn"
+ },
+ "NM_138464": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   116349
+  ],
+  "via": "gene_accn"
+ },
+ "NM_138564": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55554
+  ],
+  "via": "gene_accn"
+ },
+ "NM_138568": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   90332
+  ],
+  "via": "gene_accn"
+ },
+ "NM_138981": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5602
+  ],
+  "via": "gene_accn"
+ },
+ "NM_139019": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   728695
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_144625": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   128025
+  ],
+  "via": "gene_accn"
+ },
+ "NM_144663": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   143501
+  ],
+  "via": "gene_accn"
+ },
+ "NM_144728": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   11221
+  ],
+  "via": "gene_accn"
+ },
+ "NM_144993": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   200424
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_145013": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   219833
+  ],
+  "via": "gene_accn"
+ },
+ "NM_145170": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   118491
+  ],
+  "via": "gene_accn"
+ },
+ "NM_145274": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   147184
+  ],
+  "via": "gene_accn"
+ },
+ "NM_145653": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   162699
+  ],
+  "via": "gene_accn"
+ },
+ "NM_145664": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   728695
+  ],
+  "via": "gene_accn"
+ },
+ "NM_145665": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   171489
+  ],
+  "via": "gene_accn"
+ },
+ "NM_152392": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   130872
+  ],
+  "via": "gene_accn"
+ },
+ "NM_152399": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   132332
+  ],
+  "via": "gene_accn"
+ },
+ "NM_152554": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   154386
+  ],
+  "via": "gene_accn"
+ },
+ "NM_152569": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   157983
+  ],
+  "via": "gene_accn"
+ },
+ "NM_152666": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   200150
+  ],
+  "via": "gene_accn"
+ },
+ "NM_152916": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   30817
+  ],
+  "via": "gene_accn"
+ },
+ "NM_152991": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8726
+  ],
+  "via": "gene_accn"
+ },
+ "NM_153027": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   152756
+  ],
+  "via": "gene_accn"
+ },
+ "NM_153038": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   151278
+  ],
+  "via": "gene_accn"
+ },
+ "NM_153040": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   145858
+  ],
+  "via": "gene_accn"
+ },
+ "NM_153181": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   81832
+  ],
+  "via": "gene_accn"
+ },
+ "NM_153244": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   221060
+  ],
+  "via": "gene_accn"
+ },
+ "NM_153763": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   3749
+  ],
+  "via": "gene_accn"
+ },
+ "NM_170722": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   79671
+  ],
+  "via": "gene_accn"
+ },
+ "NM_172178": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   28977
+  ],
+  "via": "gene_accn"
+ },
+ "NM_172239": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   254958
+  ],
+  "via": "gene_accn"
+ },
+ "NM_173164": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   4775
+  ],
+  "via": "gene_accn"
+ },
+ "NM_173341": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51533
+  ],
+  "via": "gene_accn"
+ },
+ "NM_173499": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   145946
+  ],
+  "via": "gene_accn"
+ },
+ "NM_173541": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   170393
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_173572": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54777
+  ],
+  "via": "gene_accn"
+ },
+ "NM_173622": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284040
+  ],
+  "via": "gene_accn"
+ },
+ "NM_173644": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284756
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_173667": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   285668
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_173681": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   285973
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_173687": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   286122
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_173688": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   286183
+  ],
+  "via": "gene_accn"
+ },
+ "NM_173691": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   286262
+  ],
+  "via": "gene_accn"
+ },
+ "NM_173695": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   286464
+  ],
+  "via": "gene_accn"
+ },
+ "NM_174943": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283579
+  ],
+  "via": "gene_accn"
+ },
+ "NM_175047": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   29990
+  ],
+  "via": "gene_accn"
+ },
+ "NM_175071": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54840
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_175895": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283416
+  ],
+  "via": "gene_accn"
+ },
+ "NM_175918": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   285464
+  ],
+  "via": "gene_accn"
+ },
+ "NM_178230": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   164022
+  ],
+  "via": "gene_accn"
+ },
+ "NM_178504": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   201625
+  ],
+  "via": "gene_accn"
+ },
+ "NM_178519": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284185
+  ],
+  "via": "gene_accn"
+ },
+ "NM_178520": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284186
+  ],
+  "via": "gene_accn"
+ },
+ "NM_178542": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   339201
+  ],
+  "via": "gene_accn"
+ },
+ "NM_178824": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   151790
+  ],
+  "via": "gene_accn"
+ },
+ "NM_178829": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   135927
+  ],
+  "via": "gene_accn"
+ },
+ "NM_178830": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   126526
+  ],
+  "via": "gene_accn"
+ },
+ "NM_178831": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   352954
+  ],
+  "via": "gene_accn"
+ },
+ "NM_181302": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   91833
+  ],
+  "via": "gene_accn"
+ },
+ "NM_181502": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   57119
+  ],
+  "via": "gene_accn"
+ },
+ "NM_181597": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   7378
+  ],
+  "via": "gene_accn"
+ },
+ "NM_181803": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   11065
+  ],
+  "via": "gene_accn"
+ },
+ "NM_182482": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   85319
+  ],
+  "via": "gene_accn"
+ },
+ "NM_182483": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55968
+  ],
+  "via": "gene_accn"
+ },
+ "NM_182558": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283422
+  ],
+  "via": "gene_accn"
+ },
+ "NM_182560": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283598
+  ],
+  "via": "gene_accn"
+ },
+ "NM_182568": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284047
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_182626": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NM_182702": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   339906
+  ],
+  "via": "gene_accn"
+ },
+ "NM_182775": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   259173
+  ],
+  "via": "gene_accn"
+ },
+ "NM_182832": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   191585
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_182980": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   29948
+  ],
+  "via": "gene_accn"
+ },
+ "NM_183049": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   7117
+  ],
+  "via": "gene_accn"
+ },
+ "NM_183242": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284697
+  ],
+  "via": "gene_accn"
+ },
+ "NM_183378": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   341350
+  ],
+  "via": "gene_accn"
+ },
+ "NM_198255": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   7015
+  ],
+  "via": "gene_accn"
+ },
+ "NM_198397": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8913
+  ],
+  "via": "gene_accn"
+ },
+ "NM_198455": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23145
+  ],
+  "via": "gene_accn"
+ },
+ "NM_198482": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284948
+  ],
+  "via": "gene_accn"
+ },
+ "NM_198496": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   340706
+  ],
+  "via": "gene_accn"
+ },
+ "NM_198520": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   144535
+  ],
+  "via": "gene_accn"
+ },
+ "NM_199005": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   387328
+  ],
+  "via": "gene_accn"
+ },
+ "NM_199132": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   90333
+  ],
+  "via": "gene_accn"
+ },
+ "NM_199183": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   377047
+  ],
+  "via": "gene_accn"
+ },
+ "NM_199331": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9455
+  ],
+  "via": "gene_accn"
+ },
+ "NM_199414": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9055
+  ],
+  "via": "gene_accn"
+ },
+ "NM_199423": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   11060
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_201252": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   246181
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_203307": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   399669
+  ],
+  "via": "gene_accn"
+ },
+ "NM_203339": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1191
+  ],
+  "via": "nuccore_xref"
+ },
+ "NM_203425": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   388407
+  ],
+  "via": "gene_accn"
+ },
+ "NM_203488": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   97
+  ],
+  "via": "gene_accn"
+ },
+ "NM_207112": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84264
+  ],
+  "via": "gene_accn"
+ },
+ "NM_207313": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   124842
+  ],
+  "via": "gene_accn"
+ },
+ "NM_207379": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   388021
+  ],
+  "via": "gene_accn"
+ },
+ "NM_207401": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   388759
+  ],
+  "via": "gene_accn"
+ },
+ "NM_207412": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   389649
+  ],
+  "via": "gene_accn"
+ },
+ "NM_207440": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   400165
+  ],
+  "via": "gene_accn"
+ },
+ "NM_207442": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   400223
+  ],
+  "via": "gene_accn"
+ },
+ "NM_207444": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   400359
+  ],
+  "via": "gene_accn"
+ },
+ "NM_207445": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   400360
+  ],
+  "via": "gene_accn"
+ },
+ "NM_207454": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   400591
+  ],
+  "via": "gene_accn"
+ },
+ "NM_212461": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5571
+  ],
+  "via": "gene_accn"
+ },
+ "NM_212465": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   825
+  ],
+  "via": "gene_accn"
+ },
+ "NM_214461": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   408029
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_000034": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   79134
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_001318": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80867
+  ],
+  "via": "gene_accn"
+ },
+ "NR_001444": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   653639
+  ],
+  "via": "gene_accn"
+ },
+ "NR_001544": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   83869
+  ],
+  "via": "gene_accn"
+ },
+ "NR_001557": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_001577": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283458
+  ],
+  "via": "gene_accn"
+ },
+ "NR_001593": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   390354
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002162": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   432369
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002164": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   401375
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002166": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10597
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_002168": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_002191": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80316
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_002194": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84664
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002207": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283106
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002212": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   440672
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_002219": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8475
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002573": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   619491
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002577": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   245935
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002593": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   81893
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002612": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8847
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002729": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   11223
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002762": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   28997
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002764": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   29053
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002767": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55389
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002770": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   64150
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002777": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   117852
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002780": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   123346
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_002784": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   139420
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_002801": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   266695
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002804": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284367
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002823": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   389756
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002825": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   400709
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_002827": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   440362
+  ],
+  "via": "gene_accn"
+ },
+ "NR_002894": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_002927": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   664618
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003063": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80086
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_003085": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5395
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_003095": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1876
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_003130": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   343477
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003132": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   391634
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003136": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   692224
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003191": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2681
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_003251": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   22876
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_003281": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   64396
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_003377": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100034743
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003545": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80006
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003586": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441032
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003587": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80022
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003595": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   168448
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_003601": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   195977
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003662": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   388524
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_003664": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   389517,
+   728524
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003666": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441251
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003668": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   641517
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003677": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100101490
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003690": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100113385
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003692": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100113390
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003696": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100113402
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_003699": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   170958
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_003712": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100124542
+  ],
+  "via": "gene_accn"
+ },
+ "NR_003937": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   3120
+  ],
+  "via": "gene_accn"
+ },
+ "NR_004422": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   3262
+  ],
+  "via": "gene_accn"
+ },
+ "NR_015346": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   8681
+  ],
+  "via": "gene_accn"
+ },
+ "NR_015369": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   441094
+  ],
+  "via": "gene_accn"
+ },
+ "NR_015427": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   266655
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_015428": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   340393
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_023316": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   197322
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_023319": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   83440
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_023342": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100151643
+  ],
+  "via": "gene_accn"
+ },
+ "NR_023348": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2622
+  ],
+  "via": "gene_accn"
+ },
+ "NR_023388": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100169750
+  ],
+  "via": "gene_accn"
+ },
+ "NR_023928": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56651
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_023938": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56967
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024014": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100130449
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024015": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_024060": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100132948
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024064": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56286
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024081": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   414767,
+   102724845
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024103": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   360205
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024108": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5211
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024115": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   474344
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024143": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   92482
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024149": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   79104
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024154": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283927
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024164": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   64288
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024171": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   4194
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024181": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84765
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024207": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   340390
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024245": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55719
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024341": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_024352": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54070
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024356": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   345630
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024359": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   399668
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024377": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80307
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024401": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   25847
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024415": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   64859
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024427": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_024465": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10421
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024474": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100134869
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024493": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   644596
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024521": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   81562
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024551": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51295
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024557": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51322
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024573": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84514
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024609": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   643365
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024621": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   29125
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_024626": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55018
+  ],
+  "via": "gene_accn"
+ },
+ "NR_024630": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   56936
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026557": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   126520
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026566": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   399761
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026568": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54477
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026569": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   7541
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026572": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5138
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026582": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84099
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026585": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   54677
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026590": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9425
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026647": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   791115
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026685": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   149420
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026687": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   158035
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026693": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   642819
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026718": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   2310
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026750": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   374383
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026766": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10408
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026778": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   3192
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026779": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   161176
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026809": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_026810": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_026862": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   90673
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026866": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   132200
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026875": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   93082
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026894": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   94023
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026898": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   6134
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026900": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5768
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026902": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84060
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026905": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   147081
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_026960": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284836
+  ],
+  "via": "gene_accn"
+ },
+ "NR_026997": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_027013": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   497634
+  ],
+  "via": "gene_accn"
+ },
+ "NR_027014": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   27315
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027029": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   154089
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027042": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_027048": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283521
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027049": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   388507
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027063": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   205251
+  ],
+  "via": "gene_accn"
+ },
+ "NR_027067": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   400866
+  ],
+  "via": "gene_accn"
+ },
+ "NR_027068": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100130771
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027130": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   148203
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027144": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100271835
+  ],
+  "via": "gene_accn"
+ },
+ "NR_027151": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_027317": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   646600
+  ],
+  "via": "gene_accn"
+ },
+ "NR_027348": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   64699
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027378": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   286183
+  ],
+  "via": "gene_accn"
+ },
+ "NR_027393": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   285905
+  ],
+  "via": "gene_accn"
+ },
+ "NR_027458": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   255928
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027461": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   401508
+  ],
+  "via": "gene_accn"
+ },
+ "NR_027463": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   6462
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027661": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   7697
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027663": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   80303
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027686": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284739
+  ],
+  "via": "gene_accn"
+ },
+ "NR_027693": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   84808
+  ],
+  "via": "gene_accn"
+ },
+ "NR_027771": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5505
+  ],
+  "via": "gene_accn"
+ },
+ "NR_027823": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55679
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027861": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   401509
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_027868": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   10015
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_028044": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51214
+  ],
+  "via": "gene_accn"
+ },
+ "NR_028046": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   55902
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_028133": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23265
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_028291": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_028318": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   22829
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_028437": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   7332
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_028451": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   587
+  ],
+  "via": "gene_accn"
+ },
+ "NR_028581": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   92579
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_028595": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   221262
+  ],
+  "via": "gene_accn"
+ },
+ "NR_028596": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_033178": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   143162
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033296": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   126661
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033345": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23163
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033353": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   283768
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033361": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   23023
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033372": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   284257
+  ],
+  "via": "gene_accn"
+ },
+ "NR_033393": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   6738
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033439": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   57088
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033460": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   139793
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033683": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   5833
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033687": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   6576
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033688": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   553115
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033694": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   255762
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033772": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   389857
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033795": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_033800": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   257357
+  ],
+  "via": "gene_accn"
+ },
+ "NR_033808": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   1577
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033849": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_033974": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   401613
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_033977": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_034060": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   7639
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_034154": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_040071": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100131096
+  ],
+  "via": "gene_accn"
+ },
+ "NR_040448": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   9056
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_045515": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   51043
+  ],
+  "via": "nuccore_xref"
+ },
+ "NR_108107": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_131907": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   103021294
+  ],
+  "via": "gene_accn"
+ },
+ "NR_137294": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_137295": {
+  "checked": "2026-10-29",
+  "gene_ids": [],
+  "via": "none"
+ },
+ "NR_146072": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   641776
+  ],
+  "via": "gene_accn"
+ },
+ "NR_146073": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   105180390
+  ],
+  "via": "gene_accn"
+ },
+ "NR_146074": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   105180391
+  ],
+  "via": "gene_accn"
+ },
+ "NR_146079": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   643862
+  ],
+  "via": "gene_accn"
+ },
+ "NR_148929": {
+  "checked": "2026-10-29",
+  "gene_ids": [
+   100996521
+  ],
+  "via": "nuccore_xref"
+ }
+}

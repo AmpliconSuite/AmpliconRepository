@@ -177,6 +177,7 @@ def corpus(monkeypatch):
     private = ObjectId()
     tissue = ObjectId()
     names = ObjectId()
+    renamed = ObjectId()
     rows = [
         # One sample carrying MYC and CDK4 on the SAME amplicon...
         _row(public, 'Pub', 'public', 'S1', 'S1_a1', 'ecDNA', ['MYC', 'CDK4'],
@@ -229,13 +230,18 @@ def corpus(monkeypatch):
         _row(names, 'Names', 'public', 'HOS-MNNG', 'HOS-MNNG_a1', 'ecDNA', ['MYC']),
         _row(names, 'Names', 'public', 'HOS-MNNG', 'HOS-MNNG_a2', 'BFB', ['MYC']),
         _row(names, 'Names', 'public', 'S1', 'S1_a1', 'ecDNA', ['MYC']),
+        # One gene under the two names AC gave it: C17orf37 in the 2010 hg19
+        # annotation, MIEN1 in hg38 -- NCBI Gene 84299 either way.
+        _row(renamed, 'Renamed', 'public', 'R1', 'R1_a1', 'ecDNA', ['C17orf37', 'ERBB2'],
+             build='hg19'),
+        _row(renamed, 'Renamed', 'public', 'R2', 'R2_a1', 'ecDNA', ['MIEN1', 'ERBB2']),
     ]
     feature_index_handle.insert_many(rows)
     monkeypatch.setattr(api_features, 'index_is_usable', lambda: True)
     yield {'public': public, 'private': private, 'tissue': tissue,
-           'names': names}
+           'names': names, 'renamed': renamed}
     feature_index_handle.delete_many(
-        {'project_id': {'$in': [public, private, tissue, names]}})
+        {'project_id': {'$in': [public, private, tissue, names, renamed]}})
 
 
 def _get(qs, user=None):
@@ -252,7 +258,32 @@ def _scoped(corpus, qs):
 def test_gene_any_is_an_or(corpus):
     assert _scoped(corpus, 'gene_any=MYC&count_only=true').data['count'] == 3
     assert _scoped(corpus, 'gene_any=MYC,EGFR&count_only=true').data['count'] == 4
-    assert _scoped(corpus, 'gene_any=NOSUCHGENE&count_only=true').data['count'] == 0
+    # A name AmpliconSuite does not annotate is an error, not an empty result.
+    missing = _scoped(corpus, 'gene_any=NOSUCHGENE&count_only=true')
+    assert missing.status_code == 400
+    assert missing.data['code'] == 'gene_not_tracked'
+
+
+def test_a_gene_is_found_under_every_name_ac_gave_it(corpus):
+    renamed = '?project_id=%s&' % corpus['renamed']
+    for name in ('MIEN1', 'C17orf37', '84299'):
+        response = _get(renamed + 'gene_any=' + name)
+        assert response.data['count'] == 2, name
+        assert response.data['gene_terms'][0]['gene_id'] == 84299
+    row = _get(renamed + 'gene_any=MIEN1').data['results'][0]
+    assert 84299 in row['gene_ids']
+
+
+def test_a_name_with_no_single_meaning_is_a_400_naming_the_candidates(corpus):
+    response = _scoped(corpus, 'gene_any=NEU')
+    assert response.status_code == 400
+    assert response.data['code'] == 'ambiguous_gene'
+    assert 'ERBB2' in response.data['error'] and 'NEU1' in response.data['error']
+
+
+def test_mouse_rows_are_still_found_by_spelling(corpus):
+    """mm10 rows have no Gene IDs yet; MYC must still reach them."""
+    assert _scoped(corpus, 'gene_any=MYC&reference_build=mm10&count_only=true').data['count'] == 1
 
 
 def test_gene_matching_is_case_insensitive(corpus):
@@ -536,8 +567,11 @@ def test_an_ampersand_in_a_value_is_not_a_packed_query(corpus):
     """A real prod project is named "COLO320 DM & HSR hg38"."""
     resp = _get('?project_name=COLO320%20DM%20%26%20HSR%20hg38&count_only=true')
     assert resp.status_code == 200, resp.data
+    # Not refused as a packed query.  'MYC&EGFR' is not a gene name either, so
+    # the answer is that it is not tracked -- an answer about the gene, not the
+    # parameter.
     resp = _scoped(corpus, 'gene_any=MYC%26EGFR&count_only=true')
-    assert resp.status_code == 200, resp.data
+    assert resp.data['code'] == 'gene_not_tracked', resp.data
 
 
 def test_a_padded_cursor_is_not_a_packed_query():
@@ -845,7 +879,8 @@ def test_count_only_and_the_full_response_agree_on_both_counts(corpus):
 
 def test_an_empty_result_still_reports_a_sample_count(corpus):
     """Shape stability: a client reading the field must always find it."""
-    resp = _scoped(corpus, 'gene_all=MYC,NOSUCHGENE&count_only=true')
+    # TP53 is a real gene this corpus does not carry; an unknown name is a 400.
+    resp = _scoped(corpus, 'gene_all=MYC,TP53&count_only=true')
     assert resp.data['count'] == 0
     assert resp.data['sample_count'] == 0
 

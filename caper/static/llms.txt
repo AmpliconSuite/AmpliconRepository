@@ -234,6 +234,15 @@ from `/api/v1/features/facets/` at the time you answer.
 - **No browser User-Agent is needed.** Every `/api/v1/` path, plus `/robots.txt`
   and this file, answers any client. The HTML pages are a different matter and
   are not where you should be.
+- **Genes are matched by NCBI Gene ID.** A gene term can be an NCBI symbol, an
+  alias, a former name or a Gene ID (`HER2`, `C17orf37`, `84299`); each is
+  resolved to one gene, which is found under every name AmpliconSuite used for
+  it in hg19 and hg38 results. A name that is a gene's current symbol means that
+  gene. A name with no single meaning (`NEU`) is a `400` with code
+  `ambiguous_gene` listing the candidates; a name AmpliconSuite does not
+  annotate is a `400` with code `gene_not_tracked`. Responses carry
+  `gene_terms` (what each term was taken to mean) and each row carries
+  `gene_ids`.
 - **Gene lists are comma-delimited** (`gene_any=MYC,EGFR`). **Metadata values
   are not** — real ones contain commas, so repeat the parameter instead:
   `?cancer_type=Breast&cancer_type=Breast%20Adenocarcinoma`.

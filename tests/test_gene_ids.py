@@ -91,3 +91,105 @@ def test_no_two_ac_names_in_a_build_differ_only_by_case():
             key = (row['universe'], row['ac_name'].upper())
             assert key not in seen, key
             seen.add(key)
+
+
+def test_genes_ncbi_withdrew_keep_their_retired_id():
+    """CRIPAK's transcript belongs to Gene 285464, withdrawn in 2019 with no successor."""
+    from caper.gene_ids import gene_status
+    assert gene_id_of('hg19', 'CRIPAK') == 285464
+    assert gene_status(285464) == 'withdrawn'
+    assert gene_status(84299) == 'current'
+
+
+def test_transcripts_refLink_lacks_are_placed_by_ncbi():
+    """DEC1's transcript NM_017418 is NCBI Gene 50514, now called DELEC1."""
+    assert gene_id_of('hg19', 'DEC1') == 50514
+    assert gene_record(50514)[0] == 'DELEC1'
+
+
+def test_the_chromosome_settles_a_shared_symbol():
+    """Two current genes are called RNR1; AC's hg38 file puts its RNR1 on chrM."""
+    assert gene_id_of('hg38', 'RNR1') == 4549
+    assert gene_id_of('hg38', 'RNR2') == 4550
+
+
+def test_a_name_with_no_ncbi_record_is_left_unmapped():
+    assert gene_id_of('hg19', 'FLJ22763') is None
+    assert is_ac_name('hg19', 'FLJ22763')
+
+
+# --- What a typed name means (phase 2) -------------------------------------
+
+from caper.gene_ids import (  # noqa: E402
+    gene_resolution_notes, query_terms, resolve_gene_term, suggest_genes)
+
+
+def test_a_current_symbol_is_its_gene_even_when_it_is_also_an_alias():
+    """PDK1 is PDK1's symbol and an alias of PDPK1: the symbol wins, the alias is reported."""
+    result = resolve_gene_term('pdk1')
+    assert result['outcome'] == 'gene' and result['gene']['symbol'] == 'PDK1'
+    assert [c['symbol'] for c in result['also_alias_of']] == ['PDPK1']
+
+
+def test_an_old_name_or_alias_of_one_gene_resolves_to_it():
+    assert resolve_gene_term('C17orf37')['gene']['symbol'] == 'MIEN1'
+    assert resolve_gene_term('HER2')['gene']['symbol'] == 'ERBB2'
+    assert resolve_gene_term('84299')['gene']['symbol'] == 'MIEN1'
+    assert resolve_gene_term('GeneID:2064')['gene']['symbol'] == 'ERBB2'
+
+
+def test_a_name_with_no_single_preferred_meaning_is_ambiguous():
+    neu = resolve_gene_term('NEU')
+    assert neu['outcome'] == 'ambiguous'
+    assert {'ERBB2', 'NEU1', 'NEURL1'} <= {c['symbol'] for c in neu['candidates']}
+    # AOC1's hg19 name, and an alias of DBNL today: no one's current symbol.
+    assert resolve_gene_term('ABP1')['outcome'] == 'ambiguous'
+
+
+def test_untracked_and_unmapped_names():
+    assert resolve_gene_term('FLJ12345')['outcome'] == 'not_tracked'
+    assert resolve_gene_term('FLJ22763') == {'outcome': 'name_only', 'term': 'FLJ22763', 'name': 'FLJ22763'}
+
+
+def test_query_terms_split_like_the_search():
+    assert query_terms('MYC & egfr') == ['MYC', 'egfr']
+    assert query_terms('MYC|EGFR') == ['MYC', 'EGFR']
+    assert query_terms('MYC|EGFR&CDK4') == ['MYC|EGFR', 'CDK4']   # & wins, as in search_index
+    assert query_terms('MYC*') == []                              # wildcards stay on spelling
+
+
+def test_suggestions_start_at_three_characters_or_an_exact_name():
+    assert [s['symbol'] for s in suggest_genes('AR')][:1] == ['AR']
+    assert all(s['symbol'] == 'AR' or s.get('matched') == 'AR' for s in suggest_genes('AR'))
+    assert suggest_genes('MY') == []                              # no exact MY, too short for a prefix
+    myc = [s['symbol'] for s in suggest_genes('MYC')]
+    assert myc[0] == 'MYC' and 'MYCN' in myc and len(myc) <= 10
+
+
+def test_suggestions_rank_a_symbol_above_an_alias_match():
+    ranked = [s['symbol'] for s in suggest_genes('PDK1')]
+    assert ranked.index('PDK1') < ranked.index('PDPK1')
+
+
+def test_notes_skip_plain_symbols_and_explain_the_rest():
+    assert gene_resolution_notes('MYC') == []
+    [note] = gene_resolution_notes('C17orf37')
+    assert note['gene']['symbol'] == 'MIEN1' and 'C17orf37' in note['gene']['note']
+
+
+def test_an_alias_never_merges_two_genes_ac_names_separately():
+    """ZASP (chr7) is an alias of LDB3 (chr10), but AC's hg38 file names both."""
+    from caper.gene_ids import gene_status
+    assert gene_id_of('hg38', 'ZASP') != gene_id_of('hg38', 'LDB3')
+    assert gene_status(gene_id_of('hg38', 'ZASP')) == 'withdrawn'
+
+
+def test_ncbi_merges_are_followed():
+    """NCBI merged C2orf48 into RRM2; AC's 2010 file still names both."""
+    assert gene_id_of('hg19', 'C2orf48') == gene_id_of('hg19', 'RRM2') == 6241
+
+
+def test_a_reissued_record_beats_the_withdrawn_one():
+    """NCBI withdrew PPP1R2P1's old record and re-issued the gene under a new one."""
+    from caper.gene_ids import gene_status
+    assert gene_status(gene_id_of('hg19', 'PPP1R2P1')) == 'current'

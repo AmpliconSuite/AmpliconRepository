@@ -85,7 +85,7 @@ import json
 from django.core.cache import cache
 
 from .classifications import is_no_amplicon
-from .gene_ids import gene_id_of, gene_ids_of, gene_map_version, universe_of
+from .gene_ids import gene_id_of, gene_ids_of, gene_map_version, resolve_gene_term, universe_of
 from .project_status import LIVE, status_query
 from .utils import (
     collection_handle_primary,
@@ -620,6 +620,35 @@ def _row(*, project_id, project_name, project_sample_count, visibility, members,
         'extra_metadata': extra_metadata,
         'schema_version': SCHEMA_VERSION,
     }
+
+
+# The reference builds the gene map covers (gene_ids.UNIVERSE_OF_BUILD, as
+# normalised on the rows).  Rows on any other build -- mm10 today -- carry no
+# gene_ids and are matched on spelling.
+HUMAN_BUILDS = ('hg19', 'hg38')
+
+
+def gene_term_clause(term):
+    """``(clause or None, resolution)`` for one searched gene term.
+
+    One gene: its Gene ID, which reaches every name AC gave it in human
+    results, plus the typed spelling on non-human rows, which have no IDs yet
+    -- so a MYC search still finds the mouse MYC samples it found before.  An
+    AC name with no Gene ID: its spelling.  Text that names nothing human but
+    appears in non-human results (a mouse-only gene): its spelling there, and
+    the resolution says so.  Otherwise None: the term is ambiguous or names
+    nothing AmpliconSuite annotates, and the caller decides what to say.
+    """
+    resolution = resolve_gene_term(term)
+    upper = normalize_gene(term)
+    non_human = {'genes': upper, 'reference_build': {'$nin': list(HUMAN_BUILDS)}}
+    if resolution['outcome'] == 'gene':
+        return {'$or': [{'gene_ids': resolution['gene']['gene_id']}, non_human]}, resolution
+    if resolution['outcome'] == 'name_only':
+        return {'genes': upper}, resolution
+    if resolution['outcome'] == 'not_tracked' and feature_index_handle.find_one(non_human, {'_id': 1}):
+        return non_human, {'outcome': 'non_human_name', 'term': resolution['term'], 'name': upper}
+    return None, resolution
 
 
 def coamp_summary_for_project(project):

@@ -11,49 +11,52 @@
   },
   "generated": "2026-10-29",
   "generator": "build_gene_map.py",
-  "genes_in_universe": 23183,
-  "name_rows": 93486,
+  "genes_in_universe": 23214,
+  "name_rows": 93549,
   "resolution": {
     "hg19": {
-      "alias": 157,
-      "retired_symbol": 54,
-      "symbol": 424,
+      "alias": 7,
+      "ncbi_transcript": 622,
+      "no_ncbi_record": 2,
+      "retired_symbol": 4,
+      "symbol": 16,
       "transcript": 19692,
-      "unresolved": 27,
-      "unresolved_ambiguous_alias": 7
+      "withdrawn": 17,
+      "withdrawn_symbol": 1
     },
     "hg38": {
-      "alias": 26,
-      "retired_symbol": 7,
-      "symbol": 32,
+      "ncbi_transcript": 65,
+      "retired_symbol": 1,
+      "symbol": 1,
+      "symbol_by_chromosome": 2,
       "transcript": 22926,
-      "unresolved": 2,
-      "unresolved_ambiguous_alias": 3,
-      "unresolved_ambiguous_symbol": 2
+      "withdrawn": 3
     }
   },
   "sources": {
     "Homo_sapiens.gene_info.gz": {
       "bytes": 5199468,
       "file_mtime": "2026-10-29T17:29:15",
-      "last_modified": "Thu, 29 Oct 2026 05:59:45 GMT",
+      "last_modified": null,
       "md5": "cf873f804ab56dee821bbfab58186f91",
       "url": "https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz"
     },
     "gene_history.gz": {
       "bytes": 163711070,
       "file_mtime": "2026-10-29T17:29:20",
-      "last_modified": "Thu, 29 Oct 2026 05:51:46 GMT",
+      "last_modified": null,
       "md5": "d5311377eba9ddd747caf0f915d53110",
       "url": "https://ftp.ncbi.nlm.nih.gov/gene/DATA/gene_history.gz"
     },
     "refLink.txt.gz": {
       "bytes": 12387598,
       "file_mtime": "2026-10-29T17:29:13",
-      "last_modified": "Tue, 18 Aug 2020 01:52:32 GMT",
+      "last_modified": null,
       "md5": "a33bb86a5f14710ccc884c020fff7843",
       "url": "https://hgdownload.soe.ucsc.edu/goldenPath/hgFixed/database/refLink.txt.gz"
     }
   },
-  "version": "a5f228e646e2"
+  "transcripts_looked_up_at_ncbi": 714,
+  "version": "cb714cdbd57f",
+  "withdrawn_genes": 21
 }
