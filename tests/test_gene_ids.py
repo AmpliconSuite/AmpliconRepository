@@ -240,6 +240,44 @@ def test_a_chip_title_names_the_gene_as_the_autocomplete_does():
 
 
 # ---------------------------------------------------------------------------
+# The project page's filter box
+# ---------------------------------------------------------------------------
+
+def test_the_filter_matches_what_the_projects_own_build_calls_the_gene():
+    from caper.gene_ids import filter_resolution
+    assert filter_resolution('C17orf37', 'hg38')['names'] == ['MIEN1']
+    assert filter_resolution('MIEN1', 'hg19')['names'] == ['C17orf37']
+    assert filter_resolution('HER2', 'hg38')['gene']['symbol'] == 'ERBB2'
+    assert filter_resolution('84299', 'any')['names'] == ['C17orf37', 'MIEN1']
+    # ACOD1 is in the hg38 gene file only: an hg19 project can never carry it.
+    assert filter_resolution('ACOD1', 'hg19')['names'] == []
+    assert filter_resolution('NEU', 'hg38')['outcome'] == 'ambiguous'
+    assert 'names' not in filter_resolution('NOTAGENEXYZ', 'hg38')
+
+
+def test_the_filter_knows_which_builds_it_can_resolve():
+    from caper.gene_ids import filter_universe
+    assert [filter_universe(b) for b in ('hg19', 'GRCh37', 'GRCh38', 'GRCh38_viral')] == \
+        ['hg19', 'hg19', 'hg38', 'hg38']
+    # No build recorded (3 superseded prod versions, 2026-10-30) or a mix.
+    assert [filter_universe(b) for b in (None, 'Unknown', 'N/A', 'Multiple')] == ['any'] * 4
+    assert filter_universe('mm10') is None
+    # The document says nothing; its features do.
+    assert filter_universe(None, {'s1': [{'Reference_version': 'mm10'}]}) is None
+    assert filter_universe(None, {'s1': [{'Reference_version': 'GRCh38'}]}) == 'hg38'
+    assert filter_universe('Multiple', {'s1': [{'Reference_version': 'hg19'}],
+                                        's2': [{'Reference_version': 'GRCh38'}]}) == 'any'
+
+
+def test_the_resolve_endpoint_answers_with_the_builds_names(request_factory):
+    from caper import views
+    request = request_factory.get('/api/gene-resolve/', {'q': 'c17orf37', 'universe': 'hg38'})
+    answer = json.loads(views.gene_resolve(request).content)
+    assert answer['outcome'] == 'gene' and answer['gene']['gene_id'] == 84299
+    assert answer['names'] == ['MIEN1']
+
+
+# ---------------------------------------------------------------------------
 # What a search form asked for
 # ---------------------------------------------------------------------------
 

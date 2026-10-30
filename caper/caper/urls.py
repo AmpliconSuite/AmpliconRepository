@@ -172,6 +172,7 @@ urlpatterns += [
     path('url-timing-test/', views.url_timing_test, name='url_timing_test'),
     path('api/username-autocomplete/', views.username_autocomplete, name='username_autocomplete'),
     path('api/gene-suggest/', views.gene_suggest, name='gene_suggest'),
+    path('api/gene-resolve/', views.gene_resolve, name='gene_resolve'),
 
 ]
 

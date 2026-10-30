@@ -442,6 +442,55 @@ def gene_chip_title(term):
     return f"{gene['symbol']}{full} (NCBI Gene {gene['gene_id']})"
 
 
+# ---------------------------------------------------------------------------
+# The project page's filter box.  It matches the page's own rows in the
+# browser; only a name the project does not use is sent here, so a filter for
+# C17orf37 on an hg38 project finds the rows that say MIEN1.
+# ---------------------------------------------------------------------------
+
+# Builds that say nothing about which gene file was used.
+_UNRECORDED_BUILDS = frozenset({'', 'None', 'Unknown', 'N/A', 'Multiple'})
+
+
+def filter_universe(reference_genome, runs=None):
+    """Which build's names the project page's filter resolves to.
+
+    ``'hg19'``/``'hg38'``; ``'any'`` (both) when no build is recorded or the
+    project mixes the two; None when any feature is mouse, which the map does
+    not cover.  A document's own ``reference_genome`` can be empty while its
+    features record one -- the local Pradella mm10 projects, 2026-10-30 -- so
+    the features decide when the document does not.  On prod up to 3
+    superseded versions record no build anywhere, and every gene name they
+    hold is a human AC name (measured 2026-10-30).
+    """
+    universe = universe_of(reference_genome)
+    if universe:
+        return universe
+    if str(reference_genome or '').strip() not in _UNRECORDED_BUILDS:
+        return None
+    builds = {str(f.get('Reference_version') or '').strip()
+              for features in (runs or {}).values() for f in (features or [])}
+    builds -= _UNRECORDED_BUILDS
+    universes = {universe_of(b) for b in builds}
+    if None in universes:
+        return None
+    return universes.pop() if len(universes) == 1 else 'any'
+
+
+def filter_resolution(term, universe):
+    """``resolve_gene_term`` plus, for one gene, ``names``: what AC calls it in
+    ``universe`` (every human build for ``'any'``), which the page's rows hold."""
+    resolution = resolve_gene_term(term)
+    if resolution['outcome'] == 'gene':
+        by_universe = ac_names_of(resolution['gene']['gene_id'])
+        if universe in HUMAN_UNIVERSES:
+            names = by_universe.get(universe, [])
+        else:
+            names = [n for u in HUMAN_UNIVERSES for n in by_universe.get(u, [])]
+        resolution['names'] = sorted(set(names))
+    return resolution
+
+
 # Outcomes that stop a search box query: the page explains, and nothing is searched.
 BLOCKING_OUTCOMES = frozenset({'ambiguous', 'not_tracked', 'wildcard', 'mixed_operators'})
 

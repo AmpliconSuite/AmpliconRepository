@@ -63,19 +63,48 @@
         // The text filter: a sample name containing the text, a classification
         // starting with it, or an amplified gene. A complete gene symbol matches
         // only that gene -- MYC is not MYCN -- and anything shorter matches
-        // the genes it begins, so the table narrows as the name is typed.
+        // the genes it begins, so the table narrows as the name is typed. A
+        // full name the rows don't hold (an alias, the other build's name)
+        // matches the gene it resolves to.
         var filterText = '';
         var classFilter = null;
+
+        // A name the project's rows do not hold may still be one of their
+        // genes under another name: C17orf37 is MIEN1 in hg38 results, HER2 is
+        // ERBB2. /api/gene-resolve/ says which gene it is and what this
+        // build's results call it (gene_ids.filter_resolution). Mouse projects
+        // have no gene map, so their filter stays name-only.
+        var geneUniverse = '{{ gene_filter_universe|default_if_none:"" }}';
+        var resolveUrl = "{% url 'gene_resolve' %}";
+        var resolutions = {};      // lower-cased text -> the endpoint's answer
+
+        // The answer for the current text, when it is one gene this
+        // project's rows carry: {names: {lower-cased name: true}, gene, here}.
+        function resolvedGene() {
+            var answer = resolutions[filterText];
+            if (!answer || answer.outcome !== 'gene') { return null; }
+            var names = {};
+            var here = [];
+            (answer.names || []).forEach(function (n) {
+                var lower = n.toLowerCase();
+                names[lower] = true;
+                if (knownGenes.hasOwnProperty(lower)) { here.push(n); }
+            });
+            return { names: names, gene: answer.gene, here: here };
+        }
 
         function geneMatches(row) {
             if (!filterText) { return []; }
             var exact = knownGenes.hasOwnProperty(filterText);
+            // Found under another name: only that gene, as a full symbol would.
+            var resolved = exact ? null : resolvedGene();
+            var names = resolved && resolved.here.length ? resolved.names : null;
             var found = [];
             for (var i = 0; i < row._genesLower.length; i++) {
                 var gene = row._genesLower[i];
-                if (exact ? gene === filterText : gene.lastIndexOf(filterText, 0) === 0) {
-                    found.push(row._genes[i]);
-                }
+                var hit = names ? names.hasOwnProperty(gene)
+                    : exact ? gene === filterText : gene.lastIndexOf(filterText, 0) === 0;
+                if (hit) { found.push(row._genes[i]); }
             }
             return found;
         }
@@ -149,15 +178,97 @@
             });
         });
 
+        // One line under the box when the gene filter needs explaining: the
+        // name was found under another one, names several genes, or names a
+        // gene no sample here carries.
+        var geneNote = $('#sample-gene-note');
+
+        function ncbiLink(gene) {
+            return '<a href="https://www.ncbi.nlm.nih.gov/gene/' + encodeURIComponent(gene.gene_id)
+                + '" target="_blank" rel="noopener">NCBI Gene ' + escapeHtml(gene.gene_id) + '</a>';
+        }
+
+        function describeGene() {
+            var answer = filterText && !knownGenes.hasOwnProperty(filterText) && resolutions[filterText];
+            var shown = table.page.info().recordsDisplay;
+            if (!answer) { return ''; }
+            var typed = escapeHtml(answer.term);
+            if (answer.outcome === 'gene') {
+                var resolved = resolvedGene();
+                var gene = answer.gene;
+                var same = answer.term.toLowerCase() === gene.symbol.toLowerCase();
+                var line = (same ? '' : typed + ' &rarr; ') + '<b>' + escapeHtml(gene.symbol) + '</b>'
+                    + (gene.full_name ? ' ' + escapeHtml(gene.full_name) : '') + ' &middot; ' + ncbiLink(gene);
+                if (resolved.here.length) {
+                    var others = resolved.here.filter(function (n) {
+                        return n.toLowerCase() !== gene.symbol.toLowerCase();
+                    });
+                    return others.length ? line + ' &middot; called ' + others.map(escapeHtml).join(', ') + ' here' : line;
+                }
+                if (shown) { return ''; }   // genes starting with the text are on screen
+                if (!(answer.names || []).length) {
+                    return line + ' &middot; not annotated in this build\'s results';
+                }
+                return line + ' &middot; not amplified in any sample here';
+            }
+            if (answer.outcome === 'ambiguous') {
+                return typed + ' could mean several genes: ' + answer.candidates.map(function (c) {
+                    return '<button type="button" class="gene-pick" data-symbol="' + escapeHtml(c.symbol) + '"'
+                        + ' title="' + escapeHtml(c.symbol + (c.full_name ? ', ' + c.full_name : '')
+                        + ' (NCBI Gene ' + c.gene_id + ')') + '">' + escapeHtml(c.symbol) + '</button>';
+                }).join(' ');
+            }
+            if (answer.outcome === 'not_tracked' && !shown) {
+                return typed + ' is not tracked by AmpliconSuite annotations';
+            }
+            return '';
+        }
+
+        function showGeneNote() {
+            var html = describeGene();
+            geneNote.html(html).prop('hidden', !html);
+        }
+
+        // Gene names, aliases and Gene IDs (2064, GeneID:2064); not sample
+        // names with spaces, and not single letters.
+        var GENE_LIKE = /^[a-z0-9][a-z0-9._:-]+$/;
+
+        function resolveFilterText(typed) {
+            var text = filterText;
+            if (!geneUniverse || !GENE_LIKE.test(text) || knownGenes.hasOwnProperty(text)
+                    || resolutions.hasOwnProperty(text)) {
+                return;
+            }
+            resolutions[text] = null;   // asked; a failed lookup leaves the filter name-only
+            $.getJSON(resolveUrl, { q: typed, universe: geneUniverse }).done(function (answer) {
+                resolutions[text] = answer;
+                if (text === filterText) { table.draw(); }
+            });
+        }
+
+        table.on('draw', showGeneNote);
+
+        // Matching is on the lower-cased text; the note repeats it as typed.
+        function applyFilterText(typed) {
+            var value = typed.toLowerCase();
+            if (value === filterText) { return; }
+            filterText = value;
+            table.draw();
+            resolveFilterText(typed);
+        }
+
         var filterTimer = null;
         $('#sample-filter-input').on('input', function () {
-            var value = $(this).val().trim().toLowerCase();
+            var typed = $(this).val().trim();
             clearTimeout(filterTimer);
-            filterTimer = setTimeout(function () {
-                if (value === filterText) { return; }
-                filterText = value;
-                table.draw();
-            }, 150);
+            filterTimer = setTimeout(function () { applyFilterText(typed); }, 150);
+        });
+
+        // A pick replaces the text with that gene's symbol, which names it alone.
+        geneNote.on('click', '.gene-pick', function () {
+            var symbol = $(this).data('symbol');
+            $('#sample-filter-input').val(symbol);
+            applyFilterText(String(symbol));
         });
 
         // A click on a bar of the summary chart lists that bar's samples; one
@@ -1327,7 +1438,8 @@ Sizing matches the Download Project / Summary / Metadata buttons above.
 {% comment %}
 Takes the place of DataTables' own search box, which matched the text of the
 four visible columns -- so it found a sample by oncogene but never by any other
-amplified gene. This one matches a sample name, a classification, or any amplified gene. A click
+amplified gene. This one matches a sample name, a classification, or any amplified gene, under
+any of its names (an alias or old symbol is resolved by /api/gene-resolve/). A click
 on a bar of the summary chart adds the classification chip beside it. Moved into
 the control band like the download button above, and stays here if that fails.
 {% endcomment %}
@@ -1340,6 +1452,7 @@ the control band like the download button above, and stays here if that fails.
     <input type="search" id="sample-filter-input" autocomplete="off" spellcheck="false"
            placeholder="Gene, classification or sample"
            aria-label="Filter samples by gene, classification or sample name">
+    <div id="sample-gene-note" role="status" hidden></div>
 </div>
 {% comment %}
 The full sample list is in the DOM -- every sample, which on a large project is
@@ -1445,6 +1558,43 @@ paged.
         font-size: 16px;
         line-height: 1;
         color: inherit;
+        cursor: pointer;
+    }
+
+    /* Floated beside the download button there is no room on a phone: the
+       box shrank to nothing. Give it its own full-width line. */
+    @media (max-width: 767px) {
+        #sample-filter {
+            float: none !important;
+            width: 100%;
+            justify-content: flex-start;
+            margin-top: 8px;
+        }
+
+        #sample-filter-input {
+            flex: 1 1 10rem;
+            width: auto;
+        }
+
+        #sample-gene-note:not([hidden]) {
+            text-align: left !important;
+        }
+    }
+
+    #sample-gene-note:not([hidden]) {
+        flex-basis: 100%;
+        text-align: right;
+        font-size: 13px;
+        color: #555;
+    }
+
+    #sample-gene-note .gene-pick {
+        border: 1px solid #c5d3e8;
+        border-radius: 999px;
+        background: #f3f7fc;
+        color: #1f4f8f;
+        padding: 0 8px;
+        font-size: 12px;
         cursor: pointer;
     }
 

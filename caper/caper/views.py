@@ -16,9 +16,9 @@ from . import version_purge
 from .canonical import project_canonical_url, sample_canonical_url
 from .email_contact import contact_footer_text, reply_to
 from .api_features import FeatureQueryError
-from .gene_ids import (BLOCKING_OUTCOMES, describe_gene_request, gene_chip_title,
-                       gene_resolution_notes, gene_search_request, highlight_names,
-                       suggest_genes)
+from .gene_ids import (BLOCKING_OUTCOMES, describe_gene_request, filter_resolution,
+                       filter_universe, gene_chip_title, gene_resolution_notes,
+                       gene_search_request, highlight_names, suggest_genes)
 from .feature_index import gene_term_clause
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
@@ -1192,6 +1192,7 @@ def project_page(request, project_name, message=''):
         'metadata_summary': metadata_summary,
         'sample_data': sample_data,
         'sample_table_rows': sample_table_rows(sample_data, samples),
+        'gene_filter_universe': filter_universe(reference_genome, samples),
         'reference_genome': reference_genome,
         'stackedbar_graph': stacked_bar_plot,
         'summarybar': pc_fig,
@@ -7459,6 +7460,19 @@ def gene_suggest(request):
     """
     query = request.GET.get('q', '')[:64]
     return JsonResponse({'query': query, 'suggestions': suggest_genes(query)})
+
+
+def gene_resolve(request):
+    """The project page's filter box: ``GET ?q=&universe=`` -> what the name means.
+
+    Asked only for a name the project's own rows do not hold. ``names`` is what
+    AC calls the gene in that build (``universe`` from gene_ids.filter_universe),
+    so the page can match its rows on them. In memory like gene_suggest, and
+    public for the same reason.
+    """
+    term = request.GET.get('q', '')[:64]
+    universe = request.GET.get('universe', 'any')
+    return JsonResponse(filter_resolution(term, universe))
 
 
 @login_required

@@ -344,6 +344,35 @@ def test_the_advanced_search_takes_genes_as_chips(page):
 
 
 @pytest.mark.browser
+def test_the_project_filter_finds_a_gene_under_another_name(page):
+    """
+    A name the project's rows don't hold is resolved: the hg19 rows say
+    C17orf37, and a filter for MIEN1 (its hg38 name) finds the same samples.
+    """
+    from caper.utils import collection_handle
+    doc = collection_handle.find_one({
+        'private': {'$in': [False, 'public']}, 'delete': False, 'current': True,
+        'reference_genome': {'$in': ['hg19', 'GRCh37']}, 'FINISHED?': True,
+    })
+    if not doc:
+        pytest.skip('No public hg19 project in the database')
+    linkid = str(doc.get('linkid') or doc['_id'])
+    page.goto(f'/project/{linkid}')
+    page.wait_for_selector('#samples-table-wrap.is-ready', timeout=60_000)
+    box = page.locator('#sample-filter-input')
+    box.fill('C17orf37')
+    page.wait_for_timeout(500)
+    by_own_name = page.locator('#myTable1_info').inner_text()
+    if 'No samples' in by_own_name:
+        pytest.skip('This project has no C17orf37 sample')
+    box.fill('MIEN1')
+    note = page.locator('#sample-gene-note')
+    note.wait_for(state='visible', timeout=10_000)
+    assert 'called C17orf37 here' in note.inner_text()
+    assert page.locator('#myTable1_info').inner_text() == by_own_name
+
+
+@pytest.mark.browser
 def test_public_project_page_renders(page, public_project_id):
     """
     A public project page must render the sample DataTable (#myTable1)
