@@ -10,9 +10,10 @@ modal's checkbox, and the panel's metadata button open the modal's section.
     {% csrf_token %}
 
     {# Closed by default: open, it is the first thing in the panel and pushes the fields a screen down. #}
-    <details class="search-tips text-muted" style="font-size: 0.8rem; margin-bottom: 12px;">
-    <summary style="cursor: pointer; margin-bottom: 6px;">Search tips</summary>
-    <ul style="margin-bottom: 0; padding-left: 1.1rem;">
+    <details class="search-tips" style="font-size: 0.8rem; margin-bottom: 12px;">
+    <summary style="cursor: pointer; margin-bottom: 6px; font-size: 0.95rem; font-weight: 600; color: #1f4f8f;">
+        <i class="fas fa-info-circle" aria-hidden="true"></i> Search usage</summary>
+    <ul class="text-muted" style="margin-bottom: 0; padding-left: 1.1rem;">
         <li><strong>Project, Sample Name, Sample Type, Cancer Type/Tissue</strong> match on
             <strong>substrings</strong> (e.g. <em>bone</em> finds <em>Bone/soft tissue</em>;
             <em>NCIH</em> finds <em>NCIH2170</em>).</li>
