@@ -1150,10 +1150,61 @@
     }
 
     /* ---- updates, replacing the bulleted list of blue links ---- */
+    /* One row of news cards that slides: three to a view on a wide screen,
+       two on a narrow one, one on a phone. The track scrolls sideways (a
+       swipe works on touch), and the triangles beside the "Latest updates"
+       heading move it one card; each hides when there is nothing further
+       that way. */
+    .home-news-head {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .home-news-arrows {
+        display: inline-flex;
+        gap: 2px;
+    }
+
     .home-latest {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 30px;
+        --news-per-view: 3;
+        --news-gap: 30px;
+        display: flex;
+        align-items: flex-start;
+        gap: var(--news-gap);
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        scroll-behavior: smooth;
+        scrollbar-width: none;
+    }
+
+    .home-latest::-webkit-scrollbar {
+        display: none;
+    }
+
+    .home-latest > div {
+        flex: 0 0 calc((100% - (var(--news-per-view) - 1) * var(--news-gap)) / var(--news-per-view));
+        scroll-snap-align: start;
+    }
+
+    .home-news-arrow {
+        border: 0;
+        background: none;
+        padding: 0 4px;
+        color: #8b9096;
+        font-size: 13px;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .home-news-arrow:hover,
+    .home-news-arrow:focus-visible {
+        color: #1f66d0;
+    }
+
+    /* Hidden, not removed: the row keeps its width as the arrows come and go. */
+    .home-news-arrow[aria-disabled="true"] {
+        visibility: hidden;
     }
 
     .home-news-meta {
@@ -1212,6 +1263,14 @@
     a.home-news-title::after {
         content: "\00a0\2192";
         color: #8b9096;
+    }
+
+    /* A line or two under a headline that needs it, quieter than the title. */
+    .home-news-desc {
+        margin: 4px 0 0;
+        font-size: 13px;
+        line-height: 1.5;
+        color: #5f6368;
     }
 
     a.home-news-title:hover,
@@ -1290,7 +1349,11 @@
     /* ---- narrower viewports ---- */
     @media (max-width: 1100px) {
         .home-caps { grid-template-columns: repeat(2, 1fr); }
-        .home-latest { grid-template-columns: 1fr; gap: 18px; }
+        .home-latest { --news-per-view: 2; --news-gap: 24px; }
+    }
+
+    @media (max-width: 700px) {
+        .home-latest { --news-per-view: 1; }
     }
 
     @media (max-width: 900px) {
@@ -1312,6 +1375,34 @@
 
 {% block extra_js %}
 <script>
+    // Latest updates: the triangles by the heading move the row one card at a time, and each
+    // hides when the row cannot go further that way (both, when it all fits).
+    document.addEventListener('DOMContentLoaded', function () {
+        var track = document.getElementById('home-latest');
+        var prev = document.getElementById('home-news-prev');
+        var next = document.getElementById('home-news-next');
+        if (!track || !prev || !next) { return; }
+
+        function step() {
+            var card = track.firstElementChild;
+            var gap = parseFloat(getComputedStyle(track).columnGap) || 0;
+            return card ? card.getBoundingClientRect().width + gap : track.clientWidth;
+        }
+
+        function update() {
+            var atStart = track.scrollLeft <= 1;
+            var atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 1;
+            prev.setAttribute('aria-disabled', atStart ? 'true' : 'false');
+            next.setAttribute('aria-disabled', atEnd ? 'true' : 'false');
+        }
+
+        prev.addEventListener('click', function () { track.scrollBy({ left: -step() }); });
+        next.addEventListener('click', function () { track.scrollBy({ left: step() }); });
+        track.addEventListener('scroll', update, { passive: true });
+        window.addEventListener('resize', update);
+        update();
+    });
+
     // Shared date sorting helper (also defines formatDate/formatDates, unused here).
     {% include 'includes/datatable_date_utils.html' %}
 
@@ -1961,9 +2052,30 @@
         <div class="row">
             <div class="col-lg-8">
                 <div class="home-eyebrow">
-                    Latest updates
+                    <span class="home-news-head">
+                        Latest updates
+                        <span class="home-news-arrows">
+                            <button type="button" class="home-news-arrow" id="home-news-prev"
+                                    aria-controls="home-latest" aria-label="Previous update">&#9664;</button>
+                            <button type="button" class="home-news-arrow" id="home-news-next"
+                                    aria-controls="home-latest" aria-label="Next update">&#9654;</button>
+                        </span>
+                    </span>
                 </div>
-                <div class="home-latest">
+                <div class="home-latest" id="home-latest" tabindex="0" aria-label="Latest updates">
+                    <div>
+                        <div class="home-news-meta">
+                            <span class="home-tag home-tag-release">Release</span>
+                            <span class="home-news-src">GitHub</span>
+                        </div>
+                        <a class="home-news-title" href="https://github.com/AmpliconSuite/AmpliconClassifier/releases/tag/v2.0.0" target="_blank" rel="noopener noreferrer">
+                            AmpliconClassifier 2.0 adds a new classification: FAN</a>
+                        <p class="home-news-desc">
+                            <a href="https://github.com/AmpliconSuite/AmpliconClassifier/blob/main/docs/fan_primer.md" target="_blank" rel="noopener noreferrer">FAN (focal amplification in neochromosome)</a>:
+                            broad, complex amplifications built into a rearranged chromosome rather than a circle.
+                            Some AC 1.x ecDNA calls are now FAN.
+                        </p>
+                    </div>
                     <div>
                         <div class="home-news-meta">
                             <span class="home-tag home-tag-release">Release</span>
