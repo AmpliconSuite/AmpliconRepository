@@ -15,7 +15,9 @@ from .background_tasks import _thread_executor, get_background_task_status
 from . import version_purge
 from .canonical import project_canonical_url, sample_canonical_url
 from .email_contact import contact_footer_text, reply_to
-from .gene_ids import BLOCKING_OUTCOMES, gene_resolution_notes, highlight_names, suggest_genes
+from .api_features import FeatureQueryError
+from .gene_ids import (BLOCKING_OUTCOMES, describe_gene_request, gene_resolution_notes,
+                       gene_search_request, highlight_names, suggest_genes)
 from .feature_index import gene_term_clause
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
@@ -7224,8 +7226,14 @@ def search_results(request):
     """Handles user queries and renders search results."""
 
     if request.method == "POST":
-        # Extract search parameters from POST request
-        gene_search = _search_field(request.POST.get("genequery", ""))
+        # Extract search parameters from POST request.  Genes arrive as text
+        # from the home box and as one ``gene`` per chip from the Advanced
+        # search; gene_search_request reads both into one request.
+        gene_request = gene_search_request(
+            genes=[_search_field(g) for g in request.POST.getlist("gene")],
+            genequery=_search_field(request.POST.get("genequery", "")),
+            match=request.POST.get("gene_match"), scope=request.POST.get("gene_scope"))
+        gene_search = gene_request["query"]
         project_name = _search_field(request.POST.get("project_name", ""))
 
         # The home page's Projects scope asks which projects match a name, so it
@@ -7278,6 +7286,9 @@ def search_results(request):
         # the checkboxes are restored exactly as submitted.
         user_query = {
             "genequery": gene_search,
+            "gene_terms": gene_request["terms"],
+            "gene_match": gene_request["match"],
+            "gene_scope": gene_request["scope"],
             "project_name": project_name,
             "classquery": original_amp_classifications,
             "include_no_amp": original_include_no_amp,
@@ -7300,17 +7311,25 @@ def search_results(request):
             results = None
 
         # Delegate to the shared search helper
-        results = results or perform_search(
-            genequery=gene_search.upper() if gene_search else None,
-            project_name=project_name.upper() if project_name else None,
-            classquery=classifications.upper() if classifications else None,
-            metadata_sample_name=sample_name.upper() if sample_name else None,
-            metadata_sample_type=sample_type.upper() if sample_type else None,
-            metadata_cancer_type=cancer_tissue.upper() if cancer_tissue else None,
-            include_no_amp=include_no_amp,
-            no_filter=no_filter,
-            user=request.user,
-        )
+        try:
+            results = results or perform_search(
+                gene_same_sample=gene_request["same_sample"],
+                genequery=gene_search.upper() if gene_search else None,
+                project_name=project_name.upper() if project_name else None,
+                classquery=classifications.upper() if classifications else None,
+                metadata_sample_name=sample_name.upper() if sample_name else None,
+                metadata_sample_type=sample_type.upper() if sample_type else None,
+                metadata_cancer_type=cancer_tissue.upper() if cancer_tissue else None,
+                include_no_amp=include_no_amp,
+                no_filter=no_filter,
+                user=request.user,
+            )
+        except FeatureQueryError as error:
+            # The same-sample pass refuses a gene combination that matches more
+            # samples than it will intersect (api_features.MAX_AND_SAMPLE_KEYS).
+            gene_notes.append({'outcome': 'too_broad', 'message': error.message})
+            results = {'public_projects': [], 'private_projects': [],
+                       'public_sample_data': [], 'private_sample_data': []}
 
         public_projects = results["public_projects"]
         private_projects = results["private_projects"]
@@ -7352,7 +7371,7 @@ def search_results(request):
         private_samples_count = len({s.get('Sample_name') for s in private_sample_data})
 
         query_info = {
-            "Gene Name": gene_search,
+            "Gene Name": describe_gene_request(gene_request),
             "Project Name": project_name,
             "Classification": classifications,
             "Sample Name": sample_name,

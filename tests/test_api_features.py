@@ -309,6 +309,25 @@ def test_gene_all_means_the_same_sample_not_the_same_amplicon(corpus):
     assert _scoped(corpus, 'gene_all=MYC,CDK4&same_amp=true&count_only=true').data['count'] == 1
 
 
+def test_the_search_page_asks_the_same_question_as_gene_all(corpus):
+    """The Advanced search's "all of them, in one sample" is the API's gene_all,
+    and "on one amplicon" is gene_all + same_amp: same rows, same samples."""
+    from django.contrib.auth.models import AnonymousUser
+    from caper.search_index import search_from_index
+
+    def web(genequery, same_sample):
+        found = search_from_index(genequery=genequery, user=AnonymousUser(), no_filter=True,
+                                  gene_same_sample=same_sample)['public_sample_data']
+        return sorted(r['Feature_ID'] for r in found if r['project_linkid'] == corpus['public'])
+
+    def api(qs):
+        return sorted(r['feature_id'] for r in _scoped(corpus, qs + '&fields=feature_id').data['results'])
+
+    assert web('MYC&EGFR', True) == api('gene_all=MYC,EGFR') == ['S2_a1', 'S2_a2']
+    assert web('MYC&EGFR', False) == api('gene_all=MYC,EGFR&same_amp=true') == []
+    assert web('MYC&CDK4', True) == api('gene_all=MYC,CDK4') == ['S1_a1']
+
+
 def test_gene_any_and_gene_all_combine_as_an_and(corpus):
     """Supplying both is not an error; the two clauses are ANDed."""
     both = _scoped(corpus, 'gene_all=MYC,EGFR&gene_any=EGFR&count_only=true')

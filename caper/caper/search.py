@@ -253,6 +253,17 @@ def _gene_matches(query_gene, gene_list):
     else:
         return query_gene.upper() in gene_list
 
+def _samples_carrying_all(rows, genes):
+    """The rows of samples whose features, between them, carry every one of ``genes``."""
+    found = {}
+    for row in rows:
+        names = [g.replace("'", "").strip().upper() for g in row.get('All_genes') or []]
+        carried = found.setdefault((row.get('project_linkid'), row.get('Sample_name')), set())
+        carried.update(gene for gene in genes if _gene_matches(gene, names))
+    return [row for row in rows
+            if len(found[(row.get("project_linkid"), row.get("Sample_name"))]) == len(set(genes))]
+
+
 def feature_index_search_enabled():
     """Whether searches are served from the feature index on this deployment.
 
@@ -274,7 +285,8 @@ def perform_search(genequery=None,
                    extra_metadata=None,
                    include_no_amp=True,
                    no_filter=False,
-                   user=None):
+                   user=None,
+                   gene_same_sample=False):
 
     # The indexed path answers the same question by reading rows that were
     # copied out of these documents, instead of reading the documents. It is
@@ -297,7 +309,14 @@ def perform_search(genequery=None,
                 metadata_cancer_type=metadata_cancer_type,
                 metadata_tissue_origin=metadata_tissue_origin,
                 extra_metadata=extra_metadata, include_no_amp=include_no_amp,
-                no_filter=no_filter, user=user)
+                no_filter=no_filter, user=user, gene_same_sample=gene_same_sample)
+
+    # "All of these genes in one sample": search for any of them, then keep the
+    # samples that carry every one (search_index does the same against the index).
+    from .gene_ids import query_terms
+    same_sample_terms = query_terms(genequery) if gene_same_sample and genequery else []
+    if len(same_sample_terms) > 1:
+        genequery = '|'.join(same_sample_terms)
 
     gen_query = {'$regex': genequery } if genequery else None
 
@@ -369,6 +388,10 @@ def perform_search(genequery=None,
     # are both called 'test', with 118 samples and 7. A search matching a sample
     # in one of them listed *both* in the results table, with the description,
     # date and sample count of a project that contributed nothing to the search.
+    if len(same_sample_terms) > 1:
+        public_sample_data = _samples_carrying_all(public_sample_data, same_sample_terms)
+        private_sample_data = _samples_carrying_all(private_sample_data, same_sample_terms)
+
     public_project_ids = {sample["project_linkid"] for sample in public_sample_data}
     private_project_ids = {sample["project_linkid"] for sample in private_sample_data}
 

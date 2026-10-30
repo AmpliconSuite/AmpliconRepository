@@ -300,6 +300,63 @@ def query_terms(genequery):
     return [t for t in terms if t]
 
 
+GENE_MATCHES = ('any', 'all')
+GENE_SCOPES = ('amplicon', 'sample')
+
+
+def gene_search_request(genes=(), genequery='', match=None, scope=None):
+    """Which genes a search form asked for, and how they combine.
+
+    The Advanced search sends one ``gene`` per chip, with ``gene_match`` (any
+    or all) and, for all, ``gene_scope``: on one amplicon, or anywhere in one
+    sample.  These are the API's ``gene_any``, ``gene_all`` and
+    ``gene_all`` + ``same_amp``.  The home box sends text instead: ``MYC&EGFR``
+    is all on one amplicon, ``MYC|EGFR`` is any, and a comma separates terms
+    as the API's does.  Text typed into the chip box but not made a chip
+    arrives as ``genequery`` and joins the chips.
+
+    Returns ``terms``, ``match``, ``scope``, ``same_sample`` (the one
+    combination that is a question about samples rather than rows), and
+    ``query``: the request written as search box text, which is what the
+    search and ``gene_resolution_notes`` read.  Text holding both ``&`` and
+    ``|`` is passed through as ``query`` unchanged, so the notes refuse it.
+    """
+    text = str(genequery or '').strip()
+    chips = [str(g).strip() for g in genes if str(g).strip()]
+    typed = [t.strip() for t in re.split(r'[,&|]', text) if t.strip()]
+    if mixes_operators(text):
+        return {'terms': chips + typed, 'match': 'any', 'scope': 'amplicon',
+                'same_sample': False, 'query': text}
+
+    if not chips and '&' in text:
+        match, scope = 'all', 'amplicon'
+    elif not chips and '|' in text:
+        match, scope = 'any', 'amplicon'
+    else:
+        match = match if match in GENE_MATCHES else 'any'
+        scope = scope if scope in GENE_SCOPES else 'amplicon'
+
+    terms, seen = [], set()
+    for term in chips + typed:
+        if term.upper() not in seen:
+            seen.add(term.upper())
+            terms.append(term)
+    return {'terms': terms, 'match': match, 'scope': scope,
+            'same_sample': match == 'all' and scope == 'sample' and len(terms) > 1,
+            'query': ('&' if match == 'all' else '|').join(terms)}
+
+
+def describe_gene_request(request):
+    """The gene part of a search, in words: ``MYC and EGFR in one sample``."""
+    terms = request['terms']
+    if len(terms) < 2:
+        return ''.join(terms)
+    if request['match'] == 'any':
+        return ' or '.join(terms)
+    where = 'in one sample' if request['scope'] == 'sample' else 'on one amplicon'
+    return ' and '.join(terms) + ' ' + where
+
+
 def resolve_gene_query(genequery, resolve=None):
     """``resolve_gene_term`` (or ``resolve``) for every term of a query, in order."""
     resolve = resolve or resolve_gene_term

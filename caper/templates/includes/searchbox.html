@@ -7,12 +7,14 @@
         <li><strong>Project, Sample Name, Sample Type, Cancer Type/Tissue</strong> match on
             <strong>substrings</strong> (e.g. <em>bone</em> finds <em>Bone/soft tissue</em>;
             <em>NCIH</em> finds <em>NCIH2170</em>).</li>
-        <li><strong>Gene</strong> matches exactly.</li>
-        <li>Use <strong>*</strong> to anchor: <em>NCIH*</em> starts with, <em>*CDK</em> ends with.</li>
+        <li><strong>Genes</strong>: type a name and pick the gene from the list. With two or more,
+            choose whether a sample needs <strong>any</strong> of them or <strong>all</strong> of them.</li>
+        <li>In the other fields, use <strong>*</strong> to anchor: <em>NCIH*</em> starts with,
+            <em>*CDK</em> ends with.</li>
         <li>Wrap in <strong>"quotes"</strong> for an <strong>exact</strong> match, and to search text
             containing <em>&amp;</em>, <em>|</em> or <em>*</em> (e.g. <em>"Head &amp; Neck"</em>).</li>
         <li>Use <strong>|</strong> for OR (e.g. <em>breast|lung</em>) and
-            <strong>&amp;</strong> for AND (e.g. <em>bone&amp;soft</em>) in any field.</li>
+            <strong>&amp;</strong> for AND (e.g. <em>bone&amp;soft</em>) in the other fields.</li>
     </ul>
 
     <div class="mb-3">
@@ -27,10 +29,31 @@
             placeholder='e.g. NCIH (partial), or "NCIH2170" (exact)' value="{{ user_query.metadata_sample_name|default:'' }}">
     </div>
 
-    <div class="mb-3">
-        <label for="genequery" class="form-label">Gene Name</label>
-        <input type="text" class="form-control" name="genequery" id="genequery"
-               placeholder="e.g. MYC or MYC|EGFR or MYC&EGFR" value="{{ user_query.genequery|default:'' }}">
+    {% comment %}
+    One chip per gene, posted as a ``gene`` each; text not yet made a chip is
+    posted as ``genequery`` (gene_ids.gene_search_request reads both).  The
+    controls are the API's gene_any / gene_all / same_amp.  No ``for``/``id``
+    pairs here: this form is on the page twice (the header's modal and the
+    results panel), and an id would bind both copies' labels to the first.
+    gene_autocomplete.html wires it up.
+    {% endcomment %}
+    <div class="mb-3 gene-field">
+        <label class="form-label" data-gene-label>Genes</label>
+        <div class="form-control gene-chips" data-gene-chips>
+            {% for term in user_query.gene_terms %}
+            <span class="gene-chip" data-term="{{ term }}"><input type="hidden" name="gene" value="{{ term }}">{{ term }}<button type="button" class="gene-chip-remove" aria-label="Remove {{ term }}">&times;</button></span>
+            {% endfor %}
+            <input type="text" class="gene-chip-input" name="genequery" id="genequery"
+                   placeholder="{% if user_query.gene_terms %}Add a gene{% else %}e.g. MYC, then pick it from the list{% endif %}">
+        </div>
+        <div class="gene-match"{% if user_query.gene_terms|length < 2 %} hidden{% endif %}>
+            <label class="gene-option"><input type="radio" name="gene_match" value="any"{% if user_query.gene_match != 'all' %} checked{% endif %}> Any of these genes</label>
+            <label class="gene-option"><input type="radio" name="gene_match" value="all"{% if user_query.gene_match == 'all' %} checked{% endif %}> All of them</label>
+            <div class="gene-scope"{% if user_query.gene_match != 'all' %} hidden{% endif %}>
+                <label class="gene-option"><input type="radio" name="gene_scope" value="amplicon"{% if user_query.gene_scope != 'sample' %} checked{% endif %}> on the same amplicon</label>
+                <label class="gene-option"><input type="radio" name="gene_scope" value="sample"{% if user_query.gene_scope == 'sample' %} checked{% endif %}> anywhere in the same sample</label>
+            </div>
+        </div>
     </div>
 
     <div class="mb-3">

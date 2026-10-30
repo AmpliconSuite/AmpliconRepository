@@ -289,7 +289,7 @@ def test_choosing_a_gene_suggestion_searches_for_it(page):
     with page.expect_navigation(timeout=120_000):
         first.dispatch_event('mousedown')
     assert '/search_results/' in page.url
-    assert page.locator('.search-box input[name="genequery"]').input_value() == 'MIEN1'
+    assert page.locator('.search-box input[name="gene"]').input_value() == 'MIEN1'
 
 
 @pytest.mark.browser
@@ -306,6 +306,41 @@ def test_the_advanced_search_modal_suggests_genes(page):
         return Boolean(document.elementFromPoint(r.left + 5, r.top + 5).closest('.gene-ac-item'));
     }""")
     assert on_top, 'the suggestion list is hidden behind the modal'
+
+
+@pytest.mark.browser
+def test_the_advanced_search_takes_genes_as_chips(page):
+    """
+    Each suggestion picked in the Advanced search becomes a chip; with two, the
+    any/all controls appear, and "all" offers same amplicon or same sample.
+    The results page carries the same choices back.
+    """
+    page.goto('/')
+    page.click('#home-advanced')
+    modal = page.locator('#searchModal')
+    box = modal.locator('.gene-chip-input')
+    for name in ('MYC', 'CDK4'):
+        box.type(name, delay=20)
+        entry = page.locator('.gene-ac-list:not([hidden]) .gene-ac-item').first
+        entry.wait_for(timeout=10_000)
+        entry.dispatch_event('mousedown')
+    assert [c.get_attribute('data-term') for c in modal.locator('.gene-chip').all()] == ['MYC', 'CDK4']
+    assert modal.locator('.gene-match').is_visible()
+    assert not modal.locator('.gene-scope').is_visible()
+    modal.locator('input[name="gene_match"][value="all"]').check()
+    modal.locator('input[name="gene_scope"][value="sample"]').check()
+    # Text left in the box joins the chips on submit.
+    box.type('mdm2')
+    with page.expect_navigation(timeout=120_000):
+        modal.locator('button[type="submit"]').click()
+    panel = page.locator('.search-box')
+    assert [i.input_value() for i in panel.locator('input[name="gene"]').all()] == ['MYC', 'CDK4', 'mdm2']
+    assert panel.locator('input[name="gene_match"][value="all"]').is_checked()
+    assert panel.locator('input[name="gene_scope"][value="sample"]').is_checked()
+    # Removing a chip down to one hides the controls again.
+    panel.locator('.gene-chip-remove').first.click()
+    panel.locator('.gene-chip-remove').first.click()
+    assert not panel.locator('.gene-match').is_visible()
 
 
 @pytest.mark.browser

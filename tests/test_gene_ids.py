@@ -227,3 +227,55 @@ def test_a_gene_one_build_never_reports_is_flagged():
     [ct62] = gene_resolution_notes('CT62')
     assert ct62['gene']['missing_in'] == ['hg38']
     assert gene_resolution_notes('MYC') == []      # in both builds: still no note
+
+
+# ---------------------------------------------------------------------------
+# What a search form asked for
+# ---------------------------------------------------------------------------
+
+def test_home_box_text_keeps_its_operators():
+    both = gene_ids.gene_search_request(genequery='MYC&EGFR')
+    assert (both['terms'], both['match'], both['scope'], both['same_sample'], both['query']) == \
+        (['MYC', 'EGFR'], 'all', 'amplicon', False, 'MYC&EGFR')
+    either = gene_ids.gene_search_request(genequery='MYC | EGFR')
+    assert (either['terms'], either['match'], either['query']) == (['MYC', 'EGFR'], 'any', 'MYC|EGFR')
+    one = gene_ids.gene_search_request(genequery=' MYC ')
+    assert (one['terms'], one['query']) == (['MYC'], 'MYC')
+
+
+def test_chips_take_the_forms_choices():
+    request = gene_ids.gene_search_request(genes=['MYC', 'CDK4'], match='all', scope='sample')
+    assert request['same_sample'] and request['query'] == 'MYC&CDK4'
+    request = gene_ids.gene_search_request(genes=['MYC', 'CDK4'], match='all', scope='amplicon')
+    assert not request['same_sample'] and request['query'] == 'MYC&CDK4'
+    assert gene_ids.gene_search_request(genes=['MYC', 'CDK4'])['query'] == 'MYC|CDK4'
+    # Values the form never sends fall back to the defaults.
+    request = gene_ids.gene_search_request(genes=['MYC', 'CDK4'], match='most', scope='cell')
+    assert (request['match'], request['scope']) == ('any', 'amplicon')
+
+
+def test_one_gene_is_never_a_same_sample_question():
+    assert not gene_ids.gene_search_request(genes=['MYC'], match='all', scope='sample')['same_sample']
+
+
+def test_text_left_in_the_chip_box_joins_the_chips_once():
+    request = gene_ids.gene_search_request(genes=['MYC', ' '], genequery='cdk4, myc', match='all')
+    assert request['terms'] == ['MYC', 'cdk4']
+    assert request['match'] == 'all'
+
+
+def test_mixed_operators_are_passed_through_to_be_refused():
+    request = gene_ids.gene_search_request(genequery='MYC|EGFR&CDK4')
+    assert request['query'] == 'MYC|EGFR&CDK4'
+    assert request['terms'] == ['MYC', 'EGFR', 'CDK4']
+    assert gene_ids.gene_resolution_notes(request['query'])[0]['outcome'] == 'mixed_operators'
+
+
+def test_a_gene_request_in_words():
+    words = gene_ids.describe_gene_request
+    assert words(gene_ids.gene_search_request(genes=['MYC'])) == 'MYC'
+    assert words(gene_ids.gene_search_request(genes=['MYC', 'EGFR'])) == 'MYC or EGFR'
+    assert words(gene_ids.gene_search_request(genes=['MYC', 'EGFR'], match='all')) == \
+        'MYC and EGFR on one amplicon'
+    assert words(gene_ids.gene_search_request(genes=['MYC', 'EGFR'], match='all', scope='sample')) == \
+        'MYC and EGFR in one sample'
