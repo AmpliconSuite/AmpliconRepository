@@ -7,8 +7,9 @@ sample zip (sample_download), its sample metadata (sample_metadata_download)
 and its files (feature_download, pdf_download), and png_download served any
 GridFS id at all, whatever project the URL named.
 
-The rule is the pages' rule: a private project is for its members, a
-hidden_public one for anyone holding the link, a public one for everyone.
+The rule is the pages' rule: a private project is for its members and the
+site admins, a hidden_public one for anyone holding the link, a public one for
+everyone.
 The per-feature file routes also serve only an id the named sample holds.
 """
 
@@ -49,6 +50,15 @@ class _Stranger:
     email = 'pytest_access_stranger@example.com'
     is_authenticated = True
     is_staff = False
+    is_superuser = False
+
+
+class _Admin:
+    """Staff, and not a member of the project."""
+    username = 'pytest_access_admin'
+    email = 'pytest_access_admin@example.com'
+    is_authenticated = True
+    is_staff = True
     is_superuser = False
 
 
@@ -131,6 +141,7 @@ def _file_routes():
     ('private', _Stranger(), 404),
     ('private', _Anon(), 302),           # to the login form, as the pages do
     ('private', _Member(), 200),
+    ('private', _Admin(), 200),
     ('hidden_public', _Stranger(), 200),
     ('hidden_public', _Anon(), 200),
     ('public', _Anon(), 200),
@@ -182,6 +193,7 @@ def test_file_routes_404_on_missing_or_unknown_ids(make_project, request_factory
     ('private', _Stranger(), 404),
     ('private', _Anon(), 302),
     ('private', _Member(), 200),
+    ('private', _Admin(), 200),
     ('hidden_public', _Stranger(), 200),
     ('public', _Anon(), 200),
 ])
@@ -198,6 +210,7 @@ def test_sample_routes_follow_the_page_rule(make_project, request_factory,
     ('private', _Stranger(), True),
     ('private', _Anon(), True),
     ('private', _Member(), False),
+    ('private', _Admin(), False),
     ('hidden_public', _Stranger(), False),
     ('public', _Anon(), False),
 ])

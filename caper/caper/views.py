@@ -645,6 +645,21 @@ def is_user_a_project_member(project, request):
     return False
 
 
+def may_view_project(project, request):
+    """Whether this visitor may open a private project's pages and downloads.
+
+    Its members, and site admins (``is_staff``) for every project: they already
+    reach the data through the database and the bucket, so refusing them the
+    page only sent them around it.  Viewing is all this grants -- an admin who
+    is not a member still cannot edit a private project
+    (set_project_edit_OK_flag), and membership itself is unchanged for the
+    subscription box and the audit log's by_admin.
+    """
+    if is_user_a_project_member(project, request):
+        return True
+    return bool(getattr(getattr(request, 'user', None), 'is_staff', False))
+
+
 def set_project_edit_OK_flag(project, request):
     try:
         is_admin = getattr(request.user, 'is_staff', False)
@@ -903,7 +918,7 @@ def project_access_refusal(request, project):
     """What a project's pages answer a visitor who may not see it, or ``None``.
 
     The rule the project, sample and feature pages apply: a private project is
-    for its members, a hidden_public one for anyone holding the link.  The
+    for its members and the site admins (may_view_project), a hidden_public one for anyone holding the link.  The
     download routes call this so that a file answers a visitor exactly as the
     page that links to it does.  Until 2026-10-14 six of them checked nothing,
     and a signed-in non-member could download a private project's archive, its
@@ -911,7 +926,7 @@ def project_access_refusal(request, project):
     """
     visibility = normalize_visibility_field(project.get('private', 'private'))
     if (is_project_private(visibility) and not is_project_hidden_public(visibility)
-            and not is_user_a_project_member(project, request)):
+            and not may_view_project(project, request)):
         return no_access_response(request)
     return None
 
@@ -990,7 +1005,7 @@ def project_page(request, project_name, message=''):
 
     # Handle access control based on visibility
     visibility = normalize_visibility_field(project.get('private', 'private'))
-    if is_project_private(visibility) and not is_user_a_project_member(project, request):
+    if is_project_private(visibility) and not may_view_project(project, request):
         # For private and hidden_public projects, members can view
         # For private, non-members must login
         if not is_project_hidden_public(visibility):
@@ -1061,6 +1076,10 @@ def project_page(request, project_name, message=''):
 
     # Check if user is actually a project member (for subscription checkbox visibility)
     is_project_member = is_user_a_project_member(project, request)
+    # An admin reading a private project they are not a member of is told so,
+    # since nothing else on the page would show it.
+    admin_viewing_private = (is_project_private(visibility) and not is_project_member
+                             and bool(getattr(request.user, 'is_staff', False)))
 
     # Check if metadata needs regeneration
     needs_metadata = (
@@ -1203,6 +1222,7 @@ def project_page(request, project_name, message=''):
         'views': views,
         'downloads': downloads,
         'is_project_member': is_project_member,  # Pass actual membership status for subscription UI
+        'admin_viewing_private': admin_viewing_private,
         'proj_id': project_name,
         'viewing_old_project': viewing_old_project,
         'old_version_may_edit': old_version_may_edit,
@@ -1429,7 +1449,7 @@ def project_summary_download(request, project_name):
 
     # Check if user has access to private project
     visibility = normalize_visibility_field(project.get('private', 'private'))
-    if is_project_private(visibility) and not is_project_hidden_public(visibility) and not is_user_a_project_member(project, request):
+    if is_project_private(visibility) and not is_project_hidden_public(visibility) and not may_view_project(project, request):
         message = "You do not have permission to access this project."
         messages.error(request, message)
         return redirect(request.META.get('HTTP_REFERER', '/'))
@@ -1666,7 +1686,7 @@ def project_metadata_download(request, project_name):
     # Access control
     visibility = normalize_visibility_field(project.get('private', 'private'))
     if is_project_private(visibility) and not is_project_hidden_public(visibility) \
-            and not is_user_a_project_member(project, request):
+            and not may_view_project(project, request):
         messages.error(request, "You do not have permission to access this project.")
         return redirect(request.META.get('HTTP_REFERER', '/'))
 
@@ -2040,7 +2060,7 @@ def sample_page(request, project_name, sample_name):
     
     # Handle access control based on visibility
     visibility = normalize_visibility_field(project.get('private', 'private'))
-    if is_project_private(visibility) and not is_user_a_project_member(project, request):
+    if is_project_private(visibility) and not may_view_project(project, request):
         # For private and hidden_public projects, members can view
         # For private, non-members must login
         if not is_project_hidden_public(visibility):
@@ -2892,7 +2912,7 @@ def feature_page(request, project_name, sample_name, feature_name):
     if project is None:
         raise Http404(f"Project {project_name!r} not found")
     visibility = normalize_visibility_field(project.get('private', 'private'))
-    if is_project_private(visibility) and not is_user_a_project_member(project, request):
+    if is_project_private(visibility) and not may_view_project(project, request):
         if not is_project_hidden_public(visibility):
             return no_access_response(request)
 
