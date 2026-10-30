@@ -32,6 +32,17 @@ class CaperConfig(AppConfig):
         except Exception as e:
             logger.warning(f"Failed to create MongoDB indexes: {str(e)}")
         
+        # Load the gene map once, here. Under gunicorn's preload_app this runs
+        # in the master, so the workers fork with it already in memory and
+        # share it; loaded lazily instead, each of the nine workers would read
+        # it on a visitor's first gene search or keystroke (0.5 s and +81 MiB
+        # each on a laptop, measured 2026-10-29; the servers are slower).
+        try:
+            from .gene_ids import warm
+            warm()
+        except Exception as e:
+            logger.warning(f"Could not preload the gene map: {e}")
+
         # Verify cache backend is configured and working
         try:
             self.verify_cache_backend()

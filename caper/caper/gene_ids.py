@@ -54,6 +54,15 @@ def _ac_gene_table():
     return by_name, genes
 
 
+def warm():
+    """Load every table now rather than on first use (see apps.CaperConfig.ready)."""
+    _manifest()
+    _ac_gene_table()
+    _name_table()
+    _names_without_id()
+    _ac_names_by_gene()
+
+
 def universe_of(reference_build):
     return UNIVERSE_OF_BUILD.get(str(reference_build or '').strip())
 
