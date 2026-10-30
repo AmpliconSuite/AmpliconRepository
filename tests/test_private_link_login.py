@@ -64,6 +64,15 @@ def private_project(mongo_collection):
                 'Feature_BED_file': 'Not Provided',
                 'Classification': 'ecDNA',
                 'Oncogenes': [],
+                # Enough for the pages to render, for a visitor allowed in.
+                'AA_amplicon_number': 1,
+                'Location': ['chr1:1-2'],
+                'Reference_version': 'GRCh38',
+                'CNV_BED_file': 'Not Provided',
+                'AA_PNG_file': 'Not Provided',
+                'AA_PDF_file': 'Not Provided',
+                'Feature_maximum_copy_number': 12.5,
+                'Feature_median_copy_number': 8.0,
             }],
         },
         'project_members': ['somebody_else@example.com'],
@@ -171,6 +180,52 @@ def test_a_signed_in_non_member_is_refused_rather_than_sent_round_again(
 
     assert response.status_code == 404, \
         f'{page} page answered {response.status_code}, expected 404'
+
+
+@pytest.fixture
+def site_admin():
+    """A staff account that is not a member of the project."""
+    user_model = get_user_model()
+    suffix = uuid.uuid4().hex
+    user = user_model.objects.create_user(
+        username=f'private_link_admin_{suffix}',
+        email=f'private_link_admin_{suffix}@example.com',
+        password=PASSWORD,
+        is_staff=True,
+    )
+    try:
+        yield user
+    finally:
+        user.delete()
+
+
+@pytest.mark.parametrize('page', ['project', 'sample', 'feature'])
+def test_a_site_admin_can_read_a_private_project_they_are_not_in(
+        private_project, site_admin, page):
+    client = Client(HTTP_HOST='localhost')
+    client.force_login(site_admin)
+
+    response = client.get(_private_urls(private_project)[page])
+
+    assert response.status_code == 200, \
+        f'{page} page answered {response.status_code} to a site admin'
+
+
+def test_the_project_page_tells_the_admin_they_are_not_a_member(
+        private_project, site_admin, outsider, mongo_collection):
+    """And reading is all it grants: no edit link for a private project."""
+    client = Client(HTTP_HOST='localhost')
+    client.force_login(site_admin)
+    url = _private_urls(private_project)['project']
+
+    html = client.get(url).content.decode()
+    assert 'You can see it as a site admin' in html
+    assert f'/project/{private_project}/edit' not in html
+
+    # A member sees no such notice.
+    mongo_collection.update_one({'_id': ObjectId(private_project)},
+                                {'$push': {'project_members': site_admin.username}})
+    assert 'You can see it as a site admin' not in client.get(url).content.decode()
 
 
 def test_an_alias_with_an_ampersand_survives_into_next(
