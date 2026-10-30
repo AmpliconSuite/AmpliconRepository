@@ -134,6 +134,7 @@ from django.http import QueryDict  # noqa: E402
 from django.test import RequestFactory  # noqa: E402
 
 from caper import feature_index  # noqa: E402
+from caper.gene_ids import gene_ids_of  # noqa: E402
 from caper.feature_index import feature_index_handle  # noqa: E402
 from caper.classifications import is_no_amplicon  # noqa: E402
 
@@ -154,6 +155,7 @@ def _row(project_id, project_name, visibility, sample, feature_id,
         run_key=sample, sample_name=sample, feature_id=feature_id,
         classification=classification,
         genes=[g.upper() for g in genes], genes_display=list(genes),
+        gene_ids=gene_ids_of(build, [g.upper() for g in genes]),
         oncogenes=[], oncogenes_display=[], locations=['chr8:1-2'],
         reference_build=build,
         numbers=numbers or {key: None for key, _ in feature_index._FEATURE_NUMBERS},
@@ -175,6 +177,7 @@ def corpus(monkeypatch):
     private = ObjectId()
     tissue = ObjectId()
     names = ObjectId()
+    renamed = ObjectId()
     rows = [
         # One sample carrying MYC and CDK4 on the SAME amplicon...
         _row(public, 'Pub', 'public', 'S1', 'S1_a1', 'ecDNA', ['MYC', 'CDK4'],
@@ -227,13 +230,18 @@ def corpus(monkeypatch):
         _row(names, 'Names', 'public', 'HOS-MNNG', 'HOS-MNNG_a1', 'ecDNA', ['MYC']),
         _row(names, 'Names', 'public', 'HOS-MNNG', 'HOS-MNNG_a2', 'BFB', ['MYC']),
         _row(names, 'Names', 'public', 'S1', 'S1_a1', 'ecDNA', ['MYC']),
+        # One gene under the two names AC gave it: C17orf37 in the 2010 hg19
+        # annotation, MIEN1 in hg38 -- NCBI Gene 84299 either way.
+        _row(renamed, 'Renamed', 'public', 'R1', 'R1_a1', 'ecDNA', ['C17orf37', 'ERBB2'],
+             build='hg19'),
+        _row(renamed, 'Renamed', 'public', 'R2', 'R2_a1', 'ecDNA', ['MIEN1', 'ERBB2']),
     ]
     feature_index_handle.insert_many(rows)
     monkeypatch.setattr(api_features, 'index_is_usable', lambda: True)
     yield {'public': public, 'private': private, 'tissue': tissue,
-           'names': names}
+           'names': names, 'renamed': renamed}
     feature_index_handle.delete_many(
-        {'project_id': {'$in': [public, private, tissue, names]}})
+        {'project_id': {'$in': [public, private, tissue, names, renamed]}})
 
 
 def _get(qs, user=None):
@@ -250,7 +258,36 @@ def _scoped(corpus, qs):
 def test_gene_any_is_an_or(corpus):
     assert _scoped(corpus, 'gene_any=MYC&count_only=true').data['count'] == 3
     assert _scoped(corpus, 'gene_any=MYC,EGFR&count_only=true').data['count'] == 4
-    assert _scoped(corpus, 'gene_any=NOSUCHGENE&count_only=true').data['count'] == 0
+    # A name AmpliconSuite does not annotate is an error, not an empty result.
+    missing = _scoped(corpus, 'gene_any=NOSUCHGENE&count_only=true')
+    assert missing.status_code == 400
+    assert missing.data['code'] == 'gene_not_tracked'
+    pattern = _scoped(corpus, 'gene_any=MYC*&count_only=true')
+    assert pattern.status_code == 400 and pattern.data['code'] == 'invalid_parameter'
+    assert 'wildcard' in pattern.data['error']
+
+
+def test_a_gene_is_found_under_every_name_ac_gave_it(corpus):
+    renamed = '?project_id=%s&' % corpus['renamed']
+    for name in ('MIEN1', 'C17orf37', '84299'):
+        response = _get(renamed + 'gene_any=' + name)
+        assert response.data['count'] == 2, name
+        assert response.data['gene_terms'][0]['gene_id'] == 84299
+        assert response.data['gene_terms'][0]['annotated_in'] == ['hg19', 'hg38']
+    row = _get(renamed + 'gene_any=MIEN1').data['results'][0]
+    assert 84299 in row['gene_ids']
+
+
+def test_a_name_with_no_single_meaning_is_a_400_naming_the_candidates(corpus):
+    response = _scoped(corpus, 'gene_any=NEU')
+    assert response.status_code == 400
+    assert response.data['code'] == 'ambiguous_gene'
+    assert 'ERBB2' in response.data['error'] and 'NEU1' in response.data['error']
+
+
+def test_mouse_rows_are_still_found_by_spelling(corpus):
+    """mm10 rows have no Gene IDs yet; MYC must still reach them."""
+    assert _scoped(corpus, 'gene_any=MYC&reference_build=mm10&count_only=true').data['count'] == 1
 
 
 def test_gene_matching_is_case_insensitive(corpus):
@@ -270,6 +307,25 @@ def test_gene_all_means_the_same_sample_not_the_same_amplicon(corpus):
     # S1 has both on one row.
     assert _scoped(corpus, 'gene_all=MYC,CDK4&count_only=true').data['count'] == 1
     assert _scoped(corpus, 'gene_all=MYC,CDK4&same_amp=true&count_only=true').data['count'] == 1
+
+
+def test_the_search_page_asks_the_same_question_as_gene_all(corpus):
+    """The Advanced search's "all of them, in one sample" is the API's gene_all,
+    and "on one amplicon" is gene_all + same_amp: same rows, same samples."""
+    from django.contrib.auth.models import AnonymousUser
+    from caper.search_index import search_from_index
+
+    def web(genequery, same_sample):
+        found = search_from_index(genequery=genequery, user=AnonymousUser(), no_filter=True,
+                                  gene_same_sample=same_sample)['public_sample_data']
+        return sorted(r['Feature_ID'] for r in found if r['project_linkid'] == corpus['public'])
+
+    def api(qs):
+        return sorted(r['feature_id'] for r in _scoped(corpus, qs + '&fields=feature_id').data['results'])
+
+    assert web('MYC&EGFR', True) == api('gene_all=MYC,EGFR') == ['S2_a1', 'S2_a2']
+    assert web('MYC&EGFR', False) == api('gene_all=MYC,EGFR&same_amp=true') == []
+    assert web('MYC&CDK4', True) == api('gene_all=MYC,CDK4') == ['S1_a1']
 
 
 def test_gene_any_and_gene_all_combine_as_an_and(corpus):
@@ -534,8 +590,11 @@ def test_an_ampersand_in_a_value_is_not_a_packed_query(corpus):
     """A real prod project is named "COLO320 DM & HSR hg38"."""
     resp = _get('?project_name=COLO320%20DM%20%26%20HSR%20hg38&count_only=true')
     assert resp.status_code == 200, resp.data
+    # Not refused as a packed query.  'MYC&EGFR' is not a gene name either, so
+    # the answer is that it is not tracked -- an answer about the gene, not the
+    # parameter.
     resp = _scoped(corpus, 'gene_any=MYC%26EGFR&count_only=true')
-    assert resp.status_code == 200, resp.data
+    assert resp.data['code'] == 'gene_not_tracked', resp.data
 
 
 def test_a_padded_cursor_is_not_a_packed_query():
@@ -843,7 +902,8 @@ def test_count_only_and_the_full_response_agree_on_both_counts(corpus):
 
 def test_an_empty_result_still_reports_a_sample_count(corpus):
     """Shape stability: a client reading the field must always find it."""
-    resp = _scoped(corpus, 'gene_all=MYC,NOSUCHGENE&count_only=true')
+    # TP53 is a real gene this corpus does not carry; an unknown name is a 400.
+    resp = _scoped(corpus, 'gene_all=MYC,TP53&count_only=true')
     assert resp.data['count'] == 0
     assert resp.data['sample_count'] == 0
 

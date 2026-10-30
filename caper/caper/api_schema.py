@@ -274,6 +274,12 @@ class FeatureRowSerializer(serializers.Serializer):
         help_text='Amplicon class in the same spelling the sample rows use: '
                   'ecDNA, BFB, Linear, Complex-non-cyclic, FAN, Virus.')
     genes = serializers.ListField(child=serializers.CharField())
+    gene_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text='NCBI Gene IDs of `genes`, so the gene a name was taken to '
+                  'mean is explicit: C17orf37 (hg19) and MIEN1 (hg38) are both '
+                  '84299. Empty on non-human rows (mm10), which have no gene map '
+                  'yet.')
     oncogenes = serializers.ListField(child=serializers.CharField())
     locations = serializers.ListField(child=serializers.CharField())
     reference_build = serializers.CharField()
@@ -314,6 +320,35 @@ class FeatureRowSerializer(serializers.Serializer):
                   'fetching it.')
 
 
+class GeneTermSerializer(serializers.Serializer):
+    """What one gene term in the request was taken to mean."""
+
+    term = serializers.CharField()
+    outcome = serializers.CharField(
+        help_text='`gene` (resolved to one NCBI gene), `name_only` (an '
+                  'AmpliconSuite gene name with no NCBI Gene ID, matched by '
+                  'name) or `non_human_name` (found only in non-human results, '
+                  'matched by name).')
+    gene_id = serializers.IntegerField(required=False)
+    symbol = serializers.CharField(required=False, help_text='Current NCBI symbol.')
+    status = serializers.CharField(
+        required=False, help_text='`current`, or `withdrawn` for a gene NCBI '
+                                  'retired with no successor.')
+    annotated_in = serializers.ListField(
+        child=serializers.CharField(), required=False,
+        help_text='Human builds whose AmpliconSuite gene annotation includes '
+                  'this gene: `hg19`, `hg38` or both. Results on a build not '
+                  'listed can never contain it.')
+    matched_as = serializers.CharField(
+        required=False, help_text='How the term matched when it is not the '
+                                  'symbol: `ac_name`, `alias`, `retired_symbol` '
+                                  'or `withdrawn_symbol`.')
+    also_alias_of = serializers.ListField(
+        child=serializers.DictField(), required=False,
+        help_text='Other genes this symbol is also an alias of; they were not '
+                  'searched. Ask for them by name to include them.')
+
+
 class FeatureSearchSerializer(serializers.Serializer):
     count = serializers.IntegerField(
         help_text='Total matching rows, not the number on this page.')
@@ -330,9 +365,11 @@ class FeatureSearchSerializer(serializers.Serializer):
         help_text='Pass as ?cursor= for the next page. Null on the last page.')
     reference_builds = serializers.DictField(
         child=serializers.IntegerField(),
-        help_text='How the whole result set splits by reference build. Gene '
-                  'symbols are build-dependent, so a zero on one build is the '
-                  'signal that the gene may exist there under another name.')
+        help_text='How the whole result set splits by reference build.')
+    gene_terms = GeneTermSerializer(
+        many=True, required=False,
+        help_text='Present when the request names genes: what each term was '
+                  'taken to mean.')
 
 
 class FeatureSampleSerializer(serializers.Serializer):
@@ -367,6 +404,10 @@ class FeatureSampleSearchSerializer(serializers.Serializer):
     next_cursor = serializers.CharField(
         allow_null=True,
         help_text='Pass as ?cursor= for the next page. Null on the last page.')
+    gene_terms = GeneTermSerializer(
+        many=True, required=False,
+        help_text='Present when the request names genes: what each term was '
+                  'taken to mean.')
 
 
 class FacetValueSerializer(serializers.Serializer):

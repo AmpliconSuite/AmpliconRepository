@@ -1,6 +1,7 @@
 from django.conf.urls.i18n import i18n_patterns
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve as serve_static
 from django.views.generic import TemplateView
 from django.views.i18n import set_language
 import mezzanine
@@ -170,10 +171,22 @@ urlpatterns += [
     path('ec3d/<str:sample_name>/', views.ec3d_visualization, name='ec3d_visualization'),
     path('url-timing-test/', views.url_timing_test, name='url_timing_test'),
     path('api/username-autocomplete/', views.username_autocomplete, name='username_autocomplete'),
+    path('api/gene-suggest/', views.gene_suggest, name='gene_suggest'),
+    path('api/gene-resolve/', views.gene_resolve, name='gene_resolve'),
 
 ]
 
 urlpatterns += static(settings.PROJECT_DATA_URL, document_root=settings.PROJECT_DATA_ROOT)
+
+# With S3_STATIC_FILES off -- every local run -- nothing served caper/static:
+# DEBUG is False, so runserver serves no static files and static() returns no
+# pattern, and every /static/ request was a 404 (measured locally 2026-10-29:
+# the logo, style.css and jQuery among them). Dev and prod serve static files
+# from S3 and never reach this.
+if not getattr(settings, 'USE_S3', False):
+    urlpatterns += [
+        re_path(r'^static/(?P<path>.*)$', serve_static, {'document_root': settings.STATIC_ROOT}),
+    ]
 
 urlpatterns += [
     #path(r'^accounts/', include('allauth.urls')),

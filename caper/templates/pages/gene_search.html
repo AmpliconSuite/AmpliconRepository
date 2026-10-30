@@ -16,6 +16,26 @@
     }
     .results-container {
         width: 100%;
+        min-width: 0;   /* a flex item: without this a wide table widens the page */
+    }
+
+    /* A phone has no room for the panel beside the results: on a 412 px
+       Galaxy S25 the panel was ~70 px wide, one word per line, and the
+       results ran off the right edge. Stack them, results first; the panel
+       follows for refining the search. */
+    @media (max-width: 767px) {
+        .search-container {
+            flex-direction: column;
+        }
+
+        .search-box {
+            width: 100%;
+            order: 2;
+        }
+
+        .results-container {
+            order: 1;
+        }
     }
 
     /* Project filter styles */
@@ -157,6 +177,20 @@
         display: block;
     }
 
+    /* The table scrolls, not the page: its columns need ~954 px. style.css
+       lets every DataTables wrapper grow to its table's width; here that
+       carried the "Search" box off the right edge, and on a phone the
+       centred controls off the screen. As on the project page, the wrapper
+       keeps the column's width and only the table scrolls. */
+    .gs-table-inner > .dataTables_wrapper {
+        min-width: 0;
+    }
+
+    .gs-table-scroll {
+        clear: both;
+        overflow-x: auto;
+    }
+
     .gs-table-wrap.is-ready > .gs-table-placeholder {
         display: none;
     }
@@ -234,21 +268,20 @@
         geneQuery = "{{ gene_query|escapejs }}";
         {% endif %}
         
-        if (geneQuery) {
+        // The server lists every name each searched gene goes by
+        // (gene_ids.highlight_names): a C17orf37 search marks MIEN1 in hg38 rows.
+        const highlightData = document.getElementById('gene-highlight');
+        const geneHighlight = highlightData ? JSON.parse(highlightData.textContent) : [];
+        if (geneHighlight.length) {
+            searchTerms.push(...geneHighlight);
+        } else if (geneQuery) {
             // Split by OR (|) and AND (&) operators and trim whitespace
             const genes = geneQuery.split(/[|&]/).map(g => g.trim().toUpperCase()).filter(g => g);
             searchTerms.push(...genes);
         }
 
-        function wildcardToRegex(pattern) {
-            if (!pattern.includes('*')) return null;
-            const escaped = pattern.split('*').map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
-            return new RegExp('^' + escaped + '$', 'i');
-        }
-
         function geneMatchesTerm(gene, term) {
-            const re = wildcardToRegex(term);
-            return re ? re.test(gene) : gene.toUpperCase() === term;
+            return gene.toUpperCase() === term;
         }
 
         // Store project IDs for each row during DataTables initialization
@@ -416,6 +449,10 @@
                 searching: true,
                 autoWidth: false,
                 responsive: true,
+                // DataTables' default layout ('lfrtip') with the table alone in
+                // a scrolling box: the "Show entries" and "Search" controls stay
+                // in view while a table wider than the column scrolls.
+                dom: "lfr<'gs-table-scroll't>ip",
                 order: [[1, 'asc']], // Default sort by Project Name column (index 1)
                 createdRow: function(row, data, dataIndex) {
                     // Store the project ID for this row so we can access it during filtering
@@ -1155,6 +1192,54 @@
     <!-- Results (Right) -->
 {% if not landing %}
     <div class="results-container" >
+        {% if gene_notes %}
+        {# What each gene term was taken to mean; see gene_ids.gene_resolution_notes. #}
+        <div class="gene-notes" id="gene-notes">
+            {% for note in gene_notes %}
+            <div class="gene-note gene-note-{{ note.outcome }}">
+                {% if note.outcome == 'gene' %}
+                    {% if note.gene.matched %}<b>{{ note.term }}</b> &rarr; {% endif %}
+                    <b>{{ note.gene.symbol }}</b>
+                    {% if note.gene.full_name %}<span class="gene-note-full">{{ note.gene.full_name }}</span> &middot;{% endif %}
+                    <span class="gene-note-id">NCBI Gene <a href="https://www.ncbi.nlm.nih.gov/gene/{{ note.gene.gene_id|stringformat:"d" }}" target="_blank" rel="noopener">{{ note.gene.gene_id|stringformat:"d" }}</a></span>
+                    {% if note.gene.status == 'withdrawn' %}<span class="gene-note-withdrawn">withdrawn from NCBI Gene</span>{% endif %}
+                    {% if note.gene.note %}<span class="gene-note-names">&middot; {{ note.gene.note }}</span>{% endif %}
+                    {% if note.gene.missing_in %}
+                    <div class="gene-note-missing">AmpliconSuite's {{ note.gene.missing_in|join:" and " }} gene annotation does not include {{ note.gene.symbol }}, so {{ note.gene.missing_in|join:" and " }} projects never report it.</div>
+                    {% endif %}
+                    {% for other in note.also_alias_of %}
+                    <div class="gene-note-also">{{ note.term }} is also an alias of <b>{{ other.symbol }}</b>
+                        <span class="gene-note-full">({{ other.full_name }})</span>.
+                        Search <button type="button" class="gene-pick" data-term="{{ note.term }}" data-symbol="{{ other.symbol }}">{{ other.symbol }}</button> to see its results.</div>
+                    {% endfor %}
+                {% elif note.outcome == 'ambiguous' %}
+                    <div><b>{{ note.term }}</b> could mean several genes. Pick one:</div>
+                    <div class="gene-pick-list">
+                    {% for c in note.candidates %}
+                        <button type="button" class="gene-pick" data-term="{{ note.term }}" data-symbol="{{ c.symbol }}">
+                            <b>{{ c.symbol }}</b> <span class="gene-note-full">{{ c.full_name }}</span>
+                            <span class="gene-note-id">Gene {{ c.gene_id|stringformat:"d" }}{% if c.matched_label %}, {{ c.matched_label }} {{ note.term }}{% if c.matched_builds %} ({{ c.matched_builds|join:", " }}){% endif %}{% endif %}{% if c.annotated_in|length == 1 %}, {{ c.annotated_in.0 }} only{% endif %}</span>
+                        </button>
+                    {% endfor %}
+                    </div>
+                {% elif note.outcome == 'non_human_name' %}
+                    <b>{{ note.term }}</b> is not a human gene AmpliconSuite tracks; showing results that name it in other species.
+                {% elif note.outcome == 'wildcard' %}
+                    <b>{{ note.term }}</b>: gene search takes exact gene names, not <code>*</code> wildcards. Type the start of a name in the search box to see the genes it could be.
+                {% elif note.outcome == 'mixed_operators' %}
+                    <b>{{ note.term }}</b> uses both <code>&amp;</code> and <code>|</code>, which cannot be combined.
+                    The genes are listed in the search panel: choose <b>any</b> or <b>all</b> of them there and search again.
+                {% elif note.outcome == 'too_broad' %}
+                    {{ note.message }}
+                {% elif note.outcome == 'name_only' %}
+                    <b>{{ note.term }}</b> has no NCBI Gene record; matched by name only.
+                {% else %}
+                    <b>{{ note.term }}</b> is not tracked by AmpliconSuite annotations.
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
         <ul class="nav nav-tabs" id="search-result-tabs">
             <li class="nav-item">
                 <a class="nav-link" href="#projects-tab" data-bs-toggle="tab">
@@ -1352,4 +1437,33 @@
 {% endif %}
 </div>
 {% csrf_token %}
+{{ gene_highlight|json_script:"gene-highlight" }}
+
+<style>
+    .gene-notes { margin: 0 0 12px; display: flex; flex-direction: column; gap: 6px; }
+    .gene-note { padding: 8px 12px; border-radius: 6px; background: #f3f6fa; border: 1px solid #d8e0ea; font-size: 0.95em; }
+    .gene-note-ambiguous, .gene-note-not_tracked { background: #fff8e6; border-color: #f0d79a; }
+    .gene-note-id, .gene-note-names, .gene-note-full { color: #555; font-size: 0.9em; }
+    .gene-note-withdrawn { color: #8a4b00; font-size: 0.9em; margin-left: 4px; }
+    .gene-note-missing { color: #8a4b00; font-size: 0.9em; margin-top: 2px; }
+    .gene-pick-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .gene-pick { border: 1px solid #9fb3c8; background: #fff; border-radius: 4px; padding: 2px 8px; cursor: pointer; text-align: left; }
+    .gene-pick:hover, .gene-pick:focus { background: #e8f0fb; }
+</style>
+<script>
+// A pick replaces the gene chip it answers and searches again.  The chips are
+// the ones in this page's search panel: the header's search modal holds a
+// second form with the same ids, and it comes first in the page.
+document.querySelectorAll('.gene-pick').forEach(function (button) {
+    button.addEventListener('click', function () {
+        var form = document.querySelector('.search-box form#searchForm');
+        if (!form) { return; }
+        var term = button.dataset.term.toUpperCase(), symbol = button.dataset.symbol;
+        form.querySelectorAll('input[name="gene"]').forEach(function (chip) {
+            if (chip.value.trim().toUpperCase() === term) { chip.value = symbol; }
+        });
+        form.submit();
+    });
+});
+</script>
 {% endblock %}

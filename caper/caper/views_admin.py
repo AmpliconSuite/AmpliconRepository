@@ -32,6 +32,7 @@ import boto3
 
 from bson.objectid import ObjectId
 
+from .email_contact import contact_context, reply_to
 from . import storage_stats
 from .account_deletion import RELEASE, plan_account_deletion, summarize
 from .forms import FeaturedProjectForm, DeletedProjectForm, SendEmailForm
@@ -493,6 +494,7 @@ def admin_sendemail(request):
         # add details for the template
         form_dict['SITE_TITLE'] = settings.SITE_TITLE
         form_dict['SITE_URL'] = settings.SITE_URL
+        form_dict.update(contact_context())
         html_message = render_to_string('contacts/mail_template.html', form_dict)
         plain_message = strip_tags(html_message)
 
@@ -502,7 +504,7 @@ def admin_sendemail(request):
             settings.EMAIL_HOST_USER,
             [to],
             [cc],
-            reply_to=[settings.EMAIL_HOST_USER]
+            reply_to=reply_to()
         )
         email.content_subtype = "html"
         email.send(fail_silently=False)

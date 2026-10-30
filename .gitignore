@@ -31,3 +31,4 @@ caper/caper.sqlite3
 CLAUDE.md
 # co-amplification edge CSVs, written beside the neo4j cache (caper/coamp_edges.py)
 /coamp_edges/
+caper/gene_map/.sources/

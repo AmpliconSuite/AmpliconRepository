@@ -158,14 +158,14 @@ class TestGeneSearchTemplateCost:
             'private': 'public',
             'delete': False, 'current': True, 'FINISHED?': True,
             'sample_count': 1,
-            'Oncogenes': ['GSCOSTGENE'],
-            'runs': {'GS_SAMPLE': [_row('GS_SAMPLE', oncogenes=['GSCOSTGENE'])]},
+            'Oncogenes': ['OR4F5'],
+            'runs': {'GS_SAMPLE': [_row('GS_SAMPLE', oncogenes=['OR4F5'])]},
         }
         inserted = mongo_collection.insert_one(doc)
         project_id = str(inserted.inserted_id)
         try:
             request = request_factory.post('/search_results/',
-                                           {'genequery': 'GSCOSTGENE'})
+                                           {'genequery': 'OR4F5'})
             request.user = test_user
             response = search_results(request)
             assert response.status_code == 200, response.status_code

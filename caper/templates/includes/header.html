@@ -226,11 +226,12 @@
     <div class="modal-background"></div>
     <div class="modal-content">
         <div class="box">
-            {% include "includes/searchbox.html" %}
+            {% include "includes/searchbox.html" with id_prefix="modal-" %}
         </div>
     </div>
     <button class="modal-close is-large" aria-label="close"></button>
 </div>
+{% include 'includes/gene_autocomplete.html' %}
 
 
 <script>

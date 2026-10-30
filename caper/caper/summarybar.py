@@ -3,15 +3,24 @@ import plotly.graph_objects as go
 import logging
 
 
+# Legacy classification names and their canonical equivalents, so that
+# mixed-vintage projects are counted correctly rather than split into two bars.
+# The project page's sample filter applies the same mapping (sample_table.py):
+# a click on a bar must find the samples that bar counted.
+LEGACY_CLASSIFICATION_NAMES = {
+    'Linear amplification': 'Linear',
+    'Complex non-cyclic': 'Complex-non-cyclic',
+}
+
+
+def canonical_classification(name):
+    return LEGACY_CLASSIFICATION_NAMES.get(name, name)
+
+
 def summarybar(sample, fa_cmap):
     df = pd.DataFrame(sample)
 
-    # Normalise legacy classification names to their canonical equivalents so
-    # mixed-vintage projects are counted correctly rather than split into two bars.
-    df['Classification'] = df['Classification'].replace({
-        'Linear amplification': 'Linear',
-        'Complex non-cyclic': 'Complex-non-cyclic',
-    })
+    df['Classification'] = df['Classification'].replace(LEGACY_CLASSIFICATION_NAMES)
 
     # Get unique samples and their classifications
     sample_classifications = df.groupby('Sample_name')['Classification'].apply(lambda x: set(x)).reset_index()
@@ -70,8 +79,11 @@ def summarybar(sample, fa_cmap):
             marker_color=fa_cmap.get(row['Classification'], '#808080'),
             text=[f"{row['Percentage']}% ({row['Sample_count']})"],
             textposition=text_position,
+            # The project page filters its sample table on a click; see
+            # project.html. Saying so here is the only place a visitor learns it.
             hovertemplate=f"<b>{row['Classification']}</b><br>" +
-                          f"{row['Sample_count']} samples ({row['Percentage']}%)<extra></extra>"
+                          f"{row['Sample_count']} samples ({row['Percentage']}%)<br>" +
+                          "<i>Click to list these samples</i><extra></extra>"
         ))
 
     fig.update_layout(

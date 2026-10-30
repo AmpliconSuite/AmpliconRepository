@@ -14,6 +14,12 @@ from urllib.parse import quote
 from .background_tasks import _thread_executor, get_background_task_status
 from . import version_purge
 from .canonical import project_canonical_url, sample_canonical_url
+from .email_contact import contact_footer_text, reply_to
+from .api_features import FeatureQueryError
+from .gene_ids import (BLOCKING_OUTCOMES, describe_gene_request, filter_resolution,
+                       filter_universe, gene_chip_title, gene_resolution_notes,
+                       gene_search_request, highlight_names, suggest_genes)
+from .feature_index import gene_term_clause
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
@@ -148,6 +154,7 @@ import shutil
 import caper.sample_plot as sample_plot
 import caper.StackedBarChart as stacked_bar
 import caper.summarybar as summarybar
+from .sample_table import sample_table_rows
 from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import TemporaryUploadedFile
 
@@ -217,8 +224,10 @@ def samples_to_dict(form_file):
 
 
 
+# Sorted, not list(set): a set's order changes with the process's hash seed, so
+# two uploads of the same data stored the lists in different orders (#677).
 def get_project_oncogenes(runs):
-    return list({
+    return sorted({
         gene.strip().replace("'", '')
         for sample in runs
         for feature in runs[sample]
@@ -229,7 +238,7 @@ def get_project_oncogenes(runs):
 
 
 def get_project_classifications(runs):
-    return list({
+    return sorted({
         feature['Classification'].upper()
         for sample in runs
         for feature in runs[sample]
@@ -1182,6 +1191,8 @@ def project_page(request, project_name, message=''):
         'project': project,
         'metadata_summary': metadata_summary,
         'sample_data': sample_data,
+        'sample_table_rows': sample_table_rows(sample_data, samples),
+        'gene_filter_universe': filter_universe(reference_genome, samples),
         'reference_genome': reference_genome,
         'stackedbar_graph': stacked_bar_plot,
         'summarybar': pc_fig,
@@ -1371,17 +1382,18 @@ def project_download(request, project_name):
     logging.info('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
     try:
         file_location = find_one('*.tar.gz', project_data_path)
-        if not file_location:
+        if file_location:
+            source, filename = open(file_location, "rb"), file_location.split('/')[-1]
+        elif project.get('tarfile'):
+            # The extracted copy is scratch, and the temp-dir reaper removes
+            # it; the archive itself is in GridFS, as the S3 branch above
+            # already assumes when it fills the bucket.
+            source, filename = fs_handle.get(ObjectId(project['tarfile'])), f"{project['_id']}.tar.gz"
+        else:
             # Project has no samples yet (empty project) – nothing to download
-            logging.info(f"==== XXX project {project_name} has no local tar.gz yet (empty project), returning 404")
+            logging.info(f"==== XXX project {project_name} has no tarfile yet (empty project), returning 404")
             return HttpResponseNotFound('Project has no samples yet.')
-        response = StreamingHttpResponse(
-        FileWrapper(
-            open(file_location, "rb"),
-            chunk_size,
-            )
-        )
-        filename = file_location.split('/')[-1]
+        response = StreamingHttpResponse(FileWrapper(source, chunk_size))
         response['Content-Type'] = f'application/tar+gzip'
         response['Content-Disposition'] = f'attachment; filename={filename}'
         # clear_tmp()
@@ -2566,13 +2578,15 @@ This link will expire in 7 days.
 Best regards,
 {settings.SITE_TITLE} Team
 {settings.SITE_URL}
+
+{contact_footer_text()}
 """
         email = EmailMessage(
             subject,
             email_body,
             settings.EMAIL_HOST_USER,
             [user_email],
-            reply_to=[settings.EMAIL_HOST_USER]
+            reply_to=reply_to()
         )
         email.send(fail_silently=False)
 
@@ -7214,8 +7228,14 @@ def search_results(request):
     """Handles user queries and renders search results."""
 
     if request.method == "POST":
-        # Extract search parameters from POST request
-        gene_search = _search_field(request.POST.get("genequery", ""))
+        # Extract search parameters from POST request.  Genes arrive as text
+        # from the home box and as one ``gene`` per chip from the Advanced
+        # search; gene_search_request reads both into one request.
+        gene_request = gene_search_request(
+            genes=[_search_field(g) for g in request.POST.getlist("gene")],
+            genequery=_search_field(request.POST.get("genequery", "")),
+            match=request.POST.get("gene_match"), scope=request.POST.get("gene_scope"))
+        gene_search = gene_request["query"]
         project_name = _search_field(request.POST.get("project_name", ""))
 
         # The home page's Projects scope asks which projects match a name, so it
@@ -7268,6 +7288,11 @@ def search_results(request):
         # the checkboxes are restored exactly as submitted.
         user_query = {
             "genequery": gene_search,
+            "gene_terms": gene_request["terms"],
+            "gene_chips": [{"term": term, "title": gene_chip_title(term)}
+                           for term in gene_request["terms"]],
+            "gene_match": gene_request["match"],
+            "gene_scope": gene_request["scope"],
             "project_name": project_name,
             "classquery": original_amp_classifications,
             "include_no_amp": original_include_no_amp,
@@ -7277,18 +7302,38 @@ def search_results(request):
             "search_submitted": True,
         }
 
+        # What each gene term means (gene_ids.resolve_gene_term). A term that
+        # names several genes, or nothing AmpliconSuite annotates, is not
+        # searched: the page says which genes it could mean, and the visitor
+        # picks one (Jens, 2026-10-29). The others are searched by Gene ID.
+        gene_notes = gene_resolution_notes(
+            gene_search, resolve=lambda term: gene_term_clause(term)[1])
+        if any(note['outcome'] in BLOCKING_OUTCOMES for note in gene_notes):
+            results = {'public_projects': [], 'private_projects': [],
+                       'public_sample_data': [], 'private_sample_data': []}
+        else:
+            results = None
+
         # Delegate to the shared search helper
-        results = perform_search(
-            genequery=gene_search.upper() if gene_search else None,
-            project_name=project_name.upper() if project_name else None,
-            classquery=classifications.upper() if classifications else None,
-            metadata_sample_name=sample_name.upper() if sample_name else None,
-            metadata_sample_type=sample_type.upper() if sample_type else None,
-            metadata_cancer_type=cancer_tissue.upper() if cancer_tissue else None,
-            include_no_amp=include_no_amp,
-            no_filter=no_filter,
-            user=request.user,
-        )
+        try:
+            results = results or perform_search(
+                gene_same_sample=gene_request["same_sample"],
+                genequery=gene_search.upper() if gene_search else None,
+                project_name=project_name.upper() if project_name else None,
+                classquery=classifications.upper() if classifications else None,
+                metadata_sample_name=sample_name.upper() if sample_name else None,
+                metadata_sample_type=sample_type.upper() if sample_type else None,
+                metadata_cancer_type=cancer_tissue.upper() if cancer_tissue else None,
+                include_no_amp=include_no_amp,
+                no_filter=no_filter,
+                user=request.user,
+            )
+        except FeatureQueryError as error:
+            # The same-sample pass refuses a gene combination that matches more
+            # samples than it will intersect (api_features.MAX_AND_SAMPLE_KEYS).
+            gene_notes.append({'outcome': 'too_broad', 'message': error.message})
+            results = {'public_projects': [], 'private_projects': [],
+                       'public_sample_data': [], 'private_sample_data': []}
 
         public_projects = results["public_projects"]
         private_projects = results["private_projects"]
@@ -7330,7 +7375,7 @@ def search_results(request):
         private_samples_count = len({s.get('Sample_name') for s in private_sample_data})
 
         query_info = {
-            "Gene Name": gene_search,
+            "Gene Name": describe_gene_request(gene_request),
             "Project Name": project_name,
             "Classification": classifications,
             "Sample Name": sample_name,
@@ -7351,6 +7396,8 @@ def search_results(request):
             "private_projects_count": private_projects_count,
             "public_samples_count": public_samples_count,
             "private_samples_count": private_samples_count,
+            "gene_notes": gene_notes,
+            "gene_highlight": highlight_names(gene_search) if gene_search else [],
         })
 
     else:
@@ -7402,6 +7449,30 @@ def check_ec3d_available(project_name, sample_name):
     logging.debug(f"ec3d_path is {ec3d_path}")
 
     return os.path.exists(ec3d_path)
+
+
+def gene_suggest(request):
+    """Autocomplete for the gene search boxes: ``GET ?q=`` -> up to 10 genes.
+
+    Answered from the gene map held in memory (gene_ids.suggest_genes), so it
+    costs no database query. Suggestions begin at 3 characters; below that only
+    an exact name is offered (AR, ALK). Public: gene names are not private.
+    """
+    query = request.GET.get('q', '')[:64]
+    return JsonResponse({'query': query, 'suggestions': suggest_genes(query)})
+
+
+def gene_resolve(request):
+    """The project page's filter box: ``GET ?q=&universe=`` -> what the name means.
+
+    Asked only for a name the project's own rows do not hold. ``names`` is what
+    AC calls the gene in that build (``universe`` from gene_ids.filter_universe),
+    so the page can match its rows on them. In memory like gene_suggest, and
+    public for the same reason.
+    """
+    term = request.GET.get('q', '')[:64]
+    universe = request.GET.get('universe', 'any')
+    return JsonResponse(filter_resolution(term, universe))
 
 
 @login_required

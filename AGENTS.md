@@ -167,13 +167,24 @@ docker compose -f docker-compose-dev.yml up -d
 docker compose -f docker-compose-dev.yml down
 ```
 
-### Create a project from CLI
+### Create a project from the command line (local)
 ```bash
-source caper/config.sh && cd caper && \
-  python manage.py create_project <project_name> <username> <path_or_url.tar.gz> \
-    --visibility public --description "My project"
+set -a; source caper/config.sh; set +a
+LOCAL_SITE_PASSWORD=... python local_upload_project.py --user <username> \
+    --name "My project" --description "..." --visibility public \
+    [--metadata samples.csv] results.tar.gz
 ```
-Accepts local paths, HTTP URLs, or `s3://` URIs.
+Signs in through the site and submits the create-project form the way the
+page's own upload script does, so the running server builds the project exactly
+as for a browser upload, then waits until aggregation finishes. Local hosts only.
+Checked 2026-10-29: a GBM39 project and a 13-feature Waddell project, each made
+both ways, had identical documents and index rows apart from IDs, names and
+times.
+
+`manage.py create_project` (local path, HTTP URL or `s3://` URI) calls the view
+inside its own process, which exits before the background aggregation finishes.
+Projects made that way end up `aggregation_failed`, with no `AA_PNG_file` on
+their features.
 
 ### Clean up local MongoDB / GridFS data
 

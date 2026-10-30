@@ -1,0 +1,267 @@
+{% comment %}
+Gene autocomplete for a search box, and the gene chips of the Advanced search
+form. header.html includes this once on every page and sets up each search
+form's gene box (the header's Advanced modal, and the results page's own copy
+of that form); other boxes call
+GeneAutocomplete.attach(input, {active: function () { return true; }}).
+
+It completes the term being typed -- the text after the last & or | -- from
+/api/gene-suggest/, which starts suggesting at 3 characters and before that
+offers only an exact name (AR, ALK). Each entry shows the gene's NCBI symbol,
+full name and Gene ID, and the name the text matched when that is not the
+symbol (an alias, a former symbol, AmpliconSuite's own name for it, with the
+builds it is used in). In a plain box, choosing one writes the symbol into the
+box and submits the form; in the chip box it adds a chip, so a second gene can
+follow. Gene search has no wildcards; a term holding * gets no suggestions.
+{% endcomment %}
+<style>
+    .gene-ac-list { position: absolute; z-index: 2100; margin: 0; padding: 4px 0; list-style: none;
+        background: #fff; border: 1px solid #c5d0dc; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        max-height: 360px; overflow-y: auto; font-size: 14px; text-align: left; }
+    .gene-ac-item { padding: 6px 12px; cursor: pointer; line-height: 1.3; }
+    .gene-ac-item[aria-selected="true"], .gene-ac-item:hover { background: #e8f0fb; }
+    .gene-ac-symbol { font-weight: 600; }
+    .gene-ac-full { color: #444; }
+    .gene-ac-meta { color: #666; font-size: 12px; }
+    .gene-ac-withdrawn { color: #8a4b00; }
+    .gene-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; height: auto; min-height: 38px; cursor: text; }
+    .gene-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 8px; border-radius: 12px;
+        background: #e8f0fb; border: 1px solid #b8cbe4; font-size: 0.9em; font-weight: 600; }
+    .gene-chip-remove { border: 0; background: none; padding: 0 4px; line-height: 1; color: #555; cursor: pointer; font-size: 1.1em; }
+    .gene-chip-remove:hover, .gene-chip-remove:focus { color: #000; }
+    .gene-chip-input { flex: 1 1 8em; min-width: 8em; border: 0; outline: 0; padding: 2px; background: transparent; }
+    .gene-match { margin-top: 6px; font-size: 0.9em; }
+    .gene-option { margin: 0 12px 0 0; font-weight: normal; cursor: pointer; }
+    .gene-option input { margin-right: 3px; }
+    .gene-scope { margin: 2px 0 0 1.2em; }
+</style>
+<script>
+const GeneAutocomplete = (function () {
+    const URL = "{% url 'gene_suggest' %}";
+
+    function escapeHtml(text) {
+        return String(text).replace(/[&<>"']/g, function (c) {
+            return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+        });
+    }
+
+    // The term being typed: everything after the last operator.
+    function currentTerm(value) {
+        const cut = Math.max(value.lastIndexOf('&'), value.lastIndexOf('|'));
+        return {prefix: value.slice(0, cut + 1), term: value.slice(cut + 1).trim()};
+    }
+
+    function attach(input, options) {
+        const active = (options && options.active) || function () { return true; };
+        const list = document.createElement('ul');
+        list.className = 'gene-ac-list';
+        list.id = (input.id || 'gene') + '-suggestions';
+        list.setAttribute('role', 'listbox');
+        list.hidden = true;
+        document.body.appendChild(list);
+        input.setAttribute('autocomplete', 'off');
+        input.setAttribute('aria-autocomplete', 'list');
+        input.setAttribute('aria-controls', list.id);
+
+        let items = [], selected = -1, timer = null, sequence = 0;
+
+        function place() {
+            const box = input.getBoundingClientRect();
+            list.style.left = (box.left + window.scrollX) + 'px';
+            list.style.top = (box.bottom + window.scrollY + 2) + 'px';
+            list.style.minWidth = box.width + 'px';
+        }
+
+        function close() {
+            list.hidden = true;
+            items = [];
+            selected = -1;
+            input.setAttribute('aria-expanded', 'false');
+        }
+
+        function highlight(index) {
+            selected = index;
+            Array.prototype.forEach.call(list.children, function (li, i) {
+                li.setAttribute('aria-selected', i === index ? 'true' : 'false');
+                if (i === index) { li.scrollIntoView({block: 'nearest'}); }
+            });
+        }
+
+        function choose(index) {
+            const entry = items[index];
+            if (!entry) { return; }
+            if (options && options.onChoose) { close(); options.onChoose(entry); return; }
+            const parts = currentTerm(input.value);
+            input.value = parts.prefix + entry.symbol;
+            close();
+            // requestSubmit, not submit: it runs the form's own submit handlers.
+            if (input.form) { input.form.requestSubmit(); } else { input.focus(); }
+        }
+
+        function render(suggestions) {
+            items = suggestions;
+            list.innerHTML = '';
+            if (!suggestions.length) { close(); return; }
+            suggestions.forEach(function (s, i) {
+                const li = document.createElement('li');
+                li.className = 'gene-ac-item';
+                li.setAttribute('role', 'option');
+                const builds = s.matched_builds ? ' (' + s.matched_builds.map(escapeHtml).join(', ') + ')' : '';
+                const matched = s.matched ? ' &middot; ' + escapeHtml(s.matched_label) + ' ' + escapeHtml(s.matched) + builds : '';
+                const only = s.annotated_in && s.annotated_in.length === 1 ? ' &middot; ' + escapeHtml(s.annotated_in[0]) + ' only' : '';
+                const withdrawn = s.status === 'withdrawn' ? ' <span class="gene-ac-withdrawn">withdrawn from NCBI Gene</span>' : '';
+                li.innerHTML = '<span class="gene-ac-symbol">' + escapeHtml(s.symbol) + '</span> '
+                    + '<span class="gene-ac-full">' + escapeHtml(s.full_name || '') + '</span>'
+                    + '<div class="gene-ac-meta">NCBI Gene ' + escapeHtml(s.gene_id) + matched + only + withdrawn + '</div>';
+                // mousedown, not click: a click arrives after the input's blur has closed the list.
+                li.addEventListener('mousedown', function (event) { event.preventDefault(); choose(i); });
+                list.appendChild(li);
+            });
+            place();
+            list.hidden = false;
+            input.setAttribute('aria-expanded', 'true');
+            highlight(-1);
+        }
+
+        input.addEventListener('input', function () {
+            clearTimeout(timer);
+            const term = currentTerm(input.value).term;
+            if (!active() || !term || term.indexOf('*') >= 0) { close(); return; }
+            timer = setTimeout(function () {
+                const mine = ++sequence;
+                fetch(URL + '?q=' + encodeURIComponent(term), {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+                    .then(function (response) { return response.ok ? response.json() : {suggestions: []}; })
+                    .then(function (data) { if (mine === sequence) { render(data.suggestions || []); } })
+                    .catch(function () { close(); });
+            }, 120);
+        });
+
+        input.addEventListener('keydown', function (event) {
+            if (list.hidden) { return; }
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                highlight(Math.min(selected + 1, items.length - 1));
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                highlight(Math.max(selected - 1, 0));
+            } else if (event.key === 'Enter' && selected >= 0) {
+                event.preventDefault();
+                choose(selected);
+            } else if (event.key === 'Escape') {
+                event.stopPropagation();   // close the list, not the search modal around it
+                close();
+            }
+        });
+
+        input.addEventListener('blur', close);
+        window.addEventListener('resize', function () { if (!list.hidden) { place(); } });
+        window.addEventListener('scroll', function () { if (!list.hidden) { place(); } }, true);
+        return {close: close};
+    }
+
+    return {attach: attach};
+})();
+
+// The Advanced search's gene box: one chip (and one hidden ``gene`` input) per
+// gene, and the any/all controls shown once there are two.  Text typed or
+// pasted with a comma, & or | is split into chips; text left in the box when
+// the form is submitted becomes chips too, so nothing typed is lost.
+const GeneChips = (function () {
+    function setup(form) {
+        const box = form.querySelector('[data-gene-chips]');
+        const input = box.querySelector('.gene-chip-input');
+        const match = form.querySelector('.gene-match');
+        const scope = form.querySelector('.gene-scope');
+
+        function chips() { return Array.prototype.slice.call(box.querySelectorAll('.gene-chip')); }
+
+        function refresh() {
+            const all = form.querySelector('input[name="gene_match"][value="all"]');
+            match.hidden = chips().length < 2;
+            scope.hidden = !all.checked;
+            input.placeholder = chips().length ? 'Add a gene' : 'e.g. MYC';
+        }
+
+        function add(term, title) {
+            term = term.trim();
+            if (!term || chips().some(function (c) { return c.dataset.term.toUpperCase() === term.toUpperCase(); })) { return; }
+            const chip = document.createElement('span');
+            chip.className = 'gene-chip';
+            chip.dataset.term = term;
+            if (title) { chip.title = title; }
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'gene';
+            hidden.value = term;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'gene-chip-remove';
+            remove.setAttribute('aria-label', 'Remove ' + term);
+            remove.innerHTML = '&times;';
+            chip.appendChild(hidden);
+            chip.appendChild(document.createTextNode(term));
+            chip.appendChild(remove);
+            box.insertBefore(chip, input);
+        }
+
+        // Text in the box, as chips.  Home-box style text keeps its meaning
+        // when it starts the list: MYC&EGFR is all on one amplicon.
+        function takeTyped() {
+            const text = input.value;
+            if (!text.trim()) { return; }
+            if (!chips().length && (text.indexOf('&') >= 0) !== (text.indexOf('|') >= 0)) {
+                form.querySelector('input[name="gene_match"][value="' + (text.indexOf('&') >= 0 ? 'all' : 'any') + '"]').checked = true;
+                form.querySelector('input[name="gene_scope"][value="amplicon"]').checked = true;
+            }
+            text.split(/[,&|]/).forEach(function (term) { add(term); });
+            input.value = '';
+            refresh();
+        }
+
+        input.addEventListener('input', function () {
+            if (/[,&|]/.test(input.value)) { takeTyped(); }
+        });
+        input.addEventListener('keydown', function (event) {
+            if (event.key === 'Backspace' && !input.value && chips().length) {
+                chips().pop().remove();
+                refresh();
+            }
+        });
+        box.addEventListener('click', function (event) {
+            const remove = event.target.closest('.gene-chip-remove');
+            if (remove) {
+                remove.parentNode.remove();
+                refresh();
+            }
+            input.focus();
+        });
+        const label = form.querySelector('[data-gene-label]');
+        if (label) { label.addEventListener('click', function () { input.focus(); }); }
+        form.querySelectorAll('input[name="gene_match"]').forEach(function (radio) {
+            radio.addEventListener('change', refresh);
+        });
+        form.addEventListener('submit', takeTyped);
+
+        GeneAutocomplete.attach(input, {onChoose: function (entry) {
+            add(entry.symbol, entry.symbol + (entry.full_name ? ', ' + entry.full_name : '') + ' (NCBI Gene ' + entry.gene_id + ')');
+            input.value = '';
+            refresh();
+            input.focus();
+        }});
+        refresh();
+    }
+
+    return {setup: setup};
+})();
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('form#searchForm').forEach(function (form) {
+        if (form.querySelector('[data-gene-chips]')) {
+            GeneChips.setup(form);
+        } else {
+            const input = form.querySelector('input[name="genequery"]');
+            if (input) { GeneAutocomplete.attach(input); }
+        }
+    });
+});
+</script>

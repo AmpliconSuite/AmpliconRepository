@@ -69,11 +69,13 @@ the corpus holds both, so one gene reaches users under two names --
 ``C17ORF37`` on 283 feature rows and ``MIEN1``, the same gene, on 160;
 ``MYCL1`` on 59 and ``MYCL`` on 56.
 
-There is deliberately no alias map.  Reconciling symbol histories is the
-caller's to do, and a half-maintained mapping would be worse than none.  What
-this module owes them instead is the evidence that a fence exists: the build is
-on every row, so a result set can be faceted by it and a query that returns
-hg38 rows only can be *seen* to have returned hg38 rows only.
+Since schema 7 the fence has a gate: every row also carries ``gene_ids``,
+NCBI Gene IDs from a committed map of AC's gene names per build
+(``gene_ids.py``, built by ``build_gene_map.py``).  The map is built from
+fixed sources on a schedule rather than maintained by hand, which was the
+objection to an alias map here before: C17orf37 in an hg19 row and MIEN1 in an
+hg38 row are both 84299.  ``genes`` is kept as it was, so a name the map
+cannot resolve is still found by its spelling.
 """
 
 import datetime
@@ -83,6 +85,7 @@ import json
 from django.core.cache import cache
 
 from .classifications import is_no_amplicon
+from .gene_ids import gene_id_of, gene_ids_of, gene_map_version, resolve_gene_term, universe_of
 from .project_status import LIVE, status_query
 from .utils import (
     collection_handle_primary,
@@ -100,7 +103,7 @@ from .visibility import (
 # what it emits.  The version is folded into every digest, so a builder change
 # invalidates every stored row and the drift check reports the whole corpus as
 # stale -- which is correct: it is stale, against the new builder.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7   # 7: gene_ids on every row (NCBI Gene IDs from caper/gene_map)
 
 FEATURE_INDEX_COLLECTION = 'feature_index'
 SAMPLE_INDEX_COLLECTION = 'sample_index'
@@ -385,6 +388,7 @@ def feature_rows_for_project(project):
                 feature_id='',
                 classification='NA',
                 genes=[],
+                gene_ids=[],
                 genes_display=[],
                 oncogenes=[],
                 oncogenes_display=[],
@@ -413,6 +417,8 @@ def feature_rows_for_project(project):
             classification = str(get('Classification') or '')
             if is_no_amplicon(classification):
                 classification = 'NA'
+            reference_build = normalize_reference(get('Reference_version', 'Reference version'))
+            genes = _gene_list(feature)
             rows.append(_row(
                 project_id=project_id,
                 project_name=project_name,
@@ -423,12 +429,17 @@ def feature_rows_for_project(project):
                 sample_name=sample_name_of(feature, run_key),
                 feature_id=str(get('Feature_ID', 'Feature ID') or ''),
                 classification=classification,
-                genes=_gene_list(feature),
+                genes=genes,
+                # The same genes as NCBI Gene IDs, through the map of AC's
+                # gene names for this build (gene_ids.py). A name the map does
+                # not know contributes nothing here and stays searchable by
+                # name through 'genes'.
+                gene_ids=gene_ids_of(reference_build, genes),
                 genes_display=_gene_display_list(feature),
                 oncogenes=_oncogene_list(feature),
                 oncogenes_display=_gene_display_list(feature, 'Oncogenes'),
                 locations=_location_list(feature),
-                reference_build=normalize_reference(get('Reference_version', 'Reference version')),
+                reference_build=reference_build,
                 numbers=_feature_numbers(feature),
                 # Stripped, because that is how the values are displayed and
                 # how the existing filters compare them: _term_mask() calls
@@ -550,7 +561,7 @@ def sample_slice_from_index(project_id, sample_name, neighbours=True):
 
 
 def _row(*, project_id, project_name, project_sample_count, visibility, members, run_key, sample_name,
-         feature_id, classification, genes, genes_display, oncogenes,
+         feature_id, classification, genes, gene_ids, genes_display, oncogenes,
          oncogenes_display, locations, reference_build, numbers, metadata,
          extra_metadata, has_amplicon):
     """Assemble one index document.
@@ -591,6 +602,10 @@ def _row(*, project_id, project_name, project_sample_count, visibility, members,
         # upper-case and showing C17ORF37 for C17orf37 would be showing a name
         # that does not exist.
         'genes': genes,
+        # NCBI Gene IDs for 'genes', so one search reaches a gene under every
+        # name AC used for it: C17orf37 in hg19 results and MIEN1 in hg38 ones
+        # are both 84299. Ints, deduplicated, in the order of 'genes'.
+        'gene_ids': gene_ids,
         'genes_display': genes_display,
         'oncogenes': oncogenes,
         'oncogenes_display': oncogenes_display,
@@ -605,6 +620,35 @@ def _row(*, project_id, project_name, project_sample_count, visibility, members,
         'extra_metadata': extra_metadata,
         'schema_version': SCHEMA_VERSION,
     }
+
+
+# The reference builds the gene map covers (gene_ids.UNIVERSE_OF_BUILD, as
+# normalised on the rows).  Rows on any other build -- mm10 today -- carry no
+# gene_ids and are matched on spelling.
+HUMAN_BUILDS = ('hg19', 'hg38')
+
+
+def gene_term_clause(term):
+    """``(clause or None, resolution)`` for one searched gene term.
+
+    One gene: its Gene ID, which reaches every name AC gave it in human
+    results, plus the typed spelling on non-human rows, which have no IDs yet
+    -- so a MYC search still finds the mouse MYC samples it found before.  An
+    AC name with no Gene ID: its spelling.  Text that names nothing human but
+    appears in non-human results (a mouse-only gene): its spelling there, and
+    the resolution says so.  Otherwise None: the term is ambiguous or names
+    nothing AmpliconSuite annotates, and the caller decides what to say.
+    """
+    resolution = resolve_gene_term(term)
+    upper = normalize_gene(term)
+    non_human = {'genes': upper, 'reference_build': {'$nin': list(HUMAN_BUILDS)}}
+    if resolution['outcome'] == 'gene':
+        return {'$or': [{'gene_ids': resolution['gene']['gene_id']}, non_human]}, resolution
+    if resolution['outcome'] == 'name_only':
+        return {'genes': upper}, resolution
+    if resolution['outcome'] == 'not_tracked' and feature_index_handle.find_one(non_human, {'_id': 1}):
+        return non_human, {'outcome': 'non_human_name', 'term': resolution['term'], 'name': upper}
+    return None, resolution
 
 
 def coamp_summary_for_project(project):
@@ -686,6 +730,10 @@ def project_digest(project):
     """
     source = {
         'schema_version': SCHEMA_VERSION,
+        # A rebuilt gene map can change gene_ids without the project changing,
+        # so its version is an input too: after a refresh every project reads
+        # as stale until reindexed, which is true.
+        'gene_map': gene_map_version(),
         'project_name': project.get('project_name'),
         # The normalised value, not the raw one: a document whose 'private'
         # is rewritten from True to 'private' means the same thing and
@@ -791,6 +839,7 @@ def ensure_feature_index_indexes():
       path to fall back on.
     """
     feature_index_handle.create_index([('genes', 1), ('classification', 1)], name='ix_genes_class')
+    feature_index_handle.create_index([('gene_ids', 1), ('classification', 1)], name='ix_gene_ids_class')
     feature_index_handle.create_index([('project_id', 1)], name='ix_project')
     feature_index_handle.create_index([('sample_name', 1)], name='ix_sample_name')
     feature_index_handle.create_index([('sample_key', 1)], name='ix_sample_key')
@@ -845,11 +894,41 @@ def index_project(project):
 
 
 def unindex_project(project_id):
-    """Drop one project's rows and its manifest entry.  Returns rows removed."""
+    """Drop one project's rows, its names and its manifest entry.  Returns rows removed.
+
+    The names were left behind until 2026-10-30: prod then held 2,825
+    search_names rows from 9 deleted projects (measured read-only that day),
+    each one a name a search could still offer that led nowhere.
+    """
     removed = feature_index_handle.delete_many({'project_id': project_id}).deleted_count
     sample_index_handle.delete_many({'project_id': project_id})
+    search_names_handle.delete_many({'project_id': project_id})
     manifest_handle.delete_one({'project_id': project_id})
     return removed
+
+
+def _PROJECT_KEYED_COLLECTIONS():
+    return (feature_index_handle, sample_index_handle, search_names_handle)
+
+
+def stray_rows():
+    """Rows in the project-keyed derived collections whose project has no manifest entry.
+
+    ``feature_index_drift`` compares projects with the manifest, so a row
+    written around ``index_project`` -- a test fixture inserted directly, an
+    interrupted run -- is invisible to it, and a search serves it.  This counts
+    them; a full rebuild removes them.
+    """
+    indexed = [entry['project_id'] for entry in manifest_handle.find({}, {'project_id': 1})]
+    return {handle.name: handle.count_documents({'project_id': {'$nin': indexed}})
+            for handle in _PROJECT_KEYED_COLLECTIONS()}
+
+
+def remove_stray_rows(indexed_project_ids):
+    """Delete project-keyed derived rows of any project not in ``indexed_project_ids``."""
+    keep = list(indexed_project_ids)
+    return {handle.name: handle.delete_many({'project_id': {'$nin': keep}}).deleted_count
+            for handle in _PROJECT_KEYED_COLLECTIONS()}
 
 
 def rebuild_feature_index(limit=None, progress=None):
@@ -883,6 +962,12 @@ def rebuild_feature_index(limit=None, progress=None):
         for stale in list(manifest_handle.find({'project_id': {'$nin': list(projects_seen)}},
                                                {'project_id': 1})):
             unindex_project(stale['project_id'])
+        # Rows of projects with no manifest entry at all: written around
+        # index_project, so nothing above can see them.  On dev 2026-10-29 that
+        # was 13 feature rows, 17 sample rows and 14 names left by an
+        # interrupted test run, served in dev's public search as a project
+        # called 'Pub'.
+        remove_stray_rows(projects_seen)
 
     return {'projects': len(projects_seen), 'rows': rows_written}
 
@@ -907,11 +992,12 @@ def feature_index_drift():
     ``names_missing``  in the index, not in the name list  (a name search finds nothing)
     ``names_extra``    in the name list, not in the index  (harmless; resolves to no rows)
 
-    three lists of gene symbols from ``gene_catalog_drift``:
+    four lists of gene symbols from ``gene_catalog_drift``:
 
-    ``genes_missing``  in the index, not in the catalogue  (nothing reads it; a hazard)
-    ``genes_extra``    in the catalogue, not in the index  (likewise)
-    ``genes_changed``  in both, describing it differently  (likewise)
+    ``genes_missing``     in the index, not in the catalogue  (nothing reads it; a hazard)
+    ``genes_extra``       in the catalogue, not in the index  (likewise)
+    ``genes_changed``     in both, describing it differently  (likewise)
+    ``genes_without_id``  human names the gene map cannot resolve  (found by name only)
 
     and ``unchecked``, the derived collections no measurement above covers,
     which should always be empty.
@@ -952,6 +1038,7 @@ def feature_index_drift():
         'indexed': len(indexed),
         **search_name_drift(),
         **gene_catalog_drift(),
+        'stray': stray_rows(),
         'unchecked': unchecked_derived_collections(),
     }
 
@@ -1013,6 +1100,9 @@ def gene_catalog_documents(rows):
                 'symbol': symbol,
                 'is_oncogene': False,
                 'reference_builds': set(),
+                # The NCBI Gene ID(s) this name means, one per build it was
+                # seen under; empty when the gene map does not know the name.
+                'gene_ids': set(),
                 # Where the names came from, carried on every document rather
                 # than written in a doc page that a caller of the API will not
                 # read.
@@ -1023,8 +1113,12 @@ def gene_catalog_documents(rows):
                 entry['is_oncogene'] = True
             if build:
                 entry['reference_builds'].add(build)
+                gene_id = gene_id_of(build, symbol)
+                if gene_id is not None:
+                    entry['gene_ids'].add(gene_id)
     for entry in catalogue.values():
         entry['reference_builds'] = sorted(entry['reference_builds'])
+        entry['gene_ids'] = sorted(entry['gene_ids'])
     return catalogue
 
 
@@ -1038,6 +1132,7 @@ def _gene_signature(document):
     """
     return (bool(document.get('is_oncogene')),
             tuple(document.get('reference_builds') or ()),
+            tuple(document.get('gene_ids') or ()),
             document.get('source'),
             document.get('schema_version'))
 
@@ -1054,13 +1149,22 @@ def gene_catalog_drift():
     live = gene_catalog_documents(feature_index_handle.find({}, GENE_SOURCE_PROJECTION))
     stored = {document['symbol']: document for document in gene_catalog_handle.find(
         {}, {'_id': 0, 'symbol': 1, 'is_oncogene': 1, 'reference_builds': 1,
-             'source': 1, 'schema_version': 1})}
+             'gene_ids': 1, 'source': 1, 'schema_version': 1})}
     return {
         'genes_missing': sorted(set(live) - set(stored)),
         'genes_extra': sorted(set(stored) - set(live)),
         'genes_changed': sorted(
             symbol for symbol in set(live) & set(stored)
             if _gene_signature(live[symbol]) != _gene_signature(stored[symbol])),
+        # Names in human results that the gene map cannot turn into a Gene ID:
+        # outside AC's gene universe for their build, or one of the few that
+        # resolve to no single gene. This is the measurement of "every gene is
+        # searchable by ID". Mouse results are not counted: there is no mouse
+        # map yet.
+        'genes_without_id': sorted(
+            symbol for symbol, entry in live.items()
+            if not entry['gene_ids']
+            and any(universe_of(build) for build in entry['reference_builds'])),
     }
 
 

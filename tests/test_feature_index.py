@@ -356,6 +356,17 @@ def test_and_across_genes_is_per_feature_in_todays_search():
     assert {'MYC', 'EGFR'} <= per_sample['sample_365']
 
 
+def test_the_scan_answers_all_genes_in_one_sample():
+    """The fallback path's "all of them, anywhere in the sample": the rows
+    carrying any of the genes, kept only for samples that carry every one."""
+    from caper.search import _samples_carrying_all
+    project = _project()
+    rows = _samples_carrying_all(_search_rows(project, genequery='MYC|EGFR'), ['MYC', 'EGFR'])
+    assert rows and {row['Sample_name'] for row in rows} == {'sample_365'}
+    assert _samples_carrying_all(_search_rows(project, genequery='MYC|EGFR'),
+                                 ['MYC', 'EGFR', 'NOSUCHGENE']) == []
+
+
 def test_classification_is_stored_verbatim_for_the_class_filter():
     rows = feature_rows_for_project(_project())
     assert {row['classification'] for row in rows} == {'ecDNA', 'BFB', 'NA'}

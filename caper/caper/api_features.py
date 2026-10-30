@@ -55,9 +55,10 @@ from .classifications import (
     NO_AMPLICON_CANONICAL, canonical_classification,
 )
 from .request_url import absolute_url
+from .gene_ids import ambiguous_message, not_tracked_message
 from .feature_index import (
-    REFERENCE_EQUIVALENCE, feature_index_handle, index_access_filter,
-    index_is_usable, normalize_gene,
+    REFERENCE_EQUIVALENCE, feature_index_handle, gene_term_clause,
+    index_access_filter, index_is_usable, normalize_gene,
 )
 
 # A page is capped so that one request cannot ask for the corpus.  500 is not a
@@ -85,7 +86,7 @@ MAX_SAMPLE_NAME_MATCHES = 500
 # response missing the column it was counting on.
 ROW_FIELDS = (
     'project_id', 'project_name', 'sample_name', 'feature_id',
-    'classification', 'genes', 'oncogenes', 'locations', 'reference_build',
+    'classification', 'genes', 'gene_ids', 'oncogenes', 'locations', 'reference_build',
     'feature_max_copy_number', 'feature_median_copy_number',
     'complexity_score', 'captured_interval_length',
     'sample_type', 'cancer_type', 'tissue_of_origin', 'project_url',
@@ -440,27 +441,74 @@ def _build_alias_index():
 _ALIAS_BY_CANONICAL = _build_alias_index()
 
 
+def _gene_term(term):
+    """The row clause for one gene term, or a 400 when it names no single gene.
+
+    A term is resolved to an NCBI Gene ID (``feature_index.gene_term_clause``),
+    so MIEN1 also finds the hg19 rows that call it C17orf37.  The preferred
+    meaning of a name is the gene it is the current NCBI symbol of (PDK1 is
+    PDK1, not the PDPK1 it is also an alias of); every result carries
+    ``gene_ids`` so a caller can see what was matched.  A name with no single
+    preferred meaning (NEU) is a 400 naming the candidates, and a name
+    AmpliconSuite does not annotate is a 400 saying so -- an unrecognised value
+    is an error here, never an empty result.
+    """
+    clause, resolution = gene_term_clause(term)
+    if clause is not None:
+        return clause
+    if resolution['outcome'] == 'ambiguous':
+        raise FeatureQueryError(ambiguous_message(resolution), 'ambiguous_gene')
+    if resolution['outcome'] == 'wildcard':
+        raise FeatureQueryError(
+            f"{resolution['term']}: gene terms are exact names; '*' is not a wildcard here.",
+            'invalid_parameter')
+    raise FeatureQueryError(not_tracked_message(resolution['term']) + '.', 'gene_not_tracked')
+
+
+def _any(clauses):
+    return clauses[0] if len(clauses) == 1 else {'$or': clauses}
+
+
 def _gene_clauses(gene_any, gene_all, same_amp):
     """The gene half of the query, as clauses on a single row.
 
-    ``gene_any`` is one ``$in``.  ``gene_all`` with ``same_amp`` is one ``$all``
-    -- both genes on the same focal amplification, which is one row.  Without
+    ``gene_any`` is one OR over the terms.  ``gene_all`` with ``same_amp`` is
+    an AND on one row -- both genes on the same focal amplification.  Without
     ``same_amp`` the AND spans a whole sample and cannot be answered by a
     single-row clause at all; ``sample_keys_for_and`` does that pass and this
     returns only the cheap prefilter for it.
     """
     clauses = []
     if gene_any:
-        clauses.append({'genes': {'$in': [normalize_gene(g) for g in gene_any]}})
+        clauses.append(_any([_gene_term(g) for g in gene_any]))
     if gene_all:
-        genes = [normalize_gene(g) for g in gene_all]
+        terms = [_gene_term(g) for g in gene_all]
         if same_amp:
-            clauses.append({'genes': {'$all': genes}})
+            clauses.append(_and(terms))
         else:
             # Not the answer -- just the rows the sample-level pass has to look
             # at.  Narrowing here keeps that pass off the whole collection.
-            clauses.append({'genes': {'$in': genes}})
+            clauses.append(_any(terms))
     return clauses
+
+
+def gene_terms_report(params):
+    """What each gene term in a request was taken to mean, for the response."""
+    report = []
+    for term in parse_csv(params.get('gene_any')) + parse_csv(params.get('gene_all')):
+        _clause, resolution = gene_term_clause(term)
+        entry = {'term': term, 'outcome': resolution['outcome']}
+        if resolution['outcome'] == 'gene':
+            gene = resolution['gene']
+            entry.update(gene_id=gene['gene_id'], symbol=gene['symbol'], status=gene['status'],
+                         annotated_in=gene['annotated_in'])
+            if gene.get('matched_as'):
+                entry['matched_as'] = gene['matched_as']
+            if resolution.get('also_alias_of'):
+                entry['also_alias_of'] = [{'gene_id': c['gene_id'], 'symbol': c['symbol']}
+                                          for c in resolution['also_alias_of']]
+        report.append(entry)
+    return report
 
 
 def sample_keys_for_and(genes, base_clauses):
@@ -481,7 +529,7 @@ def sample_keys_for_and(genes, base_clauses):
 
     keys = None
     for gene in genes:
-        clause = _and(list(base_clauses) + [{'genes': normalize_gene(gene)}])
+        clause = _and(list(base_clauses) + [_gene_term(gene)])
         found = set()
         cursor = feature_index_handle.find(clause, {'sample_key': 1, '_id': 0})
         for row in cursor:
@@ -651,6 +699,10 @@ def row_to_dict(row, fields, request=None):
         'classification': canonical_classification(row.get('classification'))
                           if row.get('classification') else row.get('classification'),
         'genes': row.get('genes_display') or [],
+        # NCBI Gene IDs of 'genes', so a caller can see which gene a name was
+        # taken to mean (C17orf37 and MIEN1 are both 84299).  Empty on rows
+        # with no human gene map (mm10).
+        'gene_ids': row.get('gene_ids') or [],
         'oncogenes': row.get('oncogenes_display') or [],
         'locations': row.get('locations') or [],
         'reference_build': row.get('reference_build'),

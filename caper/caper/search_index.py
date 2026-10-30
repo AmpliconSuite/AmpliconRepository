@@ -44,9 +44,11 @@ from bson.objectid import ObjectId
 
 from .feature_index import (
     feature_index_handle,
+    gene_term_clause,
     index_access_filter,
     search_names_handle,
 )
+from .gene_ids import query_terms
 from .search import _field_filter, tokenize_query, wildcard_to_regex
 from .utils import collection_handle, prepare_project_linkid
 from .visibility import PUBLIC_QUERY_VALUES, format_visibility_for_display
@@ -68,19 +70,24 @@ def can_serve(extra_metadata=None, **_ignored):
 # ---------------------------------------------------------------------------
 
 def _gene_clause(term):
-    """One gene term as a query clause, wildcards included.
+    """One gene term as a query clause.
 
-    Mirrors ``_gene_matches``: a term containing ``*`` is an anchored regex,
-    anything else is an equality match against the upper-cased array. The array
-    is upper-cased at index time and the term is upper-cased here, which is what
-    makes the comparison case-insensitive without a regex -- and a regex is what
-    would cost the index.
+    A term naming one gene matches that gene's NCBI Gene ID, so it finds the
+    gene under every name AC used for it -- C17orf37 in hg19 rows and MIEN1 in
+    hg38 rows are both 84299 (``gene_ids.resolve_gene_term``).  This is a
+    deliberate difference from the document-scanning path, which still matches
+    the spelling: the swap that made the two paths interchangeable is done, and
+    resolving names is the improvement that was to come after it.
+
+    Anything that does not resolve to one gene -- an AC name with no Gene ID,
+    a name found only in non-human results, or text the search page should
+    have stopped as ambiguous or untracked -- is matched on its spelling,
+    upper-cased, as before (``feature_index.gene_term_clause``).  Gene search
+    has no wildcards: a ``*`` is literal text here, and the search page stops
+    such a query before it gets this far (``gene_ids.BLOCKING_OUTCOMES``).
     """
-    upper = term.upper()
-    pattern = wildcard_to_regex(upper)
-    if pattern:
-        return {'genes': {'$regex': pattern}}
-    return {'genes': upper}
+    clause, _resolution = gene_term_clause(term)
+    return clause or {'genes': term.upper()}
 
 
 def _gene_query(genequery):
@@ -389,7 +396,7 @@ def search_from_index(genequery=None, project_name=None, classquery=None,
                       metadata_sample_name=None, metadata_sample_type=None,
                       metadata_cancer_type=None, metadata_tissue_origin=None,
                       extra_metadata=None, include_no_amp=True, no_filter=False,
-                      user=None):
+                      user=None, gene_same_sample=False):
     """``perform_search``, served from the feature index.
 
     Returns the same four keys with the same contents. The public/private split
@@ -402,20 +409,35 @@ def search_from_index(genequery=None, project_name=None, classquery=None,
     access = index_access_filter(user)
     filters = _classification_query(classquery, include_no_amp, no_filter)
 
-    query = build_index_query(
-        genequery=genequery, project_name=project_name, classquery=classquery,
-        metadata_sample_name=metadata_sample_name,
-        metadata_sample_type=metadata_sample_type,
-        metadata_cancer_type=metadata_cancer_type,
-        metadata_tissue_origin=metadata_tissue_origin,
-        access=access)
+    # "All of these genes, anywhere in one sample" is not a predicate on a row:
+    # the rows are those carrying any of the genes, kept only in samples that
+    # carry every one.  The sample pass is the API's (gene_all without
+    # same_amp), run over this search's other filters, so the two answer the
+    # same question the same way.
+    same_sample_terms = query_terms(genequery) if gene_same_sample and genequery else []
+    if len(same_sample_terms) > 1:
+        genequery = '|'.join(same_sample_terms)
 
-    if query is None:
-        rows = []
-    else:
-        if filters:
+    def query_for(genes):
+        query = build_index_query(
+            genequery=genes, project_name=project_name, classquery=classquery,
+            metadata_sample_name=metadata_sample_name,
+            metadata_sample_type=metadata_sample_type,
+            metadata_cancer_type=metadata_cancer_type,
+            metadata_tissue_origin=metadata_tissue_origin,
+            access=access)
+        if query is not None and filters:
             query = {'$and': [query, filters]} if query else filters
-        rows = list(feature_index_handle.find(query))
+        return query
+
+    query = query_for(genequery)
+    if query is not None and len(same_sample_terms) > 1:
+        from .api_features import sample_keys_for_and
+        base = query_for(None)
+        keys = sample_keys_for_and(same_sample_terms, [base] if base else [])
+        query = {'$and': [query, {'sample_key': {'$in': sorted(keys)}}]} if keys else None
+
+    rows = [] if query is None else list(feature_index_handle.find(query))
 
     public_rows, private_rows = [], []
     for row in rows:

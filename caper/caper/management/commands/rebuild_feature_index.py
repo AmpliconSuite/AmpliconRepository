@@ -98,6 +98,22 @@ class Command(BaseCommand):
             if len(symbols) > 10:
                 self.stdout.write(f"             ... and {len(symbols) - 10} more")
 
+        # Rows whose project the manifest does not know: a search serves them,
+        # and the project comparison above cannot see them. A full rebuild
+        # removes them.
+        stray = drift.get('stray', {})
+        self.stdout.write(f"stray rows {sum(stray.values()):>5}   rows of no indexed project "
+                          + ', '.join(f'{name} {count}' for name, count in stray.items() if count))
+
+        # Human gene names the gene map cannot turn into an NCBI Gene ID. Such a
+        # gene is still found by its exact name, but not under its other names.
+        missing_ids = drift.get('genes_without_id', [])
+        self.stdout.write(f"gene ids  {len(missing_ids):>5}   human gene names with no NCBI Gene ID")
+        if missing_ids:
+            self.stdout.write(f"             {', '.join(missing_ids[:10])}")
+        if len(missing_ids) > 10:
+            self.stdout.write(f"             ... and {len(missing_ids) - 10} more")
+
         # Should always be empty. It is printed rather than assumed because the
         # failure it guards against is a collection added to DERIVED_COLLECTIONS
         # and measured by nothing -- which is precisely how ``search_names``
@@ -114,7 +130,9 @@ class Command(BaseCommand):
         # missing name can, because the search comes back short without saying
         # so. Gene drift cannot either, today, for want of a reader -- so it is
         # reported as the hazard it is rather than upgraded to an incident.
-        if drift['missing'] or drift['stale'] or drift['orphaned'] or drift['names_missing']:
+        # Stray rows can too: a search serves them as results.
+        if (drift['missing'] or drift['stale'] or drift['orphaned'] or drift['names_missing']
+                or any(drift.get('stray', {}).values())):
             self.stdout.write(self.style.WARNING(
                 'index is not current; rebuild with: manage.py rebuild_feature_index'))
         elif genes:

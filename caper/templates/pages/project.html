@@ -29,7 +29,123 @@
       });
     
     
+        // Rows come as JSON (sample_table.py), and deferRender builds only the
+        // page on screen. Before this every sample was a <tr> in the HTML, and
+        // DataTables hid all but ten of them -- 4,170 on the largest project.
+        var projectId = '{{ project.linkid }}';
+        var rowsScript = document.getElementById('sample-table-rows');
+        var sampleRows = rowsScript ? JSON.parse(rowsScript.textContent) : [];
+
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        // "Complex non-cyclic", "complex-non-cyclic" and "CNC" are one class.
+        function classKey(value) {
+            var key = String(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+            return key === 'cnc' ? 'complexnoncyclic' : key;
+        }
+
+        // Lower-cased once here rather than on every keystroke.
+        var knownGenes = {};
+        sampleRows.forEach(function (row) {
+            row._name = String(row.n).toLowerCase();
+            row._genes = row.g ? row.g.split(' ') : [];
+            row._genesLower = row._genes.map(function (g) { return g.toLowerCase(); });
+            row._classKeys = row.k.map(classKey);
+            row._oncogenes = {};
+            (row.o ? row.o.split(', ') : []).forEach(function (g) { row._oncogenes[g] = true; });
+            row._genesLower.forEach(function (g) { knownGenes[g] = true; });
+        });
+
+        // The text filter: a sample name containing the text, a classification
+        // starting with it, or an amplified gene. A complete gene symbol matches
+        // only that gene -- MYC is not MYCN -- and anything shorter matches
+        // the genes it begins, so the table narrows as the name is typed. A
+        // full name the rows don't hold (an alias, the other build's name)
+        // matches the gene it resolves to.
+        var filterText = '';
+        var classFilter = null;
+
+        // A name the project's rows do not hold may still be one of their
+        // genes under another name: C17orf37 is MIEN1 in hg38 results, HER2 is
+        // ERBB2. /api/gene-resolve/ says which gene it is and what this
+        // build's results call it (gene_ids.filter_resolution). Mouse projects
+        // have no gene map, so their filter stays name-only.
+        var geneUniverse = '{{ gene_filter_universe|default_if_none:"" }}';
+        var resolveUrl = "{% url 'gene_resolve' %}";
+        var resolutions = {};      // lower-cased text -> the endpoint's answer
+
+        // The answer for the current text, when it is one gene this
+        // project's rows carry: {names: {lower-cased name: true}, gene, here}.
+        function resolvedGene() {
+            var answer = resolutions[filterText];
+            if (!answer || answer.outcome !== 'gene') { return null; }
+            var names = {};
+            var here = [];
+            (answer.names || []).forEach(function (n) {
+                var lower = n.toLowerCase();
+                names[lower] = true;
+                if (knownGenes.hasOwnProperty(lower)) { here.push(n); }
+            });
+            return { names: names, gene: answer.gene, here: here };
+        }
+
+        function geneMatches(row) {
+            if (!filterText) { return []; }
+            var exact = knownGenes.hasOwnProperty(filterText);
+            // Found under another name: only that gene, as a full symbol would.
+            var resolved = exact ? null : resolvedGene();
+            var names = resolved && resolved.here.length ? resolved.names : null;
+            var found = [];
+            for (var i = 0; i < row._genesLower.length; i++) {
+                var gene = row._genesLower[i];
+                var hit = names ? names.hasOwnProperty(gene)
+                    : exact ? gene === filterText : gene.lastIndexOf(filterText, 0) === 0;
+                if (hit) { found.push(row._genes[i]); }
+            }
+            return found;
+        }
+
+        function matchesText(row) {
+            if (!filterText) { return true; }
+            if (row._name.indexOf(filterText) !== -1) { return true; }
+            var key = classKey(filterText);
+            if (key) {
+                for (var i = 0; i < row._classKeys.length; i++) {
+                    if (row._classKeys[i].lastIndexOf(key, 0) === 0) { return true; }
+                }
+            }
+            return geneMatches(row).length > 0;
+        }
+
+        $.fn.dataTable.ext.search.push(function (settings, searchData, index, row) {
+            if (settings.nTable.id !== 'myTable1') { return true; }
+            if (classFilter && row.k.indexOf(classFilter) === -1) { return false; }
+            return matchesText(row);
+        });
+
         var table = $('#myTable1').DataTable({
+            data: sampleRows,
+            deferRender: true,
+            // DataTables' own search box ('f') is replaced by #sample-filter.
+            dom: 'lrtip',
+            columns: [
+                { data: 'n', render: function (name, type) {
+                    if (type !== 'display') { return name; }
+                    return '<a href="/project/' + projectId + '/sample/' + encodeURIComponent(name) + '">'
+                        + escapeHtml(name) + '</a>';
+                } },
+                { data: 'f', type: 'num' },
+                { data: 'o', render: function (value, type) {
+                    return type === 'display' ? escapeHtml(value) : value;
+                } },
+                { data: 'c', render: function (value, type) {
+                    return type === 'display' ? escapeHtml(value) : value;
+                } }
+            ],
             // Same treatment as the home page table: name the unit so the count
             // says what it is counting, and arrow the pager so it reads as a
             // control rather than as a caption.
@@ -37,12 +153,188 @@
                 info: "Showing _START_ to _END_ of <b>_TOTAL_</b> samples",
                 infoEmpty: "No samples to show",
                 infoFiltered: " (filtered from _MAX_)",
+                zeroRecords: "No samples match the filter",
                 paginate: {
-                    previous: "\u2190 Prev",
-                    next: "Next \u2192"
+                    previous: "← Prev",
+                    next: "Next →"
                 }
             }
         });
+
+        // A row found by a gene that is not one of its oncogenes would show no
+        // reason for being there, so name the matching genes under the
+        // oncogenes. Only the rows on screen are touched.
+        table.on('draw', function () {
+            table.rows({ page: 'current' }).every(function () {
+                var row = this.data();
+                var cell = $(this.node()).children().eq(2);
+                cell.find('.also-genes').remove();
+                var extra = geneMatches(row).filter(function (g) { return !row._oncogenes[g]; });
+                if (!extra.length) { return; }
+                var shown = extra.slice(0, 6).map(escapeHtml).join(', ');
+                if (extra.length > 6) { shown += ' and ' + (extra.length - 6) + ' more'; }
+                var label = extra.length === 1 ? 'And non-oncogene: ' : 'And non-oncogenes: ';
+                cell.append('<span class="also-genes">' + label + shown + '</span>');
+            });
+        });
+
+        // One line under the box when the gene filter needs explaining: the
+        // name was found under another one, names several genes, or names a
+        // gene no sample here carries.
+        var geneNote = $('#sample-gene-note');
+
+        function ncbiLink(gene) {
+            return '<a href="https://www.ncbi.nlm.nih.gov/gene/' + encodeURIComponent(gene.gene_id)
+                + '" target="_blank" rel="noopener">NCBI Gene ' + escapeHtml(gene.gene_id) + '</a>';
+        }
+
+        function describeGene() {
+            var answer = filterText && !knownGenes.hasOwnProperty(filterText) && resolutions[filterText];
+            var shown = table.page.info().recordsDisplay;
+            if (!answer) { return ''; }
+            var typed = escapeHtml(answer.term);
+            if (answer.outcome === 'gene') {
+                var resolved = resolvedGene();
+                var gene = answer.gene;
+                var same = answer.term.toLowerCase() === gene.symbol.toLowerCase();
+                var line = (same ? '' : typed + ' &rarr; ') + '<b>' + escapeHtml(gene.symbol) + '</b>'
+                    + (gene.full_name ? ' ' + escapeHtml(gene.full_name) : '') + ' &middot; ' + ncbiLink(gene);
+                if (resolved.here.length) {
+                    var others = resolved.here.filter(function (n) {
+                        return n.toLowerCase() !== gene.symbol.toLowerCase();
+                    });
+                    return others.length ? line + ' &middot; called ' + others.map(escapeHtml).join(', ') + ' here' : line;
+                }
+                if (shown) { return ''; }   // genes starting with the text are on screen
+                if (!(answer.names || []).length) {
+                    return line + ' &middot; not annotated in this build\'s results';
+                }
+                return line + ' &middot; not amplified in any sample here';
+            }
+            if (answer.outcome === 'ambiguous') {
+                return typed + ' could mean several genes: ' + answer.candidates.map(function (c) {
+                    return '<button type="button" class="gene-pick" data-symbol="' + escapeHtml(c.symbol) + '"'
+                        + ' title="' + escapeHtml(c.symbol + (c.full_name ? ', ' + c.full_name : '')
+                        + ' (NCBI Gene ' + c.gene_id + ')') + '">' + escapeHtml(c.symbol) + '</button>';
+                }).join(' ');
+            }
+            if (answer.outcome === 'not_tracked' && !shown) {
+                return typed + ' is not tracked by AmpliconSuite annotations';
+            }
+            return '';
+        }
+
+        // The note's line is always there (see its CSS), so a note coming or
+        // going never moves the table.
+        function showGeneNote() {
+            geneNote.html(describeGene());
+            geneNote.attr('title', geneNote.text());
+        }
+
+        // Gene names, aliases and Gene IDs (2064, GeneID:2064); not sample
+        // names with spaces, and not single letters.
+        var GENE_LIKE = /^[a-z0-9][a-z0-9._:-]+$/;
+
+        function resolveFilterText(typed) {
+            var text = filterText;
+            if (!geneUniverse || !GENE_LIKE.test(text) || knownGenes.hasOwnProperty(text)
+                    || resolutions.hasOwnProperty(text)) {
+                return;
+            }
+            resolutions[text] = null;   // asked; a failed lookup leaves the filter name-only
+            $.getJSON(resolveUrl, { q: typed, universe: geneUniverse }).done(function (answer) {
+                resolutions[text] = answer;
+                if (text === filterText) { table.draw(); }
+            });
+        }
+
+        table.on('draw', showGeneNote);
+
+        // Matching is on the lower-cased text; the note repeats it as typed.
+        // The name is looked up once typing pauses: on the way to MIEN1, MI
+        // and MIEN are aliases of other genes, and their notes only flicker.
+        var resolveTimer = null;
+        function applyFilterText(typed, now) {
+            var value = typed.toLowerCase();
+            if (value === filterText) { return; }
+            filterText = value;
+            table.draw();
+            clearTimeout(resolveTimer);
+            resolveTimer = setTimeout(function () { resolveFilterText(typed); }, now ? 0 : 450);
+        }
+
+        var filterTimer = null;
+        $('#sample-filter-input').on('input', function () {
+            var typed = $(this).val().trim();
+            clearTimeout(filterTimer);
+            filterTimer = setTimeout(function () { applyFilterText(typed); }, 150);
+        });
+
+        // A pick replaces the text with that gene's symbol, which names it alone.
+        geneNote.on('click', '.gene-pick', function () {
+            var symbol = $(this).data('symbol');
+            $('#sample-filter-input').val(symbol);
+            applyFilterText(String(symbol), true);
+        });
+
+        // While a filter is on, the table area keeps the tallest height it has
+        // had since the filter began, so the pager and everything below it
+        // stay put as the matches come and go. Clearing the filter lets go.
+        var tableArea = $('#samples-table-wrap > .table-responsive');
+        var unfilteredHeight = 0;
+        var heldHeight = 0;
+
+        function holdTableHeight() {
+            tableArea.css('min-height', '');
+            var natural = tableArea.outerHeight();
+            if (!filterText && !classFilter) {
+                unfilteredHeight = natural;
+                heldHeight = 0;
+                return;
+            }
+            heldHeight = Math.max(heldHeight || unfilteredHeight, natural);
+            tableArea.css('min-height', heldHeight + 'px');
+        }
+
+        table.on('draw', holdTableHeight);
+
+        // A click on a bar of the summary chart lists that bar's samples; one
+        // class at a time, and a second click on the same bar, or the chip's
+        // cross, clears it. The bars are named by the same canonical names
+        // as the rows' "k" (summarybar.LEGACY_CLASSIFICATION_NAMES).
+        var classChart = document.getElementById('summarybar_plotly_div');
+
+        function setClassFilter(name) {
+            classFilter = name || null;
+            $('#sample-class-chip-name').text(classFilter || '');
+            $('#sample-class-chip').prop('hidden', !classFilter);
+            if (classChart && classChart.data && window.Plotly) {
+                Plotly.restyle(classChart, {
+                    'marker.opacity': classChart.data.map(function (trace) {
+                        return !classFilter || trace.name === classFilter ? 1 : 0.35;
+                    })
+                });
+            }
+            table.draw();
+        }
+
+        $('#sample-class-chip-clear').on('click', function () { setClassFilter(null); });
+
+        if (classChart && typeof classChart.on === 'function') {
+            classChart.on('plotly_click', function (event) {
+                var point = event && event.points && event.points[0];
+                var name = point && point.data && point.data.name;
+                if (!name) { return; }
+                setClassFilter(name === classFilter ? null : name);
+            });
+            // The drag layer under the bars owns the cursor; say they are clickable.
+            classChart.on('plotly_hover', function () {
+                $(classChart).find('.nsewdrag').css('cursor', 'pointer');
+            });
+            classChart.on('plotly_unhover', function () {
+                $(classChart).find('.nsewdrag').css('cursor', '');
+            });
+        }
 
         // The count and the pager end up at opposite ends of the page, where
         // neither reads as a control for the other. One bar, count first.
@@ -56,7 +348,7 @@
         table.columns.adjust();
 
         // Put the filtered-download control in the same band as the "Show N
-        // entries" menu and the search box.  DataTables builds that row itself,
+        // entries" menu and the filter box.  DataTables builds that row itself,
         // so this can only happen after init.  Default DataTables styling
         // floats those two controls, hence the float here.
         (function placeFilteredDownload() {
@@ -65,7 +357,9 @@
             $('#download-filtered-wrap')
                 .css({ 'float': 'left', 'margin-left': '20px', 'margin-bottom': '0' })
                 .insertAfter($band);
+            $('#sample-filter').insertAfter('#download-filtered-wrap');
         })();
+        holdTableHeight();   // the unfiltered height, now that the controls are in place
 
         // Update filtered count display, and enable the download only once the
         // table is actually filtered -- "download filtered samples" with no
@@ -81,7 +375,7 @@
                 $('#filtered-count').text('(' + filteredCount + ' of ' + totalCount + ' samples shown)');
             }
 
-            var searching = (table.search() || '').trim().length > 0;
+            var searching = Boolean(filterText || classFilter);
             var narrowed = filteredCount < totalCount;
             var enabled = searching || narrowed;
 
@@ -90,7 +384,7 @@
             // tooltip, so the hint would never appear when it is most needed.
             $('#download-filtered-wrap').attr('title', enabled
                 ? 'Download the ' + filteredCount + ' samples matching the current filter'
-                : 'Search or filter the table first, then download just the matching samples');
+                : 'Filter the table first, then download just the matching samples');
         }
 
         // Update count on table draw
@@ -104,15 +398,11 @@
         // Handle download filtered samples button click
         $('#download-filtered-samples').on('click', function() {
             var filteredSamples = [];
-            var projectId = '{{ project.linkid }}';
-            
+
             // Get all filtered rows
             table.rows({ search: 'applied' }).every(function() {
-                var data = this.data();
-                // Extract sample name from the first column (which contains an <a> tag)
-                var sampleName = $(data[0]).text();
                 // Format as projectId:sampleName to match backend expectations
-                filteredSamples.push(projectId + ':' + sampleName);
+                filteredSamples.push(projectId + ':' + this.data().n);
             });
 
             if (filteredSamples.length === 0) {
@@ -1159,19 +1449,38 @@ page was this container switching on after everything below it had been laid out
   {% if not is_empty_project %}  
 {% comment %}
 Relocated by JS into the DataTables control band (next to "Show N entries" and
-the search box) once the table initialises, so it sits with the other table
+the filter box) once the table initialises, so it sits with the other table
 controls rather than floating above them.  It stays here in the markup as the
 fallback position if that move ever fails.
 
 Sizing matches the Download Project / Summary / Metadata buttons above.
 {% endcomment %}
 <div id="download-filtered-wrap" style="margin-bottom: 15px;"
-     title="Search or filter the table first, then download just the matching samples">
+     title="Filter the table first, then download just the matching samples">
     <button id="download-filtered-samples" class="btn btn-primary btn-sm"
             style="color: white; white-space: nowrap; font-size: 0.8rem;" disabled>
         <i class="fas fa-download"></i> Download Filtered Samples
     </button>
     <span id="filtered-count" style="margin-left: 10px; color: #666;"></span>
+</div>
+{% comment %}
+Takes the place of DataTables' own search box, which matched the text of the
+four visible columns -- so it found a sample by oncogene but never by any other
+amplified gene. This one matches a sample name, a classification, or any amplified gene, under
+any of its names (an alias or old symbol is resolved by /api/gene-resolve/). A click
+on a bar of the summary chart adds the classification chip beside it. Moved into
+the control band like the download button above, and stays here if that fails.
+{% endcomment %}
+<div id="sample-filter" class="dataTables_filter">
+    <span id="sample-class-chip" hidden>
+        <span id="sample-class-chip-name"></span>
+        <button type="button" id="sample-class-chip-clear" aria-label="Show every classification" title="Show every classification">&times;</button>
+    </span>
+    <label for="sample-filter-input">Filter:</label>
+    <input type="search" id="sample-filter-input" autocomplete="off" spellcheck="false"
+           placeholder="Gene, classification or sample"
+           aria-label="Filter samples by gene, classification or sample name">
+    {% if gene_filter_universe %}<div id="sample-gene-note" role="status"></div>{% endif %}
 </div>
 {% comment %}
 The full sample list is in the DOM -- every sample, which on a large project is
@@ -1238,6 +1547,115 @@ paged.
 
     #samples-table-foot:empty {
         display: none;
+    }
+
+    #sample-filter {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 6px;
+    }
+
+    #sample-filter label {
+        margin: 0;
+    }
+
+    #sample-filter-input {
+        width: 15rem;
+        max-width: 100%;
+        margin-left: 0;
+    }
+
+    #sample-class-chip:not([hidden]) {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 1px 4px 1px 10px;
+        border-radius: 999px;
+        background: #e6effb;
+        color: #1f4f8f;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    #sample-class-chip-clear {
+        border: 0;
+        background: none;
+        padding: 0 4px;
+        font-size: 16px;
+        line-height: 1;
+        color: inherit;
+        cursor: pointer;
+    }
+
+    /* Floated beside the download button there is no room on a phone: the
+       box shrank to nothing. Give it its own full-width line. */
+    @media (max-width: 767px) {
+        #sample-filter {
+            float: none !important;
+            width: 100%;
+            justify-content: flex-start;
+            margin-top: 8px;
+        }
+
+        #sample-filter-input {
+            flex: 1 1 10rem;
+            width: auto;
+        }
+
+        div#sample-filter {
+            padding-bottom: 0;
+        }
+
+        #sample-filter #sample-gene-note {
+            position: static;
+            flex-basis: 100%;
+            min-height: 20px;
+            max-width: none;
+            white-space: normal;
+        }
+    }
+
+    /* The note's line is held even when empty, and the note is laid over it
+       rather than in the filter's flow: in the flow it widened the floated
+       filter until the filter no longer fitted beside the download button
+       and dropped a line, pushing the table down. Laid over, it can run left
+       into the empty space under the controls. A long one is cut short; its
+       full text is the tooltip. */
+    #sample-filter {
+        position: relative;
+        padding-bottom: 22px;
+    }
+
+    #sample-gene-note {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: max-content;
+        max-width: min(1100px, calc(100vw - 48px));
+        line-height: 20px;
+        font-size: 13px;
+        color: #555;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    #sample-gene-note .gene-pick {
+        border: 1px solid #c5d3e8;
+        border-radius: 999px;
+        background: #f3f7fc;
+        color: #1f4f8f;
+        padding: 0 8px;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    #myTable1 .also-genes {
+        display: block;
+        font-size: 12px;
+        color: #74777c;
     }
 
     #samples-table-foot .dataTables_info,
@@ -1329,18 +1747,10 @@ paged.
                 <!-- <th>Sample Page</th> -->
             </tr>
         </thead>
-        <tbody>
-            {% for sample in sample_data %}
-            <tr>
-                <td><a href="/project/{{project.linkid}}/sample/{{sample.Sample_name}}">{{ sample.Sample_name }}</a></td>
-                <td>{{ sample.Features }}</td>
-                <td>{{ sample.Oncogenes|join:", " }}</td>
-                <td>{{ sample.Classifications_counted|join:", " }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
+        <tbody></tbody>
     </table>
 </div>
+{{ sample_table_rows|json_script:"sample-table-rows" }}
 <div id="samples-table-foot"></div>
 </div>
 {% endif %}

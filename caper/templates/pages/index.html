@@ -1320,6 +1320,12 @@
         // search_results POST parameters it is submitted as. -----------------
         var scopeOptions = document.querySelectorAll('.home-scope-option');
         var queryInput = document.getElementById('home-query');
+        // Gene names complete as they are typed, while the Genes scope is chosen
+        // (GeneAutocomplete comes from header.html).
+        GeneAutocomplete.attach(queryInput, {active: function () {
+            var genes = document.getElementById('home-scope-genequery');
+            return Boolean(genes && genes.checked);
+        }});
 
         function applyScope() {
             var chosen = document.querySelector('.home-scope-option:checked');

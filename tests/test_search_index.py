@@ -33,11 +33,23 @@ def test_single_gene_is_an_equality_match_not_a_regex():
     where MongoDB would have used the index -- so a translation that reached
     for a regex here would be correct and useless.
     """
-    assert _gene_query('MYC') == {'genes': 'MYC'}
+    assert _gene_query('MYC') == _gene('MYC', 4609)
+    assert '$regex' not in repr(_gene_query('MYC'))
+
+
+def _gene(name, gene_id):
+    """A resolved term: its NCBI Gene ID, or its spelling on non-human rows."""
+    return {'$or': [{'gene_ids': gene_id},
+                    {'genes': name, 'reference_build': {'$nin': ['hg19', 'hg38']}}]}
 
 
 def test_gene_terms_are_upper_cased_to_match_the_indexed_array():
-    assert _gene_query('myc') == {'genes': 'MYC'}
+    assert _gene_query('myc') == _gene('MYC', 4609)
+
+
+def test_a_gene_is_matched_under_every_name_ac_gave_it():
+    """C17orf37 (hg19) and MIEN1 (hg38) are one gene, 84299."""
+    assert _gene_query('C17orf37')['$or'][0] == _gene_query('MIEN1')['$or'][0] == {'gene_ids': 84299}
 
 
 def test_and_wins_over_or_exactly_as_it_does_today():
@@ -49,11 +61,11 @@ def test_and_wins_over_or_exactly_as_it_does_today():
     where the operator lives in the parameter name.
     """
     query = _gene_query('MYC|EGFR&CDK4')
-    assert query == {'$and': [{'genes': 'MYC|EGFR'}, {'genes': 'CDK4'}]}
+    assert query == {'$and': [{'genes': 'MYC|EGFR'}, _gene('CDK4', 1019)]}
 
 
 def test_or_across_genes():
-    assert _gene_query('MYC|EGFR') == {'$or': [{'genes': 'MYC'}, {'genes': 'EGFR'}]}
+    assert _gene_query('MYC|EGFR') == {'$or': [_gene('MYC', 4609), _gene('EGFR', 1956)]}
 
 
 def test_and_across_genes_is_per_row_which_means_one_amplicon():
@@ -62,16 +74,13 @@ def test_and_across_genes_is_per_row_which_means_one_amplicon():
     Each index row is one feature, so an AND of two clauses against the same
     row is the same claim the pandas filter makes.
     """
-    assert _gene_query('MYC&EGFR') == {'$and': [{'genes': 'MYC'}, {'genes': 'EGFR'}]}
+    assert _gene_query('MYC&EGFR') == {'$and': [_gene('MYC', 4609), _gene('EGFR', 1956)]}
 
 
-@pytest.mark.parametrize('pattern, regex', [
-    ('MY*', '^MY.*$'),
-    ('*GFR', '^.*GFR$'),
-    ('*ORF*', '^.*ORF.*$'),
-])
-def test_wildcards_become_the_same_anchored_regex_the_old_path_builds(pattern, regex):
-    assert _gene_query(pattern) == {'genes': {'$regex': regex}}
+@pytest.mark.parametrize('pattern', ['MY*', '*GFR', '*ORF*'])
+def test_a_star_is_not_a_gene_wildcard(pattern):
+    """Gene search takes exact names (2026-10-29); the page stops these queries first."""
+    assert _gene_query(pattern) == {'genes': pattern}
 
 
 def test_empty_gene_query_contributes_nothing():

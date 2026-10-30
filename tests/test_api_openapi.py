@@ -300,7 +300,7 @@ class TestProjectClassificationsAreReported:
     def test_reads_the_key_the_upload_path_writes(self):
         d = views_apis._project_to_dict({'_id': 'x', 'linkid': 'x',
                                          'Classification': ['ECDNA', 'BFB']})
-        assert d['classifications'] == ['ecDNA', 'BFB']
+        assert d['classifications'] == ['BFB', 'ecDNA']
 
     def test_plural_spelling_still_read_as_a_fallback(self):
         d = views_apis._project_to_dict({'_id': 'x', 'linkid': 'x',
@@ -316,8 +316,8 @@ class TestProjectClassificationsAreReported:
         d = views_apis._project_to_dict({
             '_id': 'x', 'linkid': 'x',
             'Classification': ['ECDNA', 'LINEAR', 'COMPLEX-NON-CYCLIC', 'BFB']})
-        assert d['classifications'] == ['ecDNA', 'Linear',
-                                        'Complex-non-cyclic', 'BFB']
+        assert d['classifications'] == ['BFB', 'Complex-non-cyclic',
+                                        'ecDNA', 'Linear']
 
     def test_unknown_values_pass_through_unmangled(self):
         d = views_apis._project_to_dict({'_id': 'x', 'linkid': 'x',
