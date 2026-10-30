@@ -411,9 +411,9 @@ def gene_resolution_notes(genequery, resolve=None):
 
     Every resolution from ``resolve_gene_query``, with a ``note`` for a gene
     whose results use other names (``called C17orf37 in hg19 results``) and
-    ``missing_in`` naming the human builds AC does not annotate it in.  Terms
-    that are simply a gene's own symbol, in both builds, under no other name get
-    no note and are left out, so an ordinary MYC search shows nothing extra.
+    ``missing_in`` naming the human builds AC does not annotate it in.  A plain
+    symbol gets its line too (MYC, its full name and Gene ID): the page always
+    says which gene it searched (Jens, 2026-10-30).
     """
     if mixes_operators(genequery):
         return [{'outcome': 'mixed_operators', 'term': str(genequery).strip()}]
@@ -423,14 +423,23 @@ def gene_resolution_notes(genequery, resolve=None):
             gene = resolution['gene']
             gene['note'] = other_names_note(gene['gene_id'])
             gene['missing_in'] = [u for u in HUMAN_UNIVERSES if u not in gene['annotated_in']]
-            if not (gene['note'] or gene.get('matched') or resolution.get('also_alias_of')
-                    or gene['status'] == 'withdrawn' or gene['missing_in']):
-                continue
         elif resolution['outcome'] == 'ambiguous':
             for candidate in resolution['candidates']:
                 candidate['note'] = other_names_note(candidate['gene_id'])
         notes.append(resolution)
     return notes
+
+
+def gene_chip_title(term):
+    """A chip's hover text, as the autocomplete writes it when a gene is picked:
+    ``MYC, MYC proto-oncogene, bHLH transcription factor (NCBI Gene 4609)``.
+    Empty for a term that is not one gene."""
+    resolution = resolve_gene_term(term)
+    if resolution['outcome'] != 'gene':
+        return ''
+    gene = resolution['gene']
+    full = f", {gene['full_name']}" if gene['full_name'] else ''
+    return f"{gene['symbol']}{full} (NCBI Gene {gene['gene_id']})"
 
 
 # Outcomes that stop a search box query: the page explains, and nothing is searched.

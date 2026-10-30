@@ -162,7 +162,7 @@ def test_gene_search_has_no_wildcards():
     assert resolve_gene_term('MYC*') == {'outcome': 'wildcard', 'term': 'MYC*'}
     [note] = gene_resolution_notes('MYC*')
     assert note['outcome'] == 'wildcard'
-    assert [n['outcome'] for n in gene_resolution_notes('EGFR&MYC*')] == ['wildcard']
+    assert [n['outcome'] for n in gene_resolution_notes('EGFR&MYC*')] == ['gene', 'wildcard']
 
 
 def test_mixing_and_with_or_is_refused():
@@ -189,8 +189,10 @@ def test_suggestions_rank_a_symbol_above_an_alias_match():
     assert ranked.index('PDK1') < ranked.index('PDPK1')
 
 
-def test_notes_skip_plain_symbols_and_explain_the_rest():
-    assert gene_resolution_notes('MYC') == []
+def test_every_gene_gets_a_line_and_other_names_are_explained():
+    [myc] = gene_resolution_notes('MYC')
+    assert myc['gene']['symbol'] == 'MYC' and myc['gene']['gene_id'] == 4609
+    assert not myc['gene']['note'] and not myc['gene'].get('matched')
     [note] = gene_resolution_notes('C17orf37')
     assert note['gene']['symbol'] == 'MIEN1' and 'C17orf37' in note['gene']['note']
 
@@ -226,7 +228,15 @@ def test_a_gene_one_build_never_reports_is_flagged():
     assert acod1['gene']['annotated_in'] == ['hg38'] and acod1['gene']['missing_in'] == ['hg19']
     [ct62] = gene_resolution_notes('CT62')
     assert ct62['gene']['missing_in'] == ['hg38']
-    assert gene_resolution_notes('MYC') == []      # in both builds: still no note
+    [myc] = gene_resolution_notes('MYC')
+    assert myc['gene']['missing_in'] == []          # in both builds: no warning
+
+
+def test_a_chip_title_names_the_gene_as_the_autocomplete_does():
+    from caper.gene_ids import gene_chip_title
+    assert gene_chip_title('C17orf37').startswith('MIEN1, ')
+    assert gene_chip_title('myc').endswith('(NCBI Gene 4609)')
+    assert gene_chip_title('NOTAGENEXYZ') == ''
 
 
 # ---------------------------------------------------------------------------

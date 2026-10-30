@@ -1162,6 +1162,7 @@
                 {% if note.outcome == 'gene' %}
                     {% if note.gene.matched %}<b>{{ note.term }}</b> &rarr; {% endif %}
                     <b>{{ note.gene.symbol }}</b>
+                    {% if note.gene.full_name %}<span class="gene-note-full">{{ note.gene.full_name }}</span> &middot;{% endif %}
                     <span class="gene-note-id">NCBI Gene <a href="https://www.ncbi.nlm.nih.gov/gene/{{ note.gene.gene_id|stringformat:"d" }}" target="_blank" rel="noopener">{{ note.gene.gene_id|stringformat:"d" }}</a></span>
                     {% if note.gene.status == 'withdrawn' %}<span class="gene-note-withdrawn">withdrawn from NCBI Gene</span>{% endif %}
                     {% if note.gene.note %}<span class="gene-note-names">&middot; {{ note.gene.note }}</span>{% endif %}

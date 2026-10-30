@@ -1,4 +1,10 @@
 {% load static %}
+{% comment %}
+This form is on a page twice: the header's Advanced modal and the results
+page's side panel. header.html includes it with id_prefix="modal-" so the two
+copies have different ids; otherwise a label in the panel would tick the
+modal's checkbox, and the panel's metadata button open the modal's section.
+{% endcomment %}
 
 <form id="searchForm" action="{% url 'search_results' %}" method="POST" class="p-4 border rounded bg-light">
     {% csrf_token %}
@@ -18,32 +24,30 @@
     </ul>
 
     <div class="mb-3">
-        <label for="project_name" class="form-label">Project Name</label>
-        <input type="text" class="form-control" name="project_name" id="project_name"
+        <label for="{{ id_prefix }}project_name" class="form-label">Project Name</label>
+        <input type="text" class="form-control" name="project_name" id="{{ id_prefix }}project_name"
                placeholder='e.g. MyProject' value="{{ user_query.project_name|default:'' }}">
     </div>
 
     <div class="mb-3">
-        <label for="metadata_sample_name" class="form-label">Sample Name</label>
-        <input type="text" class="form-control" name="metadata_sample_name" id="metadata_sample_name"
+        <label for="{{ id_prefix }}metadata_sample_name" class="form-label">Sample Name</label>
+        <input type="text" class="form-control" name="metadata_sample_name" id="{{ id_prefix }}metadata_sample_name"
             placeholder='e.g. NCIH2170' value="{{ user_query.metadata_sample_name|default:'' }}">
     </div>
 
     {% comment %}
     One chip per gene, posted as a ``gene`` each; text not yet made a chip is
     posted as ``genequery`` (gene_ids.gene_search_request reads both).  The
-    controls are the API's gene_any / gene_all / same_amp.  No ``for``/``id``
-    pairs here: this form is on the page twice (the header's modal and the
-    results panel), and an id would bind both copies' labels to the first.
+    controls are the API's gene_any / gene_all / same_amp.
     gene_autocomplete.html wires it up.
     {% endcomment %}
     <div class="mb-3 gene-field">
         <label class="form-label" data-gene-label>Genes</label>
         <div class="form-control gene-chips" data-gene-chips>
-            {% for term in user_query.gene_terms %}
-            <span class="gene-chip" data-term="{{ term }}"><input type="hidden" name="gene" value="{{ term }}">{{ term }}<button type="button" class="gene-chip-remove" aria-label="Remove {{ term }}">&times;</button></span>
+            {% for chip in user_query.gene_chips %}
+            <span class="gene-chip" data-term="{{ chip.term }}"{% if chip.title %} title="{{ chip.title }}"{% endif %}><input type="hidden" name="gene" value="{{ chip.term }}">{{ chip.term }}<button type="button" class="gene-chip-remove" aria-label="Remove {{ chip.term }}">&times;</button></span>
             {% endfor %}
-            <input type="text" class="gene-chip-input" name="genequery" id="genequery"
+            <input type="text" class="gene-chip-input" name="genequery" id="{{ id_prefix }}genequery"
                    placeholder="{% if user_query.gene_terms %}Add a gene{% else %}e.g. MYC{% endif %}">
         </div>
         <div class="gene-match"{% if user_query.gene_terms|length < 2 %} hidden{% endif %}>
@@ -57,42 +61,42 @@
     </div>
 
     <div class="mb-3">
-        <label for="classquery" class="form-label">Classification Type</label>
+        <label for="{{ id_prefix }}classquery" class="form-label">Classification Type</label>
         <div>
             <div class="form-check">
-                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="ecDNA" id="class-ecDNA" {% if user_query.search_submitted %}{% if "ECDNA" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
-                <label class="form-check-label" for="class-ecDNA">
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="ecDNA" id="{{ id_prefix }}class-ecDNA" {% if user_query.search_submitted %}{% if "ECDNA" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
+                <label class="form-check-label" for="{{ id_prefix }}class-ecDNA">
                     ecDNA
                 </label>
             </div>
             <div class="form-check">
-                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="FAN" id="class-fan" {% if user_query.search_submitted %}{% if "FAN" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
-                <label class="form-check-label" for="class-fan" title="Focal amplification in neochromosome">
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="FAN" id="{{ id_prefix }}class-fan" {% if user_query.search_submitted %}{% if "FAN" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
+                <label class="form-check-label" for="{{ id_prefix }}class-fan" title="Focal amplification in neochromosome">
                     FAN
                 </label>
                 <a href="https://github.com/AmpliconSuite/AmpliconClassifier/blob/main/docs/fan_primer.md" target="_blank" rel="noopener noreferrer" title="Focal amplification in neochromosome - click to read more" aria-label="Focal amplification in neochromosome - click to read more"><i class="far fa-question-circle"></i></a>
             </div>
             <div class="form-check">
-                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="linear amplification" id="class-linear" {% if user_query.search_submitted %}{% if "LINEAR AMPLIFICATION" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
-                <label class="form-check-label" for="class-linear">
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="linear amplification" id="{{ id_prefix }}class-linear" {% if user_query.search_submitted %}{% if "LINEAR AMPLIFICATION" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
+                <label class="form-check-label" for="{{ id_prefix }}class-linear">
                     Linear Amplification
                 </label>
             </div>
             <div class="form-check">
-                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="BFB" id="class-bfb" {% if user_query.search_submitted %}{% if "BFB" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
-                <label class="form-check-label" for="class-bfb">
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="BFB" id="{{ id_prefix }}class-bfb" {% if user_query.search_submitted %}{% if "BFB" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
+                <label class="form-check-label" for="{{ id_prefix }}class-bfb">
                     Breakage-Fusion-Bridge (BFB) <i class="far fa-question-circle" title="Breakage-fusion-bridge" aria-label="Breakage-fusion-bridge"></i>
                 </label>
             </div>
             <div class="form-check">
-                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="complex non-cyclic" id="class-complex" {% if user_query.search_submitted %}{% if "COMPLEX NON-CYCLIC" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
-                <label class="form-check-label" for="class-complex">
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="complex non-cyclic" id="{{ id_prefix }}class-complex" {% if user_query.search_submitted %}{% if "COMPLEX NON-CYCLIC" in user_query.classquery|upper %}checked{% endif %}{% else %}checked{% endif %}>
+                <label class="form-check-label" for="{{ id_prefix }}class-complex">
                     Complex Non-Cyclic
                 </label>
             </div>
             <div class="form-check">
-                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="no-amp" id="class-noamp" {% if user_query.search_submitted %}{% if user_query.include_no_amp %}checked{% endif %}{% else %}checked{% endif %}>
-                <label class="form-check-label" for="class-noamp">
+                <input class="form-check-input classification-checkbox" type="checkbox" name="classquery" value="no-amp" id="{{ id_prefix }}class-noamp" {% if user_query.search_submitted %}{% if user_query.include_no_amp %}checked{% endif %}{% else %}checked{% endif %}>
+                <label class="form-check-label" for="{{ id_prefix }}class-noamp">
                     No-Amp (sample)
                 </label>
             </div>
@@ -100,23 +104,23 @@
     </div>
 
     <div class="mb-3">
-        <button class="btn btn-secondary w-100" type="button" data-toggle="collapse" data-target="#metadataCollapse"
-            aria-expanded="false" aria-controls="metadataCollapse">
+        <button class="btn btn-secondary w-100" type="button" data-toggle="collapse" data-target="#{{ id_prefix }}metadataCollapse"
+            aria-expanded="false" aria-controls="{{ id_prefix }}metadataCollapse">
             Metadata Search Options
         </button>
     </div>
 
-    <div class="collapse" id="metadataCollapse">
+    <div class="collapse" id="{{ id_prefix }}metadataCollapse">
         <div class="card card-body">
             <div class="mb-3">
-                <label for="metadata_sample_type" class="form-label">Sample Type</label>
-                <input type="text" class="form-control" name="metadata_sample_type" id="metadata_sample_type"
+                <label for="{{ id_prefix }}metadata_sample_type" class="form-label">Sample Type</label>
+                <input type="text" class="form-control" name="metadata_sample_type" id="{{ id_prefix }}metadata_sample_type"
                     placeholder="e.g. cell line" value="{{ user_query.metadata_sample_type|default:'' }}">
             </div>
 
             <div class="mb-3">
-                <label for="metadata_cancer_tissue" class="form-label">Cancer Type or Tissue</label>
-                <input type="text" class="form-control" name="metadata_cancer_tissue" id="metadata_cancer_tissue"
+                <label for="{{ id_prefix }}metadata_cancer_tissue" class="form-label">Cancer Type or Tissue</label>
+                <input type="text" class="form-control" name="metadata_cancer_tissue" id="{{ id_prefix }}metadata_cancer_tissue"
                     placeholder="e.g. breast|lung" value="{{ user_query.metadata_cancer_tissue|default:'' }}">
             </div>
         </div>

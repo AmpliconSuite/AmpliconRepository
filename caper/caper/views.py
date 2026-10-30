@@ -16,8 +16,9 @@ from . import version_purge
 from .canonical import project_canonical_url, sample_canonical_url
 from .email_contact import contact_footer_text, reply_to
 from .api_features import FeatureQueryError
-from .gene_ids import (BLOCKING_OUTCOMES, describe_gene_request, gene_resolution_notes,
-                       gene_search_request, highlight_names, suggest_genes)
+from .gene_ids import (BLOCKING_OUTCOMES, describe_gene_request, gene_chip_title,
+                       gene_resolution_notes, gene_search_request, highlight_names,
+                       suggest_genes)
 from .feature_index import gene_term_clause
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
@@ -7287,6 +7288,8 @@ def search_results(request):
         user_query = {
             "genequery": gene_search,
             "gene_terms": gene_request["terms"],
+            "gene_chips": [{"term": term, "title": gene_chip_title(term)}
+                           for term in gene_request["terms"]],
             "gene_match": gene_request["match"],
             "gene_scope": gene_request["scope"],
             "project_name": project_name,
