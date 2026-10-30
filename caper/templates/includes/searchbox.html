@@ -20,13 +20,13 @@
     <div class="mb-3">
         <label for="project_name" class="form-label">Project Name</label>
         <input type="text" class="form-control" name="project_name" id="project_name"
-               placeholder='e.g. MyProject (partial), or "My Project" (exact)' value="{{ user_query.project_name|default:'' }}">
+               placeholder='e.g. MyProject' value="{{ user_query.project_name|default:'' }}">
     </div>
 
     <div class="mb-3">
         <label for="metadata_sample_name" class="form-label">Sample Name</label>
         <input type="text" class="form-control" name="metadata_sample_name" id="metadata_sample_name"
-            placeholder='e.g. NCIH (partial), or "NCIH2170" (exact)' value="{{ user_query.metadata_sample_name|default:'' }}">
+            placeholder='e.g. NCIH2170' value="{{ user_query.metadata_sample_name|default:'' }}">
     </div>
 
     {% comment %}
@@ -44,7 +44,7 @@
             <span class="gene-chip" data-term="{{ term }}"><input type="hidden" name="gene" value="{{ term }}">{{ term }}<button type="button" class="gene-chip-remove" aria-label="Remove {{ term }}">&times;</button></span>
             {% endfor %}
             <input type="text" class="gene-chip-input" name="genequery" id="genequery"
-                   placeholder="{% if user_query.gene_terms %}Add a gene{% else %}e.g. MYC, then pick it from the list{% endif %}">
+                   placeholder="{% if user_query.gene_terms %}Add a gene{% else %}e.g. MYC{% endif %}">
         </div>
         <div class="gene-match"{% if user_query.gene_terms|length < 2 %} hidden{% endif %}>
             <label class="gene-option"><input type="radio" name="gene_match" value="any"{% if user_query.gene_match != 'all' %} checked{% endif %}> Any of these genes</label>
@@ -111,13 +111,13 @@
             <div class="mb-3">
                 <label for="metadata_sample_type" class="form-label">Sample Type</label>
                 <input type="text" class="form-control" name="metadata_sample_type" id="metadata_sample_type"
-                    placeholder="e.g. cell line (substring match, or use | for OR)" value="{{ user_query.metadata_sample_type|default:'' }}">
+                    placeholder="e.g. cell line" value="{{ user_query.metadata_sample_type|default:'' }}">
             </div>
 
             <div class="mb-3">
                 <label for="metadata_cancer_tissue" class="form-label">Cancer Type or Tissue</label>
                 <input type="text" class="form-control" name="metadata_cancer_tissue" id="metadata_cancer_tissue"
-                    placeholder="e.g. bone (finds Bone/soft tissue), or breast|lung" value="{{ user_query.metadata_cancer_tissue|default:'' }}">
+                    placeholder="e.g. breast|lung" value="{{ user_query.metadata_cancer_tissue|default:'' }}">
             </div>
         </div>
     </div>

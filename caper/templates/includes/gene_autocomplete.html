@@ -179,7 +179,7 @@ const GeneChips = (function () {
             const all = form.querySelector('input[name="gene_match"][value="all"]');
             match.hidden = chips().length < 2;
             scope.hidden = !all.checked;
-            input.placeholder = chips().length ? 'Add a gene' : 'e.g. MYC, then pick it from the list';
+            input.placeholder = chips().length ? 'Add a gene' : 'e.g. MYC';
         }
 
         function add(term, title) {
