@@ -9,7 +9,10 @@ modal's checkbox, and the panel's metadata button open the modal's section.
 <form id="searchForm" action="{% url 'search_results' %}" method="POST" class="p-4 border rounded bg-light">
     {% csrf_token %}
 
-    <ul class="text-muted" style="font-size: 0.8rem; margin-bottom: 12px; padding-left: 1.1rem;">
+    {# Closed by default: open, it is the first thing in the panel and pushes the fields a screen down. #}
+    <details class="search-tips text-muted" style="font-size: 0.8rem; margin-bottom: 12px;">
+    <summary style="cursor: pointer; margin-bottom: 6px;">Search tips</summary>
+    <ul style="margin-bottom: 0; padding-left: 1.1rem;">
         <li><strong>Project, Sample Name, Sample Type, Cancer Type/Tissue</strong> match on
             <strong>substrings</strong> (e.g. <em>bone</em> finds <em>Bone/soft tissue</em>;
             <em>NCIH</em> finds <em>NCIH2170</em>).</li>
@@ -22,6 +25,7 @@ modal's checkbox, and the panel's metadata button open the modal's section.
         <li>Use <strong>|</strong> for OR (e.g. <em>breast|lung</em>) and
             <strong>&amp;</strong> for AND (e.g. <em>bone&amp;soft</em>) in the other fields.</li>
     </ul>
+    </details>
 
     <div class="mb-3">
         <label for="{{ id_prefix }}project_name" class="form-label">Project Name</label>
