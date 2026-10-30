@@ -894,9 +894,15 @@ def index_project(project):
 
 
 def unindex_project(project_id):
-    """Drop one project's rows and its manifest entry.  Returns rows removed."""
+    """Drop one project's rows, its names and its manifest entry.  Returns rows removed.
+
+    The names were left behind until 2026-10-30: prod then held 2,825
+    search_names rows from 9 deleted projects (measured read-only that day),
+    each one a name a search could still offer that led nowhere.
+    """
     removed = feature_index_handle.delete_many({'project_id': project_id}).deleted_count
     sample_index_handle.delete_many({'project_id': project_id})
+    search_names_handle.delete_many({'project_id': project_id})
     manifest_handle.delete_one({'project_id': project_id})
     return removed
 

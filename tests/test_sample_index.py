@@ -318,3 +318,16 @@ def test_unindexing_removes_the_copy(mongo_collection, test_user):
     assert sample_index_handle.count_documents({'project_id': document['_id']}) == len(RUNS)
     unindex_project(document['_id'])
     assert sample_index_handle.count_documents({'project_id': document['_id']}) == 0
+
+
+@pytest.mark.integration
+def test_unindexing_leaves_no_project_keyed_row(mongo_collection, test_user):
+    """Names too: they were left behind, 2,825 of them on prod (2026-10-30)."""
+    document = _project_doc('pytest unindex names', RUNS, test_user.username)
+    document['_id'] = ObjectId()
+    index_project(document)
+    names = feature_index.search_names_handle
+    assert names.count_documents({'project_id': document['_id']}) > 0
+    unindex_project(document['_id'])
+    for handle in feature_index._PROJECT_KEYED_COLLECTIONS():
+        assert handle.count_documents({'project_id': document['_id']}) == 0, handle.name
