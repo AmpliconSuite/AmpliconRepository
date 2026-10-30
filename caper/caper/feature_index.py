@@ -901,6 +901,30 @@ def unindex_project(project_id):
     return removed
 
 
+def _PROJECT_KEYED_COLLECTIONS():
+    return (feature_index_handle, sample_index_handle, search_names_handle)
+
+
+def stray_rows():
+    """Rows in the project-keyed derived collections whose project has no manifest entry.
+
+    ``feature_index_drift`` compares projects with the manifest, so a row
+    written around ``index_project`` -- a test fixture inserted directly, an
+    interrupted run -- is invisible to it, and a search serves it.  This counts
+    them; a full rebuild removes them.
+    """
+    indexed = [entry['project_id'] for entry in manifest_handle.find({}, {'project_id': 1})]
+    return {handle.name: handle.count_documents({'project_id': {'$nin': indexed}})
+            for handle in _PROJECT_KEYED_COLLECTIONS()}
+
+
+def remove_stray_rows(indexed_project_ids):
+    """Delete project-keyed derived rows of any project not in ``indexed_project_ids``."""
+    keep = list(indexed_project_ids)
+    return {handle.name: handle.delete_many({'project_id': {'$nin': keep}}).deleted_count
+            for handle in _PROJECT_KEYED_COLLECTIONS()}
+
+
 def rebuild_feature_index(limit=None, progress=None):
     """Rebuild every project's rows from ``projects``.
 
@@ -932,6 +956,12 @@ def rebuild_feature_index(limit=None, progress=None):
         for stale in list(manifest_handle.find({'project_id': {'$nin': list(projects_seen)}},
                                                {'project_id': 1})):
             unindex_project(stale['project_id'])
+        # Rows of projects with no manifest entry at all: written around
+        # index_project, so nothing above can see them.  On dev 2026-10-29 that
+        # was 13 feature rows, 17 sample rows and 14 names left by an
+        # interrupted test run, served in dev's public search as a project
+        # called 'Pub'.
+        remove_stray_rows(projects_seen)
 
     return {'projects': len(projects_seen), 'rows': rows_written}
 
@@ -1002,6 +1032,7 @@ def feature_index_drift():
         'indexed': len(indexed),
         **search_name_drift(),
         **gene_catalog_drift(),
+        'stray': stray_rows(),
         'unchecked': unchecked_derived_collections(),
     }
 

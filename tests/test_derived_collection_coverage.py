@@ -149,3 +149,25 @@ class TestGeneCatalogueDrift:
         never called.
         """
         assert PYTEST_GENE in feature_index_drift()['genes_missing']
+
+
+def test_rows_of_no_indexed_project_are_reported_and_removed():
+    """A row written around index_project is invisible to the project comparison.
+
+    On dev 2026-10-29, 13 feature rows from an interrupted test run were served
+    in dev's public search as a project called 'Pub'.
+    """
+    from bson.objectid import ObjectId
+    from caper.feature_index import (feature_index_handle, manifest_handle,
+                                     remove_stray_rows, stray_rows)
+    ghost = ObjectId()
+    feature_index_handle.insert_one({'project_id': ghost, 'genes': ['MYC'], 'project_name': 'ghost'})
+    try:
+        assert stray_rows()['feature_index'] >= 1
+        # What a full rebuild does with the projects it indexed.
+        indexed = [m['project_id'] for m in manifest_handle.find({}, {'project_id': 1})]
+        remove_stray_rows(indexed)
+        assert feature_index_handle.count_documents({'project_id': ghost}) == 0
+        assert stray_rows()['feature_index'] == 0
+    finally:
+        feature_index_handle.delete_many({'project_id': ghost})
