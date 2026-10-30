@@ -134,6 +134,7 @@ from django.http import QueryDict  # noqa: E402
 from django.test import RequestFactory  # noqa: E402
 
 from caper import feature_index  # noqa: E402
+from caper.gene_ids import gene_ids_of  # noqa: E402
 from caper.feature_index import feature_index_handle  # noqa: E402
 from caper.classifications import is_no_amplicon  # noqa: E402
 
@@ -154,6 +155,7 @@ def _row(project_id, project_name, visibility, sample, feature_id,
         run_key=sample, sample_name=sample, feature_id=feature_id,
         classification=classification,
         genes=[g.upper() for g in genes], genes_display=list(genes),
+        gene_ids=gene_ids_of(build, [g.upper() for g in genes]),
         oncogenes=[], oncogenes_display=[], locations=['chr8:1-2'],
         reference_build=build,
         numbers=numbers or {key: None for key, _ in feature_index._FEATURE_NUMBERS},

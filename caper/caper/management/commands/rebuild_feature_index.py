@@ -98,6 +98,15 @@ class Command(BaseCommand):
             if len(symbols) > 10:
                 self.stdout.write(f"             ... and {len(symbols) - 10} more")
 
+        # Human gene names the gene map cannot turn into an NCBI Gene ID. Such a
+        # gene is still found by its exact name, but not under its other names.
+        missing_ids = drift.get('genes_without_id', [])
+        self.stdout.write(f"gene ids  {len(missing_ids):>5}   human gene names with no NCBI Gene ID")
+        if missing_ids:
+            self.stdout.write(f"             {', '.join(missing_ids[:10])}")
+        if len(missing_ids) > 10:
+            self.stdout.write(f"             ... and {len(missing_ids) - 10} more")
+
         # Should always be empty. It is printed rather than assumed because the
         # failure it guards against is a collection added to DERIVED_COLLECTIONS
         # and measured by nothing -- which is precisely how ``search_names``
