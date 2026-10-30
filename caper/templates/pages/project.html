@@ -224,9 +224,11 @@
             return '';
         }
 
+        // The note's line is always there (see its CSS), so a note coming or
+        // going never moves the table.
         function showGeneNote() {
-            var html = describeGene();
-            geneNote.html(html).prop('hidden', !html);
+            geneNote.html(describeGene());
+            geneNote.attr('title', geneNote.text());
         }
 
         // Gene names, aliases and Gene IDs (2064, GeneID:2064); not sample
@@ -249,12 +251,16 @@
         table.on('draw', showGeneNote);
 
         // Matching is on the lower-cased text; the note repeats it as typed.
-        function applyFilterText(typed) {
+        // The name is looked up once typing pauses: on the way to MIEN1, MI
+        // and MIEN are aliases of other genes, and their notes only flicker.
+        var resolveTimer = null;
+        function applyFilterText(typed, now) {
             var value = typed.toLowerCase();
             if (value === filterText) { return; }
             filterText = value;
             table.draw();
-            resolveFilterText(typed);
+            clearTimeout(resolveTimer);
+            resolveTimer = setTimeout(function () { resolveFilterText(typed); }, now ? 0 : 450);
         }
 
         var filterTimer = null;
@@ -268,8 +274,29 @@
         geneNote.on('click', '.gene-pick', function () {
             var symbol = $(this).data('symbol');
             $('#sample-filter-input').val(symbol);
-            applyFilterText(String(symbol));
+            applyFilterText(String(symbol), true);
         });
+
+        // While a filter is on, the table area keeps the tallest height it has
+        // had since the filter began, so the pager and everything below it
+        // stay put as the matches come and go. Clearing the filter lets go.
+        var tableArea = $('#samples-table-wrap > .table-responsive');
+        var unfilteredHeight = 0;
+        var heldHeight = 0;
+
+        function holdTableHeight() {
+            tableArea.css('min-height', '');
+            var natural = tableArea.outerHeight();
+            if (!filterText && !classFilter) {
+                unfilteredHeight = natural;
+                heldHeight = 0;
+                return;
+            }
+            heldHeight = Math.max(heldHeight || unfilteredHeight, natural);
+            tableArea.css('min-height', heldHeight + 'px');
+        }
+
+        table.on('draw', holdTableHeight);
 
         // A click on a bar of the summary chart lists that bar's samples; one
         // class at a time, and a second click on the same bar, or the chip's
@@ -332,6 +359,7 @@
                 .insertAfter($band);
             $('#sample-filter').insertAfter('#download-filtered-wrap');
         })();
+        holdTableHeight();   // the unfiltered height, now that the controls are in place
 
         // Update filtered count display, and enable the download only once the
         // table is actually filtered -- "download filtered samples" with no
@@ -1452,7 +1480,7 @@ the control band like the download button above, and stays here if that fails.
     <input type="search" id="sample-filter-input" autocomplete="off" spellcheck="false"
            placeholder="Gene, classification or sample"
            aria-label="Filter samples by gene, classification or sample name">
-    <div id="sample-gene-note" role="status" hidden></div>
+    {% if gene_filter_universe %}<div id="sample-gene-note" role="status"></div>{% endif %}
 </div>
 {% comment %}
 The full sample list is in the DOM -- every sample, which on a large project is
@@ -1576,16 +1604,42 @@ paged.
             width: auto;
         }
 
-        #sample-gene-note:not([hidden]) {
-            text-align: left !important;
+        div#sample-filter {
+            padding-bottom: 0;
+        }
+
+        #sample-filter #sample-gene-note {
+            position: static;
+            flex-basis: 100%;
+            min-height: 20px;
+            max-width: none;
+            white-space: normal;
         }
     }
 
-    #sample-gene-note:not([hidden]) {
-        flex-basis: 100%;
-        text-align: right;
+    /* The note's line is held even when empty, and the note is laid over it
+       rather than in the filter's flow: in the flow it widened the floated
+       filter until the filter no longer fitted beside the download button
+       and dropped a line, pushing the table down. Laid over, it can run left
+       into the empty space under the controls. A long one is cut short; its
+       full text is the tooltip. */
+    #sample-filter {
+        position: relative;
+        padding-bottom: 22px;
+    }
+
+    #sample-gene-note {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: max-content;
+        max-width: min(1100px, calc(100vw - 48px));
+        line-height: 20px;
         font-size: 13px;
         color: #555;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     #sample-gene-note .gene-pick {

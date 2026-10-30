@@ -366,9 +366,9 @@ def test_the_project_filter_finds_a_gene_under_another_name(page):
     if 'No samples' in by_own_name:
         pytest.skip('This project has no C17orf37 sample')
     box.fill('MIEN1')
-    note = page.locator('#sample-gene-note')
-    note.wait_for(state='visible', timeout=10_000)
-    assert 'called C17orf37 here' in note.inner_text()
+    page.wait_for_function(
+        "document.querySelector('#sample-gene-note').textContent.includes('called C17orf37 here')",
+        timeout=10_000)
     assert page.locator('#myTable1_info').inner_text() == by_own_name
 
 

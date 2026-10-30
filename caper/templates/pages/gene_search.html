@@ -16,6 +16,26 @@
     }
     .results-container {
         width: 100%;
+        min-width: 0;   /* a flex item: without this a wide table widens the page */
+    }
+
+    /* A phone has no room for the panel beside the results: on a 412 px
+       Galaxy S25 the panel was ~70 px wide, one word per line, and the
+       results ran off the right edge. Stack them, results first; the panel
+       follows for refining the search. */
+    @media (max-width: 767px) {
+        .search-container {
+            flex-direction: column;
+        }
+
+        .search-box {
+            width: 100%;
+            order: 2;
+        }
+
+        .results-container {
+            order: 1;
+        }
     }
 
     /* Project filter styles */
@@ -155,6 +175,20 @@
 
     .gs-table-wrap.is-ready > .gs-table-inner {
         display: block;
+    }
+
+    /* The table scrolls, not the page: its columns need ~954 px. style.css
+       lets every DataTables wrapper grow to its table's width; here that
+       carried the "Search" box off the right edge, and on a phone the
+       centred controls off the screen. As on the project page, the wrapper
+       keeps the column's width and only the table scrolls. */
+    .gs-table-inner > .dataTables_wrapper {
+        min-width: 0;
+    }
+
+    .gs-table-scroll {
+        clear: both;
+        overflow-x: auto;
     }
 
     .gs-table-wrap.is-ready > .gs-table-placeholder {
@@ -415,6 +449,10 @@
                 searching: true,
                 autoWidth: false,
                 responsive: true,
+                // DataTables' default layout ('lfrtip') with the table alone in
+                // a scrolling box: the "Show entries" and "Search" controls stay
+                // in view while a table wider than the column scrolls.
+                dom: "lfr<'gs-table-scroll't>ip",
                 order: [[1, 'asc']], // Default sort by Project Name column (index 1)
                 createdRow: function(row, data, dataIndex) {
                     // Store the project ID for this row so we can access it during filtering
