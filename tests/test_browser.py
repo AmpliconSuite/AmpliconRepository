@@ -275,6 +275,40 @@ def test_gene_search_redirects_to_the_home_page(page):
 
 
 @pytest.mark.browser
+def test_choosing_a_gene_suggestion_searches_for_it(page):
+    """
+    The home box suggests genes by every name AmpliconSuite used; choosing one
+    writes the NCBI symbol and submits. C17orf37 is MIEN1's name in hg19 results
+    only, and the entry says so.
+    """
+    page.goto('/')
+    page.locator('#home-query').type('C17orf3', delay=20)
+    first = page.locator('.gene-ac-list:not([hidden]) .gene-ac-item').first
+    first.wait_for(timeout=10_000)
+    assert 'MIEN1' in first.inner_text() and 'C17orf37 (hg19)' in first.inner_text()
+    with page.expect_navigation(timeout=120_000):
+        first.dispatch_event('mousedown')
+    assert '/search_results/' in page.url
+    assert page.locator('.search-box input[name="genequery"]').input_value() == 'MIEN1'
+
+
+@pytest.mark.browser
+def test_the_advanced_search_modal_suggests_genes(page):
+    """The header's search modal carries the same autocomplete, drawn above it."""
+    page.goto('/')
+    page.click('#home-advanced')
+    page.locator('#searchModal input[name="genequery"]').type('PDK', delay=20)
+    first = page.locator('.gene-ac-list:not([hidden]) .gene-ac-item').first
+    first.wait_for(timeout=10_000)
+    assert first.inner_text().startswith('PDK1')
+    on_top = page.evaluate("""() => {
+        const r = document.querySelector('.gene-ac-list:not([hidden]) .gene-ac-item').getBoundingClientRect();
+        return Boolean(document.elementFromPoint(r.left + 5, r.top + 5).closest('.gene-ac-item'));
+    }""")
+    assert on_top, 'the suggestion list is hidden behind the modal'
+
+
+@pytest.mark.browser
 def test_public_project_page_renders(page, public_project_id):
     """
     A public project page must render the sample DataTable (#myTable1)

@@ -28,6 +28,7 @@ GENE_MAP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 
 # The reference builds whose results are named in each universe's gene file.
 UNIVERSE_OF_BUILD = {'hg19': 'hg19', 'GRCh37': 'hg19', 'hg38': 'hg38', 'GRCh38': 'hg38', 'GRCh38_viral': 'hg38'}
+HUMAN_UNIVERSES = ('hg19', 'hg38')
 
 
 @lru_cache(maxsize=1)
@@ -155,11 +156,14 @@ def _names_without_id():
 def _candidate(gene_id, matched=None, kind=None):
     symbol, full_name = gene_record(gene_id)
     entry = {'gene_id': gene_id, 'symbol': symbol, 'full_name': full_name,
-             'status': gene_status(gene_id)}
+             'status': gene_status(gene_id), 'annotated_in': annotated_in(gene_id)}
     if matched is not None and matched.upper() != symbol.upper():
         entry['matched'] = matched
         entry['matched_as'] = kind
         entry['matched_label'] = MATCH_LABELS.get(kind, kind)
+        if kind == 'ac_name':
+            # C17orf37 is MIEN1's name in hg19 results only; hg38 calls it MIEN1.
+            entry['matched_builds'] = builds_naming(gene_id, matched)
     return entry
 
 
@@ -296,6 +300,23 @@ def ac_names_of(gene_id):
     return _ac_names_by_gene().get(gene_id, {})
 
 
+def annotated_in(gene_id):
+    """The human builds whose AC gene file names this gene, e.g. ``['hg19', 'hg38']``.
+
+    Not always both: of the 23,214 genes in the map, 232 are named only by the
+    hg19 file and 2,921 only by the hg38 one (measured 2026-10-29), and results
+    on the other build can never report them.
+    """
+    return sorted(ac_names_of(gene_id))
+
+
+def builds_naming(gene_id, name):
+    """The builds in which AC calls this gene ``name``."""
+    upper = str(name).upper()
+    return [universe for universe, names in sorted(ac_names_of(gene_id).items())
+            if upper in {n.upper() for n in names}]
+
+
 def other_names_note(gene_id):
     """``'called C17orf37 in hg19 results'`` when AC's names differ from the symbol, else ''."""
     record = gene_record(gene_id)
@@ -311,8 +332,9 @@ def gene_resolution_notes(genequery, resolve=None):
     """What the search results page says about each gene term.
 
     Every resolution from ``resolve_gene_query``, with a ``note`` for a gene
-    whose results use other names (``called C17orf37 in hg19 results``).  Terms
-    that are simply a gene's own symbol and match it under no other name get
+    whose results use other names (``called C17orf37 in hg19 results``) and
+    ``missing_in`` naming the human builds AC does not annotate it in.  Terms
+    that are simply a gene's own symbol, in both builds, under no other name get
     no note and are left out, so an ordinary MYC search shows nothing extra.
     """
     notes = []
@@ -320,8 +342,9 @@ def gene_resolution_notes(genequery, resolve=None):
         if resolution['outcome'] == 'gene':
             gene = resolution['gene']
             gene['note'] = other_names_note(gene['gene_id'])
+            gene['missing_in'] = [u for u in HUMAN_UNIVERSES if u not in gene['annotated_in']]
             if not (gene['note'] or gene.get('matched') or resolution.get('also_alias_of')
-                    or gene['status'] == 'withdrawn'):
+                    or gene['status'] == 'withdrawn' or gene['missing_in']):
                 continue
         elif resolution['outcome'] == 'ambiguous':
             for candidate in resolution['candidates']:

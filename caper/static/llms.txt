@@ -241,8 +241,9 @@ from `/api/v1/features/facets/` at the time you answer.
   gene. A name with no single meaning (`NEU`) is a `400` with code
   `ambiguous_gene` listing the candidates; a name AmpliconSuite does not
   annotate is a `400` with code `gene_not_tracked`. Responses carry
-  `gene_terms` (what each term was taken to mean) and each row carries
-  `gene_ids`.
+  `gene_terms` (what each term was taken to mean, including `annotated_in`:
+  the builds whose annotation has the gene at all -- some genes are hg19-only
+  or hg38-only) and each row carries `gene_ids`.
 - **Gene lists are comma-delimited** (`gene_any=MYC,EGFR`). **Metadata values
   are not** — real ones contain commas, so repeat the parameter instead:
   `?cancer_type=Breast&cancer_type=Breast%20Adenocarcinoma`.

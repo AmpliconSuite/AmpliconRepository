@@ -193,3 +193,19 @@ def test_a_reissued_record_beats_the_withdrawn_one():
     """NCBI withdrew PPP1R2P1's old record and re-issued the gene under a new one."""
     from caper.gene_ids import gene_status
     assert gene_status(gene_id_of('hg19', 'PPP1R2P1')) == 'current'
+
+
+def test_an_amplicon_suite_name_says_which_builds_use_it():
+    """C17orf37 is MIEN1's name in hg19 results; hg38 results call it MIEN1."""
+    [first] = suggest_genes('C17orf37')[:1]
+    assert first['symbol'] == 'MIEN1' and first['matched_builds'] == ['hg19']
+    assert first['annotated_in'] == ['hg19', 'hg38']
+
+
+def test_a_gene_one_build_never_reports_is_flagged():
+    """ACOD1 is in AC's hg38 gene file only, CT62 in its hg19 file only."""
+    [acod1] = gene_resolution_notes('ACOD1')
+    assert acod1['gene']['annotated_in'] == ['hg38'] and acod1['gene']['missing_in'] == ['hg19']
+    [ct62] = gene_resolution_notes('CT62')
+    assert ct62['gene']['missing_in'] == ['hg38']
+    assert gene_resolution_notes('MYC') == []      # in both builds: still no note

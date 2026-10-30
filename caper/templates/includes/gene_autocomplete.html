@@ -1,16 +1,19 @@
 {% comment %}
-Gene autocomplete for a search box. Include once, then call
+Gene autocomplete for a search box. header.html includes this once on every
+page and attaches it to each search form's gene box (the header's Advanced
+modal, and the results page's own copy of that form); other boxes call
 GeneAutocomplete.attach(input, {active: function () { return true; }}).
 
 It completes the term being typed -- the text after the last & or | -- from
 /api/gene-suggest/, which starts suggesting at 3 characters and before that
 offers only an exact name (AR, ALK). Each entry shows the gene's NCBI symbol,
 full name and Gene ID, and the name the text matched when that is not the
-symbol (an alias, a former symbol, AmpliconSuite's own name for it). Choosing
-one writes the symbol into the box.
+symbol (an alias, a former symbol, AmpliconSuite's own name for it, with the
+builds it is used in). Choosing one writes the symbol into the box and submits
+the form. A term holding * is a wildcard and gets no suggestions.
 {% endcomment %}
 <style>
-    .gene-ac-list { position: absolute; z-index: 1050; margin: 0; padding: 4px 0; list-style: none;
+    .gene-ac-list { position: absolute; z-index: 2100; margin: 0; padding: 4px 0; list-style: none;
         background: #fff; border: 1px solid #c5d0dc; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);
         max-height: 360px; overflow-y: auto; font-size: 14px; text-align: left; }
     .gene-ac-item { padding: 6px 12px; cursor: pointer; line-height: 1.3; }
@@ -78,7 +81,8 @@ const GeneAutocomplete = (function () {
             const parts = currentTerm(input.value);
             input.value = parts.prefix + entry.symbol;
             close();
-            input.focus();
+            // requestSubmit, not submit: it runs the form's own submit handlers.
+            if (input.form) { input.form.requestSubmit(); } else { input.focus(); }
         }
 
         function render(suggestions) {
@@ -89,11 +93,13 @@ const GeneAutocomplete = (function () {
                 const li = document.createElement('li');
                 li.className = 'gene-ac-item';
                 li.setAttribute('role', 'option');
-                const matched = s.matched ? ' &middot; ' + escapeHtml(s.matched_label) + ' ' + escapeHtml(s.matched) : '';
+                const builds = s.matched_builds ? ' (' + s.matched_builds.map(escapeHtml).join(', ') + ')' : '';
+                const matched = s.matched ? ' &middot; ' + escapeHtml(s.matched_label) + ' ' + escapeHtml(s.matched) + builds : '';
+                const only = s.annotated_in && s.annotated_in.length === 1 ? ' &middot; ' + escapeHtml(s.annotated_in[0]) + ' only' : '';
                 const withdrawn = s.status === 'withdrawn' ? ' <span class="gene-ac-withdrawn">withdrawn from NCBI Gene</span>' : '';
                 li.innerHTML = '<span class="gene-ac-symbol">' + escapeHtml(s.symbol) + '</span> '
                     + '<span class="gene-ac-full">' + escapeHtml(s.full_name || '') + '</span>'
-                    + '<div class="gene-ac-meta">NCBI Gene ' + escapeHtml(s.gene_id) + matched + withdrawn + '</div>';
+                    + '<div class="gene-ac-meta">NCBI Gene ' + escapeHtml(s.gene_id) + matched + only + withdrawn + '</div>';
                 // mousedown, not click: a click arrives after the input's blur has closed the list.
                 li.addEventListener('mousedown', function (event) { event.preventDefault(); choose(i); });
                 list.appendChild(li);
@@ -107,7 +113,7 @@ const GeneAutocomplete = (function () {
         input.addEventListener('input', function () {
             clearTimeout(timer);
             const term = currentTerm(input.value).term;
-            if (!active() || !term) { close(); return; }
+            if (!active() || !term || term.indexOf('*') >= 0) { close(); return; }
             timer = setTimeout(function () {
                 const mine = ++sequence;
                 fetch(URL + '?q=' + encodeURIComponent(term), {headers: {'X-Requested-With': 'XMLHttpRequest'}})
@@ -129,15 +135,23 @@ const GeneAutocomplete = (function () {
                 event.preventDefault();
                 choose(selected);
             } else if (event.key === 'Escape') {
+                event.stopPropagation();   // close the list, not the search modal around it
                 close();
             }
         });
 
         input.addEventListener('blur', close);
         window.addEventListener('resize', function () { if (!list.hidden) { place(); } });
+        window.addEventListener('scroll', function () { if (!list.hidden) { place(); } }, true);
         return {close: close};
     }
 
     return {attach: attach};
 })();
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('form#searchForm input[name="genequery"]').forEach(function (input) {
+        GeneAutocomplete.attach(input);
+    });
+});
 </script>

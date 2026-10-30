@@ -334,6 +334,11 @@ class GeneTermSerializer(serializers.Serializer):
     status = serializers.CharField(
         required=False, help_text='`current`, or `withdrawn` for a gene NCBI '
                                   'retired with no successor.')
+    annotated_in = serializers.ListField(
+        child=serializers.CharField(), required=False,
+        help_text='Human builds whose AmpliconSuite gene annotation includes '
+                  'this gene: `hg19`, `hg38` or both. Results on a build not '
+                  'listed can never contain it.')
     matched_as = serializers.CharField(
         required=False, help_text='How the term matched when it is not the '
                                   'symbol: `ac_name`, `alias`, `retired_symbol` '

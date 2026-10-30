@@ -270,6 +270,7 @@ def test_a_gene_is_found_under_every_name_ac_gave_it(corpus):
         response = _get(renamed + 'gene_any=' + name)
         assert response.data['count'] == 2, name
         assert response.data['gene_terms'][0]['gene_id'] == 84299
+        assert response.data['gene_terms'][0]['annotated_in'] == ['hg19', 'hg38']
     row = _get(renamed + 'gene_any=MIEN1').data['results'][0]
     assert 84299 in row['gene_ids']
 

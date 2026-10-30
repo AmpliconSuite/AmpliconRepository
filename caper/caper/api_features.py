@@ -496,7 +496,8 @@ def gene_terms_report(params):
         entry = {'term': term, 'outcome': resolution['outcome']}
         if resolution['outcome'] == 'gene':
             gene = resolution['gene']
-            entry.update(gene_id=gene['gene_id'], symbol=gene['symbol'], status=gene['status'])
+            entry.update(gene_id=gene['gene_id'], symbol=gene['symbol'], status=gene['status'],
+                         annotated_in=gene['annotated_in'])
             if gene.get('matched_as'):
                 entry['matched_as'] = gene['matched_as']
             if resolution.get('also_alias_of'):

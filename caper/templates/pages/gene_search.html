@@ -1166,10 +1166,13 @@
                     <span class="gene-note-id">NCBI Gene <a href="https://www.ncbi.nlm.nih.gov/gene/{{ note.gene.gene_id|stringformat:"d" }}" target="_blank" rel="noopener">{{ note.gene.gene_id|stringformat:"d" }}</a></span>
                     {% if note.gene.status == 'withdrawn' %}<span class="gene-note-withdrawn">withdrawn from NCBI Gene</span>{% endif %}
                     {% if note.gene.note %}<span class="gene-note-names">&middot; {{ note.gene.note }}</span>{% endif %}
+                    {% if note.gene.missing_in %}
+                    <div class="gene-note-missing">AmpliconSuite's {{ note.gene.missing_in|join:" and " }} gene annotation does not include {{ note.gene.symbol }}, so {{ note.gene.missing_in|join:" and " }} projects never report it.</div>
+                    {% endif %}
                     {% for other in note.also_alias_of %}
-                    <div class="gene-note-also">{{ note.term }} is also an alias of
-                        <button type="button" class="gene-pick" data-term="{{ note.term }}" data-symbol="{{ other.symbol }}">{{ other.symbol }}</button>
-                        <span class="gene-note-full">{{ other.full_name }}</span></div>
+                    <div class="gene-note-also">{{ note.term }} is also an alias of <b>{{ other.symbol }}</b>
+                        <span class="gene-note-full">({{ other.full_name }})</span>.
+                        Search <button type="button" class="gene-pick" data-term="{{ note.term }}" data-symbol="{{ other.symbol }}">{{ other.symbol }}</button> to see its results.</div>
                     {% endfor %}
                 {% elif note.outcome == 'ambiguous' %}
                     <div><b>{{ note.term }}</b> could mean several genes. Pick one:</div>
@@ -1177,7 +1180,7 @@
                     {% for c in note.candidates %}
                         <button type="button" class="gene-pick" data-term="{{ note.term }}" data-symbol="{{ c.symbol }}">
                             <b>{{ c.symbol }}</b> <span class="gene-note-full">{{ c.full_name }}</span>
-                            <span class="gene-note-id">Gene {{ c.gene_id|stringformat:"d" }}{% if c.matched_label %}, {{ c.matched_label }} {{ note.term }}{% endif %}</span>
+                            <span class="gene-note-id">Gene {{ c.gene_id|stringformat:"d" }}{% if c.matched_label %}, {{ c.matched_label }} {{ note.term }}{% if c.matched_builds %} ({{ c.matched_builds|join:", " }}){% endif %}{% endif %}{% if c.annotated_in|length == 1 %}, {{ c.annotated_in.0 }} only{% endif %}</span>
                         </button>
                     {% endfor %}
                     </div>
@@ -1396,22 +1399,20 @@
     .gene-note-ambiguous, .gene-note-not_tracked { background: #fff8e6; border-color: #f0d79a; }
     .gene-note-id, .gene-note-names, .gene-note-full { color: #555; font-size: 0.9em; }
     .gene-note-withdrawn { color: #8a4b00; font-size: 0.9em; margin-left: 4px; }
+    .gene-note-missing { color: #8a4b00; font-size: 0.9em; margin-top: 2px; }
     .gene-pick-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
     .gene-pick { border: 1px solid #9fb3c8; background: #fff; border-radius: 4px; padding: 2px 8px; cursor: pointer; text-align: left; }
     .gene-pick:hover, .gene-pick:focus { background: #e8f0fb; }
 </style>
-{% include 'includes/gene_autocomplete.html' %}
 <script>
-(function () {
-    var box = document.getElementById('genequery');
-    if (box) { GeneAutocomplete.attach(box); }
-})();
-// A pick replaces the term it answers in the gene box and searches again.
+// A pick replaces the term it answers in the gene box and searches again.  The
+// box is the one in this page's search panel: the header's search modal holds a
+// second form with the same ids, and it comes first in the page.
 document.querySelectorAll('.gene-pick').forEach(function (button) {
     button.addEventListener('click', function () {
-        var input = document.getElementById('genequery');
-        var form = document.getElementById('searchForm');
-        if (!input || !form) { return; }
+        var form = document.querySelector('.search-box form#searchForm');
+        var input = form && form.querySelector('input[name="genequery"]');
+        if (!input) { return; }
         var term = button.dataset.term, symbol = button.dataset.symbol;
         var separator = input.value.indexOf('&') >= 0 ? '&' : (input.value.indexOf('|') >= 0 ? '|' : null);
         var parts = separator ? input.value.split(separator) : [input.value];
