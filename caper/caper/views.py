@@ -1378,17 +1378,18 @@ def project_download(request, project_name):
     logging.info('==== XXX file DOES NOT EXIST must make it first and upload to S3 ')
     try:
         file_location = find_one('*.tar.gz', project_data_path)
-        if not file_location:
+        if file_location:
+            source, filename = open(file_location, "rb"), file_location.split('/')[-1]
+        elif project.get('tarfile'):
+            # The extracted copy is scratch, and the temp-dir reaper removes
+            # it; the archive itself is in GridFS, as the S3 branch above
+            # already assumes when it fills the bucket.
+            source, filename = fs_handle.get(ObjectId(project['tarfile'])), f"{project['_id']}.tar.gz"
+        else:
             # Project has no samples yet (empty project) – nothing to download
-            logging.info(f"==== XXX project {project_name} has no local tar.gz yet (empty project), returning 404")
+            logging.info(f"==== XXX project {project_name} has no tarfile yet (empty project), returning 404")
             return HttpResponseNotFound('Project has no samples yet.')
-        response = StreamingHttpResponse(
-        FileWrapper(
-            open(file_location, "rb"),
-            chunk_size,
-            )
-        )
-        filename = file_location.split('/')[-1]
+        response = StreamingHttpResponse(FileWrapper(source, chunk_size))
         response['Content-Type'] = f'application/tar+gzip'
         response['Content-Disposition'] = f'attachment; filename={filename}'
         # clear_tmp()
