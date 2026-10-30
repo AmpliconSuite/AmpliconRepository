@@ -155,7 +155,25 @@ def test_query_terms_split_like_the_search():
     assert query_terms('MYC & egfr') == ['MYC', 'egfr']
     assert query_terms('MYC|EGFR') == ['MYC', 'EGFR']
     assert query_terms('MYC|EGFR&CDK4') == ['MYC|EGFR', 'CDK4']   # & wins, as in search_index
-    assert query_terms('MYC*') == []                              # wildcards stay on spelling
+    assert query_terms('MYC*') == ['MYC*']
+
+
+def test_gene_search_has_no_wildcards():
+    assert resolve_gene_term('MYC*') == {'outcome': 'wildcard', 'term': 'MYC*'}
+    [note] = gene_resolution_notes('MYC*')
+    assert note['outcome'] == 'wildcard'
+    assert [n['outcome'] for n in gene_resolution_notes('EGFR&MYC*')] == ['wildcard']
+
+
+def test_mixing_and_with_or_is_refused():
+    """MYC|EGFR&CDK4 used to search for a gene named 'MYC|EGFR'."""
+    assert gene_resolution_notes('MYC|EGFR&CDK4') == [{'outcome': 'mixed_operators', 'term': 'MYC|EGFR&CDK4'}]
+
+
+def test_results_mark_every_name_of_the_searched_gene():
+    from caper.gene_ids import highlight_names
+    assert {'MIEN1', 'C17ORF37'} <= set(highlight_names('C17orf37'))
+    assert 'ERBB2' in highlight_names('HER2&MYC') and 'MYC' in highlight_names('HER2&MYC')
 
 
 def test_suggestions_start_at_three_characters_or_an_exact_name():

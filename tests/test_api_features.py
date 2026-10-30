@@ -262,6 +262,9 @@ def test_gene_any_is_an_or(corpus):
     missing = _scoped(corpus, 'gene_any=NOSUCHGENE&count_only=true')
     assert missing.status_code == 400
     assert missing.data['code'] == 'gene_not_tracked'
+    pattern = _scoped(corpus, 'gene_any=MYC*&count_only=true')
+    assert pattern.status_code == 400 and pattern.data['code'] == 'invalid_parameter'
+    assert 'wildcard' in pattern.data['error']
 
 
 def test_a_gene_is_found_under_every_name_ac_gave_it(corpus):

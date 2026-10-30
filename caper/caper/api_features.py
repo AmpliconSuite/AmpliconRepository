@@ -458,6 +458,10 @@ def _gene_term(term):
         return clause
     if resolution['outcome'] == 'ambiguous':
         raise FeatureQueryError(ambiguous_message(resolution), 'ambiguous_gene')
+    if resolution['outcome'] == 'wildcard':
+        raise FeatureQueryError(
+            f"{resolution['term']}: gene terms are exact names; '*' is not a wildcard here.",
+            'invalid_parameter')
     raise FeatureQueryError(not_tracked_message(resolution['term']) + '.', 'gene_not_tracked')
 
 

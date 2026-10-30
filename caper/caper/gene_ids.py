@@ -187,10 +187,16 @@ def resolve_gene_term(term):
                    to pick; the API answers 400 with the list.
     ``name_only``  an AC gene name with no NCBI Gene ID (FLJ22763): search
                    it by name.
+    ``wildcard``   the text holds ``*``.  Gene search takes exact names only
+                   (Jens, 2026-10-29): a pattern matches spellings, so it
+                   cannot follow a gene across its names, and the
+                   autocomplete now answers "genes starting with ...".
     ``not_tracked`` nothing AmpliconSuite annotates.
     """
     text = str(term or '').strip()
     upper = text.upper()
+    if '*' in text:
+        return {'outcome': 'wildcard', 'term': text}
     match = _GENE_ID_TEXT.match(upper)
     if match and gene_record(int(match.group(1))):
         return {'outcome': 'gene', 'term': text, 'gene': _candidate(int(match.group(1)))}
@@ -221,6 +227,11 @@ def resolve_gene_term(term):
 
 def not_tracked_message(term):
     return f'{term} is not tracked by AmpliconSuite annotations'
+
+
+def wildcard_message(term):
+    return (f'{term}: gene search takes exact gene names, not * wildcards. '
+            'Type the start of a name in the search box to see the genes it could be.')
 
 
 def ambiguous_message(resolution):
@@ -267,16 +278,26 @@ def suggest_genes(text, limit=SUGGEST_LIMIT):
     return [_candidate(gene_id, label, kind) for gene_id, (_key, label, kind) in ranked]
 
 
+def mixes_operators(genequery):
+    """Whether a search box query holds both ``&`` and ``|``.
+
+    The box has no grouping, so ``MYC|EGFR&CDK4`` has no meaning; the search
+    used to split on ``&`` and look for a gene named ``MYC|EGFR``.
+    """
+    text = str(genequery or '')
+    return '&' in text and '|' in text
+
+
 def query_terms(genequery):
     """The gene terms of a search box query, split the way the search splits them.
 
-    ``&`` wins over ``|`` wherever it appears (``search_index._gene_query``),
-    and a term holding ``*`` is a wildcard, which stays a match on spelling.
+    ``&`` wins over ``|`` wherever it appears (``search_index._gene_query``);
+    ``gene_resolution_notes`` refuses a query that mixes them.
     """
     text = str(genequery or '')
     separator = '&' if '&' in text else ('|' if '|' in text else None)
     terms = [t.strip() for t in text.split(separator)] if separator else [text.strip()]
-    return [t for t in terms if t and '*' not in t]
+    return [t for t in terms if t]
 
 
 def resolve_gene_query(genequery, resolve=None):
@@ -337,6 +358,8 @@ def gene_resolution_notes(genequery, resolve=None):
     that are simply a gene's own symbol, in both builds, under no other name get
     no note and are left out, so an ordinary MYC search shows nothing extra.
     """
+    if mixes_operators(genequery):
+        return [{'outcome': 'mixed_operators', 'term': str(genequery).strip()}]
     notes = []
     for resolution in resolve_gene_query(genequery, resolve):
         if resolution['outcome'] == 'gene':
@@ -351,3 +374,26 @@ def gene_resolution_notes(genequery, resolve=None):
                 candidate['note'] = other_names_note(candidate['gene_id'])
         notes.append(resolution)
     return notes
+
+
+# Outcomes that stop a search box query: the page explains, and nothing is searched.
+BLOCKING_OUTCOMES = frozenset({'ambiguous', 'not_tracked', 'wildcard', 'mixed_operators'})
+
+
+def highlight_names(genequery):
+    """Upper-cased names the results table should mark for this query.
+
+    Every name AC uses for each gene searched, in either build, plus its NCBI
+    symbol -- a C17orf37 search finds hg38 rows that say MIEN1, and those
+    should be marked too.  A term that resolves to no gene is marked as typed.
+    """
+    names = set()
+    for resolution in resolve_gene_query(genequery):
+        if resolution['outcome'] == 'gene':
+            gene_id = resolution['gene']['gene_id']
+            names.add(resolution['gene']['symbol'].upper())
+            for universe_names in ac_names_of(gene_id).values():
+                names.update(n.upper() for n in universe_names)
+        else:
+            names.add(resolution['term'].upper())
+    return sorted(names)

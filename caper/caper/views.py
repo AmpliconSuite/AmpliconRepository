@@ -15,7 +15,7 @@ from .background_tasks import _thread_executor, get_background_task_status
 from . import version_purge
 from .canonical import project_canonical_url, sample_canonical_url
 from .email_contact import contact_footer_text, reply_to
-from .gene_ids import gene_resolution_notes, suggest_genes
+from .gene_ids import BLOCKING_OUTCOMES, gene_resolution_notes, highlight_names, suggest_genes
 from .feature_index import gene_term_clause
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
@@ -7292,7 +7292,7 @@ def search_results(request):
         # picks one (Jens, 2026-10-29). The others are searched by Gene ID.
         gene_notes = gene_resolution_notes(
             gene_search, resolve=lambda term: gene_term_clause(term)[1])
-        if any(note['outcome'] in ('ambiguous', 'not_tracked') for note in gene_notes):
+        if any(note['outcome'] in BLOCKING_OUTCOMES for note in gene_notes):
             results = {'public_projects': [], 'private_projects': [],
                        'public_sample_data': [], 'private_sample_data': []}
         else:
@@ -7373,6 +7373,7 @@ def search_results(request):
             "public_samples_count": public_samples_count,
             "private_samples_count": private_samples_count,
             "gene_notes": gene_notes,
+            "gene_highlight": highlight_names(gene_search) if gene_search else [],
         })
 
     else:

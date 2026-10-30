@@ -69,7 +69,7 @@ def can_serve(extra_metadata=None, **_ignored):
 # ---------------------------------------------------------------------------
 
 def _gene_clause(term):
-    """One gene term as a query clause, wildcards included.
+    """One gene term as a query clause.
 
     A term naming one gene matches that gene's NCBI Gene ID, so it finds the
     gene under every name AC used for it -- C17orf37 in hg19 rows and MIEN1 in
@@ -81,15 +81,12 @@ def _gene_clause(term):
     Anything that does not resolve to one gene -- an AC name with no Gene ID,
     a name found only in non-human results, or text the search page should
     have stopped as ambiguous or untracked -- is matched on its spelling,
-    upper-cased, as before (``feature_index.gene_term_clause``).  A term containing ``*``
-    is an anchored regex on the spelling (wildcards stay name-based).
+    upper-cased, as before (``feature_index.gene_term_clause``).  Gene search
+    has no wildcards: a ``*`` is literal text here, and the search page stops
+    such a query before it gets this far (``gene_ids.BLOCKING_OUTCOMES``).
     """
-    upper = term.upper()
-    pattern = wildcard_to_regex(upper)
-    if pattern:
-        return {'genes': {'$regex': pattern}}
     clause, _resolution = gene_term_clause(term)
-    return clause or {'genes': upper}
+    return clause or {'genes': term.upper()}
 
 
 def _gene_query(genequery):

@@ -77,13 +77,10 @@ def test_and_across_genes_is_per_row_which_means_one_amplicon():
     assert _gene_query('MYC&EGFR') == {'$and': [_gene('MYC', 4609), _gene('EGFR', 1956)]}
 
 
-@pytest.mark.parametrize('pattern, regex', [
-    ('MY*', '^MY.*$'),
-    ('*GFR', '^.*GFR$'),
-    ('*ORF*', '^.*ORF.*$'),
-])
-def test_wildcards_become_the_same_anchored_regex_the_old_path_builds(pattern, regex):
-    assert _gene_query(pattern) == {'genes': {'$regex': regex}}
+@pytest.mark.parametrize('pattern', ['MY*', '*GFR', '*ORF*'])
+def test_a_star_is_not_a_gene_wildcard(pattern):
+    """Gene search takes exact names (2026-10-29); the page stops these queries first."""
+    assert _gene_query(pattern) == {'genes': pattern}
 
 
 def test_empty_gene_query_contributes_nothing():

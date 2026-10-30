@@ -234,21 +234,20 @@
         geneQuery = "{{ gene_query|escapejs }}";
         {% endif %}
         
-        if (geneQuery) {
+        // The server lists every name each searched gene goes by
+        // (gene_ids.highlight_names): a C17orf37 search marks MIEN1 in hg38 rows.
+        const highlightData = document.getElementById('gene-highlight');
+        const geneHighlight = highlightData ? JSON.parse(highlightData.textContent) : [];
+        if (geneHighlight.length) {
+            searchTerms.push(...geneHighlight);
+        } else if (geneQuery) {
             // Split by OR (|) and AND (&) operators and trim whitespace
             const genes = geneQuery.split(/[|&]/).map(g => g.trim().toUpperCase()).filter(g => g);
             searchTerms.push(...genes);
         }
 
-        function wildcardToRegex(pattern) {
-            if (!pattern.includes('*')) return null;
-            const escaped = pattern.split('*').map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
-            return new RegExp('^' + escaped + '$', 'i');
-        }
-
         function geneMatchesTerm(gene, term) {
-            const re = wildcardToRegex(term);
-            return re ? re.test(gene) : gene.toUpperCase() === term;
+            return gene.toUpperCase() === term;
         }
 
         // Store project IDs for each row during DataTables initialization
@@ -1186,6 +1185,11 @@
                     </div>
                 {% elif note.outcome == 'non_human_name' %}
                     <b>{{ note.term }}</b> is not a human gene AmpliconSuite tracks; showing results that name it in other species.
+                {% elif note.outcome == 'wildcard' %}
+                    <b>{{ note.term }}</b>: gene search takes exact gene names, not <code>*</code> wildcards. Type the start of a name in the search box to see the genes it could be.
+                {% elif note.outcome == 'mixed_operators' %}
+                    <b>{{ note.term }}</b> uses both <code>&amp;</code> and <code>|</code>. Use one:
+                    <code>&amp;</code> finds amplicons carrying every gene, <code>|</code> finds amplicons carrying any of them.
                 {% elif note.outcome == 'name_only' %}
                     <b>{{ note.term }}</b> has no NCBI Gene record; matched by name only.
                 {% else %}
@@ -1392,6 +1396,7 @@
 {% endif %}
 </div>
 {% csrf_token %}
+{{ gene_highlight|json_script:"gene-highlight" }}
 
 <style>
     .gene-notes { margin: 0 0 12px; display: flex; flex-direction: column; gap: 6px; }
