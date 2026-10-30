@@ -1214,6 +1214,14 @@
         color: #8b9096;
     }
 
+    /* A line or two under a headline that needs it, quieter than the title. */
+    .home-news-desc {
+        margin: 4px 0 0;
+        font-size: 13px;
+        line-height: 1.5;
+        color: #5f6368;
+    }
+
     a.home-news-title:hover,
     a.home-news-title:focus,
     a.home-news-title:hover::after,
@@ -1964,6 +1972,19 @@
                     Latest updates
                 </div>
                 <div class="home-latest">
+                    <div>
+                        <div class="home-news-meta">
+                            <span class="home-tag home-tag-release">Release</span>
+                            <span class="home-news-src">GitHub</span>
+                        </div>
+                        <a class="home-news-title" href="https://github.com/AmpliconSuite/AmpliconClassifier/releases/tag/v2.0.0" target="_blank" rel="noopener noreferrer">
+                            AmpliconClassifier 2.0 adds a new classification: FAN</a>
+                        <p class="home-news-desc">
+                            FAN (focal amplification in neochromosome): broad, complex amplifications built into a
+                            rearranged chromosome rather than a circle. Some AC 1.x ecDNA calls are now FAN.
+                            <a href="https://github.com/AmpliconSuite/AmpliconClassifier/blob/main/docs/fan_primer.md" target="_blank" rel="noopener noreferrer">Read the FAN primer</a>.
+                        </p>
+                    </div>
                     <div>
                         <div class="home-news-meta">
                             <span class="home-tag home-tag-release">Release</span>
