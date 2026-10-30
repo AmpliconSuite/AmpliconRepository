@@ -1152,19 +1152,23 @@
     /* ---- updates, replacing the bulleted list of blue links ---- */
     /* One row of news cards that slides: three to a view on a wide screen,
        two on a narrow one, one on a phone. The track scrolls sideways (a
-       swipe works on touch), and the triangles either side move it one card;
-       each hides when there is nothing further that way. */
-    .home-latest-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 6px;
+       swipe works on touch), and the triangles beside the "Latest updates"
+       heading move it one card; each hides when there is nothing further
+       that way. */
+    .home-news-head {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .home-news-arrows {
+        display: inline-flex;
+        gap: 2px;
     }
 
     .home-latest {
         --news-per-view: 3;
         --news-gap: 30px;
-        flex: 1 1 auto;
-        min-width: 0;
         display: flex;
         align-items: flex-start;
         gap: var(--news-gap);
@@ -1184,13 +1188,11 @@
     }
 
     .home-news-arrow {
-        flex: 0 0 auto;
-        align-self: center;
         border: 0;
         background: none;
-        padding: 6px 4px;
+        padding: 0 4px;
         color: #8b9096;
-        font-size: 16px;
+        font-size: 13px;
         line-height: 1;
         cursor: pointer;
     }
@@ -1373,7 +1375,7 @@
 
 {% block extra_js %}
 <script>
-    // Latest updates: the triangles move the row one card at a time, and each
+    // Latest updates: the triangles by the heading move the row one card at a time, and each
     // hides when the row cannot go further that way (both, when it all fits).
     document.addEventListener('DOMContentLoaded', function () {
         var track = document.getElementById('home-latest');
@@ -2050,11 +2052,16 @@
         <div class="row">
             <div class="col-lg-8">
                 <div class="home-eyebrow">
-                    Latest updates
+                    <span class="home-news-head">
+                        Latest updates
+                        <span class="home-news-arrows">
+                            <button type="button" class="home-news-arrow" id="home-news-prev"
+                                    aria-controls="home-latest" aria-label="Previous update">&#9664;</button>
+                            <button type="button" class="home-news-arrow" id="home-news-next"
+                                    aria-controls="home-latest" aria-label="Next update">&#9654;</button>
+                        </span>
+                    </span>
                 </div>
-                <div class="home-latest-row">
-                <button type="button" class="home-news-arrow" id="home-news-prev"
-                        aria-controls="home-latest" aria-label="Previous update">&#9664;</button>
                 <div class="home-latest" id="home-latest" tabindex="0" aria-label="Latest updates">
                     <div>
                         <div class="home-news-meta">
@@ -2093,9 +2100,6 @@
                         <a class="home-news-title" href="https://www.nature.com/articles/s41588-024-01949-7" target="_blank">
                             Leveraging large-scale genomic datasets to track ecDNA across cancer stages</a>
                     </div>
-                </div>
-                <button type="button" class="home-news-arrow" id="home-news-next"
-                        aria-controls="home-latest" aria-label="Next update">&#9654;</button>
                 </div>
             </div>
             <div class="col-lg-4">
