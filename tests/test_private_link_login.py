@@ -213,19 +213,66 @@ def test_a_site_admin_can_read_a_private_project_they_are_not_in(
 
 def test_the_project_page_tells_the_admin_they_are_not_a_member(
         private_project, site_admin, outsider, mongo_collection):
-    """And reading is all it grants: no edit link for a private project."""
+    """And offers them the edit link, as it would a member."""
     client = Client(HTTP_HOST='localhost')
     client.force_login(site_admin)
     url = _private_urls(private_project)['project']
 
     html = client.get(url).content.decode()
-    assert 'You can see it as a site admin' in html
-    assert f'/project/{private_project}/edit' not in html
+    assert 'You can see and edit it as a site admin' in html
+    assert f'/project/{private_project}/edit' in html
 
     # A member sees no such notice.
     mongo_collection.update_one({'_id': ObjectId(private_project)},
                                 {'$push': {'project_members': site_admin.username}})
-    assert 'You can see it as a site admin' not in client.get(url).content.decode()
+    assert 'as a site admin' not in client.get(url).content.decode()
+
+
+def test_a_site_admin_can_open_the_edit_form_of_a_private_project(
+        private_project, site_admin, outsider):
+    client = Client(HTTP_HOST='localhost')
+    edit_url = f'/project/{private_project}/edit'
+
+    client.force_login(outsider)
+    assert client.get(edit_url).content == b'Project does not exist'
+
+    client.force_login(site_admin)
+    response = client.get(edit_url)
+    assert response.status_code == 200
+    assert response.content != b'Project does not exist'
+
+
+def test_a_site_admin_can_delete_a_private_project_and_it_is_logged_as_theirs(
+        private_project, site_admin, outsider, mongo_collection, monkeypatch):
+    """#401: until 2026-10-30 an admin had to add themselves to a private
+    project before they could delete it."""
+    from caper import views
+    from caper.utils import audit_log_handle
+    # The fixture project was never counted into site_statistics, so it must
+    # not be uncounted from them either.
+    monkeypatch.setattr(views, 'project_removed', lambda project, visibility: None)
+    oid = ObjectId(private_project)
+    client = Client(HTTP_HOST='localhost')
+    delete_url = f'/project/{private_project}/delete'
+
+    try:
+        client.force_login(outsider)
+        assert client.get(delete_url).content == b'Project does not exist'
+        assert mongo_collection.find_one({'_id': oid})['delete'] is False
+
+        client.force_login(site_admin)
+        response = client.get(delete_url)
+        assert response.status_code == 302
+        doc = mongo_collection.find_one({'_id': oid})
+        assert doc['delete'] is True
+        assert doc['project_members'] == ['somebody_else@example.com']
+
+        event = audit_log_handle.find_one({'project_uuid': private_project,
+                                           'event_type': 'delete_project'})
+        assert event is not None and event['by_admin'] is True
+        assert event['completed'] is True
+    finally:
+        audit_log_handle.delete_many({'project_uuid': private_project})
 
 
 def test_the_admin_project_list_links_a_private_project(
