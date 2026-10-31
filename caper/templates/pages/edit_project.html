@@ -573,6 +573,22 @@
         </button>
       </form>
 
+      {# Its own form, after the edit form's close: forms cannot nest, and this
+         one must not carry the edit form's fields or wait on its licence box. #}
+      <div style="border-top: 1px solid #000; margin: 32px 0 16px;"></div>
+      <h3>Delete project</h3>
+      <p>Deletes this project <strong>and every earlier version of it</strong>. Links to any of its
+         versions &mdash; in papers, emails or bookmarks &mdash; stop working, and lead to a notice that
+         the project was deleted. A site admin can restore it until it is permanently deleted.</p>
+      <p>To delete just one version, use the Project History table on the project page.</p>
+      <form method="post" action="{% url 'project_delete' project_name=project_linkid %}" id="delete-project-form"
+            onsubmit="return confirm('Delete \'{{ project.project_name|escapejs }}\' and all of its versions?\n\nLinks to any version of this project will stop working.\n\nTo delete a single version instead, cancel and use the Project History table on the project page.');">
+        {% csrf_token %}
+        <button type="submit" class="uk-button uk-button-danger">
+          <i class="fa fa-trash"></i> Delete project
+        </button>
+      </form>
+
 {% else %}
     <h1>Please sign in to edit projects</h1>
 {% endif %}

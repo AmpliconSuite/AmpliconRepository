@@ -8,7 +8,10 @@ template draws the table from that data rather than from server-rendered rows.
 """
 
 import json
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -20,6 +23,7 @@ from caper.summarybar import summarybar
 
 
 TEMPLATE = Path(__file__).resolve().parents[1] / 'caper' / 'templates' / 'pages' / 'project.html'
+CAPER_DIR = Path(__file__).resolve().parents[1] / 'caper'
 
 
 def _feature(sample, classification, genes, oncogenes=()):
@@ -184,3 +188,29 @@ def test_project_level_lists_are_sorted():
     # A document written before the fix: the API sorts it on the way out.
     assert _canonical_classifications({'Classification': ['LINEAR', 'ECDNA', 'BFB']}) == \
         ['BFB', 'ecDNA', 'Linear']
+
+
+_TIED_BARS = '''
+import re, sys
+import pandas as pd
+from caper.summarybar import summarybar
+features = [{'Sample_name': s, 'Classification': c, 'Feature_ID': s + c}
+            for s, c in [('S1', 'Linear'), ('S1', 'BFB'), ('S1', 'ecDNA'), ('S1', 'Virus'),
+                         ('S1', 'Odd'), ('S1', 'Complex-non-cyclic'), ('S1', 'FAN'),
+                         ('S2', 'ecDNA'), ('S2', 'Linear')]]
+print(re.findall(r'"name":"([^"]+)"', summarybar(pd.DataFrame(features), {})))
+'''
+
+
+def test_tied_bars_keep_one_order_whatever_the_hash_seed():
+    """#681: tied classes came out in the hash order of a set, so a restart could swap them.
+
+    Each seed runs in its own process, because the order only changed between processes.
+    Bars are listed bottom-up: the larger count last, then ties with ecDNA on top.
+    """
+    orders = set()
+    for seed in ('0', '1', '2', '3', '4', '5'):
+        out = subprocess.run([sys.executable, '-c', _TIED_BARS], capture_output=True, text=True,
+                             cwd=CAPER_DIR, env={**os.environ, 'PYTHONHASHSEED': seed}, check=True)
+        orders.add(out.stdout.strip())
+    assert orders == {"['Odd', 'Virus', 'Complex-non-cyclic', 'BFB', 'FAN', 'Linear', 'ecDNA']"}

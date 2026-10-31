@@ -55,7 +55,7 @@ from pathlib import Path
 
 # Import admin views from separate module
 from .views_admin import (
-    admin_featured_projects, admin_version_details, admin_sendemail, admin_stats,
+    admin_featured_projects, admin_all_projects, admin_version_details, admin_sendemail, admin_stats,
     admin_permanent_delete_project, admin_delete_user, admin_delete_project,
     user_stats_download, site_stats_regenerate, project_stats_download, sizeof_fmt,
     fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report, make_project_current,
@@ -90,7 +90,7 @@ from .download_gate import (
 # Import utils functions
 from .utils import (
     collection_handle, collection_handle_primary, db_handle_primary, current_flags, fs_handle,
-    audit_log_handle,
+    audit_log_handle, deleted_urls_handle,
     fetch_sample_rows_by_name,
     get_one_project, get_one_project_sans_runs, get_one_sample, get_one_sample_rows,
     get_one_deleted_project,
@@ -126,7 +126,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
-from . import download_totals, lineage, project_fields, provenance
+from . import deleted_projects, download_totals, lineage, project_fields, provenance
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
@@ -650,9 +650,7 @@ def may_view_project(project, request):
 
     Its members, and site admins (``is_staff``) for every project: they already
     reach the data through the database and the bucket, so refusing them the
-    page only sent them around it.  Viewing is all this grants -- an admin who
-    is not a member still cannot edit a private project
-    (set_project_edit_OK_flag), and membership itself is unchanged for the
+    page only sent them around it.  Membership itself is unchanged for the
     subscription box and the audit log's by_admin.
     """
     if is_user_a_project_member(project, request):
@@ -660,17 +658,20 @@ def may_view_project(project, request):
     return bool(getattr(getattr(request, 'user', None), 'is_staff', False))
 
 
+def may_edit_project(project, request):
+    """Whether this visitor may edit, delete or version a project.
+
+    The same people as may_view_project(): its members, and site admins for
+    every project, private ones included.  Admins were held to public projects
+    until 2026-10-30, which left a private project nobody could delete without
+    first adding themselves to it (#401).  A delete by a non-member admin is
+    recorded as by_admin in the audit log.
+    """
+    return may_view_project(project, request)
+
+
 def set_project_edit_OK_flag(project, request):
-    try:
-        is_admin = getattr(request.user, 'is_staff', False)
-    except Exception:
-        is_admin = False
-    
-    # Normalize visibility field to handle legacy boolean values
-    visibility = normalize_visibility_field(project.get('private', 'private'))
-    
-    # Only members can edit. Admins can edit public projects but not private ones.
-    if is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility)):
+    if may_edit_project(project, request):
         project['current_user_may_edit'] = True
     else:
         project['current_user_may_edit'] = False
@@ -3182,12 +3183,25 @@ def log_project_audit_event(user, project_uuid, project_name, is_new_version,
         logging.error(f"Failed to write audit log for project {project_uuid}: {e}")
 
 
-def project_delete(request, project_name):
+def delete_whole_project(request, project_name):
+    """The Delete button: the project and every version of it.
+
+    project_delete() writes only the document it is given, which is all a
+    project edit needs when it calls it to retire the version it replaced.  A
+    deletion by the button also closes the older versions -- the resolver stops
+    serving them once their project's head is deleted -- and records each
+    version's URL, under the name it had, in deleted_project_urls.
+    """
+    return project_delete(request, project_name, whole_project=True)
+
+
+def project_delete(request, project_name, whole_project=False):
     project = get_one_project(project_name)
     deleter = get_current_user(request)
     is_admin = getattr(request.user, 'is_staff', False)
     visibility = normalize_visibility_field(project.get('private', 'private'))
-    allowed = is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility))
+    allowed = may_edit_project(project, request)
+    was_live = classify_status(project) == LIVE
     if check_project_exists(project_name) and allowed:
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
@@ -3210,6 +3224,10 @@ def project_delete(request, project_name):
         collection_handle.update_one(query, new_val)
         provenance.confirm(audit_log_handle, event_id)
         project_removed(project, visibility)
+        if whole_project and was_live:
+            deleted_projects.record_project_deleted(
+                collection_handle, deleted_urls_handle, project, request.user,
+                by_admin=bool(is_admin and not is_user_a_project_member(project, request)))
 
         # No Neo4j graph invalidation here on purpose. This is a reversible soft
         # delete and it runs synchronously on the request path (including as the
@@ -3279,9 +3297,7 @@ def delete_project_version(request, project_name, version_id):
     current_linkid = str(latest_project['_id'])
 
     # Check permissions using the latest project version (has up-to-date members)
-    is_admin = getattr(request.user, 'is_staff', False)
-    visibility = normalize_visibility_field(latest_project.get('private', 'private'))
-    allowed = is_user_a_project_member(latest_project, request) or (is_admin and is_project_public(visibility))
+    allowed = may_edit_project(latest_project, request)
     if not allowed:
         return JsonResponse({"error": "Permission denied"}, status=403)
 
@@ -3563,9 +3579,7 @@ def project_update(request, project_name):
     update_date will be changed after project has been updated.
     """
     project = get_one_project_sans_runs(project_name)
-    is_admin = getattr(request.user, 'is_staff', False)
-    visibility = normalize_visibility_field(project.get('private', 'private'))
-    allowed = is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility))
+    allowed = may_edit_project(project, request)
     if check_project_exists(project_name) and allowed:
         query = {'_id': project['_id']}
         ## 2 new fields: current, and update_date, $set will add a new field with the specified value.
@@ -4449,9 +4463,7 @@ def may_edit_old_version(head, request):
     """
     if not getattr(request.user, 'is_authenticated', False):
         return False
-    is_admin = getattr(request.user, 'is_staff', False)
-    visibility = normalize_visibility_field(head.get('private', 'private'))
-    return is_user_a_project_member(head, request) or (is_admin and is_project_public(visibility))
+    return may_edit_project(head, request)
 
 
 def _render_old_version_edit(request, project, head, form=None):
@@ -4566,9 +4578,7 @@ def edit_project_page(request, project_name):
             if not may_edit_old_version(old_version_head, request):
                 return HttpResponse("Project does not exist")
             return _render_old_version_edit(request, project, old_version_head)
-        is_admin = getattr(request.user, 'is_staff', False)
-        visibility = normalize_visibility_field(project.get('private', 'private'))
-        if not (is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility))):
+        if not may_edit_project(project, request):
             return HttpResponse("Project does not exist")
     if request.method == "POST":
        
@@ -4608,10 +4618,8 @@ def edit_project_page(request, project_name):
             old_alias_name = project['alias_name']
             print(f'THE OLD ALIAS NAME SHOULD BE: {old_alias_name}')
         
-        # no edits for non-project members unless admin on a public project
-        is_admin = getattr(request.user, 'is_staff', False)
-        visibility = normalize_visibility_field(project.get('private', 'private'))
-        if not (is_user_a_project_member(project, request) or (is_admin and is_project_public(visibility))):
+        # no edits for anyone but members and admins
+        if not may_edit_project(project, request):
             return HttpResponse("Project does not exist")
         
         form = UpdateForm(request.POST, request.FILES)
@@ -4637,17 +4645,11 @@ def edit_project_page(request, project_name):
         if inherit_alias:
             form_dict['alias'] = old_alias_name
         
-        # Build project member list. Avoid auto-adding admins editing public projects when they are not members.
+        # Build project member list. An admin editing a project they are not a
+        # member of is not added to it.
         is_member = is_user_a_project_member(project, request)
-        # `not project['private']` was false for every project on the site: the
-        # field holds the strings 'private'/'public'/'hidden_public', and every
-        # one of them is truthy.  Staff editing a public project they were not a
-        # member of were silently added to project_members, which is the exact
-        # thing this guard exists to prevent.
-        is_public = is_project_public(
-            normalize_visibility_field(project.get('private', 'private')))
         add_self = True
-        if getattr(request.user, 'is_staff', False) and is_public and not is_member:
+        if getattr(request.user, 'is_staff', False) and not is_member:
             add_self = False
         form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request), add_current_user=add_self)
         
@@ -4774,6 +4776,7 @@ def _render_edit_project_page(request, project, form, status=200):
 
     return render(request, "pages/edit_project.html",
                   {'project': project,
+                   'project_linkid': str(project['_id']),
                    'run': form,
                    'sample_names': sample_names,
                    'all_alias': json.dumps(get_all_alias()),

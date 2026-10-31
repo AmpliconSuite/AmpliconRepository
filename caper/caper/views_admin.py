@@ -34,11 +34,12 @@ from bson.objectid import ObjectId
 
 from .email_contact import contact_context, reply_to
 from . import storage_stats
+from . import deleted_projects as deleted_urls  # not "deleted_projects": admin_delete_project() has a local of that name
 from .account_deletion import RELEASE, plan_account_deletion, summarize
 from .forms import FeaturedProjectForm, DeletedProjectForm, SendEmailForm
 from .utils import (
     collection_handle, collection_handle_primary, current_flags, fs_handle,
-    audit_log_handle, delete_gridfs_file,
+    audit_log_handle, deleted_urls_handle, delete_gridfs_file,
     get_one_project, get_one_deleted_project, prepare_project_linkid,
     check_if_db_field_exists, get_date_short,
     form_to_dict, get_date, db_handle, db_handle_primary, format_visibility_for_display,
@@ -402,6 +403,31 @@ def admin_featured_projects(request):
         prepare_project_linkid(proj)
 
     return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
+
+
+# What the all-projects table shows. A positive projection, because a project
+# document carries its runs and sample table and the largest are tens of MB.
+_ALL_PROJECTS_FIELDS = ['project_name', 'description', 'date', 'creator',
+                        'project_members', 'private', 'sample_count', 'featured']
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_all_projects(request):
+    """Every live project, private ones included, each linked to its page.
+
+    Admins can open any project page (may_view_project), but the home page lists
+    only public projects and the ones the admin is a member of, so a private
+    project could only be reached by already knowing its id.
+    """
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    projects = list(collection_handle.find(status_query(LIVE),
+                                           {f: 1 for f in _ALL_PROJECTS_FIELDS}))
+    for proj in projects:
+        prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
+    projects.sort(key=lambda p: str(p.get('project_name', '')).lower())
+    return render(request, 'pages/admin_all_projects.html', {'projects': projects})
 
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
@@ -1208,6 +1234,9 @@ def permanently_delete_with_history(project_id, project, project_name):
     strictly lower ordinal -- so this still never reaches forward across the
     chain to versions nobody selected.
     """
+    # Before anything goes: afterwards no document is left to say what the
+    # project's URLs were.
+    deleted_urls.ensure_recorded(collection_handle, deleted_urls_handle, project)
     targets, unresolved = _permanent_delete_targets(project)
 
     # The last target is the project itself; the caller's project_name is used
@@ -1217,6 +1246,10 @@ def permanently_delete_with_history(project_id, project, project_name):
         admin_permanent_delete_project(target_id, document,
                                        document.get('project_name'))
     message = admin_permanent_delete_project(project_id, project, project_name)
+    # Asked of the primary: the message is never empty, and a replica may not
+    # have seen the delete yet.
+    if collection_handle_primary.find_one({'_id': ObjectId(str(project_id))}, {'_id': 1}) is None:
+        deleted_urls.record_project_purged(deleted_urls_handle, project_id, None)
 
     if unresolved:
         plural = 'y' if len(unresolved) == 1 else 'ies'
@@ -1355,6 +1388,9 @@ def admin_delete_project(request):
                                 'status': intended_status}}
             collection_handle.update_one(query, new_val)
             provenance.confirm(audit_log_handle, restore_event)
+            # Its URLs work again, older versions' included.
+            deleted_urls.record_project_restored(
+                deleted_urls_handle, project['_id'], request.user)
             error_message = f"Project {project_name} restored."
 
         elif deleteit and (action == 'delete'):

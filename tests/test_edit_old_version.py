@@ -252,12 +252,14 @@ def test_anonymous_user_is_refused(request_factory, make_chain, mongo_collection
 
 def test_old_version_of_a_deleted_project_is_not_editable(
         request_factory, test_user, make_chain, mongo_collection):
+    """Since 2026-10-30 it does not resolve at all: deleting a project closes
+    its older versions with it (deleted_projects.py)."""
+    from django.http import Http404
     old_id, _ = make_chain(head_status='SOFT_DELETED')
     before = mongo_collection.find_one({'_id': old_id})
-    request, response = _post(request_factory, test_user, old_id, EDIT)
+    with pytest.raises(Http404):
+        _post(request_factory, test_user, old_id, EDIT)
     assert mongo_collection.find_one({'_id': old_id}) == before
-    assert response.status_code == 302
-    assert 'Only the current version of this project can be edited.' in _messages_of(request)
 
 
 def test_current_version_edit_page_is_unchanged(request_factory, test_user, make_chain):

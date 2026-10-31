@@ -77,7 +77,7 @@ urlpatterns += [
     path("project/<project_name>/download_summary", views.project_summary_download, name="project_summary_download"),
     path("project/<project_name>/download_metadata", views.project_metadata_download, name="project_metadata_download"),
     path("project/<project_name>/download_metadata/", views.project_metadata_download, name="project_metadata_download_slash"),
-    path("project/<project_name>/delete", views.project_delete, name="project_delete"),
+    path("project/<project_name>/delete", views.delete_whole_project, name="project_delete"),
     path("project/<project_name>/delete_version/<version_id>", views.delete_project_version, name="delete_project_version"),
     path("project/<project_name>/regenerate_project_key", views.regenerate_project_key, name="regenerate_project_key"),
     path("project/<project_name>/toggle_subscription", views.toggle_project_subscription, name="toggle_project_subscription"),
@@ -101,6 +101,7 @@ urlpatterns += [
     path('terms/', TemplateView.as_view(template_name='pages/terms.html'), name='terms'),
 
     path('admin-featured-projects/', views.admin_featured_projects, name='admin_featured_projects'),
+    path('admin-all-projects/', views.admin_all_projects, name='admin_all_projects'),
     path('admin-stats/', views.admin_stats, name='admin_stats'),
     path('admin-stats/download/user/',views.user_stats_download,name="user_stats_download"),
     path('admin-stats/download/project/',views.project_stats_download,name="project_stats_download"),

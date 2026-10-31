@@ -250,6 +250,10 @@ from `/api/v1/features/facets/` at the time you answer.
 - **An unrecognised parameter is a `400`, not silence.** If you get one, the
   error names the parameters that do exist. Fix the name and retry rather than
   trusting a result you are not sure was filtered.
+- **Only the metadata filters and `classification` repeat.** `cancer_type`,
+  `sample_type`, `tissue_of_origin` and `classification` take several values
+  (as OR); every other parameter takes one, and sending it twice with different
+  values is a `400` (`invalid_parameter`), not the last value winning.
 - **Errors are uniform**: `{"error": "...", "code": "..."}`. Branch on `code`,
   never on the prose in `error`.
 - **Rate limits are per client.** On `429`, the response carries a `Retry-After`
