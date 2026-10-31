@@ -149,6 +149,8 @@ this.
 | D11 | **GBM is searchable both as one disease and by its current subtypes** (`GB`, `ASTR`) (§5.3). |
 | D12 | **Age is stored as a number**, with a pediatric / non-pediatric flag as the only grouping (§6.8). |
 | D13 | **Owners are told by email** when a project's review is ready to look at — after creation, or after an update that brings metadata or samples not seen before (§16.1). |
+| D14 | **When the curator re-proposes after a flag, owners and site admins are emailed** (§16.1). |
+| D15 | **Pediatric means under 18** (§6.8). |
 
 ---
 
@@ -344,7 +346,11 @@ empty, NaN, `None`, `NA`, `Unknown`, `Not Available`, `Not Reported` and
   number — HCMI's `age_group` (`Pediatrics`/`AYA`/`Adults`), or a non-numeric
   `age` such as "Adult" — and holds the source's label verbatim.
 - **`pediatric`:** `true` | `false` | unset — the only age grouping the site
-  defines. From `years` when known: `true` below 18, `false` otherwise. From a
+  defines. From `years` when known: `true` below 18, `false` otherwise. (18
+  is the most widely shared meaning — legal minor, and the usual cohort
+  definition — between childhood-cancer statistics' under 15 and US pediatric
+  oncology trials' up to 21. It is one configuration value; a different
+  cut-off is a range filter away for anyone who needs one.) From a
   `source_group` only when it is unambiguous: "Pediatrics"/"Pediatric"/"Child" →
   `true`, "Adult(s)" → `false`; a category that spans the boundary (HCMI's
   `AYA`, 15–39) leaves it unset.
@@ -470,7 +476,8 @@ versioned; each change records who, when and why.
 
 Admins (`is_staff`) on any harmonized project; owners/members on their own
 (`is_user_a_project_member`). The same permission check governs viewing the
-review interface and writing decisions.
+review interface and writing decisions, including flags. Every decision
+requires a logged-in user, and records who made it.
 
 ### 10.2 Scope
 
@@ -699,15 +706,18 @@ Required properties, for projects with thousands of samples:
     before anything is applied.
 11. **History** per group and per sample, from the decision log (§10.4).
 
-### 16.1 Telling owners: email (D13)
+### 16.1 Email notifications (D13, D14)
 
-- **What starts one.** Only two events:
+- **What starts one.** Only three events:
   1. a project becomes harmonizable for the first time — created public or
      hidden-public, or made so later;
   2. an update to it — re-aggregation, a new metadata sheet, added samples —
      that brings something **not seen before** in its lineage: a sample name
      the lineage has never had, or evidence that forms a group (§9.1) the
-     lineage has never had.
+     lineage has never had;
+  3. a **flag** (§10.5): a logged-in reviewer flags one or more groups or
+     samples, and the curator re-proposes. One flagging action — a single flag
+     or one bulk flag of many groups — is one event.
   An update that re-presents only known samples and known evidence — the usual
   re-aggregation — starts nothing, even though the worker re-checks it.
 - **When it is sent.** Once, when the work that event started is **finished**:
@@ -715,12 +725,20 @@ Required properties, for projects with thousands of samples:
   and the curator, or the curator has definitively failed on it. Not when the
   event happens, and not partway through a project that takes several worker
   runs (§12, *Bounded*). If nothing ends up needing attention, no email is sent.
-- **Who.** The project's owners/members. Admins are not emailed per project;
-  they see the site-wide queue (§12, *Observable*) instead.
+  For a flag, "finished" means every flagged item has a re-proposal or a
+  definitive curator failure; a failure is reported in the email rather than
+  silently leaving the item flagged.
+- **Who.**
+  - Events 1–2: the project's owners/members. Admins are not emailed for these;
+    they see the site-wide queue (§12, *Observable*) instead.
+  - Event 3: the project's owners/members **and the site admins**
+    (`is_staff`). The flagger is necessarily one of these (§10.1) and receives
+    one copy.
 - **What.** One message per event: the project name, what was new (samples,
-  groups), counts by field and status, and a link straight to the project's
-  review interface, opened on the needs-attention view. It contains no metadata
-  values, so it is safe to forward.
+  groups) or, for a flag, who flagged, how many items and how many were
+  re-proposed; counts by field and status; and a link straight to the project's
+  review interface, opened on the needs-attention view (for a flag, on the
+  `reproposed` items). It contains no metadata values, so it is safe to forward.
 - **Opt-out.** A new key in `user_preferences`, beside the existing
   `onProjectUpdate`, default on, honoured exactly as `onProjectUpdate` is in
   `user_preferences.py`. The email says how to turn it off.
@@ -786,6 +804,10 @@ Against a snapshot of the public corpus equivalent to §2:
     Re-aggregating it with the same samples and metadata sends none. Adding one
     new sample, or a sheet with a value not seen before, sends one. An owner who
     opted out receives none, and no email names a metadata value.
+13. An owner bulk-flags 20 groups: once all 20 have a re-proposal or a
+    definitive failure, exactly one email goes to the project's owners and the
+    site admins, linking to the `reproposed` items. An anonymous user cannot
+    flag.
 
 ---
 
@@ -797,9 +819,3 @@ Against a snapshot of the public corpus equivalent to §2:
    is between human decisions on a project. A later admin change to a global
    synonym is a rule, not a project decision, so as specified it does **not**
    override an earlier project-level human decision. Confirm that is wanted.
-3. **Pediatric boundary.** §6.8 uses under 18. Some pediatric oncology
-   cohorts use under 15 or under 21; confirm 18.
-4. **Email after a flag.** §16.1 emails only on creation and on updates with
-   new samples or evidence. A reviewer who flags a group gets no email when
-   the curator's re-proposal is ready, and sees it next time they open the
-   review page. Confirm, or add a third trigger for that.
