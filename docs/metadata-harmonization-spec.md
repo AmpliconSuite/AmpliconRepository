@@ -147,8 +147,8 @@ this.
 | D9 | **Cell-line, PDX and organism identity is kept** as first-class fields. A cell line also gets a cancer type, but never loses its name. |
 | D10 | **Non-human samples, including engineered mouse models, get an OncoTree cancer type** like any other sample; `species` and `specimen_kind` say what they are. |
 | D11 | **GBM is searchable both as one disease and by its current subtypes** (`GB`, `ASTR`) (§5.3). |
-| D12 | **Age is stored as a number; age groups are search presets**, not stored categories (§6.8). |
-| D13 | **Owners are told by email** when their project needs review (§16.1). |
+| D12 | **Age is stored as a number**, with a pediatric / non-pediatric flag as the only grouping (§6.8). |
+| D13 | **Owners are told by email** when a project's review is ready to look at — after creation, or after an update that brings metadata or samples not seen before (§16.1). |
 
 ---
 
@@ -342,16 +342,14 @@ empty, NaN, `None`, `NA`, `Unknown`, `Not Available`, `Not Reported` and
   the evidence.
   `source_group` is set only when the source gives a category instead of a
   number — HCMI's `age_group` (`Pediatrics`/`AYA`/`Adults`), or a non-numeric
-  `age` such as "Adult" — and holds the source's label verbatim. It is never
-  derived from `years`, and categories from different sources are not merged
-  into one scheme, because their cut-offs are not known to agree.
-- **Age groups are search presets, not stored values.** Search offers age
-  ranges, plus named presets defined once in configuration: initially
-  *pediatric* 0–17, *AYA* 15–39 (NCI's adolescent-and-young-adult range) and
-  *adult* ≥ 18. Presets may overlap, as these do; they are filters over
-  `years`. A sample with only a `source_group` matches a preset only where an
-  admin has recorded that the source's category is equivalent to that preset;
-  otherwise it is found by its own label.
+  `age` such as "Adult" — and holds the source's label verbatim.
+- **`pediatric`:** `true` | `false` | unset — the only age grouping the site
+  defines. From `years` when known: `true` below 18, `false` otherwise. From a
+  `source_group` only when it is unambiguous: "Pediatrics"/"Pediatric"/"Child" →
+  `true`, "Adult(s)" → `false`; a category that spans the boundary (HCMI's
+  `AYA`, 15–39) leaves it unset.
+- No other age groups are defined. Users group by age as they see fit, using
+  the numeric range filter (§15.1) or `years` in the API.
 
 ### 6.9 `overall_survival`, `progression_free_survival`
 
@@ -611,6 +609,7 @@ fixed.
 | Decision log | yes (append-only) | Human decisions (§10) |
 | Curator answers | yes (append-only) | Requests, responses, validation result, backend/model (§11) |
 | Group registry | derived | Groups per project lineage and their current state |
+| Seen set | yes (append-only) | Per lineage, every sample name and group key ever harmonized, with when first seen; decides "not seen before" for email (§16.1). Authoritative because it cannot be rebuilt once samples are removed |
 | Harmonized sample values | derived | The §7 record per sample per field |
 | Feature-index rows | derived | A `harmonized` sub-document on each row, so search filters on it (requires a `SCHEMA_VERSION` bump in `feature_index.py`) |
 | Work queue | operational | Pending worker jobs |
@@ -631,8 +630,8 @@ project documents, and a check comparable to
   legacy labels (§5.2) and search groupings (§5.3), and shows what it resolved
   to. Groupings are offered beside the tree: GBM appears as one choice, with
   `GB` and `ASTR` reachable under it.
-- Filters for `specimen_kind`, `disease_state`, `species`, `sex`, age range and
-  the age presets of §6.8, and "has OS data".
+- Filters for `specimen_kind`, `disease_state`, `species`, `sex`, an age range
+  (min/max years), pediatric / non-pediatric (§6.8), and "has OS data".
 - An option to restrict to a minimum confidence (e.g. exclude
   `project_inference`).
 - **Existing raw-text filters keep working unchanged**; harmonized filters are
@@ -702,24 +701,32 @@ Required properties, for projects with thousands of samples:
 
 ### 16.1 Telling owners: email (D13)
 
-- **When.** A worker run that leaves a project with groups newly needing
-  attention — new unreviewed low-confidence or conflicting groups, or a
-  `reproposed` answer to an owner's own flag — queues a notification for that
-  project. A run that changes nothing needing attention sends nothing.
+- **What starts one.** Only two events:
+  1. a project becomes harmonizable for the first time — created public or
+     hidden-public, or made so later;
+  2. an update to it — re-aggregation, a new metadata sheet, added samples —
+     that brings something **not seen before** in its lineage: a sample name
+     the lineage has never had, or evidence that forms a group (§9.1) the
+     lineage has never had.
+  An update that re-presents only known samples and known evidence — the usual
+  re-aggregation — starts nothing, even though the worker re-checks it.
+- **When it is sent.** Once, when the work that event started is **finished**:
+  every group it created or changed has been through the deterministic stages
+  and the curator, or the curator has definitively failed on it. Not when the
+  event happens, and not partway through a project that takes several worker
+  runs (§12, *Bounded*). If nothing ends up needing attention, no email is sent.
 - **Who.** The project's owners/members. Admins are not emailed per project;
   they see the site-wide queue (§12, *Observable*) instead.
-- **What.** One message per project: the project name, counts by field and
-  status, and a link straight to the project's review interface. It contains no
-  metadata values, so it is safe to forward.
-- **How often.** At most one email per project per digest period (configurable,
-  initially weekly); events inside the period are merged into one message. A
-  project's first harmonization sends one email, not one per group.
+- **What.** One message per event: the project name, what was new (samples,
+  groups), counts by field and status, and a link straight to the project's
+  review interface, opened on the needs-attention view. It contains no metadata
+  values, so it is safe to forward.
 - **Opt-out.** A new key in `user_preferences`, beside the existing
   `onProjectUpdate`, default on, honoured exactly as `onProjectUpdate` is in
   `user_preferences.py`. The email says how to turn it off.
 - **Sent by the worker**, through the site's existing `EmailMessage` path and
-  `reply_to()`. A send failure is logged and retried at the next digest; it
-  never blocks harmonization (I5).
+  `reply_to()`. A send failure is logged and retried by the worker; it never
+  blocks harmonization (I5).
 - **Private projects are never emailed about** (I2), since they are never
   harmonized.
 
@@ -771,12 +778,14 @@ Against a snapshot of the public corpus equivalent to §2:
 10. The deterministic stages alone (§8, 2–3) report, per field, how many
     samples they resolved; that report is the baseline the curator is measured
     against.
-11. A sample with `age.years` 16 matches both the *pediatric* and *AYA*
-    presets; an HCMI sample with only `source_group: Adults` matches the
-    *adult* preset only after an admin records that equivalence.
-12. Two worker runs inside one digest period that each leave a project needing
-    attention produce one email to its owners; an owner who opted out receives
-    none; no email names a metadata value.
+11. A sample with `age.years` 16 is `pediatric: true`; HCMI `Pediatrics` →
+    `true`, `Adults` → `false`, `AYA` → unset; an age range filter of 40–60
+    returns samples by `years` only.
+12. Creating a public project produces exactly one email to its owners, sent
+    after its curation finishes, even when that takes several worker runs.
+    Re-aggregating it with the same samples and metadata sends none. Adding one
+    new sample, or a sheet with a value not seen before, sends one. An owner who
+    opted out receives none, and no email names a metadata value.
 
 ---
 
@@ -788,7 +797,9 @@ Against a snapshot of the public corpus equivalent to §2:
    is between human decisions on a project. A later admin change to a global
    synonym is a rule, not a project decision, so as specified it does **not**
    override an earlier project-level human decision. Confirm that is wanted.
-3. **Age preset boundaries.** §6.8's initial presets (pediatric 0–17, AYA
-   15–39, adult ≥ 18) are configuration and easy to change; confirm them, and
-   whether further presets (e.g. elderly ≥ 65) are wanted.
-4. **Digest period** for owner email (§16.1), initially weekly.
+3. **Pediatric boundary.** §6.8 uses under 18. Some pediatric oncology
+   cohorts use under 15 or under 21; confirm 18.
+4. **Email after a flag.** §16.1 emails only on creation and on updates with
+   new samples or evidence. A reviewer who flags a group gets no email when
+   the curator's re-proposal is ready, and sees it next time they open the
+   review page. Confirm, or add a third trigger for that.
