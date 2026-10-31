@@ -1,6 +1,6 @@
 # Operator Lock (`ops_lock`) — Specification
 
-**Status:** proposed, not implemented
+**Status:** decisions settled (§11), not implemented
 **Date:** 2026-10-31
 **Related:** `shutdown_mode.py` (the model this follows), `docs/backend-architecture.md` §7–§8
 
@@ -110,11 +110,11 @@ differs. It reads and writes the primary. It uses the same exit codes: 0 done,
 
 ```
 ops_lock.py --expect-db caper-dev status
-ops_lock.py --expect-db caper-dev acquire --holder H --owner O --reason "..." [--ttl 2h]
-ops_lock.py --expect-db caper-dev renew   --holder H [--ttl 2h]
+ops_lock.py --expect-db caper-dev acquire --holder H --owner O --reason "..." [--ttl 1h]
+ops_lock.py --expect-db caper-dev renew   --holder H [--ttl 1h]
 ops_lock.py --expect-db caper-dev release --holder H
 ops_lock.py --expect-db caper-dev wait    [--timeout 1800] [--interval 30]
-ops_lock.py --expect-db caper-dev run     --holder H --owner O --reason "..." [--ttl 2h] -- <command...>
+ops_lock.py --expect-db caper-dev run     --holder H --owner O --reason "..." [--ttl 1h] -- <command...>
 ops_lock.py --expect-db caper-dev break   --reason "..."
 ```
 
@@ -162,8 +162,8 @@ Re-acquiring as the current holder counts as a renew. It does not raise an error
 ### 5.3 `run --`: the default way to use it
 
 `run` acquires the lock, starts the command with `OPS_LOCK_HOLDER` set in the
-child's environment, renews the lease every `ttl/4` in a background thread, and
-releases it in a `finally` block. The command's exit status becomes the tool's
+child's environment, renews the lease every `ttl/4` (15 min at the 1 h default)
+in a background thread, and releases it in a `finally` block. The command's exit status becomes the tool's
 exit status. Ctrl-C and SIGTERM are passed to the child, and the lock is still
 released.
 
@@ -307,20 +307,21 @@ Behaviours to cover:
 
 To test expiry, give the tool a TTL in seconds instead of sleeping for minutes.
 
-## 11 · Open decisions
+## 11 · Decisions
 
-The recommended choice is given first.
+Settled 2026-10-31.
 
-1. **Should the write tools refuse or only warn in the first release?**
-   *Recommended:* refuse on `caper` and `caper-dev`, warn only on local
-   databases. A warning that agents can scroll past does not coordinate anything.
-   `--no-lock "<reason>"` remains for emergencies.
-2. **Default and maximum TTL.** *Recommended:* 2 h default, renewed every
-   30 min by `run`, and a 12 h maximum for `acquire` so that a forgotten
-   interactive lock clears overnight.
-3. **Should the deploy itself (`git pull` + container restart) always be wrapped
-   in `run --`?** *Recommended:* yes. The restart is the operation most likely to
-   break someone else's test.
-4. **Should `manage.py` write commands go through `require()`?** *Recommended:*
-   only `create_project` at first. Others can be added as they are found to write
-   to shared environments.
+1. **The write tools refuse, from the first release.** On `caper` and
+   `caper-dev`, a write tool run without the lock refuses. On local databases it
+   only warns. A warning that agents can scroll past does not coordinate
+   anything. `--no-lock "<reason>"` remains for emergencies, and its reason is
+   logged.
+2. **TTL: 1 h default, 6 h maximum.** `run` renews every 15 min (`ttl/4`).
+   `acquire` and `renew` refuse a `--ttl` above 6 h, so a forgotten interactive
+   lock clears within a working day.
+3. **The deploy is always wrapped in `run --`.** That covers `git pull` and the
+   container restart. The restart is the operation most likely to break someone
+   else's test.
+4. **Of the `manage.py` commands, only `create_project` goes through
+   `require()` at first.** Others are added as they are found to write to shared
+   environments.
