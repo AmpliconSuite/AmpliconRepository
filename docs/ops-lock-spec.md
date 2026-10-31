@@ -26,6 +26,13 @@ human or agent, takes the lock before writing to a shared environment, renews it
 while working, and releases it when done. Anyone else who checks sees who holds
 it, why, and until when, and waits.
 
+**The lock does not lock MongoDB.** It is one ordinary document that MongoDB
+stores, used as a shared notice board. While it is held, every read and write to
+the database works exactly as before: the site, the holder's own scripts, and
+anyone who ignores the lock are all unaffected. It is "held" only because the
+repo's tools and agents agree to check it first (§6). MongoDB is simply the one
+place every operator of an environment can already reach.
+
 This is a standard pattern: Terraform state locking, etcd and Consul leases, and
 deploy locks are all versions of it. What follows is the smallest version that
 fits this repository.
