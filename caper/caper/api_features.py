@@ -123,6 +123,21 @@ ACCEPTED_PARAMS = frozenset({
 # shorten an answer, never widen it, so it is an alias of ``limit``.
 PARAM_ALIASES = {'tissue': 'tissue_of_origin', 'page_size': 'limit'}
 
+# The filters that take several values, as OR (?classification=ecDNA&classification=BFB).
+# Every other parameter takes one, and a repeat of it with a different value is a 400.
+# Before that check the last value won silently, and since these four do repeat, a
+# client reasonably repeats the rest too: measured on prod 2026-10-21,
+# ?gene_any=MYC&gene_any=EGFR counted 429 samples, EGFR's alone, where
+# ?gene_any=MYC,EGFR counts 816.
+REPEATABLE_PARAMS = frozenset({'classification', 'sample_type', 'cancer_type',
+                               'tissue_of_origin'})
+
+# How to ask for several values of a parameter that takes one.
+_ONE_VALUE_HINTS = {
+    'gene_any': "join the genes with commas: ?gene_any=MYC,EGFR",
+    'gene_all': "join the genes with commas: ?gene_all=MYC,PVT1",
+}
+
 # ``/features/samples/`` takes every filter ``/features/`` takes and answers at
 # a different granularity, so its parameter set is derived from that one rather
 # than written out again -- a second list here is a list that falls behind.
@@ -187,10 +202,20 @@ def reject_unknown_params(params, accepted=None):
             % (', '.join(repr(u) for u in sorted(unknown)),
                ', '.join(sorted(accepted))),
             'invalid_parameter')
-    for name in seen.values():
+    for name in params.keys():
+        canonical = PARAM_ALIASES.get(name, name)
+        if canonical not in seen:
+            continue
         values = params.getlist(name) if hasattr(params, 'getlist') else [params[name]]
         for value in values:
             _reject_packed_value(name, value)
+        # 'format' is DRF's, read before this runs, so it is not ours to refuse.
+        if canonical not in REPEATABLE_PARAMS and canonical != 'format' and len(set(values)) > 1:
+            hint = _ONE_VALUE_HINTS.get(canonical, 'send one value, or one query per value')
+            raise FeatureQueryError(
+                f"{name!r} takes one value and was sent {len(values)} "
+                f"({', '.join(repr(v) for v in values)}); {hint}.",
+                'invalid_parameter')
     return seen
 
 
@@ -820,17 +845,19 @@ def _values(params, name, *aliases):
     """Repeatable parameter values, read from the canonical name or an alias.
 
     A QueryDict repeats; a plain dict does not.  Both are passed in by tests and
-    by the view, so both are handled here rather than at each call site.
+    by the view, so both are handled here rather than at each call site.  Values
+    sent under both spellings are all kept: ?tissue_of_origin=Lung&tissue=Breast
+    is Lung OR Breast, where it used to drop Breast.
     """
+    found = []
     for candidate in (name,) + aliases:
         if hasattr(params, 'getlist'):
-            values = params.getlist(candidate)
+            found.extend(params.getlist(candidate))
         else:
             value = params.get(candidate)
-            values = [value] if value is not None else []
-        if values:
-            return values
-    return []
+            if value is not None:
+                found.append(value)
+    return found
 
 
 def filters_from_params(params, user):

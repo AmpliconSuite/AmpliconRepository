@@ -636,6 +636,55 @@ def test_page_size_and_limit_must_agree(corpus):
     assert resp.data['code'] == 'invalid_parameter'
 
 
+@pytest.mark.parametrize('qs', [
+    'gene_any=MYC&gene_any=EGFR',
+    'gene_all=MYC&gene_all=EGFR',
+    'reference_build=hg19&reference_build=hg38',
+    'sample_name=S1&sample_name=S2',
+    'oncogenes_only=true&oncogenes_only=false',
+    'limit=1&limit=2',
+    'page_size=1&page_size=2',
+])
+def test_a_repeated_single_value_parameter_is_refused(corpus, qs):
+    """#691: the last value used to win, and the answer said nothing.
+
+    On prod (2026-10-21) ?gene_any=MYC&gene_any=EGFR counted EGFR alone.
+    """
+    for resp in (_scoped(corpus, qs + '&count_only=true'),
+                 _samples('?project_id=%s&%s' % (corpus['public'], qs))):
+        assert resp.status_code == 400, resp.data
+        assert resp.data['code'] == 'invalid_parameter'
+        assert 'takes one value' in resp.data['error']
+
+
+def test_a_repeated_gene_parameter_says_to_use_commas(corpus):
+    resp = _scoped(corpus, 'gene_any=MYC&gene_any=EGFR')
+    assert 'gene_any=MYC,EGFR' in resp.data['error']
+
+
+def test_a_repeat_with_the_same_value_is_not_ambiguous(corpus):
+    once = _scoped(corpus, 'gene_any=MYC&count_only=true')
+    twice = _scoped(corpus, 'gene_any=MYC&gene_any=MYC&count_only=true')
+    assert once.status_code == twice.status_code == 200
+    assert once.data['count'] == twice.data['count'] == 3
+
+
+def test_the_repeatable_filters_still_repeat(corpus):
+    both = _scoped(corpus, 'classification=ecDNA&classification=BFB&count_only=true')
+    assert both.status_code == 200, both.data
+    assert both.data['count'] == (
+        _scoped(corpus, 'classification=ecDNA&count_only=true').data['count']
+        + _scoped(corpus, 'classification=BFB&count_only=true').data['count'])
+
+
+def test_a_tissue_sent_under_both_spellings_keeps_both(corpus):
+    """tissue_of_origin=X&tissue=Y used to read X only and drop Y unannounced."""
+    qs = '?project_id=%s&count_only=true&' % corpus['tissue']
+    assert _get(qs + 'tissue_of_origin=Nowhere').data['count'] == 0
+    assert _get(qs + 'tissue=Lung').data['count'] == 2
+    assert _get(qs + 'tissue_of_origin=Nowhere&tissue=Lung').data['count'] == 2
+
+
 def test_an_out_of_range_page_size_is_named_as_sent(corpus):
     resp = _scoped(corpus, 'page_size=100000')
     assert resp.status_code == 400
