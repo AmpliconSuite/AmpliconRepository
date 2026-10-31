@@ -4759,6 +4759,7 @@ def _render_edit_project_page(request, project, form, status=200):
 
     return render(request, "pages/edit_project.html",
                   {'project': project,
+                   'project_linkid': str(project['_id']),
                    'run': form,
                    'sample_names': sample_names,
                    'all_alias': json.dumps(get_all_alias()),

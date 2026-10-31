@@ -240,6 +240,9 @@ def test_a_site_admin_can_open_the_edit_form_of_a_private_project(
     response = client.get(edit_url)
     assert response.status_code == 200
     assert response.content != b'Project does not exist'
+    # And it carries the delete button, posting to the delete view.
+    assert (f'action="/project/{private_project}/delete" id="delete-project-form"'
+            in response.content.decode())
 
 
 def test_a_site_admin_can_delete_a_private_project_and_it_is_logged_as_theirs(
@@ -257,11 +260,11 @@ def test_a_site_admin_can_delete_a_private_project_and_it_is_logged_as_theirs(
 
     try:
         client.force_login(outsider)
-        assert client.get(delete_url).content == b'Project does not exist'
+        assert client.post(delete_url).content == b'Project does not exist'
         assert mongo_collection.find_one({'_id': oid})['delete'] is False
 
         client.force_login(site_admin)
-        response = client.get(delete_url)
+        response = client.post(delete_url)
         assert response.status_code == 302
         doc = mongo_collection.find_one({'_id': oid})
         assert doc['delete'] is True

@@ -573,6 +573,19 @@
         </button>
       </form>
 
+      {# Its own form, after the edit form's close: forms cannot nest, and this
+         one must not carry the edit form's fields or wait on its licence box. #}
+      <div style="border-top: 1px solid #000; margin: 32px 0 16px;"></div>
+      <h3>Delete project</h3>
+      <p>Takes the project off the site. It goes to the admin delete page, where a site admin can restore it or remove it for good.</p>
+      <form method="post" action="{% url 'project_delete' project_name=project_linkid %}" id="delete-project-form"
+            onsubmit="return confirm('Delete the project \'{{ project.project_name|escapejs }}\'?');">
+        {% csrf_token %}
+        <button type="submit" class="uk-button uk-button-danger">
+          <i class="fa fa-trash"></i> Delete project
+        </button>
+      </form>
+
 {% else %}
     <h1>Please sign in to edit projects</h1>
 {% endif %}
