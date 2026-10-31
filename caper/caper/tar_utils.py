@@ -6,6 +6,8 @@ from tar files stored in MongoDB GridFS without requiring the entire tar
 to be written to disk first.
 """
 
+import gzip
+import io
 import os
 import tarfile
 import tempfile
@@ -15,6 +17,40 @@ from .tar_safety import safe_extract_member
 from .utils import fs_handle, collection_handle
 
 logger = logging.getLogger(__name__)
+
+
+def _reproducible_tarinfo(info):
+    """Drop what describes the machine and the moment rather than the file.
+
+    Matches AmpliconSuiteAggregator's make_tarball (8.3.1): mtime 0, no
+    owner, and a mode that keeps only whether a file is executable. The
+    project document records when each version was created.
+    """
+    info.mtime = 0
+    info.uid = info.gid = 0
+    info.uname = info.gname = ''
+    if info.isdir():
+        info.mode = 0o755
+    elif info.isfile():
+        info.mode = 0o755 if info.mode & 0o111 else 0o644
+    return info
+
+
+def pack_directory_targz(dir_path, arcname):
+    """A .tar.gz of dir_path rooted at arcname, as an in-memory buffer at 0.
+
+    The bytes depend only on the names and contents of the files: the gzip
+    header carries mtime 0 and no file name, tarfile already recurses in
+    sorted order, and every member goes through _reproducible_tarinfo. An
+    unchanged directory therefore packs to the same bytes in every version
+    of a project, which file sharing between versions depends on (#624).
+    """
+    buf = io.BytesIO()
+    with gzip.GzipFile(filename='', mode='wb', fileobj=buf, mtime=0) as gz, \
+            tarfile.open(fileobj=gz, mode='w') as tar:
+        tar.add(dir_path, arcname=arcname, filter=_reproducible_tarinfo)
+    buf.seek(0)
+    return buf
 
 
 def extract_from_project_tarfile(project_id, tar_path_filter, output_dir=None, use_temp=False):

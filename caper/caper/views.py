@@ -104,6 +104,7 @@ from .utils import (
     AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
 from .tar_safety import safe_extract_member, safe_extractall
+from .tar_utils import pack_directory_targz
 from .aggregation_failure import aggregation_error_message
 from .gridfs_backlinks import put_with_backlink
 from .upload_cleanup import discard_failed_upload_payload
@@ -4964,7 +4965,6 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                     # document does reference.
                     id_var = 'Not Provided'
                     try:
-                        import io
                         directory_key = (
                             'Reconstruction directory'
                             if 'Reconstruction directory' in feature
@@ -4998,10 +4998,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         elif os.path.isdir(full_path):
                             dir_name = os.path.basename(path_var.rstrip('/'))
                             archive_name = f'{dir_name}.tar.gz'
-                            buf = io.BytesIO()
-                            with tarfile.open(fileobj=buf, mode='w:gz') as tar:
-                                tar.add(full_path, arcname=dir_name)
-                            buf.seek(0)
+                            buf = pack_directory_targz(full_path, dir_name)
                             file_size = buf.getbuffer().nbytes
                             id_var = put_with_backlink(
                                 fs_handle, buf, filename=archive_name,
