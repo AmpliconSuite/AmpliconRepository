@@ -113,7 +113,7 @@ OncoTree follows the WHO 2021 CNS classification. Glioblastoma is `GB`,
 code for the pre-2021 "glioblastoma multiforme", which included IDH-mutant
 tumours now called astrocytomas. TCGA's GBM samples are labelled with the
 pre-2021 term. Mapping them to `GB` would assert an IDH status nobody measured;
-mapping them only to a parent node would stop "GBM" finding them. §5.2 resolves
+mapping them only to a parent node would stop "GBM" finding them. §5.2–5.3 resolve
 this.
 
 ### 2.8 Review is tractable when grouped by value
@@ -145,6 +145,10 @@ this.
 | D7 | The curator runs in a **separate worker process**, never in a web request. |
 | D8 | Harmonized data is exposed in **search filters, site statistics, the API**, and to a lesser extent project and sample pages. |
 | D9 | **Cell-line, PDX and organism identity is kept** as first-class fields. A cell line also gets a cancer type, but never loses its name. |
+| D10 | **Non-human samples, including engineered mouse models, get an OncoTree cancer type** like any other sample; `species` and `specimen_kind` say what they are. |
+| D11 | **GBM is searchable both as one disease and by its current subtypes** (`GB`, `ASTR`) (§5.3). |
+| D12 | **Age is stored as a number; age groups are search presets**, not stored categories (§6.8). |
+| D13 | **Owners are told by email** when their project needs review (§16.1). |
 
 ---
 
@@ -199,26 +203,48 @@ Some labels the corpus uses correctly are not OncoTree nodes: pre-2021 "GBM" /
   `CHRCC`). Where the honest mapping is a parent node — pre-2021 GBM →
   `DIFG`/`ADIFG`, `OV` → `OVARY` level unless histology is given — the parent is
   used.
-- The harmonized value also keeps a **`legacy_label`** (e.g. `GBM`), and search
-  resolves a legacy label as a term in its own right. Searching "GBM" must
-  return both `GB` samples and samples whose `legacy_label` is `GBM`; searching
-  `GB` must return only the former.
+- The harmonized value also keeps a **`legacy_label`** (e.g. `GBM`) whenever
+  the evidence used one, including after an upgrade (below).
+- **Upgrading with evidence.** A pre-2021 GBM sample whose metadata states IDH
+  status is mapped to the post-2021 node that status implies — IDH-wildtype →
+  `GB`, IDH-mutant → `ASTR` (formerly "GBM, IDH-mutant", now astrocytoma,
+  IDH-mutant, grade 4) — and keeps `legacy_label: GBM`. Without IDH evidence it
+  stays on the parent node (`ADIFG`). The curator may make this upgrade only by
+  citing the IDH evidence in its rationale.
 - The crosswalk is data, maintained by admins, versioned like the synonyms of
   §9.3.
 
-### 5.3 Cellosaurus
+### 5.3 Search groupings
+
+People ask for "GBM" as one disease and also by its current subtypes, and
+OncoTree has no single node for the former. A **search grouping** is a named,
+admin-maintained union of OncoTree subtrees and legacy labels, searchable and
+offered in filters beside the tree. The first one:
+
+| Grouping | Matches |
+| --- | --- |
+| **GBM** (glioblastoma, any IDH status) | the `GB` subtree (incl. `SCGBM`), plus every sample with `legacy_label: GBM` — which includes legacy samples upgraded to `ASTR` and those left at `ADIFG` |
+
+So searching **GBM** finds all glioblastomas, old and new nomenclature;
+**GB** finds IDH-wildtype glioblastoma only; **ASTR** finds IDH-mutant
+astrocytomas of every grade, including the former IDH-mutant GBMs. An
+`ASTR` sample with no GBM label (a grade 2–3 astrocytoma) is not in the GBM
+grouping. Groupings are versioned like synonyms; adding one is an admin action,
+not a spec change.
+
+### 5.4 Cellosaurus
 
 Cell lines are identified by Cellosaurus accession (`CVCL_…`, which is the
 RRID). Cellosaurus supplies species, donor sex and age, the NCIt disease, and
 problematic-line flags. Lookups are cached locally with a fetch date; the site
 does not call Cellosaurus at request time.
 
-### 5.4 NCBI Taxonomy
+### 5.5 NCBI Taxonomy
 
 Species is an NCBI Taxonomy ID with its name (`9606` Homo sapiens, `10090` Mus
 musculus).
 
-### 5.5 Closed enumerations
+### 5.6 Closed enumerations
 
 Specimen kind, disease state, sex and age group are small closed lists owned by
 this spec (§6). Adding a value is a spec change.
@@ -243,6 +269,10 @@ empty, NaN, `None`, `NA`, `Unknown`, `Not Available`, `Not Reported` and
   `diagnosis_*_name`, `tissue_source_site`…); the tissue/site fields as
   disambiguation context; the project name and description (D2).
 - A cell line's cancer type is that of the tumour it was derived from.
+- Species does not limit it (D10): an engineered murine medulloblastoma model
+  is `MBL` with `species` Mus musculus and `specimen_kind: engineered_model`.
+  OncoTree is a human classification, so a non-human mapping is to the human
+  type the model is built or described to represent, and the rationale says so.
 
 ### 6.2 `tissue`
 
@@ -306,13 +336,22 @@ empty, NaN, `None`, `NA`, `Unknown`, `Not Available`, `Not Reported` and
 ### 6.8 `sex`, `age`
 
 - **`sex`:** `female` | `male`. Of the donor, for models too.
-- **`age`:** `{years, group}`. `years` is a number, at diagnosis/sampling as
-  the source states it. `group` is `pediatric` (< 15), `aya` (15–39) or
-  `adult` (≥ 40); it is derived from `years` when `years` is known, and taken
-  from `age_group`-style columns otherwise (HCMI's `Pediatrics`/`AYA`/`Adults`
-  map onto it). A non-numeric `age` such as "Adult" sets `group` only. Units
+- **`age`:** `{years, source_group}`. `years` is a number, at
+  diagnosis/sampling as the source states it, and is the canonical form. Units
   other than years (days, months) are converted and the conversion recorded in
   the evidence.
+  `source_group` is set only when the source gives a category instead of a
+  number — HCMI's `age_group` (`Pediatrics`/`AYA`/`Adults`), or a non-numeric
+  `age` such as "Adult" — and holds the source's label verbatim. It is never
+  derived from `years`, and categories from different sources are not merged
+  into one scheme, because their cut-offs are not known to agree.
+- **Age groups are search presets, not stored values.** Search offers age
+  ranges, plus named presets defined once in configuration: initially
+  *pediatric* 0–17, *AYA* 15–39 (NCI's adolescent-and-young-adult range) and
+  *adult* ≥ 18. Presets may overlap, as these do; they are filters over
+  `years`. A sample with only a `source_group` matches a preset only where an
+  admin has recorded that the source's category is equivalent to that preset;
+  otherwise it is found by its own label.
 
 ### 6.9 `overall_survival`, `progression_free_survival`
 
@@ -588,10 +627,12 @@ project documents, and a check comparable to
 
 - A **cancer-type filter by OncoTree node**, matching the node and all its
   descendants: choosing `LUNG` returns LUAD, LUSC, SCLC… and samples mapped to
-  `LUNG` itself. Typed text resolves to nodes through names, codes, synonyms and
-  legacy labels (§5.2) and shows what it resolved to.
-- Filters for `specimen_kind`, `disease_state`, `species`, `sex`, age range /
-  group, and "has OS data".
+  `LUNG` itself. Typed text resolves to nodes through names, codes, synonyms,
+  legacy labels (§5.2) and search groupings (§5.3), and shows what it resolved
+  to. Groupings are offered beside the tree: GBM appears as one choice, with
+  `GB` and `ASTR` reachable under it.
+- Filters for `specimen_kind`, `disease_state`, `species`, `sex`, age range and
+  the age presets of §6.8, and "has OS data".
 - An option to restrict to a minimum confidence (e.g. exclude
   `project_inference`).
 - **Existing raw-text filters keep working unchanged**; harmonized filters are
@@ -659,6 +700,29 @@ Required properties, for projects with thousands of samples:
     before anything is applied.
 11. **History** per group and per sample, from the decision log (§10.4).
 
+### 16.1 Telling owners: email (D13)
+
+- **When.** A worker run that leaves a project with groups newly needing
+  attention — new unreviewed low-confidence or conflicting groups, or a
+  `reproposed` answer to an owner's own flag — queues a notification for that
+  project. A run that changes nothing needing attention sends nothing.
+- **Who.** The project's owners/members. Admins are not emailed per project;
+  they see the site-wide queue (§12, *Observable*) instead.
+- **What.** One message per project: the project name, counts by field and
+  status, and a link straight to the project's review interface. It contains no
+  metadata values, so it is safe to forward.
+- **How often.** At most one email per project per digest period (configurable,
+  initially weekly); events inside the period are merged into one message. A
+  project's first harmonization sends one email, not one per group.
+- **Opt-out.** A new key in `user_preferences`, beside the existing
+  `onProjectUpdate`, default on, honoured exactly as `onProjectUpdate` is in
+  `user_preferences.py`. The email says how to turn it off.
+- **Sent by the worker**, through the site's existing `EmailMessage` path and
+  `reply_to()`. A send failure is logged and retried at the next digest; it
+  never blocks harmonization (I5).
+- **Private projects are never emailed about** (I2), since they are never
+  harmonized.
+
 ---
 
 ## 17 · Invariants
@@ -672,7 +736,7 @@ Required properties, for projects with thousands of samples:
 | I5 | Harmonization failure never fails an upload, a reindex, a page or an API call. |
 | I6 | Derived stores are rebuildable from authoritative ones, and drift is detectable. |
 | I7 | Model identity (cell line / PDX name and IDs) is never dropped or replaced by a cancer type. |
-| I8 | A value is never more specific than its evidence (§5.1); legacy labels are never silently upgraded to post-2021 codes. |
+| I8 | A value is never more specific than its evidence (§5.1). A legacy label is upgraded to a post-2021 code only on cited evidence (§5.2), and the legacy label is kept. |
 | I9 | Version-deleted tombstones are never harmonized; decisions survive re-aggregation only through `version_chain_id`. |
 
 ---
@@ -683,8 +747,10 @@ Against a snapshot of the public corpus equivalent to §2:
 
 1. "Pancreas Adenocarcinoma", "Pancreatic Adenocarcinoma" and the TCGA code
    `PAAD` all resolve to `PAAD` without the curator.
-2. Searching "GBM" returns TCGA's glioblastoma samples; searching `GB` does not
-   return samples whose only evidence is a pre-2021 label.
+2. Searching the **GBM** grouping returns TCGA's glioblastoma samples and every
+   `GB` sample. Searching `GB` returns IDH-wildtype glioblastomas only, never a
+   sample whose only evidence is a pre-2021 label. A pre-2021 GBM sample with
+   IDH-mutant evidence is found by both **GBM** and `ASTR`.
 3. Choosing the `LUNG` node returns samples labelled "Lung", "Lung
    Adenocarcinoma", "Lung Squamous Cell Carcinoma" and "Non-Small Cell Lung
    Cancer (NSCLC), Adenocarcinoma".
@@ -705,6 +771,12 @@ Against a snapshot of the public corpus equivalent to §2:
 10. The deterministic stages alone (§8, 2–3) report, per field, how many
     samples they resolved; that report is the baseline the curator is measured
     against.
+11. A sample with `age.years` 16 matches both the *pediatric* and *AYA*
+    presets; an HCMI sample with only `source_group: Adults` matches the
+    *adult* preset only after an admin records that equivalence.
+12. Two worker runs inside one digest period that each leave a project needing
+    attention produce one email to its owners; an owner who opted out receives
+    none; no email names a metadata value.
 
 ---
 
@@ -716,12 +788,7 @@ Against a snapshot of the public corpus equivalent to §2:
    is between human decisions on a project. A later admin change to a global
    synonym is a rule, not a project decision, so as specified it does **not**
    override an earlier project-level human decision. Confirm that is wanted.
-3. **Non-human cancer type.** Should engineered murine models (Pradella) get an
-   OncoTree cancer type at all, given OncoTree is a human classification, or
-   only `species` and `specimen_kind`?
-4. **Age-group boundaries.** §6.8 uses NCI's AYA range (15–39). HCMI's own
-   cut-offs may differ; confirm before mapping its groups.
-5. **Upgrading `GBM`.** If a sample's metadata elsewhere states IDH status,
-   may the curator map pre-2021 GBM to `GB`/`ASTR` on that evidence?
-6. **Owner notification.** Should owners be told when their project has
-   groups needing review, and how (project page banner, email)?
+3. **Age preset boundaries.** §6.8's initial presets (pediatric 0–17, AYA
+   15–39, adult ≥ 18) are configuration and easy to change; confirm them, and
+   whether further presets (e.g. elderly ≥ 65) are wanted.
+4. **Digest period** for owner email (§16.1), initially weekly.
