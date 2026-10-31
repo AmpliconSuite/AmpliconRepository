@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+
+{% block meta_title %}Project deleted{% endblock %}
+
+{% block main %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 style="padding-top: 50px">This project was deleted</h1>
+        <p>
+            {% if project_name %}This link was to the project <strong>{{ project_name }}</strong>.{% else %}This link was to a project on AmpliconRepository.{% endif %}
+            It was deleted from the site{% if deleted_at %} on {{ deleted_at|date:"j F Y" }}{% endif %}, together with all of its versions, so the link no longer works.
+        </p>
+        <p>
+            If you were sent this link, the person who shared it may know where the data has gone.
+            <a href="/">Browse the projects on the site</a>.
+        </p>
+    </div>
+</div>
+{% endblock %}

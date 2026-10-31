@@ -17,6 +17,12 @@ def canonical_classification(name):
     return LEGACY_CLASSIFICATION_NAMES.get(name, name)
 
 
+# Tied bars are drawn in this order, top to bottom -- the order StackedBarChart.py
+# stacks them in. Without it a tie followed the per-process hash order of the set
+# each sample's classes are collected in, so tied bars swapped after a restart.
+TIE_ORDER = ['ecDNA', 'FAN', 'BFB', 'Complex-non-cyclic', 'Linear', 'Virus']
+
+
 def summarybar(sample, fa_cmap):
     df = pd.DataFrame(sample)
 
@@ -49,7 +55,13 @@ def summarybar(sample, fa_cmap):
         ]
 
     class_counts_df['Percentage'] = (class_counts_df['Sample_count'] / total_samples * 100).round(1)
-    class_counts_df = class_counts_df.sort_values('Sample_count', ascending=True)
+    # Bars are drawn bottom-up, so the largest count is last, and among equal counts
+    # the class that comes first in TIE_ORDER is last too; unknown classes by name.
+    class_counts_df['_rank'] = class_counts_df['Classification'].map(
+        lambda c: TIE_ORDER.index(c) if c in TIE_ORDER else len(TIE_ORDER))
+    class_counts_df['_name'] = class_counts_df['Classification'].astype(str)
+    class_counts_df = class_counts_df.sort_values(['Sample_count', '_rank', '_name'],
+                                                  ascending=[True, False, False])
 
     logging.info(f"Sample classification percentages (n={total_samples}):")
     for _, row in class_counts_df.iterrows():

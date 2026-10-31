@@ -115,12 +115,48 @@ def normalize_api_v1_errors(exc, context):
 # These two wrappers answer in JSON under /api/v1/ and delegate everything else
 # to Mezzanine unchanged, so the site's own error pages are untouched.
 
+import logging
+import re
+
 from django.http import JsonResponse
 from mezzanine.core.views import page_not_found as _mezzanine_404
 from mezzanine.core.views import server_error as _mezzanine_500
 
 
+_PROJECT_PATH = re.compile(r'^/project/([^/]+)')
+
+
+def _deleted_project_page(request):
+    """A 410 naming the deleted project a /project/... URL belonged to, or None.
+
+    Every page under the project -- samples, features, downloads -- raises
+    Http404 when the project does not resolve, so one check here answers all
+    of them from the record deleted_projects.py keeps.
+    """
+    match = _PROJECT_PATH.match(request.path)
+    if not match:
+        return None
+    try:
+        from django.shortcuts import render
+        from . import deleted_projects
+        from .utils import deleted_urls_handle
+        row = deleted_projects.find_deleted(deleted_urls_handle, match.group(1))
+        if row is None:
+            return None
+        return render(request, 'pages/project_deleted.html', {
+            'project_name': deleted_projects.public_name(row, request),
+            'deleted_at': row.get('deleted_at'),
+            'purged': bool(row.get('permanently_deleted_at')),
+        }, status=410)
+    except Exception:
+        logging.exception('Could not look up deleted project for %s', request.path)
+        return None
+
+
 def api_aware_page_not_found(request, exception=None, template_name='errors/404.html'):
+    deleted = _deleted_project_page(request)
+    if deleted is not None:
+        return deleted
     if request.path.startswith(API_V1_PREFIX):
         return JsonResponse(
             {'error': 'No such endpoint. See /api/v1/openapi.json for the '
