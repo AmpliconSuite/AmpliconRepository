@@ -228,6 +228,23 @@ def test_the_project_page_tells_the_admin_they_are_not_a_member(
     assert 'You can see it as a site admin' not in client.get(url).content.decode()
 
 
+def test_the_admin_project_list_links_a_private_project(
+        private_project, site_admin, outsider, mongo_collection):
+    """A private project is reachable from the admin menu, not only by its id."""
+    name = mongo_collection.find_one({'_id': ObjectId(private_project)})['project_name']
+    client = Client(HTTP_HOST='localhost')
+    client.force_login(site_admin)
+
+    html = client.get('/admin-all-projects/').content.decode()
+    assert f'href="/project/{private_project}"' in html
+    assert name in html
+
+    client.force_login(outsider)
+    refused = client.get('/admin-all-projects/')
+    assert refused.status_code == 302
+    assert name not in refused.content.decode()
+
+
 def test_an_alias_with_an_ampersand_survives_into_next(
         anonymous_client, mongo_collection, private_project):
     """An alias is user-supplied text and ?next= is a query string, so it has

@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        $('#allProjectsTable').DataTable({
+            pageLength: 50,
+            order: [[0, 'asc']],
+            language: {searchPlaceholder: "Search projects, members, visibility"}
+        });
+    });
+</script>
+{% endblock %}
+
+{% block meta_title %}All Projects{% endblock %}
+
+{% block main %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 style="padding-top: 50px">All Projects</h1>
+        <p>Every live project on the site, private ones included ({{ projects|length }}).
+           As an admin you can open any of them; you can edit only public projects and the ones you are a member of.</p>
+        <hr>
+        <table id="allProjectsTable" class="table" style="width:100%">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Visibility</th>
+                    <th>Samples</th>
+                    <th>Last Updated</th>
+                    <th>Creator</th>
+                    <th>Project Members</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for project in projects %}
+                <tr>
+                    <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a>{% if project.featured %} <span class="badge badge-secondary">Featured</span>{% endif %}</td>
+                    <td>{{ project.visibility_display }}</td>
+                    <td>{{ project.sample_count }}</td>
+                    <td>{{ project.date }}</td>
+                    <td>{{ project.creator }}</td>
+                    <td>{% for person in project.project_members %}{{ person }}<br>{% endfor %}</td>
+                    <td>{{ project.description|truncatechars:200 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

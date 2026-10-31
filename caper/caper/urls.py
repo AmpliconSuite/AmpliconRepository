@@ -101,6 +101,7 @@ urlpatterns += [
     path('terms/', TemplateView.as_view(template_name='pages/terms.html'), name='terms'),
 
     path('admin-featured-projects/', views.admin_featured_projects, name='admin_featured_projects'),
+    path('admin-all-projects/', views.admin_all_projects, name='admin_all_projects'),
     path('admin-stats/', views.admin_stats, name='admin_stats'),
     path('admin-stats/download/user/',views.user_stats_download,name="user_stats_download"),
     path('admin-stats/download/project/',views.project_stats_download,name="project_stats_download"),

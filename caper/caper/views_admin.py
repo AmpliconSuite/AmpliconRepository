@@ -404,6 +404,31 @@ def admin_featured_projects(request):
     return render(request, 'pages/admin_featured_projects.html', {'public_projects': public_projects})
 
 
+# What the all-projects table shows. A positive projection, because a project
+# document carries its runs and sample table and the largest are tens of MB.
+_ALL_PROJECTS_FIELDS = ['project_name', 'description', 'date', 'creator',
+                        'project_members', 'private', 'sample_count', 'featured']
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_all_projects(request):
+    """Every live project, private ones included, each linked to its page.
+
+    Admins can open any project page (may_view_project), but the home page lists
+    only public projects and the ones the admin is a member of, so a private
+    project could only be reached by already knowing its id.
+    """
+    if not request.user.is_staff:
+        return redirect('/accounts/logout')
+    projects = list(collection_handle.find(status_query(LIVE),
+                                           {f: 1 for f in _ALL_PROJECTS_FIELDS}))
+    for proj in projects:
+        prepare_project_linkid(proj)
+        proj['visibility_display'] = format_visibility_for_display(proj.get('private', True))
+    projects.sort(key=lambda p: str(p.get('project_name', '')).lower())
+    return render(request, 'pages/admin_all_projects.html', {'projects': projects})
+
+
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
 def admin_version_details(request):
     if not request.user.is_staff:
