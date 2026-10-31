@@ -90,7 +90,7 @@ from .download_gate import (
 # Import utils functions
 from .utils import (
     collection_handle, collection_handle_primary, db_handle_primary, current_flags, fs_handle,
-    audit_log_handle,
+    audit_log_handle, deleted_urls_handle,
     fetch_sample_rows_by_name,
     get_one_project, get_one_project_sans_runs, get_one_sample, get_one_sample_rows,
     get_one_deleted_project,
@@ -126,7 +126,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
-from . import download_totals, lineage, project_fields, provenance
+from . import deleted_projects, download_totals, lineage, project_fields, provenance
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
@@ -3183,12 +3183,25 @@ def log_project_audit_event(user, project_uuid, project_name, is_new_version,
         logging.error(f"Failed to write audit log for project {project_uuid}: {e}")
 
 
-def project_delete(request, project_name):
+def delete_whole_project(request, project_name):
+    """The Delete button: the project and every version of it.
+
+    project_delete() writes only the document it is given, which is all a
+    project edit needs when it calls it to retire the version it replaced.  A
+    deletion by the button also closes the older versions -- the resolver stops
+    serving them once their project's head is deleted -- and records each
+    version's URL, under the name it had, in deleted_project_urls.
+    """
+    return project_delete(request, project_name, whole_project=True)
+
+
+def project_delete(request, project_name, whole_project=False):
     project = get_one_project(project_name)
     deleter = get_current_user(request)
     is_admin = getattr(request.user, 'is_staff', False)
     visibility = normalize_visibility_field(project.get('private', 'private'))
     allowed = may_edit_project(project, request)
+    was_live = classify_status(project) == LIVE
     if check_project_exists(project_name) and allowed:
         query = {'_id': project['_id']}
         #query = {'project_name': project_name}
@@ -3211,6 +3224,10 @@ def project_delete(request, project_name):
         collection_handle.update_one(query, new_val)
         provenance.confirm(audit_log_handle, event_id)
         project_removed(project, visibility)
+        if whole_project and was_live:
+            deleted_projects.record_project_deleted(
+                collection_handle, deleted_urls_handle, project, request.user,
+                by_admin=bool(is_admin and not is_user_a_project_member(project, request)))
 
         # No Neo4j graph invalidation here on purpose. This is a reversible soft
         # delete and it runs synchronously on the request path (including as the

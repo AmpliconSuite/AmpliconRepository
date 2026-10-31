@@ -451,7 +451,13 @@ REACHABLE_BY_URL_QUERY = {'$or': [dict(NOT_DELETED_QUERY),      # utils.py:692
                                   dict(PRIOR_VERSION_QUERY)]}   # utils.py:722
 """The filter form of ``is_reachable_by_url()`` -- the two ``_id`` steps of the
 resolver, which are the only two that can answer the question for a named
-document.  See ``is_reachable_by_url()`` for why the name steps add nothing."""
+document.  See ``is_reachable_by_url()`` for why the name steps add nothing.
+
+Since 2026-10-30 the resolver also refuses a SUPERSEDED document whose project
+has been deleted (deleted_projects.chain_is_deleted), which a filter on one
+document cannot express.  So this over-counts what is reachable, never under:
+cleanup tooling that asks it before deleting errs towards keeping.
+"""
 
 
 def resolver_queries(project_id=None, project_name=None):

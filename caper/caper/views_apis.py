@@ -28,7 +28,7 @@ from rest_framework import status
 
 from .email_contact import contact_context, reply_to
 from .project_status import LIVE, classify, iter_previous_versions, status_query
-from . import lineage
+from . import deleted_projects, lineage
 
 from threading import Thread
 
@@ -40,6 +40,7 @@ from . import feature_index
 from .request_url import absolute_base, absolute_url
 from .api_errors import API_V1_PREFIX
 from .utils import (
+    deleted_urls_handle,
     collection_handle, get_one_project, get_one_project_sans_runs, form_to_dict,
     get_latest_project_version, normalize_visibility_field, is_project_private,
     fs_handle, PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES, project_members_of,
@@ -467,6 +468,25 @@ def api_error(message, code, status_code):
     return Response({'error': message, 'code': code}, status=status_code)
 
 
+def _project_not_found(request, project_id):
+    """404 for an id nothing resolves to, saying so when it was a deleted project.
+
+    Still a 404 with code not_found, so no client that branches on either sees
+    a change; ``deleted`` and ``deleted_at`` are added, and ``project_name``
+    when the project was one this caller could have been told the name of.
+    """
+    body = {'error': 'Project not found', 'code': 'not_found'}
+    row = deleted_projects.find_deleted(deleted_urls_handle, project_id)
+    if row is not None:
+        body['error'] = 'This project was deleted'
+        body['deleted'] = True
+        body['deleted_at'] = row.get('deleted_at')
+        name = deleted_projects.public_name(row, request)
+        if name:
+            body['project_name'] = name
+    return Response(body, status=status.HTTP_404_NOT_FOUND)
+
+
 def _access_error(user):
     """
     The right refusal for a caller who may not read this project.
@@ -798,8 +818,7 @@ class ProjectDetailView(APIView):
         # project) — the read amplification that took production down.
         project = get_one_project_sans_runs(project_id, _PROJECT_METADATA_PROJECTION)
         if not project:
-            return api_error('Project not found', 'not_found',
-                             status.HTTP_404_NOT_FOUND)
+            return _project_not_found(request, project_id)
         if not _user_can_access_project(project, user):
             return _access_error(user)
 
@@ -855,8 +874,7 @@ class ProjectSamplesView(APIView):
         # let an anonymous caller trigger a multi-megabyte read and get a 401.
         project = get_one_project_sans_runs(project_id, _PROJECT_METADATA_PROJECTION)
         if not project:
-            return api_error('Project not found', 'not_found',
-                             status.HTTP_404_NOT_FOUND)
+            return _project_not_found(request, project_id)
         if not _user_can_access_project(project, user):
             return _access_error(user)
 
@@ -917,8 +935,7 @@ class ProjectSampleDetailView(APIView):
         # multi-megabyte read and then gets a 401 for it.
         project = get_one_project_sans_runs(project_id, _PROJECT_METADATA_PROJECTION)
         if not project:
-            return api_error('Project not found', 'not_found',
-                             status.HTTP_404_NOT_FOUND)
+            return _project_not_found(request, project_id)
         if not _user_can_access_project(project, user):
             return _access_error(user)
 
@@ -1015,8 +1032,7 @@ class ProjectDownloadView(APIView):
         # read here was the most expensive amplification of the set.
         project = get_one_project_sans_runs(project_id, _PROJECT_METADATA_PROJECTION)
         if not project:
-            return api_error('Project not found', 'not_found',
-                             status.HTTP_404_NOT_FOUND)
+            return _project_not_found(request, project_id)
         if not _user_can_access_project(project, user):
             return _access_error(user)
 

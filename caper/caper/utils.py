@@ -41,6 +41,7 @@ from .project_status import (
     status_query,
 )
 from . import lineage
+from . import deleted_projects
 from .project_version_cleanup import (
     GRIDFS_DELETE_BATCH,
     delete_gridfs_file_in_batches,
@@ -217,6 +218,8 @@ db_handle_primary, mongo_client_primary = get_db_handle(os.getenv('DB_NAME', def
 collection_handle = get_collection_handle(db_handle,'projects')
 collection_handle_primary = get_collection_handle(db_handle_primary,'projects')
 audit_log_handle = get_collection_handle(db_handle_primary,'project_audit_log')
+# One row per version of every deleted project: see deleted_projects.py.
+deleted_urls_handle = get_collection_handle(db_handle_primary, deleted_projects.COLLECTION)
 
 fs_handle = gridfs.GridFS(db_handle)
 
@@ -1049,6 +1052,9 @@ def get_one_project(project_name_or_uuid):
         try:
             project = collection_handle.find_one(
                 combine(PRIOR_VERSION_QUERY, _id=ObjectId(project_name_or_uuid)))
+            if project is not None and deleted_projects.chain_is_deleted(collection_handle, project):
+                # An older version of a deleted project goes with it.
+                return None
             if project is not None:
                 redirected = resolve_redirect_tombstone(project)
                 if redirected is not None:
@@ -1064,6 +1070,9 @@ def get_one_project(project_name_or_uuid):
         try:
             project = collection_handle.find_one(
                 combine(PRIOR_VERSION_QUERY, project_name=project_name_or_uuid))
+            if project is not None and deleted_projects.chain_is_deleted(collection_handle, project):
+                # An older version of a deleted project goes with it.
+                return None
             if project is not None:
                 redirected = resolve_redirect_tombstone(project)
                 if redirected is not None:
@@ -1500,6 +1509,9 @@ def get_one_project_sans_runs(project_name_or_uuid, projection=None):
         try:
             project = collection_handle.find_one(
                 combine(PRIOR_VERSION_QUERY, _id=ObjectId(project_name_or_uuid)), projection)
+            if project is not None and deleted_projects.chain_is_deleted(collection_handle, project):
+                # An older version of a deleted project goes with it.
+                return None
             if project is not None:
                 redirected = resolve_redirect_tombstone(project, projection)
                 if redirected is not None:
@@ -1515,6 +1527,9 @@ def get_one_project_sans_runs(project_name_or_uuid, projection=None):
         try:
             project = collection_handle.find_one(
                 combine(PRIOR_VERSION_QUERY, project_name=project_name_or_uuid), projection)
+            if project is not None and deleted_projects.chain_is_deleted(collection_handle, project):
+                # An older version of a deleted project goes with it.
+                return None
             if project is not None:
                 redirected = resolve_redirect_tombstone(project, projection)
                 if redirected is not None:
