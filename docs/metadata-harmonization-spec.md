@@ -151,6 +151,8 @@ this.
 | D13 | **Owners are told by email** when a project's review is ready to look at — after creation, or after an update that brings metadata or samples not seen before (§16.1). |
 | D14 | **When the curator re-proposes after a flag, owners and site admins are emailed** (§16.1). |
 | D15 | **Pediatric means under 18** (§6.8). |
+| D16 | **A rule change never overrides a human correction; it sends affected confirmations back to review** and emails the owners (§9.4, §16.1). |
+| D17 | **The criteria for giving a sample a label are defined and shown in the interface** at the point of decision, and the curator is held to the same criteria (§5.7). |
 
 ---
 
@@ -248,8 +250,55 @@ musculus).
 
 ### 5.6 Closed enumerations
 
-Specimen kind, disease state, sex and age group are small closed lists owned by
-this spec (§6). Adding a value is a spec change.
+Specimen kind, disease state and sex are small closed lists owned by this spec
+(§6). Adding a value is a spec change.
+
+### 5.7 Labeling criteria
+
+Every value a sample can be given — each OncoTree node, each enumeration value,
+each absence reason (§7.3) — has **labeling criteria**: what it means, what
+evidence qualifies a sample for it, what does not, and what to use instead when
+the evidence falls short. They are the rules a human applies when confirming or
+correcting, and the same rules the curator is given (§11.1), so the two cannot
+drift apart.
+
+- **One store, versioned.** Criteria are data in the vocabulary store (§14),
+  edited by admins. Each change records who, when and why, and every decision
+  and curator answer records the criteria version it was made under (§7.1).
+  Changing criteria text changes no value by itself.
+- **For an OncoTree node,** the criteria shown are: the node's path in the tree
+  (`BRAIN › DIFG › ADIFG › GB`), its NCIt definition (from the node's NCIt
+  code, held in the vocabulary store), the general rule that a value is the
+  most specific node the evidence supports and no more specific (§5.1), and an
+  admin-written note where a near-miss is common. Initial notes:
+
+  | Node | Note |
+  | --- | --- |
+  | `GB` | Requires stated IDH-wildtype status. "Glioblastoma"/"GBM" alone → `ADIFG`, keeping `legacy_label: GBM` (§5.2). |
+  | `ASTR` | Requires stated IDH-mutant status. A pre-2021 GBM with IDH-mutant evidence belongs here, keeping `legacy_label: GBM`. |
+  | level-1 tissue nodes (`LUNG`, `BOWEL`…) | Use when only the organ is known. A histology word with no organ ("Adenocarcinoma") is not evidence of an organ. |
+
+- **For an enumeration value,** the criteria are those below; changing these
+  is a spec change, not an admin edit.
+
+  | Field | Value | Qualifies | Does not qualify |
+  | --- | --- | --- | --- |
+  | `specimen_kind` | `tumor_tissue` | Material taken directly from a patient's tumour — resection, biopsy, or blood/bone marrow for a haematological cancer — and sequenced without culture or engraftment | Anything passaged in culture or grown in an animal |
+  | | `normal_tissue` | Non-tumour patient tissue sequenced as the sample of interest | A matched normal used only as the reference |
+  | | `cell_line` | An established, continuously passaged culture; a Cellosaurus entry is strong evidence | A short-term primary culture (→ `patient_derived_other`); an organoid (→ `organoid`) |
+  | | `pdx` | Patient tumour engrafted and grown in a mouse | A cell line grown as a xenograft (→ `cell_line`, with the xenograft noted) |
+  | | `organoid` | Patient-derived 3D culture described as an organoid | A spheroid (→ `patient_derived_other`) |
+  | | `patient_derived_other` | A patient-derived model whose form is unstated or is something else: spheroid, short-term culture, "expanded patient-derived model" | A model whose form is stated and listed above |
+  | | `engineered_model` | A tumour or cell population created by genetic engineering, rather than derived from a naturally occurring tumour | An established line that was later modified (→ `cell_line`) |
+  | | `other` | None of the above; a note is required | — |
+  | `disease_state` | `primary` | From the original tumour at its site of origin, before any recurrence; pre-invasive lesions (e.g. DCIS) count here. For a model, derived from such a tumour | A biopsy from an organ other than the primary's |
+  | | `metastatic` | From a site the cancer spread to, lymph-node metastases included, or a model derived from one. A biopsy site that differs from the primary organ is evidence | Locally advanced disease at the primary site |
+  | | `recurrent` | From tumour that returned after treatment or remission (e.g. GLASS `R1`/`R2`) | A second, unrelated primary |
+  | | `non_malignant` | Stated benign or non-neoplastic | Pre-invasive or in-situ lesions (→ `primary`) |
+  | `sex` | `female` / `male` | As recorded for the donor (for a model, the donor of the original tumour) | Anything inferred from sequence data; the curator does not infer sex |
+
+- `pediatric` is derived (§6.8) and has no criteria of its own: a reviewer
+  edits `age.years` or `source_group`, not the flag.
 
 ---
 
@@ -388,7 +437,12 @@ Every harmonized field on every sample is a record, never a bare value:
   decided_by:   <username>                        # human only
   decided_at:   <timestamp>
   vocab_version: <oncotree release / crosswalk version / Cellosaurus fetch date>
-  review_status: unreviewed | confirmed | corrected | flagged | reproposed
+  rule:         <the synonym or crosswalk entry, at its version>   # synonym / id_lookup via crosswalk only
+  criteria_version: <labeling criteria version in force, §5.7>
+  basis:        shown_evidence | publication | lab_records | other   # human only
+  note:         <free text>                       # human only; required when basis is other
+  confirmed_from: {source, rule}                  # confirm only: what produced the confirmed value, §9.4
+  review_status: unreviewed | confirmed | corrected | flagged | reproposed | rule_changed
 }
 ```
 
@@ -466,7 +520,27 @@ for strings that mean the same thing everywhere ("Pancreatic Adenocarcinoma" →
 `PAAD`). Synonyms are site-wide, so **only admins** create, change or retire
 them. An owner's decision is always project-scoped (§10.2). An admin may promote
 a project-scoped decision to a synonym. Synonyms and the crosswalk are
-versioned; each change records who, when and why.
+versioned; each change records who, when and why. Changes are **published** as a
+new version of the rule set; one publication may change many entries.
+
+### 9.4 When a rule changes
+
+A published change to a synonym, a crosswalk entry or the vocabulary release can
+change the value a rule produces for a group. What happens depends on the
+group's most recent human decision (§10):
+
+| Group's state | Effect |
+| --- | --- |
+| No human decision | Takes the new rule value. |
+| **Corrected** | Untouched. A correction is a human's own judgment and stands. |
+| **Confirmed**, and the confirmed value came from a rule this publication changed, and the new value differs | Goes **back to review** with `review_status: rule_changed`. The confirmed value stays in effect until a human acts; nothing is overwritten without one. The review interface shows old value, new rule value, and the rule change that caused it. |
+| Confirmed, any other case | Untouched. |
+
+Example: the synonym "Glioblastoma" → `GB` is changed to → `ADIFG`. A project
+whose owner *corrected* its "Glioblastoma" group to `GB` (knowing the cohort is
+IDH-wildtype) keeps `GB`. A project whose owner only *confirmed* the `GB` the
+rule had proposed goes back to review. This is why a confirmation records which
+rule produced the value it confirmed (§7.1).
 
 ---
 
@@ -490,7 +564,8 @@ A sample's human value for a field is the **most recent human decision that
 covers it**, whether that decision was made on its group or on the sample
 itself, by an owner or by an admin. A later group decision therefore replaces
 an earlier per-sample override; a later per-sample override replaces the group
-value for that sample only.
+value for that sample only. "Most recent wins" is between human decisions on a
+project; a change to a site-wide rule is not one, and is handled by §9.4.
 
 ### 10.4 Decisions are a log
 
@@ -501,8 +576,8 @@ earlier value, who set it and when stays readable. Undo is a new decision.
 
 | Action | Effect |
 | --- | --- |
-| **Confirm** | The current value becomes `source: human`, `review_status: confirmed`. |
-| **Correct** | Set a value (or an absence reason) by hand. `source: human`, `corrected`. |
+| **Confirm** | Asserts: *the evidence shown meets the labeling criteria (§5.7) for this value.* It asserts nothing beyond the shown evidence. The current value becomes `source: human`, `review_status: confirmed`, `basis: shown_evidence`, and the decision records the source and rule the value came from. |
+| **Correct** | Asserts: *this value's criteria are met*, on a stated **basis** — `shown_evidence` (the evidence shown supports a different value), `publication`, `lab_records`, or `other`. A note is required for `other` and optional otherwise. Sets a value (or an absence reason) by hand: `source: human`, `review_status: corrected`. |
 | **Flag** | "This is wrong", with a required comment. `review_status: flagged`; the group is queued for the curator with the comment (§11.3). The value stays visible, marked flagged, until replaced. |
 | **Revert** | A new decision restoring the previous value. |
 
@@ -526,7 +601,10 @@ The curator is any backend implementing one operation:
 - for flagged groups, the reviewer's comment and the previous answer;
 - the candidate vocabulary terms the deterministic stages shortlisted, and access
   to vocabulary lookup (search OncoTree by name/code/NCIt; resolve a Cellosaurus
-  ID).
+  ID);
+- the labeling criteria (§5.7) for every candidate term and for the field's
+  enumeration values, at a stated criteria version. The curator must apply
+  them as a human reviewer would, and its rationale names the criterion met.
 
 **Response** — per group: a value (or an absence reason), a confidence of
 `medium` or `low`, a one-line rationale citing the evidence used, and whether
@@ -612,7 +690,7 @@ fixed.
 
 | Role | Authoritative? | Contents |
 | --- | --- | --- |
-| Vocabulary store | yes (versioned) | Pinned OncoTree release(s), crosswalk, synonyms, Cellosaurus cache |
+| Vocabulary store | yes (versioned) | Pinned OncoTree release(s), crosswalk, synonyms, search groupings, labeling criteria (§5.7), NCIt definitions for OncoTree nodes, Cellosaurus cache |
 | Decision log | yes (append-only) | Human decisions (§10) |
 | Curator answers | yes (append-only) | Requests, responses, validation result, backend/model (§11) |
 | Group registry | derived | Groups per project lineage and their current state |
@@ -686,7 +764,7 @@ Required properties, for projects with thousands of samples:
    reviewed as ~40 cancer-type rows, not 4,170.
 2. **One tab per field**, each with a count of groups needing attention.
 3. **Needs-attention first.** Default order: flagged, conflicting, reproposed,
-   low confidence, medium, high, human. Filterable by status, source and
+   rule changed, low confidence, medium, high, human. Filterable by status, source and
    confidence.
 4. **Server-side paging, sorting and filtering.** Nothing loads a whole
    project's samples into the browser.
@@ -696,19 +774,29 @@ Required properties, for projects with thousands of samples:
    overrides.
 7. **Value picker:** OncoTree as a searchable tree (name, code, synonyms),
    enumerations as lists; it cannot produce a value outside the vocabulary.
-8. **Numeric fields** (age, survival) are reviewed as distributions and
+   Every value in it shows its labeling criteria (§5.7) — tree path,
+   definition, what qualifies, what does not, what to use instead — before it
+   is chosen, not only in a help page.
+8. **Criteria at the point of decision.** The confirm and correct dialogs put
+   the chosen value's criteria beside the group's evidence, so the reviewer
+   checks one against the other, and state in one sentence what the action
+   asserts (§10.5). Correct asks for its basis. A bulk confirm lists each
+   distinct value being confirmed with its criteria. A `rule_changed` group
+   shows old value, new rule value, the rule change and both values' criteria.
+9. **Numeric fields** (age, survival) are reviewed as distributions and
    outlier lists — negative days, age > 110, OS beyond a plausible horizon,
    apparent unit mismatches — not row by row.
-9. **Rationale and evidence visible** for every non-human value, including the
+10. **Rationale and evidence visible** for every non-human value, including the
    curator's rationale and, for admins, the stored exchange.
-10. **Offline round-trip:** download the group table as CSV, edit the value
+11. **Offline round-trip:** download the group table as CSV, edit the value
     column, upload it back as decisions, with a preview of what will change
-    before anything is applied.
-11. **History** per group and per sample, from the decision log (§10.4).
+    before anything is applied. The upload records a basis for every
+    correction it makes, as the dialog does.
+12. **History** per group and per sample, from the decision log (§10.4).
 
-### 16.1 Email notifications (D13, D14)
+### 16.1 Email notifications (D13, D14, D16)
 
-- **What starts one.** Only three events:
+- **What starts one.** Only four events:
   1. a project becomes harmonizable for the first time — created public or
      hidden-public, or made so later;
   2. an update to it — re-aggregation, a new metadata sheet, added samples —
@@ -717,7 +805,11 @@ Required properties, for projects with thousands of samples:
      lineage has never had;
   3. a **flag** (§10.5): a logged-in reviewer flags one or more groups or
      samples, and the curator re-proposes. One flagging action — a single flag
-     or one bulk flag of many groups — is one event.
+     or one bulk flag of many groups — is one event;
+  4. a **rule change** (§9.4): one published version of the synonyms, crosswalk
+     or vocabulary release puts any of the project's confirmed groups back into
+     review as `rule_changed`. One publication is one event per project,
+     however many entries it changed.
   An update that re-presents only known samples and known evidence — the usual
   re-aggregation — starts nothing, even though the worker re-checks it.
 - **When it is sent.** Once, when the work that event started is **finished**:
@@ -725,20 +817,23 @@ Required properties, for projects with thousands of samples:
   and the curator, or the curator has definitively failed on it. Not when the
   event happens, and not partway through a project that takes several worker
   runs (§12, *Bounded*). If nothing ends up needing attention, no email is sent.
+  For a rule change, "finished" means the worker has re-evaluated every group
+  of the project the publication touched.
   For a flag, "finished" means every flagged item has a re-proposal or a
   definitive curator failure; a failure is reported in the email rather than
   silently leaving the item flagged.
 - **Who.**
-  - Events 1–2: the project's owners/members. Admins are not emailed for these;
+  - Events 1, 2 and 4: the project's owners/members. Admins are not emailed for these;
     they see the site-wide queue (§12, *Observable*) instead.
   - Event 3: the project's owners/members **and the site admins**
     (`is_staff`). The flagger is necessarily one of these (§10.1) and receives
     one copy.
 - **What.** One message per event: the project name, what was new (samples,
   groups) or, for a flag, who flagged, how many items and how many were
-  re-proposed; counts by field and status; and a link straight to the project's
+  re-proposed, or, for a rule change, which rules changed and how many groups
+  went back to review; counts by field and status; and a link straight to the project's
   review interface, opened on the needs-attention view (for a flag, on the
-  `reproposed` items). It contains no metadata values, so it is safe to forward.
+  `reproposed` or `rule_changed` items). It contains no metadata values, so it is safe to forward.
 - **Opt-out.** A new key in `user_preferences`, beside the existing
   `onProjectUpdate`, default on, honoured exactly as `onProjectUpdate` is in
   `user_preferences.py`. The email says how to turn it off.
@@ -808,6 +903,16 @@ Against a snapshot of the public corpus equivalent to §2:
     definitive failure, exactly one email goes to the project's owners and the
     site admins, linking to the `reproposed` items. An anonymous user cannot
     flag.
+14. The §9.4 example holds: after "Glioblastoma" → `GB` is republished as →
+    `ADIFG`, a project whose group was *corrected* to `GB` keeps `GB` and gets no
+    email; a project whose group was *confirmed* from the rule keeps `GB`, shows
+    `rule_changed`, and gets one email; a project with no human decision
+    becomes `ADIFG`.
+15. Every value offered by the picker displays its criteria; the confirm and
+    correct dialogs show the criteria beside the evidence; a correction cannot
+    be saved without a basis, nor with basis `other` without a note; every
+    stored decision and curator answer carries a criteria version, and the
+    curator request for a group contains the criteria at that version.
 
 ---
 
@@ -815,7 +920,3 @@ Against a snapshot of the public corpus equivalent to §2:
 
 1. **Curator backend and model** (D6) — direct LLM API, self-hosted Biomni, or
    other. Affects cost and hosting only, not this spec.
-2. **Global synonym vs project decision timing.** §10.3's "most recent wins"
-   is between human decisions on a project. A later admin change to a global
-   synonym is a rule, not a project decision, so as specified it does **not**
-   override an earlier project-level human decision. Confirm that is wanted.
