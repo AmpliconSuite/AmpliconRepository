@@ -23,6 +23,10 @@ from bson.objectid import ObjectId
 
 import caper.views as views
 
+# Importing caper.views needs a live MongoDB, and CI runs only `integration`;
+# unmarked, none of these ran there.
+pytestmark = pytest.mark.integration
+
 SAMPLE_KEYS = ('CNV BED file', 'Sample metadata JSON', 'Run metadata JSON')
 
 
