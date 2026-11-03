@@ -4981,6 +4981,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
 
 
                 if len(feature) > 0:
+                    # The run key is positional ('sample_1'); the backlink and
+                    # the predecessor match name the sample itself.
+                    sample_name = feature.get('Sample name') or sample
                     # get paths
                     # 'AA graph file' and 'AA cycles file' are new keys (new-format archives only)
                     # stored individually in GridFS for direct access.
@@ -5013,7 +5016,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                                 file_path = f'{project_data_path}/results/{path_var}'
                                 with open(file_path, "rb") as file_var:
                                     id_var, written, file_size = store(
-                                        file_var, sample, k,
+                                        file_var, sample_name, k,
                                         opener=lambda p=file_path: open(p, 'rb'))
                                 stored_ids[cache_key] = id_var
                                 if written:
@@ -5090,12 +5093,12 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             archive_name = f'{dir_name}.tar.gz'
                             buf = pack_directory_targz(full_path, dir_name)
                             id_var, written, file_size = store(
-                                buf, sample, directory_key, filename=archive_name,
+                                buf, sample_name, directory_key, filename=archive_name,
                                 opener=lambda p=full_path, n=dir_name: pack_directory_targz(p, n))
                         else:
                             with open(full_path, 'rb') as file_var:
                                 id_var, written, file_size = store(
-                                    file_var, sample, directory_key,
+                                    file_var, sample_name, directory_key,
                                     opener=lambda p=full_path: open(p, 'rb'))
                         if cache_key not in stored_ids:
                             stored_ids[cache_key] = id_var
