@@ -109,6 +109,7 @@ from .tar_safety import safe_extract_member, safe_extractall
 from .tar_utils import pack_directory_targz
 from .aggregation_failure import aggregation_error_message
 from .gridfs_backlinks import put_with_backlink
+from .version_file_sharing import PredecessorFiles, file_digest, still_needed_here
 from .upload_cleanup import discard_failed_upload_payload
 from .project_status import (
     DELETE_FLAG_QUERY,
@@ -3268,6 +3269,22 @@ def _previous_version_linkid(previous_version):
     return previous_version
 
 
+def _files_others_need(victim):
+    """The ids among *victim*'s files that another version still needs.
+
+    Versions of one project share the files that did not change between them
+    (version_file_sharing). If the answer cannot be read, every id is returned:
+    nothing is purged, and a leaked file is recoverable where a lost one is not.
+    """
+    file_ids = set(iter_gridfs_file_ids(victim))
+    try:
+        return still_needed_here(victim, file_ids)
+    except Exception:
+        logging.exception(f"Could not tell which files of {victim.get('_id')} other "
+                          f"versions need; none of its files will be purged")
+        return file_ids
+
+
 @login_required
 def delete_project_version(request, project_name, version_id):
     """
@@ -3444,7 +3461,7 @@ def delete_project_version(request, project_name, version_id):
             # not carry the payload keys, so this is the last moment the ids
             # exist anywhere. See version_purge.
             pending_ids = version_purge.payload_ids_to_purge(
-                latest_project, promoted_file_ids)
+                latest_project, promoted_file_ids | _files_others_need(latest_project))
             tombstone = build_deleted_version_tombstone(
                 latest_project,
                 promoted_project,
@@ -3503,7 +3520,8 @@ def delete_project_version(request, project_name, version_id):
             # document it left classified as SUPERSEDED and stayed resolvable
             # with its entire payload still stored and still billed, while the
             # log line said "project fully removed".
-            pending_ids = version_purge.payload_ids_to_purge(latest_project)
+            pending_ids = version_purge.payload_ids_to_purge(
+                latest_project, _files_others_need(latest_project))
             tombstone = build_deleted_version_tombstone(
                 latest_project,
                 None,
@@ -3560,7 +3578,7 @@ def delete_project_version(request, project_name, version_id):
 
         latest_file_ids = set(iter_gridfs_file_ids(latest_project))
         pending_ids = version_purge.payload_ids_to_purge(
-            old_version, latest_file_ids)
+            old_version, latest_file_ids | _files_others_need(old_version))
         tombstone = build_deleted_version_tombstone(
             old_version,
             latest_project,
@@ -4925,6 +4943,34 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         files_written = 0
         bytes_written = 0
 
+        # A version made from another takes the identical files its
+        # predecessor names instead of storing them again (#624). The scope,
+        # and what every deletion path does about the sharing, are in
+        # version_file_sharing. Reused ids never join uploaded_file_ids: they
+        # belong to the predecessor, and a failure here must not delete them.
+        predecessor_files = PredecessorFiles(
+            collection_handle_primary, db_handle_primary['fs.files'], project_id)
+        # id -> (sample, key, filename, opener): how to store a reused file
+        # again if a deletion takes it before this version's document names it.
+        reused_sources = {}
+        files_reused = 0
+        bytes_reused = 0
+
+        def store(fileobj, sample, key, filename=None, opener=None):
+            """(id, newly written?, length) for one file."""
+            nonlocal files_reused, bytes_reused
+            sha256, length = file_digest(fileobj)
+            reused = predecessor_files.claim(sha256, length, filename, sample, key)
+            if reused is not None:
+                reused_sources.setdefault(reused, (sample, key, filename, opener))
+                files_reused += 1
+                bytes_reused += length
+                return reused, False, length
+            new_id = put_with_backlink(
+                fs_handle, fileobj, filename=filename, project_id=project_id,
+                sample_name=sample, feature_key=key, sha256=sha256)
+            return new_id, True, length
+
         gfs_start_time = time.time()
         # get cnv, image, bed files
         for sample, features in runs.items():
@@ -4957,26 +5003,30 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             feature[k] = "Not Provided"
                             continue
                         id_var = "Not Provided"
+                        written = False
                         try:
                             path_var = feature[k]
                             cache_key = (sample, k, path_var)
                             if cache_key in stored_ids:
                                 id_var = stored_ids[cache_key]
                             else:
-                                with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
-                                    file_size = os.fstat(file_var.fileno()).st_size
-                                    id_var = put_with_backlink(
-                                        fs_handle, file_var, project_id=project_id,
-                                        sample_name=sample, feature_key=k)
-                                uploaded_file_ids.append(id_var)
+                                file_path = f'{project_data_path}/results/{path_var}'
+                                with open(file_path, "rb") as file_var:
+                                    id_var, written, file_size = store(
+                                        file_var, sample, k,
+                                        opener=lambda p=file_path: open(p, 'rb'))
                                 stored_ids[cache_key] = id_var
-                                files_written += 1
-                                bytes_written += file_size
+                                if written:
+                                    uploaded_file_ids.append(id_var)
+                                    files_written += 1
+                                    bytes_written += file_size
                         except Exception as upload_error:
                             # Previously a bare `except:` that silently recorded
                             # "Not Provided".  A missing artifact left no trace at
                             # all, so nobody could tell a file had been dropped.
-                            if isinstance(id_var, ObjectId):
+                            # Only a file this upload wrote is discarded; a reused
+                            # one is the predecessor's.
+                            if written and isinstance(id_var, ObjectId):
                                 discard_unrecorded_gridfs_files(delete_gridfs_file, [id_var])
                                 id_var = "Not Provided"
                             logging.warning(
@@ -5003,6 +5053,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                     # upload would delete the *previous* artifact — one that the
                     # document does reference.
                     id_var = 'Not Provided'
+                    written = False
                     try:
                         directory_key = (
                             'Reconstruction directory'
@@ -5038,24 +5089,22 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             dir_name = os.path.basename(path_var.rstrip('/'))
                             archive_name = f'{dir_name}.tar.gz'
                             buf = pack_directory_targz(full_path, dir_name)
-                            file_size = buf.getbuffer().nbytes
-                            id_var = put_with_backlink(
-                                fs_handle, buf, filename=archive_name,
-                                project_id=project_id, sample_name=sample,
-                                feature_key=directory_key)
+                            id_var, written, file_size = store(
+                                buf, sample, directory_key, filename=archive_name,
+                                opener=lambda p=full_path, n=dir_name: pack_directory_targz(p, n))
                         else:
                             with open(full_path, 'rb') as file_var:
-                                file_size = os.fstat(file_var.fileno()).st_size
-                                id_var = put_with_backlink(
-                                    fs_handle, file_var, project_id=project_id,
-                                    sample_name=sample, feature_key=directory_key)
+                                id_var, written, file_size = store(
+                                    file_var, sample, directory_key,
+                                    opener=lambda p=full_path: open(p, 'rb'))
                         if cache_key not in stored_ids:
-                            uploaded_file_ids.append(id_var)
                             stored_ids[cache_key] = id_var
-                            files_written += 1
-                            bytes_written += file_size
+                            if written:
+                                uploaded_file_ids.append(id_var)
+                                files_written += 1
+                                bytes_written += file_size
                     except Exception as upload_error:
-                        if isinstance(id_var, ObjectId):
+                        if written and isinstance(id_var, ObjectId):
                             discard_unrecorded_gridfs_files(delete_gridfs_file, [id_var])
                         id_var = 'Not Provided'
                         logging.warning(
@@ -5076,6 +5125,32 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         rate = f"{gfs_seconds / mib_written:.3f} s/MiB" if mib_written else "n/a s/MiB"
         logging.info(f"Putting files in GridFS took {gfs_seconds:.1f}s: "
                      f"{files_written:,} files, {mib_written:,.1f} MiB, {rate}")
+        if predecessor_files.predecessor_id is not None:
+            logging.info(f"Reused {files_reused:,} file(s), {bytes_reused / 2**20:,.1f} MiB, "
+                         f"from predecessor {predecessor_files.predecessor_id}")
+
+        # Until the document below names them, a reused file is named only by
+        # the predecessor, and a deletion of the predecessor in that window
+        # could take it. Store any that went again, from the bytes on disk.
+        lost = predecessor_files.missing(reused_sources) if reused_sources else set()
+        if lost:
+            replacement = {}
+            for old_id in lost:
+                lost_sample, lost_key, lost_filename, opener = reused_sources[old_id]
+                with opener() as fileobj:
+                    sha256, _length = file_digest(fileobj)
+                    replacement[old_id] = put_with_backlink(
+                        fs_handle, fileobj, filename=lost_filename,
+                        project_id=project_id, sample_name=lost_sample,
+                        feature_key=lost_key, sha256=sha256)
+                uploaded_file_ids.append(replacement[old_id])
+            for features in runs.values():
+                for feature in features:
+                    for key, value in feature.items():
+                        if isinstance(value, ObjectId) and value in replacement:
+                            feature[key] = replacement[value]
+            logging.warning(f"{len(lost)} reused file(s) were deleted before project "
+                            f"{project_id} named them; stored them again")
         logging.info("All features processed. Updating project in database...")
 
         # Now update the project with the updated runs

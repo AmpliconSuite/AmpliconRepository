@@ -679,19 +679,51 @@ def _check_i13(snap):
 
     from caper.gridfs_backlinks import METADATA_FIELD, PROJECT_ID
 
+    from caper.version_file_sharing import REUSED_BY
+
     findings = []
+    namers = {}
+    for doc_id, ids in snap.gridfs_ids.items():
+        for file_id in ids:
+            namers.setdefault(ObjectId(str(file_id)), set()).add(doc_id)
+
+    def rows_by_kind(project_id):
+        """(residue, mislabelled) counts among the rows whose backlink is *project_id*.
+
+        A backlink names the version that wrote the file. Since versions share
+        unchanged files (#624) that version can be deleted while a later one
+        still names the file; the later one is then in ``reused_by``, and the
+        row is neither. A row a document names without having reused it is
+        mislabelled: the backlink names the wrong writer.
+        """
+        residue = mislabelled = 0
+        for row in snap.fs_files.find({f'{METADATA_FIELD}.{PROJECT_ID}': project_id},
+                                      {f'{METADATA_FIELD}.{REUSED_BY}': 1}):
+            named_by = namers.get(row['_id'])
+            if not named_by:
+                residue += 1
+            elif not named_by & set((row.get(METADATA_FIELD) or {}).get(REUSED_BY) or []):
+                mislabelled += 1
+        return residue, mislabelled
+
     # Backlinks that name a document which does not exist. The reverse
     # direction -- a document naming a file with no row -- is I12's.
     known = {doc['_id'] for doc in snap.documents}
     for project_id in snap.fs_files.distinct(f'{METADATA_FIELD}.{PROJECT_ID}'):
         if project_id in known:
             continue
-        count = snap.fs_files.count_documents(
-            {f'{METADATA_FIELD}.{PROJECT_ID}': project_id})
-        findings.append(Finding(
-            'I13', project_id, None,
-            f'{count} fs.files row(s) name project {project_id}, which has no '
-            f'document; residue of a purge or permanent delete'))
+        residue, mislabelled = rows_by_kind(project_id)
+        if residue:
+            findings.append(Finding(
+                'I13', project_id, None,
+                f'{residue} fs.files row(s) name project {project_id}, which has no '
+                f'document; residue of a purge or permanent delete'))
+        if mislabelled:
+            findings.append(Finding(
+                'I13', project_id, None,
+                f'{mislabelled} fs.files row(s) name project {project_id}, which has '
+                f'no document, as their writer, but another document names them '
+                f'without having reused them; the backlink is wrong'))
 
     # A file whose document exists but no longer names it. Not automatically a
     # defect -- it is the residue a version edit leaves, and the report grades
@@ -700,13 +732,18 @@ def _check_i13(snap):
     for doc in snap.documents:
         if snap.status[doc['_id']] != TOMBSTONE:
             continue
-        held = snap.fs_files.count_documents(
-            {f'{METADATA_FIELD}.{PROJECT_ID}': doc['_id']})
+        held, mislabelled = rows_by_kind(doc['_id'])
         if held:
             findings.append(Finding(
                 'I13', doc['_id'], snap.name(doc['_id']),
                 f'TOMBSTONE still holding {held} labelled file(s); its payload '
                 f'was supposed to have been purged'))
+        if mislabelled:
+            findings.append(Finding(
+                'I13', doc['_id'], snap.name(doc['_id']),
+                f'{mislabelled} fs.files row(s) name this TOMBSTONE as their writer, '
+                f'but another document names them without having reused them; '
+                f'the backlink is wrong'))
     return findings
 
 
@@ -850,43 +887,44 @@ def _check_i10(snap):
 
 
 def _check_i21(snap):
-    """No GridFS file is named by more than one document.
+    """No GridFS file is named by documents of more than one project.
 
-    Deletion assumes this. ``delete_gridfs_payload_for_project()`` deletes every
-    file the project it is given names, and the permanent-delete path walks the
-    document's runs and deletes each id it finds; neither asks whether anything
-    else is using the file. That is correct only while nothing is shared, and
-    nothing is: measured 2026-08-29, the distinct id count exactly equalled the
-    (document, file) pair count on both databases -- 942,279 on prod, 602,577 on
-    dev.
+    Versions of one project share the files that did not change between them
+    (#624, ``caper.version_file_sharing``), and the application's deletion
+    paths ask the other versions -- the chain, the ``previous_versions`` it
+    names, and the documents a file's backlinks name -- before deleting. They
+    do not ask unrelated projects, because nothing makes a file shared across
+    projects. Until sharing, no file was named by two documents at all:
+    measured 2026-08-29, 942,279 on prod and 602,577 on dev.
 
-    So the safety of every deletion path rests on a measured fact rather than on
-    a rule, and a measured fact needs something watching it. If sharing ever
-    appears -- a deduplicating upload, a version that reuses its predecessor's
-    files instead of re-storing them -- deleting one owner silently takes the
-    file out from under the others, and this is what says so first.
+    So a file two projects name is outside what deletion protects: deleting one
+    of them takes it from the other, and this is what says so first.
 
-    Ids are deduplicated per document before counting owners: one document
-    naming the same file from two slots is not sharing, and counting it as such
-    would make this fire on the ordinary case.
+    A document with no chain id counts as a project of its own. Ids are
+    deduplicated per document before counting owners: one document naming the
+    same file from two slots is not sharing.
     """
     if snap.gridfs_skipped:
         return []
     owners = {}
     for doc_id, file_ids in snap.gridfs_ids.items():
+        doc = snap.by_id.get(doc_id) or {}
+        project = doc.get('version_chain_id') or doc_id
         for file_id in {ObjectId(str(f)) for f in file_ids}:
-            owners.setdefault(file_id, []).append(doc_id)
+            owners.setdefault(file_id, {}).setdefault(project, []).append(doc_id)
 
     findings = []
-    for file_id, doc_ids in sorted(owners.items(), key=lambda kv: str(kv[0])):
-        if len(doc_ids) < 2:
+    for file_id, projects in sorted(owners.items(), key=lambda kv: str(kv[0])):
+        if len(projects) < 2:
             continue
+        doc_ids = [d for docs in projects.values() for d in docs]
         named = ", ".join(f'{snap.name(d) or d}' for d in doc_ids[:4])
         findings.append(Finding(
             'I21', doc_ids[0], snap.name(doc_ids[0]),
-            f'GridFS file {file_id} is named by {len(doc_ids)} documents '
-            f'({named}); every deletion path assumes exactly one, so deleting '
-            f'any one of them takes the file from the others'))
+            f'GridFS file {file_id} is named by {len(doc_ids)} documents of '
+            f'{len(projects)} projects ({named}); deletion protects only other '
+            f'versions of the same project, so deleting one takes the file from '
+            f'the others'))
     return findings
 
 
@@ -1116,7 +1154,7 @@ INVARIANTS = (
                      'application reads', check=_check_i19),
     Invariant('I20', 'No chain is headed by a TOMBSTONE while a surviving '
                      'version sits beside it', check=_check_i20),
-    Invariant('I21', 'No GridFS file is named by more than one document',
+    Invariant('I21', 'No GridFS file is named by documents of more than one project',
               check=_check_i21),
 )
 

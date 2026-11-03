@@ -89,7 +89,7 @@ def upload(tmp_path, monkeypatch):
     fail_next = set()
 
     def fake_put(fs, data, filename=None, project_id=None, sample_name=None,
-                 feature_key=None):
+                 feature_key=None, sha256=None):
         if (sample_name, feature_key) in fail_next:
             fail_next.discard((sample_name, feature_key))
             raise IOError('transient GridFS error')

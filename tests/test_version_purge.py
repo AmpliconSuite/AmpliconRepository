@@ -122,6 +122,7 @@ def test_the_purge_deletes_clears_the_pending_list_and_confirms(purge_env):
     assert purge_env['deleted'] == ids
     assert purge_env['confirmed'] == [('event-1', {'outcome': 'tombstoned_in_place',
                                                    'gridfs_files_purged': 2,
+                                                   'gridfs_files_kept_shared': 0,
                                                    's3_archive_deleted': None})]
     pulled = [i for _q, u in purge_env['collection'].updates if '$pull' in u
               for i in u['$pull'][PENDING_PAYLOAD_KEY]['$in']]
