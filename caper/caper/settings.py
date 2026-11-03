@@ -646,6 +646,10 @@ MIDDLEWARE = (
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # Below MessageMiddleware so a refused browser POST can carry its message
+    # back to the page.  Reads the flag only for upload POSTs.  See
+    # caper/shutdown_guard.py.
+    "caper.shutdown_guard.ShutdownUploadGuardMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "mezzanine.core.request.CurrentRequestMiddleware",
     "mezzanine.core.middleware.RedirectFallbackMiddleware",

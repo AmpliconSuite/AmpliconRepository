@@ -12,6 +12,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 from .background_tasks import _thread_executor, get_background_task_status
+from .context_processor import get_shutdown_pending
+from .shutdown_guard import SHUTDOWN_MESSAGE, RETRY_AFTER as SHUTDOWN_RETRY_AFTER
 from . import version_purge
 from .canonical import project_canonical_url, sample_canonical_url
 from .email_contact import contact_footer_text, reply_to
@@ -2863,6 +2865,20 @@ def batch_sample_download(request):
             _remove_tree(batch_dir)
             return redirect('gene_search_page')
 
+        # Shutdown mode stops new background work before a restart would kill
+        # it; this is the only path here that starts any.  A batch small enough
+        # to stream back in the request is still served.  The other refusals
+        # are in caper/shutdown_guard.py.
+        if get_shutdown_pending():
+            _remove_tree(batch_dir)
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                response = JsonResponse({'success': False, 'message': SHUTDOWN_MESSAGE},
+                                        status=503)
+                response['Retry-After'] = SHUTDOWN_RETRY_AFTER
+                return response
+            messages.error(request, SHUTDOWN_MESSAGE)
+            return redirect('gene_search_page')
+
         if not settings.USE_S3_DOWNLOADS:
             messages.error(request, "Email results feature requires S3 to be configured.")
             _remove_tree(batch_dir)
@@ -4191,6 +4207,85 @@ def drop_prefilled_versions(form_data, old_project):
             form_data[key] = 'NA'
 
 
+def previous_version_entry(project):
+    """The previous_versions[] entry recording *project* as the version an edit supersedes."""
+    return {
+        'date': str(project['date']),
+        'linkid': str(project['linkid']),
+        'ASP_version': project.get('ASP_version', 'NA'),
+        'AA_version': project.get('AA_version', 'NA'),
+        'AC_version': project.get('AC_version', 'NA'),
+        'aggregator_version': project.get('aggregator_version', 'NA'),
+        'Reconstruction_tools': project.get('Reconstruction_tools', 'NA'),
+        'CoRAL_version': project.get('CoRAL_version', 'NA'),
+    }
+
+
+def insert_new_version_placeholder(temp_proj_id, project_name, user, visibility):
+    """Insert the LIVE placeholder an edit's new version occupies while it aggregates.
+
+    visibility is an already-normalised visibility string.
+
+    The aggregator is handed temp_proj_id as the project name, so the archive it
+    writes carries this document's id; _process_and_aggregate_files later fills
+    the same document in place.
+    """
+    authenticated = user.is_authenticated
+    _now = get_date()
+    placeholder_project = {
+        '_id': ObjectId(temp_proj_id),
+        'project_name': f"{project_name} (Processing...)",
+        'original_project_name': project_name,
+        'linkid': temp_proj_id,
+        'FINISHED?': False,
+        'aggregation_in_progress': True,
+        'created_at': datetime.datetime.now(),
+        'date_created': _now,
+        'date': _now,
+        'update_date': _now,
+        'owner': user.username if authenticated else 'anonymous',
+        'private': visibility,
+        'sample_count': 0,
+        'runs': {},  # Empty dictionary, not list
+        **status_flags(LIVE),  # the new version becomes the chain head
+        # Seed project_members with the owner so the profile page query finds this
+        # placeholder immediately and access-control lets the owner view/delete it
+        # even if aggregation fails before _process_and_aggregate_files can update it.
+        'project_members': list(filter(None, {
+            user.username if authenticated else None,
+            getattr(user, 'email', None) if authenticated else None,
+        })),
+    }
+    collection_handle.insert_one(placeholder_project)
+    # Index-only, deliberately.  The placeholder is LIVE from this
+    # moment, so it is indexable, and an indexable project with no
+    # manifest row makes index_coverage() report the index incomplete --
+    # which switches every search on the site back to the slow path
+    # until aggregation finishes.  It holds no runs yet, so this writes
+    # a manifest row and zero feature rows.  It must NOT go through
+    # project_changed(): that also counts the project in
+    # site_statistics, and the real document is counted when
+    # aggregation finishes, so the placeholder would be counted twice.
+    project_content_changed(ObjectId(temp_proj_id))
+
+
+def restore_superseded_version(project_id):
+    """Put back the version project_update/project_delete just retired, when its
+    replacement could not even be started."""
+    try:
+        collection_handle.update_one(
+            {'_id': ObjectId(project_id)},
+            {'$set': status_flags(LIVE),
+             '$unset': {'delete_user': '', 'delete_date': ''}}
+        )
+        # project_delete already ran, which took this project out of the
+        # index.  Restoring it to LIVE without putting the rows back
+        # leaves the index short of a live project for good.
+        project_content_changed(ObjectId(project_id))
+    except Exception as rb_err:
+        logging.error(f"Failed to rollback old project {project_id}: {rb_err}")
+
+
 def edit_project_into_new_version(request, project_name, project, form_dict, form, metadata_file,
                                    samples_to_remove, remap_sample_names, file_fps, temp_proj_id, 
                                    project_data_path, reaggregate_project=False):
@@ -4266,18 +4361,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             new_prev_versions = project['previous_versions']
 
         ## update for current
-        new_prev_versions.append(
-            {
-                'date': str(project['date']),
-                'linkid': str(project['linkid']),
-                'ASP_version': project.get('ASP_version', 'NA'),
-                'AA_version': project.get('AA_version', 'NA'),
-                'AC_version': project.get('AC_version', 'NA'),
-                'aggregator_version': project.get('aggregator_version', 'NA'),
-                'Reconstruction_tools': project.get('Reconstruction_tools', 'NA'),
-                'CoRAL_version': project.get('CoRAL_version', 'NA'),
-            }
-        )
+        new_prev_versions.append(previous_version_entry(project))
 
         # Carried forward from the version being superseded, and absent when
         # that version is a tombstone -- re-populating an emptied project (T9)
@@ -4306,43 +4390,9 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
         temp_directory = os.path.join('./tmp/', str(temp_proj_id))
 
         try:
-            # Create a placeholder project in the database that _process_and_aggregate_files can update
-            _now = get_date()
-            placeholder_project = {
-                '_id': ObjectId(temp_proj_id),
-                'project_name': f"{form_dict['project_name']} (Processing...)",
-                'original_project_name': form_dict['project_name'],
-                'linkid': temp_proj_id,
-                'FINISHED?': False,
-                'aggregation_in_progress': True,
-                'created_at': datetime.datetime.now(),
-                'date_created': _now,
-                'date': _now,
-                'update_date': _now,
-                'owner': request.user.username if request.user.is_authenticated else 'anonymous',
-                'private': normalize_visibility_field(form_dict.get('private', 'private')),
-                'sample_count': 0,
-                'runs': {},  # Empty dictionary, not list
-                **status_flags(LIVE),  # the new version becomes the chain head
-                # Seed project_members with the owner so the profile page query finds this
-                # placeholder immediately and access-control lets the owner view/delete it
-                # even if aggregation fails before _process_and_aggregate_files can update it.
-                'project_members': list(filter(None, {
-                    request.user.username if request.user.is_authenticated else None,
-                    getattr(request.user, 'email', None) if request.user.is_authenticated else None,
-                })),
-            }
-            collection_handle.insert_one(placeholder_project)
-            # Index-only, deliberately.  The placeholder is LIVE from this
-            # moment, so it is indexable, and an indexable project with no
-            # manifest row makes index_coverage() report the index incomplete --
-            # which switches every search on the site back to the slow path
-            # until aggregation finishes.  It holds no runs yet, so this writes
-            # a manifest row and zero feature rows.  It must NOT go through
-            # project_changed(): that also counts the project in
-            # site_statistics, and the real document is counted when
-            # aggregation finishes, so the placeholder would be counted twice.
-            project_content_changed(ObjectId(temp_proj_id))
+            insert_new_version_placeholder(
+                temp_proj_id, form_dict['project_name'], request.user,
+                normalize_visibility_field(form_dict.get('private', 'private')))
             logging.info(f"EditProject - placeholder insert complete for new version {temp_proj_id}")
             # Audit log is written inside _process_and_aggregate_files after aggregation
             # completes (or fails), so it captures the real S3 URI, file size, and sample count.
@@ -4391,18 +4441,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 pass
 
             # Restore the old project since project_update/project_delete already ran
-            try:
-                collection_handle.update_one(
-                    {'_id': ObjectId(project_name)},
-                    {'$set': status_flags(LIVE),
-                     '$unset': {'delete_user': '', 'delete_date': ''}}
-                )
-                # project_delete already ran, which took this project out of the
-                # index.  Restoring it to LIVE without putting the rows back
-                # leaves the index short of a live project for good.
-                project_content_changed(ObjectId(project_name))
-            except Exception as rb_err:
-                logging.error(f"Failed to rollback old project {project_name}: {rb_err}")
+            restore_superseded_version(project_name)
             
             alert_message = f"An error occurred during project update: {str(e)}"
             _metadata_context = get_metadata_remap_edit_context(project)

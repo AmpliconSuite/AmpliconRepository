@@ -5,8 +5,10 @@ Read or toggle shutdown mode from the command line.
 Shutdown mode is the flag behind /admin-prepare-shutdown/: the field
 `system_settings/{_id: system_flags}.shutdown_pending`, the same one
 caper.context_processor.set_shutdown_pending() writes. While it is on, every
-page carries the "server shutdown is pending" banner and the create-project
-links refuse to start an upload. It stops no work already running.
+page carries the "server shutdown is pending" banner, and the server refuses
+new uploads: create and edit POSTs from the site, and the /upload_api/ and
+/add_samples_to_project_api/ endpoints the pipeline calls (see
+caper/shutdown_guard.py). It stops no work already running.
 
 The deploy runbooks in the GitHub wiki open with "confirm no background tasks
 are running, enable shutdown mode" and close with "disable shutdown mode". This

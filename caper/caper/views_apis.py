@@ -16,7 +16,6 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
-from django.utils.html import strip_tags
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.db.models import Q
@@ -45,7 +44,6 @@ from .utils import (
     get_latest_project_version, normalize_visibility_field, is_project_private,
     fs_handle, PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES, project_members_of,
 )
-from .project_version_cleanup import retarget_deleted_version_tombstones
 from .extra_metadata import *
 from .background_tasks import get_background_task_status
 
@@ -193,7 +191,6 @@ class ProjectFileAddView(APIView):
     def post(self, request, format=None):
         project_uuid = request.data.get('project_uuid')
         project_key = request.data.get('project_key')
-        username = request.data.get('username')
 
         # Validate project exists
         project = get_one_project(project_uuid)
@@ -235,197 +232,116 @@ class ProjectFileAddView(APIView):
         if original_project.get('privateKey') != project_key:
             return Response({'error': 'Invalid project key'}, status=status.HTTP_403_FORBIDDEN)
 
-        #  file handling , save the new file to a temp dir
-        api_id = uuid.uuid4().hex
-        tmp_project_data_path = os.path.join(settings.MEDIA_ROOT, api_id)
+        # The new version's id is fixed here, before anything is aggregated, so
+        # the aggregator is handed the id of the document its archive will
+        # belong to -- the same order the edit page uses.
+        from .views import (
+            project_update, project_delete, previous_version_entry,
+            insert_new_version_placeholder, restore_superseded_version,
+        )
+        from .background_tasks import _thread_executor
+
+        user = User.objects.get(Q(username=user_identifier) | Q(email=user_identifier))
+        old_project_id = str(project['linkid'])
+        temp_proj_id = str(ObjectId())
+        project_data_path = f"tmp/{temp_proj_id}"
 
         uploaded_file = request.FILES['file']
-        os.makedirs(tmp_project_data_path, exist_ok=True)
-        file_path = os.path.join(tmp_project_data_path, uploaded_file.name)
+        os.makedirs(project_data_path, exist_ok=True)
+        file_path = os.path.join(project_data_path, uploaded_file.name)
 
         with open(file_path, 'wb+') as destination:
             for chunk in uploaded_file.chunks():
                 destination.write(chunk)
 
-        # Start file processing in a background thread
-        file_process_thread = Thread(
-            target=self.process_file_in_background,
-            args=(request, project, username, uploaded_file, api_id)
-        )
-        file_process_thread.start()
+        # project_update/project_delete check edit rights against request.user;
+        # this endpoint authenticates by project key, so the request is anonymous.
+        request.user = user
+        project_update(request, old_project_id)
+        project_delete(request, old_project_id)
 
+        new_prev_versions = list(project.get('previous_versions', []))
+        new_prev_versions.append(previous_version_entry(project))
+
+        # What the edit page would post for an append that changes nothing but
+        # the samples.  Version fields are left out, so the new version's
+        # versions are read from its data alone, as this endpoint always did.
+        form_data = {
+            'project_name': project.get('project_name', ''),
+            'publication_link': project.get('publication_link', ''),
+            'description': project.get('description', ''),
+            'private': normalize_visibility_field(project.get('private', 'private')),
+            'project_members': ','.join(project.get('project_members', [])),
+            'alias': project.get('alias_name', ''),
+            'accept_license': True,
+        }
+
+        try:
+            insert_new_version_placeholder(
+                temp_proj_id, form_data['project_name'], user,
+                normalize_visibility_field(form_data['private']))
+            _thread_executor.submit(
+                self.process_file_in_background,
+                [file_path], temp_proj_id, project_data_path, form_data, user,
+                new_prev_versions, project,
+                task_label=f'API Add Samples: {temp_proj_id}',
+            )
+        except Exception as e:
+            logging.error(f"add_samples_to_project_api - could not start new version "
+                          f"{temp_proj_id} of {old_project_id}: {e}")
+            try:
+                collection_handle.delete_one({'_id': ObjectId(temp_proj_id)})
+            except Exception:
+                pass
+            restore_superseded_version(old_project_id)
+            shutil.rmtree(project_data_path, ignore_errors=True)
+            return Response({'error': 'Could not start processing the uploaded file.'},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({'message': 'Files uploaded successfully and submitted for processing.'}, status=status.HTTP_200_OK)
 
 
-    def process_file_in_background(self, request, project, username, uploaded_file, api_id):
-        from django.core.files.uploadedfile import TemporaryUploadedFile
-        # sys.path is already primed for AGGREGATOR_DEV_PATH in settings.py
-        from AmpliconSuiteAggregator import Aggregator
-        from .views import (
-            project_update, project_delete, download_file,
-            _create_project, invalidate_project_coamp_graphs
+    def process_file_in_background(self, file_fps, temp_proj_id, project_data_path, form_data,
+                                   user, previous_versions, project):
+        """Aggregate the upload with the project's archive into the placeholder
+        version, through the edit page's pipeline, then email the uploader."""
+        from .views import _process_edit_and_notify
+
+        old_project_id = str(project['linkid'])
+        _process_edit_and_notify(
+            file_fps, temp_proj_id, project_data_path, f"./tmp/{temp_proj_id}",
+            form_data, user, None,
+            previous_versions, [project.get('views', 0), project.get('downloads', 0)],
+            project.get('subscribers', []), project,
+            f'http://localhost:8000/project/{old_project_id}/download',
+            [], False, False,
+            oldFeatured=project.get('featured', False),
+            rollback_project_id=old_project_id,
+            old_extra_metadata=get_extra_metadata_from_project(project),
         )
 
-        project_uuid = project['linkid']
-        tmp_project_data_path = os.path.join(settings.MEDIA_ROOT, api_id)
-        user_identifier = request.data.get('username')
-        user = User.objects.get(Q(username=user_identifier) | Q(email=user_identifier))
+        result = collection_handle.find_one({'_id': ObjectId(temp_proj_id)},
+                                            {'aggregation_failed': 1, 'error_message': 1})
+        if result and not result.get('aggregation_failed'):
+            alert_message = f"Aggregation successful. New samples added to project version: {temp_proj_id}"
+        else:
+            reason = (result or {}).get('error_message') or 'Error performing aggregation.'
+            alert_message = (f"Edit project failed. {reason} The project is unchanged "
+                             f"at version {old_project_id}.")
 
-
-
-        alert_message = None
-        project_data_path = tmp_project_data_path
-        uploaded_file_path = os.path.join(tmp_project_data_path, uploaded_file.name)
-        file_fps = [uploaded_file_path]
-        url = f'http://127.0.0.1:8000/project/{project["linkid"]}/download'
-        download_path = os.path.join(project_data_path, 'download.tar.gz')
-        try:
-            ## try to download old project file
-            print(f"PREVIOUS FILE FPS LIST: {file_fps}")
-
-            download = download_file(url, download_path)
-            file_fps.append(download_path)
-
-        except:
-            logging.error("Could not download existing project data for aggregation")
-
-        logging.error(f"file_fps are {file_fps}")
-        try:
-            temp_directory = os.path.join(settings.MEDIA_ROOT, str(api_id))
-            agg = Aggregator(
-                input_paths=file_fps,
-                project_name=str(api_id),
-                work_dir=temp_directory,
-            )
-            if not agg.completed:
-                ## redirect to edit page if aggregator fails
-                alert_message = "Edit project failed. Please ensure all uploaded samples have the same reference genome and are valid AmpliconSuite results."
-            else:
-
-                with open(agg.aggregated_filename, 'rb') as f:
-                    temp_file = TemporaryUploadedFile(
-                        name=os.path.basename(agg.aggregated_filename),
-                        content_type='application/gzip',
-                        size=os.path.getsize(agg.aggregated_filename),
-                        charset=None
-                    )
-                    # Copy file in chunks
-                    for chunk in iter(lambda: f.read(1024 * 1024), b''):
-                        temp_file.write(chunk)
-                    temp_file.seek(0)
-                    # Need to flush to ensure all data is written to the temp file
-                    temp_file.file.flush()
-                    request.FILES['document'] = temp_file
-
-                # Explicitly delete aggregator object after use to free memory
-                del agg
-                agg = None
-
-                self.request.user = user
-                update_project = project_update(self.request, project_uuid)
-                delete_project = project_delete(self.request, project_uuid)
-
-                new_prev_versions = []
-                if 'previous_versions' in project:
-                    new_prev_versions = project['previous_versions']
-
-                new_prev_versions.append({
-                    'date': str(project['date']),
-                    'linkid': str(project['linkid']),
-                    'ASP_version': project.get('ASP_version', 'NA'),
-                    'AA_version': project.get('AA_version', 'NA'),
-                    'AC_version': project.get('AC_version', 'NA'),
-                    'aggregator_version': project.get('aggregator_version', 'NA'),
-                })
-                # transfer the view and downloads counts to the new project version
-                views = project['views']
-                downloads = project['downloads']
-                old_subscribers = project.get('subscribers', [])
-                form_data = {
-                    'project_name': project.get('project_name', ''),
-                    'publication_link': project.get('publication_link', ''),
-                    'description': project.get('description', ''),
-                    'private': normalize_visibility_field(project.get('private', 'private')),
-                    'project_members': ','.join(project.get('project_members', [])),
-                    'alias': project.get('alias_name', ''),
-                    'accept_license': True
-                }
-                form = RunForm(form_data)
-                if not form.is_valid():
-                    logging.error(f"Form validation failed in process_file_in_background: {form.errors}")
-                    alert_message = "Edit project failed. Form validation error - please check project information."
-                    # project_delete already removed old project stats; restore them so the
-                    # site statistics are not left in a permanently decremented state.
-                    from .project_events import project_changed
-                    try:
-                        vis = normalize_visibility_field(project.get('private', 'private'))
-                        project_changed(project, vis)
-                        logging.error("Restored old project stats after form validation failure")
-                    except Exception as stats_err:
-                        logging.error(f"Failed to restore stats after form validation failure: {stats_err}")
-                    raise ValueError(alert_message)
-
-                extra_metadata_file_fp = None
-                ## get extra metadata from csv first (if exists in old project), add it to the new proj
-                old_extra_metadata = get_extra_metadata_from_project(project)
-                new_id = _create_project(form, request, extra_metadata_file_fp, previous_versions=new_prev_versions,
-                                         previous_views=[views, downloads], old_extra_metadata = old_extra_metadata, old_subscribers = old_subscribers)
-                if new_id is None:
-                    # _create_project failed after project_delete already removed the old project's
-                    # stats — restore them so the site statistics are not permanently wrong.
-                    from .project_events import project_changed
-                    try:
-                        vis = normalize_visibility_field(project.get('private', 'private'))
-                        project_changed(project, vis)
-                        logging.error("Restored old project stats after _create_project failure")
-                    except Exception as stats_err:
-                        logging.error(f"Failed to restore stats after _create_project failure: {stats_err}")
-                    alert_message = "Edit project failed. Could not create new project version."
-                elif new_id is not None:
-                    new_project_uuid = str(new_id.inserted_id)
-                    retarget_count = retarget_deleted_version_tombstones(
-                        collection_handle,
-                        str(project['linkid']),
-                        new_project_uuid,
-                    )
-                    if retarget_count:
-                        logging.info(
-                            f"Retargeted {retarget_count} deleted-version tombstones "
-                            f"from {project['linkid']} to {new_project_uuid}"
-                        )
-                    alert_message = f"Aggregation successful. New samples added to project version: {new_project_uuid}"
-
-                    # Drop the superseded version's cached co-amplification graph(s)
-                    invalidate_project_coamp_graphs(str(project['linkid']))
-
-                    # Notify subscribers about the project update
-                    try:
-                        from .user_preferences import notify_subscribers_of_project_update
-                        new_project = get_one_project(new_project_uuid)
-                        new_sample_count = new_project.get('sample_count', len(new_project.get('runs', {})))
-                        notify_subscribers_of_project_update(project, new_id.inserted_id, new_sample_count)
-                    except Exception as notify_error:
-                        logging.error(f"Failed to notify subscribers of project update: {str(notify_error)}")
-        except Exception as e:
-            logging.error(e)
-            alert_message = "Edit project failed. Error performing aggregation. Please ensure all uploaded samples are valid AmpliconSuite results."
-
-        logging.error("Preparing to send  email with status: "+ alert_message)
+        logging.info(f"add_samples_to_project_api - {temp_proj_id}: {alert_message}")
         form_dict = {}
         # add details for the template
         form_dict['SITE_TITLE'] = settings.SITE_TITLE
         form_dict['SITE_URL'] = settings.SITE_URL
         form_dict['sharing_user_email'] = user.email
-        form_dict['project_name'] = project.get('project_name', project_uuid)
-        form_dict['project_id'] = project_uuid
+        form_dict['project_name'] = project.get('project_name', old_project_id)
+        form_dict['project_id'] = old_project_id
         form_dict['alert_message'] = alert_message
         form_dict.update(contact_context())
 
         html_message = render_to_string('contacts/project_api_file_added.html', form_dict)
-        plain_message = strip_tags(html_message)
 
-        # send_mail(subject = subject, message = body, from_email = settings.EMAIL_HOST_USER_SECRET, recipient_list = [settings.RECIPIENT_ADDRESS])
         email = EmailMessage(
             f"Project update on {form_dict['project_name']}",
             html_message,
@@ -435,7 +351,6 @@ class ProjectFileAddView(APIView):
         )
         email.content_subtype = "html"
         email.send(fail_silently=False)
-        logging.error("Finished email sent")
 
 
 # ===========================================================================

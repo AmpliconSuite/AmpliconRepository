@@ -522,8 +522,21 @@
                             error: function(xhr, status, error) {
                                 console.log('AJAX request ended with status:', status, 'error:', error);
                                 
+                                // A refusal that explains itself (shutdown pending) is not
+                                // still processing: jQuery reports any HTTP error as
+                                // status 'error', which the branch below reads that way.
+                                var refusal = null;
+                                try { refusal = JSON.parse(xhr.responseText).message; } catch (e) {}
+                                if (xhr.status >= 400 && refusal) {
+                                    $('#loadingModal .modal-body').html(
+                                        $('<div>').append(
+                                            $('<i>', {'class': 'fas fa-exclamation-circle fa-3x text-warning mb-3'}),
+                                            $('<h5>').text('Download not started'),
+                                            $('<p>').text(refusal)
+                                        )
+                                    );
                                 // Check if this is a timeout or connection issue (server still processing)
-                                if (status === 'timeout' || status === 'error' || xhr.status === 0) {
+                                } else if (status === 'timeout' || status === 'error' || xhr.status === 0) {
                                     // Timeout or connection closed - server is still processing
                                     console.log('Connection timeout/closed - server is still processing');
                                     $('#loadingModal .modal-body').html(
