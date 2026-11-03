@@ -13,8 +13,8 @@ previous version's. Now a version reuses those files instead.
 | Decision | Settled as |
 | --- | --- |
 | Scope | One version chain. A version reuses files only from the version it was made from, its immediate predecessor |
-| Match | Same SHA-256, length and GridFS filename, stored for the same sample and field |
-| Files written before this change | Carry no hash and are never matched. Sharing starts with the second version made after the deploy |
+| Match | Same SHA-256, length and GridFS filename, in the same sample and field. The sample and field are read from the predecessor document, not the file's metadata |
+| Files written before this change | Carry no hash until `backfill_gridfs_sha256.py` adds one; a file without a hash is never matched |
 | Project archive (`tarfile`) | Stays per version, as decided on #624. Its contents are never identical between versions anyway (`run.json` embeds paths) |
 | Backlink `metadata.project_id` | Still names the version that **wrote** the file |
 | Who else names it | `metadata.reused_by`, a list written **before** the reusing document names the file |
@@ -93,11 +93,35 @@ Two things close that window:
   reported as "residue of a purge", which it is not. One such row exists in
   the local database: a TR14 tarfile labelled in August 2026.
 
+## Files stored before the hash
+
+`backfill_gridfs_sha256.py` records the hash on the files the current versions
+name, since only a current version is ever a predecessor. It leaves out the
+project archives and the directory tarballs, which can never match: before #712
+the site packed directories with the time of packing in the gzip header.
+Measured on dev 2026-11-03, re-aggregating two projects, 41 of 41 and 59 of 59
+directory tarballs differed.
+It reads each file back and hashes it only if the bytes read equal the row's
+length, writes only rows without a hash, and records every id it writes in an
+undo file (`--rollback` unsets them).
+
+The match reads a file's sample and field from where the predecessor document
+names it. The rows' own metadata could not be used: measured read-only on prod
+2026-11-03, the 228,153 per-sample files that the 89 current versions name
+(15.65 GiB) carry either the document's underscore spelling of the field
+(`Feature_BED_file`, from the August 2026 backlink backfill), or the run key
+(`sample_1`) where the sample name belongs (uploads since). With the metadata as
+the key, hashing them would have matched none. Uploads now record the sample
+name, and because the run key is positional, a version that removes a sample
+still shares the files of the samples after it.
+
+The match also treats the aggregator 6 field names as their 7.0 names
+(`AA PNG file` as `Graph PNG file`, and likewise for the PDF, graph and cycles
+files). Re-aggregating a 6.1.0 project on dev with 8.3.1 gave identical bytes
+under the new name in 58 of 58 features for each pair.
+
 ## Not done here
 
-- **Backfilling hashes onto existing files.** That would let the first version
-  after the deploy share as well. It is a write to every `fs.files` row, so on
-  prod it is its own ask.
 - **Sharing across projects.** Ruled out on #624: pointers between projects are
   too easy to make stale.
 - **Identical files across samples within one version.** Matching requires the

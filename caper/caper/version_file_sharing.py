@@ -15,13 +15,22 @@ make stale. A file is therefore only ever named by versions of one project, and
 the only version a new one takes files from is the one it was made from.
 
 **Matching.** A file is reused when the predecessor names a file with the same
-SHA-256, length and GridFS filename, stored for the same sample and field. So
-a reused file is the same file in the same place, never an identical one from
-another sample. The hash is recorded in ``metadata.sha256`` when a file is
-stored. Files written before this module carry none and are never matched, so
-sharing starts with the second version made after it is deployed. The filename
-is part of the match because the per-sample download names a directory
-tarball after it.
+SHA-256, length and GridFS filename, in the same sample and field. So a reused
+file is the same file in the same place, never an identical one from another
+sample. The filename is part of the match because the per-sample download names
+a directory tarball after it.
+
+The sample and field come from the predecessor *document*, the place it names
+the file, and never from the row's metadata. The rows disagree with each other:
+measured read-only on prod 2026-11-03, the 228,153 per-sample files the current
+versions name carry either the document's underscore spelling of the field
+(``Feature_BED_file``, from the August backlink backfill) or the run key
+(``sample_1``) where the sample name belongs (from uploads since). Matching on
+the metadata would have matched none of them.
+
+The hash is recorded in ``metadata.sha256`` when a file is stored.
+``backfill_gridfs_sha256.py`` adds it to files stored before; a file without one
+is never matched.
 
 **Provenance stays the writer's.** ``metadata.project_id`` keeps naming the
 version that stored the bytes. A version that reuses the file is added to
@@ -48,7 +57,7 @@ file one survivor names is kept however many others also named it.
 import hashlib
 import logging
 
-from .gridfs_backlinks import METADATA_FIELD, PROJECT_ID, REUSED_BY, as_object_id
+from .gridfs_backlinks import METADATA_FIELD, PROJECT_ID, REUSED_BY, as_object_id, iter_backlinks
 from .project_status import TOMBSTONE, classify
 from .project_version_cleanup import iter_gridfs_file_ids
 
@@ -73,6 +82,29 @@ def file_digest(fileobj):
         length += len(block)
     fileobj.seek(0)
     return digest.hexdigest(), length
+
+
+#: Aggregator <= 6 names for what 7.0 and later call by the name on the right.
+#: Measured on dev 2026-11-03, re-aggregating a 6.1.0 project with 8.3.1: each
+#: pair held identical bytes in 58 of 58 features. The site already names the
+#: new file under both (``AA PNG file`` is set to the ``Graph PNG file`` id).
+LEGACY_FIELDS = {
+    'AA PDF file': 'Graph PDF file',
+    'AA PNG file': 'Graph PNG file',
+    'AA graph file': 'Graph file',
+    'AA cycles file': 'Cycles file',
+    'AA directory': 'Reconstruction directory',
+}
+
+
+def field_name(key):
+    """The field *key* names, for matching: run.json's spelling, today's name.
+
+    The documents store ``Feature_BED_file`` where run.json says
+    ``Feature BED file``, and older aggregators used the names in LEGACY_FIELDS.
+    """
+    key = str(key).replace('_', ' ')
+    return LEGACY_FIELDS.get(key, key)
 
 
 def _chunked(items, size=CHUNK):
@@ -114,14 +146,20 @@ class PredecessorFiles:
         if predecessor is None or classify(predecessor) == TOMBSTONE:
             return
         self.predecessor_id = predecessor_id
-        named = set(iter_gridfs_file_ids(predecessor))
-        projection = {'length': 1, 'filename': 1, METADATA_FIELD: 1}
-        for batch in _chunked(named):
+        # Every (sample, field) the predecessor names each file under. One file
+        # can sit in two fields: a directory is named as both
+        # Reconstruction_directory and its legacy alias AA_directory.
+        slots = {}
+        for file_id, sample_name, key in iter_backlinks(predecessor):
+            slots.setdefault(file_id, set()).add((sample_name, field_name(key)))
+        projection = {'length': 1, 'filename': 1, f'{METADATA_FIELD}.{SHA256}': 1}
+        for batch in _chunked(slots):
             for row in self._fs_files.find({'_id': {'$in': batch}}, projection):
-                metadata = row.get(METADATA_FIELD) or {}
-                if metadata.get(SHA256):
-                    key = (metadata[SHA256], row.get('length'), row.get('filename'),
-                           metadata.get('sample_name'), metadata.get('feature_key'))
+                sha256 = (row.get(METADATA_FIELD) or {}).get(SHA256)
+                if not sha256:
+                    continue
+                for sample_name, field in slots[row['_id']]:
+                    key = (sha256, row.get('length'), row.get('filename'), sample_name, field)
                     self._index.setdefault(key, row['_id'])
 
     def __len__(self):
@@ -133,8 +171,10 @@ class PredecessorFiles:
         The claim is written before the new document names the file, so that a
         deletion running meanwhile sees this version as a possible owner. A row
         that has gone since the index was built matches nothing and is not used.
+        *sample_name* is the feature's ``Sample name``, which the saved document
+        keeps as ``Sample_name``; not the run key.
         """
-        key = (sha256, length, filename, sample_name, feature_key)
+        key = (sha256, length, filename, sample_name, field_name(feature_key))
         file_id = self._index.get(key)
         if file_id is None:
             return None
