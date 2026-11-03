@@ -152,8 +152,9 @@ leave their project.
   serve the sample page and search. The initiative gets its own page, its own
   sample pages and a search facet.
 - **Files:** served through the source project's routes. GridFS file IDs are
-  never copied into an initiative: on prod no file is shared between projects,
-  and delete and cleanup rely on one owner per file.
+  never copied into an initiative. Versions of one project share unchanged
+  files, but no file is shared between projects, and deletion protects only
+  other versions of the same project (see version-file-sharing.md).
 - **Downloads:** the existing batch download, which already takes samples from
   several projects.
 - **Counting:** site total = initiative samples + samples in no initiative. TCGA

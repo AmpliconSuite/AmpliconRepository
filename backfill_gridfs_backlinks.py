@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cap
 
 from bson.objectid import ObjectId                      # noqa: E402
 from caper.gridfs_backlinks import (                    # noqa: E402
-    METADATA_FIELD, PROJECT_ID, build_metadata, iter_backlinks,
+    METADATA_FIELD, PROJECT_ID, REUSED_BY, build_metadata, iter_backlinks,
 )
 
 DEFAULT_CHECKPOINT = 'gridfs-backlink-checkpoint.json'
@@ -130,25 +130,31 @@ def plan_for_document(fs_files, document, repair=False):
     already names some document is left alone, because rewriting it is not
     idempotent when two documents name the same file: each run would hand the
     row to whichever document it saw last, and the backfill would never
-    converge. (No file is named by two documents on dev or prod -- measured
-    2026-08-29, distinct ids exactly equalled document-file pairs -- but the
-    local fixtures do share ids, which is how this was found.)
+    converge. (Until #624 no file was named by two documents on dev or prod --
+    measured 2026-08-29, distinct ids exactly equalled document-file pairs --
+    but the local fixtures do share ids, which is how this was found.)
+
+    Since #624 versions of one project share unchanged files. The backlink keeps
+    naming the version that wrote the file and the others are listed in
+    ``metadata.reused_by``, so a document that reused a file is not one whose
+    backlink went wrong.
 
     ``repair=True`` also rewrites backlinks that name a different document, for
-    the case where the metadata is known to have gone wrong.
+    the case where the metadata is known to have gone wrong -- except on files
+    the document reused.
     """
     wanted = {}
     for file_id, sample_name, feature_key in iter_backlinks(document):
-        # First writer wins within a document: a file appears once per slot, and
-        # measured 2026-08-29 no file is named by two documents on either
-        # database (distinct ids exactly equalled document-file pairs).
+        # First writer wins within a document: a file appears once per slot.
         wanted.setdefault(file_id, (sample_name, feature_key))
     if not wanted:
         return [], 0, 0
 
-    existing = {row['_id']: (row.get(METADATA_FIELD) or {}).get(PROJECT_ID)
-                for row in fs_files.find({'_id': {'$in': list(wanted)}},
-                                         {f'{METADATA_FIELD}.{PROJECT_ID}': 1})}
+    rows = {row['_id']: row.get(METADATA_FIELD) or {}
+            for row in fs_files.find({'_id': {'$in': list(wanted)}},
+                                     {f'{METADATA_FIELD}.{PROJECT_ID}': 1,
+                                      f'{METADATA_FIELD}.{REUSED_BY}': 1})}
+    existing = {file_id: metadata.get(PROJECT_ID) for file_id, metadata in rows.items()}
 
     project_id = document['_id']
     chain_id = document.get('version_chain_id')
@@ -159,7 +165,8 @@ def plan_for_document(fs_files, document, repair=False):
         labelled_as = existing[file_id]
         if labelled_as is not None:
             correct += 1
-            if not (repair and labelled_as != project_id):
+            reused = project_id in (rows[file_id].get(REUSED_BY) or [])
+            if not (repair and labelled_as != project_id and not reused):
                 continue
         metadata = build_metadata(project_id, sample_name=sample_name,
                                   feature_key=feature_key,
