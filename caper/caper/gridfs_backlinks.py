@@ -24,15 +24,12 @@ ingestion that dies after storing a file but before updating the document
 currently leaves an anonymous file, and with this it leaves one that says what
 it was for.
 
-**One owner is what the data has, not a rule this imposes.** No file is named by
-two documents today -- on 2026-08-29 the distinct id count exactly equalled the
-(document, file) pair count on both databases -- so ``project_id`` is a scalar.
-Should a file ever have several owners, the query ``{'metadata.project_id': X}``
-already matches an array containing X, so nothing that reads a backlink has to
-change; the writer becomes ``$addToSet``. What would be a real piece of work is
-deletion, which today deletes every file a project names and would then have to
-delete only the ones nothing else names. That work is the same size whatever
-shape this field is, so it is not a reason to complicate the field now.
+**``project_id`` names the writer, and stays a scalar.** Until #624 no file was
+named by two documents (on 2026-08-29 the distinct id count exactly equalled the
+(document, file) pair count on both databases). Since then a new version may
+reuse an identical file its predecessor names, and the versions that do are
+listed in ``metadata.reused_by`` instead -- see version_file_sharing, which
+also holds the deletion check that sharing needs.
 
 The rule that keeps that future open is the one above: **a backlink is
 provenance, never authority.** Nothing may delete a file because its metadata
@@ -53,6 +50,8 @@ from bson.objectid import ObjectId
 # Where the backlink lives on an fs.files row.
 METADATA_FIELD = 'metadata'
 PROJECT_ID = 'project_id'
+# Versions that name a file they did not write; see version_file_sharing.
+REUSED_BY = 'reused_by'
 
 # The orphan classifications from the spec, in increasing order of "safe to
 # remove". Nothing here deletes anything; these are labels for a report.
@@ -97,7 +96,8 @@ def as_object_id(value):
 
 
 def build_metadata(project_id, *, sample_name=None, feature_key=None,
-                   version_chain_id=None, event_id=None, written_at=None):
+                   version_chain_id=None, event_id=None, written_at=None,
+                   sha256=None):
     """The backlink subdocument for one file.
 
     Keys whose value is unknown are omitted rather than stored as None, so that
@@ -118,6 +118,10 @@ def build_metadata(project_id, *, sample_name=None, feature_key=None,
         metadata['sample_name'] = str(sample_name)
     if feature_key:
         metadata['feature_key'] = str(feature_key)
+    # The content hash a later version matches against to reuse this file
+    # rather than store it again; see version_file_sharing.
+    if sha256:
+        metadata['sha256'] = str(sha256)
     if metadata:
         metadata['written_at'] = written_at or datetime.datetime.now(
             datetime.timezone.utc)
@@ -126,7 +130,7 @@ def build_metadata(project_id, *, sample_name=None, feature_key=None,
 
 def put_with_backlink(fs_handle, fileobj, *, project_id, sample_name=None,
                       feature_key=None, version_chain_id=None, event_id=None,
-                      filename=None):
+                      filename=None, sha256=None):
     """``fs.put()``, carrying a backlink to the document that will name the file.
 
     **A backlink is never worth a file.** If building the metadata raises for
@@ -138,7 +142,7 @@ def put_with_backlink(fs_handle, fileobj, *, project_id, sample_name=None,
     try:
         metadata = build_metadata(
             project_id, sample_name=sample_name, feature_key=feature_key,
-            version_chain_id=version_chain_id, event_id=event_id)
+            version_chain_id=version_chain_id, event_id=event_id, sha256=sha256)
     except Exception as exc:                       # noqa: BLE001
         logging.warning(f'GridFS backlink could not be built for '
                         f'{feature_key!r} of project {project_id}: '

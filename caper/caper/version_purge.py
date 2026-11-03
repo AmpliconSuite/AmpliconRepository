@@ -150,6 +150,23 @@ def delete_s3_archive(victim_id):
         return None
 
 
+def _files_others_need(victim_id, file_ids):
+    """Those of *file_ids* another version still needs, or None if unknown.
+
+    Versions of one project share unchanged files (version_file_sharing), so a
+    deleted version's pending list can hold a file a surviving version names.
+    """
+    try:
+        from .utils import collection_handle_primary
+        from .version_file_sharing import still_needed_here
+        tombstone = collection_handle_primary.find_one({'_id': ObjectId(str(victim_id))})
+        return still_needed_here(tombstone or {'_id': ObjectId(str(victim_id))}, file_ids)
+    except Exception:
+        logging.exception("Could not tell which files of deleted version %s other "
+                          "versions need; stopping its purge", victim_id)
+        return None
+
+
 def _run(victim_id, file_ids, delete_event, outcome, confirm_extra):
     """Delete the payload, clear the pending list, then confirm the event.
 
@@ -161,16 +178,26 @@ def _run(victim_id, file_ids, delete_event, outcome, confirm_extra):
 
     file_ids = list(file_ids)
     deleted = 0
+    kept_shared = 0
     # Batched so the pending list is a progress reading and not a flag. A purge
     # of 15,733 files runs for about half an hour, and while it does the only
     # honest answer to "how far has it got" should come from the document.
     for batch in _chunks(file_ids, PURGE_PROGRESS_BATCH):
-        deleted += delete_payload_file_ids(delete_gridfs_file, batch,
-                                           owner=victim_id).deleted
+        # Asked again here, not only when the pending list was written: a
+        # version made since may have reused one of these files.
+        keep = _files_others_need(victim_id, batch)
+        if keep is None:
+            # Unknown is not "nobody". Stop with the rest still pending and the
+            # claim held; it goes stale in an hour and a restart resumes it.
+            return deleted
+        kept_shared += len(keep)
+        deleted += delete_payload_file_ids(
+            delete_gridfs_file, [f for f in batch if ObjectId(str(f)) not in keep],
+            owner=victim_id).deleted
         _pull_purged(victim_id, batch)
     _release_claim(victim_id)
-    logging.info("Purged %d GridFS file(s) of deleted version %s",
-                 deleted, victim_id)
+    logging.info("Purged %d GridFS file(s) of deleted version %s; kept %d that "
+                 "another version still names", deleted, victim_id, kept_shared)
     s3_deleted = delete_s3_archive(victim_id)
 
     if delete_event is not None:
@@ -178,6 +205,7 @@ def _run(victim_id, file_ids, delete_event, outcome, confirm_extra):
         provenance.confirm(audit_log_handle, delete_event,
                            outcome=outcome,
                            gridfs_files_purged=deleted,
+                           gridfs_files_kept_shared=kept_shared,
                            s3_archive_deleted=s3_deleted,
                            **(confirm_extra or {}))
     return deleted

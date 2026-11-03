@@ -50,6 +50,7 @@ from .project_version_cleanup import (
     delete_gridfs_payload_for_project, delete_payload_within_deadline,
     iter_gridfs_file_ids,
 )
+from .version_file_sharing import still_needed_here
 from .background_tasks import get_background_task_status
 from .project_status import (
     DETACHED,
@@ -962,9 +963,21 @@ def admin_permanent_delete_project(project_id, project, project_name):
     # cnvkit_directory -- and the list here had only the space-separated ones.
     # A second key list is the recurring defect in this repository and this is
     # what it costs; test_admin_delete_uses_the_canonical_key_list is the guard.
+    #
+    # Versions of one project share the files that did not change between them
+    # (version_file_sharing), and this deletes one document of the chain at a
+    # time, so what another document still names is kept. If that cannot be
+    # read nothing is deleted: the protected set would be a guess.
+    try:
+        others_need = still_needed_here(project, iter_gridfs_file_ids(project))
+    except Exception:
+        logging.exception('Could not tell which files of %s other versions need.', project_id)
+        return (f"Project {project_name} was not deleted: could not check which of its "
+                f"files other versions still use. Please refer to the application log files.")
     try:
         outcome = delete_payload_within_deadline(
-            delete_gridfs_file, project, deadline=current_delete_deadline())
+            delete_gridfs_file, project, protected_file_ids=others_need,
+            deadline=current_delete_deadline())
     except Exception:
         logging.exception('Problem deleting project files from Mongo.')
         error_message = "Problem deleting project files from Mongo."
