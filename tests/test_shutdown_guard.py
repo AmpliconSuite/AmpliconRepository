@@ -123,5 +123,10 @@ def test_a_batch_streamed_in_the_request_is_still_served(flag, logged_in):
     response = logged_in.post('/batch-sample-download/',
                               data={'samples': [_NO_SUCH_SAMPLE]})
 
-    assert response.status_code == 200
-    assert 'zip' in response['Content-Type']
+    try:
+        assert response.status_code == 200
+        assert 'zip' in response['Content-Type']
+    finally:
+        # The zip is written to the working directory and removed when the
+        # response is closed, as the server closes it after streaming.
+        response.close()
