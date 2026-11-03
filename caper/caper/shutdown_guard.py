@@ -16,6 +16,11 @@ for a POST to one of these paths, so no other request pays for the lookup.
 
 A browser is sent back with the banner's own message.  An API client gets a 503
 with Retry-After, which run_uploader.py reports with the response body.
+
+One refusal is not here: batch_sample_download in views.py refuses its emailed
+link path, which runs in the background, but still streams a batch small enough
+to answer in the request.  Which path a batch takes is decided inside the view,
+after access filtering, so this middleware cannot tell the two apart.
 """
 
 import json

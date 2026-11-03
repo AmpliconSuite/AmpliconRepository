@@ -74,3 +74,54 @@ def test_other_requests_never_read_the_flag(flag, client):
     client.post('/search_results/', data={})
 
     assert flag['reads'] == 0
+
+
+# ---------------------------------------------------------------------------
+# Batch sample download: only the emailed-link path runs in the background
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def logged_in(client, monkeypatch, flag):
+    from django.contrib.auth.models import User
+
+    monkeypatch.setattr('caper.views.get_shutdown_pending', lambda: flag['on'])
+    username = 'pytest_shutdown_guard'
+    User.objects.filter(username=username).delete()
+    user = User.objects.create_user(username=username, email=f'{username}@example.com')
+    client.force_login(user)
+    try:
+        yield client
+    finally:
+        user.delete()
+
+
+_NO_SUCH_SAMPLE = '000000000000000000000000:nobody'
+
+
+def test_an_emailed_batch_is_refused_with_its_reason(flag, logged_in):
+    flag['on'] = True
+    response = logged_in.post('/batch-sample-download/',
+                              data={'samples': [_NO_SUCH_SAMPLE], 'emailResults': 'true'},
+                              HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+
+    assert response.status_code == 503
+    assert response['Retry-After']
+    assert json.loads(response.content) == {'success': False, 'message': SHUTDOWN_MESSAGE}
+
+
+def test_an_emailed_batch_from_a_form_is_sent_back_with_the_message(flag, logged_in):
+    flag['on'] = True
+    response = logged_in.post('/batch-sample-download/',
+                              data={'samples': [_NO_SUCH_SAMPLE], 'emailResults': 'true'})
+
+    assert response.status_code == 302
+    assert [str(m) for m in response.wsgi_request._messages] == [SHUTDOWN_MESSAGE]
+
+
+def test_a_batch_streamed_in_the_request_is_still_served(flag, logged_in):
+    flag['on'] = True
+    response = logged_in.post('/batch-sample-download/',
+                              data={'samples': [_NO_SUCH_SAMPLE]})
+
+    assert response.status_code == 200
+    assert 'zip' in response['Content-Type']
