@@ -23,7 +23,7 @@ from caper.gridfs_backlinks import iter_backlinks
 from caper.project_status import LIVE, SUPERSEDED, TOMBSTONE, classify, status_flags
 from caper.project_version_cleanup import PENDING_PAYLOAD_KEY, iter_gridfs_file_ids
 from caper.version_file_sharing import (
-    REUSED_BY, SHA256, PredecessorFiles, field_name, files_still_needed,
+    REUSED_BY, SHA256, files_still_needed,
 )
 
 pytestmark = pytest.mark.integration
@@ -31,8 +31,8 @@ pytestmark = pytest.mark.integration
 SAMPLES = ('S1', 'S2')
 
 
-def _feature(sample, n):
-    return {
+def _feature(sample, n, aggregator_7_names=False):
+    feature = {
         'Sample name': sample,
         'Feature ID': f'{sample}_amplicon1_ecDNA_{n}',
         'Classification': 'ecDNA',
@@ -43,9 +43,12 @@ def _feature(sample, n):
         'Sample metadata JSON': f'{sample}/sample_meta.json',
         'Reconstruction directory': f'{sample}/reconstruction',
     }
+    if aggregator_7_names:
+        feature['Graph PNG file'] = feature.pop('AA PNG file')
+    return feature
 
 
-def _build_tar(where, changed=(), samples=SAMPLES):
+def _build_tar(where, changed=(), samples=SAMPLES, aggregator_7_names=False):
     """Two samples of two features. Every file of a *changed* sample differs.
 
     Runs are keyed by position, as the aggregator keys them: removing a sample
@@ -55,7 +58,7 @@ def _build_tar(where, changed=(), samples=SAMPLES):
     runs = {}
     for position, sample in enumerate(samples, 1):
         tag = 'changed' if sample in changed else 'same'
-        features = runs[f'sample_{position}'] = [_feature(sample, n) for n in (1, 2)]
+        features = runs[f'sample_{position}'] = [_feature(sample, n, aggregator_7_names) for n in (1, 2)]
         for path in {p for f in features for k, p in f.items() if k.endswith(('file', 'JSON'))}:
             (src / path).parent.mkdir(parents=True, exist_ok=True)
             (src / path).write_text(f'{path} {tag}\n')
@@ -85,7 +88,7 @@ def versions(tmp_path, monkeypatch, test_user):
     projects = utils.collection_handle_primary
     made = []
 
-    def make(changed=(), samples=SAMPLES):
+    def make(changed=(), samples=SAMPLES, aggregator_7_names=False):
         previous = [{'date': d['date'], 'linkid': str(d['_id'])} for d in made]
         doc = {'project_name': 'pytest version sharing', 'description': 'pytest',
                'private': 'private', 'project_members': [test_user.username],
@@ -97,7 +100,7 @@ def versions(tmp_path, monkeypatch, test_user):
         lineage.link_new_version(projects, new_id, previous)
         where = tmp_path / str(new_id)
         (where / 'dest').mkdir(parents=True)
-        views.extract_project_files(tarfile, _build_tar(where, changed, samples), str(where / 'dest'),
+        views.extract_project_files(tarfile, _build_tar(where, changed, samples, aggregator_7_names), str(where / 'dest'),
                                     str(new_id), None, None, [])
         made.append(projects.find_one({'_id': new_id}))
         return made[-1]
@@ -314,7 +317,7 @@ def _as_stored_before_the_hash(doc, form):
         if form == 'august backfill':
             metadata = {'feature_key': key, 'sample_name': sample_name}
         else:
-            metadata = {'feature_key': field_name(key), 'sample_name': run_key[file_id]}
+            metadata = {'feature_key': key.replace('_', ' '), 'sample_name': run_key[file_id]}
         fs_files.update_one({'_id': file_id},
                             {'$set': {f'metadata.{k}': v for k, v in metadata.items()},
                              '$unset': {f'metadata.{SHA256}': ''}})
@@ -327,9 +330,8 @@ def _backfill(tmp_path, *args):
     return undo.read_text().split() if undo.exists() else []
 
 
-def _predecessor_index(new_doc):
-    return PredecessorFiles(utils.collection_handle_primary,
-                            utils.db_handle_primary['fs.files'], new_doc['_id'])
+def _hashable(doc):
+    return backfill.files_in_scope(doc)
 
 
 @pytest.mark.parametrize('form', ['august backfill', 'uploads since'])
@@ -340,7 +342,21 @@ def test_files_stored_before_the_hash_are_shared_after_the_backfill(versions, tm
 
     v2 = versions()
 
-    assert _slots(v2) == _slots(v1)
+    before, after = _slots(v1), _slots(v2)
+    shared = {slot for slot, file_id in before.items() if file_id in _hashable(v1)}
+    assert shared and all(after[slot] == before[slot] for slot in shared)
+    # Directory tarballs are out of the backfill's scope, so are stored again.
+    assert all(after[slot] != before[slot] for slot in set(before) - shared)
+
+
+def test_an_aggregator_6_field_is_shared_under_its_7_0_name(versions):
+    """'AA PNG file' became 'Graph PNG file'; the bytes did not change."""
+    v1 = versions()
+    v2 = versions(aggregator_7_names=True)
+
+    for (sample, n, key), file_id in _slots(v1).items():
+        if key == 'AA_PNG_file':
+            assert _slots(v2)[(sample, n, 'Graph_PNG_file')] == file_id
 
 
 def test_without_the_backfill_nothing_is_shared(versions):
@@ -376,34 +392,37 @@ def test_the_backfill_hashes_the_current_versions_files_and_records_each(version
 
     written = _backfill(tmp_path, '--execute', *projects)
 
-    assert set(written) == {str(i) for i in _ids(v2)}, 'only the current version is in scope'
+    assert set(written) == {str(i) for i in _hashable(v2)}, 'only the current version is in scope'
+    assert _hashable(v2) < _ids(v2), 'the directory tarballs are not'
     stored = gridfs.GridFS(utils.db_handle_primary)
-    for row in _rows(_ids(v2)).values():
+    for row in _rows(_hashable(v2)).values():
         assert row['metadata'][SHA256] == hashlib.sha256(stored.get(row['_id']).read()).hexdigest()
     assert not any(SHA256 in row['metadata'] for row in _rows(only_v1).values())
 
     assert _backfill(tmp_path, '--execute', *projects) == written, 'a second run writes nothing'
 
     _backfill(tmp_path, '--execute', '--rollback', str(tmp_path / 'undo.txt'))
-    assert not any(SHA256 in row['metadata'] for row in _rows(_ids(v2)).values())
+    assert not any(SHA256 in row['metadata'] for row in _rows(_hashable(v2)).values())
 
 
 def test_a_file_that_does_not_read_back_whole_is_not_hashed(versions, tmp_path):
     v1 = versions()
     _as_stored_before_the_hash(v1, 'august backfill')
-    broken = next(iter(_ids(v1)))
+    broken = next(iter(_hashable(v1)))
     utils.db_handle_primary['fs.chunks'].delete_many({'files_id': broken})
 
     written = _backfill(tmp_path, '--execute', '--project', str(v1['_id']))
 
     assert str(broken) not in written
-    assert set(written) == {str(i) for i in _ids(v1) - {broken}}
+    assert set(written) == {str(i) for i in _hashable(v1) - {broken}}
     assert SHA256 not in _rows({broken})[broken]['metadata']
 
 
-def test_the_project_archive_is_out_of_scope():
-    archive, sample_file = ObjectId(), ObjectId()
+def test_archives_and_directories_are_out_of_the_backfills_scope():
+    archive, directory, sample_file = ObjectId(), ObjectId(), ObjectId()
     doc = {'tarfile': archive,
-           'runs': {'sample_1': [{'Sample_name': 'S1', 'CNV_BED_file': sample_file}]}}
+           'runs': {'sample_1': [{'Sample_name': 'S1', 'CNV_BED_file': sample_file,
+                                  'Reconstruction_directory': directory,
+                                  'AA_directory': directory}]}}
 
     assert backfill.files_in_scope(doc) == {sample_file}

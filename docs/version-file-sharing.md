@@ -96,7 +96,11 @@ Two things close that window:
 ## Files stored before the hash
 
 `backfill_gridfs_sha256.py` records the hash on the files the current versions
-name, less the project archives: only a current version is ever a predecessor.
+name, since only a current version is ever a predecessor. It leaves out the
+project archives and the directory tarballs, which can never match: before #712
+the site packed directories with the time of packing in the gzip header.
+Measured on dev 2026-11-03, re-aggregating two projects, 41 of 41 and 59 of 59
+directory tarballs differed.
 It reads each file back and hashes it only if the bytes read equal the row's
 length, writes only rows without a hash, and records every id it writes in an
 undo file (`--rollback` unsets them).
@@ -110,6 +114,11 @@ names it. The rows' own metadata could not be used: measured read-only on prod
 the key, hashing them would have matched none. Uploads now record the sample
 name, and because the run key is positional, a version that removes a sample
 still shares the files of the samples after it.
+
+The match also treats the aggregator 6 field names as their 7.0 names
+(`AA PNG file` as `Graph PNG file`, and likewise for the PDF, graph and cycles
+files). Re-aggregating a 6.1.0 project on dev with 8.3.1 gave identical bytes
+under the new name in 58 of 58 features for each pair.
 
 ## Not done here
 

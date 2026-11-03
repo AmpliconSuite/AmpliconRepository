@@ -84,9 +84,27 @@ def file_digest(fileobj):
     return digest.hexdigest(), length
 
 
+#: Aggregator <= 6 names for what 7.0 and later call by the name on the right.
+#: Measured on dev 2026-11-03, re-aggregating a 6.1.0 project with 8.3.1: each
+#: pair held identical bytes in 58 of 58 features. The site already names the
+#: new file under both (``AA PNG file`` is set to the ``Graph PNG file`` id).
+LEGACY_FIELDS = {
+    'AA PDF file': 'Graph PDF file',
+    'AA PNG file': 'Graph PNG file',
+    'AA graph file': 'Graph file',
+    'AA cycles file': 'Cycles file',
+    'AA directory': 'Reconstruction directory',
+}
+
+
 def field_name(key):
-    """*key* in the spelling run.json uses: the documents store ``Feature_BED_file``."""
-    return str(key).replace('_', ' ')
+    """The field *key* names, for matching: run.json's spelling, today's name.
+
+    The documents store ``Feature_BED_file`` where run.json says
+    ``Feature BED file``, and older aggregators used the names in LEGACY_FIELDS.
+    """
+    key = str(key).replace('_', ' ')
+    return LEGACY_FIELDS.get(key, key)
 
 
 def _chunked(items, size=CHUNK):

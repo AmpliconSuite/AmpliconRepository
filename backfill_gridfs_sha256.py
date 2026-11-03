@@ -7,12 +7,21 @@ stored before #718 have none, so without this the next version of every project
 stores all of its files once more, and sharing starts only with the version
 after that.
 
-**Scope: the files the current versions name, less the project archives.** A
-version is only ever made from the current version of its project, so a file
+**Scope: the files the current versions name, less archives and directories.**
+A version is only ever made from the current version of its project, so a file
 only an older version names is never matched, and hashing it would buy nothing.
-The project archive (``tarfile``) is stored by its own path and never matched.
+Two kinds of file the current versions name can never match either:
+
+  * the project archive (``tarfile``), which is stored by its own path;
+  * directory tarballs. The site packs those itself, and before #712 the gzip
+    header carried the time of packing, so no tarball packed then equals one
+    packed now. Every directory stored since #712 is hashed when stored, so an
+    unhashed one is always an old packing. Measured on dev 2026-11-03,
+    re-aggregating two projects: 41 of 41 and 59 of 59 differed.
+
 Measured read-only on prod 2026-11-03: 89 current versions name 228,153
-per-sample files, 15.65 GiB, of which none carried a hash.
+per-sample files, 15.65 GiB, of which none carried a hash; directories are
+about 6.6 GiB of that.
 
 **The hash is of the stored bytes, read back whole.** A file is hashed only when
 the bytes read equal the row's ``length``; anything else (a missing chunk, a
@@ -46,7 +55,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cap
 from bson.objectid import ObjectId                      # noqa: E402
 from caper.gridfs_backlinks import METADATA_FIELD, iter_backlinks  # noqa: E402
 from caper.project_status import LIVE, STATUS_QUERIES   # noqa: E402
-from caper.project_version_cleanup import PROJECT_FILE_KEYS  # noqa: E402
+from caper.project_version_cleanup import DIRECTORY_FILE_KEYS, PROJECT_FILE_KEYS  # noqa: E402
 from caper.version_file_sharing import SHA256, field_name  # noqa: E402
 
 HASH_FIELD = f'{METADATA_FIELD}.{SHA256}'
@@ -68,10 +77,10 @@ def connect(db_name, expect_host):
 
 
 def files_in_scope(document):
-    """The GridFS ids *document* names, less its project archive."""
-    project_keys = {field_name(key) for key in PROJECT_FILE_KEYS}
+    """The GridFS ids *document* names, less its archive and directory tarballs."""
+    never_matched = {field_name(key) for key in PROJECT_FILE_KEYS + DIRECTORY_FILE_KEYS}
     return {file_id for file_id, _sample, key in iter_backlinks(document)
-            if field_name(key) not in project_keys}
+            if field_name(key) not in never_matched}
 
 
 def digest_stored(gridfs_handle, file_id, length):
