@@ -11,14 +11,21 @@ Every feature must still name an id for every key it names today, because the
 readers take a sample's first row or the id in a URL.
 """
 
+import gzip
+import io
 import json
 import logging
+import os
 import tarfile
 
 import pytest
 from bson.objectid import ObjectId
 
 import caper.views as views
+
+# Importing caper.views needs a live MongoDB, and CI runs only `integration`;
+# unmarked, none of these ran there.
+pytestmark = pytest.mark.integration
 
 SAMPLE_KEYS = ('CNV BED file', 'Sample metadata JSON', 'Run metadata JSON')
 
@@ -38,8 +45,11 @@ def _feature(sample, n, amplicon):
     }
 
 
-def _build_tar(tmp_path):
-    """Two samples of three features; features 1 and 2 share amplicon 1."""
+def _build_tar(tmp_path, mtime=None):
+    """Two samples of three features; features 1 and 2 share amplicon 1.
+
+    mtime, if given, is stamped on every file and directory before packing.
+    """
     src = tmp_path / 'src' / 'results'
     runs = {}
     for sample in ('S1', 'S2'):
@@ -51,9 +61,14 @@ def _build_tar(tmp_path):
             (src / path).parent.mkdir(parents=True, exist_ok=True)
             (src / path).write_text(f'{path}\n')
         recon = src / sample / 'reconstruction'
-        recon.mkdir()
+        recon.mkdir(exist_ok=True)
         (recon / 'amplicon1_graph.txt').write_text('graph\n')
+        (recon / 'amplicon1_cycles.txt').write_text('cycles\n')
     (src / 'run.json').write_text(json.dumps({'runs': runs}))
+    if mtime is not None:
+        for dirpath, dirnames, filenames in os.walk(src):
+            for name in dirnames + filenames:
+                os.utime(os.path.join(dirpath, name), (mtime, mtime))
 
     tar_path = tmp_path / 'upload.tar.gz'
     with tarfile.open(tar_path, 'w:gz') as tar:
@@ -70,6 +85,7 @@ def upload(tmp_path, monkeypatch):
     the upload.
     """
     puts, saved, deleted = [], {}, []
+    blobs = {}
     fail_next = set()
 
     def fake_put(fs, data, filename=None, project_id=None, sample_name=None,
@@ -77,7 +93,7 @@ def upload(tmp_path, monkeypatch):
         if (sample_name, feature_key) in fail_next:
             fail_next.discard((sample_name, feature_key))
             raise IOError('transient GridFS error')
-        data.read()
+        blobs.setdefault((sample_name, feature_key), []).append(data.read())
         puts.append((sample_name, feature_key))
         return ObjectId()
 
@@ -99,14 +115,15 @@ def upload(tmp_path, monkeypatch):
     monkeypatch.setattr(views, 'process_metadata_no_request',
                         lambda runs, **kwargs: runs)
 
-    def run(fail_first=(), fail_on_save=False):
+    def run(fail_first=(), fail_on_save=False, mtime=None, dest='dest'):
         fail_next.update(fail_first)
         collection.fail_on_save = fail_on_save
-        dest = tmp_path / 'dest'
+        dest = tmp_path / dest
         dest.mkdir(exist_ok=True)
-        views.extract_project_files(tarfile, _build_tar(tmp_path), str(dest),
+        views.extract_project_files(tarfile, _build_tar(tmp_path, mtime), str(dest),
                                     str(ObjectId()), None, None, [])
 
+    run.blobs = blobs
     return puts, saved, deleted, run
 
 
@@ -128,6 +145,33 @@ def test_sample_level_files_are_stored_once_per_sample(upload):
             assert isinstance(ids[0], ObjectId)
         # The legacy alias names the same stored directory.
         assert _ids(saved, sample, 'AA directory') == _ids(saved, sample, 'Reconstruction directory')
+
+
+def test_an_unchanged_reconstruction_directory_is_stored_as_the_same_bytes(upload, monkeypatch):
+    """The site packs each reconstruction directory into a tarball of its own.
+
+    It must come out byte-identical for identical files, whenever and from
+    whatever mtimes it is packed, or no two versions of a project could ever
+    share it (#624). Until this, the gzip header carried the time of packing
+    and each member its mtime and owner.
+    """
+    _puts, _saved, _deleted, run = upload
+    for clock, mtime, dest in ((1_000_000, 1_500_000, 'dest1'), (2_000_000, 2_500_000, 'dest2')):
+        monkeypatch.setattr(gzip.time, 'time', lambda clock=clock: clock)
+        run(mtime=mtime, dest=dest)
+
+    for sample in ('S1', 'S2'):
+        first, second = run.blobs[(sample, 'Reconstruction directory')]
+        assert first == second, sample
+        with tarfile.open(fileobj=io.BytesIO(first), mode='r:gz') as tar:
+            members = tar.getmembers()
+            assert [m.name for m in members] == [
+                'reconstruction',
+                'reconstruction/amplicon1_cycles.txt',
+                'reconstruction/amplicon1_graph.txt',
+            ]
+            assert members[0].isdir()
+            assert tar.extractfile(members[2]).read() == b'graph\n'
 
 
 def test_amplicon_and_feature_files_are_stored_once_per_path(upload):
