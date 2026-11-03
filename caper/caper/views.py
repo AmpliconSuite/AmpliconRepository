@@ -12,6 +12,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 from .background_tasks import _thread_executor, get_background_task_status
+from .context_processor import get_shutdown_pending
+from .shutdown_guard import SHUTDOWN_MESSAGE, RETRY_AFTER as SHUTDOWN_RETRY_AFTER
 from . import version_purge
 from .canonical import project_canonical_url, sample_canonical_url
 from .email_contact import contact_footer_text, reply_to
@@ -2860,6 +2862,20 @@ def batch_sample_download(request):
                 f"request; batches over {BATCH_DIRECT_DOWNLOAD_MAX_SAMPLES} are "
                 f"delivered by email. Re-submit with the emailed-link option.")
             _remove_tree(batch_dir)
+            return redirect('gene_search_page')
+
+        # Shutdown mode stops new background work before a restart would kill
+        # it; this is the only path here that starts any.  A batch small enough
+        # to stream back in the request is still served.  The other refusals
+        # are in caper/shutdown_guard.py.
+        if get_shutdown_pending():
+            _remove_tree(batch_dir)
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                response = JsonResponse({'success': False, 'message': SHUTDOWN_MESSAGE},
+                                        status=503)
+                response['Retry-After'] = SHUTDOWN_RETRY_AFTER
+                return response
+            messages.error(request, SHUTDOWN_MESSAGE)
             return redirect('gene_search_page')
 
         if not settings.USE_S3_DOWNLOADS:
