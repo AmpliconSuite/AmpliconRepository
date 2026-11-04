@@ -941,6 +941,13 @@ def admin_permanent_delete_project(project_id, project, project_name):
     Stops at the deadline set by delete_deadline() if one is active, keeping the
     S3 object and the project document so the remaining payload stays reachable.
     Outside a request there is no deadline and the whole payload goes.
+
+    Raises if the payload cannot be dealt with, before S3 and the document are
+    touched: the document is what names the files, and removing it after a
+    failure strands them. A returned message cannot say this, because the batch
+    delete counts a returned message as a project removed and the account
+    deletion ignores it. Each file that will not delete is still only logged, in
+    delete_payload_file_ids().
     """
     error_message = ""
     query = {'_id': ObjectId(project_id)}
@@ -968,32 +975,22 @@ def admin_permanent_delete_project(project_id, project, project_name):
     # (version_file_sharing), and this deletes one document of the chain at a
     # time, so what another document still names is kept. If that cannot be
     # read nothing is deleted: the protected set would be a guess.
-    try:
-        others_need = still_needed_here(project, iter_gridfs_file_ids(project))
-    except Exception:
-        logging.exception('Could not tell which files of %s other versions need.', project_id)
-        return (f"Project {project_name} was not deleted: could not check which of its "
-                f"files other versions still use. Please refer to the application log files.")
-    try:
-        outcome = delete_payload_within_deadline(
-            delete_gridfs_file, project, protected_file_ids=others_need,
-            deadline=current_delete_deadline())
-    except Exception:
-        logging.exception('Problem deleting project files from Mongo.')
-        error_message = "Problem deleting project files from Mongo."
-    else:
-        if outcome.remaining:
-            # Stop here, before S3 and before the document.  Both are records
-            # that the project existed; removing either now would leave the
-            # remaining files named by nothing, which is the exact way the
-            # existing orphan population was created.  Keeping them makes the
-            # next attempt a continuation.
-            return (
-                f"Project {project_name} {PARTIAL_DELETE_MARKER} "
-                f"{outcome.deleted} file(s) removed, {len(outcome.remaining)} still "
-                f"to go. It is still listed as deleted -- select it and submit again "
-                f"to continue where this left off."
-            )
+    others_need = still_needed_here(project, iter_gridfs_file_ids(project))
+    outcome = delete_payload_within_deadline(
+        delete_gridfs_file, project, protected_file_ids=others_need,
+        deadline=current_delete_deadline())
+    if outcome.remaining:
+        # Stop here, before S3 and before the document.  Both are records
+        # that the project existed; removing either now would leave the
+        # remaining files named by nothing, which is the exact way the
+        # existing orphan population was created.  Keeping them makes the
+        # next attempt a continuation.
+        return (
+            f"Project {project_name} {PARTIAL_DELETE_MARKER} "
+            f"{outcome.deleted} file(s) removed, {len(outcome.remaining)} still "
+            f"to go. It is still listed as deleted -- select it and submit again "
+            f"to continue where this left off."
+        )
 
     # Only one of these exists, and usually neither: the extracted upload is a
     # scratch copy that the temp-dir reaper has normally already taken. Picking a
@@ -1418,9 +1415,17 @@ def admin_delete_project(request):
                 project, intended={'status': None, 'documents_removed': True})
             # Same ceiling applies to a single delete: the four largest projects
             # on prod each need more than the 900 s a worker gets.
-            with delete_deadline(REQUEST_DELETE_DEADLINE):
-                error_message = permanently_delete_with_history(
-                    project_id, project, project_name)
+            try:
+                with delete_deadline(REQUEST_DELETE_DEADLINE):
+                    error_message = permanently_delete_with_history(
+                        project_id, project, project_name)
+            except Exception:
+                logging.exception(f"Permanent delete failed for project {project_id} ({project_name}).")
+                # 'Problem' is the word the page's script looks for to colour
+                # the banner as a warning rather than a success.
+                error_message = (f"Problem deleting project {project_name}. It is still listed "
+                                 f"as deleted and keeps its files; please refer to the "
+                                 f"application log files.")
             provenance.confirm(audit_log_handle, purge_event,
                                outcome='failed' if error_message else 'removed',
                                error_message=error_message or None)

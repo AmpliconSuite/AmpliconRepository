@@ -419,3 +419,94 @@ def test_the_bulk_delete_writes_a_provenance_event(projects, deletions):
         assert event is not None, f'no event for {project_id}'
         assert event.get('outcome') == 'removed'
         assert event.get('user_email') == 'bulk@example.com'
+
+
+# ---------------------------------------------------------------------------
+# A delete that fails keeps the document
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(params=['delete_payload_within_deadline', 'still_needed_here'])
+def payload_cannot_go(request, monkeypatch):
+    """The payload delete itself fails, or the check that must come before it does.
+
+    The document is what names the files. Removing it after either of these
+    strands them, with nothing left to say whose they were.
+    """
+    from caper import views_admin
+
+    def fail(*args, **kwargs):
+        raise RuntimeError(f'simulated failure in {request.param}')
+    monkeypatch.setattr(views_admin, request.param, fail)
+
+
+def test_a_failed_delete_raises_and_keeps_the_document(projects, payload_cannot_go):
+    from caper.views_admin import admin_permanent_delete_project
+
+    project_id = projects('-kept')
+    project = projects.collection.find_one({'_id': project_id})
+
+    with pytest.raises(RuntimeError):
+        admin_permanent_delete_project(str(project_id), project, project['project_name'])
+
+    assert projects.collection.find_one({'_id': project_id}) is not None
+
+
+def test_the_batch_reports_a_failed_delete_as_not_deleted(projects, payload_cannot_go):
+    """A returned message would read "Permanently deleted 1 of 1" here."""
+    from caper.views_admin import delete_selected_projects
+
+    project_id = projects('-kept')
+
+    message = delete_selected_projects([str(project_id)])
+
+    assert 'Permanently deleted 0 of 1' in message
+    assert 'Problem deleting' in message
+    assert projects.collection.find_one({'_id': project_id}) is not None
+
+
+def test_a_failure_on_an_older_version_stops_before_the_project(projects, payload_cannot_go):
+    from caper.views_admin import permanently_delete_with_history
+
+    older = projects('-older')
+    head = projects('-head', previous_versions=[{'linkid': str(older)}])
+    project = projects.collection.find_one({'_id': head})
+
+    with pytest.raises(RuntimeError):
+        permanently_delete_with_history(str(head), project, project['project_name'])
+
+    assert projects.collection.find_one({'_id': older}) is not None
+    assert projects.collection.find_one({'_id': head}) is not None
+
+
+def test_the_single_delete_view_reports_a_failure_and_records_it(
+        projects, payload_cannot_go, request_factory, admin_user):
+    from caper import provenance
+    from caper.utils import audit_log_handle
+
+    project_id = projects('-kept')
+    name = projects.collection.find_one({'_id': project_id})['project_name']
+
+    response = _post(request_factory, admin_user,
+                     {'action': 'delete', 'delete': 'on', 'project_id': str(project_id),
+                      'project_name': name})
+
+    assert response.status_code == 200
+    assert b'Problem deleting project' in response.content
+    assert projects.collection.find_one({'_id': project_id}) is not None
+    event = audit_log_handle.find_one(
+        {'event_type': provenance.PERMANENT_DELETE, 'project_uuid': str(project_id)},
+        sort=[('_id', -1)])
+    assert event is not None and event.get('outcome') == 'failed'
+
+
+def test_an_account_deletion_reports_a_failed_delete_as_an_error(projects, payload_cannot_go):
+    """It ignores the returned message, so only an exception can reach its report."""
+    from caper.account_deletion import dispose_of_projects
+
+    username = f'{projects.marker}-user'
+    project_id = projects('-kept', project_members=[username], private='private', delete=False)
+
+    report = dispose_of_projects(username, None, projects_collection=projects.collection)
+
+    assert report['deleted'] == []
+    assert report['errors'] == [projects.collection.find_one({'_id': project_id})['project_name']]
