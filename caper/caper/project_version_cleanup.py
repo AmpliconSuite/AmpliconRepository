@@ -133,7 +133,24 @@ def iter_gridfs_file_ids(value, parent_key=None):
             yield from iter_gridfs_file_ids(child, parent_key)
 
 
-def delete_gridfs_payload_for_project(delete_file, project, protected_file_ids=None):
+def protected_id_strings(protected_file_ids):
+    """*protected_file_ids* as strings, refusing ``None``.
+
+    Every payload deleter takes this set from its caller, with no default.
+    Versions of one project share files (version_file_sharing), so a caller has
+    to have asked what the others still need; an empty set is that answer when
+    nothing does. ``None`` is not an answer: ``version_purge`` uses it for "could
+    not find out", and read here as "protect nothing" it would delete files a
+    surviving version names.
+    """
+    if protected_file_ids is None:
+        raise ValueError('protected_file_ids is None: say what other documents '
+                         'still need (see version_file_sharing), or pass an '
+                         'empty set if that is nothing')
+    return {str(file_id) for file_id in protected_file_ids}
+
+
+def delete_gridfs_payload_for_project(delete_file, project, protected_file_ids):
     """
     Delete every GridFS file this project references, except the protected ones.
 
@@ -160,7 +177,7 @@ PayloadDeletion = collections.namedtuple('PayloadDeletion', 'deleted remaining')
 """What one payload pass achieved: files removed, and file ids not reached."""
 
 
-def delete_payload_within_deadline(delete_file, project, protected_file_ids=None,
+def delete_payload_within_deadline(delete_file, project, protected_file_ids,
                                    deadline=None, now=time.monotonic):
     """``delete_gridfs_payload_for_project`` with a stopping time.
 
@@ -193,7 +210,7 @@ def delete_payload_within_deadline(delete_file, project, protected_file_ids=None
     fully gone; a failed delete is logged, counted as reached, and left out of
     it, because retrying it is not what unblocks the project.
     """
-    protected_file_ids = {str(file_id) for file_id in (protected_file_ids or set())}
+    protected_file_ids = protected_id_strings(protected_file_ids)
     wanted = (file_id for file_id in iter_gridfs_file_ids(project)
               if str(file_id) not in protected_file_ids)
     return delete_payload_file_ids(delete_file, wanted, deadline=deadline,

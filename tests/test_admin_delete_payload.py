@@ -91,7 +91,7 @@ def test_delete_removes_every_referenced_file_including_nested_ones():
         'extra': {'deeper': {'Reconstruction_directory': nested_id}},
     }
     removed = []
-    count = delete_gridfs_payload_for_project(removed.append, project)
+    count = delete_gridfs_payload_for_project(removed.append, project, set())
     assert set(removed) == {nested_id, run_id, tar_id}
     assert count == 3
 
@@ -126,7 +126,7 @@ def test_a_failed_delete_does_not_abandon_the_rest():
         if file_id == bad:
             raise RuntimeError('gridfs is having a day')
 
-    deleted = delete_gridfs_payload_for_project(flaky, project)
+    deleted = delete_gridfs_payload_for_project(flaky, project, set())
     assert set(seen) == {bad, good}, 'must attempt every file'
     assert deleted == 1
 

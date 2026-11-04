@@ -47,6 +47,11 @@ _STATUS_BUCKET = {
     TOMBSTONE: 'tombstone',
 }
 
+# Versions of one project share files, so one file can have holders in several
+# buckets. It is counted once, in the first bucket any holder is in: a file the
+# current version needs reads as current, whichever document the walk met first.
+_BUCKET_RANK = {key: rank for rank, (key, _label) in enumerate(BUCKETS)}
+
 
 def measure(database=None):
     """Walk the database and return one snapshot. Seconds, not milliseconds."""
@@ -62,13 +67,14 @@ def measure(database=None):
     # that exists to stop templates reading the raw visibility field.
     visibility = {'listed': {'files': 0, 'bytes': 0},
                   'restricted': {'files': 0, 'bytes': 0}}
-    seen = set()
+    holders = {}                # file id -> (best bucket rank, any holder private)
     duplicated_bytes = 0
     projects = 0
 
     for project in database['projects'].find({}):
         projects += 1
         bucket = _STATUS_BUCKET.get(classify(project), 'detached')
+        rank = _BUCKET_RANK[bucket]
         documents[bucket] += 1
         # is_project_private() takes the visibility value, not the document --
         # and 'private' is an enum of strings with a legacy boolean spelling,
@@ -86,21 +92,27 @@ def measure(database=None):
                 # Named by a document but absent from fs.files: invariant I12's
                 # finding, and it has no bytes to attribute.
                 continue
-            if file_id in seen:
-                # A second document naming the same file. Measured 2026-09-02
-                # this is zero on both databases, and it stops being zero the
-                # day identical content is stored once.
+            held = holders.get(file_id)
+            if held is None:
+                holders[file_id] = (rank, private)
+            else:
+                # A second document naming the same file, which versions of one
+                # project do by design. Restricted wins for the same reason an
+                # unreadable visibility does, above.
                 duplicated_bytes += size
-                continue
-            seen.add(file_id)
-            buckets[bucket]['files'] += 1
-            buckets[bucket]['bytes'] += size
-            side = 'restricted' if private else 'listed'
-            visibility[side]['files'] += 1
-            visibility[side]['bytes'] += size
+                holders[file_id] = (min(held[0], rank), held[1] or private)
+
+    for file_id, (rank, private) in holders.items():
+        size = lengths[file_id]
+        bucket = BUCKETS[rank][0]
+        buckets[bucket]['files'] += 1
+        buckets[bucket]['bytes'] += size
+        side = 'restricted' if private else 'listed'
+        visibility[side]['files'] += 1
+        visibility[side]['bytes'] += size
 
     for file_id, size in lengths.items():
-        if file_id not in seen:
+        if file_id not in holders:
             buckets['residue']['files'] += 1
             buckets['residue']['bytes'] += size
 

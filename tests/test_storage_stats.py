@@ -6,6 +6,7 @@ what is left rather than a second opinion. A breakdown whose parts do not sum
 to the whole is worse than none, because it invites arithmetic that is wrong.
 """
 
+import pytest
 from bson import ObjectId
 
 from caper import storage_stats
@@ -76,6 +77,41 @@ def test_a_file_two_documents_name_is_counted_once():
     assert sum(b['bytes'] for b in snapshot['buckets'].values()) == 500
     assert snapshot['shared_bytes'] == 500, 'the second naming is reported'
     assert snapshot['buckets']['residue']['files'] == 0
+
+
+@pytest.mark.parametrize('current_first', [True, False])
+def test_a_shared_file_counts_under_the_version_that_needs_it(current_first):
+    """Whichever document the walk meets first. Counted under the first, a file
+    the current version needs would move to "older versions" as sharing grows."""
+    shared, old_only = _file(500), _file(30)
+    current = {'_id': ObjectId(), 'delete': False, 'current': True,
+               'private': 'public', 'tarfile': shared['_id']}
+    older = {'_id': ObjectId(), 'delete': True, 'current': False, 'private': 'public',
+             'tarfile': old_only['_id'], 'Run metadata JSON': shared['_id']}
+    db = _Database('caper-test', [current, older] if current_first else [older, current],
+                   [shared, old_only])
+
+    snapshot = storage_stats.measure(db)
+
+    assert snapshot['buckets']['live'] == {'files': 1, 'bytes': 500}
+    assert snapshot['buckets']['superseded'] == {'files': 1, 'bytes': 30}
+    assert snapshot['documents']['live'] == 1
+    assert snapshot['documents']['superseded'] == 1
+    assert snapshot['shared_bytes'] == 500
+    assert sum(b['bytes'] for b in snapshot['buckets'].values()) == snapshot['bytes'] == 530
+
+
+@pytest.mark.parametrize('private_first', [True, False])
+def test_a_file_any_restricted_version_names_is_restricted(private_first):
+    shared = _file(500)
+    docs = [{'_id': ObjectId(), 'delete': False, 'current': True,
+             'private': visibility, 'tarfile': shared['_id']}
+            for visibility in (('private', 'public') if private_first else ('public', 'private'))]
+
+    snapshot = storage_stats.measure(_Database('caper-test', docs, [shared]))
+
+    assert snapshot['visibility']['restricted']['bytes'] == 500
+    assert snapshot['visibility']['listed']['bytes'] == 0
 
 
 def test_a_named_file_with_no_fs_files_row_contributes_nothing():

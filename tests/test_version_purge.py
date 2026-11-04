@@ -106,7 +106,7 @@ def test_the_same_id_is_only_listed_once():
               'runs': {'r': [{'AA directory': repeated},
                              {'Reconstruction directory': repeated}]}}
 
-    assert version_purge.payload_ids_to_purge(victim) == [repeated]
+    assert version_purge.payload_ids_to_purge(victim, set()) == [repeated]
 
 
 # ---------------------------------------------------------------------------
