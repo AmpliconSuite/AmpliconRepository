@@ -59,6 +59,7 @@ from pathlib import Path
 from .views_admin import (
     admin_featured_projects, admin_all_projects, admin_version_details, admin_sendemail, admin_stats,
     admin_permanent_delete_project, admin_delete_user, admin_delete_project,
+    tag_publication_version,
     user_stats_download, site_stats_regenerate, project_stats_download, sizeof_fmt,
     fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report, make_project_current,
     admin_audit_log,
@@ -130,7 +131,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
-from . import deleted_projects, download_totals, lineage, project_fields, provenance
+from . import deleted_projects, download_totals, lineage, project_fields, provenance, publication_versions
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
@@ -1221,6 +1222,7 @@ def project_page(request, project_name, message=''):
         'stackedbar_graph': stacked_bar_plot,
         'summarybar': pc_fig,
         'prev_versions': prev_versions,
+        'may_tag_publication_versions': bool(getattr(getattr(request, 'user', None), 'is_staff', False)),
         'prev_versions_length': len(prev_versions),
         'active_prev_versions_length': len(active_prev_versions),
         'has_promotable_project_version': has_promotable_project_version,
@@ -3337,6 +3339,21 @@ def delete_project_version(request, project_name, version_id):
 
     deleting_current = (version_id == current_linkid)
     deleter = get_current_user(request)
+
+    # Read from the primary: a tag written a moment ago must not be missed.
+    tagged = collection_handle_primary.find_one({'_id': ObjectId(version_id)})
+    if publication_versions.is_protected(tagged):
+        try:
+            typed = json.loads(request.body or b'{}').get('confirm_project_name')
+        except (ValueError, AttributeError):
+            typed = None
+        if not publication_versions.name_confirmed(tagged, typed):
+            return JsonResponse({
+                'error': 'This version is recorded as used in a publication. '
+                         'Type the project name to delete it.',
+                'publication': tagged[publication_versions.FIELD].get('publication'),
+                'project_name': tagged.get('project_name'),
+            }, status=409)
 
     # this version's data is going away; any graph cached from it is dead weight
     invalidate_project_coamp_graphs(version_id)
