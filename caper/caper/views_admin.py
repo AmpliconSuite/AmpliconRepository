@@ -1191,6 +1191,13 @@ def permanent_delete_size(project, lengths=None):
     for _target_id, document in targets:
         file_ids.update(iter_gridfs_file_ids(document))
 
+    # A version that survives this delete keeps the files it shares with these
+    # (version_file_sharing), so they are not freed. If that cannot be read this
+    # raises, and the page shows "unknown" rather than a number it cannot stand
+    # behind.
+    file_ids -= still_needed_here(project, file_ids,
+                                  also_going=[target_id for target_id, _ in targets])
+
     total_bytes = 0
     counted = 0
     if file_ids:

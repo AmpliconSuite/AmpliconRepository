@@ -97,7 +97,7 @@ def make_project(mongo_collection):
     yield _make
     for pid in made:
         doc = mongo_collection.find_one({'_id': pid}) or {}
-        delete_gridfs_payload_for_project(delete_gridfs_file, doc)
+        delete_gridfs_payload_for_project(delete_gridfs_file, doc, set())
         mongo_collection.delete_one({'_id': pid})
         for root in ('tmp', os.path.join('caper', 'tmp')):
             shutil.rmtree(os.path.join(root, str(pid)), ignore_errors=True)

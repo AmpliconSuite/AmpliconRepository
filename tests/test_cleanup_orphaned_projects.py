@@ -1,3 +1,4 @@
+import pytest
 from bson import ObjectId
 
 from caper.project_status import matches
@@ -89,8 +90,15 @@ def test_delete_gridfs_files_for_project_handles_current_underscore_keys():
         },
     }
 
-    assert delete_gridfs_files_for_project(fs.delete, project) == 3
+    assert delete_gridfs_files_for_project(fs.delete, project, set()) == 3
     assert fs.deleted == [str(tar_id), str(png_id), str(graph_id)]
+
+
+def test_the_script_refuses_to_guess_what_is_protected():
+    fs = FakeGridFS()
+    with pytest.raises(ValueError):
+        delete_gridfs_files_for_project(fs.delete, {'tarfile': ObjectId()}, None)
+    assert fs.deleted == []
 
 
 def test_collect_protected_ids_preserves_deleted_version_tombstones():
@@ -197,7 +205,7 @@ def test_gridfs_deletion_uses_the_canonical_key_list():
         }]},
     }
 
-    assert delete_gridfs_files_for_project(fs.delete, project) == 5
+    assert delete_gridfs_files_for_project(fs.delete, project, set()) == 5
     for missed in (run_meta_id, recon_id, cycles_id):
         assert str(missed) in fs.deleted
 

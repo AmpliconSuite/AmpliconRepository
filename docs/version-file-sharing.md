@@ -120,6 +120,28 @@ The match also treats the aggregator 6 field names as their 7.0 names
 files). Re-aggregating a 6.1.0 project on dev with 8.3.1 gave identical bytes
 under the new name in 58 of 58 features for each pair.
 
+## Rules for new code
+
+- **Same id means same bytes. Different ids mean nothing.** Private copies are a
+  permanent, normal state, not a leftover: files from before this change,
+  directories packed before #712, a sample renamed in depth, an archive
+  compressed by another build of zlib, and any upload whose reuse lookup failed
+  all store their own copy. To ask whether two files are identical, compare
+  their hashes.
+- **Every payload deleter is told what to protect.** They take
+  `protected_file_ids` with no default, and refuse `None`. Pass what
+  `still_needed_here()` returns. An empty set is a valid answer. Pass one on
+  purpose only when every document naming the files is going too.
+
+## Accounting
+
+- **Admin > Usage Stats** counts a shared file once, in the first bucket any
+  holder is in (`Current versions` before `Older versions`), and as restricted
+  if any holder is.
+- **The permanent-delete page** leaves out files a surviving version keeps, so
+  it shows what the delete frees. Files shared only among the versions being
+  deleted are counted once.
+
 ## Not done here
 
 - **Sharing across projects.** Ruled out on #624: pointers between projects are
@@ -127,6 +149,3 @@ under the new name in 58 of 58 features for each pair.
 - **Identical files across samples within one version.** Matching requires the
   same sample and field, so a reused file is always the same file in the same
   place.
-- **`permanent_delete_size()`.** It still sums every file a project names, so
-  for a project that shares files with a surviving version, the admin page
-  overstates what a permanent delete frees.

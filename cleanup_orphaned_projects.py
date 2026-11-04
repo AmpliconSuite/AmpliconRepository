@@ -70,6 +70,7 @@ from caper.project_version_cleanup import (
     GRIDFS_FILE_KEYS,
     delete_gridfs_file_in_batches,
     iter_gridfs_file_ids,
+    protected_id_strings,
 )
 # Same reason for project_status: every protection rule below used to be a
 # hand-written copy of a query in caper/utils.py, and the copy is what drifted.
@@ -341,7 +342,7 @@ def collect_retained_file_ids(all_projects, orphaned_ids):
 
 
 def delete_gridfs_files_for_project(delete_file, project,
-                                    protected_file_ids=None, dry_run=False):
+                                    protected_file_ids, dry_run=False):
     """
     Delete every GridFS file the *project* document names — the tarfile, the
     per-sample feature files, and the directory-shaped payloads.
@@ -364,7 +365,7 @@ def delete_gridfs_files_for_project(delete_file, project,
 
     Returns the count deleted, or the count that would be deleted.
     """
-    protected_file_ids = {str(file_id) for file_id in (protected_file_ids or ())}
+    protected_file_ids = protected_id_strings(protected_file_ids)
     file_ids = []
     seen = set()
     shared = 0

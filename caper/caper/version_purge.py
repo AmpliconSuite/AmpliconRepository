@@ -55,16 +55,17 @@ from .project_version_cleanup import (
     PURGE_CLAIM_STALE_SECONDS,
     delete_payload_file_ids,
     iter_gridfs_file_ids,
+    protected_id_strings,
 )
 
 
-def payload_ids_to_purge(victim, protected_file_ids=None):
+def payload_ids_to_purge(victim, protected_file_ids):
     """The file ids deleting *victim* should remove, protected ones excluded.
 
     Read from the document **before** its tombstone replaces it, which is the
     only moment the payload keys are still there.
     """
-    protected = {str(file_id) for file_id in (protected_file_ids or set())}
+    protected = protected_id_strings(protected_file_ids)
     seen, wanted = set(), []
     for file_id in iter_gridfs_file_ids(victim):
         key = str(file_id)

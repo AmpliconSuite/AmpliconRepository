@@ -44,7 +44,7 @@ class _Clock:
 def test_no_deadline_deletes_the_whole_payload():
     project, ids = _project(5)
     removed = []
-    assert delete_gridfs_payload_for_project(removed.append, project) == 5
+    assert delete_gridfs_payload_for_project(removed.append, project, set()) == 5
     assert set(removed) == set(ids)
 
 
@@ -54,7 +54,7 @@ def test_a_deadline_stops_the_pass_and_reports_what_is_left():
     clock = _Clock()
 
     outcome = delete_payload_within_deadline(
-        removed.append, project, deadline=3.0, now=clock)
+        removed.append, project, set(), deadline=3.0, now=clock)
 
     assert outcome.deleted == len(removed)
     assert outcome.remaining, 'the deadline did not stop the pass'
@@ -67,7 +67,7 @@ def test_every_file_is_either_deleted_or_reported():
     project, ids = _project(25)
     removed = []
     outcome = delete_payload_within_deadline(
-        removed.append, project, deadline=5.0, now=_Clock())
+        removed.append, project, set(), deadline=5.0, now=_Clock())
 
     assert set(removed) | set(outcome.remaining) == set(ids)
 
@@ -77,7 +77,7 @@ def test_an_expired_deadline_still_deletes_one_file():
     project, _ = _project(4)
     removed = []
     outcome = delete_payload_within_deadline(
-        removed.append, project, deadline=-1.0, now=_Clock())
+        removed.append, project, set(), deadline=-1.0, now=_Clock())
 
     assert outcome.deleted == 1
     assert len(outcome.remaining) == 3
@@ -91,11 +91,11 @@ def test_a_second_pass_finishes_what_the_first_left():
     def delete(file_id):
         store.discard(file_id)
 
-    first = delete_payload_within_deadline(delete, project, deadline=4.0, now=_Clock())
+    first = delete_payload_within_deadline(delete, project, set(), deadline=4.0, now=_Clock())
     assert store, 'nothing left to resume; widen the test'
 
     # The document is untouched, so it still names everything that is left.
-    second = delete_gridfs_payload_for_project(delete, project)
+    second = delete_gridfs_payload_for_project(delete, project, set())
 
     assert store == set()
     assert second == len(first.remaining) + first.deleted
@@ -121,7 +121,7 @@ def test_a_failing_delete_is_not_reported_as_remaining():
         seen.append(file_id)
         raise RuntimeError('GridFS is unhappy')
 
-    outcome = delete_payload_within_deadline(flaky, project)
+    outcome = delete_payload_within_deadline(flaky, project, set())
 
     assert len(seen) == 3
     assert outcome.deleted == 0
@@ -132,5 +132,5 @@ def test_the_underscore_spelling_is_still_walked():
     """The deadline path must not quietly reintroduce a narrower key set."""
     project, ids = _project(4, key='Sample_metadata_JSON')
     removed = []
-    delete_payload_within_deadline(removed.append, project)
+    delete_payload_within_deadline(removed.append, project, set())
     assert set(removed) == set(ids)

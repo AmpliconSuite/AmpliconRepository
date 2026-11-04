@@ -16,6 +16,11 @@ from bson import ObjectId
 from caper import views_admin
 
 
+@pytest.fixture(autouse=True)
+def _nothing_survives(monkeypatch):
+    monkeypatch.setattr(views_admin, 'still_needed_here', lambda *a, **k: set())
+
+
 class _FakeFiles:
     def __init__(self, lengths):
         self.lengths = lengths
@@ -104,6 +109,18 @@ def test_a_file_named_twice_is_counted_once(monkeypatch):
 
     assert removal['bytes'] == 500
     assert removal['files'] == 1
+
+
+def test_a_size_that_cannot_be_worked_out_raises(wired, monkeypatch):
+    """The page turns this into "unknown". A guess here would read as a promise."""
+    head, _files = wired
+
+    def unreadable(*args, **kwargs):
+        raise RuntimeError('primary unreachable')
+    monkeypatch.setattr(views_admin, 'still_needed_here', unreadable)
+
+    with pytest.raises(RuntimeError):
+        views_admin.permanent_delete_size(head)
 
 
 def test_the_size_and_the_delete_walk_the_same_documents():
