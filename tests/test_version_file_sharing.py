@@ -20,7 +20,7 @@ import backfill_gridfs_sha256 as backfill
 import caper.views as views
 from caper import lineage, utils, version_purge
 from caper.gridfs_backlinks import iter_backlinks
-from caper.project_status import LIVE, SUPERSEDED, TOMBSTONE, classify, status_flags
+from caper.project_status import LIVE, SOFT_DELETED, SUPERSEDED, TOMBSTONE, classify, status_flags
 from caper.project_version_cleanup import PENDING_PAYLOAD_KEY, iter_gridfs_file_ids
 from caper.version_file_sharing import (
     REUSED_BY, SHA256, files_still_needed,
@@ -294,6 +294,52 @@ def test_admin_permanent_delete_keeps_what_another_version_names(versions):
     assert utils.collection_handle_primary.find_one({'_id': v1['_id']}) is None
     assert set(_rows(_ids(v2))) == _ids(v2)
     assert not _rows(_ids(v1) - _ids(v2))
+
+
+def _length(file_ids):
+    return sum(row.get('length', 0) for row in _rows(file_ids).values())
+
+
+def test_the_delete_page_promises_what_the_button_frees(versions):
+    """v1 and v2 go together and v3 stays. What v3 shares with them is not freed;
+    what v1 and v2 share only with each other is freed, and once."""
+    from caper.views_admin import permanent_delete_size, permanently_delete_with_history
+    projects = utils.collection_handle_primary
+    v1 = versions()
+    v2 = versions(changed={'S2'})
+    v3 = versions(changed={'S1', 'S2'})
+    for doc in (v1, v2):
+        projects.update_one({'_id': doc['_id']}, {'$set': status_flags(SOFT_DELETED)})
+    v2 = projects.find_one({'_id': v2['_id']})
+    freed = (_ids(v1) | _ids(v2)) - _ids(v3)
+    assert _ids(v1) & _ids(v2) - _ids(v3), 'the case of a file only the victims share'
+    assert _ids(v2) & _ids(v3), 'the case of a file the survivor keeps'
+
+    promised = permanent_delete_size(v2)
+
+    assert promised['versions'] == 2
+    assert promised['files'] == len(freed)
+    assert promised['bytes'] == _length(freed)
+
+    before = _rows(_ids(v1) | _ids(v2) | _ids(v3))
+    permanently_delete_with_history(str(v2['_id']), v2, v2['project_name'])
+    after = _rows(before)
+    gone = set(before) - set(after)
+
+    assert gone == freed, 'the page and the button disagree about which files go'
+    assert sum(before[f].get('length', 0) for f in gone) == promised['bytes']
+    assert _ids(v3) <= set(after)
+
+
+def test_a_delete_page_for_a_version_with_a_survivor_is_not_overstated(versions):
+    from caper.views_admin import permanent_delete_size
+    v1 = versions()
+    v2 = versions(changed={'S2'})
+
+    promised = permanent_delete_size(v1)
+
+    assert promised['files'] == len(_ids(v1) - _ids(v2))
+    assert promised['bytes'] == _length(_ids(v1) - _ids(v2))
 
 
 # --- Files stored before uploads recorded a hash (backfill_gridfs_sha256.py) ---

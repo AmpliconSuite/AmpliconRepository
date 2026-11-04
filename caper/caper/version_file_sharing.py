@@ -208,7 +208,7 @@ def _in_progress(document):
             and classify(document) != TOMBSTONE)
 
 
-def files_still_needed(projects, fs_files, victim, candidate_ids):
+def files_still_needed(projects, fs_files, victim, candidate_ids, also_going=()):
     """Which of *candidate_ids* another document still needs. Never deletes.
 
     *victim* is the document whose payload is being removed (or its tombstone).
@@ -218,6 +218,10 @@ def files_still_needed(projects, fs_files, victim, candidate_ids):
     document the candidates' backlinks name (writer and reusers). The backlinks
     only add documents to read; a file is kept or released by what those
     documents contain.
+
+    *also_going* names documents to leave out as well, for a question about a
+    delete of several documents at once. The deletes themselves go one document
+    at a time and do not pass it.
 
     Read from the primary: a version that has just claimed a file must not be
     missed because a replica has not seen it yet.
@@ -251,6 +255,7 @@ def files_still_needed(projects, fs_files, victim, candidate_ids):
                     to_read.add(reuser)
                     claimed_by.setdefault(reuser, set()).add(row['_id'])
     to_read.discard(victim_id)
+    to_read -= {as_object_id(doc_id) for doc_id in also_going}
 
     needed = set()
     for doc_id in to_read:
@@ -263,8 +268,8 @@ def files_still_needed(projects, fs_files, victim, candidate_ids):
     return needed
 
 
-def still_needed_here(victim, candidate_ids):
+def still_needed_here(victim, candidate_ids, also_going=()):
     """``files_still_needed`` against this site's database, read from the primary."""
     from .utils import collection_handle_primary, db_handle_primary
     return files_still_needed(collection_handle_primary, db_handle_primary['fs.files'],
-                              victim, candidate_ids)
+                              victim, candidate_ids, also_going)

@@ -133,7 +133,7 @@ def test_the_version_delete_path_deletes_a_multi_chunk_file(gridfs_file):
     file_id = gridfs_file(chunks=8)
     project = {'_id': ObjectId(), 'tarfile': file_id}
 
-    assert delete_gridfs_payload_for_project(delete_gridfs_file, project) == 1
+    assert delete_gridfs_payload_for_project(delete_gridfs_file, project, set()) == 1
     assert _counts(gridfs_file, file_id) == (0, 0)
 
 

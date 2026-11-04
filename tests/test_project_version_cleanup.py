@@ -1,3 +1,4 @@
+import pytest
 from bson import ObjectId
 
 from caper.project_status import matches
@@ -51,8 +52,34 @@ def test_delete_gridfs_payload_for_project_deduplicates_files():
         'runs': {'sample1': [{'AA_directory': tar_id}]},
     }
 
-    assert delete_gridfs_payload_for_project(fs.delete, project) == 1
+    assert delete_gridfs_payload_for_project(fs.delete, project, set()) == 1
     assert fs.deleted == [str(tar_id)]
+
+
+def test_a_deleter_refuses_to_guess_what_is_protected():
+    """None means "could not find out" in version_purge. Read as "protect
+    nothing" it would delete files a surviving version names."""
+    from caper import version_purge
+    from caper.project_version_cleanup import delete_payload_within_deadline
+    fs = FakeGridFS()
+    project = {'tarfile': ObjectId()}
+
+    for call in (lambda: delete_gridfs_payload_for_project(fs.delete, project, None),
+                 lambda: delete_payload_within_deadline(fs.delete, project, None),
+                 lambda: version_purge.payload_ids_to_purge(project, None)):
+        with pytest.raises(ValueError):
+            call()
+    assert fs.deleted == []
+
+
+def test_an_empty_protected_set_is_a_real_answer():
+    """Asked, and nothing else needs them: the usual answer for a project with
+    one version. It must not be mistaken for not having asked."""
+    fs = FakeGridFS()
+    file_id = ObjectId()
+
+    assert delete_gridfs_payload_for_project(fs.delete, {'tarfile': file_id}, set()) == 1
+    assert fs.deleted == [str(file_id)]
 
 
 def test_delete_gridfs_payload_for_project_skips_protected_shared_files():
@@ -93,7 +120,7 @@ def test_a_file_that_will_not_delete_is_logged_and_the_rest_still_go(caplog):
     }
 
     with caplog.at_level('WARNING'):
-        assert delete_gridfs_payload_for_project(delete_file, project) == 1
+        assert delete_gridfs_payload_for_project(delete_file, project, set()) == 1
 
     assert str(stubborn) in caplog.text
     assert str(fine) not in caplog.text
