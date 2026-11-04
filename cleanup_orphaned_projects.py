@@ -72,6 +72,7 @@ from caper.project_version_cleanup import (
     iter_gridfs_file_ids,
     protected_id_strings,
 )
+from caper.publication_versions import is_protected
 # Same reason for project_status: every protection rule below used to be a
 # hand-written copy of a query in caper/utils.py, and the copy is what drifted.
 from caper.project_status import (
@@ -598,6 +599,12 @@ def main():
                     f"    REFUSING to delete {pid}: get_one_project() can still "
                     f"resolve it. The protection rules and the resolver have "
                     f"drifted apart — fix collect_protected_ids().")
+                continue
+
+            # A publication used this version. Nobody here to confirm that.
+            if is_protected(project):
+                logger.error(f"    REFUSING to delete {pid}: it is tagged as used in a "
+                             f"publication. Look at it by hand.")
                 continue
 
             # 2a. GridFS

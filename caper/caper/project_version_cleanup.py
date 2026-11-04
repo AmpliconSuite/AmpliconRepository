@@ -310,6 +310,10 @@ def discard_unrecorded_gridfs_files(delete_file, file_ids):
 #: interrupted purge resumable instead of a matter for a global orphan sweep.
 PENDING_PAYLOAD_KEY = 'pending_payload_file_ids'
 
+#: publication_versions.FIELD, which imports project_status and so can't be
+#: imported from here at module scope; test_publication_versions holds them equal.
+PUBLICATION_TAG_FIELD = 'publication_tag'
+
 #: When a worker last took responsibility for the pending purge above.  Every
 #: gunicorn worker checks for interrupted purges when it starts, so the claim
 #: is what stops eight of them running the same one.  A claim older than
@@ -388,6 +392,11 @@ def build_deleted_version_tombstone(old_project, latest_project, deleter,
     for field in DATED_COUNTERS:
         if old_project.get(field):
             tombstone[field] = old_project[field]
+
+    # What was deleted: a tombstone is written with replace_one, so a tag left off
+    # this dict would destroy the record that a publication used this version.
+    if old_project.get(PUBLICATION_TAG_FIELD):
+        tombstone[PUBLICATION_TAG_FIELD] = old_project[PUBLICATION_TAG_FIELD]
 
     # The payload is removed after this document is written, not before, so the
     # tombstone has to carry the ids until they are gone. See PENDING_PAYLOAD_KEY.

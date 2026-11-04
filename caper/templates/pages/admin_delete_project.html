@@ -24,8 +24,15 @@ function undelete_project(event, project_id, project_name) {
   }
 
 
-  function set_project_deleted(event, project_id, project_name, to_be_deleted) {
+  function set_project_deleted(event, project_id, project_name, to_be_deleted, publication_versions) {
         var goahead = confirm("Really PERMANENTLY delete project " + project_name + "("+project_id+")? This cannot be undone.");
+        if (goahead && publication_versions) {
+            // The server checks this too; here so that the question comes before the POST.
+            var typed = prompt("This project holds " + publication_versions + " version(s) recorded as used in a publication. "
+                + "To delete them anyway, type the project name:\n\n" + project_name);
+            goahead = typed !== null;
+            document.getElementById("form__confirm_project_name").value = typed || "";
+        }
         if (goahead){
 
             let form = document.getElementById("form__submit");
@@ -207,6 +214,7 @@ function undelete_project(event, project_id, project_name) {
                      <input id="form__project_id" type="text" name="project_id" /><br />
                      <input id="form__delete" type="checkbox" name="delete" /><br /><br />
                      <input id="form__action" type="text" name="action" /><br />
+                     <input id="form__confirm_project_name" type="text" name="confirm_project_name" /><br />
 
                   </form>
 
@@ -290,13 +298,16 @@ function undelete_project(event, project_id, project_name) {
                                     {% if project.delete_versions %}
                                     <br><small class="text-muted">{{ project.delete_versions }} version{{ project.delete_versions|pluralize }}{% if project.delete_files %}, {{ project.delete_files }} file{{ project.delete_files|pluralize }}{% endif %}</small>
                                     {% endif %}
+                                    {% if project.delete_publication_versions %}
+                                    <br><small class="text-danger" title="Versions recorded as used in a publication. The bulk delete skips this project; deleting it on its own asks for the project name.">{{ project.delete_publication_versions }} used in a publication</small>
+                                    {% endif %}
                                     {% if project.delete_unresolved %}
                                     <br><small class="text-warning" title="History entries naming a version that is already gone. They are skipped, and contribute nothing to the total.">{{ project.delete_unresolved }} dangling</small>
                                     {% endif %}
                                 </td>
                                 <td>
 
-                                    <input type = "button"  onclick="set_project_deleted(event, '{{ project.linkid }}', '{{ project.project_name }}', true)" value="delete"/>
+                                    <input type = "button"  onclick="set_project_deleted(event, '{{ project.linkid }}', '{{ project.project_name }}', true, {{ project.delete_publication_versions|default:0 }})" value="delete"/>
 
                                 </td>
                             </tr>

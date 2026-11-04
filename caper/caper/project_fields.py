@@ -118,6 +118,8 @@ VERSION_LEVEL = frozenset({
     'Reconstruction_tools',
     'aggregator_version',
     'sample_name_remap_enabled',
+    # which publication used this run; see publication_versions
+    'publication_tag',
     # how it turned out
     'FINISHED?',
     'aggregation_failed',

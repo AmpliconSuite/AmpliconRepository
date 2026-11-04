@@ -60,6 +60,9 @@ PERMANENT_DELETE = 'permanent_delete'
 PURGE_PAYLOAD = 'purge_payload'
 """GridFS files were removed while the document stayed."""
 
+TAG_PUBLICATION_VERSION = 'tag_publication_version'
+"""An admin recorded, or removed, which publication used a version."""
+
 DELETION_EVENTS = (DELETE_PROJECT, RESTORE_PROJECT, DELETE_VERSION,
                    PROMOTE_VERSION, PERMANENT_DELETE, PURGE_PAYLOAD)
 

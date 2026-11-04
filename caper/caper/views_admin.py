@@ -3,6 +3,7 @@ Admin-related views for the Caper application.
 This module contains all administrative functions that require staff privileges.
 """
 
+import json
 import logging
 import os
 import csv
@@ -14,7 +15,7 @@ import threading
 import time
 from pathlib import Path
 
-from django.http import FileResponse, HttpResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import get_user_model
@@ -30,6 +31,7 @@ from django.utils.html import strip_tags
 
 import boto3
 
+from bson.errors import InvalidId
 from bson.objectid import ObjectId
 
 from .email_contact import contact_context, reply_to
@@ -51,6 +53,7 @@ from .project_version_cleanup import (
     iter_gridfs_file_ids,
 )
 from .version_file_sharing import still_needed_here
+from . import publication_versions
 from .background_tasks import get_background_task_status
 from .project_status import (
     DETACHED,
@@ -949,6 +952,8 @@ def admin_permanent_delete_project(project_id, project, project_name):
     deletion ignores it. Each file that will not delete is still only logged, in
     delete_payload_file_ids().
     """
+    publication_versions.refuse_unless_confirmed(project)
+
     error_message = ""
     query = {'_id': ObjectId(project_id)}
 
@@ -1034,6 +1039,50 @@ def admin_permanent_delete_project(project_id, project, project_name):
         error_message = f"Project {project_name} deleted."
 
     return error_message
+
+
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def tag_publication_version(request, project_name, version_id):
+    """Record which publication used a version, or remove that record.
+
+    Admins only: the tag decides how hard the version is to delete. See
+    publication_versions.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    project = get_one_project(project_name)
+    if not project:
+        return JsonResponse({"error": "Project not found"}, status=404)
+    try:
+        body = json.loads(request.body or b'{}')
+        version_oid = ObjectId(version_id)
+    except (ValueError, InvalidId):
+        return JsonResponse({"error": "Bad request"}, status=400)
+
+    version = collection_handle_primary.find_one({'_id': version_oid})
+    chain_id = project.get('version_chain_id')
+    if version is None or chain_id is None or version.get('version_chain_id') != chain_id:
+        return JsonResponse({"error": "That version is not part of this project"}, status=404)
+    if is_tombstone(version):
+        return JsonResponse({"error": "That version has been deleted"}, status=409)
+
+    field = publication_versions.FIELD
+    if body.get('action') == 'remove':
+        update, intended = {'$unset': {field: ''}}, {field: None}
+    else:
+        try:
+            tag = publication_versions.build_tag(body.get('publication'), body.get('evidence'),
+                                                 request.user)
+        except ValueError as error:
+            return JsonResponse({"error": str(error)}, status=400)
+        update, intended = {'$set': {field: tag}}, {field: tag}
+
+    event = provenance.record(audit_log_handle, provenance.TAG_PUBLICATION_VERSION,
+                              request.user, version, intended=intended,
+                              previous_tag=version.get(field))
+    collection_handle_primary.update_one({'_id': version_oid}, update)
+    provenance.confirm(audit_log_handle, event)
+    return JsonResponse({"success": True})
 
 
 def _lookup_account(username):
@@ -1219,10 +1268,13 @@ def permanent_delete_size(project, lengths=None):
         'files':      counted,
         'bytes':      total_bytes,
         'unresolved': unresolved,
+        'publication_versions': sum(1 for _target_id, document in targets
+                                    if publication_versions.is_protected(document)),
     }
 
 
-def permanently_delete_with_history(project_id, project, project_name):
+def permanently_delete_with_history(project_id, project, project_name,
+                                    confirm_project_name=None):
     """
     Permanently delete a soft-deleted project along with the older versions its
     history names, and return a message describing what happened.
@@ -1251,18 +1303,28 @@ def permanently_delete_with_history(project_id, project, project_name):
     strictly lower ordinal -- so this still never reaches forward across the
     chain to versions nobody selected.
     """
+    targets, unresolved = _permanent_delete_targets(project)
+
+    # Checked for the whole chain before anything goes, so that a tagged version
+    # refuses the delete rather than stopping it halfway down the history.
+    if (any(publication_versions.is_protected(document) for _target_id, document in targets)
+            and not publication_versions.name_confirmed(project, confirm_project_name)):
+        raise publication_versions.PublicationVersionProtected(
+            f"{project_name} holds a version used in a publication")
+
     # Before anything goes: afterwards no document is left to say what the
     # project's URLs were.
     deleted_urls.ensure_recorded(collection_handle, deleted_urls_handle, project)
-    targets, unresolved = _permanent_delete_targets(project)
 
     # The last target is the project itself; the caller's project_name is used
     # for it so the message keeps naming what the operator selected.
     message = ''
-    for target_id, document in targets[:-1]:
-        admin_permanent_delete_project(target_id, document,
-                                       document.get('project_name'))
-    message = admin_permanent_delete_project(project_id, project, project_name)
+    with (publication_versions.delete_confirmed() if confirm_project_name
+          else contextlib.nullcontext()):
+        for target_id, document in targets[:-1]:
+            admin_permanent_delete_project(target_id, document,
+                                           document.get('project_name'))
+        message = admin_permanent_delete_project(project_id, project, project_name)
     # Asked of the primary: the message is never empty, and a replica may not
     # have seen the delete yet.
     if collection_handle_primary.find_one({'_id': ObjectId(str(project_id))}, {'_id': 1}) is None:
@@ -1334,6 +1396,14 @@ def delete_selected_projects(project_ids, time_budget=BULK_DELETE_TIME_BUDGET,
                 intended={'status': None, 'documents_removed': True})
             try:
                 outcome = permanently_delete_with_history(project_id, project, name)
+            except publication_versions.PublicationVersionProtected as protected:
+                # Nobody here to type the name. Not a failure of the batch, so it
+                # goes on to the next project.
+                provenance.confirm(audit_log_handle, purge_event,
+                                   outcome='refused', error_message=str(protected))
+                problems.append(f"{name} (holds a version used in a publication: "
+                                f"delete it on its own)")
+                continue
             except Exception:
                 logging.exception(f"Permanent delete failed for project {project_id} ({name}).")
                 provenance.confirm(audit_log_handle, purge_event,
@@ -1425,7 +1495,14 @@ def admin_delete_project(request):
             try:
                 with delete_deadline(REQUEST_DELETE_DEADLINE):
                     error_message = permanently_delete_with_history(
-                        project_id, project, project_name)
+                        project_id, project, project_name,
+                        confirm_project_name=request.POST.get('confirm_project_name'))
+            except publication_versions.PublicationVersionProtected as protected:
+                # 'Problem' colours the banner as a warning; see below.
+                error_message = (f"Problem deleting project {project_name}: it holds a version "
+                                 f"used in a publication, and the project name typed did not "
+                                 f"match. Nothing was deleted.")
+                logging.warning(str(protected))
             except Exception:
                 logging.exception(f"Permanent delete failed for project {project_id} ({project_name}).")
                 # 'Problem' is the word the page's script looks for to colour
@@ -1468,6 +1545,7 @@ def admin_delete_project(request):
             proj['delete_size'] = sizeof_fmt(removal['bytes'])
             proj['delete_files'] = removal['files']
             proj['delete_unresolved'] = len(removal['unresolved'])
+            proj['delete_publication_versions'] = removal['publication_versions']
         except Exception as error:
             # A size that cannot be computed must not read as a small one.
             logging.warning(
@@ -1477,6 +1555,8 @@ def admin_delete_project(request):
             proj['delete_size'] = 'unknown'
             proj['delete_files'] = None
             proj['delete_unresolved'] = 0
+            # Unknown is not "none": the page still asks, and the delete checks.
+            proj['delete_publication_versions'] = 1
 
     return render(request, 'pages/admin_delete_project.html',
                   {'deleted_projects': deleted_projects, 'error_message': error_message})

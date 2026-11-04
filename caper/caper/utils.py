@@ -1200,6 +1200,7 @@ def _current_version_history_entry(project):
     entry = {
         'date': project.get('date', '1999-01-01T00:00:00.000000'),
         'linkid': str(project.get('linkid', project['_id'])),
+        'publication_tag': project.get('publication_tag'),
     }
     for field in VERSION_HISTORY_FIELDS:
         entry[field] = project.get(field, 'NA')
@@ -1294,7 +1295,7 @@ def _sort_history_entries_newest_first(entries):
 HISTORY_PROJECTION = {
     field: 1 for field in
     ['date', 'linkid', 'project_name', 'version_chain_id', 'version_ordinal',
-     'is_latest'] + VERSION_HISTORY_FIELDS + DELETED_VERSION_HISTORY_FIELDS
+     'is_latest', 'publication_tag'] + VERSION_HISTORY_FIELDS + DELETED_VERSION_HISTORY_FIELDS
 }
 
 

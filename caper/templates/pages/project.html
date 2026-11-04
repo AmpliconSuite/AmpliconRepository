@@ -1979,6 +1979,15 @@ paged.
                                     {% endif %}
                                     {% if version.version_deleted_from_history %}
                                         <span class="badge badge-secondary">Deleted</span>
+                                    {% elif version.publication_tag %}
+                                        <span class="badge badge-info" title="{{ version.publication_tag.publication }}">Used in publication</span>
+                                    {% endif %}
+                                    {% if may_tag_publication_versions and not version.version_deleted_from_history %}
+                                        {% if version.publication_tag %}
+                                            <button class="btn btn-link btn-sm p-0" onclick="removePublicationTag('{{ version.linkid }}')">Remove tag</button>
+                                        {% else %}
+                                            <button class="btn btn-link btn-sm p-0" onclick="tagPublicationVersion('{{ version.linkid }}')">Tag publication</button>
+                                        {% endif %}
                                     {% endif %}
                                 </td>
                                 <td scope="row">{{ version.Reconstruction_tools|default:"AmpliconArchitect" }}</td>
@@ -2061,6 +2070,10 @@ paged.
                 return;
             }
 
+            sendVersionDelete(currentProjectId, versionId, null);
+        }
+
+        function sendVersionDelete(currentProjectId, versionId, typedName) {
             // Show a loading state
             document.body.classList.add('wait-cursor');
 
@@ -2071,6 +2084,7 @@ paged.
                     'X-CSRFToken': getCookie('csrftoken'),
                     'Content-Type': 'application/json'
                 },
+                data: JSON.stringify({confirm_project_name: typedName}),
                 success: function(response) {
                     document.body.classList.remove('wait-cursor');
                     if (response.success && response.redirect) {
@@ -2081,6 +2095,18 @@ paged.
                 },
                 error: function(xhr, status, error) {
                     document.body.classList.remove('wait-cursor');
+                    if (xhr.status === 409 && xhr.responseJSON && xhr.responseJSON.project_name) {
+                        // Tagged as used in a publication: the server asks for the name.
+                        var typed = prompt('This version is recorded as used in a publication:\n\n'
+                            + xhr.responseJSON.publication
+                            + '\n\nDeleting it removes the data that publication relies on, and '
+                            + 'cannot be undone. To delete it anyway, type the project name:\n\n'
+                            + xhr.responseJSON.project_name);
+                        if (typed !== null) {
+                            sendVersionDelete(currentProjectId, versionId, typed);
+                        }
+                        return;
+                    }
                     var errorMsg = 'An error occurred while deleting the version.';
                     if (xhr.responseJSON && xhr.responseJSON.error) {
                         errorMsg = xhr.responseJSON.error;
@@ -2088,6 +2114,36 @@ paged.
                     alert(errorMsg);
                 }
             });
+        }
+
+        function sendPublicationTag(versionId, body) {
+            $.ajax({
+                url: '/project/{{ project.linkid }}/publication_tag/' + versionId,
+                type: 'POST',
+                headers: {
+                    'X-CSRFToken': getCookie('csrftoken'),
+                    'Content-Type': 'application/json'
+                },
+                data: JSON.stringify(body),
+                success: function() { window.location.reload(); },
+                error: function(xhr) {
+                    alert((xhr.responseJSON && xhr.responseJSON.error) || 'Could not change the tag.');
+                }
+            });
+        }
+
+        function tagPublicationVersion(versionId) {
+            var publication = prompt('Which publication used this version? (link or citation)');
+            if (!publication) { return; }
+            var evidence = prompt('How do we know? (for example, the version id in its data availability statement)');
+            if (!evidence) { return; }
+            sendPublicationTag(versionId, {action: 'set', publication: publication, evidence: evidence});
+        }
+
+        function removePublicationTag(versionId) {
+            if (confirm('Remove the record that a publication used this version? It can then be deleted without the extra check.')) {
+                sendPublicationTag(versionId, {action: 'remove'});
+            }
         }
         </script>
     </div>

@@ -108,7 +108,7 @@ Deleting an old project version now purges its heavy GridFS payload but keeps a 
 - `payload_purged: True`
 - `redirect_to_project: <current_project_id>`
 
-`utils.get_one_project()` resolves these tombstones to the surviving project. Cleanup code must preserve them. Use `caper/caper/project_version_cleanup.py` helpers when changing version deletion behavior, especially `iter_gridfs_file_ids()`, `delete_gridfs_payload_for_project()`, and `build_deleted_version_tombstone()`. Versions of one project share files, so every payload deleter must be told what to protect: pass what `version_file_sharing.still_needed_here()` returns.
+`utils.get_one_project()` resolves these tombstones to the surviving project. Cleanup code must preserve them. Use `caper/caper/project_version_cleanup.py` helpers when changing version deletion behavior, especially `iter_gridfs_file_ids()`, `delete_gridfs_payload_for_project()`, and `build_deleted_version_tombstone()`. Versions of one project share files, so every payload deleter must be told what to protect: pass what `version_file_sharing.still_needed_here()` returns. A version tagged as used in a publication (`publication_versions`) takes a typed project name to delete, and any path with nobody to ask must refuse it.
 
 Files (tarballs from AmpliconSuiteAggregator) are stored in **GridFS** and referenced by ObjectId within the project document. Use `tar_utils.extract_from_project_tarfile()` to stream-extract specific paths without writing the full tar to disk.
 

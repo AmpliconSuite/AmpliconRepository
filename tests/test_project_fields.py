@@ -69,9 +69,13 @@ def test_every_field_measured_on_prod_or_dev_is_classified():
         f'{sorted(MEASURED_2026_08_29 - DECLARED)}')
 
 
+#: Fields written by code newer than the census, each named on purpose.
+ADDED_SINCE_THE_CENSUS = frozenset({'publication_tag'})
+
+
 def test_nothing_is_declared_that_was_never_seen():
     """A set that grows by guesswork is the thing this module replaces."""
-    invented = DECLARED - MEASURED_2026_08_29
+    invented = DECLARED - MEASURED_2026_08_29 - ADDED_SINCE_THE_CENSUS
     assert not invented, (
         f'declared but present on neither deployment on 2026-08-29: {sorted(invented)}. '
         'Either the census is stale and should be re-run, or the name is wrong.')
