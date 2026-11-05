@@ -2002,7 +2002,7 @@ paged.
                                 <td scope="row">{{ version.aggregator_version|default:"NA" }}</td>
                                 <td scope="row">
                                     {% if version.version_deleted_from_history %}
-                                        <span class="text-muted">Project deleted</span>
+                                        <span class="text-muted">Version deleted</span>
                                     {% else %}
                                         <a class="btn btn-primary btn-sm" href="/project/{{ version.linkid }}/download" style="color: white;">Download</a>
                                     {% endif %}
