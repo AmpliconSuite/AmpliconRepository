@@ -625,14 +625,18 @@
                                         <span class="badge badge-event-edit-no">Edit</span>
                                     {% endif %}
                                     {% if entry.backfilled %}
-                                        {# Reconstructed from the project document's own date and
-                                           creator, not observed when it happened. #}
+                                        {% comment %}
+                                        Reconstructed from the project document's own date and
+                                        creator, not observed when it happened.
+                                        {% endcomment %}
                                         <span class="badge badge-event-reconstructed"
                                               title="Reconstructed from the project's date and creator; not recorded at the time">reconstructed</span>
                                     {% endif %}
                                     {% if entry.event_type in deletion_events and not entry.completed %}
-                                        {# Recorded before the mutation and never confirmed: the
-                                           operation started and did not finish. Worth seeing. #}
+                                        {% comment %}
+                                        Recorded before the mutation and never confirmed: the
+                                        operation started and did not finish. Worth seeing.
+                                        {% endcomment %}
                                         <span class="badge badge-event-unfinished"
                                               title="Recorded before the change; never confirmed as completed">unfinished</span>
                                     {% endif %}
