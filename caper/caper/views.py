@@ -1212,6 +1212,8 @@ def project_page(request, project_name, message=''):
     total_time = time.time() - t_total_start
     logging.info(f"[PERF] Total project_page processing for {project_name}: {total_time:.3f}s")
 
+    may_tag_publication_versions = bool(getattr(getattr(request, 'user', None), 'is_staff', False))
+
     return render(request, "pages/project.html", {
         'project': project,
         'metadata_summary': metadata_summary,
@@ -1222,7 +1224,9 @@ def project_page(request, project_name, message=''):
         'stackedbar_graph': stacked_bar_plot,
         'summarybar': pc_fig,
         'prev_versions': prev_versions,
-        'may_tag_publication_versions': bool(getattr(getattr(request, 'user', None), 'is_staff', False)),
+        'may_tag_publication_versions': may_tag_publication_versions,
+        'publication_link_to_offer': (publication_versions.link_to_offer(collection_handle, project)
+                                      if may_tag_publication_versions else ''),
         'prev_versions_length': len(prev_versions),
         'active_prev_versions_length': len(active_prev_versions),
         'has_promotable_project_version': has_promotable_project_version,

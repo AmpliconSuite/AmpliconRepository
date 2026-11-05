@@ -27,6 +27,7 @@ import contextlib
 import datetime
 import threading
 
+from . import lineage
 from .project_status import is_tombstone
 
 FIELD = 'publication_tag'
@@ -60,6 +61,19 @@ def build_tag(publication, evidence, user):
         'tagged_by': getattr(user, 'username', None) or str(user),
         'tagged_at': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
+
+
+def link_to_offer(collection, project):
+    """The project's publication link, to offer when tagging one of its versions.
+
+    Read from the head, since the link belongs to the project and an older
+    version need not carry it. Measured read-only on prod 2026-11-04: all 36
+    chains with a link hold one distinct link and the head has it, while 14 of
+    their 59 superseded versions have none.
+    """
+    head = lineage.latest_version(collection, project, {'publication_link': 1, 'is_latest': 1,
+                                                        'version_ordinal': 1})
+    return ((head or project).get('publication_link') or '').strip()
 
 
 def name_confirmed(document, typed):

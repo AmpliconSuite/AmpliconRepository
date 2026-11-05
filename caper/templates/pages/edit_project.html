@@ -573,8 +573,10 @@
         </button>
       </form>
 
-      {# Its own form, after the edit form's close: forms cannot nest, and this
-         one must not carry the edit form's fields or wait on its licence box. #}
+      {% comment %}
+      Its own form, after the edit form's close: forms cannot nest, and this
+      one must not carry the edit form's fields or wait on its licence box.
+      {% endcomment %}
       <div style="border-top: 1px solid #000; margin: 32px 0 16px;"></div>
       <h3>Delete project</h3>
       <p>Deletes this project <strong>and every earlier version of it</strong>. Links to any of its

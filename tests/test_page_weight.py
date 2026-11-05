@@ -19,6 +19,7 @@ The contract these tests pin down:
 """
 
 import ast
+import glob
 import os
 
 import pytest
@@ -101,13 +102,24 @@ def test_template_loads_plotly_once_before_the_figures(template_path, figure_mar
     )
 
 
-@pytest.mark.parametrize('template_path', (SAMPLE_TEMPLATE, PROJECT_TEMPLATE))
+ALL_TEMPLATES = sorted(glob.glob(os.path.join(REPO_ROOT, 'caper', 'templates', '**', '*.html'),
+                                 recursive=True))
+
+
+def test_the_comment_check_sees_the_templates():
+    assert PROJECT_TEMPLATE in ALL_TEMPLATES and SAMPLE_TEMPLATE in ALL_TEMPLATES
+
+
+@pytest.mark.parametrize('template_path', ALL_TEMPLATES)
 def test_no_multiline_hash_comments(template_path):
     """``{# #}`` is single-line only in Django; a multi-line one renders verbatim.
 
     Caught in dev testing on 2026-08-07, with a paragraph about plotly.js
     displayed to users at the top of every project and sample page.  Multi-line
     commentary belongs in ``{% comment %} ... {% endcomment %}``.
+
+    Checked two templates until 2026-11-04, when the same mistake turned up on
+    the project edit page, which sat outside them.
     """
     with open(template_path) as fh:
         lines = fh.read().splitlines()

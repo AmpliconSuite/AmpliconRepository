@@ -382,3 +382,76 @@ def test_the_history_table_reads_the_tag(chain):
     tags = {entry['linkid']: entry.get('publication_tag') for entry in entries}
     assert tags[str(old['_id'])] == TAG
     assert tags[str(head['_id'])] is None
+
+
+# --- Offering the project's link when tagging ---
+
+def _set_link(*documents, link):
+    from caper.utils import collection_handle_primary as projects
+    projects.update_many({'_id': {'$in': [d['_id'] for d in documents]}},
+                         {'$set': {'publication_link': link, 'private': 'public'}})
+
+
+def _page(request_factory, user, document):
+    from django.contrib.messages.storage.fallback import FallbackStorage
+    from django.contrib.sessions.middleware import SessionMiddleware
+
+    from caper.views import project_page
+    req = request_factory.get(f"/project/{document['_id']}", HTTP_HOST='localhost')
+    req.user = user
+    SessionMiddleware(lambda r: None).process_request(req)
+    req.session.save()
+    req._messages = FallbackStorage(req)
+    return project_page(req, str(document['_id'])).content.decode()
+
+
+LINK = 'https://pubmed.ncbi.nlm.nih.gov/12345/'
+
+
+def test_tagging_offers_the_projects_link_already_selected(chain, request_factory, admin_user):
+    old, head = chain()
+    _set_link(old, head, link=LINK)
+
+    page = _page(request_factory, admin_user, head)
+
+    assert f'id="publicationChoiceProject" value="{LINK}" checked' in page
+    assert 'id="publicationTagOther" maxlength="1000" placeholder="Link or citation" disabled' in page
+
+
+def test_an_older_version_without_the_link_still_offers_the_projects(chain, request_factory, admin_user):
+    old, head = chain()
+    _set_link(head, link=LINK)
+    _set_link(old, link='')
+
+    assert f'value="{LINK}" checked' in _page(request_factory, admin_user, old)
+
+
+def test_with_no_link_there_is_only_the_box_to_type_in(chain, request_factory, admin_user):
+    old, head = chain()
+    _set_link(old, head, link='')
+
+    page = _page(request_factory, admin_user, head)
+
+    assert 'id="publicationTagModal"' in page
+    assert 'id="publicationChoiceProject"' not in page
+    assert 'placeholder="Link or citation" required' in page
+
+
+def test_the_link_is_what_someone_typed_so_it_is_escaped(chain, request_factory, admin_user):
+    old, head = chain()
+    _set_link(old, head, link='"><script>alert(1)</script>')
+
+    page = _page(request_factory, admin_user, head)
+
+    assert '<script>alert(1)</script>' not in page
+    assert 'value="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;" checked' in page
+
+
+def test_someone_who_is_not_an_admin_gets_no_tagging_dialog(chain, request_factory):
+    old, head = chain()
+    _set_link(old, head, link=LINK)
+
+    page = _page(request_factory, _NotAdmin(), head)
+
+    assert 'id="publicationTagModal"' not in page
+    assert 'Tag publication</button>' not in page
