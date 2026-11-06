@@ -67,6 +67,7 @@ caper/caper/           # Main Django app
   search.py            # MongoDB-based project/sample search
   extra_metadata.py    # CSV/TSV/XLSX metadata attachment to samples
   sample_metadata_rows.py # Which feature row holds a sample's metadata; readers for both stored forms
+  project_record_size.py # Refuses a project or metadata sheet that would not fit in one document
   gridfs_cache.py      # Django cache wrapper around GridFS reads
   tar_utils.py         # Stream-extract files from GridFS-stored tarballs
   site_stats.py        # Aggregated stats stored in MongoDB 'site_statistics'

@@ -142,6 +142,8 @@ from .project_version_cleanup import (
 
 from .extra_metadata import *
 from .sample_metadata_rows import sample_metadata_of
+from .project_record_size import (
+    LIMIT_BYTES, refuse_new_version_over_limit, size_after_metadata_edit, too_large_message)
 
 # imports for coamp graph
 from .neo4j_utils import (load_graph, fetch_subgraph, fetch_overview,
@@ -1036,7 +1038,8 @@ def project_page(request, project_name, message=''):
                 request,
                 "Project aggregation failed during editing. "
                 "Your previous version has been automatically restored — "
-                "you can retry the edit from here."
+                "you can retry the edit from here. "
+                f"{project.get('error_message') or ''}".strip()
             )
             return redirect('edit_project_page', project_name=rollback_id)
         set_project_edit_OK_flag(project, request)
@@ -4708,6 +4711,21 @@ def edit_project_page(request, project_name):
         if not form.is_valid():
             return _render_edit_project_page(request, project, form, status=400)
 
+        # Also before anything is written. A sheet with no new archive applies to
+        # these samples, so its size can be known exactly and refused right away.
+        if (metadata_file and not request.FILES.getlist('document')
+                and not samples_to_remove and project.get('runs')):
+            try:
+                record_size = size_after_metadata_edit(project, metadata_file)
+            except Exception:
+                # An unreadable sheet is reported by the edit itself.
+                logging.exception('Could not size a metadata sheet for %s', project_name)
+                record_size = None
+            if record_size is not None and record_size > LIMIT_BYTES:
+                return _render_edit_project_page(
+                    request, project, form, status=400,
+                    alert_message=too_large_message(record_size, True))
+
         ## give the new project the old project alias.
         inherit_alias = not form.cleaned_data.get('alias') and bool(old_alias_name)
         if inherit_alias:
@@ -4840,7 +4858,7 @@ def edit_project_page(request, project_name):
     return _render_edit_project_page(request, project, form)
 
 
-def _render_edit_project_page(request, project, form, status=200):
+def _render_edit_project_page(request, project, form, status=200, alert_message=None):
     """The edit page for *project*, around *form* -- unbound on GET, or the
     bound one a POST failed to validate, so its errors and entries show."""
     sample_names = set()
@@ -4859,6 +4877,7 @@ def _render_edit_project_page(request, project, form, status=200):
                    'sample_names': sample_names,
                    'all_alias': json.dumps(get_all_alias()),
                    "is_empty_project": project_is_empty(project),
+                   'alert_message': alert_message,
                    **get_metadata_remap_edit_context(project),
                    }, status=status)
 
@@ -5816,6 +5835,12 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
 
         ## after running aggregator, use the aggregated file for project creation:
         logging.info(f"Aggregated filename: {agg.aggregated_filename}")
+
+        # Before anything is stored. Raising here reaches the handler below, which
+        # rolls an edit back to the old version or marks a new project as failed.
+        refuse_new_version_over_limit(
+            agg.aggregated_filename, extra_metadata_file_fp, old_extra_metadata,
+            remap_names_to_alias=(name_map_file_path is not None))
 
         # Read the aggregated file and create a temporary uploaded file
         with open(agg.aggregated_filename, 'rb') as f:
