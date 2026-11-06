@@ -65,6 +65,8 @@ import os
 import re
 import sys
 
+import ops_lock
+
 OBJECT_ID_RE = re.compile(r'(?<![0-9a-fA-F])([0-9a-fA-F]{24})(?![0-9a-fA-F])')
 
 DEFAULT_BUCKET = 'amprepo-private'
@@ -169,6 +171,7 @@ def main():
     ap.add_argument('--execute', action='store_true')
     ap.add_argument('--limit', type=int, default=None)
     ap.add_argument('--undo-record', default=None)
+    ops_lock.add_no_lock_argument(ap)
     args = ap.parse_args()
 
     if len(args.ids_file) < args.require_databases:
@@ -250,6 +253,10 @@ def main():
     if not args.execute:
         print('\nREPORT ONLY -- nothing deleted. Add --execute.')
         return 0
+
+    # This tool reads id files and S3, not the database, so the lock it takes is the
+    # one for the environment it's being run from.
+    ops_lock.require_for_environment('sweep_s3_unreferenced --execute', args.no_lock)
 
     if args.limit:
         candidates = candidates[:args.limit]

@@ -30,6 +30,12 @@ from caper.gridfs_backlinks import (
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def _operator_lock_is_not_under_test(monkeypatch):
+    """These run main() against stand-in databases, which require() can't read."""
+    monkeypatch.setattr('ops_lock.require', lambda *args, **kwargs: None)
+
+
 @pytest.fixture
 def scratch(mongo_collection):
     """Empty scratch collections in the test database, dropped afterwards."""

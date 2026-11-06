@@ -58,6 +58,7 @@ import sys
 
 from bson import ObjectId
 from pymongo import MongoClient, uri_parser
+import ops_lock  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
 
@@ -841,9 +842,12 @@ def main():
                         help='Where to record the inverse of each write. '
                              'Defaults to a timestamped file in the working '
                              'directory. Only written under --execute.')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args()
 
     projects = connect(args.expect_db, args.expect_host)
+    if args.execute:
+        ops_lock.require(projects.database, 'backfill_project_status --execute', args.no_lock)
     print('mode: %s\n' % ('EXECUTE -- writes documents' if args.execute
                           else 'REPORT -- nothing is written (pass --execute)'))
 

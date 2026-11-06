@@ -32,9 +32,18 @@ class Collection(FakeHistoryCollection):
     database = _Database()
 
 
+class _LockChecks(list):
+    def append_call(self, _db, purpose, no_lock=None):
+        self.append(purpose)
+
+
+LOCK_CHECKS = _LockChecks()
+
+
 def run(monkeypatch, collection, argv):
     monkeypatch.setattr(recover, 'collection_handle', collection)
     monkeypatch.setattr(sys, 'argv', ['recover_deleted_version.py'] + argv)
+    monkeypatch.setattr(recover.ops_lock, 'require', LOCK_CHECKS.append_call)
     return recover.main()
 
 
@@ -181,3 +190,12 @@ def test_the_wrong_database_stops_the_run_before_it_reads_anything(monkeypatch):
 
     assert 'caper-dev' in str(exit_info.value)
     assert 'version_deleted_from_history' in collection.docs[str(tombstone['_id'])]
+
+
+def test_only_a_write_checks_the_operator_lock(monkeypatch):
+    tombstone, head = chain_of_two(purged=False)
+    LOCK_CHECKS.clear()
+    run(monkeypatch, Collection([tombstone, head]), [str(tombstone['_id'])])
+    assert LOCK_CHECKS == []
+    run(monkeypatch, Collection([tombstone, head]), [str(tombstone['_id']), '--apply'])
+    assert LOCK_CHECKS == ['recover_deleted_version --apply']

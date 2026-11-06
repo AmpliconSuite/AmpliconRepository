@@ -52,6 +52,7 @@ import time
 
 from bson import ObjectId
 from pymongo import MongoClient, ReadPreference, uri_parser
+import ops_lock  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
 
@@ -521,6 +522,7 @@ def main(argv=None):
     parser.add_argument('--undo-file')
     parser.add_argument('--delete-log')
     parser.add_argument('--budget-seconds', type=float)
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args(argv)
     # Runs on a server go to a log file, where stdout is block-buffered: a
     # report that has run for an hour would otherwise show an empty log.
@@ -534,6 +536,8 @@ def main(argv=None):
         parser.error('--phase delete needs --delete-log (appended to; it is how a run resumes)')
 
     db = connect(args.expect_db, args.expect_host)
+    if args.execute:
+        ops_lock.require(db, 'dedupe_sample_level_copies --execute', args.no_lock)
     print('mode:', 'EXECUTE' if args.execute else 'REPORT, nothing is written', '| phase:', args.phase)
     if args.execute:
         require_quiet(db)

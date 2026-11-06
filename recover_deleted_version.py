@@ -55,6 +55,8 @@ import sys
 
 import django
 
+import ops_lock
+
 # ---------------------------------------------------------------------------
 # Bootstrap Django so we can reuse the app's DB settings and collection_handle
 # ---------------------------------------------------------------------------
@@ -143,6 +145,7 @@ def main():
                              'required for any database not on this machine')
     parser.add_argument('--apply', action='store_true',
                         help='Actually write changes (default is dry-run)')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args()
 
     # Prod and dev share one cluster, and dev's database has the same name as
@@ -152,6 +155,8 @@ def main():
     if args.expect_db is not None and db_name != args.expect_db:
         raise SystemExit(f'connected to database {db_name!r}, but --expect-db '
                          f'says {args.expect_db!r}. Check which config.sh is sourced.')
+    if args.apply:
+        ops_lock.require(collection_handle.database, 'recover_deleted_version --apply', args.no_lock)
 
     print(f"\n{'=' * 60}")
     print(f"Database        : {db_name}")

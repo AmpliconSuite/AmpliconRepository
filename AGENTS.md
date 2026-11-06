@@ -27,6 +27,26 @@ Never commit `caper/config.sh` or `caper/.env` to version control.
 
 ---
 
+## Critical: The Operator Lock Before Any Write to Dev or Prod
+
+**Before any write to dev or prod**, run `ops_lock.py --expect-db <db> status`. Wrap the
+work in `ops_lock.py --expect-db <db> run --holder H --owner O --reason "..." -- <command>`,
+or `acquire` it and `release` it when done. If the lock is held, report the holder and
+reason to your user and use `wait`. Do not `break` it or work around it. On prod, each of
+these is still a write that needs its own explicit ask.
+
+What counts as a write: the `--apply` or `--execute` mode of a maintenance script, `manage.py`
+commands that write, deploys, container and Neo4j restarts, `shutdown_mode.py on/off`,
+migrations and backfills, and test runs or manual testing on dev that create, edit or delete
+projects. Reads, reports and dry runs don't need it, and neither does your own local database.
+
+The repo's write tools refuse without the lock on dev and prod. `--no-lock "<reason>"` is for
+emergencies, and its reason is logged. The lock only coordinates operators: uploads through
+the site don't need it, and users are kept out by shutdown mode. See
+[docs/ops-lock-spec.md](docs/ops-lock-spec.md).
+
+---
+
 ## Architecture Overview
 
 ### Dual-Database Design (key non-obvious detail)

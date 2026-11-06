@@ -25,6 +25,7 @@ import os
 import sys
 
 from pymongo import ASCENDING, MongoClient, ReadPreference
+import ops_lock  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
 
@@ -120,6 +121,7 @@ def main(argv=None):
                         help='write at most N chains, for staging a first run')
     parser.add_argument('--verbose', action='store_true',
                         help='list every chain, not just the counts')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args(argv)
 
     db_name = os.getenv('DB_NAME', 'caper')
@@ -129,6 +131,8 @@ def main(argv=None):
     projects = database['projects']
     chain_view = database[COLLECTION]
     print(f'target: {db_name} ({args.expect_host})')
+    if args.execute:
+        ops_lock.require(database, 'rebuild_version_chains --execute', args.no_lock)
 
     to_create, stale, agreeing, empty, orphaned = plan(projects, chain_view)
 

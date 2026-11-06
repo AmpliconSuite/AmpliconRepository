@@ -25,6 +25,7 @@ import os
 import sys
 
 from pymongo import MongoClient
+import ops_lock  # noqa: E402
 from pymongo.read_preferences import ReadPreference
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
@@ -101,6 +102,7 @@ def main(argv=None):
     parser.add_argument('--undo-file', metavar='PATH',
                         help='where to write the inverse of every write')
     parser.add_argument('--verbose', action='store_true')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args(argv)
 
     db_name = os.getenv('DB_NAME', 'caper')
@@ -109,6 +111,8 @@ def main(argv=None):
     database = connect(db_name, args.expect_host)
     audit, projects = database[AUDIT], database['projects']
     print(f'target: {db_name} ({args.expect_host})')
+    if args.execute:
+        ops_lock.require(database, 'backfill_audit_chain_ids --execute', args.no_lock)
 
     total = audit.count_documents({})
     already = audit.count_documents({'version_chain_id': {'$exists': True}})

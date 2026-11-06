@@ -24,7 +24,8 @@ Usage (on the server, from the repo root, which the container mounts at /srv):
 Locally, `source caper/config.sh` first and run it with the conda python.
 
 `on` and `off` are database writes. On prod (`--expect-db caper`) each one is
-its own explicit ask, like any other write to production.
+its own explicit ask, like any other write to production. They also need the
+operator lock on dev and prod, so run them inside `ops_lock.py run --`.
 
 What the task check can and cannot see. Background tasks are rows in
 `background_tasks` with `state: 'running'`; nothing refreshes them while they
@@ -45,6 +46,8 @@ import sys
 import time
 
 from pymongo import MongoClient, ReadPreference
+
+import ops_lock
 
 FLAGS_ID = 'system_flags'
 FLAG = 'shutdown_pending'
@@ -168,6 +171,7 @@ def main(argv=None):
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--expect-db', required=True,
                         help="Abort unless DB_NAME is this. 'caper' is prod, 'caper-dev' is dev.")
+    ops_lock.add_no_lock_argument(parser)
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('status', help='print the flag and any running background tasks')
     on = sub.add_parser('on', help='enable shutdown mode (refuses while tasks run)')
@@ -183,6 +187,8 @@ def main(argv=None):
     settings_col, tasks_col = db['system_settings'], db['background_tasks']
 
     report(db.name, get_flag(settings_col), running_tasks(tasks_col))
+    if args.command in ('on', 'off'):
+        ops_lock.require(db, 'shutdown_mode.py %s' % args.command, args.no_lock)
     if args.command == 'on':
         return cmd_on(settings_col, tasks_col, args.allow_running)
     if args.command == 'off':

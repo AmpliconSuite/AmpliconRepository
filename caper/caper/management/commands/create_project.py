@@ -13,7 +13,11 @@ from django.utils.datastructures import MultiValueDict
 from django.http import QueryDict
 
 from caper.views import create_project
-from caper.utils import normalize_visibility_field
+from caper.utils import collection_handle, normalize_visibility_field
+
+# ops_lock.py sits at the repo root, and manage.py runs from caper/.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), *['..'] * 4)))
+import ops_lock  # noqa: E402
 
 
 class Command(BaseCommand):
@@ -38,7 +42,10 @@ class Command(BaseCommand):
         parser.add_argument('--chunk-size', type=int, default=8192, 
                           help='Chunk size for downloading files (in bytes)')
     
+        ops_lock.add_no_lock_argument(parser)
+
     def handle(self, *args, **options):
+        ops_lock.require(collection_handle.database, 'manage.py create_project', options['no_lock'])
         project_name = options['project_name']
         username = options['username']
         file_path = options['file_path']

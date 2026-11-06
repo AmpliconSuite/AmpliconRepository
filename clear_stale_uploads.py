@@ -33,6 +33,7 @@ import sys
 
 from bson import ObjectId
 from pymongo import MongoClient
+import ops_lock  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
 
@@ -199,9 +200,12 @@ def main():
     parser.add_argument('--undo-file',
                         help='Where to record each removed document. Defaults '
                              'to a timestamped file. Only under --execute.')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args()
 
     projects = connect(args.expect_db)
+    if args.execute:
+        ops_lock.require(projects.database, 'clear_stale_uploads --execute', args.no_lock)
     print('mode: %s\n' % ('EXECUTE -- deletes documents' if args.execute
                           else 'REPORT -- nothing is deleted (pass --execute)'))
 

@@ -307,6 +307,11 @@ Three consequences worth knowing:
 Four kinds of tool, and the kind matters more than the name. **Nothing in the
 first two columns writes.**
 
+**The operator lock.** `ops_lock.py` holds one lease per database, so people and agents can
+see who is changing dev or prod. The write tools below refuse without it on dev and prod
+(`--no-lock "<reason>"` overrides and is logged). The lock is
+`system_settings/{_id: ops_lock}` and its history is `ops_lock_log`.
+
 ### Surveyors — report only, never delete
 
 | tool | the question it answers |
@@ -360,6 +365,9 @@ exactly one member qualifies and it is `SUPERSEDED` gets the wrong head.
 ---
 
 ## 8. The admin pages
+
+When the operator lock is held, staff see one line saying who holds it at the top of the
+`/admin` pages. The site never enforces the lock.
 
 All sixteen were exercised locally on 2026-09-02; every one returned without
 raising.

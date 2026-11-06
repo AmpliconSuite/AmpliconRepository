@@ -102,6 +102,11 @@
             <h1 id="page-title">{% block title %}{% endblock %}</h1>
             <h5 id="page-description">{% block description %}{% endblock %}</h5>
             {% endblock %} -->
+            {% if OPS_LOCK %}
+            <div class="alert alert-warning" role="status">
+                Operator lock held by {{ OPS_LOCK.holder }} ({{ OPS_LOCK.owner }}) for {{ OPS_LOCK.minutes_held }} min, expires in {{ OPS_LOCK.minutes_left }} min: {{ OPS_LOCK.reason }}
+            </div>
+            {% endif %}
             <!-- Display the main content -->
             {% block main-container %}
             <div>

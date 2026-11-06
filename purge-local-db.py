@@ -23,6 +23,8 @@ import shutil
 from bson import ObjectId
 from pymongo import MongoClient
 
+import ops_lock
+
 from cleanup_orphaned_projects import collect_protected_ids
 
 # cleanup_orphaned_projects puts caper/ on sys.path, so these imports resolve.
@@ -504,6 +506,7 @@ def parse_args():
         action='store_true',
         help='Report project tarfile references and whether their GridFS files exist.',
     )
+    ops_lock.add_no_lock_argument(parser)
     return parser.parse_args()
 
 
@@ -515,6 +518,8 @@ def main():
         print(f"{'Purging' if args.execute else 'Inspecting'} {db_name}")
         db_handle, mongo_client = get_db_handle(db_name, args.uri)
         try:
+            if args.execute:
+                ops_lock.require(db_handle, 'purge-local-db --execute', args.no_lock)
             if args.smart_gridfs:
                 smart_purge_gridfs(
                     db_handle,
