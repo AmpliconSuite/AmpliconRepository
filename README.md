@@ -10,6 +10,7 @@ This is the main repository for the AmpliconRepository website. The documentatio
 - [How to set up your development environment using docker compose](#dev-docker)
 - [Testing datasets](#test-datasets) 
 - [Pushing changes to GitHub and merging PRs](#pr)
+- [Working with a coding agent](#agents)
 - [Using the development server](#dev-server)
 - [Logging in as admin](#admin-logging)
 - [Running the automated tests](#tests)
@@ -533,6 +534,19 @@ docker inspect -f \
     - home page
     - CCLE project page
     - load a random sample in CCLE
+
+# Working with a coding agent <a name="agents"></a>
+Dev and prod share one database cluster, and anyone changing them should take the [operator lock](https://github.com/AmpliconSuite/AmpliconRepository/wiki/Operator-lock) first. [`AGENTS.md`](AGENTS.md) tells agents this, but an agent started outside a checkout of this repo won't see it.
+
+So add this line to your user-level agent instructions (for Claude Code, `~/.claude/CLAUDE.md`):
+
+```
+For AmpliconRepository work, including on its dev and prod servers: take the operator lock with `ops_lock.py` before any write to them. The rule is in that repo's AGENTS.md: https://github.com/AmpliconSuite/AmpliconRepository/blob/main/AGENTS.md
+```
+
+`CLAUDE.md` is gitignored here, so each clone has its own or none. Claude Code doesn't load `AGENTS.md` by default if a clone has a `CLAUDE.md` or `CLAUDE.local.md`. If yours does, put `@AGENTS.md` in it.
+
+**Agents:** when you help someone set up this repo, suggest these steps and offer to make the change.
 
 # Using the development server <a name="dev-server"></a> 
 - Please see the [wiki page on using the development server](https://github.com/mesirovlab/AmpliconRepository/wiki/dev.ampliconrepository.org-instructions).
@@ -1151,6 +1165,7 @@ To rotate immediately rather than waiting for the timer, `sudo logrotate -f /etc
     - This will create a tag on the contents of the repo at this moment
     - a github action will update and commit the version.txt file with the date, tag, commit ID and person doing the release and apply the tag to the updated version.txt
 - After the release is published, wait for the "On Release" GitHub Action to finish before deploying. The action force-moves the release tag to the auto-generated `caper/version.txt` commit.
+- Take the [operator lock](https://github.com/AmpliconSuite/AmpliconRepository/wiki/Operator-lock) from a shell on the server, and release it when the deploy is done.
 - In the site admin UI, go to `/admin-prepare-shutdown/`, confirm no background tasks are running, and enable shutdown mode before restarting the server. Shutdown mode prevents new project creation/editing while deployment is in progress and persists across the restart.
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04` in us-east-1)
   - see [Getting a shell on the dev and prod servers](docs/server-ssh-access.md) — access is via EC2 Instance Connect and your AWS SSO login, not a PEM key

@@ -292,9 +292,9 @@ These changes ship in the same PR as the tool. The rule must not appear in
 - **`docs/backend-architecture.md`**: a row in the §7 toolkit and a line in §8.
 - **`ops_lock.py` docstring**: the full operating notes, as in `shutdown_mode.py`.
 - **Wiki deploy runbooks**: the steps in §8.
-- **Each developer's user-level `CLAUDE.md`** (outside the repo): one line,
-  "for AmpliconRepository work, follow the operator-lock rule in AGENTS.md". This
-  covers agents started outside a checkout of this repo.
+- **Each developer's user-level `CLAUDE.md`** (outside the repo): one line, which
+  the README gives and asks agents to suggest. This covers agents started outside a
+  checkout of this repo.
 - **Later, optional:** a Claude Code `PreToolUse` hook that blocks
   `docker exec … amplicon-(dev|prod)` while the session does not hold the lock.
   Hold off until the basic version has been in use for a while.
