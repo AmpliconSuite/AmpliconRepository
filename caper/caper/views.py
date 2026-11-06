@@ -12,6 +12,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 from .background_tasks import _thread_executor, get_background_task_status
+from .context_processor import get_shutdown_pending
+from .shutdown_guard import SHUTDOWN_MESSAGE, RETRY_AFTER as SHUTDOWN_RETRY_AFTER
 from . import version_purge
 from .canonical import project_canonical_url, sample_canonical_url
 from .email_contact import contact_footer_text, reply_to
@@ -57,6 +59,7 @@ from pathlib import Path
 from .views_admin import (
     admin_featured_projects, admin_all_projects, admin_version_details, admin_sendemail, admin_stats,
     admin_permanent_delete_project, admin_delete_user, admin_delete_project,
+    tag_publication_version,
     user_stats_download, site_stats_regenerate, project_stats_download, sizeof_fmt,
     fix_schema, data_qc, admin_prepare_shutdown, admin_project_files_report, make_project_current,
     admin_audit_log,
@@ -104,8 +107,10 @@ from .utils import (
     AC_VERSION_OUTDATED, AC_VERSION_UNIDENTIFIED
 )
 from .tar_safety import safe_extract_member, safe_extractall
+from .tar_utils import pack_directory_targz
 from .aggregation_failure import aggregation_error_message
 from .gridfs_backlinks import put_with_backlink
+from .version_file_sharing import PredecessorFiles, file_digest, still_needed_here
 from .upload_cleanup import discard_failed_upload_payload
 from .project_status import (
     DELETE_FLAG_QUERY,
@@ -126,7 +131,7 @@ from .project_status import (
     status_flags,
     status_query,
 )
-from . import deleted_projects, download_totals, lineage, project_fields, provenance
+from . import deleted_projects, download_totals, lineage, project_fields, provenance, publication_versions
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
     build_deleted_version_tombstone,
@@ -136,6 +141,9 @@ from .project_version_cleanup import (
 )
 
 from .extra_metadata import *
+from .sample_metadata_rows import sample_metadata_of
+from .project_record_size import (
+    LIMIT_BYTES, refuse_new_version_over_limit, size_after_metadata_edit, too_large_message)
 
 # imports for coamp graph
 from .neo4j_utils import (load_graph, fetch_subgraph, fetch_overview,
@@ -1030,7 +1038,8 @@ def project_page(request, project_name, message=''):
                 request,
                 "Project aggregation failed during editing. "
                 "Your previous version has been automatically restored — "
-                "you can retry the edit from here."
+                "you can retry the edit from here. "
+                f"{project.get('error_message') or ''}".strip()
             )
             return redirect('edit_project_page', project_name=rollback_id)
         set_project_edit_OK_flag(project, request)
@@ -1207,6 +1216,8 @@ def project_page(request, project_name, message=''):
     total_time = time.time() - t_total_start
     logging.info(f"[PERF] Total project_page processing for {project_name}: {total_time:.3f}s")
 
+    may_tag_publication_versions = bool(getattr(getattr(request, 'user', None), 'is_staff', False))
+
     return render(request, "pages/project.html", {
         'project': project,
         'metadata_summary': metadata_summary,
@@ -1217,6 +1228,9 @@ def project_page(request, project_name, message=''):
         'stackedbar_graph': stacked_bar_plot,
         'summarybar': pc_fig,
         'prev_versions': prev_versions,
+        'may_tag_publication_versions': may_tag_publication_versions,
+        'publication_link_to_offer': (publication_versions.link_to_offer(collection_handle, project)
+                                      if may_tag_publication_versions else ''),
         'prev_versions_length': len(prev_versions),
         'active_prev_versions_length': len(active_prev_versions),
         'has_promotable_project_version': has_promotable_project_version,
@@ -1948,9 +1962,7 @@ def get_sample_metadata(sample_data):
             logging.warning(f"Could not read Sample_metadata_JSON {sample_metadata_id!r}: {e}")
     try:
         # Add metadata from the `extra_metadata_from_csv` field
-        extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
-        if isinstance(extra_metadata, dict):
-            sample_metadata.update(extra_metadata)
+        sample_metadata.update(sample_metadata_of(sample_data) or {})
     except Exception as e:
         logging.exception(e)
         #sample_metadata = defaultdict(str)
@@ -2862,6 +2874,20 @@ def batch_sample_download(request):
             _remove_tree(batch_dir)
             return redirect('gene_search_page')
 
+        # Shutdown mode stops new background work before a restart would kill
+        # it; this is the only path here that starts any.  A batch small enough
+        # to stream back in the request is still served.  The other refusals
+        # are in caper/shutdown_guard.py.
+        if get_shutdown_pending():
+            _remove_tree(batch_dir)
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                response = JsonResponse({'success': False, 'message': SHUTDOWN_MESSAGE},
+                                        status=503)
+                response['Retry-After'] = SHUTDOWN_RETRY_AFTER
+                return response
+            messages.error(request, SHUTDOWN_MESSAGE)
+            return redirect('gene_search_page')
+
         if not settings.USE_S3_DOWNLOADS:
             messages.error(request, "Email results feature requires S3 to be configured.")
             _remove_tree(batch_dir)
@@ -3192,6 +3218,16 @@ def delete_whole_project(request, project_name):
     serving them once their project's head is deleted -- and records each
     version's URL, under the name it had, in deleted_project_urls.
     """
+    project = get_one_project(project_name)
+    # Asked only here, not in project_delete(), which is also a step of every edit.
+    # Read from the primary: a tag written a moment ago must not be missed.
+    if (project and may_edit_project(project, request)
+            and publication_versions.tagged_versions_in_chain(collection_handle_primary, project)
+            and not publication_versions.name_confirmed(
+                project, request.POST.get('confirm_project_name'))):
+        messages.error(request, 'This project holds a version used in a publication. '
+                                'Type the project name in the delete section to delete it.')
+        return redirect('edit_project_page', project_name=str(project['_id']))
     return project_delete(request, project_name, whole_project=True)
 
 
@@ -3251,6 +3287,22 @@ def _previous_version_linkid(previous_version):
     return previous_version
 
 
+def _files_others_need(victim):
+    """The ids among *victim*'s files that another version still needs.
+
+    Versions of one project share the files that did not change between them
+    (version_file_sharing). If the answer cannot be read, every id is returned:
+    nothing is purged, and a leaked file is recoverable where a lost one is not.
+    """
+    file_ids = set(iter_gridfs_file_ids(victim))
+    try:
+        return still_needed_here(victim, file_ids)
+    except Exception:
+        logging.exception(f"Could not tell which files of {victim.get('_id')} other "
+                          f"versions need; none of its files will be purged")
+        return file_ids
+
+
 @login_required
 def delete_project_version(request, project_name, version_id):
     """
@@ -3303,6 +3355,21 @@ def delete_project_version(request, project_name, version_id):
 
     deleting_current = (version_id == current_linkid)
     deleter = get_current_user(request)
+
+    # Read from the primary: a tag written a moment ago must not be missed.
+    tagged = collection_handle_primary.find_one({'_id': ObjectId(version_id)})
+    if publication_versions.is_protected(tagged):
+        try:
+            typed = json.loads(request.body or b'{}').get('confirm_project_name')
+        except (ValueError, AttributeError):
+            typed = None
+        if not publication_versions.name_confirmed(tagged, typed):
+            return JsonResponse({
+                'error': 'This version is recorded as used in a publication. '
+                         'Type the project name to delete it.',
+                'publication': tagged[publication_versions.FIELD].get('publication'),
+                'project_name': tagged.get('project_name'),
+            }, status=409)
 
     # this version's data is going away; any graph cached from it is dead weight
     invalidate_project_coamp_graphs(version_id)
@@ -3427,7 +3494,7 @@ def delete_project_version(request, project_name, version_id):
             # not carry the payload keys, so this is the last moment the ids
             # exist anywhere. See version_purge.
             pending_ids = version_purge.payload_ids_to_purge(
-                latest_project, promoted_file_ids)
+                latest_project, promoted_file_ids | _files_others_need(latest_project))
             tombstone = build_deleted_version_tombstone(
                 latest_project,
                 promoted_project,
@@ -3486,7 +3553,8 @@ def delete_project_version(request, project_name, version_id):
             # document it left classified as SUPERSEDED and stayed resolvable
             # with its entire payload still stored and still billed, while the
             # log line said "project fully removed".
-            pending_ids = version_purge.payload_ids_to_purge(latest_project)
+            pending_ids = version_purge.payload_ids_to_purge(
+                latest_project, _files_others_need(latest_project))
             tombstone = build_deleted_version_tombstone(
                 latest_project,
                 None,
@@ -3543,7 +3611,7 @@ def delete_project_version(request, project_name, version_id):
 
         latest_file_ids = set(iter_gridfs_file_ids(latest_project))
         pending_ids = version_purge.payload_ids_to_purge(
-            old_version, latest_file_ids)
+            old_version, latest_file_ids | _files_others_need(old_version))
         tombstone = build_deleted_version_tombstone(
             old_version,
             latest_project,
@@ -4190,6 +4258,85 @@ def drop_prefilled_versions(form_data, old_project):
             form_data[key] = 'NA'
 
 
+def previous_version_entry(project):
+    """The previous_versions[] entry recording *project* as the version an edit supersedes."""
+    return {
+        'date': str(project['date']),
+        'linkid': str(project['linkid']),
+        'ASP_version': project.get('ASP_version', 'NA'),
+        'AA_version': project.get('AA_version', 'NA'),
+        'AC_version': project.get('AC_version', 'NA'),
+        'aggregator_version': project.get('aggregator_version', 'NA'),
+        'Reconstruction_tools': project.get('Reconstruction_tools', 'NA'),
+        'CoRAL_version': project.get('CoRAL_version', 'NA'),
+    }
+
+
+def insert_new_version_placeholder(temp_proj_id, project_name, user, visibility):
+    """Insert the LIVE placeholder an edit's new version occupies while it aggregates.
+
+    visibility is an already-normalised visibility string.
+
+    The aggregator is handed temp_proj_id as the project name, so the archive it
+    writes carries this document's id; _process_and_aggregate_files later fills
+    the same document in place.
+    """
+    authenticated = user.is_authenticated
+    _now = get_date()
+    placeholder_project = {
+        '_id': ObjectId(temp_proj_id),
+        'project_name': f"{project_name} (Processing...)",
+        'original_project_name': project_name,
+        'linkid': temp_proj_id,
+        'FINISHED?': False,
+        'aggregation_in_progress': True,
+        'created_at': datetime.datetime.now(),
+        'date_created': _now,
+        'date': _now,
+        'update_date': _now,
+        'owner': user.username if authenticated else 'anonymous',
+        'private': visibility,
+        'sample_count': 0,
+        'runs': {},  # Empty dictionary, not list
+        **status_flags(LIVE),  # the new version becomes the chain head
+        # Seed project_members with the owner so the profile page query finds this
+        # placeholder immediately and access-control lets the owner view/delete it
+        # even if aggregation fails before _process_and_aggregate_files can update it.
+        'project_members': list(filter(None, {
+            user.username if authenticated else None,
+            getattr(user, 'email', None) if authenticated else None,
+        })),
+    }
+    collection_handle.insert_one(placeholder_project)
+    # Index-only, deliberately.  The placeholder is LIVE from this
+    # moment, so it is indexable, and an indexable project with no
+    # manifest row makes index_coverage() report the index incomplete --
+    # which switches every search on the site back to the slow path
+    # until aggregation finishes.  It holds no runs yet, so this writes
+    # a manifest row and zero feature rows.  It must NOT go through
+    # project_changed(): that also counts the project in
+    # site_statistics, and the real document is counted when
+    # aggregation finishes, so the placeholder would be counted twice.
+    project_content_changed(ObjectId(temp_proj_id))
+
+
+def restore_superseded_version(project_id):
+    """Put back the version project_update/project_delete just retired, when its
+    replacement could not even be started."""
+    try:
+        collection_handle.update_one(
+            {'_id': ObjectId(project_id)},
+            {'$set': status_flags(LIVE),
+             '$unset': {'delete_user': '', 'delete_date': ''}}
+        )
+        # project_delete already ran, which took this project out of the
+        # index.  Restoring it to LIVE without putting the rows back
+        # leaves the index short of a live project for good.
+        project_content_changed(ObjectId(project_id))
+    except Exception as rb_err:
+        logging.error(f"Failed to rollback old project {project_id}: {rb_err}")
+
+
 def edit_project_into_new_version(request, project_name, project, form_dict, form, metadata_file,
                                    samples_to_remove, remap_sample_names, file_fps, temp_proj_id, 
                                    project_data_path, reaggregate_project=False):
@@ -4265,18 +4412,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             new_prev_versions = project['previous_versions']
 
         ## update for current
-        new_prev_versions.append(
-            {
-                'date': str(project['date']),
-                'linkid': str(project['linkid']),
-                'ASP_version': project.get('ASP_version', 'NA'),
-                'AA_version': project.get('AA_version', 'NA'),
-                'AC_version': project.get('AC_version', 'NA'),
-                'aggregator_version': project.get('aggregator_version', 'NA'),
-                'Reconstruction_tools': project.get('Reconstruction_tools', 'NA'),
-                'CoRAL_version': project.get('CoRAL_version', 'NA'),
-            }
-        )
+        new_prev_versions.append(previous_version_entry(project))
 
         # Carried forward from the version being superseded, and absent when
         # that version is a tombstone -- re-populating an emptied project (T9)
@@ -4305,43 +4441,9 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
         temp_directory = os.path.join('./tmp/', str(temp_proj_id))
 
         try:
-            # Create a placeholder project in the database that _process_and_aggregate_files can update
-            _now = get_date()
-            placeholder_project = {
-                '_id': ObjectId(temp_proj_id),
-                'project_name': f"{form_dict['project_name']} (Processing...)",
-                'original_project_name': form_dict['project_name'],
-                'linkid': temp_proj_id,
-                'FINISHED?': False,
-                'aggregation_in_progress': True,
-                'created_at': datetime.datetime.now(),
-                'date_created': _now,
-                'date': _now,
-                'update_date': _now,
-                'owner': request.user.username if request.user.is_authenticated else 'anonymous',
-                'private': normalize_visibility_field(form_dict.get('private', 'private')),
-                'sample_count': 0,
-                'runs': {},  # Empty dictionary, not list
-                **status_flags(LIVE),  # the new version becomes the chain head
-                # Seed project_members with the owner so the profile page query finds this
-                # placeholder immediately and access-control lets the owner view/delete it
-                # even if aggregation fails before _process_and_aggregate_files can update it.
-                'project_members': list(filter(None, {
-                    request.user.username if request.user.is_authenticated else None,
-                    getattr(request.user, 'email', None) if request.user.is_authenticated else None,
-                })),
-            }
-            collection_handle.insert_one(placeholder_project)
-            # Index-only, deliberately.  The placeholder is LIVE from this
-            # moment, so it is indexable, and an indexable project with no
-            # manifest row makes index_coverage() report the index incomplete --
-            # which switches every search on the site back to the slow path
-            # until aggregation finishes.  It holds no runs yet, so this writes
-            # a manifest row and zero feature rows.  It must NOT go through
-            # project_changed(): that also counts the project in
-            # site_statistics, and the real document is counted when
-            # aggregation finishes, so the placeholder would be counted twice.
-            project_content_changed(ObjectId(temp_proj_id))
+            insert_new_version_placeholder(
+                temp_proj_id, form_dict['project_name'], request.user,
+                normalize_visibility_field(form_dict.get('private', 'private')))
             logging.info(f"EditProject - placeholder insert complete for new version {temp_proj_id}")
             # Audit log is written inside _process_and_aggregate_files after aggregation
             # completes (or fails), so it captures the real S3 URI, file size, and sample count.
@@ -4390,23 +4492,13 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 pass
 
             # Restore the old project since project_update/project_delete already ran
-            try:
-                collection_handle.update_one(
-                    {'_id': ObjectId(project_name)},
-                    {'$set': status_flags(LIVE),
-                     '$unset': {'delete_user': '', 'delete_date': ''}}
-                )
-                # project_delete already ran, which took this project out of the
-                # index.  Restoring it to LIVE without putting the rows back
-                # leaves the index short of a live project for good.
-                project_content_changed(ObjectId(project_name))
-            except Exception as rb_err:
-                logging.error(f"Failed to rollback old project {project_name}: {rb_err}")
+            restore_superseded_version(project_name)
             
             alert_message = f"An error occurred during project update: {str(e)}"
             _metadata_context = get_metadata_remap_edit_context(project)
             return render(request, 'pages/edit_project.html',
                           {'project': project,
+                           'project_linkid': str(project['_id']),
                            'run': form,
                            'alert_message': alert_message,
                            'all_alias': json.dumps(get_all_alias()),
@@ -4630,6 +4722,21 @@ def edit_project_page(request, project_name):
         if not form.is_valid():
             return _render_edit_project_page(request, project, form, status=400)
 
+        # Also before anything is written. A sheet with no new archive applies to
+        # these samples, so its size can be known exactly and refused right away.
+        if (metadata_file and not request.FILES.getlist('document')
+                and not samples_to_remove and project.get('runs')):
+            try:
+                record_size = size_after_metadata_edit(project, metadata_file)
+            except Exception:
+                # An unreadable sheet is reported by the edit itself.
+                logging.exception('Could not size a metadata sheet for %s', project_name)
+                record_size = None
+            if record_size is not None and record_size > LIMIT_BYTES:
+                return _render_edit_project_page(
+                    request, project, form, status=400,
+                    alert_message=too_large_message(record_size, True))
+
         ## give the new project the old project alias.
         inherit_alias = not form.cleaned_data.get('alias') and bool(old_alias_name)
         if inherit_alias:
@@ -4762,7 +4869,7 @@ def edit_project_page(request, project_name):
     return _render_edit_project_page(request, project, form)
 
 
-def _render_edit_project_page(request, project, form, status=200):
+def _render_edit_project_page(request, project, form, status=200, alert_message=None):
     """The edit page for *project*, around *form* -- unbound on GET, or the
     bound one a POST failed to validate, so its errors and entries show."""
     sample_names = set()
@@ -4781,6 +4888,9 @@ def _render_edit_project_page(request, project, form, status=200):
                    'sample_names': sample_names,
                    'all_alias': json.dumps(get_all_alias()),
                    "is_empty_project": project_is_empty(project),
+                   'alert_message': alert_message,
+                   'tagged_version_count': len(publication_versions.tagged_versions_in_chain(
+                       collection_handle_primary, project)),
                    **get_metadata_remap_edit_context(project),
                    }, status=status)
 
@@ -4885,6 +4995,34 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         files_written = 0
         bytes_written = 0
 
+        # A version made from another takes the identical files its
+        # predecessor names instead of storing them again (#624). The scope,
+        # and what every deletion path does about the sharing, are in
+        # version_file_sharing. Reused ids never join uploaded_file_ids: they
+        # belong to the predecessor, and a failure here must not delete them.
+        predecessor_files = PredecessorFiles(
+            collection_handle_primary, db_handle_primary['fs.files'], project_id)
+        # id -> (sample, key, filename, opener): how to store a reused file
+        # again if a deletion takes it before this version's document names it.
+        reused_sources = {}
+        files_reused = 0
+        bytes_reused = 0
+
+        def store(fileobj, sample, key, filename=None, opener=None):
+            """(id, newly written?, length) for one file."""
+            nonlocal files_reused, bytes_reused
+            sha256, length = file_digest(fileobj)
+            reused = predecessor_files.claim(sha256, length, filename, sample, key)
+            if reused is not None:
+                reused_sources.setdefault(reused, (sample, key, filename, opener))
+                files_reused += 1
+                bytes_reused += length
+                return reused, False, length
+            new_id = put_with_backlink(
+                fs_handle, fileobj, filename=filename, project_id=project_id,
+                sample_name=sample, feature_key=key, sha256=sha256)
+            return new_id, True, length
+
         gfs_start_time = time.time()
         # get cnv, image, bed files
         for sample, features in runs.items():
@@ -4895,6 +5033,9 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
 
 
                 if len(feature) > 0:
+                    # The run key is positional ('sample_1'); the backlink and
+                    # the predecessor match name the sample itself.
+                    sample_name = feature.get('Sample name') or sample
                     # get paths
                     # 'AA graph file' and 'AA cycles file' are new keys (new-format archives only)
                     # stored individually in GridFS for direct access.
@@ -4917,26 +5058,30 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                             feature[k] = "Not Provided"
                             continue
                         id_var = "Not Provided"
+                        written = False
                         try:
                             path_var = feature[k]
                             cache_key = (sample, k, path_var)
                             if cache_key in stored_ids:
                                 id_var = stored_ids[cache_key]
                             else:
-                                with open(f'{project_data_path}/results/{path_var}', "rb") as file_var:
-                                    file_size = os.fstat(file_var.fileno()).st_size
-                                    id_var = put_with_backlink(
-                                        fs_handle, file_var, project_id=project_id,
-                                        sample_name=sample, feature_key=k)
-                                uploaded_file_ids.append(id_var)
+                                file_path = f'{project_data_path}/results/{path_var}'
+                                with open(file_path, "rb") as file_var:
+                                    id_var, written, file_size = store(
+                                        file_var, sample_name, k,
+                                        opener=lambda p=file_path: open(p, 'rb'))
                                 stored_ids[cache_key] = id_var
-                                files_written += 1
-                                bytes_written += file_size
+                                if written:
+                                    uploaded_file_ids.append(id_var)
+                                    files_written += 1
+                                    bytes_written += file_size
                         except Exception as upload_error:
                             # Previously a bare `except:` that silently recorded
                             # "Not Provided".  A missing artifact left no trace at
                             # all, so nobody could tell a file had been dropped.
-                            if isinstance(id_var, ObjectId):
+                            # Only a file this upload wrote is discarded; a reused
+                            # one is the predecessor's.
+                            if written and isinstance(id_var, ObjectId):
                                 discard_unrecorded_gridfs_files(delete_gridfs_file, [id_var])
                                 id_var = "Not Provided"
                             logging.warning(
@@ -4963,8 +5108,8 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                     # upload would delete the *previous* artifact — one that the
                     # document does reference.
                     id_var = 'Not Provided'
+                    written = False
                     try:
-                        import io
                         directory_key = (
                             'Reconstruction directory'
                             if 'Reconstruction directory' in feature
@@ -4998,28 +5143,23 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         elif os.path.isdir(full_path):
                             dir_name = os.path.basename(path_var.rstrip('/'))
                             archive_name = f'{dir_name}.tar.gz'
-                            buf = io.BytesIO()
-                            with tarfile.open(fileobj=buf, mode='w:gz') as tar:
-                                tar.add(full_path, arcname=dir_name)
-                            buf.seek(0)
-                            file_size = buf.getbuffer().nbytes
-                            id_var = put_with_backlink(
-                                fs_handle, buf, filename=archive_name,
-                                project_id=project_id, sample_name=sample,
-                                feature_key=directory_key)
+                            buf = pack_directory_targz(full_path, dir_name)
+                            id_var, written, file_size = store(
+                                buf, sample_name, directory_key, filename=archive_name,
+                                opener=lambda p=full_path, n=dir_name: pack_directory_targz(p, n))
                         else:
                             with open(full_path, 'rb') as file_var:
-                                file_size = os.fstat(file_var.fileno()).st_size
-                                id_var = put_with_backlink(
-                                    fs_handle, file_var, project_id=project_id,
-                                    sample_name=sample, feature_key=directory_key)
+                                id_var, written, file_size = store(
+                                    file_var, sample_name, directory_key,
+                                    opener=lambda p=full_path: open(p, 'rb'))
                         if cache_key not in stored_ids:
-                            uploaded_file_ids.append(id_var)
                             stored_ids[cache_key] = id_var
-                            files_written += 1
-                            bytes_written += file_size
+                            if written:
+                                uploaded_file_ids.append(id_var)
+                                files_written += 1
+                                bytes_written += file_size
                     except Exception as upload_error:
-                        if isinstance(id_var, ObjectId):
+                        if written and isinstance(id_var, ObjectId):
                             discard_unrecorded_gridfs_files(delete_gridfs_file, [id_var])
                         id_var = 'Not Provided'
                         logging.warning(
@@ -5040,6 +5180,32 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
         rate = f"{gfs_seconds / mib_written:.3f} s/MiB" if mib_written else "n/a s/MiB"
         logging.info(f"Putting files in GridFS took {gfs_seconds:.1f}s: "
                      f"{files_written:,} files, {mib_written:,.1f} MiB, {rate}")
+        if predecessor_files.predecessor_id is not None:
+            logging.info(f"Reused {files_reused:,} file(s), {bytes_reused / 2**20:,.1f} MiB, "
+                         f"from predecessor {predecessor_files.predecessor_id}")
+
+        # Until the document below names them, a reused file is named only by
+        # the predecessor, and a deletion of the predecessor in that window
+        # could take it. Store any that went again, from the bytes on disk.
+        lost = predecessor_files.missing(reused_sources) if reused_sources else set()
+        if lost:
+            replacement = {}
+            for old_id in lost:
+                lost_sample, lost_key, lost_filename, opener = reused_sources[old_id]
+                with opener() as fileobj:
+                    sha256, _length = file_digest(fileobj)
+                    replacement[old_id] = put_with_backlink(
+                        fs_handle, fileobj, filename=lost_filename,
+                        project_id=project_id, sample_name=lost_sample,
+                        feature_key=lost_key, sha256=sha256)
+                uploaded_file_ids.append(replacement[old_id])
+            for features in runs.values():
+                for feature in features:
+                    for key, value in feature.items():
+                        if isinstance(value, ObjectId) and value in replacement:
+                            feature[key] = replacement[value]
+            logging.warning(f"{len(lost)} reused file(s) were deleted before project "
+                            f"{project_id} named them; stored them again")
         logging.info("All features processed. Updating project in database...")
 
         # Now update the project with the updated runs
@@ -5682,6 +5848,12 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
 
         ## after running aggregator, use the aggregated file for project creation:
         logging.info(f"Aggregated filename: {agg.aggregated_filename}")
+
+        # Before anything is stored. Raising here reaches the handler below, which
+        # rolls an edit back to the old version or marks a new project as failed.
+        refuse_new_version_over_limit(
+            agg.aggregated_filename, extra_metadata_file_fp, old_extra_metadata,
+            remap_names_to_alias=(name_map_file_path is not None))
 
         # Read the aggregated file and create a temporary uploaded file
         with open(agg.aggregated_filename, 'rb') as f:

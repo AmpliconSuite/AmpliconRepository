@@ -188,7 +188,9 @@ def _cleanup_project(collection, project_id):
         from caper.utils import delete_gridfs_file
 
         project = collection.find_one({'_id': ObjectId(project_id)}) or {}
-        deleted = delete_gridfs_payload_for_project(delete_gridfs_file, project)
+        # Nothing protected: a test removes everything it made, and any other
+        # version it made is cleaned up by its own call here.
+        deleted = delete_gridfs_payload_for_project(delete_gridfs_file, project, set())
         logging.info(f"[cleanup] Deleted {deleted} GridFS file(s) for {project_id}")
     except Exception as e:
         logging.warning(f"[cleanup] Could not inspect GridFS artifacts for {project_id}: {e}")

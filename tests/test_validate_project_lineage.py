@@ -398,7 +398,7 @@ def test_i11_does_not_call_an_array_named_tombstone_a_divergence():
 
 
 # ---------------------------------------------------------------------------
-# I21 -- no GridFS file is named by more than one document
+# I21 -- no GridFS file is named by documents of more than one project
 #
 # The rule, not the loading: Snapshot builds gridfs_ids by streaming the heavy
 # field out of the collection, and a fake that reproduced that would be testing
@@ -438,6 +438,20 @@ def test_i21_reports_a_file_two_documents_name():
     assert len(findings) == 1
     assert str(shared) in findings[0].detail
     assert 'named by 2 documents' in findings[0].detail
+
+
+def test_i21_does_not_fire_for_versions_of_one_project():
+    """Versions share unchanged files by design (#624); deletion asks the chain."""
+    first, second = ObjectId(), ObjectId()
+    shared = ObjectId()
+    documents = chain({'_id': first}, {'_id': second})
+
+    findings = _check_i21(_with_gridfs(documents, {
+        first: [shared, ObjectId()],
+        second: [shared],
+    }))
+
+    assert findings == []
 
 
 def test_i21_does_not_fire_when_one_document_names_a_file_twice():

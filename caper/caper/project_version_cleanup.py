@@ -133,7 +133,24 @@ def iter_gridfs_file_ids(value, parent_key=None):
             yield from iter_gridfs_file_ids(child, parent_key)
 
 
-def delete_gridfs_payload_for_project(delete_file, project, protected_file_ids=None):
+def protected_id_strings(protected_file_ids):
+    """*protected_file_ids* as strings, refusing ``None``.
+
+    Every payload deleter takes this set from its caller, with no default.
+    Versions of one project share files (version_file_sharing), so a caller has
+    to have asked what the others still need; an empty set is that answer when
+    nothing does. ``None`` is not an answer: ``version_purge`` uses it for "could
+    not find out", and read here as "protect nothing" it would delete files a
+    surviving version names.
+    """
+    if protected_file_ids is None:
+        raise ValueError('protected_file_ids is None: say what other documents '
+                         'still need (see version_file_sharing), or pass an '
+                         'empty set if that is nothing')
+    return {str(file_id) for file_id in protected_file_ids}
+
+
+def delete_gridfs_payload_for_project(delete_file, project, protected_file_ids):
     """
     Delete every GridFS file this project references, except the protected ones.
 
@@ -160,7 +177,7 @@ PayloadDeletion = collections.namedtuple('PayloadDeletion', 'deleted remaining')
 """What one payload pass achieved: files removed, and file ids not reached."""
 
 
-def delete_payload_within_deadline(delete_file, project, protected_file_ids=None,
+def delete_payload_within_deadline(delete_file, project, protected_file_ids,
                                    deadline=None, now=time.monotonic):
     """``delete_gridfs_payload_for_project`` with a stopping time.
 
@@ -193,7 +210,7 @@ def delete_payload_within_deadline(delete_file, project, protected_file_ids=None
     fully gone; a failed delete is logged, counted as reached, and left out of
     it, because retrying it is not what unblocks the project.
     """
-    protected_file_ids = {str(file_id) for file_id in (protected_file_ids or set())}
+    protected_file_ids = protected_id_strings(protected_file_ids)
     wanted = (file_id for file_id in iter_gridfs_file_ids(project)
               if str(file_id) not in protected_file_ids)
     return delete_payload_file_ids(delete_file, wanted, deadline=deadline,
@@ -293,6 +310,10 @@ def discard_unrecorded_gridfs_files(delete_file, file_ids):
 #: interrupted purge resumable instead of a matter for a global orphan sweep.
 PENDING_PAYLOAD_KEY = 'pending_payload_file_ids'
 
+#: publication_versions.FIELD, which imports project_status and so can't be
+#: imported from here at module scope; test_publication_versions holds them equal.
+PUBLICATION_TAG_FIELD = 'publication_tag'
+
 #: When a worker last took responsibility for the pending purge above.  Every
 #: gunicorn worker checks for interrupted purges when it starts, so the claim
 #: is what stops eight of them running the same one.  A claim older than
@@ -371,6 +392,11 @@ def build_deleted_version_tombstone(old_project, latest_project, deleter,
     for field in DATED_COUNTERS:
         if old_project.get(field):
             tombstone[field] = old_project[field]
+
+    # What was deleted: a tombstone is written with replace_one, so a tag left off
+    # this dict would destroy the record that a publication used this version.
+    if old_project.get(PUBLICATION_TAG_FIELD):
+        tombstone[PUBLICATION_TAG_FIELD] = old_project[PUBLICATION_TAG_FIELD]
 
     # The payload is removed after this document is written, not before, so the
     # tombstone has to carry the ids until they are gone. See PENDING_PAYLOAD_KEY.

@@ -1,3 +1,4 @@
+import pytest
 from bson import ObjectId
 
 from caper.project_status import matches
@@ -89,8 +90,15 @@ def test_delete_gridfs_files_for_project_handles_current_underscore_keys():
         },
     }
 
-    assert delete_gridfs_files_for_project(fs.delete, project) == 3
+    assert delete_gridfs_files_for_project(fs.delete, project, set()) == 3
     assert fs.deleted == [str(tar_id), str(png_id), str(graph_id)]
+
+
+def test_the_script_refuses_to_guess_what_is_protected():
+    fs = FakeGridFS()
+    with pytest.raises(ValueError):
+        delete_gridfs_files_for_project(fs.delete, {'tarfile': ObjectId()}, None)
+    assert fs.deleted == []
 
 
 def test_collect_protected_ids_preserves_deleted_version_tombstones():
@@ -197,7 +205,7 @@ def test_gridfs_deletion_uses_the_canonical_key_list():
         }]},
     }
 
-    assert delete_gridfs_files_for_project(fs.delete, project) == 5
+    assert delete_gridfs_files_for_project(fs.delete, project, set()) == 5
     for missed in (run_meta_id, recon_id, cycles_id):
         assert str(missed) in fs.deleted
 
@@ -319,3 +327,33 @@ def test_main_passes_the_retained_ids_to_the_deleter(monkeypatch, tmp_path):
 
     assert str(orphan['_id']) in seen, 'the orphan was never offered for deletion'
     assert seen[str(orphan['_id'])] == {str(shared_id)}
+
+
+def test_the_script_leaves_a_version_a_publication_used(monkeypatch):
+    """Nobody is there to type the name, so it is left for someone to look at."""
+    import cleanup_orphaned_projects as cop
+
+    survivor = {'_id': ObjectId(), 'project_name': 'live', 'tarfile': ObjectId(),
+                'delete': False, 'current': True, 'linkid': str(ObjectId())}
+    tagged = {'_id': ObjectId(), 'project_name': 'orphan', 'tarfile': ObjectId(),
+              'publication_tag': {'publication': 'PMID 1', 'evidence': 'its statement'}}
+    plain = {'_id': ObjectId(), 'project_name': 'orphan too', 'tarfile': ObjectId()}
+
+    handle = _FakeDBHandle({'projects': _FakeProjects([survivor, tagged, plain]),
+                            'fs.files': object(), 'fs.chunks': object()})
+    monkeypatch.setattr(cop, 'get_db_handle', lambda *a, **k: (handle, _FakeClient()))
+    monkeypatch.setattr(cop, 'delete_gridfs_file_in_batches', lambda *a, **k: 0)
+    monkeypatch.setenv('DB_URI_SECRET', 'mongodb://user:pw@localhost/test')
+    monkeypatch.setenv('DB_NAME', 'caper-test')
+    monkeypatch.delenv('S3_FILE_DOWNLOADS', raising=False)
+    monkeypatch.setattr(cop.os.path, 'isdir', lambda path: False)
+    monkeypatch.setattr(cop.sys, 'argv', ['cleanup_orphaned_projects.py', '--execute'])
+
+    seen = []
+    monkeypatch.setattr(cop, 'delete_gridfs_files_for_project',
+                        lambda delete_file, project, protected, dry_run=False: seen.append(project['_id']) or 0)
+
+    cop.main()
+
+    assert plain['_id'] in seen, 'the control: the plain orphan was offered'
+    assert tagged['_id'] not in seen

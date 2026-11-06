@@ -31,9 +31,12 @@ and the reason is narrow enough to state exactly:
     its own placeholder, and -- on an edit -- the version being rolled back to.
 
 Both of those are read fresh and their ids are excluded. Anything the metadata
-claims but those two documents do not name has no other possible owner. The
-measured backdrop is the same one the rule rests on: no GridFS id on either
-database is named by more than one document, 0 of 1.55 million on 2026-08-31.
+claims but those two documents do not name has no other possible owner.
+
+Since #624 an upload may also *reuse* files its predecessor names, without
+storing them. Those are never candidates here: ``metadata.project_id`` names the
+version that wrote a file, and a reused file was written by an earlier one. The
+upload is only added to its ``metadata.reused_by`` (see version_file_sharing).
 """
 
 import logging

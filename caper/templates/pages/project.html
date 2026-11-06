@@ -522,8 +522,21 @@
                             error: function(xhr, status, error) {
                                 console.log('AJAX request ended with status:', status, 'error:', error);
                                 
+                                // A refusal that explains itself (shutdown pending) is not
+                                // still processing: jQuery reports any HTTP error as
+                                // status 'error', which the branch below reads that way.
+                                var refusal = null;
+                                try { refusal = JSON.parse(xhr.responseText).message; } catch (e) {}
+                                if (xhr.status >= 400 && refusal) {
+                                    $('#loadingModal .modal-body').html(
+                                        $('<div>').append(
+                                            $('<i>', {'class': 'fas fa-exclamation-circle fa-3x text-warning mb-3'}),
+                                            $('<h5>').text('Download not started'),
+                                            $('<p>').text(refusal)
+                                        )
+                                    );
                                 // Check if this is a timeout or connection issue (server still processing)
-                                if (status === 'timeout' || status === 'error' || xhr.status === 0) {
+                                } else if (status === 'timeout' || status === 'error' || xhr.status === 0) {
                                     // Timeout or connection closed - server is still processing
                                     console.log('Connection timeout/closed - server is still processing');
                                     $('#loadingModal .modal-body').html(
@@ -1966,6 +1979,15 @@ paged.
                                     {% endif %}
                                     {% if version.version_deleted_from_history %}
                                         <span class="badge badge-secondary">Deleted</span>
+                                    {% elif version.publication_tag %}
+                                        <span class="badge badge-info" title="{{ version.publication_tag.publication }}">Used in publication</span>
+                                    {% endif %}
+                                    {% if may_tag_publication_versions and not version.version_deleted_from_history %}
+                                        {% if version.publication_tag %}
+                                            <button class="btn btn-link btn-sm p-0" onclick="removePublicationTag('{{ version.linkid }}')">Remove tag</button>
+                                        {% else %}
+                                            <button class="btn btn-link btn-sm p-0" onclick="tagPublicationVersion('{{ version.linkid }}')">Tag publication</button>
+                                        {% endif %}
                                     {% endif %}
                                 </td>
                                 <td scope="row">{{ version.Reconstruction_tools|default:"AmpliconArchitect" }}</td>
@@ -1980,7 +2002,7 @@ paged.
                                 <td scope="row">{{ version.aggregator_version|default:"NA" }}</td>
                                 <td scope="row">
                                     {% if version.version_deleted_from_history %}
-                                        <span class="text-muted">Project deleted</span>
+                                        <span class="text-muted">Version deleted</span>
                                     {% else %}
                                         <a class="btn btn-primary btn-sm" href="/project/{{ version.linkid }}/download" style="color: white;">Download</a>
                                     {% endif %}
@@ -2048,6 +2070,10 @@ paged.
                 return;
             }
 
+            sendVersionDelete(currentProjectId, versionId, null);
+        }
+
+        function sendVersionDelete(currentProjectId, versionId, typedName) {
             // Show a loading state
             document.body.classList.add('wait-cursor');
 
@@ -2058,6 +2084,7 @@ paged.
                     'X-CSRFToken': getCookie('csrftoken'),
                     'Content-Type': 'application/json'
                 },
+                data: JSON.stringify({confirm_project_name: typedName}),
                 success: function(response) {
                     document.body.classList.remove('wait-cursor');
                     if (response.success && response.redirect) {
@@ -2068,6 +2095,18 @@ paged.
                 },
                 error: function(xhr, status, error) {
                     document.body.classList.remove('wait-cursor');
+                    if (xhr.status === 409 && xhr.responseJSON && xhr.responseJSON.project_name) {
+                        // Tagged as used in a publication: the server asks for the name.
+                        var typed = prompt('This version is recorded as used in a publication:\n\n'
+                            + xhr.responseJSON.publication
+                            + '\n\nDeleting it removes the data that publication relies on, and '
+                            + 'cannot be undone. To delete it anyway, type the project name:\n\n'
+                            + xhr.responseJSON.project_name);
+                        if (typed !== null) {
+                            sendVersionDelete(currentProjectId, versionId, typed);
+                        }
+                        return;
+                    }
                     var errorMsg = 'An error occurred while deleting the version.';
                     if (xhr.responseJSON && xhr.responseJSON.error) {
                         errorMsg = xhr.responseJSON.error;
@@ -2076,6 +2115,51 @@ paged.
                 }
             });
         }
+
+        function sendPublicationTag(versionId, body) {
+            $.ajax({
+                url: '/project/{{ project.linkid }}/publication_tag/' + versionId,
+                type: 'POST',
+                headers: {
+                    'X-CSRFToken': getCookie('csrftoken'),
+                    'Content-Type': 'application/json'
+                },
+                data: JSON.stringify(body),
+                success: function() { window.location.reload(); },
+                error: function(xhr) {
+                    alert((xhr.responseJSON && xhr.responseJSON.error) || 'Could not change the tag.');
+                }
+            });
+        }
+
+        var publicationTagVersionId = null;
+
+        function tagPublicationVersion(versionId) {
+            publicationTagVersionId = versionId;
+            $('#publicationTagModal').modal('show');
+        }
+
+        $(document).on('change', 'input[name="publicationChoice"]', function() {
+            var other = !$('#publicationChoiceProject').prop('checked');
+            $('#publicationTagOther').prop({disabled: !other, required: other});
+            if (other) { $('#publicationTagOther').trigger('focus'); }
+        });
+
+        $(document).on('submit', '#publicationTagForm', function(event) {
+            event.preventDefault();
+            var offered = $('#publicationChoiceProject');
+            sendPublicationTag(publicationTagVersionId, {
+                action: 'set',
+                publication: offered.prop('checked') ? offered.val() : $('#publicationTagOther').val(),
+                evidence: $('#publicationTagEvidence').val()
+            });
+        });
+
+        function removePublicationTag(versionId) {
+            if (confirm('Remove the record that a publication used this version? It can then be deleted without the extra check.')) {
+                sendPublicationTag(versionId, {action: 'remove'});
+            }
+        }
         </script>
     </div>
     </div>
@@ -2083,6 +2167,43 @@ paged.
 
 
 </div>
+
+{% if may_tag_publication_versions %}
+<div class="modal fade" id="publicationTagModal" tabindex="-1" role="dialog" aria-labelledby="publicationTagModalLabel" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <form class="modal-content" id="publicationTagForm">
+      <div class="modal-header">
+        <h5 class="modal-title" id="publicationTagModalLabel">Tag publication version</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="publicationTagOther">Which publication used this version?</label>
+          {% if publication_link_to_offer %}
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="publicationChoice" id="publicationChoiceProject" value="{{ publication_link_to_offer }}" checked>
+            <label class="form-check-label text-break" for="publicationChoiceProject">This project's publication: {{ publication_link_to_offer }}</label>
+          </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="radio" name="publicationChoice" id="publicationChoiceOther">
+            <label class="form-check-label" for="publicationChoiceOther">Another publication</label>
+          </div>
+          {% endif %}
+          <input type="text" class="form-control" id="publicationTagOther" maxlength="1000" placeholder="Link or citation" {% if publication_link_to_offer %}disabled{% else %}required{% endif %}>
+        </div>
+        <div class="form-group mb-0">
+          <label for="publicationTagEvidence">How do we know?</label>
+          <input type="text" class="form-control" id="publicationTagEvidence" maxlength="2000" placeholder="For example, the version id in its data availability statement" required>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Tag version</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 
 {% if metadata_summary.available %}
 {% comment %}
