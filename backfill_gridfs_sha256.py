@@ -48,6 +48,7 @@ import sys
 import time
 
 from pymongo import ASCENDING, UpdateOne
+import ops_lock  # noqa: E402
 from pymongo.errors import PyMongoError
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
@@ -146,6 +147,7 @@ def main(argv=None):
     parser.add_argument('--rollback', metavar='PATH',
                         help='unset the hash on every id in a previous run\'s '
                              '--undo file. Needs --execute. Does nothing else.')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args(argv)
 
     db_name = os.getenv('DB_NAME', 'caper')
@@ -158,6 +160,8 @@ def main(argv=None):
     assert primary.name == db_name
     fs_files = primary['fs.files']
     print(f'target: {db_name} ({args.expect_host})')
+    if args.execute:
+        ops_lock.require(primary, 'backfill_gridfs_sha256 --execute', args.no_lock)
 
     if args.rollback:
         return rollback(fs_files, args.rollback, args.batch, args.execute)

@@ -1,6 +1,6 @@
 # Operator Lock (`ops_lock`) — Specification
 
-**Status:** decisions settled (§11), not implemented
+**Status:** implemented in `ops_lock.py`; §5.1 revised 2026-11-06
 **Date:** 2026-10-31
 **Related:** `shutdown_mode.py` (the model this follows), `docs/backend-architecture.md` §7–§8
 
@@ -127,18 +127,17 @@ ops_lock.py --expect-db caper-dev break   --reason "..."
 
 `--holder` defaults to `$OPS_LOCK_HOLDER` when set.
 
-### 5.1 Acquire is one atomic write
+### 5.1 Acquire is one conditional write
 
 ```python
+now = client.admin.command('hello')['localTime']   # the server's clock
 db.system_settings.find_one_and_update(
     {'_id': 'ops_lock',
-     '$or': [{'holder': None},
-             {'expires_at': {'$lte': '$$NOW'}},   # via $expr
-             {'holder': me}]},
-    [{'$set': {..., 'acquired_at': '$$NOW',
-               'expires_at': {'$add': ['$$NOW', ttl_ms]},
-               'token': {'$add': [{'$ifNull': ['$token', 0]}, 1]}}}],
-    upsert=True, return_document=AFTER)
+     '$or': [{'holder': None}, {'expires_at': {'$lte': now}}]},
+    {'$set': {'holder': me, ..., 'acquired_at': now,
+              'expires_at': now + ttl},
+     '$inc': {'token': 1}},
+    upsert=True, return_document=BEFORE)
 ```
 
 If another holder's unexpired lease exists, the filter misses, the upsert
@@ -146,20 +145,26 @@ collides on `_id`, and the result is a `DuplicateKeyError`. That error means
 "held". The tool then prints the holder, owner, reason, age and time remaining,
 and exits 1.
 
-**Times come from the MongoDB server (`$$NOW`), never from the client.** Agents
-run on laptops, cloud containers and EC2, and their clocks disagree. (`$$NOW` in
-an update pipeline needs MongoDB ≥ 4.2. Check the deployed version before
-implementing.)
+**Times come from the database server, never from the client.** Agents run on
+laptops, cloud containers and EC2, and their clocks disagree. This spec first used
+`$$NOW` in an update pipeline, but the deployed DocumentDB refuses it ("Feature not
+supported: $$NOW", engine 5.0.0, measured 2026-11-06), and AWS's API table doesn't
+list it for 8.0 either. So the tool reads `hello.localTime` just before the write.
+A lease can then be judged expired up to one round trip late, which doesn't matter
+with leases of an hour. Measured on `caper-dev` in scratch collections on 2026-11-06:
+eight processes racing for a released lock, and for no document at all, gave exactly
+one winner each time.
 
-Re-acquiring as the current holder counts as a renew. It does not raise an error.
+Re-acquiring as the current holder counts as a renew. It does not raise an error,
+and it keeps the token.
 
 ### 5.2 Expiry and breaking
 
 - **Expired lease.** `acquire` takes it, with no flag needed, but prints whose
   lease it replaced and logs `event: 'expired_takeover'`. It never takes one
   silently.
-- **Unexpired lease held by someone else.** Only `break --reason` takes it. It
-  needs a reason and is logged. On prod, `break` is its own explicit request to
+- **Unexpired lease held by someone else.** Only `break --reason` frees it, and
+  the caller then takes it with `acquire`. It needs a reason and is logged. On prod, `break` is its own explicit request to
   the user, the same as any other prod write. The normal response to a held lock
   is `wait`, or reporting to your user, not `break`.
 - `release` only succeeds for the current holder. Releasing a lock you do not hold
@@ -168,8 +173,8 @@ Re-acquiring as the current holder counts as a renew. It does not raise an error
 
 ### 5.3 `run --`: the default way to use it
 
-`run` acquires the lock, starts the command with `OPS_LOCK_HOLDER` set in the
-child's environment, renews the lease every `ttl/4` (15 min at the 1 h default)
+`run` acquires the lock, starts the command with `OPS_LOCK_HOLDER` and
+`OPS_LOCK_TOKEN` set in the child's environment, renews the lease every `ttl/4` (15 min at the 1 h default)
 in a background thread, and releases it in a `finally` block. The command's exit status becomes the tool's
 exit status. Ctrl-C and SIGTERM are passed to the child, and the lock is still
 released.
@@ -191,9 +196,9 @@ The known weakness of leases is that a holder can stall past its expiry (the
 laptop sleeps, a worker hangs) while someone else takes the lock.
 Two measures cover it:
 
-1. **Holders check before each destructive step.** The `require()` helper in §6
-   compares the holder and the `token` it saw at acquire time. If the token has
-   changed, the lease was lost and the script stops.
+1. **Write tools check when they start.** The `require()` helper in §6 compares the
+   holder and the `token` from `OPS_LOCK_TOKEN`. If the token has changed, the lease
+   was lost and the tool refuses. It checks once per run, not before each step.
 2. **`run` does not kill its child when a renewal fails.** Interrupting a write
    halfway is worse than a short overlap. The tool logs `event: 'renew_failed'`,
    prints a loud warning, and exits non-zero after the child finishes.
@@ -227,9 +232,15 @@ first tools to get it:
 | `cleanup_orphaned_projects.py`, `cleanup_failed_upload_residue.py`, `clear_stale_uploads.py` | non-dry-run |
 | `purge-local-db.py` | `--execute` |
 | `backfill_*.py`, `repair_*.py`, `rebuild_version_chains.py`, `dedupe_sample_level_copies.py`, `zero_carried_forward_views.py` | `--apply` / `--execute` |
-| `local_upload_project.py`, `manage.py create_project` | always (they create projects) |
+| `manage.py create_project` | always (it creates a project) |
 
-Before each tool is changed, confirm the exact write-mode flag from its argparse.
+`local_upload_project.py` isn't gated, because it already refuses anything but a
+local site. Neither are `restore_sample_csv_metadata.py` and
+`migrate_project_visibility.py` yet. `sweep_s3_unreferenced.py` has no database
+connection of its own, so it checks the lock of the environment it runs in.
+
+"Shared" means the database is named `caper` or `caper-dev` and its host isn't
+local, because the local docker database is also named `caper-dev`.
 
 ## 7 · Visibility on the site
 
@@ -256,7 +267,7 @@ They are separate mechanisms that compose:
 
 The deploy runbooks in the wiki become:
 
-1. `ops_lock.py acquire` (or wrap the whole deploy in `run --`)
+1. `ops_lock.py acquire` (not `run --`, which a restart would kill inside the container)
 2. `shutdown_mode.py wait`, then `on`
 3. deploy
 4. `shutdown_mode.py off`
@@ -281,9 +292,9 @@ These changes ship in the same PR as the tool. The rule must not appear in
 - **`docs/backend-architecture.md`**: a row in the §7 toolkit and a line in §8.
 - **`ops_lock.py` docstring**: the full operating notes, as in `shutdown_mode.py`.
 - **Wiki deploy runbooks**: the steps in §8.
-- **Each developer's user-level `CLAUDE.md`** (outside the repo): one line,
-  "for AmpliconRepository work, follow the operator-lock rule in AGENTS.md". This
-  covers agents started outside a checkout of this repo.
+- **Each developer's user-level `CLAUDE.md`** (outside the repo): one line, which
+  the README gives and asks agents to suggest. This covers agents started outside a
+  checkout of this repo.
 - **Later, optional:** a Claude Code `PreToolUse` hook that blocks
   `docker exec … amplicon-(dev|prod)` while the session does not hold the lock.
   Hold off until the basic version has been in use for a while.

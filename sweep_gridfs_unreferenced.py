@@ -48,6 +48,7 @@ import os
 import sys
 
 from pymongo import MongoClient, ReadPreference
+import ops_lock  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
 
@@ -215,6 +216,7 @@ def main(argv=None):
                         help='actually delete; without this nothing is written')
     parser.add_argument('--undo-record', help='path for the JSONL undo record '
                                               '(required with --execute)')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args(argv)
 
     if args.execute and not args.undo_record:
@@ -226,6 +228,8 @@ def main(argv=None):
             tzinfo=datetime.timezone.utc)
 
     db = connect(args.expect_db)
+    if args.execute:
+        ops_lock.require(db, 'sweep_gridfs_unreferenced --execute', args.no_lock)
     projects, fs_files = db['projects'], db['fs.files']
     print('target: %s   %s' % (db.name, 'EXECUTE' if args.execute else 'REPORT-ONLY'))
 

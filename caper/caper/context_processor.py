@@ -1,3 +1,5 @@
+import datetime
+
 from django.conf import settings
 
 
@@ -62,6 +64,30 @@ def shutdown_mode(request):
     return {
         'SHUTDOWN_PENDING': get_shutdown_pending()
     }
+
+
+def ops_lock_notice(request):
+    """Who holds the operator lock, for the line on admin pages.
+
+    The read happens only for staff on /admin pages, so other requests pay nothing.
+    The site never enforces the lock: this line is how someone in a browser finds out.
+    """
+    user = getattr(request, 'user', None)
+    if not (request.path.startswith('/admin') and user is not None and user.is_staff):
+        return {}
+    doc = _get_settings_collection().find_one({'_id': 'ops_lock'})
+    if not doc or not doc.get('holder'):
+        return {}
+    now = datetime.datetime.utcnow()
+    if doc['expires_at'] <= now:
+        return {}
+    return {'OPS_LOCK': {
+        'holder': doc['holder'],
+        'owner': doc.get('owner'),
+        'reason': doc.get('reason'),
+        'minutes_held': int((now - doc['acquired_at']).total_seconds() // 60),
+        'minutes_left': int((doc['expires_at'] - now).total_seconds() // 60),
+    }}
 
 
 def registration_mode(request):

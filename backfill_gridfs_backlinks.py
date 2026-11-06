@@ -33,6 +33,7 @@ import sys
 import time
 
 from pymongo import ASCENDING, UpdateOne
+import ops_lock  # noqa: E402
 from pymongo.errors import PyMongoError
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
@@ -207,6 +208,7 @@ def main(argv=None):
     parser.add_argument('--resume', action='store_true',
                         help='continue after the last document the checkpoint '
                              'records as done')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args(argv)
 
     db_name = os.getenv('DB_NAME', 'caper')
@@ -219,6 +221,8 @@ def main(argv=None):
     projects = database['projects']
     fs_files = database['fs.files']
     print(f'target: {db_name} ({args.expect_host})')
+    if args.execute:
+        ops_lock.require(database, 'backfill_gridfs_backlinks --execute', args.no_lock)
 
     if args.rollback:
         return rollback(fs_files, args.rollback, args.batch,

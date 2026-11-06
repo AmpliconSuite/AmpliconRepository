@@ -61,6 +61,8 @@ import argparse
 from bson import ObjectId
 from pymongo import MongoClient
 
+import ops_lock
+
 # The canonical GridFS key list lives with the application so the upload path
 # and every delete path share one definition.  Importing it here — rather than
 # keeping a second hand-written copy, which is what this script used to do —
@@ -440,6 +442,7 @@ def main():
     parser.add_argument(
         '--verbose', '-v', action='store_true',
         help='Enable DEBUG-level logging.')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args()
 
     # Reporting is the default. This script once deleted 84 documents on prod
@@ -491,6 +494,8 @@ def main():
 
     # ─── Connect ─────────────────────────────────────────────────────
     db_handle, mongo_client = get_db_handle(db_name, db_uri)
+    if args.execute:
+        ops_lock.require(db_handle, 'cleanup_orphaned_projects --execute', args.no_lock)
     collection = db_handle['projects']
 
     # This script opens its own connection, so it binds the application's

@@ -37,6 +37,7 @@ import os
 import sys
 
 from pymongo import MongoClient
+import ops_lock  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
 
@@ -104,6 +105,7 @@ def main(argv=None):
                         help='run again on a database that has already been '
                              'reconciled. Every count this zeroes on a second '
                              'run is a real view, not residue.')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args(argv)
 
     db_name = os.getenv('DB_NAME', 'caper')
@@ -112,6 +114,8 @@ def main(argv=None):
     database = connect(db_name, args.expect_host)
     projects = database['projects']
     print(f'target: {db_name} ({args.expect_host})')
+    if args.execute:
+        ops_lock.require(database, 'zero_carried_forward_views --execute', args.no_lock)
 
     marker = database[MIGRATIONS].find_one({'_id': MARKER})
     if marker:

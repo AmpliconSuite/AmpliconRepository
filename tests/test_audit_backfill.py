@@ -25,6 +25,12 @@ from bson import ObjectId
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+@pytest.fixture(autouse=True)
+def _operator_lock_is_not_under_test(monkeypatch):
+    """These run main() against stand-in databases, which require() can't read."""
+    monkeypatch.setattr('ops_lock.require', lambda *args, **kwargs: None)
+
+
 def _load(name):
     spec = importlib.util.spec_from_file_location(name, os.path.join(ROOT, f'{name}.py'))
     module = importlib.util.module_from_spec(spec)

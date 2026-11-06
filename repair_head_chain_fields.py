@@ -38,6 +38,7 @@ import os
 import sys
 
 from pymongo import MongoClient
+import ops_lock  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
 
@@ -102,6 +103,7 @@ def main(argv=None):
                         help='repair at most N fields, for staging a first run')
     parser.add_argument('--undo-file', metavar='PATH',
                         help='where to write the inverse of every write')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args(argv)
 
     db_name = os.getenv('DB_NAME', 'caper')
@@ -110,6 +112,8 @@ def main(argv=None):
     database = connect(db_name, args.expect_host)
     projects = database['projects']
     print(f'target: {db_name} ({args.expect_host})')
+    if args.execute:
+        ops_lock.require(database, 'repair_head_chain_fields --execute', args.no_lock)
 
     repairs = plan(projects)
     print(f'\n{len(repairs)} field(s) to restore onto {len({r[0] for r in repairs})} head(s)\n')

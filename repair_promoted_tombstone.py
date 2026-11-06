@@ -39,6 +39,7 @@ import sys
 
 from bson.objectid import ObjectId
 from pymongo import MongoClient
+import ops_lock  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caper'))
 
@@ -153,6 +154,7 @@ def main(argv=None):
     parser.add_argument('--rollback-file',
                         help='where to record the inverse of every write '
                              '(default: repair-promoted-tombstone-undo.jsonl)')
+    ops_lock.add_no_lock_argument(parser)
     args = parser.parse_args(argv)
 
     db_name = os.getenv('DB_NAME', 'caper')
@@ -160,6 +162,8 @@ def main(argv=None):
         sys.exit(f'DB_NAME is {db_name!r}, --expect-db said {args.expect_db!r}')
     projects = connect(db_name, args.expect_host)
     print(f'target: {db_name} ({args.expect_host})')
+    if args.execute:
+        ops_lock.require(projects.database, 'repair_promoted_tombstone --execute', args.no_lock)
 
     affected = find_affected(projects)
     if not affected:
