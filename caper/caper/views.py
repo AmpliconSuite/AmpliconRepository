@@ -3218,6 +3218,16 @@ def delete_whole_project(request, project_name):
     serving them once their project's head is deleted -- and records each
     version's URL, under the name it had, in deleted_project_urls.
     """
+    project = get_one_project(project_name)
+    # Asked only here, not in project_delete(), which is also a step of every edit.
+    # Read from the primary: a tag written a moment ago must not be missed.
+    if (project and may_edit_project(project, request)
+            and publication_versions.tagged_versions_in_chain(collection_handle_primary, project)
+            and not publication_versions.name_confirmed(
+                project, request.POST.get('confirm_project_name'))):
+        messages.error(request, 'This project holds a version used in a publication. '
+                                'Type the project name in the delete section to delete it.')
+        return redirect('edit_project_page', project_name=str(project['_id']))
     return project_delete(request, project_name, whole_project=True)
 
 
@@ -4488,6 +4498,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
             _metadata_context = get_metadata_remap_edit_context(project)
             return render(request, 'pages/edit_project.html',
                           {'project': project,
+                           'project_linkid': str(project['_id']),
                            'run': form,
                            'alert_message': alert_message,
                            'all_alias': json.dumps(get_all_alias()),
@@ -4878,6 +4889,8 @@ def _render_edit_project_page(request, project, form, status=200, alert_message=
                    'all_alias': json.dumps(get_all_alias()),
                    "is_empty_project": project_is_empty(project),
                    'alert_message': alert_message,
+                   'tagged_version_count': len(publication_versions.tagged_versions_in_chain(
+                       collection_handle_primary, project)),
                    **get_metadata_remap_edit_context(project),
                    }, status=status)
 
