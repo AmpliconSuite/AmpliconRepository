@@ -1,4 +1,4 @@
-# Updating site projects to a new AmpliconClassifier release
+# `amprepo_reclassify`: updating site projects to a new AmpliconClassifier release
 
 Status: design, nothing built in this repo yet. Written 2026-11-06.
 
@@ -71,8 +71,9 @@ aggregator on every upload, so the site decides how the stored project is packed
 local copy is for checks before upload: catching dropped samples, including samples
 without amplicons, and producing the `run.json` that the record-size check reads. `setup`
 installs the version pinned in this repo's `requirements.txt`, which was 8.3.1 on both
-servers and the latest on PyPI on 2026-11-06. The site gets a new aggregator only when
-that pin changes and its image is rebuilt, so `preflight` warns if PyPI has moved ahead.
+servers and the latest on PyPI on 2026-11-06. A new aggregator goes to PyPI, then prod,
+and reclassifying comes after that, so the two match in practice. `preflight` warns if
+PyPI is ahead of the pin, which means prod hasn't got the new version yet.
 
 **Assume AC's default configuration.** At `v2.0.1`, AC rewrites its default config file
 if it differs from the shipped values, so non-default values can only come from flags or
@@ -90,8 +91,8 @@ logs. Both were tested on 2026-11-06, with a missing licence. Whether a CBC-only
 machine should ever be allowed depends on comparing the two solvers' results, which
 hasn't been done.
 
-**The code lives in this repo,** in its own top-level directory with its own
-requirements, importing nothing from `caper/`. The site's upload endpoint and this
+**The code lives in this repo,** in a top-level `amprepo_reclassify/` directory with its
+own requirements, importing nothing from `caper/`. The site's upload endpoint and this
 client change together, which is the reason to keep them in one place. The repo is
 public, so project lists, tokens and machine paths stay out of it: the project list
 comes from the site, and per-machine settings go in an ignored config file.
