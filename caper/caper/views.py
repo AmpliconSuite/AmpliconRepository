@@ -141,6 +141,7 @@ from .project_version_cleanup import (
 )
 
 from .extra_metadata import *
+from .sample_metadata_rows import sample_metadata_of
 
 # imports for coamp graph
 from .neo4j_utils import (load_graph, fetch_subgraph, fetch_overview,
@@ -1958,9 +1959,7 @@ def get_sample_metadata(sample_data):
             logging.warning(f"Could not read Sample_metadata_JSON {sample_metadata_id!r}: {e}")
     try:
         # Add metadata from the `extra_metadata_from_csv` field
-        extra_metadata = sample_data[0].get('extra_metadata_from_csv', {})
-        if isinstance(extra_metadata, dict):
-            sample_metadata.update(extra_metadata)
+        sample_metadata.update(sample_metadata_of(sample_data) or {})
     except Exception as e:
         logging.exception(e)
         #sample_metadata = defaultdict(str)

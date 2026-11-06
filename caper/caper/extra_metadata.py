@@ -7,6 +7,7 @@ import pandas as pd
 
 from .utils import *
 from .project_events import project_content_changed
+from .sample_metadata_rows import METADATA_KEY, sample_metadata_of
 
 # Columns that carry sample identity rather than a metadata value. They are
 # indexed for lookup (see _build_metadata_lookup_from_dataframe) and are not
@@ -228,6 +229,9 @@ def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=No
     old_metadata_lookup = _build_retained_metadata_lookup(old_extra_metadata)
 
     for sample_key, sample_list in project_runs.items():
+        # The first matched row of each sample holds its metadata, and the rest
+        # hold none: see sample_metadata_rows for why, and for how they read it.
+        holders = {}
         for sample in sample_list:
             sample_name = sample.get('Sample_name')
             if not sample_name:
@@ -246,30 +250,47 @@ def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=No
 
             samples_updated += 1
 
-            if "extra_metadata_from_csv" not in sample:
-                sample["extra_metadata_from_csv"] = {}
+            holder = holders.get(sample_name)
+            if holder is None:
+                holders[sample_name] = sample
+                metadata = sample.setdefault(METADATA_KEY, {})
 
-            # If there is old metadata for this sample, preserve it
-            old_metadata = old_metadata_lookup.get(sample_name)
-            if old_metadata:
-                sample["extra_metadata_from_csv"].update(old_metadata)
+                # If there is old metadata for this sample, preserve it
+                old_metadata = old_metadata_lookup.get(sample_name)
+                if old_metadata:
+                    metadata.update(old_metadata)
 
-            original_name = _metadata_value(row, 'original_sample_name')
-            if not _has_metadata_value(original_name):
-                original_name = _metadata_value(row, 'sample_name')
-            if _has_metadata_value(original_name):
-                sample["extra_metadata_from_csv"]["original_sample_name"] = str(original_name)
+                original_name = _metadata_value(row, 'original_sample_name')
+                if not _has_metadata_value(original_name):
+                    original_name = _metadata_value(row, 'sample_name')
+                if _has_metadata_value(original_name):
+                    metadata["original_sample_name"] = str(original_name)
 
-            sample_name_alias = _metadata_value(row, 'sample_name_alias')
-            if _has_metadata_value(sample_name_alias):
-                sample["extra_metadata_from_csv"]["sample_name_alias"] = str(sample_name_alias)
+                sample_name_alias = _metadata_value(row, 'sample_name_alias')
+                if _has_metadata_value(sample_name_alias):
+                    metadata["sample_name_alias"] = str(sample_name_alias)
 
-            # Update with new metadata
+                # Update with new metadata
+                # A blank cell stores nothing, and clears any value carried over.
+                for key, value in row.items():
+                    if str(key).lower() in IDENTITY_COLUMNS:
+                        continue
+                    if _has_metadata_value(value):
+                        metadata[key] = value
+                    else:
+                        metadata.pop(key, None)
+            else:
+                # A row from a version that stored a copy per row. Anything only
+                # it knows moves to the holder; what was just applied stands.
+                copy = sample.pop(METADATA_KEY, None)
+                if isinstance(copy, dict):
+                    for key, value in copy.items():
+                        holder[METADATA_KEY].setdefault(key, value)
+
+            # These three are read per row, by search among others, so every row
+            # keeps them.
             for key, value in row.items():
                 normalized_key = str(key).lower()
-                if normalized_key not in {
-                        'sample_name', 'original_sample_name', 'sample_name_alias'}:
-                    sample["extra_metadata_from_csv"][key] = value
                 if normalized_key == 'cancer_type':
                     sample["Cancer_type"] = value
                 if normalized_key == 'sample_type':
@@ -280,6 +301,7 @@ def _apply_metadata_to_runs(project_runs, metadata_lookup, old_extra_metadata=No
             # Metadata attachment and sample renaming are separate operations.
             # When remapping is declined, retain the name supplied by the new
             # project archive instead of silently restoring metadata['sample_name'].
+            sample_name_alias = _metadata_value(row, 'sample_name_alias')
             if remap_name_to_alias and _has_metadata_value(sample_name_alias):
                 sample["Sample_name"] = str(sample_name_alias)
 
@@ -531,20 +553,18 @@ def project_sample_names(project):
 def _sample_metadata_rows(project):
     """Yield ``(sample_name, metadata_or_None)`` once per sample in the project.
 
-    Every feature row of a sample carries the same ``extra_metadata_from_csv``
-    copy, so only the first is read.
+    A sample's metadata is on one of its feature rows, or on all of them in a
+    version written before sample_metadata_rows.
     """
     for run_key, sample_list in (project.get('runs') or {}).items():
         name = str(run_key)
-        metadata = None
         for feature in sample_list or []:
             if not isinstance(feature, dict):
                 continue
             if feature.get('Sample_name'):
                 name = str(feature['Sample_name'])
-            metadata = feature.get('extra_metadata_from_csv') or None
             break
-        yield name, (metadata if isinstance(metadata, dict) else None)
+        yield name, sample_metadata_of(sample_list)
 
 
 def metadata_coverage(project):
