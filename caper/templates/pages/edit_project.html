@@ -464,6 +464,7 @@
                               <li><strong>The first column</strong> is <b>"sample_name"</b> (e.g., "Sample_001").</li>
                               <li><strong>The second column</strong> is <b>"cancer_type"</b> (e.g., "Lung Cancer").</li>
                               <li><strong>All other columns</strong> are metadata fields associated with the sample.</li>
+                              <li><strong>Maximum size:</strong> this depends on the project, because its samples and metadata share one 16 MB record. As a guide, a CSV or TSV of up to about 3 MB fits a project of up to about 2,000 features, and about 1 MB fits one of up to about 7,000. Wide sheets take more room, since each sample repeats the column names. A sheet that won't fit is refused with a message, and nothing is changed.</li>
                               <li>If a column named <strong>sample_name_alias</strong> is included, you will have the option of renaming samples names to the alias names after the project is created.</li>
                           </ul>
                       
