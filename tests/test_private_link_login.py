@@ -241,8 +241,13 @@ def test_a_site_admin_can_open_the_edit_form_of_a_private_project(
     assert response.status_code == 200
     assert response.content != b'Project does not exist'
     # And it carries the delete button, posting to the delete view.
-    assert (f'action="/project/{private_project}/delete" id="delete-project-form"'
-            in response.content.decode())
+    html = response.content.decode()
+    assert f'action="/project/{private_project}/delete" id="delete-project-form"' in html
+    # Collapsed, and above the edit form, so nobody working down to Submit at
+    # the bottom of the page lands on it. A <details> left open would show it.
+    section = html.index('<details id="delete-project-section"')
+    assert (section < html.index('id="delete-project-form"')
+            < html.index('</details>', section) < html.index('id="upload-form"'))
 
 
 def test_a_site_admin_can_delete_a_private_project_and_it_is_logged_as_theirs(
