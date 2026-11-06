@@ -12,7 +12,8 @@ admin, from what the paper itself says, and ``evidence`` records how we know: a
 version id in the paper's data availability statement, or something weaker.
 
 **Deleting a tagged version takes a typed project name.** A person deleting one
-project or version is asked for it. A path with nobody to ask (the admin's bulk
+project or version is asked for it, and that includes deleting a whole project
+that holds a tagged version. A path with nobody to ask (the admin's bulk
 delete, an account deletion, the orphan cleanup script) does not delete the
 project and reports why; an admin can then delete it on its own.
 
@@ -74,6 +75,15 @@ def link_to_offer(collection, project):
     head = lineage.latest_version(collection, project, {'publication_link': 1, 'is_latest': 1,
                                                         'version_ordinal': 1})
     return ((head or project).get('publication_link') or '').strip()
+
+
+def tagged_versions_in_chain(collection, project):
+    """The versions of *project* that deleting the whole project would need confirmed."""
+    if not project:
+        return []
+    # A document with no chain pointers is a project of one version.
+    members = lineage.chain_members(collection, project, {'runs': 0, 'sample_data': 0}) or [project]
+    return [member for member in members if is_protected(member)]
 
 
 def name_confirmed(document, typed):

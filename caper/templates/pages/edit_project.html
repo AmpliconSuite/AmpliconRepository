@@ -97,28 +97,6 @@
 {% if user.is_authenticated %}
     <div id="alert-box"></div>
 
-    {% comment %}
-    Collapsed and above the edit form, so it is nowhere near Submit at the bottom
-    of the page. Its own form: forms cannot nest, and this one must not carry the
-    edit form's fields or wait on its licence box.
-    {% endcomment %}
-    <details id="delete-project-section" style="margin-bottom: 16px;">
-      <summary class="text-danger" style="cursor: pointer;">Delete this project&hellip;</summary>
-      <div style="margin-top: 8px;">
-        <p>Deletes this project <strong>and every earlier version of it</strong>. Links to any of its
-           versions &mdash; in papers, emails or bookmarks &mdash; stop working, and lead to a notice that
-           the project was deleted. A site admin can restore it until it is permanently deleted.</p>
-        <p>To delete just one version, use the Project History table on the project page.</p>
-        <form method="post" action="{% url 'project_delete' project_name=project_linkid %}" id="delete-project-form"
-              onsubmit="return confirm('Delete \'{{ project.project_name|escapejs }}\' and all of its versions?\n\nLinks to any version of this project will stop working.\n\nTo delete a single version instead, cancel and use the Project History table on the project page.');">
-          {% csrf_token %}
-          <button type="submit" class="uk-button uk-button-danger">
-            <i class="fa fa-trash"></i> Delete project
-          </button>
-        </form>
-      </div>
-    </details>
-
     <form method="post" enctype="multipart/form-data" id="upload-form">
 
         {% csrf_token %} 
@@ -596,6 +574,34 @@
           Submit
         </button>
       </form>
+
+      {% comment %}
+      Below the edit form and well apart from it, collapsed, so Submit is the only
+      button at the end of the form. Its own form: forms cannot nest, and this one
+      must not carry the edit form's fields or wait on its licence box.
+      {% endcomment %}
+      <details id="delete-project-section" style="margin-top: 64px; padding-top: 16px; border-top: 1px solid #ddd;">
+        <summary class="text-danger" style="cursor: pointer;">Delete this project&hellip;</summary>
+        <div style="margin-top: 8px;">
+          <p>Deletes this project <strong>and every earlier version of it</strong>. Links to any of its
+             versions &mdash; in papers, emails or bookmarks &mdash; stop working, and lead to a notice that
+             the project was deleted. A site admin can restore it until it is permanently deleted.</p>
+          <p>To delete just one version, use the Project History table on the project page.</p>
+          <form method="post" action="{% url 'project_delete' project_name=project_linkid %}" id="delete-project-form"
+                onsubmit="return confirm('Delete \'{{ project.project_name|escapejs }}\' and all of its versions?\n\nLinks to any version of this project will stop working.\n\nTo delete a single version instead, cancel and use the Project History table on the project page.');">
+            {% csrf_token %}
+            {% if tagged_version_count %}
+              <p><strong>This project holds {{ tagged_version_count }} version{{ tagged_version_count|pluralize }} used in a publication.</strong>
+                 Type the project name, <code>{{ project.project_name }}</code>, to delete it.</p>
+              <input type="text" name="confirm_project_name" required autocomplete="off"
+                     aria-label="Project name" style="margin-bottom: 8px;"><br>
+            {% endif %}
+            <button type="submit" class="uk-button uk-button-danger">
+              <i class="fa fa-trash"></i> Delete project
+            </button>
+          </form>
+        </div>
+      </details>
 
 {% else %}
     <h1>Please sign in to edit projects</h1>

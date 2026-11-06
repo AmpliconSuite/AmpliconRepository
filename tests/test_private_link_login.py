@@ -243,11 +243,11 @@ def test_a_site_admin_can_open_the_edit_form_of_a_private_project(
     # And it carries the delete button, posting to the delete view.
     html = response.content.decode()
     assert f'action="/project/{private_project}/delete" id="delete-project-form"' in html
-    # Collapsed, and above the edit form, so nobody working down to Submit at
-    # the bottom of the page lands on it. A <details> left open would show it.
-    section = html.index('<details id="delete-project-section"')
-    assert (section < html.index('id="delete-project-form"')
-            < html.index('</details>', section) < html.index('id="upload-form"'))
+    # Collapsed, and after the edit form has closed, so it is not one of the
+    # buttons at the end of the form. A <details> left open would show it.
+    upload_form_end = html.index('</form>', html.index('id="upload-form"'))
+    section = html.index('<details id="delete-project-section"', upload_form_end)
+    assert section < html.index('id="delete-project-form"') < html.index('</details>', section)
 
 
 def test_a_site_admin_can_delete_a_private_project_and_it_is_logged_as_theirs(
@@ -281,6 +281,62 @@ def test_a_site_admin_can_delete_a_private_project_and_it_is_logged_as_theirs(
         assert event['completed'] is True
     finally:
         audit_log_handle.delete_many({'project_uuid': private_project})
+
+
+def _tag_older_version(mongo_collection, project_id):
+    """Give the project an older, tagged version in its chain. Returns that version's id."""
+    oid = ObjectId(project_id)
+    mongo_collection.update_one({'_id': oid}, {'$set': {'version_chain_id': oid, 'version_ordinal': 2}})
+    older = mongo_collection.find_one({'_id': oid})
+    older.update(_id=ObjectId(), current=False, version_ordinal=1, status='SUPERSEDED',
+                 publication_tag={'publication': 'Some paper', 'evidence': 'stated'})
+    mongo_collection.insert_one(older)
+    return older['_id']
+
+
+def test_deleting_a_project_with_a_tagged_version_takes_the_typed_name(
+        private_project, site_admin, mongo_collection, monkeypatch):
+    from caper import views
+    monkeypatch.setattr(views, 'project_removed', lambda project, visibility: None)
+    oid = ObjectId(private_project)
+    older = _tag_older_version(mongo_collection, private_project)
+    name = mongo_collection.find_one({'_id': oid})['project_name']
+    client = Client(HTTP_HOST='localhost')
+    client.force_login(site_admin)
+    url = f'/project/{private_project}/delete'
+    try:
+        edit_page = client.get(f'/project/{private_project}/edit').content.decode()
+        assert 'name="confirm_project_name"' in edit_page
+        assert 'holds 1 version used in a publication' in edit_page
+
+        for typed in ({}, {'confirm_project_name': 'wrong'}):
+            response = client.post(url, typed)
+            assert response.status_code == 302 and response['Location'].endswith('/edit')
+            assert mongo_collection.find_one({'_id': oid})['delete'] is False
+
+        assert client.post(url, {'confirm_project_name': name}).status_code == 302
+        assert mongo_collection.find_one({'_id': oid})['delete'] is True
+    finally:
+        mongo_collection.delete_one({'_id': older})
+
+
+def test_a_project_with_no_tagged_version_is_not_asked_for_its_name(private_project, site_admin):
+    client = Client(HTTP_HOST='localhost')
+    client.force_login(site_admin)
+    edit_page = client.get(f'/project/{private_project}/edit').content.decode()
+    assert 'name="confirm_project_name"' not in edit_page
+
+
+def test_someone_who_cannot_edit_is_not_told_about_the_tag(
+        private_project, outsider, mongo_collection):
+    older = _tag_older_version(mongo_collection, private_project)
+    client = Client(HTTP_HOST='localhost')
+    client.force_login(outsider)
+    try:
+        response = client.post(f'/project/{private_project}/delete')
+        assert response.content == b'Project does not exist'
+    finally:
+        mongo_collection.delete_one({'_id': older})
 
 
 def test_the_admin_project_list_links_a_private_project(
