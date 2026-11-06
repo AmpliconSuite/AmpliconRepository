@@ -93,6 +93,7 @@ from .utils import (
     get_collection_handle,
 )
 from .search import METADATA_COLUMN_FOR_KEY
+from .sample_metadata_rows import with_metadata_on_every_row
 from .visibility import (
     PUBLIC_QUERY_VALUES,
     RESTRICTED_QUERY_VALUES,
@@ -357,6 +358,8 @@ def feature_rows_for_project(project):
     runs = project.get('runs') or {}
     if not isinstance(runs, dict):
         return []
+    # One row per feature here, each carrying its sample's metadata.
+    runs = with_metadata_on_every_row(runs)
 
     cached_metadata = _sample_metadata_lookup(project)
     # len(runs), carried on every row. The search results table reports a

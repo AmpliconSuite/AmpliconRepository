@@ -4,6 +4,7 @@ import re
 from pymongo import MongoClient
 from .utils import *
 from .project_status import LIVE, status_query
+from .sample_metadata_rows import with_metadata_on_every_row
 
 
 # ---------------------------------------------------------------------------
@@ -634,7 +635,7 @@ def get_samples_from_features(projects, genequery, classquery, metadata_sample_n
         project_url = reverse('project_page',
                               kwargs={'project_name': str(project_linkid)})
         features = project['runs']
-        features_list = replace_space_to_underscore(features)
+        features_list = replace_space_to_underscore(with_metadata_on_every_row(features))
 
         # Collect zero-feature samples from the runs dict.
         # These are samples where runs[key] is an empty list.
