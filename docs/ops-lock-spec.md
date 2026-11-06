@@ -267,7 +267,7 @@ They are separate mechanisms that compose:
 
 The deploy runbooks in the wiki become:
 
-1. `ops_lock.py acquire` (or wrap the whole deploy in `run --`)
+1. `ops_lock.py acquire` (not `run --`, which a restart would kill inside the container)
 2. `shutdown_mode.py wait`, then `on`
 3. deploy
 4. `shutdown_mode.py off`

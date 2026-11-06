@@ -256,8 +256,10 @@ def require(db, purpose, no_lock=None):
     state = describe(doc, now)
     if _is_shared(db):
         print('REFUSED: %s needs the operator lock on %s, which is %s\n'
-              'Wrap the command in `ops_lock.py --expect-db %s run ... -- <command>`, or '
-              'use `wait` if someone else holds it.' % (purpose, db.name, state, db.name))
+              'For this one command, wrap it in `ops_lock.py --expect-db %s run ... -- <command>`. '
+              'For a longer job such as a deploy, `acquire` first, because a restart kills '
+              '`run` inside the container. If someone else holds it, tell your user and use '
+              '`wait`.' % (purpose, db.name, state, db.name))
         sys.exit(1)
     print('WARNING: %s is running without the operator lock on local database %s, which is %s'
           % (purpose, db.name, state))

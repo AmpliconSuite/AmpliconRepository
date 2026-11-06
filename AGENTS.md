@@ -31,7 +31,8 @@ Never commit `caper/config.sh` or `caper/.env` to version control.
 
 **Before any write to dev or prod**, run `ops_lock.py --expect-db <db> status`. Wrap the
 work in `ops_lock.py --expect-db <db> run --holder H --owner O --reason "..." -- <command>`,
-or `acquire` it and `release` it when done. If the lock is held, report the holder and
+or `acquire` it and `release` it when done. Use `acquire` for a deploy, because a restart kills
+`run` inside the container. If the lock is held, report the holder and
 reason to your user and use `wait`. Do not `break` it or work around it. On prod, each of
 these is still a write that needs its own explicit ask.
 
