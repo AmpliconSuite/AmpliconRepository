@@ -755,7 +755,7 @@ def is_macos_metadata_file(path):
     return parts[-1].startswith('._') or '__MACOSX' in parts
 
 
-def initialize_ecDNA_context(project):
+def initialize_ecDNA_context(project, fs=None):
     """
     Check for and initialize the ecDNA_context dictionary in a project.
 
@@ -765,6 +765,8 @@ def initialize_ecDNA_context(project):
 
     Args:
         project: The project dictionary from the database
+        fs: Where to read the archive from, for a caller that can't wait for a replica
+            to have it: a failed read stores an empty context for good.
 
     Returns:
         None - modifies the project in the database if needed
@@ -786,7 +788,7 @@ def initialize_ecDNA_context(project):
         # Get the tar file from GridFS and extract ecDNA_context_calls.tsv files
         try:
             tar_id = project['tarfile']
-            tar_gridfs_file = fs_handle.get(ObjectId(tar_id))
+            tar_gridfs_file = (fs or fs_handle).get(ObjectId(tar_id))
             logging.debug(f"Retrieved tarfile from GridFS for project {project.get('project_name', project['_id'])}")
 
             # Open tar file and look for ecDNA_context_calls.tsv files

@@ -93,6 +93,14 @@ def _status(job_id, token):
     return ProjectReplaceStatusView.as_view()(request, job_id=job_id)
 
 
+def _prepare(version_id, token=None):
+    from caper.views_apis import ProjectReplacePrepareView
+
+    headers = {'HTTP_AUTHORIZATION': f'Token {token}'} if token else {}
+    request = APIRequestFactory().post(f'/upload_api/replace-prepare/{version_id}/', **headers)
+    return ProjectReplacePrepareView.as_view()(request, version_id=version_id)
+
+
 def _state(doc):
     """What a refused request must leave alone."""
     return utils.collection_handle_primary.find_one({'_id': doc['_id']})
@@ -342,6 +350,54 @@ def test_status_follows_the_placeholder(project, admin):
     assert failed['restored_project_id'] == 'abc'
 
 
+# ---- Getting a new version's page ready ----
+
+def test_prepare_needs_an_admin(project, member):
+    assert _prepare(str(project['_id'])).status_code == 401
+    assert _prepare(str(project['_id']), member[1]).status_code == 403
+    assert _state(project) == project
+
+
+@pytest.mark.parametrize('version_id', ['not-an-id', str(ObjectId())])
+def test_prepare_on_no_such_version_is_404(admin, version_id):
+    assert _prepare(version_id, admin[1]).status_code == 404
+
+
+@pytest.mark.parametrize('change', [{'FINISHED?': False}, {'aggregation_failed': True}])
+def test_prepare_refuses_a_version_that_has_not_finished(project, admin, change):
+    utils.collection_handle_primary.update_one({'_id': project['_id']}, {'$set': change})
+    response = _prepare(str(project['_id']), admin[1])
+    assert response.status_code == 409
+    assert response.data['code'] == 'not_finished'
+    assert 'metadata_stored' not in _state(project)
+
+
+def test_prepare_does_nothing_twice(project, admin, monkeypatch):
+    from caper import background_tasks
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError('the fields were already stored')
+
+    monkeypatch.setattr(background_tasks._thread_executor, 'submit', must_not_run)
+    utils.collection_handle_primary.update_one({'_id': project['_id']}, {'$set': {'metadata_stored': 'Yes'}})
+    response = _prepare(str(project['_id']), admin[1])
+    assert response.status_code == 202
+    assert response.data == {'page_ready': True}
+
+
+def test_page_fields_read_the_archive_from_the_primary(project, monkeypatch):
+    """A replica can lack an archive written moments ago, and a failed read is stored for good."""
+    import caper.views
+
+    seen = {}
+    monkeypatch.setattr(caper.views, 'store_page_fields',
+                        lambda doc, fs=None: seen.update(fs=fs, id=doc['_id']))
+    monkeypatch.setattr(project_replace.gridfs, 'GridFS', lambda database: database)
+    project_replace._store_page_fields(project['_id'])
+    assert seen['id'] == project['_id']
+    assert seen['fs'] is utils.db_handle_primary
+
+
 # ---- For real, with the aggregator ----
 
 def _wait_for_job(job_id, token):
@@ -414,6 +470,24 @@ def test_a_real_replacement_matches_its_dry_run(real_project, admin, tmp_path):
         result = _wait_for_job(new_id, admin[1])
 
     assert result['state'] == 'finished', result
+    assert result['page_ready'] is False
+    assert result['page_fields'] == {'sample_data': 0, 'reference_genome': None, 'ecDNA_context': 0}
+
+    # What the first page view would have stored, without a page view.
+    new_id = result['project_id']
+    assert _prepare(new_id, admin[1]).data == {'page_ready': False}
+    deadline = time.time() + POLL_TIMEOUT
+    while not _status(new_id, admin[1]).data['page_ready'] and time.time() < deadline:
+        time.sleep(1)
+    prepared = collection.find_one({'_id': ObjectId(new_id)})
+    assert prepared['metadata_stored'] == 'Yes'
+    assert prepared['reference_genome'] and prepared['sample_data']
+    assert isinstance(prepared['ecDNA_context'], dict)
+    assert prepared['views'] == 0, 'preparing a page is not a visit'
+    names = {feature['Sample_name'] for features in prepared['runs'].values() for feature in features}
+    assert _status(new_id, admin[1]).data['page_fields'] == {
+        'sample_data': len(names), 'reference_genome': prepared['reference_genome'],
+        'ecDNA_context': len(prepared['ecDNA_context'])}
     for key in ('shared', 'new'):
         assert result['files'][key] == prediction['files'][key], key
     # Both near the upload's size, and always written: it holds the version's id.

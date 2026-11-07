@@ -396,7 +396,8 @@ def kept_content(tar_path):
 
 
 def run_json_summary(tar_path):
-    """The samples named in an archive's run.json, and the file's size."""
+    """The samples named in an archive's run.json, the counts the site will report for that file
+    (`entries`, `features`), and its size."""
     with tarfile.open(tar_path) as tar:
         member = next((m for m in tar if os.path.basename(m.name) == 'run.json' and m.isfile()), None)
         if member is None:
@@ -404,7 +405,20 @@ def run_json_summary(tar_path):
         data = json.load(tar.extractfile(member))
     names = {feature.get('Sample name') for features in data.get('runs', {}).values()
              for feature in features}
-    return {'samples': sorted(n for n in names if n), 'bytes': member.size}
+    return {'samples': sorted(n for n in names if n), 'bytes': member.size,
+            'entries': len(data.get('runs', {})),
+            'features': sum(len(features) for features in data.get('runs', {}).values())}
+
+
+def context_calls(tar_path):
+    """How many ecDNA context calls an archive holds. Plenty of archives legitimately have none."""
+    calls = 0
+    with tarfile.open(tar_path) as tar:
+        for member in tar:
+            name = os.path.basename(member.name)
+            if member.isfile() and name.endswith('ecDNA_context_calls.tsv') and not name.startswith('._'):
+                calls += sum(1 for line in tar.extractfile(member) if line.strip())
+    return calls
 
 
 def content_hashes(tar_path):

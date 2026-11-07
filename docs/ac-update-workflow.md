@@ -1,7 +1,8 @@
 # `amprepo_reclassify`: updating site projects to a new AmpliconClassifier release
 
-Status: written 2026-11-06. `setup`, `plan`, `preflight`, `run` and `summary` are built, in
-[`amprepo_reclassify/`](../amprepo_reclassify/README.md). `upload` and the site's route aren't.
+Status: written 2026-11-06. Every stage is built, in
+[`amprepo_reclassify/`](../amprepo_reclassify/README.md), and so is the site's route. The checkbox
+isn't. No project has been updated on prod with this.
 
 ## Goal
 
@@ -22,7 +23,9 @@ one machine, with hard-coded paths and a named conda environment.
 
 ## Stages
 
-Each stage is one subcommand. Only `upload` writes to a site.
+Each stage is one subcommand. Only `upload` writes to a site. The order is AC on everything, a
+person reviews, then the upload: `upload` refuses while any project in the plan is unbuilt, unless
+`--only` names what to send.
 
 | Stage | Does | Writes to |
 |---|---|---|
@@ -221,9 +224,19 @@ fully automatic, because a person reviews changes first.
 - **Site load.** Upload one project at a time. GridFS writes took about 0.30 s/MiB in
   autumn 2026, so a 2 GB archive holds the site's write path for about 10 minutes.
   Shutdown mode refuses uploads, and `upload` should say so plainly.
-- **Checking the result.** After each upload, confirm through the API the AC version,
-  sample count and feature count, open the project page once so derived fields are
-  written, and record files shared against the prediction. Stop the batch on a miss.
+- **Checking the result.** After each upload, compare the site's sample and feature counts
+  and its page fields with the archive's own, its AC version with the target, and, if there was
+  a dry run, the files stored with the prediction. Stop the batch on a miss.
+- **A new version's page fields.** A version has no `sample_data`, `ecDNA_context` or
+  `reference_genome` until its page is first opened, and the API reports a blank reference
+  until then. The form's user always opens it, but a script can't: the WAF refuses a non-browser
+  page request (403, dev, 2026-11-06), and a private page needs a login. So `upload` asks for
+  this with `POST upload_api/replace-prepare/<version id>/`, and the status reports `page_ready`.
+  It reads the archive from the primary, because a failed read stores an empty context for good.
+  These fields have to be there, so `upload` stops if they aren't. `sample_data` should have one
+  row per distinct sample name, not per `sample_count`: read-only on 2026-11-07, that held on all
+  83 of prod's and 41 of dev's current versions, and `sample_count` on 76 and 37. An empty
+  `ecDNA_context` is only wrong if the archive holds calls. All 10 of prod's empty ones hold none.
 - **Undo.** Keep a record of each new version id and what it replaced. Old versions are
   never removed to make room.
 - **Resuming.** A full run takes many hours, so per-project state must survive a crash
@@ -241,5 +254,6 @@ by 2026-11-16 and can be built alongside this.
 
 1. `setup`, `preflight`, `plan`, `run` and `summary`, moved into the repo. Done.
 2. The upload route with `dry_run` and `expected_latest_id`: local, dev, check-in, prod.
-3. `upload`, tested end to end against dev.
+3. `upload`, tested end to end against dev. Non-admins keep using the edit form: this is
+   for admins updating in bulk.
 4. The keep-current checkbox and index, then point `plan` at it.

@@ -3,6 +3,7 @@
 import csv
 import datetime
 import json
+import os
 
 from . import pins
 
@@ -31,17 +32,23 @@ AMBIGUOUS = 'ambiguous'
 
 
 def read_project_file(path):
-    """A TSV with `project_name` and/or `latest_id`, and optional `ref` and `extra_ac_flags`.
+    """A TSV with `project_name` and/or `latest_id`, and optional `ref`, `extra_ac_flags` and
+    `metadata_sheet`, a sheet to send with the upload, its path relative to this file.
 
     Lines starting with # are comments. An id from an older version still resolves.
     """
+    def sheet(row):
+        value = (row.get('metadata_sheet') or '').strip()
+        return os.path.join(os.path.dirname(os.path.abspath(path)), value) if value else ''
+
     with open(path, newline='') as handle:
         rows = csv.DictReader((line for line in handle if not line.startswith('#')),
                               delimiter='\t')
         return [{'name': (row.get('project_name') or '').strip(),
                  'id': (row.get('latest_id') or '').strip(),
                  'ref': (row.get('ref') or '').strip(),
-                 'extra_ac_flags': (row.get('extra_ac_flags') or '').strip()}
+                 'extra_ac_flags': (row.get('extra_ac_flags') or '').strip(),
+                 'metadata_sheet': sheet(row)}
                 for row in rows]
 
 
@@ -88,7 +95,8 @@ def build_entry(wanted, by_id, by_name, site, target_version):
              'visibility': head.get('visibility'), 'current_ac': head.get('AC_version'),
              'aggregator': head.get('aggregator_version'),
              'tools': head.get('reconstruction_tools'),
-             'extra_ac_flags': wanted['extra_ac_flags'], 'archive_bytes': None, 'note': ''}
+             'extra_ac_flags': wanted['extra_ac_flags'],
+             'metadata_sheet': wanted.get('metadata_sheet', ''), 'archive_bytes': None, 'note': ''}
     if head.get('AC_version') == target_version:
         entry['status'] = CURRENT
     elif _is_coral(head):

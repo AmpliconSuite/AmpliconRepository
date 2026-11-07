@@ -71,7 +71,7 @@ from .views_admin import (
 
 # Import API views from separate module
 from .views_apis import (
-    ProjectReplaceView, ProjectReplaceStatusView,
+    ProjectReplaceView, ProjectReplaceStatusView, ProjectReplacePrepareView,
     FileUploadView, ProjectFileAddView, BackgroundTaskStatusView,
     ProjectListView, ProjectDetailView, ProjectSamplesView,
     ProjectSampleDetailView, FeatureSamplesView,
@@ -976,6 +976,34 @@ def sample_file_or_refusal(request, project_name, sample_name, file_id, kind):
     raise Http404(f"No {kind.upper()} available")
 
 
+def store_page_fields(project, fs=None):
+    """Work out and store what a project's page needs, which a version doesn't have until now.
+
+    Normally the first page view does this. *fs* is where to read the archive from.
+    Returns (samples, reference_genome, sample_data, aggregate).
+    """
+    initialize_ecDNA_context(project, fs)
+
+    samples = project['runs'].copy()
+    features_list = replace_space_to_underscore(samples)
+    reference_genome = reference_genome_from_project(samples)
+    sample_data = sample_data_from_feature_list(features_list)
+    aggregate, aggregate_save_fp = create_aggregate_df(project, samples)
+
+    logging.debug(f'aggregate shape: {aggregate.shape}')
+    new_values = {"$set" : {'sample_data' : sample_data,
+                            'reference_genome' : reference_genome,
+                            'aggregate_df' : aggregate_save_fp,
+                            'metadata_stored': 'Yes'}}
+    # Old versions too; see OPENABLE_WITH_PAYLOAD_QUERY.
+    query = combine(OPENABLE_WITH_PAYLOAD_QUERY, _id=project['_id'])
+
+    logging.debug('Inserting Now')
+    collection_handle.update_one(query, new_values)
+    logging.debug('Insert complete')
+    return samples, reference_genome, sample_data, aggregate
+
+
 def project_page(request, project_name, message=''):
     """
     Render Project Page
@@ -1111,26 +1139,7 @@ def project_page(request, project_name, message=''):
         pc_fig = None
     # For regular projects missing one or more keys
     elif needs_metadata:
-        # Initialize ecDNA_context for this project
-        initialize_ecDNA_context(project)
-        
-        samples = project['runs'].copy()
-        features_list = replace_space_to_underscore(samples)
-        reference_genome = reference_genome_from_project(samples)
-        sample_data = sample_data_from_feature_list(features_list)
-        aggregate, aggregate_save_fp = create_aggregate_df(project, samples)
-
-        logging.debug(f'aggregate shape: {aggregate.shape}')
-        new_values = {"$set" : {'sample_data' : sample_data,
-                                'reference_genome' : reference_genome,
-                                'aggregate_df' : aggregate_save_fp,
-                                'metadata_stored': 'Yes'}}
-        # Old versions too; see OPENABLE_WITH_PAYLOAD_QUERY.
-        query = combine(OPENABLE_WITH_PAYLOAD_QUERY, _id=project['_id'])
-
-        logging.debug('Inserting Now')
-        collection_handle.update_one(query, new_values)
-        logging.debug('Insert complete')
+        samples, reference_genome, sample_data, aggregate = store_page_fields(project)
 
         # Use cached chart generation
         stacked_bar_plot = get_cached_chart(
