@@ -146,6 +146,25 @@ class PredecessorFiles:
         if predecessor is None or classify(predecessor) == TOMBSTONE:
             return
         self.predecessor_id = predecessor_id
+        self._index_files(predecessor)
+
+    @classmethod
+    def of_version(cls, fs_files, version):
+        """The files a version made from *version* could take, with no new version yet.
+
+        For predicting: ``would_reuse`` works on it and writes nothing.
+        """
+        self = cls.__new__(cls)
+        self._fs_files, self.new_id, self.predecessor_id = fs_files, None, version['_id']
+        self._index = {}
+        self._index_files(version)
+        return self
+
+    def would_reuse(self, sha256, length, filename, sample_name, feature_key):
+        """The id ``claim`` would return for this file, without recording anything."""
+        return self._index.get((sha256, length, filename, sample_name, field_name(feature_key)))
+
+    def _index_files(self, predecessor):
         # Every (sample, field) the predecessor names each file under. One file
         # can sit in two fields: a directory is named as both
         # Reconstruction_directory and its legacy alias AA_directory.

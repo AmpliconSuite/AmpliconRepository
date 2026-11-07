@@ -10,7 +10,8 @@ flag on: a form POST to /create-project/ and three run_uploader.py calls to
 /add_samples_to_project_api/ were all accepted and aggregated.
 
 The paths refused here are the ones the banner already tells a browser user are
-unavailable, plus the two upload endpoints the AmpliconSuite pipeline calls.
+unavailable, plus the two upload endpoints the AmpliconSuite pipeline calls and the admins'
+replace route.
 Only POSTs are refused; the pages themselves still load.  The flag is read only
 for a POST to one of these paths, so no other request pays for the lookup.
 
@@ -38,7 +39,7 @@ SHUTDOWN_MESSAGE = ('That feature is not available currently, server shutdown is
 # Seconds.  A deploy's shutdown window is normally a few minutes.
 RETRY_AFTER = '600'
 
-_API_UPLOAD_RE = re.compile(r'^/(?:upload_api|add_samples_to_project_api)/?$')
+_API_UPLOAD_RE = re.compile(r'^/(?:upload_api(?:/replace/[^/]+)?|add_samples_to_project_api)/?$')
 _PAGE_UPLOAD_RE = re.compile(r'^/(?:create-project|create-empty-project|project/[^/]+/edit)/?$')
 
 
