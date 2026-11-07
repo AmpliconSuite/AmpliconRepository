@@ -302,7 +302,8 @@ def dry_run_report(plan, rows):
     attention = []
     for entry, state in rows:
         result = state['dry_run']
-        attention += ['%s: %s' % (entry['name'], item) for item in dry_run_concerns(result)]
+        attention += ['%s: %s' % (entry['name'], item)
+                      for item in report.concerns(state['result']) + dry_run_concerns(result)]
         if result.get('state') != 'finished':
             lines.append('| %s | failed | | | | | | |' % entry['name'])
             continue

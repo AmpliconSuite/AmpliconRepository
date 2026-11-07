@@ -1002,6 +1002,16 @@ def test_a_dry_run_changes_nothing_and_reports_what_would_be_stored(built):
     assert '0.00 GB of new files' in text
 
 
+def test_a_dry_run_report_includes_what_the_summary_flagged(built):
+    state = built.state()
+    state['result']['expected_samples'] = state['result']['archive_samples'] + 1
+    pipeline.save_state(built.machine, ID_A, state)
+    upload.run_dry_runs(built.plan, built.machine, built.site)
+    text = open(os.path.join(built.machine.output_dir, upload.DRY_RUN_FILE)).read()
+    assert 'Nothing flagged.' not in text
+    assert 'Project A: The site has' in text
+
+
 def test_a_dry_run_keeps_going_after_a_failure_and_says_so(built):
     built.site.prediction = {'state': 'failed', 'error': 'no run.json'}
     assert upload.run_dry_runs(built.plan, built.machine, built.site) == 2
