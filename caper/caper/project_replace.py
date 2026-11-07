@@ -27,6 +27,7 @@ import os
 import shutil
 import tarfile
 
+import gridfs
 from bson.objectid import ObjectId
 from django.http import HttpResponseRedirect, QueryDict
 
@@ -39,7 +40,7 @@ from .project_version_cleanup import FEATURE_FILE_KEYS
 from .tar_safety import safe_extractall
 from .tar_utils import pack_directory_targz
 from .utils import (collection_handle_primary, db_handle_primary, get_one_project_sans_runs,
-                    normalize_visibility_field)
+                    normalize_visibility_field, validate_project)
 from .version_file_sharing import CHUNK, PredecessorFiles, file_digest
 
 RUNNING, FINISHED, FAILED = 'running', 'finished', 'failed'
@@ -321,11 +322,43 @@ def _replacement_status(version_id):
 
     version = collection_handle_primary.find_one({'_id': version_id})
     return {**base, 'state': FINISHED,
+            'page_ready': 'metadata_stored' in version,
             'samples': version.get('sample_count'),
             'features': sum(len(features) for features in (version.get('runs') or {}).values()),
             'versions': {key: version.get(key) for key in (
                 'AA_version', 'AC_version', 'ASP_version', 'Reconstruction_tools', 'CoRAL_version')},
             'files': _stored_files(version)}
+
+
+def prepare_page(version_id):
+    """Start storing what this finished version's page needs. True if that's already done,
+    False if it has started, None for an id that isn't a version."""
+    from .background_tasks import _thread_executor
+
+    if not ObjectId.is_valid(version_id):
+        return None
+    version_id = ObjectId(version_id)
+    summary = collection_handle_primary.find_one(
+        {'_id': version_id}, {'FINISHED?': 1, 'aggregation_failed': 1, 'metadata_stored': 1})
+    if summary is None:
+        return None
+    if summary.get('aggregation_failed') or not summary.get('FINISHED?'):
+        raise Refusal('This version has not finished successfully.', 'not_finished')
+    if 'metadata_stored' in summary:
+        return True
+    _thread_executor.submit(_store_page_fields, version_id,
+                            task_label=f'Replace page fields: {version_id}')
+    return False
+
+
+def _store_page_fields(version_id):
+    from .views import store_page_fields
+
+    project = collection_handle_primary.find_one({'_id': version_id})
+    project = validate_project(project, str(version_id))
+    # From the primary: this can run moments after the archive was written, and a read that
+    # fails stores an empty ecDNA context for good.
+    store_page_fields(project, fs=gridfs.GridFS(db_handle_primary))
 
 
 def _stored_files(version):

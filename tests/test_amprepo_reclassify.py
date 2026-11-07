@@ -16,10 +16,10 @@ import threading
 
 import pytest
 
-from amprepo_reclassify import archive, environment, pins, pipeline, plan, report
+from amprepo_reclassify import archive, environment, pins, pipeline, plan, report, upload
 from amprepo_reclassify.archive import ProjectError
 from amprepo_reclassify.machine import Machine
-from amprepo_reclassify.site_api import Site, SiteError, USER_AGENT
+from amprepo_reclassify.site_api import Refused, Site, SiteError, USER_AGENT
 
 pytestmark = pytest.mark.integration
 
@@ -432,7 +432,7 @@ def test_project_file_skips_comments_and_reads_overrides(tmp_path):
     path.write_text('# a comment\nproject_name\tlatest_id\tref\textra_ac_flags\n'
                     'Alpha\t%s\thg19\t--filter_similar\n' % ID_OLD)
     assert plan.read_project_file(str(path)) == [{'name': 'Alpha', 'id': ID_OLD, 'ref': 'hg19',
-                                                  'extra_ac_flags': '--filter_similar'}]
+                                                  'extra_ac_flags': '--filter_similar', 'metadata_sheet': ''}]
 
 
 def test_argument_is_read_as_an_id_or_a_name():
@@ -619,3 +619,421 @@ def test_the_tool_imports_nothing_from_the_site():
                 modules = [node.module]
             for module in modules:
                 assert not module.startswith(('caper', 'django', 'pymongo')), (name, module)
+
+
+# ---- writing to a site ----
+
+class _PostHandler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length') or 0)
+        self.server.posts.append({'path': self.path, 'token': self.headers.get('Authorization'),
+                                  'type': self.headers.get('Content-Type'),
+                                  'body': self.rfile.read(length), 'length': length})
+        code, answer, headers = self.server.answers.pop(0)
+        payload = answer if isinstance(answer, bytes) else json.dumps(answer).encode()
+        self.send_response(code)
+        for key, value in headers.items():
+            self.send_header(key, value)
+        self.send_header('Content-Length', str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+
+@pytest.fixture
+def post_server():
+    httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0), _PostHandler)
+    httpd.posts, httpd.answers = [], []
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    yield httpd, Site('dev', token='secret', base_url='http://127.0.0.1:%d' % httpd.server_port)
+    httpd.shutdown()
+
+
+def test_an_upload_streams_the_archive_and_says_what_it_is(post_server, tmp_path):
+    server, site = post_server
+    archive_file = tmp_path / 'x_reclass.tar.gz'
+    content = os.urandom(3 * 1024 * 1024)
+    archive_file.write_bytes(content)
+    sheet = tmp_path / 'sheet.tsv'
+    sheet.write_text('sample_name\tcolour\n')
+    server.answers.append((202, {'job_id': 'j1'}, {}))
+
+    assert site.replace(ID_A, str(archive_file), ID_B, dry_run=False, metadata_path=str(sheet)) == {'job_id': 'j1'}
+
+    post = server.posts[0]
+    assert post['path'] == '/upload_api/replace/%s/' % ID_A
+    assert post['token'] == 'Token secret'
+    assert post['length'] == len(post['body']), 'Content-Length has to be exact for a streamed body'
+    import email.parser
+    message = email.parser.BytesParser().parsebytes(
+        b'Content-Type: ' + post['type'].encode() + b'\r\n\r\n' + post['body'])
+    fields = {part.get_param('name', header='content-disposition'): part for part in message.get_payload()}
+    assert fields['dry_run'].get_payload() == 'false', 'false must be sent, not left out'
+    assert fields['expected_latest_id'].get_payload() == ID_B
+    assert fields['document'].get_filename() == 'x_reclass.tar.gz'
+    assert fields['document'].get_payload(decode=True) == content
+    assert fields['metadataFile'].get_filename() == 'sheet.tsv'
+
+
+def test_a_rate_limited_upload_sends_the_whole_body_again(post_server, tmp_path):
+    server, site = post_server
+    archive_file = tmp_path / 'x.tar.gz'
+    archive_file.write_bytes(b'0123456789')
+    server.answers += [(429, {}, {'Retry-After': '0'}), (202, {'job_id': 'j1'}, {})]
+    site.replace(ID_A, str(archive_file), ID_A, dry_run=True)
+    assert b'0123456789' in server.posts[0]['body'] and b'0123456789' in server.posts[1]['body']
+
+
+@pytest.mark.parametrize('code, answer, kind, expected_code', [
+    (409, {'error': 'moved on', 'code': 'stale_version', 'latest_id': ID_B}, Refused, 'stale_version'),
+    (403, {'error': 'Only site admins can do this.', 'code': 'admin_required'}, Refused, 'admin_required'),
+    (403, b'<html>blocked</html>', Refused, 'blocked'),
+    (503, {'error': 'server shutdown is pending'}, SiteError, None),
+])
+def test_a_refusal_keeps_the_sites_reason(post_server, code, answer, kind, expected_code):
+    server, site = post_server
+    server.answers.append((code, answer, {}))
+    with pytest.raises(kind) as caught:
+        site.replace_status('j1')
+    assert getattr(caught.value, 'code', None) == expected_code
+    assert (type(caught.value) is Refused) == (kind is Refused)
+    if isinstance(answer, dict):
+        assert answer['error'] in str(caught.value)
+
+
+def test_a_redirect_on_a_post_is_not_followed(post_server):
+    """The token must not go wherever a redirect points."""
+    server, site = post_server
+    server.answers.append((302, b'', {'Location': 'http://127.0.0.1:1/elsewhere'}))
+    with pytest.raises(SiteError):
+        site.replace_status('j1')
+    assert len(server.posts) == 1
+
+
+def test_an_admin_token_is_recognised_by_a_404(post_server):
+    server, site = post_server
+    server.answers.append((404, {'error': 'No such job.', 'code': 'not_found'}, {}))
+    site.check_admin()
+    server.answers.append((403, {'error': 'Only site admins can do this.', 'code': 'admin_required'}, {}))
+    with pytest.raises(Refused):
+        site.check_admin()
+
+
+# ---- `upload` ----
+
+class UploadSite:
+    """A site that makes each new version, and can be told to go wrong."""
+    name = 'dev'
+
+    def __init__(self, entries=2, features=2):
+        self.sent, self.polls, self.prepared = [], [], []
+        self.stored = {'state': 'finished', 'samples': entries, 'features': features, 'page_ready': True,
+                       'versions': {'AC_version': '2.0.1'},
+                       'files': {'shared': 5, 'shared_bytes': 50, 'new': 1, 'new_bytes': 10, 'archive_bytes': 900}}
+        self.prediction = {'state': 'finished', 'samples': entries, 'features': features,
+                           'record': {'bytes': 1000, 'limit_bytes': 16777216, 'fits': True},
+                           'files': {'shared': 5, 'shared_bytes': 50, 'new': 1, 'new_bytes': 10,
+                                     'archive_bytes': 900, 'missing': 0}}
+        self.refuse = None
+        self.page_ready = True
+        self.admin = True
+        self.latest = True
+
+    def check_admin(self):
+        if not self.admin:
+            raise Refused('Only site admins can do this.', 'admin_required')
+
+    def project_url(self, project_id):
+        return 'https://site/project/' + project_id
+
+    def replace(self, project_id, archive_path, expected_latest_id, dry_run, metadata_path=None):
+        self.sent.append({'id': project_id, 'expected': expected_latest_id, 'dry_run': dry_run,
+                          'archive': archive_path, 'metadata': metadata_path})
+        if self.refuse:
+            raise self.refuse
+        return {'job_id': ('dry-' if dry_run else 'new-') + project_id}
+
+    def replace_status(self, job_id):
+        self.polls.append(job_id)
+        return self.prediction if job_id.startswith('dry-') else self.stored
+
+    def prepare_page(self, version_id):
+        self.prepared.append(version_id)
+        return self.page_ready
+
+    def project(self, project_id):
+        return {'id': project_id, 'is_latest_version': self.latest}
+
+
+def _counts_of(path):
+    summary = archive.run_json_summary(path)
+    return summary['entries'], summary['features']
+
+
+@pytest.fixture
+def built(workspace, monkeypatch):
+    """Two built projects, A and B, with a change summary. `.send()` runs a real upload."""
+    monkeypatch.setattr(upload, 'POLL_SECONDS', 0)
+    entries = [workspace.entry(), workspace.entry(project_id=ID_B, name='Project B')]
+    target, failures = workspace.run(*entries)
+    assert failures == 0
+    for project_id in (ID_A, ID_B):
+        # The stub archive has no AC log, which is flagged. Nothing here should start flagged.
+        state = workspace.state(project_id)
+        state['result']['settings']['notes'] = []
+        pipeline.save_state(workspace.machine, project_id, state)
+
+    class Built:
+        plan = dict(target, target_ac=pins.AC_VERSION)
+        machine = workspace.machine
+        state = staticmethod(workspace.state)
+        site = UploadSite(*_counts_of(workspace.state()['result']['archive']))
+
+        @classmethod
+        def summarise(cls):
+            os.makedirs(cls.machine.output_dir, exist_ok=True)
+            path = os.path.join(cls.machine.output_dir, upload.SUMMARY_FILE)
+            with open(path, 'w') as handle:
+                handle.write('reviewed')
+            newest = max(os.path.getmtime(workspace.state(i)['result']['archive']) for i in (ID_A, ID_B))
+            os.utime(path, (newest + 1, newest + 1))
+
+        @classmethod
+        def send(cls, **kwargs):
+            return upload.run_uploads(cls.plan, cls.machine, cls.site, assume_yes=True, **kwargs)
+
+        @classmethod
+        def records(cls):
+            path = os.path.join(cls.machine.output_dir, upload.RECORD_FILE)
+            if not os.path.exists(path):
+                return []
+            with open(path) as handle:
+                return [json.loads(line) for line in handle]
+
+    Built.summarise()
+    return Built
+
+
+def test_an_upload_sends_each_project_and_records_it(built):
+    assert built.send() == 2
+    assert [(s['id'], s['expected'], s['dry_run']) for s in built.site.sent] == [(ID_A, ID_A, False), (ID_B, ID_B, False)]
+    assert built.site.prepared == ['new-' + ID_A, 'new-' + ID_B]
+    first = built.records()[0]
+    assert (first['replaced'], first['new_version']) == (ID_A, 'new-' + ID_A)
+    assert first['misses'] == [] and first['page_ready'] is True
+    assert built.state()['upload']['state'] == 'done'
+
+
+def test_running_it_again_sends_nothing_twice(built):
+    built.send()
+    assert built.send() == 0
+    assert len(built.site.sent) == 2
+
+
+def test_only_an_admin_token_starts(built):
+    built.site.admin = False
+    with pytest.raises(Refused):
+        built.send()
+    assert built.site.sent == []
+
+
+def test_no_summary_means_no_upload(built):
+    os.remove(os.path.join(built.machine.output_dir, upload.SUMMARY_FILE))
+    with pytest.raises(upload.Stop, match='summary'):
+        built.send()
+    assert built.site.sent == []
+
+
+def test_an_archive_newer_than_the_summary_has_not_been_reviewed(built):
+    path = built.state()['result']['archive']
+    future = os.path.getmtime(path) + 1000
+    os.utime(path, (future, future))
+    with pytest.raises(upload.Stop, match='built after the change summary'):
+        built.send()
+    assert built.site.sent == []
+
+
+@pytest.mark.parametrize('change, message', [
+    ({'samples': 99}, 'samples'),
+    ({'features': 99}, 'features'),
+    ({'versions': {'AC_version': '2.0.0'}}, 'AC'),
+])
+def test_a_count_that_differs_from_the_archive_stops_the_batch(built, change, message):
+    built.site.stored = dict(built.site.stored, **change)
+    with pytest.raises(upload.Stop, match=message):
+        built.send()
+    assert [s['id'] for s in built.site.sent] == [ID_A], 'the second project must not go up'
+    assert built.records()[0]['misses'], 'what went up is still recorded'
+    # It did go up, so a second run moves on, and doesn't send it twice.
+    with pytest.raises(upload.Stop):
+        built.send()
+    assert [s['id'] for s in built.site.sent] == [ID_A, ID_B]
+
+
+def test_a_failed_job_stops_the_batch_and_can_be_retried(built):
+    good = built.site.stored
+    built.site.stored = {'state': 'failed', 'error': 'it broke', 'restored_project_id': ID_A}
+    with pytest.raises(upload.Stop, match='it broke'):
+        built.send()
+    assert len(built.site.sent) == 1 and built.records() == []
+    built.site.stored = good
+    assert built.send() == 2
+    assert [s['id'] for s in built.site.sent] == [ID_A, ID_A, ID_B]
+
+
+def test_a_project_that_moved_on_stops_the_batch(built):
+    built.site.refuse = Refused('moved on', 'stale_version', ID_OLD)
+    with pytest.raises(upload.Stop, match=ID_OLD):
+        built.send()
+    assert len(built.site.sent) == 1
+    assert 'upload' not in built.state()
+
+
+def test_a_shutdown_refusal_stops_the_batch_plainly(built):
+    built.site.refuse = SiteError('dev: HTTP 503. server shutdown is pending')
+    with pytest.raises(upload.Stop, match='shutdown is pending'):
+        built.send()
+    assert len(built.site.sent) == 1
+
+
+def test_a_job_interrupted_by_a_crash_is_followed_not_sent_again(built, monkeypatch):
+    def crash(*args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(built.site, 'replace_status', crash)
+    with pytest.raises(KeyboardInterrupt):
+        built.send()
+    monkeypatch.undo()
+    monkeypatch.setattr(upload, 'POLL_SECONDS', 0)
+    assert built.state()['upload'] == {'state': 'started', 'job_id': 'new-' + ID_A, 'replaces': ID_A}
+    built.site = UploadSite(*_counts_of(built.state()['result']['archive']))
+    assert built.send() == 2
+    assert [s['id'] for s in built.site.sent] == [ID_B]
+    assert 'new-' + ID_A in built.site.polls
+
+
+def test_an_outage_while_waiting_is_not_a_failure(built, monkeypatch):
+    real = built.site.replace_status
+    answers = [SiteError('dev: HTTP 502'), SiteError('dev: lost the connection')]
+
+    def flaky(job_id):
+        if answers:
+            raise answers.pop(0)
+        return real(job_id)
+
+    monkeypatch.setattr(built.site, 'replace_status', flaky)
+    assert built.send() == 2
+
+
+def test_a_long_outage_stops_the_batch_without_forgetting_the_job(built, monkeypatch):
+    def down(job_id):
+        raise SiteError('dev: HTTP 502')
+
+    monkeypatch.setattr(built.site, 'replace_status', down)
+    monkeypatch.setattr(upload, 'OUTAGE_LIMIT_SECONDS', 0)
+    with pytest.raises(upload.Stop, match='not answered'):
+        built.send()
+    assert built.state()['upload']['state'] == 'started'
+
+
+def test_a_page_that_is_not_ready_is_a_note_not_a_stop(built, monkeypatch):
+    built.site.page_ready = False
+    built.site.stored = dict(built.site.stored, page_ready=False)
+    monkeypatch.setattr(upload, 'PAGE_LIMIT_SECONDS', 0)
+    assert built.send() == 2
+    assert built.records()[0]['page_ready'] is False
+
+
+def test_a_site_without_the_prepare_route_is_a_note_not_a_stop(built, monkeypatch):
+    def missing(version_id):
+        raise Refused('dev: HTTP 404', 'not_found')
+
+    monkeypatch.setattr(built.site, 'prepare_page', missing)
+    assert built.send() == 2
+
+
+def test_a_new_version_that_is_not_the_latest_stops_the_batch(built):
+    built.site.latest = False
+    with pytest.raises(upload.Stop, match='not the latest'):
+        built.send()
+
+
+def test_a_flagged_project_waits_until_it_is_accepted(built):
+    state = built.state()
+    state['result']['expected_samples'] = state['result']['archive_samples'] + 1
+    pipeline.save_state(built.machine, ID_A, state)
+    assert built.send() == 1
+    assert [s['id'] for s in built.site.sent] == [ID_B]
+    assert built.send(accept_flagged=True) == 1
+    assert [s['id'] for s in built.site.sent] == [ID_B, ID_A]
+
+
+def test_only_limits_the_upload(built):
+    assert built.send(only=['Project B']) == 1
+    assert [s['id'] for s in built.site.sent] == [ID_B]
+
+
+def test_a_metadata_sheet_goes_with_its_project(built, tmp_path):
+    sheet = tmp_path / 'sheet.tsv'
+    sheet.write_text('x')
+    built.plan['projects'][0]['metadata_sheet'] = str(sheet)
+    built.plan['projects'][1]['metadata_sheet'] = str(tmp_path / 'gone.tsv')
+    assert built.send() == 1, 'a sheet that has gone is a reason not to send that project'
+    assert built.site.sent[0]['metadata'] == str(sheet)
+
+
+def test_the_project_list_reads_a_sheet_relative_to_itself(tmp_path):
+    listing = tmp_path / 'list.tsv'
+    listing.write_text('project_name\tmetadata_sheet\nAlpha\tsheets/a.tsv\nBeta\t\n')
+    wanted = plan.read_project_file(str(listing))
+    assert wanted[0]['metadata_sheet'] == str(tmp_path / 'sheets' / 'a.tsv')
+    assert wanted[1]['metadata_sheet'] == ''
+
+
+def test_a_dry_run_changes_nothing_and_reports_what_would_be_stored(built):
+    assert upload.run_dry_runs(built.plan, built.machine, built.site) == 0
+    assert all(s['dry_run'] for s in built.site.sent) and len(built.site.sent) == 2
+    assert 'upload' not in built.state() and built.records() == []
+    text = open(os.path.join(built.machine.output_dir, upload.DRY_RUN_FILE)).read()
+    assert 'Project A' in text and 'Nothing flagged.' in text
+    assert '0.00 GB of new files' in text
+
+
+def test_a_dry_run_keeps_going_after_a_failure_and_says_so(built):
+    built.site.prediction = {'state': 'failed', 'error': 'no run.json'}
+    assert upload.run_dry_runs(built.plan, built.machine, built.site) == 2
+    assert 'no run.json' in open(os.path.join(built.machine.output_dir, upload.DRY_RUN_FILE)).read()
+
+
+def test_a_real_upload_is_compared_with_its_dry_run(built):
+    upload.run_dry_runs(built.plan, built.machine, built.site)
+    built.site.sent.clear()
+    built.site.stored = dict(built.site.stored, files=dict(built.site.stored['files'], new=99))
+    with pytest.raises(upload.Stop, match='predicted 1 and the site stored 99'):
+        built.send()
+    assert len(built.site.sent) == 1
+
+
+def test_a_project_too_big_for_the_record_limit_waits(built):
+    built.site.prediction = dict(built.site.prediction, record={'bytes': 17_000_000, 'limit_bytes': 16_777_216, 'fits': False})
+    upload.run_dry_runs(built.plan, built.machine, built.site)
+    built.site.sent.clear()
+    assert built.send() == 0
+    assert built.site.sent == []
+
+
+def test_upload_needs_the_plans_site_and_a_token(built, monkeypatch):
+    from amprepo_reclassify import cli
+
+    config = os.path.join(built.machine.workdir, 'machine.json')
+    built.machine.save(config)
+    plan.save_plan(built.plan, built.machine.plan_path)
+    with pytest.raises(SystemExit, match='The plan is for dev'):
+        cli.main(['--config', config, 'upload', '--target', 'prod'])
+    with pytest.raises(SystemExit, match='token'):
+        cli.main(['--config', config, 'upload', '--target', 'dev'])
+    with pytest.raises(SystemExit):
+        cli.main(['--config', config, 'upload'])

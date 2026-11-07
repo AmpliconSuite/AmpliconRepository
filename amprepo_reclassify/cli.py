@@ -1,10 +1,10 @@
-"""The subcommands. Only `upload`, which isn't built yet, would write to a site."""
+"""The subcommands. Only `upload` writes to a site."""
 
 import argparse
 import os
 import sys
 
-from . import environment, pins, pipeline, plan as plan_module, report
+from . import environment, pins, pipeline, plan as plan_module, report, upload as upload_module
 from .machine import DEFAULT_PATH, Machine, NotSetUp
 from .site_api import SITES, Site, SiteError
 
@@ -97,6 +97,24 @@ def cmd_summary(args):
     return 0
 
 
+def cmd_upload(args):
+    machine = Machine.load(args.config)
+    plan = _load_plan(machine)
+    # Ids belong to one site, and saying which is the point of this flag.
+    if args.target != plan['site']:
+        raise SystemExit('The plan is for %s, not %s. Run `plan --site %s` first.'
+                         % (plan['site'], args.target, args.target))
+    site = _site(machine, args.target)
+    if not site.token:
+        raise SystemExit('`upload` needs a site admin\'s token for %s. Add it with `setup --token-file`.'
+                         % args.target)
+    if args.dry_run:
+        return 1 if upload_module.run_dry_runs(plan, machine, site, only=args.only) else 0
+    upload_module.run_uploads(plan, machine, site, only=args.only,
+                              accept_flagged=args.accept_flagged, assume_yes=args.yes)
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog='python -m amprepo_reclassify', description=__doc__)
     parser.add_argument('--config', default=DEFAULT_PATH, help='this machine\'s settings file')
@@ -127,6 +145,17 @@ def build_parser():
 
     summary = commands.add_parser('summary', help='combined change summary for review')
     summary.set_defaults(func=cmd_summary)
+
+    upload = commands.add_parser('upload', help='send reviewed archives to the site; site admins only')
+    upload.add_argument('--target', choices=sorted(SITES), required=True,
+                        help='the site to send to, which must be the plan\'s')
+    upload.add_argument('--dry-run', action='store_true',
+                        help='ask the site what each upload would store, and change nothing')
+    upload.add_argument('--only', action='append', help='a project name or id from the plan; repeatable')
+    upload.add_argument('--accept-flagged', action='store_true',
+                        help='also send projects with something under "Check before uploading"')
+    upload.add_argument('--yes', action='store_true', help='don\'t ask for confirmation')
+    upload.set_defaults(func=cmd_upload)
     return parser
 
 

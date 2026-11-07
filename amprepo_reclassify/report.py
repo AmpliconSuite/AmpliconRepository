@@ -188,7 +188,7 @@ def combined_summary(plan, states):
     """One table across a run, then everything that needs a look."""
     lines = ['# Change summary to AC %s' % plan['target_ac'], '',
              'Site: %s. Plan made %s.' % (plan['site'], plan['created']), '',
-             '| Project | State | Samples | ecDNA+ | BFB+ | Amplicons changed | Archive MB | New files MB |',
+             '| Project | State | Samples | ecDNA+ | BFB+ | Amplicons changed | Archive MB | Files not in old archive MB |',
              '| --- | --- | --- | --- | --- | --- | --- | --- |']
     total_archive = total_new = 0
     attention = []
@@ -210,7 +210,7 @@ def combined_summary(plan, states):
             if state.get('failed'):
                 attention.append('%s: failed: %s' % (entry['name'], state['failed']))
     lines += ['', 'Rebuilt archives come to %.0f MB, and files not in the old archives to %.0f MB. '
-              'The site\'s own dry run will give the real storage numbers.'
+              'That isn\'t what the site will store. `upload --dry-run` gives those numbers.'
               % (total_archive / 1e6, total_new / 1e6), '']
     lines.append('## Check before uploading')
     lines += ['- %s' % item for item in attention] or ['Nothing flagged.']

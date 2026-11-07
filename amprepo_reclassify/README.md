@@ -1,18 +1,19 @@
 # amprepo_reclassify
 
-Moves projects on the site to a new AmpliconClassifier (AC) release. AC runs on your machine, and
-a person reviews the changes before anything goes back to the site. The design and its reasoning
-are in [docs/ac-update-workflow.md](../docs/ac-update-workflow.md).
+Moves projects on the site to a new AmpliconClassifier (AC) release, in bulk. AC runs on your
+machine, and a person reviews the changes before anything goes back to the site. The design and its
+reasoning are in [docs/ac-update-workflow.md](../docs/ac-update-workflow.md).
 
-`upload` isn't built yet, so nothing here can write to a site. Every command reads from the site's
-API, or works locally.
+**This is for site admins.** Only `upload` writes to a site, and it needs an admin's token. Anyone
+else updates a project through its edit page.
 
 ## What you need
 
 - Python 3.9 or later, git and gzip
 - A Gurobi licence. BFBArchitect moves to another solver if Gurobi fails, and the tool refuses that.
 - `$AA_DATA_REPO` with the references your projects use. `preflight` prints how to get a missing one.
-- An API token from your site profile, to see private or hidden projects you belong to
+- An API token from your site profile. `plan` uses it to see private projects you belong to, and
+  `upload` needs it to be a site admin's. Even an admin only sees private projects they belong to.
 
 ## Steps
 
@@ -34,6 +35,12 @@ python -m amprepo_reclassify run
 
 # The combined change summary to review, saved to <workdir>/output/summary.md.
 python -m amprepo_reclassify summary
+
+# Optional: what the site would store. Changes nothing. Useful once, at the start of a campaign.
+python -m amprepo_reclassify upload --target prod --dry-run
+
+# Sends each project, smallest first, and checks what the site stored.
+python -m amprepo_reclassify upload --target prod
 ```
 
 Rebuilt archives and one report per project go in `<workdir>/output/`. Files you can delete after
@@ -44,9 +51,9 @@ On a 32-thread machine, `--jobs 16 --bfb-threads 2` has worked well. Settings ar
 `amprepo_reclassify/machine.json`, which git ignores.
 
 **Project list:** a TSV with a `project_name` or `latest_id` column, or both. Lines starting with
-`#` are comments. An id from an older version still resolves to the latest one. Two optional columns
+`#` are comments. An id from an older version still resolves to the latest one. Three optional columns
 are for projects that need them: `ref` sets AC's reference, and `extra_ac_flags` adds AC flags
-such as `--filter_similar`. For one project, use `plan --project <id or exact name>`. To use the
+such as `--filter_similar`. `metadata_sheet` is described under Uploading. For one project, use `plan --project <id or exact name>`. To use the
 dev site, use `plan --site dev` with a `dev=` token file.
 
 **Keep this list out of the repo.** The repo is public, and a list can name private projects.
@@ -74,6 +81,35 @@ A project stops rather than producing an archive if:
 - a reference that differs from the site's
 - settings that came from run metadata rather than an AC log, which can be older than the results
 - a large `run.json`, which may reach the site's 16 MiB record limit
+
+## Uploading
+
+`upload` won't start without a change summary newer than every archive it would send, and it asks
+you to type the site's name. `--target` has to match the plan, because ids belong to one site. It
+sends one project at a time. For each one, it:
+
+1. sends the archive with the version it was built from, so a project that has moved on is refused
+2. waits for the site to finish making the new version
+3. asks the site to get the version's page ready, because a script can't open the page
+4. compares the site's sample and feature counts with the archive, its AC version with the target,
+   and, if you ran a dry run, the files stored with the prediction
+
+**Anything that goes wrong stops the batch.** Run `upload` again to carry on: finished projects are
+skipped, and a project whose job was still running is followed, not sent again.
+
+Every project gets a new version, even if no classes changed. A project already on the target AC
+has no archive to send. Project members stay as they are. You become the new version's creator, and
+the audit log records that you did it. Subscribers get the usual email.
+
+A project with something under "Check before uploading", in the summary or the dry run, is skipped
+until you pass `--accept-flagged`. Use `--only` to accept just the ones you've looked at.
+
+To send a metadata sheet with a project's update, add a `metadata_sheet` column to the project list.
+Its path is relative to the list.
+
+`upload --dry-run` writes `<workdir>/output/dry_run.md`. Each real upload adds a line to
+`<workdir>/output/uploads.jsonl` with the new version and the one it replaced. To undo an upload,
+delete the new version from the project's page, which makes the one before it current again.
 
 ## What the plan's status means
 
