@@ -559,6 +559,35 @@ class ProjectReplaceStatusView(APIView):
         return Response(result)
 
 
+class ProjectReplacePrepareView(APIView):
+    """
+    Store what a finished replacement's page needs, in the background. Admins only, by API token.
+
+    A version doesn't have these until its page is first opened. A script can't open it: the
+    WAF sends non-browser page requests to Bot Control, and a private page needs a login.
+    Status reports `page_ready` and `page_fields`. Safe to repeat.
+    """
+    authentication_classes = []
+    permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_replace'
+
+    def post(self, request, version_id):
+        from . import project_replace
+
+        _user, error = _admin_from_token(request)
+        if error:
+            return error
+        try:
+            ready = project_replace.prepare_page(version_id)
+        except project_replace.Refusal as refused:
+            return Response({'error': str(refused), 'code': refused.code, **refused.extra},
+                            status=status.HTTP_409_CONFLICT)
+        if ready is None:
+            return api_error('No such version.', 'not_found', status.HTTP_404_NOT_FOUND)
+        return Response({'page_ready': ready}, status=status.HTTP_202_ACCEPTED)
+
+
 _SAFE_PREV_VERSION_KEYS = frozenset({
     'date', 'linkid', 'AA_version', 'AC_version', 'ASP_version',
     'aggregator_version', 'Reconstruction_tools', 'CoRAL_version',

@@ -239,6 +239,14 @@ class ProjectRun:
         self._save_state()
 
 
+def save_state(machine, project_id, state):
+    """Write a project's state file, for a later stage that adds to it."""
+    path = os.path.join(machine.projects_dir, project_id, STATE_FILE)
+    with open(path + '.tmp', 'w') as handle:
+        json.dump(state, handle, indent=1)
+    os.replace(path + '.tmp', path)
+
+
 def load_states(machine, entries):
     """Whatever state each project in a plan has on disk."""
     states = {}
