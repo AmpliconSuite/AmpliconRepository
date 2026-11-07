@@ -286,7 +286,7 @@ def test_a_bad_job_id_is_404_not_a_path(admin):
 # ---- What a real replacement hands to the form's code ----
 
 def test_a_replacement_is_the_forms_replace(project, admin, tmp_path, monkeypatch):
-    """Everything but the results carries forward, and the admin doesn't join the project."""
+    """Everything but the results carries forward."""
     from caper import views
 
     submitted = {}
@@ -317,6 +317,7 @@ def test_a_replacement_is_the_forms_replace(project, admin, tmp_path, monkeypatc
         assert args[13] is True, 'replace, so the old archive is not aggregated in'
         assert submitted['kw']['oldFeatured'] is True
         assert submitted['kw']['rollback_project_id'] == str(project['_id'])
+        assert submitted['kw']['keep_people']['project_members'] == project['project_members']
 
         placeholder = _state({'_id': ObjectId(new_id)})
         assert classify(placeholder) == LIVE
@@ -380,7 +381,8 @@ def real_project(request_factory, admin):
     alias = f'pytest_alias_{uuid.uuid4().hex[:8]}'
     collection.update_one({'_id': ObjectId(project_id)}, {'$set': {
         'alias_name': alias, 'description': 'keep me', 'publication_link': 'PMID:1',
-        'subscribers': ['someone@example.com'], 'views': 7, 'downloads': 3}})
+        'subscribers': ['someone@example.com'], 'views': 7, 'downloads': 3, 'featured': True,
+        'creator': 'the_real_creator', 'project_members': ['the_real_creator']}})
     made = [project_id]
     yield collection.find_one({'_id': ObjectId(project_id)}), made
     for each in reversed(made):
@@ -420,11 +422,14 @@ def test_a_real_replacement_matches_its_dry_run(real_project, admin, tmp_path):
 
     new = collection.find_one({'_id': ObjectId(new_id)})
     assert classify(new) == LIVE and classify(collection.find_one({'_id': old['_id']})) == SUPERSEDED
+    # The admin doing this isn't its creator or a member, and doesn't become either.
+    assert new['creator'] == 'the_real_creator'
+    assert new['project_members'] == ['the_real_creator']
+    assert new['featured'] is True
     assert new['project_name'] == old['project_name']
     assert new['alias_name'] == old['alias_name']
     assert new['description'] == 'keep me' and new['publication_link'] == 'PMID:1'
     assert new['subscribers'] == ['someone@example.com']
-    assert sorted(new['project_members']) == sorted(old['project_members'])
     assert new['previous_versions'][-1]['linkid'] == old_id
 
     # A second replacement from the old id now finds it has moved on.

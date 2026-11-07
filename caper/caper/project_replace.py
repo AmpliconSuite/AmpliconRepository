@@ -3,8 +3,12 @@
 ``amprepo_reclassify`` moves projects to a new AmpliconClassifier release from an
 operator's machine. The edit form needs a browser session, so this gives a token the
 form's "replace" with nothing else changed. Metadata, description, alias, publication
-link, membership, subscribers and counters carry forward because this calls the code
-the form calls (``form_dict_for_edit``, ``edit_project_into_new_version``).
+link and subscribers carry forward because this calls the code the form calls
+(``form_dict_for_edit``, ``edit_project_into_new_version``). The creator and members do
+too, which is where this differs from the form: there the person uploading becomes both,
+and an admin refreshing someone's project shouldn't. The audit log records who did it. A
+new version's view and download counts start at zero, and the project's total is the sum
+across its versions.
 
 A real replacement refuses a project that has moved on since the archive was built.
 A dry run answers what a replacement would do, for review before anything is written.
@@ -114,6 +118,11 @@ def form_for(project):
     return UpdateForm(post), post
 
 
+def _people(project):
+    """Who the project belongs to, for its next version to keep."""
+    return {key: project[key] for key in ('creator', 'project_members') if project.get(key) is not None}
+
+
 def start_replacement(django_request, user, project):
     """Start the new version, in the background as the form does, and return its id.
 
@@ -132,7 +141,8 @@ def start_replacement(django_request, user, project):
     new_id = str(ObjectId())
     result = edit_project_into_new_version(
         django_request, str(project['_id']), project, form_dict, form,
-        django_request.FILES.get('metadataFile'), [], False, [], new_id, f'tmp/{new_id}')
+        django_request.FILES.get('metadataFile'), [], False, [], new_id, f'tmp/{new_id}',
+        keep_people=_people(project))
     if not isinstance(result, HttpResponseRedirect):
         # The form's own failure paths have put the old version back by this point.
         raise Refusal('The new version could not be started. The project is unchanged.',
