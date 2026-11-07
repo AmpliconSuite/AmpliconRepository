@@ -154,5 +154,11 @@ then prod, and only then should you reclassify.
 
 ## Tests
 
-`pytest tests/test_amprepo_reclassify.py` uses a small synthetic archive and a stubbed AC and
-aggregator, so it needs no Gurobi licence. This package imports nothing from `caper/`.
+```bash
+python -m pytest amprepo_reclassify
+```
+
+Run it from the top of the checkout. The tests are in `amprepo_reclassify/tests/`, apart from the
+site's, and use a small synthetic archive and a stubbed AC and aggregator, so they need no Gurobi
+licence. This package imports nothing from `caper/`, and its own `pytest.ini` keeps the site's
+`conftest.py` out, so the tests need neither Django, a database nor the site's `config.sh`.

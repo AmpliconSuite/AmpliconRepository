@@ -1,7 +1,7 @@
 """Tests for amprepo_reclassify, with a synthetic archive and a stubbed AC and aggregator.
 
-CI has no Gurobi licence, so nothing here runs the real tools. Nothing here uses the database
-either; the `integration` mark is because that's the one mark CI selects.
+CI has no Gurobi licence, so nothing here runs the real tools. Nothing here uses the site, Django
+or the database, and `amprepo_reclassify/pytest.ini` keeps the site's conftest.py out.
 """
 
 import ast
@@ -20,8 +20,6 @@ from amprepo_reclassify import archive, environment, pins, pipeline, plan, repor
 from amprepo_reclassify.archive import ProjectError
 from amprepo_reclassify.machine import Machine
 from amprepo_reclassify.site_api import Refused, Site, SiteError, USER_AGENT
-
-pytestmark = pytest.mark.integration
 
 PACKAGE_DIR = os.path.dirname(os.path.abspath(archive.__file__))
 ID_A = 'a' * 24
@@ -467,6 +465,31 @@ def test_a_different_reference_from_the_log_is_flagged(workspace, tmp_path):
                                       ('No amp/Invalid', 'No amp/Invalid')])
 def test_renamed_labels_are_not_changes(old, new):
     assert report.canon_class(old) == report.canon_class(new)
+
+
+def _result_table(path, rows):
+    with open(path, 'w') as handle:
+        handle.write('Sample name\tAA amplicon number\tFeature ID\tClassification\n')
+        for sample, amplicon, label in rows:
+            handle.write('%s\t%s\t%s_amplicon%s_%s_1\t%s\n' % (sample, amplicon, sample, amplicon, label, label))
+    return report.load_result_table(path)[0]
+
+
+def test_every_feature_of_an_amplicon_is_counted(tmp_path):
+    # Measured on CUGA 2026-11-07: keeping one class per amplicon hid 5 of 216 ecDNA+ samples.
+    old = _result_table(str(tmp_path / 'old.tsv'), [('S1', '1', 'ecDNA'), ('S1', '1', 'BFB'),
+                                                    ('S2', '1', 'BFB'), ('S2', '1', 'ecDNA'),
+                                                    ('S3', 'NA', 'NA')])
+    new = _result_table(str(tmp_path / 'new.tsv'), [('S1', '1', 'BFB'), ('S1', '1', 'ecDNA'),
+                                                    ('S2', '1', 'BFB'),
+                                                    ('S3', 'NA', 'NA')])
+    calls = report.compare_calls(old, new)
+    assert (calls['ecdna_old'], calls['ecdna_new']) == (2, 1)
+    assert (calls['bfb_old'], calls['bfb_new']) == (2, 2)
+    assert calls['features'] == {'BFB': [2, 2], 'ecDNA': [2, 1]}
+    # Row order within an amplicon is not a change.
+    assert calls['amplicon_changes'] == [['S2', '1', 'BFB + ecDNA', 'BFB']]
+    assert calls['ecdna_lost'] == ['S2']
 
 
 def test_new_content_counts_only_files_the_old_archive_lacks(tmp_path):
