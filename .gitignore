@@ -32,3 +32,6 @@ CLAUDE.md
 # co-amplification edge CSVs, written beside the neo4j cache (caper/coamp_edges.py)
 /coamp_edges/
 caper/gene_map/.sources/
+
+# amprepo_reclassify: per-machine paths and token locations; this repo is public
+amprepo_reclassify/machine.json
