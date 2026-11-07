@@ -4,10 +4,9 @@
 operator's machine. The edit form needs a browser session, so this gives a token the
 form's "replace" with nothing else changed. Metadata, description, alias, publication
 link and subscribers carry forward because this calls the code the form calls
-(``form_dict_for_edit``, ``edit_project_into_new_version``). The creator and members do
-too, which is where this differs from the form: there the person uploading becomes both,
-and an admin refreshing someone's project shouldn't. The audit log records who did it. A
-new version's view and download counts start at zero, and the project's total is the sum
+(``form_dict_for_edit``, ``edit_project_into_new_version``). So do the members: an admin
+refreshing someone's project doesn't join it, as with the form. The admin is the new
+version's creator, and the audit log also records who did it. A new version's view and download counts start at zero, and the project's total is the sum
 across its versions.
 
 A real replacement refuses a project that has moved on since the archive was built.
@@ -19,8 +18,7 @@ tracker's own row is its one database write.
 A dry run reads the uploaded archive, though the site aggregates that archive again
 during a real replacement. Re-aggregating with the same aggregator leaves the files
 byte-identical (measured 2026-11-02, see version_file_sharing), so a difference from
-the prediction after an upload means that assumption failed. ``amprepo_reclassify``
-stops its batch when that happens.
+the prediction after an upload means that assumption failed.
 """
 
 import json
@@ -118,11 +116,6 @@ def form_for(project):
     return UpdateForm(post), post
 
 
-def _people(project):
-    """Who the project belongs to, for its next version to keep."""
-    return {key: project[key] for key in ('creator', 'project_members') if project.get(key) is not None}
-
-
 def start_replacement(django_request, user, project):
     """Start the new version, in the background as the form does, and return its id.
 
@@ -142,7 +135,7 @@ def start_replacement(django_request, user, project):
     result = edit_project_into_new_version(
         django_request, str(project['_id']), project, form_dict, form,
         django_request.FILES.get('metadataFile'), [], False, [], new_id, f'tmp/{new_id}',
-        keep_people=_people(project))
+        keep_members=project.get('project_members') or [])
     if not isinstance(result, HttpResponseRedirect):
         # The form's own failure paths have put the old version back by this point.
         raise Refusal('The new version could not be started. The project is unchanged.',

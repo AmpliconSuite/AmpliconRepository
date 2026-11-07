@@ -65,9 +65,7 @@ So do ``date``, ``update_date`` and ``created_at``.
 ``creator`` is **version-level**, while ``project_members`` is chain-level.
 ``creator`` is whoever ran *this* aggregation -- it varies across 12 of the 45
 chains, because a project can be re-aggregated by someone other than the person
-who first uploaded it. A site admin from outside the project is the exception:
-the version keeps its predecessor's creator. Ownership of the project is
-``project_members``.
+who first uploaded it. Ownership of the project is ``project_members``.
 
 Variance across a chain is evidence and not proof, in one direction only. A
 chain-level counter varies too, precisely because promotion has been dropping

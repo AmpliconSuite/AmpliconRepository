@@ -318,7 +318,7 @@ def test_a_replacement_is_the_forms_replace(project, admin, tmp_path, monkeypatc
         assert args[13] is True, 'replace, so the old archive is not aggregated in'
         assert submitted['kw']['oldFeatured'] is True
         assert submitted['kw']['rollback_project_id'] == str(project['_id'])
-        assert submitted['kw']['keep_people']['project_members'] == project['project_members']
+        assert submitted['kw']['keep_members'] == project['project_members']
 
         placeholder = _state({'_id': ObjectId(new_id)})
         assert classify(placeholder) == LIVE
@@ -423,9 +423,10 @@ def test_a_real_replacement_matches_its_dry_run(real_project, admin, tmp_path):
 
     new = collection.find_one({'_id': ObjectId(new_id)})
     assert classify(new) == LIVE and classify(collection.find_one({'_id': old['_id']})) == SUPERSEDED
-    # The admin doing this isn't its creator or a member, and doesn't become either.
-    assert new['creator'] == 'the_real_creator'
+    # The admin ran this version, so is its creator, but doesn't join the project.
+    assert new['creator'] == admin[0].username
     assert new['project_members'] == ['the_real_creator']
+    assert collection.find_one({'_id': old['_id']})['creator'] == 'the_real_creator'
     assert new['featured'] is True
     assert new['project_name'] == old['project_name']
     assert new['alias_name'] == old['alias_name']
@@ -486,7 +487,7 @@ def test_an_admin_uploading_through_the_form_stays_outside_the_project(
     done = _poll_until_finished(collection, new_id)
     assert done and not done.get('aggregation_failed'), done and done.get('error_message')
 
-    assert done['creator'] == 'the_real_creator'
+    assert done['creator'] == admin[0].username
     # The box on the form still decides who else is on the project.
     assert sorted(done['project_members']) == ['added_by_the_admin', 'the_real_creator']
 
@@ -503,7 +504,7 @@ def test_an_admin_emptying_a_project_through_the_form_stays_outside_it(
     done = _poll_until_finished(collection, new_id)
     assert done and done.get('EMPTY?') and not done.get('aggregation_failed'), done
 
-    assert done['creator'] == 'the_real_creator'
+    assert done['creator'] == admin[0].username
     assert done['project_members'] == ['the_real_creator']
 
 
@@ -522,6 +523,7 @@ def test_a_member_uploading_through_the_form_stays_a_member(
     done = _poll_until_finished(collection, new_id)
     assert done and not done.get('aggregation_failed'), done and done.get('error_message')
 
+    assert done['creator'] == member[0].username
     assert sorted(done['project_members']) == sorted(['the_real_creator', member[0].username])
 
 

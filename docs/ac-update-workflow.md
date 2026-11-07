@@ -154,9 +154,9 @@ a project's results with a token, so there's `POST upload_api/replace/<project i
   reports the state. After a real replacement it reports what was stored, to compare with
   the dry run.
 - **Metadata, description, alias, publication link and subscribers carry forward** because
-  the route calls the code the form's replace calls. **The creator and members carry forward
-  too,** because one admin refreshing every kept project shouldn't become their creator and
-  a member. The form now does the same for an admin from outside the project. The audit log
+  the route calls the code the form's replace calls. **The members carry forward too,** so
+  an admin refreshing a project doesn't join it. The form now does the same. The admin is the
+  new version's creator, a field that says who ran each version, and the audit log also
   records who did it. View and download counts start at zero on a new version, as with any edit, and the
   page shows the total across versions.
 - **The whole project archive is counted apart.** Each version stores a new one, because it

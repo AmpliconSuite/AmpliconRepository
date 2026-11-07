@@ -4058,7 +4058,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
                              previous_versions, previous_views, old_subscribers, old_project_data,
                              download_url, samples_to_remove, replace_project, remap_sample_names,
                              reaggregate_project=False, oldFeatured=False, rollback_project_id=None,
-                             old_extra_metadata=None, keep_people=None):
+                             old_extra_metadata=None, keep_members=None):
     """
     Wrapper function for edit operations that handles notification and then calls _process_and_aggregate_files.
     This runs in a background thread for edit operations.
@@ -4181,7 +4181,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             empty_edit=empty_edit,
             # Read before the edit cleared it from the database.
             rollback_alias=old_project_data.get('alias_name'),
-            keep_people=keep_people,
+            keep_members=keep_members,
         )
 
         # Clean up temporary files (downloaded old project and name map) after aggregation
@@ -4346,16 +4346,15 @@ def restore_superseded_version(project_id, alias=None):
 
 def edit_project_into_new_version(request, project_name, project, form_dict, form, metadata_file,
                                    samples_to_remove, remap_sample_names, file_fps, temp_proj_id, 
-                                   project_data_path, reaggregate_project=False, keep_people=None):
+                                   project_data_path, reaggregate_project=False, keep_members=None):
     """
     Handle project edits that require creating a new version:
     - Adding new samples
     - Uploading new data files
     - Running aggregator
 
-    keep_people: {'creator': ..., 'project_members': [...]} for the new version, when the
-    person uploading shouldn't become its creator and a member. For scripts only: it never
-    comes from a request's fields, so a form can't name someone else as creator.
+    keep_members: the new version's member list, when the person uploading shouldn't be added
+    to it. They're still its creator: that field says who ran each version.
     """
     try:
         files = request.FILES.getlist('document')
@@ -4484,7 +4483,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 rollback_project_id=str(project['linkid']),
                 task_label=f'Project Edit: {temp_proj_id}',
                 old_extra_metadata=old_extra_metadata,
-                keep_people=keep_people,
+                keep_members=keep_members,
             )
             logging.info(f"EditProject - finished launch of background thread")
 
@@ -4803,17 +4802,15 @@ def edit_project_page(request, project_name):
             
             # Only a site admin gets this far without being a member. Uploading doesn't put
             # them on the project: an in-place edit already left them off, and a new version
-            # made the same admin its creator and a member (HCC827 on prod, measured 2026-11-06).
-            keep_people = None
+            # used to add them (HCC827 on prod, measured 2026-11-06).
+            keep_members = None
             if not is_user_a_project_member(project, request):
-                keep_people = {'project_members': form_dict['project_members']}
-                if project.get('creator') is not None:
-                    keep_people['creator'] = project['creator']
+                keep_members = form_dict['project_members']
 
             result = edit_project_into_new_version(
                 request, project_name, project, form_dict, form, metadata_file,
                 samples_to_remove, remap_sample_names, file_fps, temp_proj_id, project_data_path,
-                reaggregate_project=reaggregate_project, keep_people=keep_people
+                reaggregate_project=reaggregate_project, keep_members=keep_members
             )
             
             if result is not None:
@@ -4870,7 +4867,7 @@ def form_dict_for_edit(request, project, form):
     Hands the alias over when the form leaves it blank, which clears it on the
     current document, so call this only once the edit is going ahead. Also builds
     the member list. An admin who isn't a member isn't added to it, though a new
-    version's document still has to be told so: see keep_people.
+    version's document still has to be told so: see keep_members.
     """
     old_alias_name = project.get('alias_name')
 
@@ -5547,7 +5544,7 @@ def removes_every_sample(old_project, samples_to_remove, new_files):
 
 def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
                             previous_views, old_subscribers, oldFeatured,
-                            audit_event_type, keep_people=None):
+                            audit_event_type, keep_members=None):
     """Write the new version of a project whose samples were all removed.
 
     The aggregator cannot help here: given every sample excluded it aborts with
@@ -5585,7 +5582,8 @@ def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
     build_project_document(
         project, form, form_to_dict(form), creator, {}, None,
         previous_versions or [], previous_views or [0, 0], old_subscribers)
-    project.update(keep_people or {})
+    if keep_members is not None:
+        project['project_members'] = keep_members
 
     # Nothing is extracted afterwards, so the version is complete as written.
     # The aggregated path leaves this False for extract_project_files to flip.
@@ -5656,7 +5654,7 @@ def _discard_failed_upload(temp_proj_id, rollback_project_id=None):
         delete_gridfs_file, temp_proj_id, rollback_project_id)
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None, exclude_samples=None, empty_edit=False, rollback_alias=None, keep_people=None):
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None, exclude_samples=None, empty_edit=False, rollback_alias=None, keep_members=None):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
@@ -5784,7 +5782,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
             if not _finalize_empty_version(
                     form_data, user, temp_proj_id, previous_versions,
                     previous_views, old_subscribers, oldFeatured,
-                    audit_event_type, keep_people=keep_people):
+                    audit_event_type, keep_members=keep_members):
                 _err_msg = ('Form validation failed. Please check your project '
                             'information.')
                 if rollback_project_id:
@@ -5983,7 +5981,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                                        old_subscribers=old_subscribers,
                                        audit_params=cp_audit_params,
                                        oldFeatured=oldFeatured, remap_name_to_alias=(name_map_file_path is not None),
-                                       keep_people=keep_people)
+                                       keep_members=keep_members)
 
         else:
             success = _create_project(form, mock_request, extra_metadata_file_fp, 
@@ -6278,7 +6276,7 @@ def _resolved_tool_versions(project, fallback):
     return pick('AA_version'), pick('AC_version'), pick('ASP_version')
 
 
-def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, audit_params=None, oldFeatured=False, remap_name_to_alias=False, keep_people=None):
+def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, audit_params=None, oldFeatured=False, remap_name_to_alias=False, keep_members=None):
     """
     Creates or updates a project.
     
@@ -6345,7 +6343,8 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         if project is None:
             return False
 
-        project.update(keep_people or {})
+        if keep_members is not None:
+            project['project_members'] = keep_members
         project['sample_name_remap_enabled'] = bool(remap_name_to_alias)
         # Update the placeholder project with real data
         project['_id'] = project_id
