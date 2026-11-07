@@ -728,9 +728,10 @@ class UploadSite:
     """A site that makes each new version, and can be told to go wrong."""
     name = 'dev'
 
-    def __init__(self, entries=2, features=2):
+    def __init__(self, entries=2, features=2, names=1):
         self.sent, self.polls, self.prepared = [], [], []
         self.stored = {'state': 'finished', 'samples': entries, 'features': features, 'page_ready': True,
+                       'page_fields': {'sample_data': names, 'reference_genome': 'GRCh38', 'ecDNA_context': 0},
                        'versions': {'AC_version': '2.0.1'},
                        'files': {'shared': 5, 'shared_bytes': 50, 'new': 1, 'new_bytes': 10, 'archive_bytes': 900}}
         self.prediction = {'state': 'finished', 'samples': entries, 'features': features,
@@ -770,7 +771,7 @@ class UploadSite:
 
 def _counts_of(path):
     summary = archive.run_json_summary(path)
-    return summary['entries'], summary['features']
+    return summary['entries'], summary['features'], len(summary['samples'])
 
 
 @pytest.fixture
@@ -823,7 +824,7 @@ def test_an_upload_sends_each_project_and_records_it(built):
     assert built.site.prepared == ['new-' + ID_A, 'new-' + ID_B]
     first = built.records()[0]
     assert (first['replaced'], first['new_version']) == (ID_A, 'new-' + ID_A)
-    assert first['misses'] == [] and first['page_ready'] is True
+    assert first['misses'] == [] and first['page_fields']['reference_genome'] == 'GRCh38'
     assert built.state()['upload']['state'] == 'done'
 
 
@@ -939,20 +940,94 @@ def test_a_long_outage_stops_the_batch_without_forgetting_the_job(built, monkeyp
     assert built.state()['upload']['state'] == 'started'
 
 
-def test_a_page_that_is_not_ready_is_a_note_not_a_stop(built, monkeypatch):
+def test_a_page_that_is_not_ready_stops_the_batch_and_is_asked_again(built, monkeypatch):
     built.site.page_ready = False
-    built.site.stored = dict(built.site.stored, page_ready=False)
+    good = built.site.stored
+    built.site.stored = dict(good, page_ready=False)
     monkeypatch.setattr(upload, 'PAGE_LIMIT_SECONDS', 0)
+    with pytest.raises(upload.Stop, match='has not stored what its page needs'):
+        built.send()
+    assert [s['id'] for s in built.site.sent] == [ID_A] and built.records() == []
+    assert built.state()['upload']['state'] == 'started'
+
+    built.site.page_ready = True
+    built.site.stored = good
     assert built.send() == 2
-    assert built.records()[0]['page_ready'] is False
+    assert [s['id'] for s in built.site.sent] == [ID_A, ID_B], 'asked again, not sent again'
+    assert built.state()['upload']['state'] == 'done'
 
 
-def test_a_site_without_the_prepare_route_is_a_note_not_a_stop(built, monkeypatch):
+def test_a_site_without_the_prepare_route_stops_the_batch(built, monkeypatch):
     def missing(version_id):
         raise Refused('dev: HTTP 404', 'not_found')
 
     monkeypatch.setattr(built.site, 'prepare_page', missing)
-    assert built.send() == 2
+    with pytest.raises(upload.Stop, match='has not stored what its page needs'):
+        built.send()
+
+
+@pytest.mark.parametrize('fields, message', [
+    ({'sample_data': 0}, 'sample_data'),
+    ({'reference_genome': None}, 'reference_genome'),
+    ({'reference_genome': ''}, 'reference_genome'),
+])
+def test_a_page_field_that_is_missing_stops_the_batch(built, fields, message):
+    built.site.stored['page_fields'] = dict(built.site.stored['page_fields'], **fields)
+    with pytest.raises(upload.Stop, match=message):
+        built.send()
+    assert len(built.site.sent) == 1
+    assert built.records()[0]['misses']
+
+
+def test_an_empty_context_is_only_wrong_if_the_archive_has_calls(built, monkeypatch):
+    assert built.send(only=['Project A']) == 1, 'no calls, so empty is right'
+    monkeypatch.setattr(upload.archive, 'context_calls', lambda path: 3)
+    with pytest.raises(upload.Stop, match='ecDNA_context is empty, and the archive holds 3'):
+        built.send(only=['Project B'])
+
+
+def test_context_calls_are_counted_from_the_archive(tmp_path):
+    path = str(tmp_path / 'x.tar.gz')
+    with tarfile.open(path, 'w:gz') as tar:
+        _add(tar, 'results/run.json', '{}')
+        _add(tar, 'results/consolidated/p_ecDNA_context_calls.tsv', 'S1_1\tthing\nS1_2\tthing\n\n')
+        _add(tar, 'results/consolidated/._p_ecDNA_context_calls.tsv', 'mac junk\n')
+    assert archive.context_calls(path) == 2
+
+
+def test_nothing_goes_up_until_ac_has_finished_for_everything(built):
+    """AC on everything, then the review, then the upload."""
+    state = built.state(ID_B)
+    state['result'], state['failed'] = None, 'it broke'
+    pipeline.save_state(built.machine, ID_B, state)
+    with pytest.raises(upload.Stop, match='AC has not finished for 1 project.*Project B'):
+        built.send()
+    assert built.site.sent == []
+
+
+def test_a_project_never_run_holds_the_upload_too(built, workspace):
+    built.plan['projects'].append(workspace.entry(project_id=ID_OLD, name='Project C'))
+    with pytest.raises(upload.Stop, match='Project C'):
+        built.send()
+    assert built.site.sent == []
+
+
+def test_only_is_the_way_to_send_part_of_a_plan(built):
+    state = built.state(ID_B)
+    state['result'], state['failed'] = None, 'it broke'
+    pipeline.save_state(built.machine, ID_B, state)
+    assert built.send(only=['Project A']) == 1
+    assert [s['id'] for s in built.site.sent] == [ID_A]
+
+
+def test_a_summary_older_than_any_archive_in_the_plan_is_refused(built):
+    """Even one this upload isn't sending: the review is of the whole run."""
+    path = built.state(ID_B)['result']['archive']
+    future = os.path.getmtime(path) + 1000
+    os.utime(path, (future, future))
+    with pytest.raises(upload.Stop, match='Project B was built after'):
+        built.send(only=['Project A'])
+    assert built.site.sent == []
 
 
 def test_a_new_version_that_is_not_the_latest_stops_the_batch(built):

@@ -471,6 +471,7 @@ def test_a_real_replacement_matches_its_dry_run(real_project, admin, tmp_path):
 
     assert result['state'] == 'finished', result
     assert result['page_ready'] is False
+    assert result['page_fields'] == {'sample_data': 0, 'reference_genome': None, 'ecDNA_context': 0}
 
     # What the first page view would have stored, without a page view.
     new_id = result['project_id']
@@ -483,6 +484,10 @@ def test_a_real_replacement_matches_its_dry_run(real_project, admin, tmp_path):
     assert prepared['reference_genome'] and prepared['sample_data']
     assert isinstance(prepared['ecDNA_context'], dict)
     assert prepared['views'] == 0, 'preparing a page is not a visit'
+    names = {feature['Sample_name'] for features in prepared['runs'].values() for feature in features}
+    assert _status(new_id, admin[1]).data['page_fields'] == {
+        'sample_data': len(names), 'reference_genome': prepared['reference_genome'],
+        'ecDNA_context': len(prepared['ecDNA_context'])}
     for key in ('shared', 'new'):
         assert result['files'][key] == prediction['files'][key], key
     # Both near the upload's size, and always written: it holds the version's id.

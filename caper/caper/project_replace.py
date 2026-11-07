@@ -323,6 +323,9 @@ def _replacement_status(version_id):
     version = collection_handle_primary.find_one({'_id': version_id})
     return {**base, 'state': FINISHED,
             'page_ready': 'metadata_stored' in version,
+            'page_fields': {'sample_data': len(version.get('sample_data') or []),
+                            'reference_genome': version.get('reference_genome'),
+                            'ecDNA_context': len(version.get('ecDNA_context') or {})},
             'samples': version.get('sample_count'),
             'features': sum(len(features) for features in (version.get('runs') or {}).values()),
             'versions': {key: version.get(key) for key in (

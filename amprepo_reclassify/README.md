@@ -17,7 +17,8 @@ else updates a project through its edit page.
 
 ## Steps
 
-Run these from the top of a checkout of this repo.
+The order is AC on everything, then a person reviews, then the upload. Run these from the top of a
+checkout of this repo.
 
 ```bash
 # Once per machine. Creates an environment with the pinned tools, in about 20 seconds.
@@ -36,7 +37,7 @@ python -m amprepo_reclassify run
 # The combined change summary to review, saved to <workdir>/output/summary.md.
 python -m amprepo_reclassify summary
 
-# Optional: what the site would store. Changes nothing. Useful once, at the start of a campaign.
+# Optional: what the site would store. Changes nothing. Useful once, before a campaign's uploads.
 python -m amprepo_reclassify upload --target prod --dry-run
 
 # Sends each project, smallest first, and checks what the site stored.
@@ -84,15 +85,17 @@ A project stops rather than producing an archive if:
 
 ## Uploading
 
-`upload` won't start without a change summary newer than every archive it would send, and it asks
-you to type the site's name. `--target` has to match the plan, because ids belong to one site. It
-sends one project at a time. For each one, it:
+`upload` won't start until AC has finished for every project in the plan, or while the change summary
+is older than any archive, and it asks you to type the site's name. If a project can't be built, take
+it out of the plan, or name what to send with `--only`. `--target` has to match the plan, because ids
+belong to one site. It sends one project at a time. For each one, it:
 
 1. sends the archive with the version it was built from, so a project that has moved on is refused
 2. waits for the site to finish making the new version
-3. asks the site to get the version's page ready, because a script can't open the page
-4. compares the site's sample and feature counts with the archive, its AC version with the target,
-   and, if you ran a dry run, the files stored with the prediction
+3. asks the site to store `sample_data`, `ecDNA_context` and `reference_genome`, which a version
+   otherwise doesn't have until its page is first opened, and a script can't open it
+4. compares the site's sample and feature counts and those fields with the archive, its AC version
+   with the target, and, if you ran a dry run, the files stored with the prediction
 
 **Anything that goes wrong stops the batch.** Run `upload` again to carry on: finished projects are
 skipped, and a project whose job was still running is followed, not sent again.

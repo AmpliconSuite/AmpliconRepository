@@ -1,7 +1,7 @@
 """`upload`: send reviewed archives to the site one at a time, and check what it stored.
 
 The only stage that writes to a site, and it needs a site admin's token. Anyone else updates a
-project through its edit page.
+project through its edit page. It comes last: AC on everything, a person reviews, then this.
 
 A real upload stops the batch at the first thing that goes wrong, so a problem costs one
 project. Run it again to carry on: finished projects are skipped, and a project whose job was
@@ -14,7 +14,7 @@ import os
 import sys
 import time
 
-from . import archive, pipeline, report
+from . import archive, pipeline, plan as plan_module, report
 from .site_api import Refused, SiteError
 
 log = pipeline.log
@@ -104,7 +104,7 @@ def wait_for_job(site, job_id):
 
 
 def _wait_for_page(site, version_id):
-    """Get the new version's page ready. Not a failure if it can't: its first visitor does this."""
+    """Have the site store what the new version's page needs. True once it has."""
     try:
         if site.prepare_page(version_id):
             return True
@@ -129,6 +129,20 @@ def check_result(status, archive_path, target_ac, dry_run=None):
     stored_ac = (status.get('versions') or {}).get('AC_version')
     if stored_ac != target_ac:
         misses.append('The site reports AC %s, not %s' % (stored_ac, target_ac))
+    # A version isn't finished until these are there: search and the API read them too.
+    fields = status.get('page_fields') or {}
+    if fields.get('sample_data') != len(sent['samples']):
+        # Distinct names, not the sample count, which can be higher. They matched on all 83 of
+        # prod's and 41 of dev's current versions on 2026-11-07, and the count on 76 and 37.
+        misses.append('sample_data has %s rows, and the archive names %d samples'
+                      % (fields.get('sample_data'), len(sent['samples'])))
+    if not fields.get('reference_genome'):
+        misses.append('The new version has no reference_genome')
+    # Empty is right for an archive with no calls, as on all 10 of prod's empty ones that day.
+    # With calls, it means the site's read of the archive failed, and it stores that for good.
+    calls = archive.context_calls(archive_path)
+    if calls and not fields.get('ecDNA_context'):
+        misses.append('ecDNA_context is empty, and the archive holds %d calls' % calls)
     predicted = (dry_run or {}).get('files')
     if predicted:
         stored_files = status.get('files') or {}
@@ -178,7 +192,11 @@ def upload_one(entry, state, plan, machine, site):
         raise Stop('The site could not make the new version of %s: %s. Its old version is %s.'
                    % (entry['name'], status.get('error'), status.get('restored_project_id') or 'unchanged'))
 
-    page_ready = _wait_for_page(site, job_id)
+    if not _wait_for_page(site, job_id):
+        # Still `started`, so running this again asks again, and sends nothing.
+        raise Stop('The new version of %s (%s) exists, but the site has not stored what its page '
+                   'needs. Run `upload` again to ask again.' % (entry['name'], job_id))
+    status = site.replace_status(job_id)
     misses = check_result(status, archive_path, plan['target_ac'], state.get('dry_run'))
     latest = site.project(job_id)
     if not latest.get('is_latest_version', True):
@@ -190,7 +208,7 @@ def upload_one(entry, state, plan, machine, site):
         'url': url, 'samples': status.get('samples'), 'features': status.get('features'),
         'versions': status.get('versions'), 'files': status.get('files'),
         'predicted_files': (state.get('dry_run') or {}).get('files'),
-        'page_ready': page_ready, 'misses': misses})
+        'page_fields': status.get('page_fields'), 'misses': misses})
     state['upload'] = dict(upload, state='done', misses=misses)
     pipeline.save_state(machine, project_id, state)
 
@@ -200,8 +218,6 @@ def upload_one(entry, state, plan, machine, site):
            files.get('shared'), files.get('new'), (files.get('new_bytes') or 0) / 1e6,
            (files.get('archive_bytes') or 0) / 1e6))
     log('  %s' % url)
-    if not page_ready:
-        log('  note: its page isn\'t ready yet, so its first visitor will wait for that')
     if misses:
         raise Stop('%s went up, but not as expected:\n  %s' % (entry['name'], '\n  '.join(misses)))
 
@@ -211,13 +227,23 @@ def _print_skipped(skipped):
         log('  skipped %s: %s' % (name, why))
 
 
-def _require_review(machine, ready):
+def _require_all_built(plan, states):
+    """AC on everything comes first. The review is of the whole run, not of part of it."""
+    waiting = [entry['name'] for entry in plan['projects'] if entry.get('status') == plan_module.UPDATE
+               and not (states.get(entry.get('id')) or {}).get('result')]
+    if waiting:
+        raise Stop('AC has not finished for %d project(s) in the plan: %s. Finish `run` first, or '
+                   'name what to send with --only.' % (len(waiting), ', '.join(waiting)))
+
+
+def _require_review(plan, machine, states):
     """An archive newer than the summary, or no summary, hasn't been reviewed."""
     path = os.path.join(machine.output_dir, SUMMARY_FILE)
     if not os.path.exists(path):
         raise Stop('No change summary at %s. Run `summary` and read it first.' % path)
-    for entry, state in ready:
-        if os.path.getmtime(state['result']['archive']) > os.path.getmtime(path):
+    for entry in plan['projects']:
+        result = (states.get(entry.get('id')) or {}).get('result')
+        if result and os.path.getmtime(result['archive']) > os.path.getmtime(path):
             raise Stop('%s was built after the change summary. Run `summary` and read it again.'
                        % entry['name'])
 
@@ -241,12 +267,15 @@ def _confirm(site_name, ready, assume_yes):
 def run_uploads(plan, machine, site, only=None, accept_flagged=False, assume_yes=False):
     """Returns the number uploaded. Raises Stop at the first thing that goes wrong."""
     site.check_admin()
-    ready, skipped = select(plan, pipeline.load_states(machine, plan['projects']), only, accept_flagged)
+    states = pipeline.load_states(machine, plan['projects'])
+    if not only:
+        _require_all_built(plan, states)
+    ready, skipped = select(plan, states, only, accept_flagged)
     _print_skipped(skipped)
     if not ready:
         log('Nothing to upload.')
         return 0
-    _require_review(machine, ready)
+    _require_review(plan, machine, states)
     _confirm(site.name, ready, assume_yes)
     for done, (entry, state) in enumerate(ready):
         log('\n%s\n%s (%s)' % ('=' * 78, entry['name'], entry['id']))

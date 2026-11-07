@@ -565,7 +565,7 @@ class ProjectReplacePrepareView(APIView):
 
     A version doesn't have these until its page is first opened. A script can't open it: the
     WAF sends non-browser page requests to Bot Control, and a private page needs a login.
-    Status reports `page_ready`. Safe to repeat. If this never runs, the first page view does it.
+    Status reports `page_ready` and `page_fields`. Safe to repeat.
     """
     authentication_classes = []
     permission_classes = []

@@ -410,6 +410,17 @@ def run_json_summary(tar_path):
             'features': sum(len(features) for features in data.get('runs', {}).values())}
 
 
+def context_calls(tar_path):
+    """How many ecDNA context calls an archive holds. Plenty of archives legitimately have none."""
+    calls = 0
+    with tarfile.open(tar_path) as tar:
+        for member in tar:
+            name = os.path.basename(member.name)
+            if member.isfile() and name.endswith('ecDNA_context_calls.tsv') and not name.startswith('._'):
+                calls += sum(1 for line in tar.extractfile(member) if line.strip())
+    return calls
+
+
 def content_hashes(tar_path):
     """{sha256: size} for every file in an archive, read in one pass."""
     hashes = {}
