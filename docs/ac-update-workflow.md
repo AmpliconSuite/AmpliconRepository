@@ -5,8 +5,8 @@ Status: written 2026-11-06. `setup`, `plan`, `preflight`, `run` and `summary` ar
 
 ## Goal
 
-When AmpliconClassifier (AC) has a new release, anyone with a licence and a token
-can move the projects we keep current onto it, from any machine, without storage
+When AmpliconClassifier (AC) has a new release, a site admin with a licence and a
+token can move the projects we keep current onto it, from any machine, without storage
 growing out of proportion to what actually changed.
 
 AC runs on the operator's machine, not on the site. Results go back to the site as
@@ -154,18 +154,45 @@ and settings recovered this way can be older than the results they sit beside.
 
 ## Needed on the site
 
-**An upload route that doesn't exist yet.** The form needs a browser session. The API
-has `upload_api/`, which creates a project, and `add_samples_to_project_api/`, which
-adds samples. Neither replaces a project's results with a token. The new route should:
+**The upload route.** The form needs a browser session. The API has `upload_api/`, which
+creates a project, and `add_samples_to_project_api/`, which adds samples. Neither replaces
+a project's results with a token, so there's `POST upload_api/replace/<project id>/`.
 
-- authenticate with a token and require project membership;
-- take `expected_latest_id` and refuse if the project has a newer version than the one
-  the archive was built from, so a newer upload can't be overwritten unnoticed;
-- support `dry_run`, reading the archive's `run.json` and returning the sample and feature
-  counts, the record size against the limit, and the predicted files shared and written,
-  without storing anything;
-- carry forward metadata, description, aliases, publication link and membership exactly
-  as the form's replace does, by calling the same code.
+- **Only site admins, by API token.** Anyone with an account can make a token, so the
+  route also requires `is_staff`. It takes no browser session, so a cookie can't reach it.
+- **It takes `expected_latest_id`** and refuses if the project has a newer version than the
+  one the archive was built from. The check runs after the body has arrived and just before
+  the write. Two requests in the same moment could still both pass, as two form edits can.
+- **`dry_run` is required, as `true` or `false`,** so a mistyped request can't write. That
+  only means each request says which it is. Nothing makes an upload wait for a dry run: a
+  campaign runs them once at the start, to see the sizes and any problems, and
+  `expected_latest_id` catches a project that moves on after that. A dry run reads the
+  archive and reports sample and feature counts, tool versions, record size against the
+  limit, files shared and written, and files that `run.json` names but the archive lacks.
+  Its only database write is the task tracker's own row.
+- **Both run in the background and answer 202 with a job id,** because a large project
+  can take longer than a request should stay open. `POST upload_api/replace-status/<job id>/`
+  reports the state. After a real replacement it reports what was stored, to compare with
+  the dry run.
+- **Metadata, description, alias, publication link and subscribers carry forward** because
+  the route calls the code the form's replace calls. **The members carry forward too,** so
+  an admin refreshing a project doesn't join it. The form now does the same. The admin is the
+  new version's creator, a field that says who ran each version, and the audit log also
+  records who did it. View and download counts start at zero on a new version, as with any edit, and the
+  page shows the total across versions.
+- **The whole project archive is counted apart.** Each version stores a new one, because it
+  holds the version's id, so an update with no changed file still costs that much.
+- **Reconstruction directories stored before #712 are written once more.** They carry real
+  timestamps and owners in their tar headers, so they can't match the deterministic packing
+  used now, even with identical contents. On dev on 2026-11-06, 8 samples of unchanged data
+  shared 301 files and wrote 8 directories (26 MB). The dry run shows this per project.
+
+**Where the route lives.** `/api/v1/` is documented as read-only, so the route is outside
+it. It's under `upload_api/` because the WAF lets non-browser POSTs through there, while a
+new top-level path meets Bot Control (tested on both sites 2026-11-06), and we'd rather not
+change the WAF. GETs under `upload_api/` also meet Bot Control, which is why the status call
+is a POST. A 500 MB body reached dev through the load balancer in 52 s, about 10 MB/s from
+the lab, so a gunicorn worker's 900 s limit allows about 9 GB at that speed.
 
 **The keep-current checkbox and index,** as already agreed: off by default, in the
 same project, a new row in the version history, and wording that doesn't promise it's
@@ -188,6 +215,9 @@ fully automatic, because a person reviews changes first.
   replacement, and it sits close to the record limit, so `dry_run` must cover the pair.
 - **Solver time limits.** Gurobi has a time limit, so results near it could depend on
   machine load and may not reproduce byte for byte even when pinned. Not measured yet.
+- **A failed upload used to lose the alias.** The edit clears the alias from the old
+  version to hand it on, and a rollback didn't put it back, in the form as well. Fixed with
+  the route.
 - **Site load.** Upload one project at a time. GridFS writes took about 0.30 s/MiB in
   autumn 2026, so a 2 GB archive holds the site's write path for about 10 minutes.
   Shutdown mode refuses uploads, and `upload` should say so plainly.

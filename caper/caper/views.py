@@ -71,6 +71,7 @@ from .views_admin import (
 
 # Import API views from separate module
 from .views_apis import (
+    ProjectReplaceView, ProjectReplaceStatusView,
     FileUploadView, ProjectFileAddView, BackgroundTaskStatusView,
     ProjectListView, ProjectDetailView, ProjectSamplesView,
     ProjectSampleDetailView, FeatureSamplesView,
@@ -4057,7 +4058,7 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
                              previous_versions, previous_views, old_subscribers, old_project_data,
                              download_url, samples_to_remove, replace_project, remap_sample_names,
                              reaggregate_project=False, oldFeatured=False, rollback_project_id=None,
-                             old_extra_metadata=None):
+                             old_extra_metadata=None, keep_members=None):
     """
     Wrapper function for edit operations that handles notification and then calls _process_and_aggregate_files.
     This runs in a background thread for edit operations.
@@ -4178,6 +4179,9 @@ def _process_edit_and_notify(file_fps, placeholder_project_id, project_data_path
             old_extra_metadata=old_extra_metadata,
             exclude_samples=samples_to_remove,
             empty_edit=empty_edit,
+            # Read before the edit cleared it from the database.
+            rollback_alias=old_project_data.get('alias_name'),
+            keep_members=keep_members,
         )
 
         # Clean up temporary files (downloaded old project and name map) after aggregation
@@ -4320,13 +4324,16 @@ def insert_new_version_placeholder(temp_proj_id, project_name, user, visibility)
     project_content_changed(ObjectId(temp_proj_id))
 
 
-def restore_superseded_version(project_id):
+def restore_superseded_version(project_id, alias=None):
     """Put back the version project_update/project_delete just retired, when its
-    replacement could not even be started."""
+    replacement could not even be started. *alias* is the one the edit took from it."""
     try:
+        restored = dict(status_flags(LIVE))
+        if alias:
+            restored['alias_name'] = alias
         collection_handle.update_one(
             {'_id': ObjectId(project_id)},
-            {'$set': status_flags(LIVE),
+            {'$set': restored,
              '$unset': {'delete_user': '', 'delete_date': ''}}
         )
         # project_delete already ran, which took this project out of the
@@ -4339,12 +4346,15 @@ def restore_superseded_version(project_id):
 
 def edit_project_into_new_version(request, project_name, project, form_dict, form, metadata_file,
                                    samples_to_remove, remap_sample_names, file_fps, temp_proj_id, 
-                                   project_data_path, reaggregate_project=False):
+                                   project_data_path, reaggregate_project=False, keep_members=None):
     """
     Handle project edits that require creating a new version:
     - Adding new samples
     - Uploading new data files
     - Running aggregator
+
+    keep_members: the new version's member list, when the person uploading shouldn't be added
+    to it. They're still its creator: that field says who ran each version.
     """
     try:
         files = request.FILES.getlist('document')
@@ -4473,6 +4483,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 rollback_project_id=str(project['linkid']),
                 task_label=f'Project Edit: {temp_proj_id}',
                 old_extra_metadata=old_extra_metadata,
+                keep_members=keep_members,
             )
             logging.info(f"EditProject - finished launch of background thread")
 
@@ -4492,7 +4503,7 @@ def edit_project_into_new_version(request, project_name, project, form_dict, for
                 pass
 
             # Restore the old project since project_update/project_delete already ran
-            restore_superseded_version(project_name)
+            restore_superseded_version(project_name, alias=project.get('alias_name'))
             
             alert_message = f"An error occurred during project update: {str(e)}"
             _metadata_context = get_metadata_remap_edit_context(project)
@@ -4705,11 +4716,6 @@ def edit_project_page(request, project_name):
             messages.error(request, "Only the current version of this project can be edited.")
             return redirect('project_page', project_name=project_name)
 
-        old_alias_name = None
-        if 'alias_name' in project:
-            old_alias_name = project['alias_name']
-            print(f'THE OLD ALIAS NAME SHOULD BE: {old_alias_name}')
-        
         # no edits for anyone but members and admins
         if not may_edit_project(project, request):
             return HttpResponse("Project does not exist")
@@ -4737,29 +4743,8 @@ def edit_project_page(request, project_name):
                     request, project, form, status=400,
                     alert_message=too_large_message(record_size, True))
 
-        ## give the new project the old project alias.
-        inherit_alias = not form.cleaned_data.get('alias') and bool(old_alias_name)
-        if inherit_alias:
-            ## update old project so its alias is set to None, and the alias is set to the new project
-            query = {'_id': ObjectId(project_name)}
-            new_val = { "$set": {'alias_name' : None}}
-            collection_handle.update_one(query, new_val)
+        form_dict = form_dict_for_edit(request, project, form)
 
-        ## new project information is stored in form_dict
-        form_dict = form_to_dict(form)
-        # Set here, not in form.data: the form is already validated, and
-        # form.save() returns the instance built from what was submitted.
-        if inherit_alias:
-            form_dict['alias'] = old_alias_name
-        
-        # Build project member list. An admin editing a project they are not a
-        # member of is not added to it.
-        is_member = is_user_a_project_member(project, request)
-        add_self = True
-        if getattr(request.user, 'is_staff', False) and not is_member:
-            add_self = False
-        form_dict['project_members'] = create_user_list(form_dict['project_members'], get_current_user(request), add_current_user=add_self)
-        
         # lets notify users (if their preferences request it) if project membership has changed
         new_membership = form_dict['project_members']
         old_membership = project['project_members']
@@ -4815,10 +4800,17 @@ def edit_project_page(request, project_name):
             temp_proj_id = str(ObjectId())  # Must be a valid MongoDB ObjectId (24-char hex)
             project_data_path = f"tmp/{temp_proj_id}" ## to change
             
+            # Only a site admin gets this far without being a member. Uploading doesn't put
+            # them on the project: an in-place edit already left them off, and a new version
+            # used to add them (HCC827 on prod, measured 2026-11-06).
+            keep_members = None
+            if not is_user_a_project_member(project, request):
+                keep_members = form_dict['project_members']
+
             result = edit_project_into_new_version(
                 request, project_name, project, form_dict, form, metadata_file,
                 samples_to_remove, remap_sample_names, file_fps, temp_proj_id, project_data_path,
-                reaggregate_project=reaggregate_project
+                reaggregate_project=reaggregate_project, keep_members=keep_members
             )
             
             if result is not None:
@@ -4867,6 +4859,37 @@ def edit_project_page(request, project_name):
                                    "CoRAL_version": CoRALVersion })
 
     return _render_edit_project_page(request, project, form)
+
+
+def form_dict_for_edit(request, project, form):
+    """What a validated edit form means for this project's next version.
+
+    Hands the alias over when the form leaves it blank, which clears it on the
+    current document, so call this only once the edit is going ahead. Also builds
+    the member list. An admin who isn't a member isn't added to it, though a new
+    version's document still has to be told so: see keep_members.
+    """
+    old_alias_name = project.get('alias_name')
+
+    ## give the new project the old project alias.
+    inherit_alias = not form.cleaned_data.get('alias') and bool(old_alias_name)
+    if inherit_alias:
+        ## update old project so its alias is set to None, and the alias is set to the new project
+        collection_handle.update_one({'_id': ObjectId(project['_id'])},
+                                     {"$set": {'alias_name': None}})
+
+    ## new project information is stored in form_dict
+    form_dict = form_to_dict(form)
+    # Set here, not in form.data: the form is already validated, and
+    # form.save() returns the instance built from what was submitted.
+    if inherit_alias:
+        form_dict['alias'] = old_alias_name
+
+    is_member = is_user_a_project_member(project, request)
+    add_self = not (getattr(request.user, 'is_staff', False) and not is_member)
+    form_dict['project_members'] = create_user_list(
+        form_dict['project_members'], get_current_user(request), add_current_user=add_self)
+    return form_dict
 
 
 def _render_edit_project_page(request, project, form, status=200, alert_message=None):
@@ -5521,7 +5544,7 @@ def removes_every_sample(old_project, samples_to_remove, new_files):
 
 def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
                             previous_views, old_subscribers, oldFeatured,
-                            audit_event_type):
+                            audit_event_type, keep_members=None):
     """Write the new version of a project whose samples were all removed.
 
     The aggregator cannot help here: given every sample excluded it aborts with
@@ -5559,6 +5582,8 @@ def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
     build_project_document(
         project, form, form_to_dict(form), creator, {}, None,
         previous_versions or [], previous_views or [0, 0], old_subscribers)
+    if keep_members is not None:
+        project['project_members'] = keep_members
 
     # Nothing is extracted afterwards, so the version is complete as written.
     # The aggregated path leaves this False for extract_project_files to flip.
@@ -5629,7 +5654,7 @@ def _discard_failed_upload(temp_proj_id, rollback_project_id=None):
         delete_gridfs_file, temp_proj_id, rollback_project_id)
 
 
-def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None, exclude_samples=None, empty_edit=False):
+def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp_directory, form_data, user, extra_metadata_file_fp, name_map_file_path=None, previous_versions=None, previous_views=None, old_subscribers=None, audit_event_type=None, oldFeatured=False, remap_name_to_alias=False, rollback_project_id=None, old_extra_metadata=None, exclude_samples=None, empty_edit=False, rollback_alias=None, keep_members=None):
     """
     Background thread function to process files and run aggregator.
     Updates the project once aggregation is complete.
@@ -5656,6 +5681,8 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                              project_page can redirect the user to the old project's edit page.
         exclude_samples: Sample names to leave out of the aggregation (optional).  Requires
                          AmpliconSuiteAggregator >= 8.3.0; see the guard below.
+        rollback_alias: The old project's alias, put back with it on failure. The edit cleared
+                        it from the old project to hand it to the new version.
     """
 
     def _do_rollback(failed_placeholder_id, old_project_id, error_msg):
@@ -5673,10 +5700,13 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
 
         # 1. Restore old project to current, non-deleted state
         try:
+            restored = dict(status_flags(LIVE))
+            if rollback_alias:
+                restored['alias_name'] = rollback_alias
             collection_handle.update_one(
                 {'_id': ObjectId(old_project_id)},
                 {
-                    '$set': status_flags(LIVE),
+                    '$set': restored,
                     '$unset': {'delete_user': '', 'delete_date': ''}
                 }
             )
@@ -5752,7 +5782,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
             if not _finalize_empty_version(
                     form_data, user, temp_proj_id, previous_versions,
                     previous_views, old_subscribers, oldFeatured,
-                    audit_event_type):
+                    audit_event_type, keep_members=keep_members):
                 _err_msg = ('Form validation failed. Please check your project '
                             'information.')
                 if rollback_project_id:
@@ -5950,7 +5980,8 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
                                        previous_views=previous_views or [0, 0],
                                        old_subscribers=old_subscribers,
                                        audit_params=cp_audit_params,
-                                       oldFeatured=oldFeatured, remap_name_to_alias=(name_map_file_path is not None))
+                                       oldFeatured=oldFeatured, remap_name_to_alias=(name_map_file_path is not None),
+                                       keep_members=keep_members)
 
         else:
             success = _create_project(form, mock_request, extra_metadata_file_fp, 
@@ -6245,7 +6276,7 @@ def _resolved_tool_versions(project, fallback):
     return pick('AA_version'), pick('AC_version'), pick('ASP_version')
 
 
-def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, audit_params=None, oldFeatured=False, remap_name_to_alias=False):
+def _create_project(form, request, extra_metadata_file_fp = None, old_extra_metadata = None,  previous_versions = [], previous_views = [0, 0], old_subscribers = None, agg_fp = None, placeholder_project_id=None, audit_params=None, oldFeatured=False, remap_name_to_alias=False, keep_members=None):
     """
     Creates or updates a project.
     
@@ -6312,6 +6343,8 @@ def _create_project(form, request, extra_metadata_file_fp = None, old_extra_meta
         if project is None:
             return False
 
+        if keep_members is not None:
+            project['project_members'] = keep_members
         project['sample_name_remap_enabled'] = bool(remap_name_to_alias)
         # Update the placeholder project with real data
         project['_id'] = project_id

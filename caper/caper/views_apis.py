@@ -454,6 +454,111 @@ def _user_can_access_project(project, user):
     return user.username in members or (user.email and user.email in members)
 
 
+def _admin_from_token(request):
+    """(admin user, None), or (None, the refusal).
+
+    A token alone isn't enough, because anyone with an account can make one. A browser
+    session never gets this far: these views take no session authentication, so a cookie
+    can't reach them and they need no CSRF check.
+    """
+    user, error = _authenticate_api_request(request)
+    if error:
+        return None, error
+    if user is None:
+        return None, api_error('An API token is required.', 'authentication_required',
+                               status.HTTP_401_UNAUTHORIZED)
+    if not user.is_staff:
+        return None, api_error('Only site admins can do this.', 'admin_required',
+                               status.HTTP_403_FORBIDDEN)
+    return user, None
+
+
+class ProjectReplaceView(APIView):
+    """
+    Replace a project's results with a new archive, as the edit form's replace does.
+
+    Admins only, by API token. A multipart POST of:
+      document            the archive, built with the aggregator
+      expected_latest_id  the version the archive was built from; refused if it has moved on
+      dry_run             `true` to report what would happen, or `false` to do it. Required,
+                          so a mistyped request can't write.
+      metadataFile        optional sheet, replacing the project's metadata
+
+    Answers 202 with a `job_id` for `upload_api/replace-status/<job_id>/`. Refused during
+    shutdown mode by ShutdownUploadGuardMiddleware.
+    """
+    authentication_classes = []
+    permission_classes = []
+    parser_classes = [MultiPartParser]
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_replace'
+
+    def post(self, request, project_id):
+        from . import project_replace
+
+        # Before the body is read, so a refused caller doesn't cost a parse of the archive.
+        user, error = _admin_from_token(request)
+        if error:
+            return error
+
+        dry_run = str(request.data.get('dry_run', '')).lower()
+        if dry_run not in ('true', 'false'):
+            return api_error('dry_run must be true or false.', 'invalid_dry_run',
+                             status.HTTP_400_BAD_REQUEST)
+        archive = request.FILES.get('document')
+        if archive is None:
+            return api_error('No archive in `document`.', 'no_archive', status.HTTP_400_BAD_REQUEST)
+        expected = request.data.get('expected_latest_id')
+        if not expected:
+            return api_error('expected_latest_id is required.', 'no_expected_id',
+                             status.HTTP_400_BAD_REQUEST)
+
+        # After the body is read, which can take minutes, so this is close to the write.
+        head = project_replace.current_head(project_id)
+        if head is None:
+            return api_error('Project not found.', 'not_found', status.HTTP_404_NOT_FOUND)
+        try:
+            refusal = project_replace.refusal_for(head, expected)
+            if refusal:
+                raise refusal
+            if dry_run == 'true':
+                job_id = project_replace.start_dry_run(
+                    archive, request.FILES.get('metadataFile'), head)
+            else:
+                job_id = project_replace.start_replacement(request._request, user, head)
+        except project_replace.Refusal as refused:
+            return Response({'error': str(refused), 'code': refused.code, **refused.extra},
+                            status=status.HTTP_409_CONFLICT)
+        return Response({'job_id': job_id, 'dry_run': dry_run == 'true', 'replaces': str(head['_id'])},
+                        status=status.HTTP_202_ACCEPTED)
+
+
+class ProjectReplaceStatusView(APIView):
+    """
+    What a job from ProjectReplaceView has got to. Admins only, by API token.
+
+    A POST though it only reads: the WAF lets non-browser POSTs through under upload_api/ and
+    sends GETs there to Bot Control. Not refused during shutdown mode, because a deploy waits
+    for these jobs and a client has to be able to see them end.
+    """
+    authentication_classes = []
+    permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
+
+    def post(self, request, job_id):
+        from . import project_replace
+
+        _user, error = _admin_from_token(request)
+        if error:
+            return error
+        result = project_replace.job_status(job_id)
+        if result is None:
+            return api_error('No such job. A dry run\'s result is kept for about an hour.',
+                             'not_found', status.HTTP_404_NOT_FOUND)
+        return Response(result)
+
+
 _SAFE_PREV_VERSION_KEYS = frozenset({
     'date', 'linkid', 'AA_version', 'AC_version', 'ASP_version',
     'aggregator_version', 'Reconstruction_tools', 'CoRAL_version',
