@@ -4801,10 +4801,19 @@ def edit_project_page(request, project_name):
             temp_proj_id = str(ObjectId())  # Must be a valid MongoDB ObjectId (24-char hex)
             project_data_path = f"tmp/{temp_proj_id}" ## to change
             
+            # Only a site admin gets this far without being a member. Uploading doesn't put
+            # them on the project: an in-place edit already left them off, and a new version
+            # made the same admin its creator and a member (HCC827 on prod, measured 2026-11-06).
+            keep_people = None
+            if not is_user_a_project_member(project, request):
+                keep_people = {'project_members': form_dict['project_members']}
+                if project.get('creator') is not None:
+                    keep_people['creator'] = project['creator']
+
             result = edit_project_into_new_version(
                 request, project_name, project, form_dict, form, metadata_file,
                 samples_to_remove, remap_sample_names, file_fps, temp_proj_id, project_data_path,
-                reaggregate_project=reaggregate_project
+                reaggregate_project=reaggregate_project, keep_people=keep_people
             )
             
             if result is not None:
@@ -4860,7 +4869,8 @@ def form_dict_for_edit(request, project, form):
 
     Hands the alias over when the form leaves it blank, which clears it on the
     current document, so call this only once the edit is going ahead. Also builds
-    the member list. An admin who isn't a member isn't added to it.
+    the member list. An admin who isn't a member isn't added to it, though a new
+    version's document still has to be told so: see keep_people.
     """
     old_alias_name = project.get('alias_name')
 
@@ -5537,7 +5547,7 @@ def removes_every_sample(old_project, samples_to_remove, new_files):
 
 def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
                             previous_views, old_subscribers, oldFeatured,
-                            audit_event_type):
+                            audit_event_type, keep_people=None):
     """Write the new version of a project whose samples were all removed.
 
     The aggregator cannot help here: given every sample excluded it aborts with
@@ -5575,6 +5585,7 @@ def _finalize_empty_version(form_data, user, temp_proj_id, previous_versions,
     build_project_document(
         project, form, form_to_dict(form), creator, {}, None,
         previous_versions or [], previous_views or [0, 0], old_subscribers)
+    project.update(keep_people or {})
 
     # Nothing is extracted afterwards, so the version is complete as written.
     # The aggregated path leaves this False for extract_project_files to flip.
@@ -5773,7 +5784,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
             if not _finalize_empty_version(
                     form_data, user, temp_proj_id, previous_versions,
                     previous_views, old_subscribers, oldFeatured,
-                    audit_event_type):
+                    audit_event_type, keep_people=keep_people):
                 _err_msg = ('Form validation failed. Please check your project '
                             'information.')
                 if rollback_project_id:

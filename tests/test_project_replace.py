@@ -440,6 +440,91 @@ def test_a_real_replacement_matches_its_dry_run(real_project, admin, tmp_path):
     assert stale.data['latest_id'] == new_id
 
 
+@pytest.fixture
+def no_subscriber_mail():
+    """Held until the background version finishes, which is when subscribers are told."""
+    with patch('caper.user_preferences.notify_subscribers_of_project_update'):
+        yield
+
+
+def _form_edit(request_factory, user, project, tar_path=None, **fields):
+    """The edit page's POST, as a browser sends it, and the new version's id."""
+    from django.contrib.messages.storage.fallback import FallbackStorage
+
+    from conftest import _project_id_from_redirect
+    from caper.views import edit_project_page
+
+    project_id = str(project['_id'])
+    data = {'project_name': project['project_name'], 'description': project['description'],
+            'private': project['private'], 'publication_link': project['publication_link'],
+            'project_members': ','.join(project['project_members']), 'alias': '',
+            'remap_sample_names': 'false', 'accept_license': 'on', **fields}
+    handle = open(tar_path, 'rb') if tar_path else None
+    try:
+        if handle:
+            data.update(document=handle, project_mode='replace')
+        request = request_factory.post(f'/project/{project_id}/edit', data=data, format='multipart')
+        request.user = user
+        request.session = {}
+        request._messages = FallbackStorage(request)
+        response = edit_project_page(request, project_name=project_id)
+    finally:
+        if handle:
+            handle.close()
+    return _project_id_from_redirect(response)
+
+
+@pytest.mark.slow
+def test_an_admin_uploading_through_the_form_stays_outside_the_project(
+        real_project, admin, request_factory, no_subscriber_mail):
+    collection = utils.collection_handle_primary
+    old, made = real_project
+
+    new_id = _form_edit(request_factory, admin[0], old, tar_path=DATASET_SMALL_TAR,
+                        project_members='the_real_creator,added_by_the_admin')
+    made.append(new_id)
+    done = _poll_until_finished(collection, new_id)
+    assert done and not done.get('aggregation_failed'), done and done.get('error_message')
+
+    assert done['creator'] == 'the_real_creator'
+    # The box on the form still decides who else is on the project.
+    assert sorted(done['project_members']) == ['added_by_the_admin', 'the_real_creator']
+
+
+@pytest.mark.slow
+def test_an_admin_emptying_a_project_through_the_form_stays_outside_it(
+        real_project, admin, request_factory, no_subscriber_mail):
+    collection = utils.collection_handle_primary
+    old, made = real_project
+    samples = sorted({feature['Sample_name'] for features in old['runs'].values() for feature in features})
+
+    new_id = _form_edit(request_factory, admin[0], old, samples_to_remove=samples)
+    made.append(new_id)
+    done = _poll_until_finished(collection, new_id)
+    assert done and done.get('EMPTY?') and not done.get('aggregation_failed'), done
+
+    assert done['creator'] == 'the_real_creator'
+    assert done['project_members'] == ['the_real_creator']
+
+
+@pytest.mark.slow
+def test_a_member_uploading_through_the_form_stays_a_member(
+        real_project, member, request_factory, no_subscriber_mail):
+    """The rule for admins from outside changes nothing for the project's own people."""
+    collection = utils.collection_handle_primary
+    old, made = real_project
+    collection.update_one({'_id': old['_id']}, {'$set': {
+        'project_members': ['the_real_creator', member[0].username]}})
+    old = collection.find_one({'_id': old['_id']})
+
+    new_id = _form_edit(request_factory, member[0], old, tar_path=DATASET_SMALL_TAR)
+    made.append(new_id)
+    done = _poll_until_finished(collection, new_id)
+    assert done and not done.get('aggregation_failed'), done and done.get('error_message')
+
+    assert sorted(done['project_members']) == sorted(['the_real_creator', member[0].username])
+
+
 @pytest.mark.slow
 def test_a_failed_replacement_leaves_the_project_as_it_was(real_project, admin, tmp_path):
     """Including its alias, which is how the projects this tool updates are often linked."""

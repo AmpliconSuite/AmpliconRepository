@@ -142,19 +142,22 @@ a project's results with a token, so there's `POST upload_api/replace/<project i
 - **It takes `expected_latest_id`** and refuses if the project has a newer version than the
   one the archive was built from. The check runs after the body has arrived and just before
   the write. Two requests in the same moment could still both pass, as two form edits can.
-- **`dry_run` is required, as `true` or `false`,** so a mistyped request can't write. A dry
-  run reads the archive and reports sample and feature counts, tool versions, record size
-  against the limit, files shared and written, and files that `run.json` names but the
-  archive lacks. Its only database write is the task tracker's own row.
+- **`dry_run` is required, as `true` or `false`,** so a mistyped request can't write. That
+  only means each request says which it is. Nothing makes an upload wait for a dry run: a
+  campaign runs them once at the start, to see the sizes and any problems, and
+  `expected_latest_id` catches a project that moves on after that. A dry run reads the
+  archive and reports sample and feature counts, tool versions, record size against the
+  limit, files shared and written, and files that `run.json` names but the archive lacks.
+  Its only database write is the task tracker's own row.
 - **Both run in the background and answer 202 with a job id,** because a large project
   can take longer than a request should stay open. `POST upload_api/replace-status/<job id>/`
   reports the state. After a real replacement it reports what was stored, to compare with
   the dry run.
 - **Metadata, description, alias, publication link and subscribers carry forward** because
   the route calls the code the form's replace calls. **The creator and members carry forward
-  too,** where the form would make the person uploading both, because one admin refreshing
-  every kept project shouldn't become their creator and a member. The audit log records who
-  did it. View and download counts start at zero on a new version, as with any edit, and the
+  too,** because one admin refreshing every kept project shouldn't become their creator and
+  a member. The form now does the same for an admin from outside the project. The audit log
+  records who did it. View and download counts start at zero on a new version, as with any edit, and the
   page shows the total across versions.
 - **The whole project archive is counted apart.** Each version stores a new one, because it
   holds the version's id, so an update with no changed file still costs that much.
