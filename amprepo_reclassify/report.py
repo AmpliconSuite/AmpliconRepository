@@ -128,6 +128,13 @@ def compare_calls(old_calls, new_calls):
 def concerns(result):
     """What a person must look at before this project is uploaded."""
     found = list(result['settings']['notes'])
+    if result.get('local_archive'):
+        local = result['local_archive']
+        found.append('Built from a local archive, not the site\'s: %s (sha256 %s)'
+                     % (local['path'], local['sha256'][:12]))
+    if result.get('repack_dropped'):
+        found.append('The aggregator\'s repack of the input dropped %d file(s), first %s'
+                     % (len(result['repack_dropped']), result['repack_dropped'][0]))
     if result.get('site_ref') and result['ref'] != result['site_ref']:
         found.append('AC ran with reference %s, and the site says %s' % (result['ref'], result['site_ref']))
     if result['settings']['flags'] or result.get('extra_ac_flags'):

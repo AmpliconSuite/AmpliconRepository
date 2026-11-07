@@ -37,6 +37,14 @@ def clean_mac_junk(root):
             dirnames.remove('__MACOSX')
 
 
+def repeated_names(root, suffix):
+    """File names ending in `suffix` that appear more than once under `root`."""
+    seen = defaultdict(int)
+    for path in find_files(root, suffix):
+        seen[os.path.basename(path)] += 1
+    return sorted(name for name, count in seen.items() if count > 1)
+
+
 def find_files(root, suffix):
     found = []
     for dirpath, _, filenames in os.walk(root):
@@ -196,14 +204,73 @@ def discover_samples(root):
             samples[os.path.basename(path)[:-len('_AA_results.tar.gz')]].setdefault('aa_tarball', path)
     _recover_unpacked_aa(root, samples)
     _attach_named_files(root, samples)
-    return {name: paths for name, paths in samples.items()
+    kept = {name: paths for name, paths in samples.items()
             if _has_aa(paths) or paths.get('cnv_calls_bed')}
+    for name, paths in kept.items():
+        home = _sample_home(name, paths)
+        if home:
+            paths['home'] = home
+    return kept
+
+
+def _sample_home(sample, paths):
+    """The directory named after this sample that holds its files, as in
+    results/samples/<sample>/, or None in a layout without one."""
+    for path in paths.values():
+        directory = os.path.dirname(path)
+        if os.path.basename(directory) == sample:
+            return directory
+    return None
+
+
+def aux_dirs(root):
+    """Directories marked with an AUX_DIR file. The aggregator copies them whole into
+    other_files/, and they are the uploader's own files, so a rebuild must keep them."""
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        if dirpath != root and 'AUX_DIR' in filenames:
+            found.append(dirpath)
+            dirnames[:] = []
+    return sorted(found)
+
+
+def structure_problems(samples):
+    """Samples whose reconstruction directory AC can't use as it stands. The fix belongs on
+    the site, so this only reports.
+
+    - An amplicon's graph file more than once: AC searches recursively, so it would classify
+      those amplicons twice and fail at its results table hours later. PCAWG on dev had a
+      nested <sample>_AA_results copy in every sample (measured 2026-11-07).
+    - An empty graph or cycles file: AC 2.0.1 refuses them. CUGA on dev has 9 samples whose
+      only amplicon files are empty (measured 2026-11-07).
+    """
+    problems = []
+    for sample, paths in sorted(samples.items()):
+        if 'aa_dir' not in paths:
+            continue
+        top = paths['aa_dir']
+        seen = defaultdict(list)
+        for path in find_files(top, '_graph.txt'):
+            seen[os.path.basename(path)].append(os.path.relpath(os.path.dirname(path), top))
+        repeated = sorted(name for name, dirs in seen.items() if len(dirs) > 1)
+        if repeated:
+            problems.append('%s: %d graph file(s) more than once, %s in %s'
+                            % (sample, len(repeated), repeated[0], ' and '.join(seen[repeated[0]])))
+        empty = sorted(os.path.basename(p) for p in find_files(top, '_graph.txt') + find_files(top, '_cycles.txt')
+                       if os.path.getsize(p) == 0)
+        if empty:
+            problems.append('%s: %d empty AA file(s), first %s' % (sample, len(empty), empty[0]))
+    return problems
 
 
 def old_ac_dirs(root):
-    """Every directory with AC profiles. A project may have one, or one per sample."""
+    """Every directory with AC profiles. A project may have one, or one per sample. AC output
+    kept in an AUX folder, such as PCAWG's copy of an older AC run, is the uploader's record
+    and not the version's calls."""
+    aux = [d + os.sep for d in aux_dirs(root)]
     return sorted({os.path.dirname(p)
-                   for p in find_files(root, '_amplicon_classification_profiles.tsv')})
+                   for p in find_files(root, '_amplicon_classification_profiles.tsv')
+                   if not any(p.startswith(d) for d in aux)})
 
 
 # ---- staging ----
@@ -233,6 +300,24 @@ def _stage_aa(sample, paths, sample_dir):
         shutil.rmtree(unpacked, ignore_errors=True)
 
 
+def _stage_other_files(paths, sample_dir):
+    """Everything else in the sample's own directory, such as its pipeline log, finish flag,
+    timing log and metadata, under the same names, so the rebuild doesn't lose them."""
+    home = paths.get('home')
+    if not home:
+        return
+    used = {os.path.realpath(p) for key, p in paths.items() if key != 'home'}
+    for name in os.listdir(home):
+        source = os.path.join(home, name)
+        if os.path.realpath(source) in used:
+            continue
+        dest = os.path.join(sample_dir, name)
+        if os.path.isdir(source):
+            shutil.copytree(source, dest)
+        else:
+            shutil.copy2(source, dest)
+
+
 def stage_samples(samples, stage_dir):
     """One uniform tree per sample, which is both AC's input and the aggregator's."""
     for sample, paths in samples.items():
@@ -241,6 +326,7 @@ def stage_samples(samples, stage_dir):
         sample_dir = os.path.join(stage_dir, sample)
         os.makedirs(sample_dir)
         _stage_aa(sample, paths, sample_dir)
+        _stage_other_files(paths, sample_dir)
         if paths.get('cnv_calls_bed'):
             shutil.copy(paths['cnv_calls_bed'], os.path.join(sample_dir, sample + '_CNV_CALLS.bed'))
         if paths.get('cnvkit_dir'):
@@ -361,6 +447,22 @@ _AMPLICON_FILE = re.compile(r'.+_amplicon\d+(\.png|\.pdf|_graph\.txt|_cycles\.tx
 # These must round-trip unchanged. Classification tables change on purpose, so they aren't here.
 _KEPT_SUFFIXES = ('_CNV_CALLS.bed', '_AA_CNV_SEEDS.bed', '_cnvkit_output.tar.gz', '_summary.txt',
                   '_sample_metadata.json', '_run_metadata.json')
+
+
+def has_member(tar_path, name):
+    with tarfile.open(tar_path) as tar:
+        return name in tar.getnames()
+
+
+def missing_paths(reference_tar, built_tar):
+    """Files in `reference_tar` that `built_tar` lacks at the same path, apart from AC's own
+    consolidated output, which a rebuild replaces and renames."""
+    def files(path):
+        with tarfile.open(path) as tar:
+            return {m.name for m in tar if m.isfile() and not os.path.basename(m.name).startswith('._')}
+    built = files(built_tar)
+    return sorted(name for name in files(reference_tar)
+                  if '/consolidated_classification/' not in '/' + name and name not in built)
 
 
 def _member_names(tar_path):

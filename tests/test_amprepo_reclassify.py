@@ -53,15 +53,28 @@ STUB_AGGREGATOR = textwrap.dedent('''
     args = p.parse_args()
     drop = (args.o.endswith('_reclass') and os.environ.get('STUB_ASA_DROP')) or '\\0'
     samples = set()
+    # Like the real one: AC output goes to consolidated_classification/, a folder with an
+    # AUX_DIR file goes whole to other_files/, and everything else is kept.
     with tarfile.open(args.o + '.tar.gz', 'w:gz') as tar:
         for root in args.files:
-            for dirpath, _, names in os.walk(root):
+            for dirpath, dirnames, names in os.walk(root):
+                for d in list(dirnames):
+                    if os.path.exists(os.path.join(dirpath, d, 'AUX_DIR')):
+                        tar.add(os.path.join(dirpath, d), arcname='results/other_files/' + d)
+                        dirnames.remove(d)
                 for name in names:
                     if name == 'run.json' or name.startswith(drop):
                         continue
                     if name.endswith('_CNV_CALLS.bed'):
                         samples.add(name.split('_CNV_CALLS')[0])
-                    tar.add(os.path.join(dirpath, name), arcname='results/files/' + name)
+                    path = os.path.join(dirpath, name)
+                    if 'consolidated_classification' in dirpath or os.path.basename(root) == 'ac_new':
+                        arcname = 'results/consolidated_classification/' + name
+                    elif os.path.basename(root) == 'results':
+                        arcname = 'results/' + os.path.relpath(path, root)
+                    else:  # the stage: one directory per sample
+                        arcname = 'results/samples/' + os.path.relpath(path, root)
+                    tar.add(path, arcname=arcname)
         data = json.dumps({'runs': {'r': [{'Sample name': s} for s in sorted(samples)]}}).encode()
         info = tarfile.TarInfo('results/run.json'); info.size = len(data)
         import io
@@ -76,8 +89,9 @@ def _add(tar, name, text=''):
     tar.addfile(info, io.BytesIO(data))
 
 
-def make_archive(path, ac_log='', manifest=None):
-    """A modern archive: S1 has an amplicon, and S2 has only a CNV."""
+def make_archive(path, ac_log='', manifest=None, extra=()):
+    """A modern archive: S1 has an amplicon, and S2 has only a CNV. `extra` is (name, text)
+    pairs to add."""
     manifest = manifest or {'runs': {'run': [
         {'Sample name': 'S1', 'Reconstruction directory': 'samples/S1/S1_AA_results',
          'CNV BED file': 'samples/S1/S1_CNV_CALLS.bed'},
@@ -98,6 +112,8 @@ def make_archive(path, ac_log='', manifest=None):
              'S2\tNA\tS2_NA\tNA\tNA\n')
         if ac_log:
             _add(tar, ac + '.log', ac_log)
+        for name, text in extra:
+            _add(tar, name, text)
     return path
 
 
@@ -235,6 +251,29 @@ def test_solver_fallback_stops_the_project_not_the_batch(workspace, monkeypatch)
     assert workspace.ac_calls.read_text().count('--ref') == 2
 
 
+def test_a_nested_copy_of_the_aa_results_stops_the_project_before_any_work(workspace, tmp_path):
+    nested = 'results/samples/S1/S1_AA_results/S1_AA_results/S1_AA_results/'
+    workspace.site = FakeSite(make_archive(str(tmp_path / 'nested.tar.gz'), extra=[
+        (nested + 'S1_amplicon1_graph.txt', 'aa data for S1_amplicon1_graph.txt')]))
+    _, failures = workspace.run()
+    assert failures == 1
+    state = workspace.state()
+    assert 'structural problem' in state['failed']
+    assert 'S1: 1 graph file(s) more than once, S1_amplicon1_graph.txt' in state['failed']
+    assert state['done'] == ['download', 'unpack']
+    assert workspace.ac_calls.read_text() == ''
+
+
+def test_an_empty_aa_file_stops_the_project_before_any_work(workspace, tmp_path):
+    workspace.site = FakeSite(make_archive(str(tmp_path / 'empty.tar.gz'), extra=[
+        ('results/samples/S1/S1_AA_results/S1_amplicon2_graph.txt', ''),
+        ('results/samples/S1/S1_AA_results/S1_amplicon2_cycles.txt', '')]))
+    _, failures = workspace.run()
+    assert failures == 1
+    assert 'S1: 2 empty AA file(s), first S1_amplicon2_cycles.txt' in workspace.state()['failed']
+    assert workspace.ac_calls.read_text() == ''
+
+
 def test_empty_ac_input_is_a_failure_not_all_no_amp(workspace, monkeypatch):
     monkeypatch.setenv('STUB_AC_INPUT', '')
     _, failures = workspace.run()
@@ -242,13 +281,65 @@ def test_empty_ac_input_is_a_failure_not_all_no_amp(workspace, monkeypatch):
     assert 'AC.input is empty' in workspace.state()['failed']
 
 
-def test_dropped_sample_is_flagged_for_review(workspace, monkeypatch):
+def test_a_rebuild_that_loses_input_files_stops_the_project(workspace, monkeypatch):
     monkeypatch.setenv('STUB_ASA_DROP', 'S2')
-    workspace.run()
+    _, failures = workspace.run()
+    assert failures == 1
+    state = workspace.state()
+    assert 'the rebuilt archive lacks 1 file(s) that the input has, first results/samples/S2/S2_CNV_CALLS.bed' in state['failed']
+    assert state['result'] is None
+
+
+def test_other_sample_files_and_aux_folders_survive_the_rebuild(workspace, tmp_path):
+    workspace.site = FakeSite(make_archive(str(tmp_path / 'more.tar.gz'), extra=[
+        ('results/samples/S1/S1.log', 'pipeline log'),
+        ('results/samples/S1/S1_finish_flag.txt', 'All stages completed'),
+        ('results/samples/S2/S2_timing_log.txt', 'timing'),
+        ('results/other_files/notes/AUX_DIR', ''),
+        ('results/other_files/notes/README.md', 'why'),
+        ('results/other_files/old_ac/AUX_DIR', ''),
+        ('results/other_files/old_ac/old_amplicon_classification_profiles.tsv', 'header\n')]))
+    _, failures = workspace.run()
+    assert failures == 0, workspace.state()['failed']
+    with tarfile.open(workspace.state()['result']['archive']) as tar:
+        names = set(tar.getnames())
+    for name in ('results/samples/S1/S1.log', 'results/samples/S1/S1_finish_flag.txt',
+                 'results/samples/S2/S2_timing_log.txt', 'results/other_files/notes/README.md',
+                 'results/other_files/old_ac/old_amplicon_classification_profiles.tsv'):
+        assert name in names
+    # The AUX copy of an old AC run is the uploader's record, not this version's calls.
+    assert workspace.state()['result']['calls']['amplicon_changes'] == [['S1', '1', 'Linear', 'ecDNA']]
+
+
+def test_a_local_archive_replaces_the_download(workspace, tmp_path):
+    local = make_archive(str(tmp_path / 'local.tar.gz'), extra=[('results/samples/S1/S1.log', 'x')])
+    entry = workspace.entry(local_archive={'path': local, 'bytes': os.path.getsize(local),
+                                           'sha256': plan.sha256(local)})
+    _, failures = workspace.run(entry)
+    assert failures == 0
+    assert workspace.site.downloads == 0
     result = workspace.state()['result']
-    found = report.concerns(result)
-    assert any('site has 2 samples and the rebuilt archive has 1' in item for item in found)
-    assert any('rebuilt archive dropped files' in item for item in found)
+    assert any('Built from a local archive' in item for item in report.concerns(result))
+
+
+def test_a_local_archive_that_changed_since_the_plan_is_refused(workspace, tmp_path):
+    local = make_archive(str(tmp_path / 'local.tar.gz'))
+    entry = workspace.entry(local_archive={'path': local, 'bytes': os.path.getsize(local),
+                                           'sha256': '0' * 64})
+    _, failures = workspace.run(entry)
+    assert failures == 1
+    assert 'has changed since `plan` recorded it' in workspace.state()['failed']
+
+
+def test_switching_to_a_local_archive_starts_the_project_again(workspace, tmp_path):
+    workspace.run()
+    local = make_archive(str(tmp_path / 'local.tar.gz'))
+    entry = workspace.entry(local_archive={'path': local, 'bytes': os.path.getsize(local),
+                                           'sha256': plan.sha256(local)})
+    _, failures = workspace.run(entry)
+    assert failures == 0
+    assert workspace.ac_calls.read_text().count('--ref') == 2
+    assert workspace.state()['source'].startswith('local ')
 
 
 def test_project_with_a_newer_version_than_the_plan_is_refused(workspace):
@@ -432,7 +523,22 @@ def test_project_file_skips_comments_and_reads_overrides(tmp_path):
     path.write_text('# a comment\nproject_name\tlatest_id\tref\textra_ac_flags\n'
                     'Alpha\t%s\thg19\t--filter_similar\n' % ID_OLD)
     assert plan.read_project_file(str(path)) == [{'name': 'Alpha', 'id': ID_OLD, 'ref': 'hg19',
-                                                  'extra_ac_flags': '--filter_similar', 'metadata_sheet': ''}]
+                                                  'extra_ac_flags': '--filter_similar', 'metadata_sheet': '',
+                                                  'archive': ''}]
+
+
+def test_a_local_archive_in_the_project_file_is_recorded_by_hash(tmp_path):
+    (tmp_path / 'clean.tar.gz').write_bytes(b'archive bytes')
+    path = tmp_path / 'list.tsv'
+    path.write_text('latest_id\tarchive\n%s\tclean.tar.gz\n' % ID_A)
+    wanted = plan.read_project_file(str(path))
+    assert wanted[0]['archive'] == str(tmp_path / 'clean.tar.gz')
+    entry = _plan([HEAD_A], wanted, sizes={ID_A: None})[0]
+    assert entry['status'] == plan.UPDATE
+    assert entry['local_archive']['bytes'] == 13 and entry['archive_bytes'] == 13
+    assert entry['local_archive']['sha256'] == plan.sha256(str(tmp_path / 'clean.tar.gz'))
+    (tmp_path / 'clean.tar.gz').unlink()
+    assert _plan([HEAD_A], wanted)[0]['status'] == plan.NO_ARCHIVE
 
 
 def test_argument_is_read_as_an_id_or_a_name():

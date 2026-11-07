@@ -2,6 +2,7 @@
 
 import csv
 import datetime
+import hashlib
 import json
 import os
 
@@ -32,13 +33,14 @@ AMBIGUOUS = 'ambiguous'
 
 
 def read_project_file(path):
-    """A TSV with `project_name` and/or `latest_id`, and optional `ref`, `extra_ac_flags` and
-    `metadata_sheet`, a sheet to send with the upload, its path relative to this file.
+    """A TSV with `project_name` and/or `latest_id`, and optional `ref`, `extra_ac_flags`,
+    `metadata_sheet`, a sheet to send with the upload, and `archive`, a local archive to use
+    instead of the site's. Both paths are relative to this file.
 
     Lines starting with # are comments. An id from an older version still resolves.
     """
-    def sheet(row):
-        value = (row.get('metadata_sheet') or '').strip()
+    def relative(row, column):
+        value = (row.get(column) or '').strip()
         return os.path.join(os.path.dirname(os.path.abspath(path)), value) if value else ''
 
     with open(path, newline='') as handle:
@@ -48,7 +50,8 @@ def read_project_file(path):
                  'id': (row.get('latest_id') or '').strip(),
                  'ref': (row.get('ref') or '').strip(),
                  'extra_ac_flags': (row.get('extra_ac_flags') or '').strip(),
-                 'metadata_sheet': sheet(row)}
+                 'metadata_sheet': relative(row, 'metadata_sheet'),
+                 'archive': relative(row, 'archive')}
                 for row in rows]
 
 
@@ -56,7 +59,7 @@ def wanted_from_argument(value):
     """--project takes an id or an exact name."""
     is_id = len(value) == 24 and all(c in '0123456789abcdefABCDEF' for c in value)
     return {'name': '' if is_id else value, 'id': value if is_id else '',
-            'ref': '', 'extra_ac_flags': ''}
+            'ref': '', 'extra_ac_flags': '', 'archive': ''}
 
 
 def _index(projects):
@@ -107,12 +110,32 @@ def build_entry(wanted, by_id, by_name, site, target_version):
         entry['note'] = 'no AC reference for %r; add a ref column' % reference
     else:
         entry['status'] = UPDATE
-    if entry['status'] in (UPDATE, UNTESTED_TOOL):
+    if wanted.get('archive') and entry['status'] in (UPDATE, UNTESTED_TOOL):
+        # One campaign's substitute for the site's archive, such as a cleaned copy. Once it is
+        # uploaded it is the site's archive, so later campaigns drop this column.
+        local = wanted['archive']
+        if not os.path.isfile(local):
+            entry['status'] = NO_ARCHIVE
+            entry['note'] = 'the local archive %s is not there' % local
+        else:
+            entry['local_archive'] = {'path': os.path.abspath(local), 'bytes': os.path.getsize(local),
+                                      'sha256': sha256(local)}
+            entry['archive_bytes'] = entry['local_archive']['bytes']
+            entry['note'] = 'uses the local archive %s, not the site\'s' % local
+    elif entry['status'] in (UPDATE, UNTESTED_TOOL):
         entry['archive_bytes'] = site.archive_size(head['id'])
         if entry['archive_bytes'] is None:
             entry['status'] = NO_ARCHIVE
             entry['note'] = 'the site has no stored archive to download for this version'
     return entry
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        for block in iter(lambda: handle.read(1 << 20), b''):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def build_plan(wanted, site, target_version=pins.AC_VERSION):
