@@ -323,6 +323,9 @@ REST_FRAMEWORK = {
         'api_batch_auth': '30/min',
         # Token create/revoke, from a logged-in browser session.
         'api_token': '10/min',
+        # Replacing a project's results: admins only, one archive at a time.
+        'api_replace': '10/min',
+        'api_replace_auth': '30/min',
     },
 }
 

@@ -130,6 +130,10 @@ urlpatterns += [
     path('data-qc/make-project-current/<str:project_id>/', views.make_project_current, name='make_project_current'),
     path('upload_api/', views.FileUploadView.as_view(), name = 'Document'),
     path('add_samples_to_project_api/', views.ProjectFileAddView.as_view(), name='addSamplesToProject'),
+    # Outside /api/v1/, which is documented as read-only, and under upload_api/ because the
+    # WAF lets POSTs through there. A new top-level path would meet Bot Control.
+    path('upload_api/replace/<str:project_id>/', views.ProjectReplaceView.as_view(), name='project_replace'),
+    path('upload_api/replace-status/<str:job_id>/', views.ProjectReplaceStatusView.as_view(), name='project_replace_status'),
     path('api/background-task-status/', views.BackgroundTaskStatusView.as_view(), name='background_task_status'),
 
     # REST API v1
