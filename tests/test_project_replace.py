@@ -20,7 +20,8 @@ import pytest
 from bson.objectid import ObjectId
 from rest_framework.test import APIRequestFactory
 
-from conftest import DATASET_SMALL_TAR, POLL_TIMEOUT, _cleanup_project, _poll_until_finished
+from conftest import (DATASET_SMALL_TAR, DATASET_SMALL_XLSX, POLL_TIMEOUT, _cleanup_project,
+                      _poll_until_finished)
 from test_version_file_sharing import _build_tar, versions  # noqa: F401 (a fixture)
 
 from caper import project_replace, utils
@@ -465,3 +466,80 @@ def test_a_failed_replacement_leaves_the_project_as_it_was(real_project, admin, 
     assert classify(restored) == LIVE
     assert restored['alias_name'] == old['alias_name']
     assert restored['description'] == 'keep me'
+
+
+def _project_with_sheet(request_factory, admin, xlsx_path):
+    from conftest import _build_create_request, _project_id_from_redirect
+    from caper.views import create_project
+
+    request, handles = _build_create_request(request_factory, admin[0], f'pytest replace {uuid.uuid4().hex[:8]}',
+                                             tar_path=DATASET_SMALL_TAR, xlsx_path=xlsx_path)
+    try:
+        response = create_project(request)
+    finally:
+        for handle in handles:
+            handle.close()
+    project_id = _project_id_from_redirect(response)
+    assert _poll_until_finished(utils.collection_handle_primary, project_id)
+    return project_id
+
+
+def _metadata(project_id):
+    from caper.extra_metadata import get_extra_metadata_from_project
+
+    return get_extra_metadata_from_project(
+        utils.collection_handle_primary.find_one({'_id': ObjectId(project_id)}))
+
+
+@pytest.mark.slow
+def test_a_replacement_keeps_the_projects_metadata(request_factory, admin, tmp_path):
+    """No sheet sent, so what the project already holds stays, as the form's retain box does."""
+    made = [_project_with_sheet(request_factory, admin, DATASET_SMALL_XLSX)]
+    try:
+        before = _metadata(made[0])
+        assert before, 'the sheet should have given the project some metadata'
+        archive_path = _aggregated(DATASET_SMALL_TAR, tmp_path / 'agg')
+
+        with _upload(archive_path) as archive:
+            dry = _post(made[0], token=admin[1], dry_run='true', document=archive, expected_latest_id=made[0])
+        prediction = _wait_for_job(dry.data['job_id'], admin[1])
+        _cleanup_job(dry.data['job_id'])
+        assert prediction['metadata'] == 'retained'
+
+        with _upload(archive_path) as archive:
+            real = _post(made[0], token=admin[1], dry_run='false', document=archive, expected_latest_id=made[0])
+        made.append(real.data['job_id'])
+        assert _wait_for_job(made[1], admin[1])['state'] == 'finished'
+        assert _metadata(made[1]) == before
+    finally:
+        for each in reversed(made):
+            _cleanup_project(utils.collection_handle_primary, each)
+
+
+@pytest.mark.slow
+def test_a_sheet_sent_with_a_replacement_is_applied(request_factory, admin, tmp_path):
+    """How Hartwig's richer sheet goes up with its AC replacement."""
+    made = [_project_with_sheet(request_factory, admin, None)]
+    try:
+        assert not _metadata(made[0])
+        archive_path = _aggregated(DATASET_SMALL_TAR, tmp_path / 'agg')
+
+        with _upload(archive_path) as archive, open(DATASET_SMALL_XLSX, 'rb') as sheet:
+            dry = _post(made[0], token=admin[1], dry_run='true', document=archive, metadataFile=sheet,
+                        expected_latest_id=made[0])
+        prediction = _wait_for_job(dry.data['job_id'], admin[1])
+        _cleanup_job(dry.data['job_id'])
+        assert prediction['state'] == 'finished', prediction
+        assert prediction['metadata'] == 'new sheet'
+
+        with _upload(archive_path) as archive, open(DATASET_SMALL_XLSX, 'rb') as sheet:
+            real = _post(made[0], token=admin[1], dry_run='false', document=archive, metadataFile=sheet,
+                         expected_latest_id=made[0])
+        made.append(real.data['job_id'])
+        assert _wait_for_job(made[1], admin[1])['state'] == 'finished'
+        assert _metadata(made[1])
+        # The dry run counts the sheet in the record size, which is what Hartwig needs from it.
+        assert prediction['record']['bytes'] > 0
+    finally:
+        for each in reversed(made):
+            _cleanup_project(utils.collection_handle_primary, each)
