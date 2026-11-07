@@ -17,6 +17,8 @@ from pymongo import MongoClient
 import ops_lock
 from caper import context_processor
 
+pytestmark = pytest.mark.integration
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

@@ -1,6 +1,7 @@
 # `amprepo_reclassify`: updating site projects to a new AmpliconClassifier release
 
-Status: design, nothing built in this repo yet. Written 2026-11-06.
+Status: written 2026-11-06. `setup`, `plan`, `preflight`, `run` and `summary` are built, in
+[`amprepo_reclassify/`](../amprepo_reclassify/README.md). `upload` and the site's route aren't.
 
 ## Goal
 
@@ -26,8 +27,8 @@ Each stage is one subcommand. Only `upload` writes to a site.
 | Stage | Does | Writes to |
 |---|---|---|
 | `setup` | Creates a virtual environment with the pinned tools; records this machine's AC threading | local |
+| `plan` | The dry run: lists each project's latest version, reference, archive size and expected work | local |
 | `preflight` | Checks tools, solver, `$AA_DATA_REPO`, disk, token and site | nothing |
-| `plan` | The dry run: lists each project's latest version, reference, recovered AC settings, sizes and expected work | nothing |
 | `run` | Download, AC, rebuild, validate, report, per project, resumable | local |
 | `summary` | Combined change summary, record-size check and predicted storage for review | local |
 | `upload --target dev\|prod` | Uploads reviewed archives, smallest first, and verifies each | the site |
@@ -99,8 +100,28 @@ comes from the site, and per-machine settings go in an ignored config file.
 
 **The list of projects comes from the site.** The keep-current checkbox is the index;
 `plan` reads it through the API with the operator's token. Until the checkbox exists,
-`plan` takes a local file. Version ids change with every update, so they're looked up
-at `plan` time, never stored.
+`plan` takes a local file. Version ids change with every update, so `plan` looks them up,
+and an id from an older version resolves to the latest one. The plan is saved locally for
+`preflight` and `run`, and `run` refuses a project that has moved on since.
+
+**`plan` doesn't show recovered AC settings.** They're only in the archive, so they need a
+download. They appear in each project's report and in `summary`, where any non-default
+flag is flagged before upload. `plan` gets sizes with a one-byte read of the stored
+archive, because the API has no size field. On 2026-11-06 that took 28 seconds for all 29
+projects, and each had a stored archive.
+
+**The tool identifies itself.** Its API calls use the User-Agent
+`amprepo_reclassify/<version>`, which both sites accepted on 2026-11-06, where the
+lab script sent a browser's. The token goes only to the site, never to the storage URL the
+site redirects to.
+
+**Some things stop a project; others go to the reviewer.** A failed tool, an empty
+`AC.input` or a solver fallback stops that project. A dropped file, a differing sample
+count or an unexpected reference still produces an archive, and it's flagged in `summary`,
+because a person reviews every update anyway.
+
+**Results from CoRAL are skipped by default.** They're marked `untested-tool` until one has
+been through the workflow.
 
 ## Validation so far
 
@@ -218,7 +239,7 @@ fully automatic, because a person reviews changes first.
 refuses it during a deploy. So it doesn't need the operator lock (#710), which is wanted
 by 2026-11-16 and can be built alongside this.
 
-1. `setup`, `preflight`, `plan`, `run` and `summary`, moved into the repo.
+1. `setup`, `preflight`, `plan`, `run` and `summary`, moved into the repo. Done.
 2. The upload route with `dry_run` and `expected_latest_id`: local, dev, check-in, prod.
 3. `upload`, tested end to end against dev.
 4. The keep-current checkbox and index, then point `plan` at it.
