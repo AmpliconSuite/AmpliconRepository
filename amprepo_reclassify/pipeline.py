@@ -215,9 +215,9 @@ class ProjectRun:
         if missing:
             raise ProjectError('the rebuilt archive lacks %d file(s) that the input has, first %s'
                                % (len(missing), missing[0]))
-        # Only meaningful when the input already has the aggregator's layout; an older layout
-        # moves every path.
-        validation['repack_dropped'] = (archive.missing_paths(self.tgz, control)
+        # By name, not path: the aggregator's layout has changed between versions, and moving a
+        # file isn't losing it. Only meaningful when the input already has a run.json layout.
+        validation['repack_dropped'] = (archive.missing_names(self.tgz, control)
                                         if archive.has_member(self.tgz, 'results/run.json') else [])
         validation['final_dropped'] = sorted(archive.kept_content(control) - archive.kept_content(built))
         manifest = archive.run_json_summary(built)

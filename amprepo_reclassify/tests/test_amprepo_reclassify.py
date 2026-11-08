@@ -496,6 +496,19 @@ def test_every_feature_of_an_amplicon_is_counted(tmp_path):
     assert calls['ecdna_lost'] == ['S2']
 
 
+def test_a_moved_file_is_not_a_dropped_one(tmp_path):
+    old, new = str(tmp_path / 'old.tar.gz'), str(tmp_path / 'new.tar.gz')
+    with tarfile.open(old, 'w:gz') as tar:
+        _add(tar, 'results/samples/S1/S1_AA_results/S1_amplicon1_graph.txt', 'g')
+        _add(tar, 'results/samples/S1/S1_AA_results/S1_summary.txt', 's')
+        _add(tar, 'results/samples/S1/S1_AA_results/S1.log', 'l')
+        _add(tar, 'results/consolidated_classification/old_result_table.tsv', 't')
+    with tarfile.open(new, 'w:gz') as tar:
+        _add(tar, 'results/samples/S1/S1_reconstruction_results/S1_amplicon1_graph.txt', 'g')
+        _add(tar, 'results/samples/S1/S1_reconstruction_results/S1_summary.txt', 's')
+    assert archive.missing_names(old, new) == ['results/samples/S1/S1_AA_results/S1.log']
+
+
 def test_new_content_counts_only_files_the_old_archive_lacks(tmp_path):
     old, new = str(tmp_path / 'old.tar.gz'), str(tmp_path / 'new.tar.gz')
     with tarfile.open(old, 'w:gz') as tar:
