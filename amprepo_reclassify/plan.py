@@ -30,7 +30,6 @@ SECONDS_PER_SAMPLE = 19
 
 UPDATE = 'update'
 CURRENT = 'current'
-UNTESTED_TOOL = 'untested-tool'
 UNKNOWN_REF = 'unknown-ref'
 NO_ARCHIVE = 'no-archive'
 NOT_FOUND = 'not-found'
@@ -94,12 +93,6 @@ def _index(projects):
     return by_id, by_name
 
 
-def _is_coral(project):
-    tools = project.get('reconstruction_tools') or ''
-    version = project.get('CoRAL_version') or ''
-    return 'coral' in tools.lower() or version not in ('', 'NA', 'None')
-
-
 def build_entry(wanted, by_id, by_name, site, target_version):
     label = wanted['name'] or wanted['id']
     head = by_id.get(wanted['id'])
@@ -131,15 +124,12 @@ def build_entry(wanted, by_id, by_name, site, target_version):
              'source': wanted.get('source', GIVEN)}
     if head.get('AC_version') == target_version:
         entry['status'] = CURRENT
-    elif _is_coral(head):
-        entry['status'] = UNTESTED_TOOL
-        entry['note'] = 'CoRAL results have not been through this workflow'
     elif not ac_ref:
         entry['status'] = UNKNOWN_REF
         entry['note'] = 'no AC reference for %r; give it a ref in a --projects file' % reference
     else:
         entry['status'] = UPDATE
-    if wanted.get('archive') and entry['status'] in (UPDATE, UNTESTED_TOOL):
+    if wanted.get('archive') and entry['status'] == UPDATE:
         # One campaign's substitute for the site's archive, such as a cleaned copy. Once it is
         # uploaded it is the site's archive, so later campaigns drop this column.
         local = wanted['archive']
@@ -151,7 +141,7 @@ def build_entry(wanted, by_id, by_name, site, target_version):
                                       'sha256': sha256(local)}
             entry['archive_bytes'] = entry['local_archive']['bytes']
             entry['note'] = 'uses the local archive %s, not the site\'s' % local
-    elif entry['status'] in (UPDATE, UNTESTED_TOOL):
+    elif entry['status'] == UPDATE:
         entry['archive_bytes'] = site.archive_size(head['id'])
         if entry['archive_bytes'] is None:
             entry['status'] = NO_ARCHIVE

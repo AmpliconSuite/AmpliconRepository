@@ -88,7 +88,7 @@ def cmd_run(args):
     tools = environment.tools_for(machine)
     print('Tools: %s' % tools.description)
     failures = pipeline.run_plan(plan, machine, tools, _site(machine, plan['site']),
-                                 only=args.only, allow_untested_tool=args.allow_untested_tool)
+                                 only=args.only)
     print('\n%d project(s) failed. Run this again to retry them.' % failures if failures
           else '\nFinished. Next: `summary`.')
     return 1 if failures else 0
@@ -155,8 +155,6 @@ def build_parser():
 
     run = commands.add_parser('run', help='download, AC, rebuild, check and report; resumable')
     run.add_argument('--only', action='append', help='a project name or id from the plan; repeatable')
-    run.add_argument('--allow-untested-tool', action='store_true',
-                     help='also run projects flagged untested-tool (CoRAL results)')
     run.set_defaults(func=cmd_run)
 
     summary = commands.add_parser('summary', help='combined change summary for review')

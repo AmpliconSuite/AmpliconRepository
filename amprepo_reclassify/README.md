@@ -144,7 +144,6 @@ delete the new version from the project's page, which makes the one before it cu
 |---|---|---|
 | `update` | On an older AC | Runs it |
 | `current` | Already on the target AC | Skips it |
-| `untested-tool` | CoRAL results, which haven't been through this workflow | Skips it, unless you pass `--allow-untested-tool` |
 | `no-archive` | The site has no stored archive to download | Skips it |
 | `unknown-ref` | No AC reference for the site's reference name | Skips it. Add a `ref` column. |
 | `not-found` | Not visible with this token | Skips it |

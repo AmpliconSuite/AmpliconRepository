@@ -310,19 +310,16 @@ def load_states(machine, entries):
     return states
 
 
-def run_plan(plan, machine, tools, site, only=None, allow_untested_tool=False):
+def run_plan(plan, machine, tools, site, only=None):
     """Work through a plan, smallest first. One project failing doesn't stop the rest.
     Returns the number that failed."""
     heads = {p['id'] for p in site.list_projects() if p.get('is_latest_version', True)}
-    allowed = {plan_module.UPDATE}
-    if allow_untested_tool:
-        allowed.add(plan_module.UNTESTED_TOOL)
     failures = 0
     for entry in plan['projects']:
         if only and entry['name'] not in only and entry.get('id') not in only:
             continue
         log('\n%s\n%s (%s)' % ('=' * 78, entry['name'], entry.get('id')))
-        if entry['status'] not in allowed:
+        if entry['status'] != plan_module.UPDATE:
             log('  skipped: %s. %s' % (entry['status'], entry.get('note') or ''))
             continue
         if not plan_module.is_head(site, heads, entry['id']):

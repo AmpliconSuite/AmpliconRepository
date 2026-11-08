@@ -132,8 +132,8 @@ site redirects to.
 count or an unexpected reference still produces an archive, and it's flagged in `summary`,
 because a person reviews every update anyway.
 
-**Results from CoRAL are skipped by default.** They're marked `untested-tool` until one has
-been through the workflow.
+**CoRAL results run like AmpliconArchitect's.** CoRAL writes the same `_graph.txt` and
+`_cycles.txt` layout that AC reads, so the plan doesn't treat them differently.
 
 ## Validation so far
 
@@ -242,7 +242,6 @@ isn't private.
   settings of its own. The `extra_ac_flags` column of a `--projects` file is the fallback
   for an archive whose logs don't record them. None is known to need it today: DCIS -
   Chmelova's current version ran with defaults.
-- **Non-AA projects.** CoRAL cell lines hasn't been through this script.
 - **Metadata that travels with an update.** Hartwig's richer sheet goes up with its AC
   replacement, and it sits close to the record limit, so `dry_run` must cover the pair.
 - **Solver time limits.** Gurobi has a time limit, so results near it could depend on

@@ -352,7 +352,7 @@ def test_project_with_a_newer_version_than_the_plan_is_refused(workspace):
 
 
 def test_only_update_rows_run(workspace):
-    entries = [workspace.entry(ID_B, 'CoRAL one', status=plan.UNTESTED_TOOL),
+    entries = [workspace.entry(ID_B, 'No archive', status=plan.NO_ARCHIVE),
                workspace.entry(ID_A, 'Current one', status=plan.CURRENT)]
     _, failures = workspace.run(*entries)
     assert failures == 0
@@ -533,11 +533,15 @@ def test_a_name_on_two_projects_is_refused():
 
 @pytest.mark.parametrize('changes, expected', [
     ({'AC_version': pins.AC_VERSION}, plan.CURRENT),
-    ({'reconstruction_tools': 'CoRAL', 'CoRAL_version': '2.2.0'}, plan.UNTESTED_TOOL),
     ({'reference_genome': 'unknown'}, plan.UNKNOWN_REF),
 ])
 def test_projects_that_should_not_run_are_marked(changes, expected):
     assert _plan([dict(HEAD_A, **changes)], [{'name': 'Alpha'}])[0]['status'] == expected
+
+
+def test_coral_results_are_planned_like_amplicon_architect():
+    coral = dict(HEAD_A, reconstruction_tools='CoRAL', CoRAL_version='2.2.0')
+    assert _plan([coral], [{'name': 'Alpha'}])[0]['status'] == plan.UPDATE
 
 
 def test_missing_project_and_missing_archive_are_marked():
