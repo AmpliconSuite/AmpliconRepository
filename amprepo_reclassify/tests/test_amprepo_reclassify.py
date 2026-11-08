@@ -421,6 +421,24 @@ def test_settings_come_from_the_log_and_keep_only_semantic_flags(tmp_path):
     assert settings['source'] == 'AC log' and settings['settings_ac_version'] == '2.0.0'
 
 
+def test_every_classification_option_is_carried_from_a_real_log_line(tmp_path):
+    log = ('2026-07-10 19:17:39,869 - INFO - Command: /x/amplicon_classifier.py --ref GRCh37 '
+           '--input HMF.input -o out/HMF --jobs 9 --bfb_threads 2 --verbose_classification '
+           '--no_LC_filter --force --no_bfbarchitect --report_complexity --min_size=10000\n'
+           'AmpliconClassifier 2.0.0\n')
+    settings = archive.recover_settings(_unpack(tmp_path, ac_log=log), 'hg19')
+    assert settings['flags'] == ['--no_LC_filter', '--force', '--no_bfbarchitect',
+                                 '--report_complexity', '--min_size', '10000']
+    assert settings['notes'] == []
+
+
+def test_an_option_the_tool_does_not_know_is_flagged_not_dropped_silently(tmp_path):
+    log = 'amplicon_classifier.py --ref GRCh38 --plotstyle noplot --filter_similar\nAmpliconClassifier 1.1.3\n'
+    settings = archive.recover_settings(_unpack(tmp_path, ac_log=log), 'hg19')
+    assert settings['flags'] == ['--filter_similar']
+    assert any('--plotstyle' in note and "doesn't carry" in note for note in settings['notes'])
+
+
 def test_default_config_line_is_normal(tmp_path):
     log = LOG + 'Configuration loaded from: default config\n'
     assert archive.recover_settings(_unpack(tmp_path, ac_log=log), 'hg19')['notes'] == []

@@ -343,15 +343,29 @@ def stage_samples(samples, stage_dir):
 
 # ---- how AC was run ----
 
+# Every AmpliconClassifier 2.0.1 option that changes the calls or the files it writes is carried
+# over from the original run, so no project needs its settings looked up by hand.
 AC_FLAGS_VALUED = ('--min_flow', '--min_size', '--decomposition_strictness', '--filter_pval',
                    '--exclude_bed')
-AC_FLAGS_BOOL = ('--filter_similar', '--add_chr_tag')
+AC_FLAGS_BOOL = ('--filter_similar', '--add_chr_tag', '--no_LC_filter', '--force',
+                 '--no_bfbarchitect', '--report_complexity')
+# Options that describe the machine or this tool's own run, not the classification. `--config`
+# is reported separately, because its values aren't in the log.
+AC_FLAGS_OF_THE_RUN = ('--ref', '--AA_results', '-i', '--input', '-o', '--jobs', '--bfb_threads',
+                       '--verbose_classification', '--no_results_table', '--config', '-h', '--help',
+                       '-v', '--version')
 DEFAULT_CONFIG = 'default config'
 
 
 def _parse_ac_command(command):
-    tokens = command.split()
-    ref, flags = None, []
+    """(reference, flags to carry over, options in the command that aren't carried)."""
+    # Only what follows the script: a wrapper such as `conda run -n env` may come before it.
+    words = command.split()
+    start = next((i + 1 for i, word in enumerate(words) if word.endswith('amplicon_classifier.py')), 0)
+    tokens = []
+    for token in words[start:]:
+        tokens += token.split('=', 1) if token.startswith('--') and '=' in token else [token]
+    ref, flags, unknown = None, [], []
     for i, token in enumerate(tokens):
         if token == '--ref' and i + 1 < len(tokens):
             ref = tokens[i + 1]
@@ -359,7 +373,11 @@ def _parse_ac_command(command):
             flags.append(token)
         elif token in AC_FLAGS_VALUED and i + 1 < len(tokens):
             flags += [token, tokens[i + 1]]
-    return ref, flags
+        # A log line starts "<time> - INFO - Command: ...", so a lone "-" isn't an option.
+        elif (re.match(r'^--?[A-Za-z][\w-]*$', token) and token not in AC_FLAGS_OF_THE_RUN
+              and token not in unknown):
+            unknown.append(token)
+    return ref, flags, unknown
 
 
 def recover_settings(root, api_reference):
@@ -373,7 +391,7 @@ def recover_settings(root, api_reference):
     """
     notes, info = [], []
     log_ref, log_version, log_flags = None, None, []
-    variants, config_files = set(), set()
+    variants, config_files, unknown_flags = set(), set(), set()
     logs = set(find_files(root, '.log')) | set(find_files(root, '_AA_AC_out.txt'))
     for path in sorted(logs):
         with open(path, errors='ignore') as handle:
@@ -383,9 +401,10 @@ def recover_settings(root, api_reference):
                         and 'make_input' not in line and 'make_results' not in line), None)
         if not command:
             continue
-        ref, flags = _parse_ac_command(command)
+        ref, flags, unknown = _parse_ac_command(command)
         if not ref:
             continue
+        unknown_flags.update(unknown)
         version = re.search(r'AmpliconClassifier\s+v?(\d+\.\d+\.\d+)', text)
         log_ref, log_flags = ref, flags
         log_version = version.group(1) if version else log_version
@@ -418,7 +437,8 @@ def recover_settings(root, api_reference):
             info.append('AC was rerun after the pipeline: the log says %s and run metadata says '
                         '%s. Using the log.' % (log_version, meta_version))
     elif meta_command:
-        ref, flags = _parse_ac_command(meta_command)
+        ref, flags, unknown = _parse_ac_command(meta_command)
+        unknown_flags.update(unknown)
         version, source = meta_version, 'run metadata'
         notes.append('No AC log, so these settings come from run metadata and may be older than '
                      'the results.')
@@ -426,6 +446,9 @@ def recover_settings(root, api_reference):
         ref, flags, version, source = None, [], None, 'defaults'
         notes.append('No AC log or run metadata, so no settings could be recovered.')
 
+    if unknown_flags:
+        notes.append('The original AC command has %s, which this tool doesn\'t carry over.'
+                     % ', '.join(sorted(unknown_flags)))
     if ref:
         ref = REF_MAP.get(ref, ref)
     else:
