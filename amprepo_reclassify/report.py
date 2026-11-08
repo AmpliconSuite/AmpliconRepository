@@ -38,7 +38,10 @@ def canon_class(label):
 
 
 def load_result_table(path):
-    """{(sample, amplicon number): classification} and the AC version, if the table has one."""
+    """{(sample, amplicon number): [classification of each feature]} and the AC version, if the
+    table has one. The table has a row per feature, and an amplicon can have several features,
+    such as an ecDNA and a BFB. Features are paired across AC versions only by their amplicon,
+    because a Feature ID names its class."""
     calls, version = {}, None
     with open(path) as handle:
         header = handle.readline().rstrip('\n').split('\t')
@@ -53,7 +56,7 @@ def load_result_table(path):
             row = line.rstrip('\n').split('\t')
             if len(row) <= max(sample, amplicon, classification):
                 continue
-            calls[(row[sample], row[amplicon])] = row[classification]
+            calls.setdefault((row[sample], row[amplicon]), []).append(row[classification])
             if (version_column is not None and len(row) > version_column
                     and row[version_column] not in ('', 'NA', 'None')):
                 version = row[version_column]
@@ -94,22 +97,41 @@ def add_no_amp_rows(table_path, samples, reference):
             handle.write('\t'.join(row) + '\n')
 
 
+def _amplicon_classes(labels):
+    """An amplicon's feature classes, in a fixed order. No amp only when it has no feature."""
+    classes = sorted(canon_class(label) for label in labels or [None])
+    return [c for c in classes if c != 'No amp'] or ['No amp']
+
+
 def _sample_status(calls):
     per_sample = defaultdict(set)
-    for (sample, _), label in calls.items():
-        per_sample[sample].add(canon_class(label))
+    for (sample, _), labels in calls.items():
+        per_sample[sample].update(_amplicon_classes(labels))
     return per_sample
 
 
+def _feature_counts(calls):
+    counts = defaultdict(int)
+    for labels in calls.values():
+        for label in _amplicon_classes(labels):
+            if label != 'No amp':
+                counts[label] += 1
+    return counts
+
+
 def compare_calls(old_calls, new_calls):
-    """The numbers a person reviews. Everything here is about classifications only."""
+    """The numbers a person reviews, per sample and per feature. Classifications only."""
     old, new = _sample_status(old_calls), _sample_status(new_calls)
     samples = sorted(set(old) | set(new))
     changes = []
     for key in sorted(set(old_calls) | set(new_calls)):
-        before, after = canon_class(old_calls.get(key)), canon_class(new_calls.get(key))
+        before = _amplicon_classes(old_calls.get(key))
+        after = _amplicon_classes(new_calls.get(key))
         if before != after:
-            changes.append([key[0], key[1], before, after])
+            changes.append([key[0], key[1], ' + '.join(before), ' + '.join(after)])
+    old_features, new_features = _feature_counts(old_calls), _feature_counts(new_calls)
+    features = {label: [old_features.get(label, 0), new_features.get(label, 0)]
+                for label in sorted(set(old_features) | set(new_features))}
 
     def flips(label, source, destination):
         return [s for s in samples if label in destination.get(s, ()) and label not in source.get(s, ())]
@@ -121,6 +143,7 @@ def compare_calls(old_calls, new_calls):
             'bfb_new': sum('BFB' in c for c in new.values()),
             'ecdna_gained': flips('ecDNA', old, new), 'ecdna_lost': flips('ecDNA', new, old),
             'bfb_gained': flips('BFB', old, new), 'bfb_lost': flips('BFB', new, old),
+            'features': features,
             'amplicon_changes': changes,
             'changed_samples': len({change[0] for change in changes})}
 
@@ -128,6 +151,13 @@ def compare_calls(old_calls, new_calls):
 def concerns(result):
     """What a person must look at before this project is uploaded."""
     found = list(result['settings']['notes'])
+    if result.get('local_archive'):
+        local = result['local_archive']
+        found.append('Built from a local archive, not the site\'s: %s (sha256 %s)'
+                     % (local['path'], local['sha256'][:12]))
+    if result.get('repack_dropped'):
+        found.append('The aggregator\'s repack of the input dropped %d file(s), first %s'
+                     % (len(result['repack_dropped']), result['repack_dropped'][0]))
     if result.get('site_ref') and result['ref'] != result['site_ref']:
         found.append('AC ran with reference %s, and the site says %s' % (result['ref'], result['site_ref']))
     if result['settings']['flags'] or result.get('extra_ac_flags'):
@@ -169,17 +199,22 @@ def project_report(result):
         lines.append('## Check before uploading')
         lines += ['- %s' % item for item in found]
         lines.append('')
-    lines += ['## Calls', '', '| | Old | New |', '| --- | --- | --- |',
-              '| ecDNA+ samples | %d | %d |' % (calls['ecdna_old'], calls['ecdna_new']),
-              '| BFB+ samples | %d | %d |' % (calls['bfb_old'], calls['bfb_new']),
-              '', '%d amplicon(s) in %d sample(s) changed class.'
+    lines += ['## Calls', '', '| Samples | Old | New |', '| --- | --- | --- |',
+              '| ecDNA+ | %d | %d |' % (calls['ecdna_old'], calls['ecdna_new']),
+              '| BFB+ | %d | %d |' % (calls['bfb_old'], calls['bfb_new']), '']
+    if calls.get('features'):
+        lines += ['| Features | Old | New |', '| --- | --- | --- |']
+        lines += ['| %s | %d | %d |' % (label, old, new)
+                  for label, (old, new) in sorted(calls['features'].items())]
+        lines.append('')
+    lines += ['%d amplicon(s) in %d sample(s) changed their feature classes.'
               % (len(calls['amplicon_changes']), calls['changed_samples']), '']
     for key, label in (('ecdna_gained', 'ecDNA gained'), ('ecdna_lost', 'ecDNA lost'),
                        ('bfb_gained', 'BFB gained'), ('bfb_lost', 'BFB lost')):
         if calls[key]:
             lines.append('- %s (%d): %s' % (label, len(calls[key]), ', '.join(calls[key])))
     if calls['amplicon_changes']:
-        lines += ['', '| Sample | Amplicon | Old | New |', '| --- | --- | --- | --- |']
+        lines += ['', '| Sample | Amplicon | Old features | New features |', '| --- | --- | --- | --- |']
         lines += ['| %s | %s | %s | %s |' % tuple(change) for change in calls['amplicon_changes']]
     return '\n'.join(lines) + '\n'
 
@@ -188,8 +223,9 @@ def combined_summary(plan, states):
     """One table across a run, then everything that needs a look."""
     lines = ['# Change summary to AC %s' % plan['target_ac'], '',
              'Site: %s. Plan made %s.' % (plan['site'], plan['created']), '',
-             '| Project | State | Samples | ecDNA+ | BFB+ | Amplicons changed | Archive MB | Files not in old archive MB |',
-             '| --- | --- | --- | --- | --- | --- | --- | --- |']
+             '| Project | State | Samples | ecDNA+ samples | BFB+ samples | ecDNA features '
+             '| BFB features | Amplicons changed | Archive MB | Files not in old archive MB |',
+             '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     total_archive = total_new = 0
     attention = []
     for entry in plan['projects']:
@@ -199,14 +235,17 @@ def combined_summary(plan, states):
             calls = result['calls']
             total_archive += result['archive_bytes']
             total_new += result['new_content_bytes']
-            lines.append('| %s | built | %d | %d to %d | %d to %d | %d | %.1f | %.1f |' % (
+            features = calls.get('features', {})
+            lines.append('| %s | built | %d | %d to %d | %d to %d | %s | %s | %d | %.1f | %.1f |' % (
                 entry['name'], result['archive_samples'], calls['ecdna_old'], calls['ecdna_new'],
-                calls['bfb_old'], calls['bfb_new'], len(calls['amplicon_changes']),
+                calls['bfb_old'], calls['bfb_new'],
+                '%d to %d' % tuple(features.get('ecDNA', (0, 0))),
+                '%d to %d' % tuple(features.get('BFB', (0, 0))), len(calls['amplicon_changes']),
                 result['archive_bytes'] / 1e6, result['new_content_bytes'] / 1e6))
             attention += ['%s: %s' % (entry['name'], item) for item in concerns(result)]
         else:
             label = 'failed' if state.get('failed') else 'unfinished' if state else entry['status']
-            lines.append('| %s | %s | %s | | | | | |' % (entry['name'], label, entry.get('samples', '')))
+            lines.append('| %s | %s | %s | | | | | | | |' % (entry['name'], label, entry.get('samples', '')))
             if state.get('failed'):
                 attention.append('%s: failed: %s' % (entry['name'], state['failed']))
     lines += ['', 'Rebuilt archives come to %.0f MB, and files not in the old archives to %.0f MB. '

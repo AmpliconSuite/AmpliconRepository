@@ -54,8 +54,16 @@ On a 32-thread machine, `--jobs 16 --bfb-threads 2` has worked well. Settings ar
 **Project list:** a TSV with a `project_name` or `latest_id` column, or both. Lines starting with
 `#` are comments. An id from an older version still resolves to the latest one. Three optional columns
 are for projects that need them: `ref` sets AC's reference, and `extra_ac_flags` adds AC flags
-such as `--filter_similar`. `metadata_sheet` is described under Uploading. For one project, use `plan --project <id or exact name>`. To use the
+such as `--filter_similar`. `metadata_sheet` is described under Uploading, and `archive` under
+"Using your own archive". For one project, use `plan --project <id or exact name>`. To use the
 dev site, use `plan --site dev` with a `dev=` token file.
+
+**Using your own archive:** an `archive` column gives a local `.tar.gz` to use in place of the
+site's download, with its path relative to the list. Use it when the site's archive needs fixing
+first: fix it outside this tool, then reclassify the fixed copy. `plan` records the file's size and
+sha256, and `run` refuses the file if it has changed since. Switching a project to or from a local
+archive starts it again. The summary flags a project built this way. Once the fixed archive is on
+the site, later campaigns don't need the column.
 
 **Keep this list out of the repo.** The repo is public, and a list can name private projects.
 
@@ -71,6 +79,12 @@ A project stops rather than producing an archive if:
 - any amplicon was solved without Gurobi
 - AC or the aggregator fails
 - AC finds no usable input, which happens when an archive has only annotated cycles files
+- the archive has a structural problem: a sample with the same AA graph file in more than one
+  place, such as a nested copy of its AA results, or an empty AA graph or cycles file. Nothing is
+  run. Fix the archive, then run again, with the `archive` column if the fix isn't on the site yet.
+- the rebuilt archive lacks a file that the input has, apart from the old AC results it replaces.
+  Staging carries each sample's other files, and folders marked with an `AUX_DIR` file are passed
+  to the aggregator, so nothing should be lost.
 
 ## What to check in the summary
 
@@ -78,6 +92,9 @@ A project stops rather than producing an archive if:
 
 - a sample count that differs between the site and the rebuilt archive
 - plots or data files that the rebuild dropped
+- a project built from a local archive rather than the site's
+- files that the aggregator's plain repack of the site's archive dropped, which says the stored
+  archive is unusual
 - non-default AC flags recovered from an archive, or a config file that AC logged
 - a reference that differs from the site's
 - settings that came from run metadata rather than an AC log, which can be older than the results
@@ -137,5 +154,11 @@ then prod, and only then should you reclassify.
 
 ## Tests
 
-`pytest tests/test_amprepo_reclassify.py` uses a small synthetic archive and a stubbed AC and
-aggregator, so it needs no Gurobi licence. This package imports nothing from `caper/`.
+```bash
+python -m pytest amprepo_reclassify
+```
+
+Run it from the top of the checkout. The tests are in `amprepo_reclassify/tests/`, apart from the
+site's, and use a small synthetic archive and a stubbed AC and aggregator, so they need no Gurobi
+licence. This package imports nothing from `caper/`, and its own `pytest.ini` keeps the site's
+`conftest.py` out, so the tests need neither Django, a database nor the site's `config.sh`.

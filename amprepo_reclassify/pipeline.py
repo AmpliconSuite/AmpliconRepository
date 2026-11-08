@@ -72,6 +72,9 @@ class ProjectRun:
         self.ac_dir = os.path.join(self.dir, 'ac_new')
         self.control_dir = os.path.join(self.dir, 'control')
         self.build_dir = os.path.join(self.dir, 'build')
+        self.aux_dir = os.path.join(self.dir, 'aux_inputs')
+        local = entry.get('local_archive')
+        self.source = 'local %s' % local['sha256'] if local else 'site'
         self.ac_prefix = os.path.join(self.ac_dir, self.name)
         self.state = self._load_state()
 
@@ -80,18 +83,20 @@ class ProjectRun:
 
     def _load_state(self):
         os.makedirs(self.dir, exist_ok=True)
-        fresh = {'id': self.entry['id'], 'tools': self.tools.description, 'done': [],
-                 'validation': {}, 'failed': None, 'result': None}
+        fresh = {'id': self.entry['id'], 'tools': self.tools.description, 'source': self.source,
+                 'done': [], 'validation': {}, 'failed': None, 'result': None}
         try:
             with open(self._state_path()) as handle:
                 state = json.load(handle)
         except FileNotFoundError:
             return fresh
-        if state.get('tools') != self.tools.description:
-            log('  tools changed since this project\'s last run, so it starts again')
+        changed_source = state.get('source', 'site') != self.source
+        if changed_source or state.get('tools') != self.tools.description:
+            log('  %s changed since this project\'s last run, so it starts again'
+                % ('the input archive' if changed_source else 'tools'))
             for name in os.listdir(self.dir):
                 path = os.path.join(self.dir, name)
-                if path == self.tgz:
+                if path == self.tgz and not changed_source:
                     continue
                 shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
             return fresh
@@ -118,9 +123,23 @@ class ProjectRun:
     # ---- the steps ----
 
     def _download(self):
+        local = self.entry.get('local_archive')
+        if local:
+            self._copy_local(local)
         # A version's archive doesn't change, and only a complete file gets this name.
-        if not os.path.exists(self.tgz):
+        elif not os.path.exists(self.tgz):
             self.site.download(self.entry['id'], self.tgz)
+
+    def _copy_local(self, local):
+        """The project list's archive instead of the site's, if it is still the file `plan` saw."""
+        if not os.path.isfile(local['path']):
+            raise ProjectError('the local archive %s is not there' % local['path'])
+        partial = self.tgz + '.partial'
+        shutil.copyfile(local['path'], partial)
+        if os.path.getsize(partial) != local['bytes'] or plan_module.sha256(partial) != local['sha256']:
+            os.remove(partial)
+            raise ProjectError('%s has changed since `plan` recorded it. Run `plan` again.' % local['path'])
+        os.replace(partial, self.tgz)
 
     def _unpack(self):
         archive.extract(self.tgz, self.unpacked)
@@ -151,6 +170,11 @@ class ProjectRun:
         ref = self._reference(settings)
         if not ref:
             raise ProjectError('no reference for AC. Add a ref column to the project list.')
+        # Checked before AC because AC takes hours on a large project and only fails at the end.
+        repeated = archive.repeated_names(self.stage_dir, '_graph.txt')
+        if repeated:
+            raise ProjectError('%d AA graph file(s) are staged more than once, first %s. AC would '
+                               'classify them twice.' % (len(repeated), repeated[0]))
         command = self.tools.ac_cmd + ['--ref', ref, '--AA_results', self.stage_dir + '/',
                                        '-o', self.ac_prefix, '--verbose_classification',
                                        '--jobs', str(self.machine.jobs),
@@ -173,9 +197,28 @@ class ProjectRun:
             log('  added no-amplification rows for %d sample(s), first %s' % (len(unseen), unseen[0]))
 
     def _build(self):
-        built = self._aggregate([self.stage_dir, self.ac_dir], self.name + '_reclass', self.build_dir)
+        inputs = [self.stage_dir, self.ac_dir]
+        # The aggregator recognises an AUX folder only among the subdirectories of an input.
+        shutil.rmtree(self.aux_dir, ignore_errors=True)
+        aux = archive.aux_dirs(self.unpacked)
+        if aux:
+            os.makedirs(self.aux_dir)
+            for index, path in enumerate(aux):
+                shutil.copytree(path, os.path.join(self.aux_dir, '%d' % index, os.path.basename(path)))
+            inputs += [os.path.join(self.aux_dir, '%d' % index) for index in range(len(aux))]
+        built = self._aggregate(inputs, self.name + '_reclass', self.build_dir)
         validation = self.state['validation']
         control = os.path.join(self.control_dir, self.name + '_control.tar.gz')
+        # The control is the aggregator's own repack of the input, so anything it has that the
+        # rebuild lacks was lost here. The reclassifier only replaces AC's output.
+        missing = archive.missing_paths(control, built)
+        if missing:
+            raise ProjectError('the rebuilt archive lacks %d file(s) that the input has, first %s'
+                               % (len(missing), missing[0]))
+        # Only meaningful when the input already has the aggregator's layout; an older layout
+        # moves every path.
+        validation['repack_dropped'] = (archive.missing_paths(self.tgz, control)
+                                        if archive.has_member(self.tgz, 'results/run.json') else [])
         validation['final_dropped'] = sorted(archive.kept_content(control) - archive.kept_content(built))
         manifest = archive.run_json_summary(built)
         validation['archive_samples'] = len(manifest['samples'])
@@ -199,6 +242,7 @@ class ProjectRun:
             current_ac=self.entry.get('current_ac'), new_ac=new_version,
             tools=self.tools.description, settings=settings, flags=flags,
             extra_ac_flags=self.entry.get('extra_ac_flags'),
+            local_archive=self.entry.get('local_archive'),
             expected_samples=self.entry.get('samples'),
             discovered_samples=len(samples),
             cnv_beds=sum(1 for paths in samples.values() if paths.get('cnv_calls_bed')),
@@ -223,6 +267,11 @@ class ProjectRun:
         samples = archive.discover_samples(self.unpacked)
         if not samples:
             raise ProjectError('no AA results found in the archive')
+        problems = archive.structure_problems(samples)
+        if problems:
+            where = 'the local archive' if self.entry.get('local_archive') else 'the archive on the site'
+            raise ProjectError('%s has a structural problem, so nothing was run. Fix it there, then '
+                               'run again. %d sample(s), first %s' % (where, len(problems), problems[0]))
         settings = archive.recover_settings(self.unpacked, self.entry.get('reference'))
         flags = list(settings['flags'])
         flags += [f for f in (self.entry.get('extra_ac_flags') or '').split() if f not in flags]

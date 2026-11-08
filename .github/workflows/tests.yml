@@ -75,3 +75,8 @@ jobs:
         run: |
           pytest -m "integration and not slow and not functional and not browser" \
                  -v --tb=short
+
+      - name: Run amprepo_reclassify tests
+        # The reclassifier's own tests, kept apart from the site's: no Django, no database.
+        run: |
+          python -m pytest amprepo_reclassify -v
