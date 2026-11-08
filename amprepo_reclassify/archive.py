@@ -465,6 +465,27 @@ def missing_paths(reference_tar, built_tar):
                   if '/consolidated_classification/' not in '/' + name and name not in built)
 
 
+def missing_names(reference_tar, built_tar):
+    """Files in `reference_tar` whose name appears fewer times anywhere in `built_tar`, apart
+    from AC's consolidated output. For comparing across an aggregator layout change, which
+    moves files, e.g. `<sample>_AA_results/` to `<sample>_reconstruction_results/`."""
+    def files(path):
+        with tarfile.open(path) as tar:
+            return [m.name for m in tar if m.isfile() and not os.path.basename(m.name).startswith('._')]
+    left = defaultdict(int)
+    for name in files(built_tar):
+        left[os.path.basename(name)] += 1
+    missing = []
+    for name in sorted(files(reference_tar)):
+        if '/consolidated_classification/' in '/' + name:
+            continue
+        if left[os.path.basename(name)]:
+            left[os.path.basename(name)] -= 1
+        else:
+            missing.append(name)
+    return missing
+
+
 def _member_names(tar_path):
     with tarfile.open(tar_path) as tar:
         return [os.path.basename(name) for name in tar.getnames()

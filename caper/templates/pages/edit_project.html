@@ -120,6 +120,8 @@
                 <div id='result'></div>
                 <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
 
+            {% elif field.name == 'keep_current' %}
+                {% include "includes/keep_current_field.html" %}
             {% else %}
                 {% if field.name != 'accept_license' and field.name != 'replace_project' %}
                   {% if field.name == 'AA_version' or field.name == 'ASP_version' %}

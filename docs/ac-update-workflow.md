@@ -1,8 +1,9 @@
 # `amprepo_reclassify`: updating site projects to a new AmpliconClassifier release
 
 Status: written 2026-11-06. Every stage is built, in
-[`amprepo_reclassify/`](../amprepo_reclassify/README.md), and so is the site's route. The checkbox
-isn't. No project has been updated on prod with this.
+[`amprepo_reclassify/`](../amprepo_reclassify/README.md), and so is the site's route. The
+keep-current checkbox and the list `plan` reads from it were added 2026-11-07. CUGA was updated on
+prod with this on 2026-11-07, from a local list.
 
 ## Goal
 
@@ -101,9 +102,17 @@ client change together, which is the reason to keep them in one place. The repo 
 public, so project lists, tokens and machine paths stay out of it: the project list
 comes from the site, and per-machine settings go in an ignored config file.
 
-**The list of projects comes from the site.** The keep-current checkbox is the index;
-`plan` reads it through the API with the operator's token. Until the checkbox exists,
-`plan` takes a local file. Version ids change with every update, so `plan` looks them up,
+**The list of projects comes from the site.** The keep-current checkbox is the index.
+With no list given, `plan` reads it from `upload_api/keep-current/` with the operator's
+admin token, and `--exclude` and `--include` (an id or exact name, repeatable) make the
+exceptions for one run. The plan and the change summary both say how many came from the
+site's list and name each exception, and an `--exclude` that matches nothing is said, not
+ignored. The list holds public and hidden-public projects. A hidden-public project isn't in
+the API's project listing unless the caller is a member, so `plan` and `run` ask for it by
+id, which an admin token can read. A project on the list that the token still can't read is
+marked `no-access` rather than left out without a word.
+`--projects FILE` or `--project` still give a list instead, for a test run. Version ids
+change with every update, so `plan` looks them up,
 and an id from an older version resolves to the latest one. The plan is saved locally for
 `preflight` and `run`, and `run` refuses a project that has moved on since.
 
@@ -123,8 +132,8 @@ site redirects to.
 count or an unexpected reference still produces an archive, and it's flagged in `summary`,
 because a person reviews every update anyway.
 
-**Results from CoRAL are skipped by default.** They're marked `untested-tool` until one has
-been through the workflow.
+**CoRAL results run like AmpliconArchitect's.** CoRAL writes the same `_graph.txt` and
+`_cycles.txt` layout that AC reads, so the plan doesn't treat them differently.
 
 ## Validation so far
 
@@ -197,9 +206,27 @@ change the WAF. GETs under `upload_api/` also meet Bot Control, which is why the
 is a POST. A 500 MB body reached dev through the load balancer in 52 s, about 10 MB/s from
 the lab, so a gunicorn worker's 900 s limit allows about 9 GB at that speed.
 
-**The keep-current checkbox and index,** as already agreed: off by default, in the
-same project, a new row in the version history, and wording that doesn't promise it's
-fully automatic, because a person reviews changes first.
+**The keep-current checkbox and index.** "Keep this project's classifications up to
+date", on the create and edit forms, with the explanation in a tooltip. It's off by default,
+and the wording doesn't promise it's fully automatic, because a person reviews changes
+first. Owners, members and admins can change it, the same people who can edit the project.
+It isn't available for private projects: the box is greyed out while Visibility is Private,
+and the form refuses the pair, including when an opted-in project is made private with the
+box still ticked. A private project's data stays with its members, and its name stays out
+of the operator's plan files. Public and hidden-public projects can opt in, and an admin's
+API token can read a hidden-public project, as anyone with the link can on the site; a
+private one stays members-only through the API. It's stored as `keep_current` and is
+chain-level (`project_fields.CHAIN_LEVEL`):
+
+- Changing only the checkbox edits the project in place, with no new version.
+- A new version, including the replace route's, carries the project's setting.
+- Deleting the newest version leaves the setting where the project now is. If version 3
+  is deleted and version 1 becomes current, version 1 takes version 3's setting, because
+  promotion copies chain-level fields from the deleted head.
+
+The flag isn't in the public API. The admin list is a POST, for the WAF reason above. A
+project made private some other way keeps its stored flag but drops off the list until it
+isn't private.
 
 ## Easy to forget
 
@@ -210,10 +237,11 @@ fully automatic, because a person reviews changes first.
 - **A base that moves.** A project can change between `run` and `upload`, hence
   `expected_latest_id`.
 - **Recovered settings can mislead.** A flag recovered from an archive shows how that
-  version ran, and an archive without an AC log falls back to older metadata. The
-  per-project override stays for a project that really needs non-default flags. None is
-  known today: DCIS - Chmelova's current version ran with defaults.
-- **Non-AA projects.** CoRAL cell lines hasn't been through this script.
+  version ran, and an archive without an AC log falls back to older metadata. Flags are
+  meant to come from the archive's own AC logs, so a project on the site's list needs no
+  settings of its own. The `extra_ac_flags` column of a `--projects` file is the fallback
+  for an archive whose logs don't record them. None is known to need it today: DCIS -
+  Chmelova's current version ran with defaults.
 - **Metadata that travels with an update.** Hartwig's richer sheet goes up with its AC
   replacement, and it sits close to the record limit, so `dry_run` must cover the pair.
 - **Solver time limits.** Gurobi has a time limit, so results near it could depend on
@@ -256,4 +284,4 @@ by 2026-11-16 and can be built alongside this.
 2. The upload route with `dry_run` and `expected_latest_id`: local, dev, check-in, prod.
 3. `upload`, tested end to end against dev. Non-admins keep using the edit form: this is
    for admins updating in bulk.
-4. The keep-current checkbox and index, then point `plan` at it.
+4. The keep-current checkbox and index, then point `plan` at it. Built 2026-11-07.

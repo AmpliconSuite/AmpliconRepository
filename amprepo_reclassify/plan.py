@@ -1,4 +1,8 @@
-"""The dry run: what an update would do, from the site's own list. Changes nothing on the site."""
+"""The dry run: what an update would do. Changes nothing on the site.
+
+The projects come from the site's keep-current list, the ones whose owners ticked "Keep this
+project's classifications up to date", unless they're given on the command line.
+"""
 
 import csv
 import datetime
@@ -7,6 +11,7 @@ import json
 import os
 
 from . import pins
+from .site_api import SiteError
 
 # AC's --ref value for each reference name the site uses.
 REF_MAP = {
@@ -25,11 +30,16 @@ SECONDS_PER_SAMPLE = 19
 
 UPDATE = 'update'
 CURRENT = 'current'
-UNTESTED_TOOL = 'untested-tool'
 UNKNOWN_REF = 'unknown-ref'
 NO_ARCHIVE = 'no-archive'
 NOT_FOUND = 'not-found'
+NO_ACCESS = 'no-access'
 AMBIGUOUS = 'ambiguous'
+
+# Where a project in the plan came from.
+FROM_SITE = 'site list'
+INCLUDED = 'included'
+GIVEN = 'given'
 
 
 def read_project_file(path):
@@ -55,11 +65,21 @@ def read_project_file(path):
                 for row in rows]
 
 
-def wanted_from_argument(value):
-    """--project takes an id or an exact name."""
-    is_id = len(value) == 24 and all(c in '0123456789abcdefABCDEF' for c in value)
+def _is_id(value):
+    return len(value) == 24 and all(c in '0123456789abcdefABCDEF' for c in value)
+
+
+def wanted_from_argument(value, source=GIVEN):
+    """--project and --include take an id or an exact name."""
+    is_id = _is_id(value)
     return {'name': '' if is_id else value, 'id': value if is_id else '',
-            'ref': '', 'extra_ac_flags': '', 'archive': ''}
+            'ref': '', 'extra_ac_flags': '', 'archive': '', 'source': source}
+
+
+def wanted_from_site(rows):
+    """The site's keep-current list: the projects whose owners ticked the box."""
+    return [{'name': row['project_name'], 'id': row['id'], 'ref': '', 'extra_ac_flags': '',
+             'archive': '', 'source': FROM_SITE} for row in rows]
 
 
 def _index(projects):
@@ -73,12 +93,6 @@ def _index(projects):
     return by_id, by_name
 
 
-def _is_coral(project):
-    tools = project.get('reconstruction_tools') or ''
-    version = project.get('CoRAL_version') or ''
-    return 'coral' in tools.lower() or version not in ('', 'NA', 'None')
-
-
 def build_entry(wanted, by_id, by_name, site, target_version):
     label = wanted['name'] or wanted['id']
     head = by_id.get(wanted['id'])
@@ -87,8 +101,15 @@ def build_entry(wanted, by_id, by_name, site, target_version):
         if len(matches) > 1:
             return {'name': label, 'id': None, 'status': AMBIGUOUS,
                     'note': '%d projects have this name; give the id' % len(matches)}
+        if not matches and wanted.get('source') == FROM_SITE:
+            # On the site's list, so it exists, and the site gave this token no way to read it.
+            return {'name': label, 'id': wanted['id'], 'status': NO_ACCESS,
+                    'source': FROM_SITE,
+                    'note': 'on the site\'s list, but this token can\'t read it. Is it an '
+                            'admin\'s token?'}
         if not matches:
             return {'name': label, 'id': None, 'status': NOT_FOUND,
+                    'source': wanted.get('source', GIVEN),
                     'note': 'not visible on %s with this token' % site.name}
         head = matches[0]
     reference = head.get('reference_genome') or ''
@@ -99,18 +120,16 @@ def build_entry(wanted, by_id, by_name, site, target_version):
              'aggregator': head.get('aggregator_version'),
              'tools': head.get('reconstruction_tools'),
              'extra_ac_flags': wanted['extra_ac_flags'],
-             'metadata_sheet': wanted.get('metadata_sheet', ''), 'archive_bytes': None, 'note': ''}
+             'metadata_sheet': wanted.get('metadata_sheet', ''), 'archive_bytes': None, 'note': '',
+             'source': wanted.get('source', GIVEN)}
     if head.get('AC_version') == target_version:
         entry['status'] = CURRENT
-    elif _is_coral(head):
-        entry['status'] = UNTESTED_TOOL
-        entry['note'] = 'CoRAL results have not been through this workflow'
     elif not ac_ref:
         entry['status'] = UNKNOWN_REF
-        entry['note'] = 'no AC reference for %r; add a ref column' % reference
+        entry['note'] = 'no AC reference for %r; give it a ref in a --projects file' % reference
     else:
         entry['status'] = UPDATE
-    if wanted.get('archive') and entry['status'] in (UPDATE, UNTESTED_TOOL):
+    if wanted.get('archive') and entry['status'] == UPDATE:
         # One campaign's substitute for the site's archive, such as a cleaned copy. Once it is
         # uploaded it is the site's archive, so later campaigns drop this column.
         local = wanted['archive']
@@ -122,7 +141,7 @@ def build_entry(wanted, by_id, by_name, site, target_version):
                                       'sha256': sha256(local)}
             entry['archive_bytes'] = entry['local_archive']['bytes']
             entry['note'] = 'uses the local archive %s, not the site\'s' % local
-    elif entry['status'] in (UPDATE, UNTESTED_TOOL):
+    elif entry['status'] == UPDATE:
         entry['archive_bytes'] = site.archive_size(head['id'])
         if entry['archive_bytes'] is None:
             entry['status'] = NO_ARCHIVE
@@ -138,13 +157,90 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def build_plan(wanted, site, target_version=pins.AC_VERSION):
+def _exclusions(values, by_id, by_name):
+    """Each --exclude value, and the ids and names it stands for."""
+    found = []
+    for value in values:
+        keys = {value}
+        head = by_id.get(value)
+        if head is not None:
+            keys |= {head['id'], head['project_name']}
+        for match in by_name.get(value, []):
+            keys.add(match['id'])
+        found.append((value, keys))
+    return found
+
+
+def _add_unlisted_heads(wanted, by_id, by_name, site):
+    """Hidden-public projects aren't in the project listing unless the caller is a member, but
+    an admin can read them by id. Ask for each one on the site's list that's missing."""
+    for w in wanted:
+        if w.get('source') != FROM_SITE or not w['id'] or w['id'] in by_id:
+            continue
+        try:
+            head = site.project(w['id'])
+        except SiteError:
+            continue
+        if head.get('is_latest_version', True):
+            extra_id, extra_name = _index([head])
+            by_id.update(extra_id)
+            by_name.setdefault(head['project_name'], []).append(head)
+
+
+def is_head(site, heads, project_id):
+    """Whether *project_id* is still a project's current version, asking by id when the
+    listing doesn't show it."""
+    if project_id in heads:
+        return True
+    try:
+        return bool(site.project(project_id).get('is_latest_version', True))
+    except SiteError:
+        return False
+
+
+def build_plan(wanted, site, target_version=pins.AC_VERSION, exclude=(), listed=None):
+    """*listed* is how many came from the site's list, or None when the list was given."""
     by_id, by_name = _index(site.list_projects())
-    entries = [build_entry(w, by_id, by_name, site, target_version) for w in wanted]
+    _add_unlisted_heads(wanted, by_id, by_name, site)
+    exclusions = _exclusions(exclude, by_id, by_name)
+    entries, seen, excluded = [], set(), {value: [] for value in exclude}
+    for w in wanted:
+        entry = build_entry(w, by_id, by_name, site, target_version)
+        keys = {entry.get('id'), entry['name']} - {None, ''}
+        hits = [value for value, ex_keys in exclusions if keys & ex_keys]
+        if hits:
+            for value in hits:
+                excluded[value].append(entry['name'])
+            continue
+        if entry.get('id') and entry['id'] in seen:
+            continue
+        seen.add(entry.get('id'))
+        entries.append(entry)
     entries.sort(key=lambda e: (e['status'] != UPDATE, e.get('archive_bytes') or 0))
     return {'site': site.name, 'target_ac': target_version,
             'created': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
+            'list': {'from_site': listed is not None, 'site_count': listed,
+                     'included': [e['name'] for e in entries if e.get('source') == INCLUDED],
+                     'excluded': [{'value': value, 'matched': names}
+                                  for value, names in excluded.items()]},
             'projects': entries}
+
+
+def describe_list(plan):
+    """Where the plan's projects came from, and the exceptions made at run time."""
+    listing = plan.get('list') or {}
+    if listing.get('from_site'):
+        lines = ['Projects: %d on %s\'s keep-current list' % (listing['site_count'], plan['site'])]
+    else:
+        lines = ['Projects: given on the command line, not %s\'s keep-current list' % plan['site']]
+    for name in listing.get('included') or []:
+        lines.append('  included by hand: %s' % name)
+    for row in listing.get('excluded') or []:
+        if row['matched']:
+            lines.append('  excluded by hand: %s' % ', '.join(row['matched']))
+        else:
+            lines.append('  --exclude %s matched nothing in the list' % row['value'])
+    return lines
 
 
 def predicted_disk(entries):
@@ -152,7 +248,8 @@ def predicted_disk(entries):
 
 
 def format_plan(plan):
-    lines = ['Plan for %s, to AC %s, made %s' % (plan['site'], plan['target_ac'], plan['created']), '']
+    lines = ['Plan for %s, to AC %s, made %s' % (plan['site'], plan['target_ac'], plan['created'])]
+    lines += describe_list(plan) + ['']
     lines.append('%-13s %8s %9s %-13s %-9s %-24s %s'
                  % ('status', 'samples', 'archive', 'reference', 'AC now', 'latest id', 'project'))
     for e in plan['projects']:

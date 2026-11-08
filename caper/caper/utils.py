@@ -1385,6 +1385,9 @@ def form_to_dict(form):
     # print(form)
     run = form.save(commit=False)
     form_dict = model_to_dict(run)
+    # Not a model field, so model_to_dict() leaves it out.
+    if 'keep_current' in form.fields:
+        form_dict['keep_current'] = bool(form.cleaned_data.get('keep_current'))
 
     if "alias" in form_dict:
         try:

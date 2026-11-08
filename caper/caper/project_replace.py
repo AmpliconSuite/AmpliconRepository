@@ -105,6 +105,8 @@ def _form_fields(project):
         'accept_license': 'on',
         'project_mode': 'replace',
         'retain_old_metadata': 'true',
+        # An unticked checkbox posts nothing, so this has to be said either way.
+        'keep_current': 'true' if project.get('keep_current') else 'false',
     }
 
 

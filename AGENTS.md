@@ -114,157 +114,35 @@ Projects live in the `projects` collection. Notable fields:
 - `AA_version`, `AC_version`, `ASP_version`, `aggregator_version` — tool version metadata that must be preserved in version history/API output
 - `ecDNA_context` — lazily populated from `ecDNA_context_calls.tsv` files inside the project tarball
 
-### AC 2.0 / no-amp conventions
+### Search and version-deletion conventions
 
-Search now treats no-amplification samples explicitly. The search UI has four real amplicon class filters (`ecDNA`, `linear amplification`, `BFB`, `complex non-cyclic`) plus the `no-amp` pseudo-filter. Backend no-amp matching uses `search._zero_feature_mask()` and includes:
-- empty `runs[sample]` lists, converted to placeholder rows with `Classification='NA'`
-- blank `Feature_ID`
-- `Classification == 'No FSCNA'`
-- `Classification == 'NA'`, the current AmpliconSuiteAggregator convention for samples with no amplification result
+Details are in [docs/data-model-notes.md](docs/data-model-notes.md). The two rules to carry:
 
-When editing search/classification logic, keep `views.search_results()` and `search.perform_search()` semantics aligned: no boxes checked and all five boxes checked both mean no filter; all four amp types checked without `no-amp` excludes no-amp rows.
+- Keep `views.search_results()` and `search.perform_search()` semantics aligned
+  when editing search or classification logic; no-amp samples are matched by
+  `search._zero_feature_mask()`.
+- Deleting an old version leaves a MongoDB tombstone that `utils.get_one_project()`
+  resolves to the surviving project, and cleanup code must preserve it. Versions of
+  one project share files, so every payload deleter must be told what to protect:
+  pass what `version_file_sharing.still_needed_here()` returns. A version tagged as
+  used in a publication takes a typed project name to delete; any path with nobody to
+  ask must refuse it.
 
-### Deleted Version Tombstones
-
-Deleting an old project version now purges its heavy GridFS payload but keeps a lightweight MongoDB tombstone with:
-- `version_deleted_from_history: True`
-- `payload_purged: True`
-- `redirect_to_project: <current_project_id>`
-
-`utils.get_one_project()` resolves these tombstones to the surviving project. Cleanup code must preserve them. Use `caper/caper/project_version_cleanup.py` helpers when changing version deletion behavior, especially `iter_gridfs_file_ids()`, `delete_gridfs_payload_for_project()`, and `build_deleted_version_tombstone()`. Versions of one project share files, so every payload deleter must be told what to protect: pass what `version_file_sharing.still_needed_here()` returns. A version tagged as used in a publication (`publication_versions`) takes a typed project name to delete, and any path with nobody to ask must refuse it.
-
-Files (tarballs from AmpliconSuiteAggregator) are stored in **GridFS** and referenced by ObjectId within the project document. Use `tar_utils.extract_from_project_tarfile()` to stream-extract specific paths without writing the full tar to disk.
+Files (tarballs from AmpliconSuiteAggregator) are stored in **GridFS** and referenced by ObjectId within the project document. Use `tar_utils.extract_from_project_tarfile()` to stream-extract specific paths.
 
 ---
 
 ## Developer Workflows
 
-### Local dev server
-```bash
-source caper/config.sh && cd caper && python manage.py runserver
-# visit http://localhost:8000
-```
+Procedures are in [docs/developer-workflows.md](docs/developer-workflows.md):
+local dev server, the dev landing gate (`dev_gate.py`: home page only, never
+authenticates, must not touch MongoDB), AWS SSO for S3 (`aws sso login --profile
+amprepo`), Docker dev, creating a project from the command line
+(`local_upload_project.py`, not `manage.py create_project`), local MongoDB/GridFS
+cleanup, `recover_deleted_version.py`, and `shutdown_mode.py` during a deploy.
+Deploy runbooks are in the
+[wiki](https://github.com/AmpliconSuite/AmpliconRepository/wiki).
 
-### The dev server landing gate
-`dev.ampliconrepository.org` shows a landing page instead of its home page. The passphrase
-is **`amprepodev`** — published here, in README.md and in the
-[wiki](https://github.com/AmpliconSuite/AmpliconRepository/wiki/Development-Server), because
-it is a shibboleth to keep wanderers and crawlers out, not a secret. For a dev server
-account, contact Jens Luebeck (jluebeck@ucsd.edu).
-
-Implementation is `caper/caper/dev_gate.py`, second in `MIDDLEWARE` right after the health
-check. Three properties matter when changing anything near it:
-
-- **Home page only.** Deep links, the REST API and the OAuth callbacks are not gated, which
-  is why no exemption list exists. Do not widen this without re-reading the module docstring.
-- **It never authenticates.** It runs above `SessionMiddleware`, so it cannot see
-  `request.user` and cannot admit an admin by login. That is deliberate — dev exists largely
-  to test anonymous behaviour.
-- **It must not touch MongoDB.** The landing page is rendered with `render_to_string` and no
-  request object, so no template context processor runs (`shutdown_mode` alone would be a
-  Mongo round trip). Keep it that way.
-
-Off unless `DEV_GATE_ENABLED=True` is exported, so production and local checkouts are
-unchanged; export it locally to see the gate. `DEV_ROBOTS_DISALLOW_ALL` is the separate,
-later stage of de-indexing dev — README.md explains why the two cannot be flipped together.
-
-### AWS credentials for S3 (config.sh has `S3_*=TRUE`)
-The app authenticates to S3 via the boto3 profile `amprepo` (`AWS_PROFILE_NAME`), read from
-`~/.aws`. If that profile is SSO-based, refresh the ~8-hour token before running anything
-that touches S3 (uploads, downloads, static sync):
-```bash
-aws sso login --profile amprepo
-```
-A static `[amprepo]` block in `~/.aws/credentials` overrides the SSO profile — remove/rename
-it to use SSO. On the dev/prod EC2 servers the target is an IAM instance role (no keys, auto
-refresh); permanent access keys are being retired.
-
-### Docker dev (simplest for new setup)
-```bash
-mkdir -p logs tmp .git
-# host ~/.aws is mounted into the container; if using SSO, `aws sso login --profile amprepo`
-# on the host first so a valid token is present.
-docker compose -f docker-compose-dev.yml build --no-cache
-docker compose -f docker-compose-dev.yml up -d
-# visit http://localhost:8000
-docker compose -f docker-compose-dev.yml down
-```
-
-### Create a project from the command line (local)
-```bash
-set -a; source caper/config.sh; set +a
-LOCAL_SITE_PASSWORD=... python local_upload_project.py --user <username> \
-    --name "My project" --description "..." --visibility public \
-    [--metadata samples.csv] results.tar.gz
-```
-Signs in through the site and submits the create-project form the way the
-page's own upload script does, so the running server builds the project exactly
-as for a browser upload, then waits until aggregation finishes. Local hosts only.
-Checked 2026-10-29: a GBM39 project and a 13-feature Waddell project, each made
-both ways, had identical documents and index rows apart from IDs, names and
-times.
-
-`manage.py create_project` (local path, HTTP URL or `s3://` URI) calls the view
-inside its own process, which exits before the background aggregation finishes.
-Projects made that way end up `aggregation_failed`, with no `AA_PNG_file` on
-their features.
-
-### Clean up local MongoDB / GridFS data
-
-Prefer the safe two-stage cleanup before any full local purge:
-
-```bash
-source caper/config.sh
-
-# 1. Remove unreachable project docs and their attached GridFS/S3/tmp files.
-(cd caper && python ../cleanup_orphaned_projects.py --dry-run)
-(cd caper && python ../cleanup_orphaned_projects.py)
-
-# 2. Remove remaining GridFS blobs not referenced by reachable projects.
-python purge-local-db.py --smart-gridfs
-python purge-local-db.py --smart-gridfs --execute
-```
-
-Useful read-only reports:
-
-```bash
-source caper/config.sh && python purge-local-db.py --gridfs-usage-by-type --limit 25
-source caper/config.sh && python purge-local-db.py --gridfs-usage-by-project --limit 25
-source caper/config.sh && python purge-local-db.py --tarfile-report --limit 25
-```
-
-`cleanup_orphaned_projects.py` protects all reachable projects, previous versions, soft-deleted current projects, and redirect tombstones before deleting orphan project documents plus their GridFS/S3/tmp payloads. `purge-local-db.py` is dry-run by default; destructive operations require `--execute`. Its default `--reference-scope reachable` is conservative, and `--reference-strategy recursive` protects any ObjectId-like value in reachable project documents. Use `--reference-strategy app-fields` only when you intentionally want a more aggressive GridFS cleanup based on known GridFS fields.
-
-The legacy full wipe is now explicit and local-dev-only: `python purge-local-db.py --all-project-data --execute`.
-
-For project flag audits, run:
-```bash
-source caper/config.sh
-(cd caper && python manage.py shell < ../check_project_flags_django.py)
-```
-
-To restore a version that was deleted from a project's history, use
-`recover_deleted_version.py`; it is dry-run by default and writes only with
-`--apply`. It **refuses** a version whose `payload_purged` flag is set: deletion
-purges the GridFS payload, so clearing the markers would leave a version that
-resolves by URL and has no data behind it. Such a version is already visible in
-the history table, marked as deleted.
-
-### Shutdown mode during a deploy
-The deploy runbooks in the
-[wiki](https://github.com/AmpliconSuite/AmpliconRepository/wiki) open by
-enabling shutdown mode and close by disabling it. Without a browser session,
-use `shutdown_mode.py` from the server's checkout, which the container mounts
-at `/srv`:
-```bash
-docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev status
-docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev on     # refuses while tasks run
-docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev wait   # blocks until none run
-docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev off
-```
-On prod the container is `amplicon-prod` and the database `caper`; `on` and
-`off` there are prod writes. Its docstring explains why "no running tasks" means
-no task younger than about an hour.
 
 ### Do NOT commit
 - `caper/caper.sqlite3`
@@ -273,8 +151,6 @@ no task younger than about an hour.
   them, never stage them. Nothing in `.gitignore` prevents `git add -A` or
   `git add docs/` from picking them up, so check `git status` before staging.
   (Other files under `docs/` — `*-todo.md`, `api-roadmap.md` — *are* tracked.)
-  See `CLAUDE.md`, which is gitignored, for what they contain and where the
-  backups live.
 
 ---
 
@@ -305,45 +181,12 @@ For bug fixes and new features, **start by writing a failing test** before touch
 
 ### Running tests
 
-Tests live in `tests/` and are run with `pytest` from the repository root, where `pytest.ini` defines markers:
-- `integration`: live MongoDB, normally fast
-- `slow`: real AmpliconSuiteAggregator project creation/reaggregation
-- `functional`: depends on `loaded_datasets` and usually a local dev server
-- `browser`: Playwright tests against `http://localhost:8000`
-- `performance`: benchmarking only
-
-```bash
-# Fast integration tests only — MongoDB required, no aggregation/server.
-source caper/config.sh && pytest -m "integration and not slow and not functional and not browser" -v
-
-# All integration + functional tests — requires local server and AmpliconSuiteAggregator.
-source caper/config.sh && pytest -m "integration and not browser" -v
-
-# Full slow aggregation tests.
-source caper/config.sh && pytest -m "slow and integration" -v
-
-# Browser tests; start the server from caper/ in a separate shell first.
-source caper/config.sh && pytest -m browser --base-url http://localhost:8000 -v
-
-# Full suite
-source caper/config.sh && pytest -v
-```
-
-### Test datasets
-
-Additional test data files (tarballs, sample inputs, etc.) are available on Google Drive:
-https://drive.google.com/drive/folders/1lp6NUPWg1C-72CQQeywucwX0swnBFDvu?usp=drive_link
-
-New tests should use the narrowest marker that matches behavior. Use `@pytest.mark.integration` for live-Mongo unit/view behavior, add `@pytest.mark.slow` only when the test runs real aggregation, add `@pytest.mark.functional` when it depends on the shared `loaded_datasets` flow or local server, and add `@pytest.mark.browser` for Playwright.
-
-```python
-import pytest
-
-@pytest.mark.integration
-def test_my_feature(client, live_mongo):
-    # arrange → act → assert
-    ...
-```
+Run `pytest` from the repository root after `source caper/config.sh`. Markers
+(`integration`, `slow`, `functional`, `browser`, `performance`), the commands for
+each tier, and the test-data link are in [docs/testing.md](docs/testing.md). Use
+the narrowest marker that matches the behavior; add `slow` only for real
+aggregation, `functional` only for the shared `loaded_datasets` flow or a local
+server, `browser` for Playwright.
 
 ### Test addition policy
 

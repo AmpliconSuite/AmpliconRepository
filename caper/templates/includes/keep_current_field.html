@@ -1,0 +1,31 @@
+{# The keep-current opt-in, for the create and edit forms. Greyed out while Visibility is Private: #}
+{# the form refuses that pair anyway, and this says so before anyone submits. #}
+<div class="form-group form-check" id="div_id_keep_current">
+    {{ field }}
+    <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+    <i class="far fa-question-circle" tabindex="0" role="img" data-toggle="tooltip" data-placement="right"
+       title="{{ field.help_text }}" aria-label="{{ field.help_text }}"></i>
+    <small class="form-text text-muted" id="keep_current_private_note" style="display:none;">
+        Not available for private projects.
+    </small>
+    {% for error in field.errors %}
+        <div class="invalid-feedback d-block">{{ error }}</div>
+    {% endfor %}
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var visibility = document.getElementById('id_private');
+    var box = document.getElementById('{{ field.id_for_label }}');
+    var note = document.getElementById('keep_current_private_note');
+    if (!visibility || !box) { return; }
+    function sync() {
+        var isPrivate = visibility.value === 'private';
+        if (isPrivate) { box.checked = false; }
+        box.disabled = isPrivate;
+        box.parentElement.classList.toggle('text-muted', isPrivate);
+        note.style.display = isPrivate ? '' : 'none';
+    }
+    visibility.addEventListener('change', sync);
+    sync();
+});
+</script>

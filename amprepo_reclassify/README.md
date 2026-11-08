@@ -25,8 +25,9 @@ checkout of this repo.
 python -m amprepo_reclassify setup --workdir /big/disk/ac_update \
     --jobs 16 --bfb-threads 2 --token-file prod=~/.amprepo_token
 
-# The dry run. Lists what would be updated, saved to <workdir>/plan.json.
-python -m amprepo_reclassify plan --projects my_projects.tsv
+# The dry run. Lists what would be updated, saved to <workdir>/plan.json. The projects are the
+# ones on the site's keep-current list, less any --exclude, plus any --include.
+python -m amprepo_reclassify plan --site prod --exclude <id or exact name>
 
 # Checks tools, solver, references, disk and the site. Exits 1 if a run shouldn't start.
 python -m amprepo_reclassify preflight
@@ -51,12 +52,18 @@ uploading are in `<workdir>/projects/<id>/`.
 On a 32-thread machine, `--jobs 16 --bfb-threads 2` has worked well. Settings are saved in
 `amprepo_reclassify/machine.json`, which git ignores.
 
-**Project list:** a TSV with a `project_name` or `latest_id` column, or both. Lines starting with
+**Which projects:** by default, every project whose owners ticked "Keep this project's
+classifications up to date", read from the site with your admin token. `--exclude` and `--include`
+take an id or exact name and can be repeated; the plan and the summary name each one. Private
+projects can't opt in. Hidden-public ones can, and your admin token reads them by id.
+
+**Your own list instead,** for a test run: `--projects FILE` or `--project <id or exact name>`.
+The file is a TSV with a `project_name` or `latest_id` column, or both. Lines starting with
 `#` are comments. An id from an older version still resolves to the latest one. Three optional columns
 are for projects that need them: `ref` sets AC's reference, and `extra_ac_flags` adds AC flags
-such as `--filter_similar`. `metadata_sheet` is described under Uploading, and `archive` under
-"Using your own archive". For one project, use `plan --project <id or exact name>`. To use the
-dev site, use `plan --site dev` with a `dev=` token file.
+such as `--filter_similar`, for an archive whose AC logs don't record them. `metadata_sheet` is
+described under Uploading, and `archive` under "Using your own archive". To use the dev site, use
+`plan --site dev` with a `dev=` token file.
 
 **Using your own archive:** an `archive` column gives a local `.tar.gz` to use in place of the
 site's download, with its path relative to the list. Use it when the site's archive needs fixing
@@ -137,7 +144,6 @@ delete the new version from the project's page, which makes the one before it cu
 |---|---|---|
 | `update` | On an older AC | Runs it |
 | `current` | Already on the target AC | Skips it |
-| `untested-tool` | CoRAL results, which haven't been through this workflow | Skips it, unless you pass `--allow-untested-tool` |
 | `no-archive` | The site has no stored archive to download | Skips it |
 | `unknown-ref` | No AC reference for the site's reference name | Skips it. Add a `ref` column. |
 | `not-found` | Not visible with this token | Skips it |

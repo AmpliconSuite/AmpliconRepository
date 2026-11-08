@@ -215,9 +215,9 @@ class ProjectRun:
         if missing:
             raise ProjectError('the rebuilt archive lacks %d file(s) that the input has, first %s'
                                % (len(missing), missing[0]))
-        # Only meaningful when the input already has the aggregator's layout; an older layout
-        # moves every path.
-        validation['repack_dropped'] = (archive.missing_paths(self.tgz, control)
+        # By name, not path: the aggregator's layout has changed between versions, and moving a
+        # file isn't losing it. Only meaningful when the input already has a run.json layout.
+        validation['repack_dropped'] = (archive.missing_names(self.tgz, control)
                                         if archive.has_member(self.tgz, 'results/run.json') else [])
         validation['final_dropped'] = sorted(archive.kept_content(control) - archive.kept_content(built))
         manifest = archive.run_json_summary(built)
@@ -310,22 +310,19 @@ def load_states(machine, entries):
     return states
 
 
-def run_plan(plan, machine, tools, site, only=None, allow_untested_tool=False):
+def run_plan(plan, machine, tools, site, only=None):
     """Work through a plan, smallest first. One project failing doesn't stop the rest.
     Returns the number that failed."""
     heads = {p['id'] for p in site.list_projects() if p.get('is_latest_version', True)}
-    allowed = {plan_module.UPDATE}
-    if allow_untested_tool:
-        allowed.add(plan_module.UNTESTED_TOOL)
     failures = 0
     for entry in plan['projects']:
         if only and entry['name'] not in only and entry.get('id') not in only:
             continue
         log('\n%s\n%s (%s)' % ('=' * 78, entry['name'], entry.get('id')))
-        if entry['status'] not in allowed:
+        if entry['status'] != plan_module.UPDATE:
             log('  skipped: %s. %s' % (entry['status'], entry.get('note') or ''))
             continue
-        if entry['id'] not in heads:
+        if not plan_module.is_head(site, heads, entry['id']):
             log('  FAILED: this project has a newer version than the plan. Run `plan` again.')
             failures += 1
             continue

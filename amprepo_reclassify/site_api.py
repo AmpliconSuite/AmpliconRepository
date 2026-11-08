@@ -207,6 +207,12 @@ class Site:
             if refused.code != 'not_found':
                 raise
 
+    def keep_current_list(self):
+        """The projects whose owners opted in to updates, private ones too. Admins only."""
+        if not self.token:
+            raise SiteError('reading %s\'s keep-current list needs an admin token' % self.name)
+        return self._post('/upload_api/keep-current/')['projects']
+
     def replace(self, project_id, archive_path, expected_latest_id, dry_run, metadata_path=None):
         """Send an archive. The answer holds the `job_id` to follow."""
         files = {'document': archive_path}

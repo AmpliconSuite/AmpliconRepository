@@ -44,6 +44,7 @@ from .utils import (
     get_latest_project_version, normalize_visibility_field, is_project_private,
     fs_handle, PUBLIC_QUERY_VALUES, RESTRICTED_QUERY_VALUES, project_members_of,
 )
+from .visibility import VISIBILITY_QUERY_VALUES, is_project_hidden_public
 from .extra_metadata import *
 from .background_tasks import get_background_task_status
 
@@ -274,6 +275,8 @@ class ProjectFileAddView(APIView):
             'project_members': ','.join(project.get('project_members', [])),
             'alias': project.get('alias_name', ''),
             'accept_license': True,
+            # Said either way: a form left without it reads as unticked.
+            'keep_current': 'true' if project.get('keep_current') else 'false',
         }
 
         try:
@@ -449,6 +452,10 @@ def _user_can_access_project(project, user):
         return True
     if user is None:
         return False
+    # Anyone with the link can open a hidden-public project on the site. Through the API,
+    # members and site admins can; admins need it to download projects for updates.
+    if is_project_hidden_public(vis) and getattr(user, 'is_staff', False):
+        return True
     # The current version's list, for an old version too: membership is chain-level.
     members = project_members_of(project)
     return user.username in members or (user.email and user.email in members)
@@ -557,6 +564,39 @@ class ProjectReplaceStatusView(APIView):
             return api_error('No such job. A dry run\'s result is kept for about an hour.',
                              'not_found', status.HTTP_404_NOT_FOUND)
         return Response(result)
+
+
+class KeepCurrentListView(APIView):
+    """
+    The current version of every public or hidden-public project whose owners ticked "Keep
+    this project's classifications up to date". Admins only, by API token; the
+    reclassifier's `plan` reads it.
+
+    The form refuses the box on a private project. A project made private some other way
+    keeps its stored flag but drops off this list until it isn't private.
+
+    A POST though it only reads, for the same WAF reason as ProjectReplaceStatusView.
+    """
+    authentication_classes = []
+    permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'api_read'
+
+    def post(self, request):
+        _user, error = _admin_from_token(request)
+        if error:
+            return error
+        heads = collection_handle.find(status_query(LIVE, keep_current=True,
+                                                    private={'$in': PUBLIC_QUERY_VALUES
+                                                             + VISIBILITY_QUERY_VALUES['hidden_public']}),
+                                       {'project_name': 1, 'private': 1, 'sample_count': 1})
+        return Response({'projects': sorted(
+            ({'id': str(head['_id']),
+              'project_name': head.get('project_name', ''),
+              'visibility': normalize_visibility_field(head.get('private', 'private')),
+              'sample_count': head.get('sample_count', 0)}
+             for head in heads),
+            key=lambda row: (row['project_name'], row['id']))})
 
 
 class ProjectReplacePrepareView(APIView):

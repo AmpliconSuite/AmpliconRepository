@@ -135,6 +135,7 @@ urlpatterns += [
     path('upload_api/replace/<str:project_id>/', views.ProjectReplaceView.as_view(), name='project_replace'),
     path('upload_api/replace-status/<str:job_id>/', views.ProjectReplaceStatusView.as_view(), name='project_replace_status'),
     path('upload_api/replace-prepare/<str:version_id>/', views.ProjectReplacePrepareView.as_view(), name='project_replace_prepare'),
+    path('upload_api/keep-current/', views.KeepCurrentListView.as_view(), name='keep_current_list'),
     path('api/background-task-status/', views.BackgroundTaskStatusView.as_view(), name='background_task_status'),
 
     # REST API v1

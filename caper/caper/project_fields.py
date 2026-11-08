@@ -84,6 +84,9 @@ CHAIN_LEVEL = frozenset({
     'publication_link',
     'alias_name',
     'alias',
+    # The owner's consent to admins adding reclassified versions. Must outlive any
+    # one version: delete the head and the promoted version keeps the setting.
+    'keep_current',
     'views',
     'downloads',
     'project_downloads',

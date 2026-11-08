@@ -71,7 +71,7 @@ from .views_admin import (
 
 # Import API views from separate module
 from .views_apis import (
-    ProjectReplaceView, ProjectReplaceStatusView, ProjectReplacePrepareView,
+    ProjectReplaceView, ProjectReplaceStatusView, ProjectReplacePrepareView, KeepCurrentListView,
     FileUploadView, ProjectFileAddView, BackgroundTaskStatusView,
     ProjectListView, ProjectDetailView, ProjectSamplesView,
     ProjectSampleDetailView, FeatureSamplesView,
@@ -3977,7 +3977,8 @@ def edit_project_without_reversioning(request, project_name, project, form_dict,
                             # project's classifications describing the sample
                             # set it had at creation.
                             'Classification': get_project_classifications(current_runs),
-                            'alias_name': alias_name}}
+                            'alias_name': alias_name,
+                            'keep_current': bool(form_dict.get('keep_current'))}}
 
         if project.get('sample_data', False) and samples_to_remove and len(samples_to_remove) > 0:
             new_val["$unset"] = {'metadata_stored': ""}
@@ -4862,6 +4863,7 @@ def edit_project_page(request, project_name):
                                    "private": normalize_visibility_field(project['private']),
                                    "project_members": memberString,
                                    "publication_link": publication_link,
+                                   "keep_current": bool(project.get('keep_current')),
                                    "AA_version": AAVersion,
                                    "ASP_version": ASPVersion,
                                    "AC_version": ACVersion,
@@ -6635,6 +6637,7 @@ def build_project_document(project, form, form_dict, user, runs, project_tar_id,
     project['views'] = 0
     project['downloads'] = 0
     project['alias_name'] = form_dict['alias']
+    project['keep_current'] = bool(form_dict.get('keep_current'))
     project['sample_count'] = len(runs)
 
     # Preserve subscribers from previous version if provided
