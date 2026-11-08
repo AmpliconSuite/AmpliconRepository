@@ -45,12 +45,22 @@ def _site(machine, name):
 
 def cmd_plan(args):
     machine = Machine.load(args.config)
+    site = _site(machine, args.site)
     wanted = [plan_module.wanted_from_argument(p) for p in args.project or []]
     if args.projects:
         wanted += plan_module.read_project_file(args.projects)
+    listed = None
     if not wanted:
-        raise SystemExit('Name projects with --projects FILE or --project ID_OR_NAME.')
-    plan = plan_module.build_plan(wanted, _site(machine, args.site))
+        try:
+            wanted = plan_module.wanted_from_site(site.keep_current_list())
+        except SiteError as error:
+            raise SystemExit('Could not read the keep-current list: %s' % error)
+        listed = len(wanted)
+    wanted += [plan_module.wanted_from_argument(p, plan_module.INCLUDED) for p in args.include or []]
+    if not wanted:
+        raise SystemExit('Nothing to plan: %s\'s keep-current list is empty and nothing was '
+                         'included.' % args.site)
+    plan = plan_module.build_plan(wanted, site, exclude=args.exclude or [], listed=listed)
     plan_module.save_plan(plan, machine.plan_path)
     print(plan_module.format_plan(plan))
     print('\nSaved to %s' % machine.plan_path)
@@ -130,8 +140,14 @@ def build_parser():
 
     plan = commands.add_parser('plan', help='the dry run: what would be updated')
     plan.add_argument('--site', choices=sorted(SITES), default='prod')
-    plan.add_argument('--projects', help='TSV with project_name and/or latest_id columns')
-    plan.add_argument('--project', action='append', help='a project id or exact name; repeatable')
+    plan.add_argument('--projects', help='TSV with project_name and/or latest_id columns, '
+                      'used instead of the site\'s keep-current list')
+    plan.add_argument('--project', action='append',
+                      help='a project id or exact name, instead of the site\'s list; repeatable')
+    plan.add_argument('--include', action='append',
+                      help='a project id or exact name to add to the list; repeatable')
+    plan.add_argument('--exclude', action='append',
+                      help='a project id or exact name to leave out; repeatable')
     plan.set_defaults(func=cmd_plan)
 
     preflight = commands.add_parser('preflight', help='check tools, solver, references, disk and site')

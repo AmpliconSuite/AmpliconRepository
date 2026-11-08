@@ -325,7 +325,7 @@ def run_plan(plan, machine, tools, site, only=None, allow_untested_tool=False):
         if entry['status'] not in allowed:
             log('  skipped: %s. %s' % (entry['status'], entry.get('note') or ''))
             continue
-        if entry['id'] not in heads:
+        if not plan_module.is_head(site, heads, entry['id']):
             log('  FAILED: this project has a newer version than the plan. Run `plan` again.')
             failures += 1
             continue

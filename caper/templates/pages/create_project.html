@@ -120,6 +120,8 @@
               <br>
               <br>
               <div style="border-top: 1px solid #000; margin: 20px 0;"></div>
+          {% elif field.name == 'keep_current' %}
+              {% include "includes/keep_current_field.html" %}
           {% else %}
             {% if field.name != 'accept_license' %}
               {{field | as_crispy_field }}

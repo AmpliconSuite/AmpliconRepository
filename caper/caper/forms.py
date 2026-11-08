@@ -13,6 +13,38 @@ from crispy_forms.layout import Submit, Layout, Field
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
+# Off unless someone ticks it. Belongs to the project, not to one version
+# (project_fields.CHAIN_LEVEL), so a new version and a promotion both carry it.
+KEEP_CURRENT_LABEL = "Keep this project's classifications up to date"
+KEEP_CURRENT_HELP = (
+    "When a new version of AmpliconClassifier is released, site admins may re-run it on "
+    "this project's results and add the output as a new version. A person reviews the "
+    "changes before anything is added, and earlier versions stay in Project History. "
+    "Only classifications are redone; your AmpliconArchitect results are not changed. "
+    "Not available for private projects.")
+KEEP_CURRENT_NOT_PRIVATE = ("Private projects can't be kept up to date. Make the project public "
+                            "or hidden public, or untick this box.")
+
+
+def keep_current_field():
+    return forms.BooleanField(label=KEEP_CURRENT_LABEL, required=False,
+                              widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+                              help_text=KEEP_CURRENT_HELP)
+
+
+def check_keep_current_not_private(form):
+    """Public and hidden-public projects only. A private project's data stays with its
+    members, so admins don't download it for updates, and its name stays out of the
+    operator's plan files."""
+    from .visibility import (is_project_hidden_public, is_project_private,
+                             normalize_visibility_field)
+
+    data = form.cleaned_data
+    visibility = normalize_visibility_field(data.get('private'))
+    if (data.get('keep_current') and is_project_private(visibility)
+            and not is_project_hidden_public(visibility)):
+        form.add_error('keep_current', KEEP_CURRENT_NOT_PRIVATE)
+
 
 class RunForm(forms.ModelForm):
     accept_license = forms.BooleanField(
@@ -23,10 +55,11 @@ class RunForm(forms.ModelForm):
         help_text=
             'Click checkbox to acknowledge and accept the terms of the license agreement.',
     )
+    keep_current = keep_current_field()
 
     class Meta:
         model = Run
-        fields = ('project_name','description','publication_link','private','project_members', 'accept_license', 'alias')
+        fields = ('project_name','description','publication_link','private','project_members', 'accept_license', 'alias', 'keep_current')
         labels = {
             'private': 'Visibility'
         }
@@ -38,6 +71,11 @@ class RunForm(forms.ModelForm):
                 '&nbsp;Only you and project members may edit the project. Visibility settings can be updated later.'
             ),
         }
+
+    def clean(self):
+        cleaned = super().clean()
+        check_keep_current_not_private(self)
+        return cleaned
 
     def __init__(self, *args, **kwargs):
         super(RunForm, self).__init__(*args, **kwargs)
@@ -64,6 +102,7 @@ class UpdateForm(forms.ModelForm):
         widget = forms.CheckboxInput(),
         help_text = 'The default behavior is to add samples to the current project.'
     )
+    keep_current = keep_current_field()
     ASP_version = forms.CharField(
         required=False,
         label="AmpliconSuite-pipeline version(s)",
@@ -92,7 +131,7 @@ class UpdateForm(forms.ModelForm):
 
     class Meta:
         model = Run
-        fields = ('project_name', 'description', 'publication_link', 'private', 'project_members', 'accept_license', 'alias', 'ASP_version','AC_version', 'AA_version', 'CoRAL_version')
+        fields = ('project_name', 'description', 'publication_link', 'private', 'project_members', 'accept_license', 'alias', 'keep_current', 'ASP_version','AC_version', 'AA_version', 'CoRAL_version')
         labels = {
             'private': 'Visibility'
         }
@@ -105,6 +144,11 @@ class UpdateForm(forms.ModelForm):
             ),
         }
     
+    def clean(self):
+        cleaned = super().clean()
+        check_keep_current_not_private(self)
+        return cleaned
+
     def __init__(self, *args, **kwargs):
         super(UpdateForm, self).__init__(*args, **kwargs)
         self.fields['description'].required = False
@@ -125,7 +169,7 @@ class OldVersionEditForm(forms.Form):
     """The fields a superseded version may still have corrected.
 
     Each one describes that version alone. Fields project_fields.CHAIN_LEVEL
-    declares -- title, visibility, members, alias, publication link -- belong to
+    declares -- title, visibility, members, alias, publication link, keep_current -- belong to
     the project as a whole and are edited on the current version;
     samples and data cannot change without making a new version, and a new
     version made from an old one would fork the history.

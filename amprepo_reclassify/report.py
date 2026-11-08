@@ -5,6 +5,7 @@ import re
 from collections import defaultdict
 
 from .archive import ProjectError
+from .plan import describe_list
 
 # The site's record limit is 16 MiB (16.78 MB). On 2026-11-06 prod's documents were 0.62 (Tang)
 # and 0.69 (TCGA) of the local run.json. Metadata adds to that, and a local run can't see it, so
@@ -222,7 +223,9 @@ def project_report(result):
 def combined_summary(plan, states):
     """One table across a run, then everything that needs a look."""
     lines = ['# Change summary to AC %s' % plan['target_ac'], '',
-             'Site: %s. Plan made %s.' % (plan['site'], plan['created']), '',
+             'Site: %s. Plan made %s.' % (plan['site'], plan['created'])]
+    lines += describe_list(plan) + [
+             '',
              '| Project | State | Samples | ecDNA+ samples | BFB+ samples | ecDNA features '
              '| BFB features | Amplicons changed | Archive MB | Files not in old archive MB |',
              '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']

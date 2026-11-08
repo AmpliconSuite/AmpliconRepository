@@ -131,6 +131,10 @@ class FakeSite:
     def list_projects(self):
         return [{'id': head, 'is_latest_version': True} for head in self.heads]
 
+    def project(self, project_id):
+        """Only what the listing shows, unless a test adds more."""
+        raise SiteError('dev: HTTP 404 for /projects/%s/' % project_id)
+
     def archive_size(self, project_id):
         return self.sizes.get(project_id, 1000)
 
@@ -1251,3 +1255,132 @@ def test_upload_needs_the_plans_site_and_a_token(built, monkeypatch):
         cli.main(['--config', config, 'upload', '--target', 'dev'])
     with pytest.raises(SystemExit):
         cli.main(['--config', config, 'upload'])
+
+
+# ---- the site's keep-current list ----
+
+HEAD_B = dict(HEAD_A, id=ID_B, project_name='Beta', previous_versions=[])
+ID_PRIVATE = 'd' * 24
+
+
+def _site_plan(listed, readable, include=(), exclude=()):
+    """A plan the way `plan --site` makes one with no project file."""
+    site = FakeSite(None)
+    site.list_projects = lambda: readable
+    wanted = plan.wanted_from_site(listed)
+    wanted += [plan.wanted_from_argument(value, plan.INCLUDED) for value in include]
+    return plan.build_plan(wanted, site, exclude=exclude, listed=len(listed))
+
+
+def _row(head):
+    return {'id': head['id'], 'project_name': head['project_name'], 'visibility': 'public',
+            'sample_count': 3}
+
+
+def test_the_site_list_is_the_plan():
+    made = _site_plan([_row(HEAD_A), _row(HEAD_B)], [HEAD_A, HEAD_B])
+    assert [(e['name'], e['source']) for e in made['projects']] == [
+        ('Alpha', plan.FROM_SITE), ('Beta', plan.FROM_SITE)]
+    assert made['list'] == {'from_site': True, 'site_count': 2, 'included': [], 'excluded': []}
+    assert "2 on dev's keep-current list" in plan.format_plan(made)
+
+
+@pytest.mark.parametrize('value', ['Beta', ID_B])
+def test_exclude_takes_a_name_or_an_id(value):
+    made = _site_plan([_row(HEAD_A), _row(HEAD_B)], [HEAD_A, HEAD_B], exclude=[value])
+    assert [e['name'] for e in made['projects']] == ['Alpha']
+    assert made['list']['excluded'] == [{'value': value, 'matched': ['Beta']}]
+    assert 'excluded by hand: Beta' in plan.format_plan(made)
+
+
+def test_exclude_takes_an_older_versions_id_too():
+    made = _site_plan([_row(HEAD_A)], [HEAD_A], exclude=[ID_OLD])
+    assert made['projects'] == []
+
+
+def test_an_exclude_that_matches_nothing_is_said_not_ignored():
+    made = _site_plan([_row(HEAD_A)], [HEAD_A], exclude=['Typo'])
+    assert len(made['projects']) == 1
+    assert '--exclude Typo matched nothing' in plan.format_plan(made)
+
+
+def test_include_adds_to_the_list_once():
+    made = _site_plan([_row(HEAD_A)], [HEAD_A, HEAD_B], include=['Beta', 'Alpha'])
+    assert sorted((e['name'], e['source']) for e in made['projects']) == [
+        ('Alpha', plan.FROM_SITE), ('Beta', plan.INCLUDED)]
+    assert made['list']['included'] == ['Beta']
+
+
+def test_a_listed_project_the_token_cannot_read_is_marked_not_dropped():
+    hidden = {'id': ID_PRIVATE, 'project_name': 'Hidden', 'visibility': 'hidden_public', 'sample_count': 9}
+    made = _site_plan([_row(HEAD_A), hidden], [HEAD_A])
+    entry = next(e for e in made['projects'] if e['name'] == 'Hidden')
+    assert entry['status'] == plan.NO_ACCESS and entry['id'] == ID_PRIVATE
+    assert 'admin' in entry['note']
+
+
+def test_a_hidden_public_project_missing_from_the_listing_is_read_by_id(monkeypatch):
+    """The listing leaves out hidden-public projects the caller isn't a member of."""
+    hidden_head = dict(HEAD_A, id=ID_PRIVATE, project_name='Hidden', previous_versions=[])
+    site = FakeSite(None)
+    site.list_projects = lambda: [HEAD_A]
+    site.project = lambda project_id: hidden_head if project_id == ID_PRIVATE else {}
+    row = {'id': ID_PRIVATE, 'project_name': 'Hidden', 'visibility': 'hidden_public', 'sample_count': 3}
+    made = plan.build_plan(plan.wanted_from_site([row]), site, listed=1)
+    assert [(e['name'], e['status']) for e in made['projects']] == [('Hidden', plan.UPDATE)]
+    assert plan.is_head(site, {ID_A}, ID_PRIVATE)
+    hidden_head['is_latest_version'] = False
+    assert not plan.is_head(site, {ID_A}, ID_PRIVATE)
+
+
+def test_a_given_list_still_says_so():
+    site = FakeSite(None)
+    site.list_projects = lambda: [HEAD_A]
+    made = plan.build_plan([plan.wanted_from_argument('Alpha')], site)
+    assert made['list']['from_site'] is False
+    assert "not dev's keep-current list" in plan.format_plan(made)
+
+
+def test_the_change_summary_names_the_exceptions():
+    made = _site_plan([_row(HEAD_A), _row(HEAD_B)], [HEAD_A, HEAD_B], exclude=['Beta'])
+    text = report.combined_summary(made, {})
+    assert "1 on dev's keep-current list" not in text
+    assert "2 on dev's keep-current list" in text and 'excluded by hand: Beta' in text
+
+
+def test_reading_the_list_posts_with_the_token(post_server):
+    server, site = post_server
+    server.answers.append((200, {'projects': [_row(HEAD_A)]}, {}))
+    assert site.keep_current_list() == [_row(HEAD_A)]
+    assert server.posts[0]['path'] == '/upload_api/keep-current/'
+    assert server.posts[0]['token'] == 'Token secret'
+
+
+def test_reading_the_list_needs_a_token():
+    with pytest.raises(SiteError, match='admin token'):
+        Site('dev', token=None, base_url='http://127.0.0.1:1').keep_current_list()
+
+
+def test_plan_with_no_list_given_reads_the_sites(tmp_path, monkeypatch):
+    from amprepo_reclassify import cli
+
+    machine = Machine(workdir=str(tmp_path / 'work'), jobs=1, bfb_threads=1)
+    os.makedirs(machine.workdir)
+    config = str(tmp_path / 'machine.json')
+    machine.save(config)
+    site = FakeSite(None)
+    site.list_projects = lambda: [HEAD_A, HEAD_B]
+    site.keep_current_list = lambda: [_row(HEAD_A), _row(HEAD_B)]
+    monkeypatch.setattr(cli, '_site', lambda machine, name: site)
+
+    assert cli.main(['--config', config, 'plan', '--site', 'dev', '--exclude', 'Beta']) == 0
+    saved = plan.load_plan(machine.plan_path)
+    assert [e['name'] for e in saved['projects']] == ['Alpha']
+
+    assert cli.main(['--config', config, 'plan', '--site', 'dev', '--project', 'Beta']) == 0
+    saved = plan.load_plan(machine.plan_path)
+    assert [e['name'] for e in saved['projects']] == ['Beta'] and not saved['list']['from_site']
+
+    site.keep_current_list = lambda: []
+    with pytest.raises(SystemExit, match='list is empty'):
+        cli.main(['--config', config, 'plan', '--site', 'dev'])

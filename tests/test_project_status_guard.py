@@ -211,6 +211,12 @@ ALLOWED = {
      "new_val = { \"$set\": {'current': status_flags(SUPERSEDED)['current'],"):
         "project_update() clears 'current' only: SOFT_DELETED -> SUPERSEDED",
 
+    # -- a key that happens to be spelled 'current' -----------------------
+    (os.path.join('caper', 'caper', 'project_replace.py'),
+     "'current': {'id': str(project['_id']), 'samples': project.get('sample_count'),"):
+        "the dry run's answer describing the version being replaced; a key in "
+        "a result, not a status flag or a query",
+
     # -- the one write with no status to name -----------------------------
     (os.path.join('caper', 'caper', 'views.py'),
      "'current': False,"):

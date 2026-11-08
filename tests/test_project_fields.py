@@ -70,7 +70,7 @@ def test_every_field_measured_on_prod_or_dev_is_classified():
 
 
 #: Fields written by code newer than the census, each named on purpose.
-ADDED_SINCE_THE_CENSUS = frozenset({'publication_tag'})
+ADDED_SINCE_THE_CENSUS = frozenset({'publication_tag', 'keep_current'})
 
 
 def test_nothing_is_declared_that_was_never_seen():
@@ -150,8 +150,10 @@ def test_what_the_old_hand_written_list_got_wrong_in_both_directions():
 
     # Chain-level and forgotten: deleting a renamed version used to revert the
     # project's name.
+    # keep_current came later (2026-11-07), and was added to the declared set
+    # rather than to a list here, which is the point.
     assert CARRIED_ON_PROMOTION - old_hand_written_list == {'project_name',
-                                                            'alias'}
+                                                            'alias', 'keep_current'}
     # Per version and copied anyway, which is what made the total unsummable.
     assert old_hand_written_list - CARRIED_ON_PROMOTION == {'downloads'}
 
