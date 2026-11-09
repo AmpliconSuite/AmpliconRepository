@@ -166,7 +166,13 @@ Under "Notes" it lists what the review should see but that holds nothing back:
   than the results, or AC's defaults, with the site's reference
 - non-default AC flags carried over from the original run. Flags AC already has on by default,
   such as `--report_complexity` in AC 2.0.1, aren't listed.
-- samples that had no CNV BED in the site's archive to begin with
+- CNV BEDs taken from a sample's own CNVkit output because run.json named none. That output
+  holds the same file, and the tool takes it only when there is exactly one.
+- samples that have no CNV BED anywhere in the site's archive
+
+A built project is rebuilt, keeping its download, when its build no longer stands: the AC options
+detected from its input have changed, AC's output fails a check, or a CNV BED is now found that the
+build lacks.
 
 When a new version of this tool changes these checks, `run` reports each built project again from
 what it has already built. It doesn't download anything or run AC again, and it leaves a project

@@ -343,7 +343,7 @@ def run_plan(plan, machine, tools, site, only=None):
             log('  Slurm job %s is still in the queue, so this follows it' % job_id)
             running[job_id] = project
             continue
-        project.restart_if_ac_options_changed() or project.restart_if_ac_output_refused()
+        project.restart_if_stale()
         if project.is_built():
             log('  already built: %s' % project.state['result']['archive'])
             continue

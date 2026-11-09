@@ -282,6 +282,61 @@ def test_solver_fallback_stops_the_project_not_the_batch(workspace, monkeypatch)
     assert workspace.ac_calls.read_text().count('--ref') == 2
 
 
+def _cnvkit_archive(path, beds):
+    """S1's run.json names no CNV BED, and its CNVkit tarball holds `beds`."""
+    inner = io.BytesIO()
+    with tarfile.open(fileobj=inner, mode='w:gz') as tar:
+        for name in beds:
+            _add(tar, name, 'chr7 1 2 9\n')
+    manifest = {'runs': {'run': [
+        {'Sample name': 'S1', 'Reconstruction directory': 'samples/S1/S1_AA_results',
+         'CNV BED file': 'Not Provided'},
+        {'Sample name': 'S2', 'Reconstruction directory': 'Not Provided',
+         'CNV BED file': 'samples/S2/S2_CNV_CALLS.bed'}]}}
+    make_archive(path, manifest=manifest)
+    with tarfile.open(path) as old:
+        members = [(m, old.extractfile(m).read()) for m in old if m.isfile()
+                   and m.name != 'results/samples/S1/S1_CNV_CALLS.bed']
+    with tarfile.open(path, 'w:gz') as tar:
+        for member, data in members:
+            tar.addfile(member, io.BytesIO(data))
+        info = tarfile.TarInfo('results/samples/S1/S1_cnvkit_output.tar.gz')
+        info.size = len(inner.getvalue())
+        tar.addfile(info, io.BytesIO(inner.getvalue()))
+    return path
+
+
+def test_a_cnv_bed_in_the_samples_cnvkit_output_is_used(workspace, tmp_path):
+    # Named for the sample before a rename, as in prod's DCIS FISH comparison samples.
+    workspace.site.source = _cnvkit_archive(str(tmp_path / 'p.tar.gz'),
+                                            ['S1_cnvkit_output/old_S1.cs_CNV_CALLS.bed'])
+    _, failures = workspace.run()
+    assert failures == 0, workspace.state()['failed']
+    result = workspace.state()['result']
+    assert (result['cnv_beds'], result['cnv_beds_from_cnvkit']) == (2, 1)
+    assert any('1 sample(s) taken from their CNVkit output' in n for n in report.notes(result))
+    with tarfile.open(result['archive']) as tar:
+        assert 'results/samples/S1/S1_CNV_CALLS.bed' in tar.getnames()
+
+
+def test_two_cnv_beds_in_a_cnvkit_output_are_not_guessed_between(tmp_path):
+    root = _unpack_path(_cnvkit_archive(str(tmp_path / 'p.tar.gz'), ['a/X_CNV_CALLS.bed', 'a/Y_CNV_CALLS.bed']),
+                        tmp_path)
+    assert not archive.has_cnv_bed(archive.discover_samples(root)['S1'])
+
+
+def test_a_build_without_a_cnv_bed_it_could_have_had_is_rebuilt(workspace, tmp_path):
+    workspace.site.source = _cnvkit_archive(str(tmp_path / 'p.tar.gz'), ['o/S1_CNV_CALLS.bed'])
+    workspace.run()
+    os.remove(os.path.join(workspace.machine.projects_dir, ID_A, 'stage', 'S1', 'S1_CNV_CALLS.bed'))
+    _, failures = workspace.run()
+    assert failures == 0
+    assert workspace.ac_calls.read_text().count('--ref') == 2
+    assert workspace.site.downloads == 1
+    workspace.run()
+    assert workspace.ac_calls.read_text().count('--ref') == 2, 'and only once'
+
+
 def test_lost_bfbarchitect_outputs_stop_the_project(workspace, monkeypatch):
     monkeypatch.setenv('STUB_AC_SAYS', 'WARNING - Could not write BFBArchitect outputs for '
                                        'x/S1_amplicon1_region1: no display name')
@@ -464,6 +519,12 @@ def test_summary_shows_built_failed_and_concerns(workspace, monkeypatch):
 
 
 # ---- discovery and settings ----
+
+def _unpack_path(path, tmp_path):
+    root = str(tmp_path / 'unpacked')
+    archive.extract(path, root)
+    return root
+
 
 def _unpack(tmp_path, **kwargs):
     root = str(tmp_path / 'unpacked')

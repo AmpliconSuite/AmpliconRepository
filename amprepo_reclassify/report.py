@@ -184,6 +184,9 @@ def notes(result):
     flags = [flag for flag in result['flags'] if flag not in AC_FLAGS_DEFAULT_ON]
     if flags:
         found.append('Non-default AC flags, carried over: %s' % ' '.join(flags))
+    if result.get('cnv_beds_from_cnvkit'):
+        found.append('CNV BEDs for %d sample(s) taken from their CNVkit output, as run.json named '
+                     'none' % result['cnv_beds_from_cnvkit'])
     if result['cnv_beds'] != result['discovered_samples']:
         found.append('The site\'s archive has CNV BEDs for %d of %d samples'
                      % (result['cnv_beds'], result['discovered_samples']))

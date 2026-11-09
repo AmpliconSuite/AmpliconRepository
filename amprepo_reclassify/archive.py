@@ -210,7 +210,38 @@ def discover_samples(root):
         home = _sample_home(name, paths)
         if home:
             paths['home'] = home
+        _find_cnv_bed_in_cnvkit_output(paths)
     return kept
+
+
+def _find_cnv_bed_in_cnvkit_output(paths):
+    """A CNV BED for a sample that run.json gave none, from the sample's own CNVkit output.
+
+    It is the same file: on 2026-11-09, in all 8,838 of prod's samples with both, the CNV BED
+    in the CNVkit tarball was byte-identical to the sample's. Taken only when that output holds
+    exactly one, and matched by where it is, not by its name, which keeps a sample's name from
+    before a rename (`LP2102349-DNA_A01_CNV_CALLS.bed` in `melz_LP2102349-DNA_A01`'s tarball).
+    """
+    if paths.get('cnv_calls_bed'):
+        return
+    if paths.get('cnvkit_dir'):
+        beds = [os.path.join(dirpath, name) for dirpath, _, names in os.walk(paths['cnvkit_dir'])
+                for name in names if name.endswith('_CNV_CALLS.bed') and not name.startswith('.')]
+        if len(beds) == 1:
+            paths['cnv_calls_bed'] = beds[0]
+            paths['cnv_bed_from_cnvkit'] = True
+    elif paths.get('cnvkit_tarball'):
+        with tarfile.open(paths['cnvkit_tarball']) as tar:
+            beds = [member.name for member in tar if member.isfile()
+                    and member.name.endswith('_CNV_CALLS.bed')
+                    and not os.path.basename(member.name).startswith('.')]
+        if len(beds) == 1:
+            paths['cnv_bed_member'] = beds[0]
+            paths['cnv_bed_from_cnvkit'] = True
+
+
+def has_cnv_bed(paths):
+    return bool(paths.get('cnv_calls_bed') or paths.get('cnv_bed_member'))
 
 
 def _sample_home(sample, paths):
@@ -306,7 +337,8 @@ def _stage_other_files(paths, sample_dir):
     home = paths.get('home')
     if not home:
         return
-    used = {os.path.realpath(p) for key, p in paths.items() if key != 'home'}
+    used = {os.path.realpath(p) for key, p in paths.items()
+            if key not in ('home', 'cnv_bed_member', 'cnv_bed_from_cnvkit')}
     for name in os.listdir(home):
         source = os.path.join(home, name)
         if os.path.realpath(source) in used:
@@ -327,8 +359,12 @@ def stage_samples(samples, stage_dir):
         os.makedirs(sample_dir)
         _stage_aa(sample, paths, sample_dir)
         _stage_other_files(paths, sample_dir)
+        bed = os.path.join(sample_dir, sample + '_CNV_CALLS.bed')
         if paths.get('cnv_calls_bed'):
-            shutil.copy(paths['cnv_calls_bed'], os.path.join(sample_dir, sample + '_CNV_CALLS.bed'))
+            shutil.copy(paths['cnv_calls_bed'], bed)
+        elif paths.get('cnv_bed_member'):
+            with tarfile.open(paths['cnvkit_tarball']) as tar, open(bed, 'wb') as out:
+                shutil.copyfileobj(tar.extractfile(paths['cnv_bed_member']), out)
         if paths.get('cnvkit_dir'):
             shutil.copytree(paths['cnvkit_dir'], os.path.join(sample_dir, sample + '_cnvkit_output'))
         elif paths.get('cnvkit_tarball'):

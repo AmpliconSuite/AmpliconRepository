@@ -173,6 +173,28 @@ class ProjectRun:
             return True
         return False
 
+    def restart_if_cnv_beds_found(self):
+        """Rebuild a project whose staged input lacks a CNV BED that discovery now finds,
+        keeping its download. Not once its upload has started. Returns True if it restarts."""
+        if ('stage' not in self.state['done'] or self.state.get('upload')
+                or not os.path.isdir(self.unpacked) or not os.path.isdir(self.stage_dir)):
+            return False
+        found = [sample for sample, paths in archive.discover_samples(self.unpacked).items()
+                 if archive.has_cnv_bed(paths) and not os.path.exists(
+                     os.path.join(self.stage_dir, sample, sample + '_CNV_CALLS.bed'))]
+        if not found:
+            return False
+        log('  %d sample(s) now have a CNV BED that the build lacks, first %s, so it starts '
+            'again, keeping the downloaded archive' % (len(found), found[0]))
+        self._restart()
+        return True
+
+    def restart_if_stale(self):
+        """Start again if the build no longer stands: its AC options, its AC output or its
+        CNV BEDs. Returns True if it does."""
+        return (self.restart_if_ac_options_changed() or self.restart_if_ac_output_refused()
+                or self.restart_if_cnv_beds_found())
+
     def _restart(self):
         self._wipe(keep_archive=True)
         self.state = self._fresh_state()
@@ -340,7 +362,8 @@ class ProjectRun:
             local_archive=self.entry.get('local_archive'),
             expected_samples=self.entry.get('samples'),
             discovered_samples=len(samples),
-            cnv_beds=sum(1 for paths in samples.values() if paths.get('cnv_calls_bed')),
+            cnv_beds=sum(1 for paths in samples.values() if archive.has_cnv_bed(paths)),
+            cnv_beds_from_cnvkit=sum(1 for paths in samples.values() if paths.get('cnv_bed_from_cnvkit')),
             calls=report.compare_calls(old_calls, new_calls), report_version=REPORT_VERSION)
         text = report.project_report(result)
         path = os.path.join(self.machine.output_dir, self.name + '_reclass_report.md')
@@ -357,7 +380,7 @@ class ProjectRun:
         self._step('download', self._download)
 
     def execute(self, offline=False):
-        self.restart_if_ac_options_changed() or self.restart_if_ac_output_refused()
+        self.restart_if_stale()
         if self.is_built():
             log('  already built: %s' % self.state['result']['archive'])
             return
