@@ -1571,6 +1571,7 @@ def test_a_named_conda_environment_is_activated_for_each_tool(tmp_path):
     assert machine.tool_prefix()[-2:] == ['/c/etc/profile.d/conda.sh', 'tools']
     script = slurm.job_script(machine, '/w/code/x', ['job', '/w/spec.json'])
     assert 'conda activate tools' in script and 'unset PYTHONPATH' in script
+    assert 'unset DISPLAY' in script
     path = tmp_path / 'job.sh'
     path.write_text(script)
     import subprocess

@@ -104,6 +104,9 @@ def job_script(machine, code_dir, args):
              '# Written by amprepo_reclassify, and again on each submission.',
              'set -eo pipefail',
              'unset PYTHONPATH PYTHONHOME',
+             # The submitting machine's display means nothing on another node, and a plotting
+             # library that tries it there prints X authorization errors.
+             'unset DISPLAY',
              'export PYTHONNOUSERSITE=1']
     data_repo = os.environ.get('AA_DATA_REPO')
     if data_repo:
