@@ -244,6 +244,35 @@ def test_new_tools_restart_a_project_but_keep_its_download(workspace):
     assert workspace.state()['tools'] == 'stub tools 2'
 
 
+def test_a_change_in_detected_ac_options_rebuilds_the_project(workspace, monkeypatch):
+    workspace.run()
+    assert workspace.state()['ac_options'] == {'ref': 'GRCh38', 'flags': []}
+    recover = archive.recover_settings
+
+    def fixed_detection(root, reference):
+        settings = recover(root, reference)
+        return dict(settings, flags=settings['flags'] + ['--report_complexity'])
+
+    monkeypatch.setattr(archive, 'recover_settings', fixed_detection)
+    _, failures = workspace.run()
+    assert failures == 0
+    calls = workspace.ac_calls.read_text().splitlines()
+    assert len(calls) == 2 and '--report_complexity' in calls[1]
+    assert workspace.site.downloads == 1
+    assert workspace.state()['ac_options']['flags'] == ['--report_complexity']
+
+
+def test_a_build_that_did_not_record_its_ac_options_is_rebuilt(workspace):
+    workspace.run()
+    state = workspace.state()
+    del state['ac_options']
+    pipeline.save_state(workspace.machine, ID_A, state)
+    _, failures = workspace.run()
+    assert failures == 0
+    assert workspace.ac_calls.read_text().count('--ref') == 2
+    assert workspace.site.downloads == 1
+
+
 def test_solver_fallback_stops_the_project_not_the_batch(workspace, monkeypatch):
     monkeypatch.setenv('STUB_AC_SAYS', 'Gurobi unavailable; retrying with cbc')
     _, failures = workspace.run(workspace.entry(), workspace.entry(ID_B, 'Project B'))
@@ -419,6 +448,24 @@ def test_settings_come_from_the_log_and_keep_only_semantic_flags(tmp_path):
     assert settings['ref'] == 'GRCh38'
     assert settings['flags'] == ['--min_flow', '3', '--filter_similar']
     assert settings['source'] == 'AC log' and settings['settings_ac_version'] == '2.0.0'
+
+
+def test_every_classification_option_is_carried_from_a_real_log_line(tmp_path):
+    log = ('2026-07-10 19:17:39,869 - INFO - Command: /x/amplicon_classifier.py --ref GRCh37 '
+           '--input HMF.input -o out/HMF --jobs 9 --bfb_threads 2 --verbose_classification '
+           '--no_LC_filter --force --no_bfbarchitect --report_complexity --min_size=10000\n'
+           'AmpliconClassifier 2.0.0\n')
+    settings = archive.recover_settings(_unpack(tmp_path, ac_log=log), 'hg19')
+    assert settings['flags'] == ['--no_LC_filter', '--force', '--no_bfbarchitect',
+                                 '--report_complexity', '--min_size', '10000']
+    assert settings['notes'] == []
+
+
+def test_an_option_the_tool_does_not_know_is_flagged_not_dropped_silently(tmp_path):
+    log = 'amplicon_classifier.py --ref GRCh38 --plotstyle noplot --filter_similar\nAmpliconClassifier 1.1.3\n'
+    settings = archive.recover_settings(_unpack(tmp_path, ac_log=log), 'hg19')
+    assert settings['flags'] == ['--filter_similar']
+    assert any('--plotstyle' in note and "doesn't carry" in note for note in settings['notes'])
 
 
 def test_default_config_line_is_normal(tmp_path):
@@ -1555,6 +1602,26 @@ def test_a_job_still_queued_is_followed_not_submitted_again(cluster, monkeypatch
     assert _slurm_run(cluster) == 1
     assert cluster.slurm_calls() == []
     assert 'job 77 ended before the project finished' in cluster.state()['failed']
+
+
+def test_a_queued_job_is_never_restarted_under_it(cluster, monkeypatch):
+    # A state from before AC options were recorded would restart the project, but its job is
+    # still working in the project's directory.
+    project_dir = os.path.join(cluster.machine.projects_dir, ID_A)
+    os.makedirs(os.path.join(project_dir, 'ac_new'))
+    working = os.path.join(project_dir, 'ac_new', 'in_progress')
+    open(working, 'w').close()
+    with open(os.path.join(project_dir, slurm.JOB_RECORD), 'w') as handle:
+        json.dump({'jobs': [{'id': '77'}]}, handle)
+    pipeline.save_state(cluster.machine, ID_A, {
+        'id': ID_A, 'tools': environment.tools_for(cluster.machine).description, 'source': 'site',
+        'done': ['download', 'unpack', 'control', 'stage', 'classify'], 'validation': {},
+        'failed': None, 'result': None})
+    answers = iter([{'77'}, set()])
+    monkeypatch.setattr(slurm, 'queued', lambda: next(answers))
+    _slurm_run(cluster)
+    assert os.path.exists(working)
+    assert cluster.slurm_calls() == []
 
 
 def test_preflight_checks_each_available_node(cluster):

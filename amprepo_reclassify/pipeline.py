@@ -54,6 +54,10 @@ def refuse_solver_fallback(ac_dir):
                            'First: %s' % (len(hits), hits[0]))
 
 
+def _describe_options(options):
+    return ' '.join(['--ref %s' % options['ref']] + options['flags'])
+
+
 def safe_name(name, fallback):
     return re.sub(r'[^A-Za-z0-9_.-]+', '_', name).strip('_') or fallback
 
@@ -83,8 +87,7 @@ class ProjectRun:
 
     def _load_state(self):
         os.makedirs(self.dir, exist_ok=True)
-        fresh = {'id': self.entry['id'], 'tools': self.tools.description, 'source': self.source,
-                 'done': [], 'validation': {}, 'failed': None, 'result': None}
+        fresh = self._fresh_state()
         try:
             with open(self._state_path()) as handle:
                 state = json.load(handle)
@@ -94,13 +97,58 @@ class ProjectRun:
         if changed_source or state.get('tools') != self.tools.description:
             log('  %s changed since this project\'s last run, so it starts again'
                 % ('the input archive' if changed_source else 'tools'))
-            for name in os.listdir(self.dir):
-                path = os.path.join(self.dir, name)
-                if path == self.tgz and not changed_source:
-                    continue
-                shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
+            self._wipe(keep_archive=not changed_source)
             return fresh
         return state
+
+    def _fresh_state(self):
+        return {'id': self.entry['id'], 'tools': self.tools.description, 'source': self.source,
+                'done': [], 'validation': {}, 'failed': None, 'result': None}
+
+    def _wipe(self, keep_archive):
+        for name in os.listdir(self.dir):
+            path = os.path.join(self.dir, name)
+            if path == self.tgz and keep_archive:
+                continue
+            shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
+
+    def ac_settings(self):
+        """How AC is to be run on this project: the settings recovered from the unpacked input,
+        and the flags to pass, with the project list's extra flags after them."""
+        settings = archive.recover_settings(self.unpacked, self.entry.get('reference'))
+        flags = list(settings['flags'])
+        flags += [f for f in (self.entry.get('extra_ac_flags') or '').split() if f not in flags]
+        return settings, flags
+
+    def _ac_options(self, settings, flags):
+        return {'ref': self._reference(settings), 'flags': flags}
+
+    def restart_if_ac_options_changed(self):
+        """Keep a classified project only while the AC options detected from its input now are
+        the ones it was classified with. A fix to how options are detected then rebuilds exactly
+        the projects it changes. Returns True if the project starts again.
+
+        Not for a project whose Slurm job may still be running: this deletes its working files."""
+        if 'classify' not in self.state['done']:
+            return False
+        before = self.state.get('ac_options')
+        now = self._ac_options(*self.ac_settings()) if os.path.isdir(self.unpacked) else None
+        if before is not None and now == before:
+            return False
+        if before is None:
+            why = 'its state does not record the AC options it was classified with'
+        elif now is None:
+            why = 'its unpacked input is missing, so its AC options cannot be checked'
+        else:
+            why = 'AC options detected now (%s) differ from the ones it was classified with (%s)' % (
+                _describe_options(now), _describe_options(before))
+        log('  %s, so it starts again, keeping the downloaded archive' % why)
+        self._wipe(keep_archive=True)
+        self.state = self._fresh_state()
+        if os.path.exists(self.tgz) and not self.entry.get('local_archive'):
+            self.state['done'].append('download')
+        self._save_state()
+        return True
 
     def _save_state(self):
         partial = self._state_path() + '.tmp'
@@ -175,6 +223,7 @@ class ProjectRun:
         if repeated:
             raise ProjectError('%d AA graph file(s) are staged more than once, first %s. AC would '
                                'classify them twice.' % (len(repeated), repeated[0]))
+        self.state['ac_options'] = self._ac_options(settings, flags)
         command = self.tools.ac_cmd + ['--ref', ref, '--AA_results', self.stage_dir + '/',
                                        '-o', self.ac_prefix, '--verbose_classification',
                                        '--jobs', str(self.machine.jobs),
@@ -262,6 +311,7 @@ class ProjectRun:
         self._step('download', self._download)
 
     def execute(self, offline=False):
+        self.restart_if_ac_options_changed()
         if self.state['result']:
             log('  already built: %s' % self.state['result']['archive'])
             return
@@ -278,9 +328,7 @@ class ProjectRun:
             where = 'the local archive' if self.entry.get('local_archive') else 'the archive on the site'
             raise ProjectError('%s has a structural problem, so nothing was run. Fix it there, then '
                                'run again. %d sample(s), first %s' % (where, len(problems), problems[0]))
-        settings = archive.recover_settings(self.unpacked, self.entry.get('reference'))
-        flags = list(settings['flags'])
-        flags += [f for f in (self.entry.get('extra_ac_flags') or '').split() if f not in flags]
+        settings, flags = self.ac_settings()
         log('  %d samples. Settings from %s: --ref %s %s' % (
             len(samples), settings['source'], self._reference(settings),
             ' '.join(flags) or '(no other flags)'))
