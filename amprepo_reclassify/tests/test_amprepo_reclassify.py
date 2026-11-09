@@ -520,7 +520,7 @@ def test_every_classification_option_is_carried_from_a_real_log_line(tmp_path):
            'AmpliconClassifier 2.0.0\n')
     settings = archive.recover_settings(_unpack(tmp_path, ac_log=log), 'hg19')
     assert settings['flags'] == ['--no_LC_filter', '--force', '--no_bfbarchitect',
-                                 '--report_complexity', '--min_size', '10000']
+                                 '--min_size', '10000']
     assert settings['notes'] == []
 
 
@@ -567,12 +567,13 @@ def test_no_log_falls_back_to_the_site_reference_and_says_so(tmp_path):
     assert any('AC ran with its defaults' in note for note in settings['info'])
 
 
-def test_a_flag_that_ac_has_on_already_is_carried_but_not_flagged(workspace, tmp_path):
+def test_a_flag_that_ac_has_on_already_is_not_passed_or_flagged(workspace, tmp_path):
     log = 'amplicon_classifier.py --ref GRCh38 --report_complexity\nAmpliconClassifier 2.0.0\n'
     workspace.site.source = make_archive(str(tmp_path / 'p.tar.gz'), ac_log=log)
     workspace.run()
     result = workspace.state()['result']
-    assert result['flags'] == ['--report_complexity']
+    assert result['flags'] == []
+    assert '--report_complexity' not in workspace.ac_calls.read_text()
     assert report.concerns(result) == [] and report.notes(result) == []
 
 
