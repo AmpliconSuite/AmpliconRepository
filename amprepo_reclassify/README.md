@@ -204,7 +204,9 @@ If a project gets a newer version after `plan`, `run` refuses it and asks you to
 ## For the next AC release
 
 Change the versions and the commit in `pins.py`, then run `setup` again. A changed tool version
-makes each project start again, apart from its download. The aggregator isn't in `pins.py`: it comes
+makes each project start again, apart from its download. So does a change in the AC options
+detected from a project's input, for example after a fix to how they are read: a project is kept
+only while it was classified with the options detected now. The aggregator isn't in `pins.py`: it comes
 from this repo's `requirements.txt`, so it follows what the site runs. A new aggregator goes to PyPI,
 then prod, and only then should you reclassify.
 

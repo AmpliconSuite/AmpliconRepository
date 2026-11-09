@@ -336,13 +336,15 @@ def run_plan(plan, machine, tools, site, only=None):
             failures += 1
             continue
         project = pipeline.ProjectRun(entry, machine, tools, site)
-        if project.state['result']:
-            log('  already built: %s' % project.state['result']['archive'])
-            continue
         job_id = _last_job(project)
+        # Before anything that could restart it: the job is working in this project's directory.
         if job_id in active:
             log('  Slurm job %s is still in the queue, so this follows it' % job_id)
             running[job_id] = project
+            continue
+        project.restart_if_ac_options_changed()
+        if project.state['result']:
+            log('  already built: %s' % project.state['result']['archive'])
             continue
         waiting.append(project)
     log('\n%d project(s) to submit, %d already in the queue, at most %s at once.'
