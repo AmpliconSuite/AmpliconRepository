@@ -282,6 +282,30 @@ def test_solver_fallback_stops_the_project_not_the_batch(workspace, monkeypatch)
     assert workspace.ac_calls.read_text().count('--ref') == 2
 
 
+def test_lost_bfbarchitect_outputs_stop_the_project(workspace, monkeypatch):
+    monkeypatch.setenv('STUB_AC_SAYS', 'WARNING - Could not write BFBArchitect outputs for '
+                                       'x/S1_amplicon1_region1: no display name')
+    _, failures = workspace.run()
+    assert failures == 1
+    assert 'could not write BFBArchitect outputs for 1 region' in workspace.state()['failed']
+    assert workspace.state()['result'] is None
+
+
+def test_a_build_that_lost_bfbarchitect_outputs_is_rebuilt(workspace, monkeypatch):
+    workspace.run()
+    console = os.path.join(workspace.machine.projects_dir, ID_A, 'ac_new', 'ac_console.out')
+    with open(console, 'a') as handle:
+        handle.write('WARNING - Could not write BFBArchitect outputs for x: no display name\n')
+    _, failures = workspace.run()
+    assert failures == 0
+    assert workspace.ac_calls.read_text().count('--ref') == 2
+    assert workspace.site.downloads == 1
+
+
+def test_ac_plots_without_a_display():
+    assert environment.tool_env()['MPLBACKEND'] == 'Agg'
+
+
 def test_a_nested_copy_of_the_aa_results_stops_the_project_before_any_work(workspace, tmp_path):
     nested = 'results/samples/S1/S1_AA_results/S1_AA_results/S1_AA_results/'
     workspace.site = FakeSite(make_archive(str(tmp_path / 'nested.tar.gz'), extra=[
@@ -1717,7 +1741,7 @@ def test_a_named_conda_environment_is_activated_for_each_tool(tmp_path):
     assert machine.tool_prefix()[-2:] == ['/c/etc/profile.d/conda.sh', 'tools']
     script = slurm.job_script(machine, '/w/code/x', ['job', '/w/spec.json'])
     assert 'conda activate tools' in script and 'unset PYTHONPATH' in script
-    assert 'unset DISPLAY' in script
+    assert 'unset DISPLAY WAYLAND_DISPLAY' in script
     path = tmp_path / 'job.sh'
     path.write_text(script)
     import subprocess

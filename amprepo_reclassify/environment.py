@@ -57,6 +57,10 @@ class Tools:
 def tool_env(path_prefix=''):
     env = {k: v for k, v in os.environ.items() if k not in UNSET}
     env['PYTHONNOUSERSITE'] = '1'
+    # AC only writes plots to files. Without this, matplotlib picks its backend from whatever
+    # display a job inherits: on 2026-11-09, Slurm jobs on oreo and acamas had WAYLAND_DISPLAY
+    # but no DISPLAY, so it chose Tk, which failed, and all 1,587 of their BFB plots were lost.
+    env['MPLBACKEND'] = 'Agg'
     if path_prefix:
         env['PATH'] = path_prefix + os.pathsep + env.get('PATH', '')
     return env

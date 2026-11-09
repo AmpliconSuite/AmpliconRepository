@@ -20,6 +20,8 @@ from .site_api import SiteError
 # AC can't request a solver. BFBArchitect autodetects one and moves to MOSEK or CBC if Gurobi
 # fails, including mid-run, and only logs that. These are its log messages.
 SOLVER_FALLBACK = re.compile(r'Gurobi unavailable|retrying with')
+# AC catches a failure to write BFBArchitect's graph, cycles or plot, and only logs it.
+BFB_OUTPUT_FAILURE = re.compile(r'Could not (write|create) BFBArchitect output')
 STATE_FILE = 'state.json'
 # Raise this when what a project's report checks or notes changes. A project built before then
 # is reported again from what it has built, with no download, AC or rebuild.
@@ -43,18 +45,27 @@ def _run_logged(label, command, path, cwd=None, env=None):
         raise ProjectError('%s exited with %d. Its output is in %s' % (label, process.returncode, path))
 
 
-def refuse_solver_fallback(ac_dir):
-    """Stop if any amplicon in this AC run was solved without Gurobi."""
+def _matching_lines(ac_dir, pattern):
     hits = []
     for dirpath, _, names in os.walk(ac_dir):
         for name in names:
             if name.endswith(('.log', '.out')):
                 with open(os.path.join(dirpath, name), errors='replace') as handle:
-                    hits += ['%s: %s' % (name, line.strip()) for line in handle
-                             if SOLVER_FALLBACK.search(line)]
+                    hits += ['%s: %s' % (name, line.strip()) for line in handle if pattern.search(line)]
+    return hits
+
+
+def check_ac_output(ac_dir):
+    """Stop if any amplicon in this AC run was solved without Gurobi, or lost its BFBArchitect
+    outputs."""
+    hits = _matching_lines(ac_dir, SOLVER_FALLBACK)
     if hits:
         raise ProjectError('%d solver fallback line(s): these results did not all use Gurobi. '
                            'First: %s' % (len(hits), hits[0]))
+    hits = _matching_lines(ac_dir, BFB_OUTPUT_FAILURE)
+    if hits:
+        raise ProjectError('AC could not write BFBArchitect outputs for %d region(s). First: %s'
+                           % (len(hits), hits[0]))
 
 
 def _describe_options(options):
@@ -146,12 +157,28 @@ class ProjectRun:
             why = 'AC options detected now (%s) differ from the ones it was classified with (%s)' % (
                 _describe_options(now), _describe_options(before))
         log('  %s, so it starts again, keeping the downloaded archive' % why)
+        self._restart()
+        return True
+
+    def restart_if_ac_output_refused(self):
+        """Rebuild a project whose AC output the current checks refuse, keeping its download.
+        Not once its upload has started. Returns True if the project starts again."""
+        if 'classify' not in self.state['done'] or self.state.get('upload'):
+            return False
+        try:
+            check_ac_output(self.ac_dir)
+        except ProjectError as error:
+            log('  %s, so it starts again, keeping the downloaded archive' % error)
+            self._restart()
+            return True
+        return False
+
+    def _restart(self):
         self._wipe(keep_archive=True)
         self.state = self._fresh_state()
         if os.path.exists(self.tgz) and not self.entry.get('local_archive'):
             self.state['done'].append('download')
         self._save_state()
-        return True
 
     def is_built(self):
         """True if this project is built and reported by the current checks. One reported by
@@ -246,7 +273,7 @@ class ProjectRun:
                                        '--jobs', str(self.machine.jobs),
                                        '--bfb_threads', str(self.machine.bfb_threads)] + flags
         _run_logged('AC', command, os.path.join(self.ac_dir, 'ac_console.out'), env=self.tools.env())
-        refuse_solver_fallback(self.ac_dir)
+        check_ac_output(self.ac_dir)
         # AC pairs <amplicon>_graph.txt with raw <amplicon>_cycles.txt. An archive with only
         # AC's annotated cycles gives an empty AC.input, and every amplicon would become No amp.
         ac_input = os.path.join(self.ac_dir, 'AC.input')
@@ -330,7 +357,7 @@ class ProjectRun:
         self._step('download', self._download)
 
     def execute(self, offline=False):
-        self.restart_if_ac_options_changed()
+        self.restart_if_ac_options_changed() or self.restart_if_ac_output_refused()
         if self.is_built():
             log('  already built: %s' % self.state['result']['archive'])
             return
