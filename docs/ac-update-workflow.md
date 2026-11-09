@@ -30,7 +30,7 @@ person reviews, then the upload: `upload` refuses while any project in the plan 
 
 | Stage | Does | Writes to |
 |---|---|---|
-| `setup` | Creates a virtual environment with the pinned tools; records this machine's AC threading | local |
+| `setup` | Clones AC at the pinned tag; makes an environment with the pinned tools, or names one; records threading and where projects run | local |
 | `plan` | The dry run: lists each project's latest version, reference, archive size and expected work | local |
 | `preflight` | Checks tools, solver, `$AA_DATA_REPO`, disk, token and site | nothing |
 | `run` | Download, AC, rebuild, validate, report, per project, resumable | local |
@@ -48,6 +48,29 @@ AmpliconArchitect, which this never runs. On 2026-11-06, a clean virtual environ
 with AC from its `v2.0.1` tag, the aggregator and `gurobipy` installed in 21 seconds
 (1.2 GB) and ran 6 samples with Gurobi. AC isn't on PyPI, so it installs from the git
 tag. BFBArchitect and the aggregator are on PyPI.
+
+**Run AC from a source tree at the pinned tag (changed 2026-11-08).** A release is tagged
+on GitHub before it reaches conda, and AC isn't on PyPI, so AC isn't installed into the
+environment at all: `setup` clones the tag, or `--ac-src` names a checkout. The
+environment holds AC's requirements and the other pinned tools, which are all on PyPI,
+so it can be an ordinary named conda environment that a cluster's own tooling copies
+between nodes. Where `run` starts, git checks the checkout's commit and that it has no
+uncommitted changes. A node may have no git, so each job compares the sha256 of every
+tracked AC file with the submitting machine's instead. `preflight` warns when GitHub's
+latest release is newer than the pin. The pin itself changes by hand, per campaign,
+because one campaign has to run one AC.
+
+**Slurm is optional, one job per project.** Without `--executor slurm` nothing changes.
+With it, `run` downloads each archive where it runs, so nodes need no network or token,
+and submits a job for the rest of the project's steps. Nodes need the workdir and the
+AC checkout on shared storage at the same paths, and the environment set up by hand
+before the run; the tool never installs on a node. Jobs run a copy of this package in
+the workdir, because a node may not see the checkout and a long run shouldn't change
+code under running jobs. A job sets AC's `--jobs` from the CPUs it may use
+(`sched_getaffinity`), because some clusters allocate cores while Linux and AC count
+hardware threads. `--at-once` caps concurrent project jobs for the Gurobi licence;
+the safe value depends on the licence and is measured per cluster. Uploads never run
+in a job.
 
 **`preflight` checks `$AA_DATA_REPO` rather than installing references.** The variable
 must be set and hold every reference the project list needs, each with its
@@ -67,7 +90,7 @@ so a full lockfile isn't needed. It may cost some storage between versions made 
 different machines, because file sharing matches on exact bytes.
 
 **Threading is per-machine configuration.** `setup` asks for AC's `--jobs` and
-`--bfb_threads` and stores them in the machine's ignored config file (oreo, 32 threads:
+`--bfb_threads` and stores them in the machine's ignored config file (on a 32-thread machine,
 `--jobs 16 --bfb_threads 2`). `preflight` warns if their product exceeds the machine's
 threads.
 

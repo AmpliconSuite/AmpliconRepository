@@ -257,11 +257,17 @@ class ProjectRun:
 
     # ---- one project ----
 
-    def execute(self):
+    def prepare(self):
+        """The download, on the machine with the network and the token. A Slurm job does the rest."""
+        self._step('download', self._download)
+
+    def execute(self, offline=False):
         if self.state['result']:
             log('  already built: %s' % self.state['result']['archive'])
             return
         self.state['failed'] = None
+        if offline and 'download' not in self.state['done']:
+            raise ProjectError('the archive was not downloaded before this job started')
         self._step('download', self._download)
         self._step('unpack', self._unpack, self.unpacked)
         samples = archive.discover_samples(self.unpacked)
@@ -310,11 +316,10 @@ def load_states(machine, entries):
     return states
 
 
-def run_plan(plan, machine, tools, site, only=None):
-    """Work through a plan, smallest first. One project failing doesn't stop the rest.
-    Returns the number that failed."""
+def runnable(plan, site, only=None):
+    """Each project in the plan to work on now, as (entry, refusal), logging a header for each.
+    A refusal counts as a failure; a skipped project isn't yielded."""
     heads = {p['id'] for p in site.list_projects() if p.get('is_latest_version', True)}
-    failures = 0
     for entry in plan['projects']:
         if only and entry['name'] not in only and entry.get('id') not in only:
             continue
@@ -323,17 +328,32 @@ def run_plan(plan, machine, tools, site, only=None):
             log('  skipped: %s. %s' % (entry['status'], entry.get('note') or ''))
             continue
         if not plan_module.is_head(site, heads, entry['id']):
-            log('  FAILED: this project has a newer version than the plan. Run `plan` again.')
+            yield entry, 'this project has a newer version than the plan. Run `plan` again.'
+            continue
+        yield entry, None
+
+
+def record_failure(project, error):
+    if not isinstance(error, (ProjectError, SiteError)):
+        log(traceback.format_exc())
+    project.state['failed'] = str(error)
+    project._save_state()
+    log('  FAILED: %s' % error)
+
+
+def run_plan(plan, machine, tools, site, only=None):
+    """Work through a plan on this machine, smallest first. One project failing doesn't stop the
+    rest. Returns the number that failed."""
+    failures = 0
+    for entry, refusal in runnable(plan, site, only):
+        if refusal:
+            log('  FAILED: ' + refusal)
             failures += 1
             continue
         project = ProjectRun(entry, machine, tools, site)
         try:
             project.execute()
         except Exception as error:  # a full run takes many hours, so one project can't end it
-            if not isinstance(error, (ProjectError, SiteError)):
-                log(traceback.format_exc())
-            project.state['failed'] = str(error)
-            project._save_state()
-            log('  FAILED: %s' % error)
+            record_failure(project, error)
             failures += 1
     return failures
