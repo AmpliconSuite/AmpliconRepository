@@ -12,6 +12,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -266,8 +267,12 @@ def submit(project, machine, tools, site_name, code_dir, lane=None):
     # Cleared before the job exists, so an old failure can't be read as this job's.
     project.state['failed'] = None
     project._save_state()
-    name = 'amprepo-lane%d' % lane if lane is not None else 'amprepo-%s' % project.entry['id'][:8]
-    command = ['sbatch', '--parsable', '--job-name=%s' % name, '--nodes=1', '--ntasks=1', '--cpus-per-task=%s' % executor['cpus'],
+    # Named for the project so squeue says what is running. A lane's jobs must share a name for
+    # singleton, so there the project name goes in the comment (squeue -o %k).
+    project_name = re.sub(r'[^A-Za-z0-9._-]+', '_', project.entry['name']).strip('_') or project.entry['id']
+    name = 'amprepo-lane%d' % lane if lane is not None else project_name
+    command = ['sbatch', '--parsable', '--job-name=%s' % name, '--comment=%s' % project_name,
+               '--nodes=1', '--ntasks=1', '--cpus-per-task=%s' % executor['cpus'],
                '--mem=%s' % executor['mem'], '--output=%s' % os.path.join(project.dir, 'slurm-%j.out'),
                '--chdir=%s' % project.dir]
     if lane is not None:

@@ -133,10 +133,14 @@ checkout, and changing it doesn't change jobs already running.
 - **CPUs:** a job runs AC with `--jobs` set to the CPUs it may use divided by `--bfb-threads`.
   Linux counts hardware threads, so a 12-core job on a two-thread-per-core node runs AC with
   `--jobs 12 --bfb-threads 2`.
+- **Job names:** each job is named for its project, with anything other than letters, digits,
+  `.`, `_` and `-` turned into `_`. Plain `squeue` shows only the first 8 characters of a name;
+  `squeue -o "%.8i %.10P %.40j %.2t %.10M %R"` shows 40.
 - **`--max-running N`** limits how many project jobs run at once; by default there is no limit.
   Every job is still submitted straight away: the jobs share N names and are submitted with
   `--dependency=singleton`, so Slurm starts a job only when the one before it in its lane has
-  finished. Lanes are per user, so the limit covers all your reclassify runs together. Use it when
+  finished. Those jobs are named for their lane, so the project name is in the job's comment
+  instead (`squeue -o "%.8i %.12j %.40k %.2t %.10M %R"`). Lanes are per user, so the limit covers all your reclassify runs together. Use it when
   a Gurobi licence allows fewer sessions than the cluster has room for. A project solved without
   Gurobi fails either way, as it does when running locally, so it can be run again under a
   lower limit.

@@ -10,6 +10,7 @@ import http.server
 import io
 import json
 import os
+import re
 import sys
 import tarfile
 import textwrap
@@ -1693,7 +1694,9 @@ def test_every_project_is_submitted_and_slurm_schedules_them(cluster):
     calls = [c for c in cluster.slurm_calls() if c[0] == 'sbatch']
     assert len(calls) == 2
     assert not any('--dependency=singleton' in c for c in calls)
-    assert {'--job-name=amprepo-aaaaaaaa', '--job-name=amprepo-bbbbbbbb'} <= {a for c in calls for a in c}
+    names = {a for c in calls for a in c if a.startswith('--job-name=')}
+    assert names == {'--job-name=%s' % re.sub(r'[^A-Za-z0-9._-]+', '_', e['name']) for e in entries}
+    assert '--job-name=Project_B' in names
 
 
 def test_max_running_puts_jobs_in_lanes_slurm_runs_one_at_a_time(cluster):
@@ -1705,6 +1708,7 @@ def test_max_running_puts_jobs_in_lanes_slurm_runs_one_at_a_time(cluster):
     # Both are submitted at once; the shared name and singleton make Slurm run one at a time.
     assert len(calls) == 2
     assert all('--job-name=amprepo-lane0' in c and '--dependency=singleton' in c for c in calls)
+    assert any('--comment=Project_B' in c for c in calls)
 
 
 def test_a_node_with_different_ac_files_runs_nothing(cluster):
