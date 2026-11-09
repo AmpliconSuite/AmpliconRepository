@@ -16,7 +16,7 @@ import threading
 
 import pytest
 
-from amprepo_reclassify import archive, environment, pins, pipeline, plan, report, upload
+from amprepo_reclassify import archive, environment, pins, pipeline, plan, report, slurm, upload
 from amprepo_reclassify.archive import ProjectError
 from amprepo_reclassify.machine import Machine
 from amprepo_reclassify.site_api import Refused, Site, SiteError, USER_AGENT
@@ -1401,3 +1401,187 @@ def test_plan_with_no_list_given_reads_the_sites(tmp_path, monkeypatch):
     site.keep_current_list = lambda: []
     with pytest.raises(SystemExit, match='list is empty'):
         cli.main(['--config', config, 'plan', '--site', 'dev'])
+
+
+# ---- AC from a source tree, and Slurm ----
+
+def _git(path, *args):
+    import subprocess
+    subprocess.run(['git', '-C', str(path), '-c', 'user.name=t', '-c', 'user.email=t@example.test']
+                   + list(args), check=True, capture_output=True)
+
+
+def _ac_checkout(path):
+    """A git tree shaped like AC, with the stub as amplicon_classifier.py."""
+    (path / 'ampclasslib').mkdir(parents=True)
+    (path / 'ampclasslib' / '_version.py').write_text(
+        '__ampliconclassifier_version__ = "%s"\n' % pins.AC_VERSION)
+    (path / 'amplicon_classifier.py').write_text(STUB_AC)
+    (path / 'requirements.txt').write_text('numpy\n')
+    _git(path, 'init', '-q')
+    _git(path, 'add', '.')
+    _git(path, 'commit', '-q', '-m', 'stub')
+    import subprocess
+    return subprocess.run(['git', '-C', str(path), 'rev-parse', 'HEAD'], capture_output=True,
+                          text=True, check=True).stdout.strip()
+
+
+FAKE_PYTHON = '''#!/bin/bash
+# Answers the tool probe with the pinned versions, runs the stub aggregator for -m, and is the
+# real interpreter otherwise.
+case "$*" in *"print('TOOLS "*) echo 'TOOLS %(tools)s'; exit 0;; esac
+if [ "$1" = -I ] && [ "$2" = -m ] && [ "$3" = AmpliconSuiteAggregator ]; then
+  shift 3; exec %(python)s %(asa)s "$@"
+fi
+exec %(python)s "$@"
+'''
+
+FAKE_SBATCH = '''#!%(python)s
+"""Runs the job script at once, as the job would run, and says its id."""
+import json, os, subprocess, sys
+args = sys.argv[1:]
+with open(os.environ['FAKE_SLURM_LOG'], 'a') as log:
+    log.write(json.dumps(['sbatch'] + args) + '\\n')
+options = dict(a[2:].split('=', 1) for a in args if a.startswith('--') and '=' in a)
+counter = os.environ['FAKE_SLURM_LOG'] + '.ids'
+job = str(len(open(counter).read().split()) + 101 if os.path.exists(counter) else 101)
+open(counter, 'a').write(job + '\\n')
+with open(options['output'].replace('%%j', job), 'w') as out:
+    subprocess.run(['bash', args[-1]], cwd=options['chdir'], stdout=out, stderr=subprocess.STDOUT,
+                   env=dict(os.environ, SLURM_JOB_ID=job))
+print(job)
+'''
+
+FAKE_SRUN = '''#!%(python)s
+import json, os, subprocess, sys
+args = sys.argv[1:]
+with open(os.environ['FAKE_SLURM_LOG'], 'a') as log:
+    log.write(json.dumps(['srun'] + args) + '\\n')
+command = args[args.index('bash'):]
+sys.exit(subprocess.run(command, env=dict(os.environ, SLURM_JOB_ID='900')).returncode)
+'''
+
+
+@pytest.fixture
+def cluster(workspace, tmp_path, monkeypatch):
+    """The workspace as a Slurm machine: an AC checkout, a fake interpreter and fake Slurm."""
+    ac_src = tmp_path / 'ac_src'
+    commit = _ac_checkout(ac_src)
+    monkeypatch.setattr(pins, 'AC_COMMIT', commit)
+    found = {'bfbarchitect': pins.BFBARCHITECT, 'solver': pins.REQUIRED_SOLVER,
+             'gurobi': pins.GUROBI, 'aggregator': pins.aggregator_pin()}
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    values = {'python': sys.executable, 'asa': str(tmp_path / 'stub_asa.py'),
+              'tools': json.dumps(found)}
+    for name, text in [('python', FAKE_PYTHON), ('sbatch', FAKE_SBATCH), ('srun', FAKE_SRUN),
+                       ('squeue', '#!/bin/bash\ncat "$FAKE_SQUEUE" 2>/dev/null; true\n'),
+                       ('sinfo', '#!/bin/bash\nprintf "node1 idle\\nnode2 down*\\n"\n')]:
+        (bin_dir / name).write_text(text % values if '%(' in text else text)
+        (bin_dir / name).chmod(0o755)
+    monkeypatch.setenv('PATH', str(bin_dir) + os.pathsep + os.environ['PATH'])
+    slurm_log = tmp_path / 'slurm_calls.jsonl'
+    monkeypatch.setenv('FAKE_SLURM_LOG', str(slurm_log))
+    monkeypatch.setenv('FAKE_SQUEUE', str(tmp_path / 'queue.txt'))
+    data_repo = tmp_path / 'data_repo'
+    (data_repo / 'GRCh38').mkdir(parents=True)
+    (data_repo / 'GRCh38' / 'file_list.txt').write_text('')
+    monkeypatch.setenv('AA_DATA_REPO', str(data_repo))
+    monkeypatch.setattr(slurm, 'POLL_SECONDS', 0)
+    workspace.machine = Machine(
+        workdir=str(tmp_path / 'work'), jobs=2, bfb_threads=1, ac_src=str(ac_src),
+        python_path=str(bin_dir / 'python'),
+        executor={'kind': 'slurm', 'cpus': 2, 'mem': '1G', 'at_once': 1})
+    workspace.ac_src = ac_src
+    workspace.slurm_calls = lambda: [json.loads(line) for line in slurm_log.read_text().splitlines()] \
+        if slurm_log.exists() else []
+    return workspace
+
+
+def _slurm_run(cluster, *entries):
+    tools = environment.tools_for(cluster.machine)
+    plan_ = {'site': 'dev', 'target_ac': '2.0.1', 'created': 'now',
+             'projects': list(entries) or [cluster.entry()]}
+    return slurm.run_plan(plan_, cluster.machine, tools, cluster.site)
+
+
+def test_ac_runs_from_a_checked_source_tree(cluster):
+    found = environment.read_ac_source(str(cluster.ac_src))
+    assert found['ac'] == pins.AC_VERSION and found['ac_commit'] == pins.AC_COMMIT
+    assert found['ac_changed'] == [] and 'amplicon_classifier.py' in found['ac_files']
+    (cluster.ac_src / 'amplicon_classifier.py').write_text('changed')
+    changed = environment.read_ac_source(str(cluster.ac_src))
+    problems = environment.version_problems(dict(changed, **{k: GOOD[k] for k in (
+        'bfbarchitect', 'solver', 'gurobi')}, aggregator='8.3.1'), '8.3.1')
+    assert problems == ['the AC checkout has uncommitted changes to 1 file(s), first '
+                        'amplicon_classifier.py']
+
+
+def test_a_project_runs_as_a_slurm_job(cluster):
+    assert _slurm_run(cluster) == 0
+    result = cluster.state()['result']
+    assert os.path.exists(result['archive'])
+    (sbatch,) = cluster.slurm_calls()
+    assert '--cpus-per-task=2' in sbatch and '--mem=1G' in sbatch
+    # The job sets AC's --jobs from the CPUs it may use, not from the machine's setting.
+    expected = max(1, len(os.sched_getaffinity(0)) // cluster.machine.bfb_threads)
+    assert '--jobs %d ' % expected in cluster.ac_calls.read_text()
+    project_dir = os.path.join(cluster.machine.projects_dir, ID_A)
+    with open(os.path.join(project_dir, 'slurm-101.out')) as handle:
+        assert 'can use' in handle.read()
+    # The job ran a copy of this code in the workdir, not this checkout.
+    with open(os.path.join(project_dir, slurm.JOB_SCRIPT)) as handle:
+        script = handle.read()
+    assert os.path.join(cluster.machine.workdir, 'code') in script and PACKAGE_DIR not in script
+
+
+def test_a_node_with_different_ac_files_runs_nothing(cluster):
+    tools = environment.tools_for(cluster.machine)
+    (cluster.ac_src / 'amplicon_classifier.py').write_text('print("not the checked AC")')
+    plan_ = {'site': 'dev', 'target_ac': '2.0.1', 'created': 'now', 'projects': [cluster.entry()]}
+    assert slurm.run_plan(plan_, cluster.machine, tools, cluster.site) == 1
+    failed = cluster.state()['failed']
+    assert 'not ready' in failed and 'amplicon_classifier.py' in failed
+    assert cluster.ac_calls.read_text() == ''
+
+
+def test_a_job_still_queued_is_followed_not_submitted_again(cluster, monkeypatch):
+    project_dir = os.path.join(cluster.machine.projects_dir, ID_A)
+    os.makedirs(project_dir)
+    with open(os.path.join(project_dir, slurm.JOB_RECORD), 'w') as handle:
+        json.dump({'jobs': [{'id': '77'}]}, handle)
+    answers = iter([{'77'}, set()])
+    monkeypatch.setattr(slurm, 'queued', lambda: next(answers))
+    assert _slurm_run(cluster) == 1
+    assert cluster.slurm_calls() == []
+    assert 'job 77 ended before the project finished' in cluster.state()['failed']
+
+
+def test_preflight_checks_each_available_node(cluster):
+    checks = environment.Checks()
+    slurm.check_nodes(cluster.machine, environment.tools_for(cluster.machine), {'GRCh38'}, checks)
+    assert checks.failed == 0
+    assert [call[0] for call in cluster.slurm_calls()] == ['srun']
+    assert '--nodelist=node1' in cluster.slurm_calls()[0]
+
+
+def test_a_named_conda_environment_is_activated_for_each_tool(tmp_path):
+    machine = Machine(workdir='/w', jobs=1, bfb_threads=1, ac_src='/ac', conda_env='tools',
+                      conda_sh='/c/etc/profile.d/conda.sh')
+    assert machine.tool_prefix()[-2:] == ['/c/etc/profile.d/conda.sh', 'tools']
+    script = slurm.job_script(machine, '/w/code/x', ['job', '/w/spec.json'])
+    assert 'conda activate tools' in script and 'unset PYTHONPATH' in script
+    path = tmp_path / 'job.sh'
+    path.write_text(script)
+    import subprocess
+    assert subprocess.run(['bash', '-n', str(path)]).returncode == 0
+
+
+def test_setup_offers_slurm_but_does_not_switch_it_on(cluster, tmp_path, capsys):
+    from amprepo_reclassify import cli
+    config = tmp_path / 'machine.json'
+    assert cli.main(['--config', str(config), 'setup', '--workdir', str(tmp_path / 'w2'),
+                     '--jobs', '4', '--bfb-threads', '2', '--ac-src', str(cluster.ac_src),
+                     '--python', cluster.machine.python_path]) == 0
+    assert 'Slurm is available here' in capsys.readouterr().out
+    assert Machine.load(str(config)).executor == {'kind': 'local'}

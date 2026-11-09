@@ -21,7 +21,8 @@ The order is AC on everything, then a person reviews, then the upload. Run these
 checkout of this repo.
 
 ```bash
-# Once per machine. Creates an environment with the pinned tools, in about 20 seconds.
+# Once per machine. Clones AC at the pinned tag and makes an environment with its dependencies
+# and the pinned tools, in about a minute.
 python -m amprepo_reclassify setup --workdir /big/disk/ac_update \
     --jobs 16 --bfb-threads 2 --token-file prod=~/.amprepo_token
 
@@ -51,6 +52,16 @@ uploading are in `<workdir>/projects/<id>/`.
 **Choosing `--jobs` and `--bfb-threads`:** their product shouldn't exceed the machine's threads.
 On a 32-thread machine, `--jobs 16 --bfb-threads 2` has worked well. Settings are saved in
 `amprepo_reclassify/machine.json`, which git ignores.
+
+**Which AC:** the tag in `pins.py`, run from a source tree rather than a package, because a release
+is tagged on GitHub before it reaches any package index. `setup` clones it into the workdir, or
+`--ac-src` names a checkout you already have. Either way it has to be at the pinned commit with no
+uncommitted changes, and `preflight` warns when GitHub has a newer release than the pin.
+
+**Your own environment instead:** `--conda-env NAME` uses a named conda environment, activated
+for each tool, and `--python PATH` uses that interpreter's environment. Either needs AC's
+requirements, BFBArchitect, gurobipy and the aggregator at the pinned versions. `preflight` says
+which differ.
 
 **Which projects:** by default, every project whose owners ticked "Keep this project's
 classifications up to date", read from the site with your admin token. `--exclude` and `--include`
@@ -92,6 +103,45 @@ A project stops rather than producing an archive if:
 - the rebuilt archive lacks a file that the input has, apart from the old AC results it replaces.
   Staging carries each sample's other files, and folders marked with an `AUX_DIR` file are passed
   to the aggregator, so nothing should be lost.
+
+## Running on a Slurm cluster
+
+If `sbatch` is on this machine, `setup` says so, but projects still run here until you choose
+otherwise:
+
+```bash
+python -m amprepo_reclassify setup --workdir /shared/disk/ac_update --jobs 16 --bfb-threads 2 \
+    --conda-env NAME --executor slurm --cpus 12 --mem 24G --at-once 2 \
+    --token-file prod=~/.amprepo_token
+```
+
+`run` then downloads each project on this machine and submits one job for the rest of it. Every
+node needs:
+
+- the workdir and the AC checkout at the same paths, on storage they share
+- the environment, set up on each node before the run, unless nodes share a home directory.
+  The tool never installs anything on a node.
+- `$AA_DATA_REPO`, at the path it has where you run `run`, with the references
+
+Each job checks its node first: the tools against the pins, AC's files against the ones checked
+where you ran `run`, the references and the workdir. If anything differs, the project fails with
+the reason and nothing runs. `preflight` runs the same check as a short job on each available
+node, up to eight. Jobs run a copy of this code in `<workdir>/code/`, so nodes don't need this
+checkout, and changing it doesn't change jobs already running.
+
+- **CPUs:** a job runs AC with `--jobs` set to the CPUs it may use divided by `--bfb-threads`.
+  Linux counts hardware threads, so a 12-core job on a two-thread-per-core node runs AC with
+  `--jobs 12 --bfb-threads 2`.
+- **`--at-once`** is the most project jobs in the queue together, 2 by default. Each job's
+  BFBArchitect uses Gurobi, and a licence can limit concurrent sessions. A project solved without
+  Gurobi fails, as it does when running locally.
+- **Other options:** `--partition`, `--time`, `--sbatch-arg` (for example `--account=X`), and
+  `--job-setup`, a shell line each job runs before activating the environment.
+- **`run` waits** for its jobs and reports each one. If you stop it, the jobs keep running, and
+  running it again follows them without submitting them twice. A job's log is
+  `<workdir>/projects/<id>/slurm-<job>.out`.
+- `run --executor local` runs here instead, with `--jobs` from setup.
+- Uploads always run where you run `upload`, never in a job.
 
 ## What to check in the summary
 
