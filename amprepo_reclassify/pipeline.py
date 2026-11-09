@@ -21,6 +21,9 @@ from .site_api import SiteError
 # fails, including mid-run, and only logs that. These are its log messages.
 SOLVER_FALLBACK = re.compile(r'Gurobi unavailable|retrying with')
 STATE_FILE = 'state.json'
+# Raise this when what a project's report checks or notes changes. A project built before then
+# is reported again from what it has built, with no download, AC or rebuild.
+REPORT_VERSION = 2
 
 
 def log(message):
@@ -150,6 +153,20 @@ class ProjectRun:
         self._save_state()
         return True
 
+    def is_built(self):
+        """True if this project is built and reported by the current checks. One reported by
+        older checks is set to report again, unless its upload has started."""
+        result = self.state['result']
+        if not result:
+            return False
+        if result.get('report_version') == REPORT_VERSION or self.state.get('upload'):
+            return True
+        log('  built, but reported by older checks, so it is reported again')
+        self.state['result'] = None
+        self.state['done'] = [step for step in self.state['done'] if step != 'report']
+        self._save_state()
+        return False
+
     def _save_state(self):
         partial = self._state_path() + '.tmp'
         with open(partial, 'w') as handle:
@@ -264,10 +281,6 @@ class ProjectRun:
         if missing:
             raise ProjectError('the rebuilt archive lacks %d file(s) that the input has, first %s'
                                % (len(missing), missing[0]))
-        # By name, not path: the aggregator's layout has changed between versions, and moving a
-        # file isn't losing it. Only meaningful when the input already has a run.json layout.
-        validation['repack_dropped'] = (archive.missing_names(self.tgz, control)
-                                        if archive.has_member(self.tgz, 'results/run.json') else [])
         validation['final_dropped'] = sorted(archive.kept_content(control) - archive.kept_content(built))
         manifest = archive.run_json_summary(built)
         validation['archive_samples'] = len(manifest['samples'])
@@ -283,6 +296,12 @@ class ProjectRun:
         new_calls, new_version = report.load_result_table(self.ac_prefix + '_result_table.tsv')
         old_calls = report.load_old_calls(archive.old_ac_dirs(self.unpacked))
         validation = self.state['validation']
+        # Here and not in the build, so a change to this check reaches projects already built.
+        # By name, not path: the aggregator's layout has changed between versions, and moving a
+        # file isn't losing it. Only meaningful when the input already has a run.json layout.
+        control = os.path.join(self.control_dir, self.name + '_control.tar.gz')
+        validation['repack_dropped'] = (archive.missing_names(self.tgz, control)
+                                        if archive.has_member(self.tgz, 'results/run.json') else [])
         result = dict(
             validation, name=self.entry['name'], id=self.entry['id'],
             url=self.site.project_url(self.entry['id']),
@@ -295,7 +314,7 @@ class ProjectRun:
             expected_samples=self.entry.get('samples'),
             discovered_samples=len(samples),
             cnv_beds=sum(1 for paths in samples.values() if paths.get('cnv_calls_bed')),
-            calls=report.compare_calls(old_calls, new_calls))
+            calls=report.compare_calls(old_calls, new_calls), report_version=REPORT_VERSION)
         text = report.project_report(result)
         path = os.path.join(self.machine.output_dir, self.name + '_reclass_report.md')
         with open(path, 'w') as handle:
@@ -312,7 +331,7 @@ class ProjectRun:
 
     def execute(self, offline=False):
         self.restart_if_ac_options_changed()
-        if self.state['result']:
+        if self.is_built():
             log('  already built: %s' % self.state['result']['archive'])
             return
         self.state['failed'] = None

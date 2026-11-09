@@ -349,6 +349,11 @@ AC_FLAGS_VALUED = ('--min_flow', '--min_size', '--decomposition_strictness', '--
                    '--exclude_bed')
 AC_FLAGS_BOOL = ('--filter_similar', '--add_chr_tag', '--no_LC_filter', '--force',
                  '--no_bfbarchitect', '--report_complexity')
+# Options that AC 2.0.1 already has on: it declares `--report_complexity` with default=True and
+# "[Deprecated - on by default]". Still carried, so the AC command matches the original, but a
+# project that has one isn't using a non-default setting, and two logs differing only in one
+# didn't run AC differently.
+AC_FLAGS_DEFAULT_ON = ('--report_complexity',)
 # Options that describe the machine or this tool's own run, not the classification. `--config`
 # is reported separately, because its values aren't in the log.
 AC_FLAGS_OF_THE_RUN = ('--ref', '--AA_results', '-i', '--input', '-o', '--jobs', '--bfb_threads',
@@ -386,8 +391,11 @@ def recover_settings(root, api_reference):
     A log wins over run metadata, because AC may have been rerun after the pipeline. Settings
     from run metadata can be older than the results beside them, and they're noted as such.
 
-    `notes` need a person's attention. `info` doesn't: on 2026-11-06 the rerun message fired on
-    both real projects tried, because AC is commonly rerun after the pipeline.
+    `notes` stop the upload until a person accepts them: something about the run couldn't be
+    carried over. `info` is shown for the review and stops nothing. Where the settings came from
+    is `info`. On 2026-11-06 the rerun message fired on both real projects tried, because AC is
+    commonly rerun after the pipeline. On 2026-11-09, 9 of prod's 26 rebuilt projects had no
+    AC log, and in all 17 that had one, its reference matched the site's.
     """
     notes, info = [], []
     log_ref, log_version, log_flags = None, None, []
@@ -408,7 +416,7 @@ def recover_settings(root, api_reference):
         version = re.search(r'AmpliconClassifier\s+v?(\d+\.\d+\.\d+)', text)
         log_ref, log_flags = ref, flags
         log_version = version.group(1) if version else log_version
-        variants.add((ref, tuple(flags)))
+        variants.add((ref, tuple(flag for flag in flags if flag not in AC_FLAGS_DEFAULT_ON)))
         for match in re.finditer(r'Configuration loaded from:?\s*(.+)', text):
             if match.group(1).strip() != DEFAULT_CONFIG:
                 config_files.add(match.group(1).strip())
@@ -440,11 +448,11 @@ def recover_settings(root, api_reference):
         ref, flags, unknown = _parse_ac_command(meta_command)
         unknown_flags.update(unknown)
         version, source = meta_version, 'run metadata'
-        notes.append('No AC log, so these settings come from run metadata and may be older than '
+        info.append('No AC log, so these settings come from run metadata and may be older than '
                      'the results.')
     else:
         ref, flags, version, source = None, [], None, 'defaults'
-        notes.append('No AC log or run metadata, so no settings could be recovered.')
+        info.append('No AC log or run metadata, so AC ran with its defaults.')
 
     if unknown_flags:
         notes.append('The original AC command has %s, which this tool doesn\'t carry over.'
@@ -453,7 +461,7 @@ def recover_settings(root, api_reference):
         ref = REF_MAP.get(ref, ref)
     else:
         ref = REF_MAP.get(api_reference)
-        notes.append('Reference taken from the site (%s).' % api_reference)
+        info.append('Reference taken from the site (%s).' % api_reference)
     if '--exclude_bed' in flags:
         i = flags.index('--exclude_bed')
         if not os.path.exists(flags[i + 1]):
@@ -491,7 +499,10 @@ def missing_paths(reference_tar, built_tar):
 def missing_names(reference_tar, built_tar):
     """Files in `reference_tar` whose name appears fewer times anywhere in `built_tar`, apart
     from AC's consolidated output. For comparing across an aggregator layout change, which
-    moves files, e.g. `<sample>_AA_results/` to `<sample>_reconstruction_results/`."""
+    moves files, e.g. `<sample>_AA_results/` to `<sample>_reconstruction_results/`.
+
+    A file is also there as `<name>.gz`: the aggregator gzips CoRAL's `_reconstruct.log`. On
+    2026-11-09 all 24 of prod's CoRAL cell lines logs gunzipped to the original bytes."""
     def files(path):
         with tarfile.open(path) as tar:
             return [m.name for m in tar if m.isfile() and not os.path.basename(m.name).startswith('._')]
@@ -502,8 +513,10 @@ def missing_names(reference_tar, built_tar):
     for name in sorted(files(reference_tar)):
         if '/consolidated_classification/' in '/' + name:
             continue
-        if left[os.path.basename(name)]:
-            left[os.path.basename(name)] -= 1
+        for found in (os.path.basename(name), os.path.basename(name) + '.gz'):
+            if left[found]:
+                left[found] -= 1
+                break
         else:
             missing.append(name)
     return missing

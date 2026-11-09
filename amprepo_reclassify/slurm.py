@@ -343,7 +343,7 @@ def run_plan(plan, machine, tools, site, only=None):
             running[job_id] = project
             continue
         project.restart_if_ac_options_changed()
-        if project.state['result']:
+        if project.is_built():
             log('  already built: %s' % project.state['result']['archive'])
             continue
         waiting.append(project)
