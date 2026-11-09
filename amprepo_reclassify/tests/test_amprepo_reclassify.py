@@ -282,6 +282,30 @@ def test_solver_fallback_stops_the_project_not_the_batch(workspace, monkeypatch)
     assert workspace.ac_calls.read_text().count('--ref') == 2
 
 
+def test_lost_bfbarchitect_outputs_stop_the_project(workspace, monkeypatch):
+    monkeypatch.setenv('STUB_AC_SAYS', 'WARNING - Could not write BFBArchitect outputs for '
+                                       'x/S1_amplicon1_region1: no display name')
+    _, failures = workspace.run()
+    assert failures == 1
+    assert 'could not write BFBArchitect outputs for 1 region' in workspace.state()['failed']
+    assert workspace.state()['result'] is None
+
+
+def test_a_build_that_lost_bfbarchitect_outputs_is_rebuilt(workspace, monkeypatch):
+    workspace.run()
+    console = os.path.join(workspace.machine.projects_dir, ID_A, 'ac_new', 'ac_console.out')
+    with open(console, 'a') as handle:
+        handle.write('WARNING - Could not write BFBArchitect outputs for x: no display name\n')
+    _, failures = workspace.run()
+    assert failures == 0
+    assert workspace.ac_calls.read_text().count('--ref') == 2
+    assert workspace.site.downloads == 1
+
+
+def test_ac_plots_without_a_display():
+    assert environment.tool_env()['MPLBACKEND'] == 'Agg'
+
+
 def test_a_nested_copy_of_the_aa_results_stops_the_project_before_any_work(workspace, tmp_path):
     nested = 'results/samples/S1/S1_AA_results/S1_AA_results/S1_AA_results/'
     workspace.site = FakeSite(make_archive(str(tmp_path / 'nested.tar.gz'), extra=[
@@ -386,6 +410,45 @@ def test_only_update_rows_run(workspace):
     _, failures = workspace.run(*entries)
     assert failures == 0
     assert workspace.site.downloads == 0
+
+
+def test_a_project_reported_by_older_checks_is_reported_again_without_a_rebuild(workspace):
+    workspace.run()
+    state = workspace.state()
+    state['result']['report_version'] = 1
+    state['result']['repack_dropped'] = ['stale']
+    pipeline.save_state(workspace.machine, ID_A, state)
+    _, failures = workspace.run()
+    assert failures == 0
+    assert workspace.ac_calls.read_text().count('--ref') == 1, 'AC did not run again'
+    assert workspace.site.downloads == 1
+    result = workspace.state()['result']
+    assert result['report_version'] == pipeline.REPORT_VERSION and result['repack_dropped'] == []
+
+
+def test_an_upload_in_progress_keeps_its_report(workspace):
+    workspace.run()
+    state = workspace.state()
+    state['result']['report_version'] = 1
+    state['upload'] = {'state': 'started', 'job_id': 'j1'}
+    pipeline.save_state(workspace.machine, ID_A, state)
+    workspace.run()
+    assert workspace.state()['result']['report_version'] == 1
+
+
+def test_cnv_beds_the_site_lacked_are_a_note_not_a_concern(workspace):
+    workspace.run()
+    result = dict(workspace.state()['result'], cnv_beds=0)
+    assert report.concerns(result) == []
+    assert any('CNV BEDs for 0 of 2' in item for item in report.notes(result))
+
+
+def test_a_large_run_json_is_flagged_until_a_dry_run_says_it_fits(workspace):
+    workspace.run()
+    result = dict(workspace.state()['result'], run_json_bytes=report.RECORD_WARNING_BYTES + 1)
+    assert any('16 MiB' in item for item in report.concerns(result))
+    assert report.concerns(result, {'record': {'fits': True}}) == []
+    assert any('16 MiB' in item for item in report.concerns(result, {'record': {'fits': None}}))
 
 
 def test_summary_shows_built_failed_and_concerns(workspace, monkeypatch):
@@ -498,7 +561,36 @@ def test_metadata_without_a_version_is_not_a_rerun(tmp_path):
 def test_no_log_falls_back_to_the_site_reference_and_says_so(tmp_path):
     settings = archive.recover_settings(_unpack(tmp_path), 'hg38')
     assert settings['ref'] == 'GRCh38' and settings['flags'] == []
-    assert any('Reference taken from the site' in note for note in settings['notes'])
+    # Where the settings came from is for the review, and stops nothing.
+    assert settings['notes'] == []
+    assert any('Reference taken from the site' in note for note in settings['info'])
+    assert any('AC ran with its defaults' in note for note in settings['info'])
+
+
+def test_a_flag_that_ac_has_on_already_is_carried_but_not_flagged(workspace, tmp_path):
+    log = 'amplicon_classifier.py --ref GRCh38 --report_complexity\nAmpliconClassifier 2.0.0\n'
+    workspace.site.source = make_archive(str(tmp_path / 'p.tar.gz'), ac_log=log)
+    workspace.run()
+    result = workspace.state()['result']
+    assert result['flags'] == ['--report_complexity']
+    assert report.concerns(result) == [] and report.notes(result) == []
+
+
+def test_logs_that_differ_only_in_a_flag_ac_has_on_already_agree(tmp_path):
+    other = ('results/samples/S2/S2_AC.log',
+             'amplicon_classifier.py --ref GRCh38\nAmpliconClassifier 2.0.0\n')
+    log = 'amplicon_classifier.py --ref GRCh38 --report_complexity\nAmpliconClassifier 2.0.0\n'
+    settings = archive.recover_settings(_unpack(tmp_path, ac_log=log, extra=[other]), 'hg19')
+    assert settings['notes'] == []
+
+
+def test_a_real_non_default_flag_is_noted_for_the_review(workspace, tmp_path):
+    log = 'amplicon_classifier.py --ref GRCh38 --filter_similar\nAmpliconClassifier 2.0.0\n'
+    workspace.site.source = make_archive(str(tmp_path / 'p.tar.gz'), ac_log=log)
+    workspace.run()
+    result = workspace.state()['result']
+    assert report.concerns(result) == []
+    assert report.notes(result) == ['Non-default AC flags, carried over: --filter_similar']
 
 
 def test_a_different_reference_from_the_log_is_flagged(workspace, tmp_path):
@@ -554,6 +646,17 @@ def test_a_moved_file_is_not_a_dropped_one(tmp_path):
         _add(tar, 'results/samples/S1/S1_reconstruction_results/S1_amplicon1_graph.txt', 'g')
         _add(tar, 'results/samples/S1/S1_reconstruction_results/S1_summary.txt', 's')
     assert archive.missing_names(old, new) == ['results/samples/S1/S1_AA_results/S1.log']
+
+
+def test_a_file_the_aggregator_gzipped_is_not_a_dropped_one(tmp_path):
+    old, new = str(tmp_path / 'old.tar.gz'), str(tmp_path / 'new.tar.gz')
+    with tarfile.open(old, 'w:gz') as tar:
+        _add(tar, 'results/samples/S1/S1_reconstruction_results/S1_reconstruct.log', 'log')
+        _add(tar, 'results/samples/S2/S2_reconstruction_results/S2_reconstruct.log', 'log')
+    with tarfile.open(new, 'w:gz') as tar:
+        _add(tar, 'results/samples/S1/S1_reconstruction_results/S1_reconstruct.log.gz', 'gz')
+    assert archive.missing_names(old, new) == [
+        'results/samples/S2/S2_reconstruction_results/S2_reconstruct.log']
 
 
 def test_new_content_counts_only_files_the_old_archive_lacks(tmp_path):
@@ -1638,7 +1741,7 @@ def test_a_named_conda_environment_is_activated_for_each_tool(tmp_path):
     assert machine.tool_prefix()[-2:] == ['/c/etc/profile.d/conda.sh', 'tools']
     script = slurm.job_script(machine, '/w/code/x', ['job', '/w/spec.json'])
     assert 'conda activate tools' in script and 'unset PYTHONPATH' in script
-    assert 'unset DISPLAY' in script
+    assert 'unset DISPLAY WAYLAND_DISPLAY' in script
     path = tmp_path / 'job.sh'
     path.write_text(script)
     import subprocess

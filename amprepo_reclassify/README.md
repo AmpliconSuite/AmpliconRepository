@@ -145,17 +145,32 @@ checkout, and changing it doesn't change jobs already running.
 
 ## What to check in the summary
 
-`summary` lists these under "Check before uploading":
+`summary` lists these under "Check before uploading". Each one holds its project back from
+`upload` until you accept it:
 
 - a sample count that differs between the site and the rebuilt archive
 - plots or data files that the rebuild dropped
 - a project built from a local archive rather than the site's
 - files that the aggregator's plain repack of the site's archive dropped, which says the stored
-  archive is unusual
-- non-default AC flags recovered from an archive, or a config file that AC logged
+  archive is unusual. A file the aggregator gzipped, such as CoRAL's `_reconstruct.log`, isn't
+  dropped.
+- AC settings that couldn't be carried over: per-sample logs that disagree, a config file that AC
+  logged, or an option this tool doesn't know
 - a reference that differs from the site's
-- settings that came from run metadata rather than an AC log, which can be older than the results
-- a large `run.json`, which may reach the site's 16 MiB record limit
+- a large `run.json`, which may reach the site's 16 MiB record limit, until `upload --dry-run`
+  says the site's record fits
+
+Under "Notes" it lists what the review should see but that holds nothing back:
+
+- where AC's settings came from, when that wasn't an AC log: run metadata, which can be older
+  than the results, or AC's defaults, with the site's reference
+- non-default AC flags carried over from the original run. Flags AC already has on by default,
+  such as `--report_complexity` in AC 2.0.1, aren't listed.
+- samples that had no CNV BED in the site's archive to begin with
+
+When a new version of this tool changes these checks, `run` reports each built project again from
+what it has already built. It doesn't download anything or run AC again, and it leaves a project
+alone once its upload has started.
 
 ## Uploading
 

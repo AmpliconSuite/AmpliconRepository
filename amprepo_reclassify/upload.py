@@ -73,7 +73,7 @@ def select(plan, states, only=None, accept_flagged=False):
         elif entry.get('metadata_sheet') and not os.path.exists(entry['metadata_sheet']):
             skipped.append((entry['name'], 'no such metadata sheet: %s' % entry['metadata_sheet']))
         else:
-            flagged = report.concerns(result) + dry_run_concerns(state.get('dry_run'))
+            flagged = report.concerns(result, state.get('dry_run')) + dry_run_concerns(state.get('dry_run'))
             if flagged and not accept_flagged:
                 skipped.append((entry['name'], 'flagged, see --accept-flagged: %s' % '; '.join(flagged)))
             else:
@@ -332,7 +332,7 @@ def dry_run_report(plan, rows):
     for entry, state in rows:
         result = state['dry_run']
         attention += ['%s: %s' % (entry['name'], item)
-                      for item in report.concerns(state['result']) + dry_run_concerns(result)]
+                      for item in report.concerns(state['result'], result) + dry_run_concerns(result)]
         if result.get('state') != 'finished':
             lines.append('| %s | failed | | | | | | |' % entry['name'])
             continue

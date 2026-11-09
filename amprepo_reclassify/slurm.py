@@ -105,8 +105,9 @@ def job_script(machine, code_dir, args):
              'set -eo pipefail',
              'unset PYTHONPATH PYTHONHOME',
              # The submitting machine's display means nothing on another node, and a plotting
-             # library that tries it there prints X authorization errors.
-             'unset DISPLAY',
+             # library that tries it there prints X authorization errors. AC's environment also
+             # sets MPLBACKEND, which is what keeps its plots working.
+             'unset DISPLAY WAYLAND_DISPLAY',
              'export PYTHONNOUSERSITE=1']
     data_repo = os.environ.get('AA_DATA_REPO')
     if data_repo:
@@ -342,8 +343,8 @@ def run_plan(plan, machine, tools, site, only=None):
             log('  Slurm job %s is still in the queue, so this follows it' % job_id)
             running[job_id] = project
             continue
-        project.restart_if_ac_options_changed()
-        if project.state['result']:
+        project.restart_if_ac_options_changed() or project.restart_if_ac_output_refused()
+        if project.is_built():
             log('  already built: %s' % project.state['result']['archive'])
             continue
         waiting.append(project)

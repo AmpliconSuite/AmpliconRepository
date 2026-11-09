@@ -4,7 +4,7 @@ import os
 import re
 from collections import defaultdict
 
-from .archive import ProjectError
+from .archive import AC_FLAGS_DEFAULT_ON, ProjectError
 from .plan import describe_list
 
 # The site's record limit is 16 MiB (16.78 MB). On 2026-11-06 prod's documents were 0.62 (Tang)
@@ -149,8 +149,10 @@ def compare_calls(old_calls, new_calls):
             'changed_samples': len({change[0] for change in changes})}
 
 
-def concerns(result):
-    """What a person must look at before this project is uploaded."""
+def concerns(result, dry_run=None):
+    """What stops this project's upload until a person accepts it: something wasn't carried
+    over, or doesn't match. `dry_run` is the site's answer to `upload --dry-run`, if there is
+    one, and settles the record size."""
     found = list(result['settings']['notes'])
     if result.get('local_archive'):
         local = result['local_archive']
@@ -161,8 +163,6 @@ def concerns(result):
                      % (len(result['repack_dropped']), result['repack_dropped'][0]))
     if result.get('site_ref') and result['ref'] != result['site_ref']:
         found.append('AC ran with reference %s, and the site says %s' % (result['ref'], result['site_ref']))
-    if result['settings']['flags'] or result.get('extra_ac_flags'):
-        found.append('Non-default AC flags: %s' % ' '.join(result['flags']))
     for key, label in (('control_dropped', 'The control rebuild dropped plots the original had'),
                        ('final_dropped', 'The rebuilt archive dropped files')):
         if result.get(key):
@@ -170,12 +170,23 @@ def concerns(result):
     if result['expected_samples'] != result['archive_samples']:
         found.append('The site has %d samples and the rebuilt archive has %d'
                      % (result['expected_samples'], result['archive_samples']))
+    record_fits = ((dry_run or {}).get('record') or {}).get('fits')
+    if result['run_json_bytes'] > RECORD_WARNING_BYTES and record_fits is not True:
+        found.append('run.json is %.1f MB, so check this against the site\'s 16 MiB record limit. '
+                     '`upload --dry-run` checks it' % (result['run_json_bytes'] / 1e6))
+    return found
+
+
+def notes(result):
+    """What the review should see that stops nothing: where the settings came from, and what
+    the site's archive lacked to begin with. A file the rebuild lost is a concern instead."""
+    found = list(result['settings'].get('info', []))
+    flags = [flag for flag in result['flags'] if flag not in AC_FLAGS_DEFAULT_ON]
+    if flags:
+        found.append('Non-default AC flags, carried over: %s' % ' '.join(flags))
     if result['cnv_beds'] != result['discovered_samples']:
-        found.append('CNV BEDs for %d of %d samples. Check whether the original had them.'
+        found.append('The site\'s archive has CNV BEDs for %d of %d samples'
                      % (result['cnv_beds'], result['discovered_samples']))
-    if result['run_json_bytes'] > RECORD_WARNING_BYTES:
-        found.append('run.json is %.1f MB, so check this against the site\'s 16 MiB record limit'
-                     % (result['run_json_bytes'] / 1e6))
     return found
 
 
@@ -190,7 +201,7 @@ def project_report(result):
              '- AC flags: `%s` (recovered from: %s, which ran AC %s)'
              % (' '.join(result['flags']) or 'defaults', result['settings']['source'],
                 result['settings']['settings_ac_version'] or 'of unknown version'),
-             *['- Note: %s' % item for item in result['settings'].get('info', [])],
+             *['- Note: %s' % item for item in notes(result)],
              '- Samples: %d on the site, %d in the rebuilt archive'
              % (result['expected_samples'], result['archive_samples']),
              '- Archive: %.1f MB, of which %.1f MB of files aren\'t in the old archive'
@@ -230,7 +241,7 @@ def combined_summary(plan, states):
              '| BFB features | Amplicons changed | Archive MB | Files not in old archive MB |',
              '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     total_archive = total_new = 0
-    attention = []
+    attention, for_review = [], []
     for entry in plan['projects']:
         state = states.get(entry['id']) or {}
         result = state.get('result')
@@ -245,7 +256,9 @@ def combined_summary(plan, states):
                 '%d to %d' % tuple(features.get('ecDNA', (0, 0))),
                 '%d to %d' % tuple(features.get('BFB', (0, 0))), len(calls['amplicon_changes']),
                 result['archive_bytes'] / 1e6, result['new_content_bytes'] / 1e6))
-            attention += ['%s: %s' % (entry['name'], item) for item in concerns(result)]
+            attention += ['%s: %s' % (entry['name'], item)
+                          for item in concerns(result, state.get('dry_run'))]
+            for_review += ['%s: %s' % (entry['name'], item) for item in notes(result)]
         else:
             label = 'failed' if state.get('failed') else 'unfinished' if state else entry['status']
             lines.append('| %s | %s | %s | | | | | | | |' % (entry['name'], label, entry.get('samples', '')))
@@ -255,5 +268,9 @@ def combined_summary(plan, states):
               'That isn\'t what the site will store. `upload --dry-run` gives those numbers.'
               % (total_archive / 1e6, total_new / 1e6), '']
     lines.append('## Check before uploading')
+    lines.append('These stop the upload until accepted with `--accept-flagged`.')
     lines += ['- %s' % item for item in attention] or ['Nothing flagged.']
+    if for_review:
+        lines += ['', '## Notes', 'For the review. These don\'t stop anything.']
+        lines += ['- %s' % item for item in for_review]
     return '\n'.join(lines) + '\n'
