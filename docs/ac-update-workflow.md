@@ -68,8 +68,10 @@ before the run; the tool never installs on a node. Jobs run a copy of this packa
 the workdir, because a node may not see the checkout and a long run shouldn't change
 code under running jobs. A job sets AC's `--jobs` from the CPUs it may use
 (`sched_getaffinity`), because some clusters allocate cores while Linux and AC count
-hardware threads. `--at-once` caps concurrent project jobs for the Gurobi licence;
-the safe value depends on the licence and is measured per cluster. Uploads never run
+hardware threads. `run` submits every project and Slurm schedules them. `--max-running N`
+caps how many run at once, for a Gurobi licence that needs it, by giving jobs N shared
+names with `--dependency=singleton`; the default is no cap. A project solved without
+Gurobi fails, so a licence limit shows up as failures to rerun under a cap. Uploads never run
 in a job.
 
 **`preflight` checks `$AA_DATA_REPO` rather than installing references.** The variable

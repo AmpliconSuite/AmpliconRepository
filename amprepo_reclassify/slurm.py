@@ -12,6 +12,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -254,7 +255,9 @@ def _log_path(project, job_id):
     return os.path.join(project.dir, 'slurm-%s.out' % job_id)
 
 
-def submit(project, machine, tools, site_name, code_dir):
+def submit(project, machine, tools, site_name, code_dir, lane=None):
+    """Submit the project's job. With a lane, the job shares its name with that lane's other jobs
+    and waits for them (--dependency=singleton), so at most max_running jobs run at once."""
     executor = settings(machine)
     spec_path = os.path.join(project.dir, JOB_SPEC)
     script_path = os.path.join(project.dir, JOB_SCRIPT)
@@ -264,10 +267,16 @@ def submit(project, machine, tools, site_name, code_dir):
     # Cleared before the job exists, so an old failure can't be read as this job's.
     project.state['failed'] = None
     project._save_state()
-    command = ['sbatch', '--parsable', '--job-name=amprepo-%s' % project.entry['id'][:8],
+    # Named for the project so squeue says what is running. A lane's jobs must share a name for
+    # singleton, so there the project name goes in the comment (squeue -o %k).
+    project_name = re.sub(r'[^A-Za-z0-9._-]+', '_', project.entry['name']).strip('_') or project.entry['id']
+    name = 'amprepo-lane%d' % lane if lane is not None else project_name
+    command = ['sbatch', '--parsable', '--job-name=%s' % name, '--comment=%s' % project_name,
                '--nodes=1', '--ntasks=1', '--cpus-per-task=%s' % executor['cpus'],
                '--mem=%s' % executor['mem'], '--output=%s' % os.path.join(project.dir, 'slurm-%j.out'),
                '--chdir=%s' % project.dir]
+    if lane is not None:
+        command.append('--dependency=singleton')
     if executor.get('partition'):
         command.append('--partition=%s' % executor['partition'])
     if executor.get('time'):
@@ -322,11 +331,11 @@ def _wait_for_queue(since):
 
 
 def run_plan(plan, machine, tools, site, only=None):
-    """Download each project here, run the rest as Slurm jobs, and wait for them. Running it
-    again follows jobs still in the queue rather than submitting them twice. Returns the number
-    of projects that failed."""
+    """Download each project here and submit it as a Slurm job, then wait for them all. Slurm
+    decides when each job runs. Running it again follows jobs still in the queue rather than
+    submitting them twice. Returns the number of projects that failed."""
     executor = settings(machine)
-    at_once = executor.get('at_once') or None
+    max_running = executor.get('max_running') or None
     code_dir = snapshot_code(machine)
     failures = 0
     waiting, running = [], {}
@@ -348,26 +357,25 @@ def run_plan(plan, machine, tools, site, only=None):
             log('  already built: %s' % project.state['result']['archive'])
             continue
         waiting.append(project)
-    log('\n%d project(s) to submit, %d already in the queue, at most %s at once.'
-        % (len(waiting), len(running), at_once or 'any number'))
-    answered = time.monotonic()
+    log('\n%d project(s) to submit, %d already in the queue%s.'
+        % (len(waiting), len(running),
+           ', at most %d running at once' % max_running if max_running else ''))
     try:
-        while waiting or running:
-            while waiting and (not at_once or len(running) < at_once):
-                project = waiting.pop(0)
-                log('%s: downloading here, then submitting' % project.entry['name'])
-                try:
-                    project.prepare()
-                    job_id = submit(project, machine, tools, site.name, code_dir)
-                except Exception as error:
-                    pipeline.record_failure(project, error)
-                    failures += 1
-                    continue
-                log('%s: Slurm job %s, log %s' % (project.entry['name'], job_id,
-                                                   _log_path(project, job_id)))
-                running[job_id] = project
-            if not running:
-                break
+        for number, project in enumerate(waiting):
+            log('%s: downloading here, then submitting' % project.entry['name'])
+            try:
+                project.prepare()
+                job_id = submit(project, machine, tools, site.name, code_dir,
+                                lane=number % max_running if max_running else None)
+            except Exception as error:
+                pipeline.record_failure(project, error)
+                failures += 1
+                continue
+            log('%s: Slurm job %s, log %s' % (project.entry['name'], job_id,
+                                               _log_path(project, job_id)))
+            running[job_id] = project
+        answered = time.monotonic()
+        while running:
             time.sleep(POLL_SECONDS)
             active = _wait_for_queue(answered)
             if active is None:
@@ -376,8 +384,8 @@ def run_plan(plan, machine, tools, site, only=None):
             for job_id in [j for j in running if j not in active]:
                 failures += _finished(running.pop(job_id), job_id)
     except KeyboardInterrupt:
-        log('\nStopped waiting. Submitted jobs keep running: %s. Run this again to follow them, '
-            'or scancel them.' % (', '.join(sorted(running)) or 'none'))
+        log('\nStopped. Submitted jobs keep running: %s. Run this again to follow them and submit '
+            'the rest, or scancel them.' % (', '.join(sorted(running)) or 'none'))
         raise
     return failures
 

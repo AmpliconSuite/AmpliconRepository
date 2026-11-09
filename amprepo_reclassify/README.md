@@ -111,11 +111,12 @@ otherwise:
 
 ```bash
 python -m amprepo_reclassify setup --workdir /shared/disk/ac_update --jobs 16 --bfb-threads 2 \
-    --conda-env NAME --executor slurm --cpus 12 --mem 24G --at-once 2 \
+    --conda-env NAME --executor slurm --cpus 12 --mem 24G \
     --token-file prod=~/.amprepo_token
 ```
 
-`run` then downloads each project on this machine and submits one job for the rest of it. Every
+`run` then downloads each project on this machine and submits one job for the rest of it. It
+submits every project and leaves the scheduling to Slurm. Every
 node needs:
 
 - the workdir and the AC checkout at the same paths, on storage they share
@@ -132,9 +133,19 @@ checkout, and changing it doesn't change jobs already running.
 - **CPUs:** a job runs AC with `--jobs` set to the CPUs it may use divided by `--bfb-threads`.
   Linux counts hardware threads, so a 12-core job on a two-thread-per-core node runs AC with
   `--jobs 12 --bfb-threads 2`.
-- **`--at-once`** is the most project jobs in the queue together, 2 by default. Each job's
-  BFBArchitect uses Gurobi, and a licence can limit concurrent sessions. A project solved without
-  Gurobi fails, as it does when running locally.
+- **Job names:** each job is named for its project, with anything other than letters, digits,
+  `.`, `_` and `-` turned into `_`. Plain `squeue` shows only the first 8 characters of a name;
+  `squeue -o "%.8i %.10P %.40j %.2t %.10M %R"` shows 40.
+- **`--max-running N`** limits how many project jobs run at once; by default there is no limit.
+  Every job is still submitted straight away: the jobs share N names and are submitted with
+  `--dependency=singleton`, so Slurm starts a job only when the one before it in its lane has
+  finished. Those jobs are named for their lane, so the project name is in the job's comment
+  instead (`squeue -o "%.8i %.12j %.40k %.2t %.10M %R"`). Lanes are per user, so the limit covers all your reclassify runs together. Use it when
+  a Gurobi licence allows fewer sessions than the cluster has room for. A project solved without
+  Gurobi fails either way, as it does when running locally, so it can be run again under a
+  lower limit.
+- **Which nodes** is Slurm's choice. To keep jobs to some nodes, pass a partition, or
+  `--sbatch-arg=--exclude=NODES` for the rest.
 - **Other options:** `--partition`, `--time`, `--sbatch-arg` (for example `--account=X`), and
   `--job-setup`, a shell line each job runs before activating the environment.
 - **`run` waits** for its jobs and reports each one. If you stop it, the jobs keep running, and
