@@ -33,7 +33,7 @@ python -m amprepo_reclassify plan --site prod --exclude <id or exact name>
 # Checks tools, solver, references, disk and the site. Exits 1 if a run shouldn't start.
 python -m amprepo_reclassify preflight
 
-# Downloads, runs AC, rebuilds and checks each project, smallest first.
+# Downloads, runs AC, swaps in its output and checks each project, smallest first.
 python -m amprepo_reclassify run
 
 # The combined change summary to review, saved to <workdir>/output/summary.md.
@@ -46,8 +46,16 @@ python -m amprepo_reclassify upload --target prod --dry-run
 python -m amprepo_reclassify upload --target prod
 ```
 
-Rebuilt archives and one report per project go in `<workdir>/output/`. Files you can delete after
+New archives and one report per project go in `<workdir>/output/`. Files you can delete after
 uploading are in `<workdir>/projects/<id>/`.
+
+**What `run` does to a project:** it downloads and unpacks the site's archive, checks its samples,
+and runs AC's own `make_input.sh` on `results/samples/`. If those pairs match the samples
+`run.json` names, AC classifies them. The new archive is the site's with its
+`results/consolidated_classification/` replaced by AC's output, and nothing else changed: the
+site aggregates every archive it takes in, which writes `run.json` again from AC's tables. `run`
+aggregates the new archive once here as a check, so a failure shows here rather than on the
+site. That copy isn't uploaded.
 
 **Choosing `--jobs` and `--bfb-threads`:** their product shouldn't exceed the machine's threads.
 On a 32-thread machine, `--jobs 16 --bfb-threads 2` has worked well. Settings are saved in
@@ -96,13 +104,16 @@ A project stops rather than producing an archive if:
 
 - any amplicon was solved without Gurobi
 - AC or the aggregator fails
-- AC finds no usable input, which happens when an archive has only annotated cycles files
+- the archive isn't laid out as the site's aggregator writes archives today, with
+  `results/run.json` and `results/samples/`. All 27 keep-current archives on prod were, on
+  2026-11-09.
 - the archive has a structural problem: a sample with the same AA graph file in more than one
-  place, such as a nested copy of its AA results, or an empty AA graph or cycles file. Nothing is
-  run. Fix the archive, then run again, with the `archive` column if the fix isn't on the site yet.
-- the rebuilt archive lacks a file that the input has, apart from the old AC results it replaces.
-  Staging carries each sample's other files, and folders marked with an `AUX_DIR` file are passed
-  to the aggregator, so nothing should be lost.
+  place, such as a nested copy of its AA results, AA results that aren't a folder, or an empty AA
+  graph or cycles file. Nothing is run. Fix the archive, then run again, with the `archive` column
+  if the fix isn't on the site yet.
+- AC's input doesn't match `run.json`: an amplicon found twice, a sample `run.json` doesn't
+  name, or a sample with graph files but no raw `_cycles.txt`, as in an archive with only AC's
+  annotated cycles. Nothing is run.
 
 ## Running on a Slurm cluster
 
@@ -148,12 +159,8 @@ checkout, and changing it doesn't change jobs already running.
 `summary` lists these under "Check before uploading". Each one holds its project back from
 `upload` until you accept it:
 
-- a sample count that differs between the site and the rebuilt archive
-- plots or data files that the rebuild dropped
+- a sample count that differs between the site and the new archive, aggregated here
 - a project built from a local archive rather than the site's
-- files that the aggregator's plain repack of the site's archive dropped, which says the stored
-  archive is unusual. A file the aggregator gzipped, such as CoRAL's `_reconstruct.log`, isn't
-  dropped.
 - AC settings that couldn't be carried over: per-sample logs that disagree, a config file that AC
   logged, or an option this tool doesn't know
 - a reference that differs from the site's
@@ -199,7 +206,8 @@ until you pass `--accept-flagged`. Use `--only` to accept just the ones you've l
 To send a metadata sheet with a project's update, add a `metadata_sheet` column to the project list.
 Its path is relative to the list.
 
-`upload --dry-run` writes `<workdir>/output/dry_run.md`. Each real upload adds a line to
+`upload --dry-run` writes `<workdir>/output/dry_run.md`. It sends the copy aggregated here,
+because the site's dry run reads `run.json` as sent, without aggregating it first. Each real upload adds a line to
 `<workdir>/output/uploads.jsonl` with the new version and the one it replaced. To undo an upload,
 delete the new version from the project's page, which makes the one before it current again.
 

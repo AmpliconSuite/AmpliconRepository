@@ -1,16 +1,15 @@
-"""Reading a site archive, whatever aggregator built it, and staging its samples for AC.
+"""Reading a site archive, checking AC's input against it, and swapping in AC's new output.
 
-Archives differ by the aggregator version that built them: older ones have
-`results/AA_outputs/<project>/` and `other_files/classification/`, newer ones
-`results/samples/<sample>/` and `consolidated_classification/`. Discovery works from
-`run.json` where it can and from file names where it can't.
+A site archive is already aggregated: `results/run.json` names each sample, `results/samples/`
+holds their files, and AC's output is in one folder, `results/consolidated_classification/`.
+All 27 keep-current projects on prod were laid out this way on 2026-11-09. The new archive is
+the old one with that folder replaced, and the site aggregates it again when it takes it in.
 """
 
 import hashlib
 import json
 import os
 import re
-import shutil
 import tarfile
 from collections import defaultdict
 
@@ -27,24 +26,6 @@ def extract(tar_path, dest):
         tar.extractall(dest, filter='data')
 
 
-def clean_mac_junk(root):
-    for dirpath, dirnames, filenames in os.walk(root):
-        for name in filenames:
-            if name.startswith('._') or name == '.DS_Store':
-                os.remove(os.path.join(dirpath, name))
-        if '__MACOSX' in dirnames:
-            shutil.rmtree(os.path.join(dirpath, '__MACOSX'), ignore_errors=True)
-            dirnames.remove('__MACOSX')
-
-
-def repeated_names(root, suffix):
-    """File names ending in `suffix` that appear more than once under `root`."""
-    seen = defaultdict(int)
-    for path in find_files(root, suffix):
-        seen[os.path.basename(path)] += 1
-    return sorted(name for name, count in seen.items() if count > 1)
-
-
 def find_files(root, suffix):
     found = []
     for dirpath, _, filenames in os.walk(root):
@@ -54,9 +35,15 @@ def find_files(root, suffix):
     return found
 
 
-def results_root(unpacked):
+def samples_root(unpacked):
+    """`results/samples/` of an unpacked site archive. ProjectError for another layout."""
     results = os.path.join(unpacked, 'results')
-    return results if os.path.isdir(results) else unpacked
+    for needed in ('run.json', 'samples'):
+        if not os.path.exists(os.path.join(results, needed)):
+            raise ProjectError('the archive has no results/%s, so it isn\'t laid out as the site\'s '
+                               'aggregator writes archives today. Re-aggregate it on the site first.'
+                               % needed)
+    return os.path.join(results, 'samples')
 
 
 # ---- discovery ----
@@ -94,12 +81,10 @@ def discover_from_runjson(root):
             # Aggregator 7.0 renamed this field. Missing it sends every sample to the
             # recovery path, which drops the AA log, and then the site can't share directories.
             aa = _resolve(base, feature.get('Reconstruction directory') or feature.get('AA directory'))
-            if aa and aa.endswith('.tar.gz'):
-                paths['aa_tarball'] = aa
-            elif aa and os.path.isdir(aa):
+            if aa and os.path.isdir(aa):
                 paths['aa_dir'] = aa
-            # Kept even when the AA output wasn't packed: a sample can have a valid CNV BED
-            # while its reconstruction lives only in AC's files/ copy.
+            elif aa:
+                paths['aa_not_a_dir'] = aa
             for key, field in (('cnv_calls_bed', 'CNV BED file'),
                                ('sample_meta', 'Sample metadata JSON'),
                                ('run_meta', 'Run metadata JSON')):
@@ -109,53 +94,6 @@ def discover_from_runjson(root):
             if paths:
                 samples[name] = paths
     return samples
-
-
-def _ac_files_dirs(root):
-    """Directories named `files`: AC's copy of graph, cycles and summary."""
-    return [dirpath for dirpath, _, names in os.walk(root)
-            if os.path.basename(dirpath) == 'files' and any(n.endswith('_graph.txt') for n in names)]
-
-
-def _has_aa(paths):
-    return any(key in paths for key in ('aa_dir', 'aa_tarball', 'aa_files_dir'))
-
-
-def _recover_unpacked_aa(root, samples):
-    """Find AA data for samples with no packed AA output.
-
-    It may be in a loose directory with every amplicon's plots, or in AC's files/ copy, which
-    keeps plots only for classified amplicons. Take the one with the most plots, or the
-    unclassified amplicons lose their images in the rebuild.
-    """
-    packed = {s for s, paths in samples.items() if 'aa_dir' in paths or 'aa_tarball' in paths}
-    candidates = set(_ac_files_dirs(root))
-    for dirpath, _, names in os.walk(root):
-        if any(n.endswith('_summary.txt') and not n.startswith('.') for n in names):
-            candidates.add(dirpath)
-    listings = {d: os.listdir(d) for d in candidates}
-    needed = set(samples)
-    for names in listings.values():
-        for name in names:
-            if name.startswith('.'):
-                continue
-            if name.endswith('_graph.txt') and '_amplicon' in name:
-                needed.add(name.split('_amplicon')[0])
-            elif name.endswith('_summary.txt'):
-                needed.add(name[:-len('_summary.txt')])
-    for sample in needed - packed:
-        best, best_score = None, (-1, -1, -1)
-        for directory, names in listings.items():
-            graphs = sum(n.startswith(sample + '_amplicon') and n.endswith('_graph.txt') for n in names)
-            summary = (sample + '_summary.txt') in names
-            if not (graphs or summary):
-                continue
-            plots = sum(n.startswith(sample + '_amplicon') and n.endswith('.png') for n in names)
-            score = (plots, graphs, int(summary))
-            if score > best_score:
-                best, best_score = directory, score
-        if best is not None:
-            samples[sample].setdefault('aa_files_dir', best)
 
 
 def _attach_named_files(root, samples):
@@ -190,22 +128,12 @@ def _attach_named_files(root, samples):
 
 
 def discover_samples(root):
-    """{sample: paths}. Keeps samples with AA data or a CNV BED: a sample with only a CNV has
-    no amplification, and it belongs in the archive as part of the denominator."""
-    samples = defaultdict(dict)
-    for name, paths in discover_from_runjson(root).items():
-        samples[name].update(paths)
-    if not any(_has_aa(paths) for paths in samples.values()):
-        for dirpath, dirnames, _ in os.walk(root):
-            for name in dirnames:
-                if name.endswith('_AA_results'):
-                    samples[name[:-len('_AA_results')]]['aa_dir'] = os.path.join(dirpath, name)
-        for path in find_files(root, '_AA_results.tar.gz'):
-            samples[os.path.basename(path)[:-len('_AA_results.tar.gz')]].setdefault('aa_tarball', path)
-    _recover_unpacked_aa(root, samples)
+    """{sample: paths}, from run.json. Keeps samples with AA data or a CNV BED: a sample with
+    only a CNV has no amplification, and it belongs in the archive as part of the denominator."""
+    samples = discover_from_runjson(root)
     _attach_named_files(root, samples)
     kept = {name: paths for name, paths in samples.items()
-            if _has_aa(paths) or paths.get('cnv_calls_bed')}
+            if 'aa_dir' in paths or 'aa_not_a_dir' in paths or paths.get('cnv_calls_bed')}
     for name, paths in kept.items():
         home = _sample_home(name, paths)
         if home:
@@ -243,9 +171,14 @@ def structure_problems(samples):
       nested <sample>_AA_results copy in every sample (measured 2026-11-07).
     - An empty graph or cycles file: AC 2.0.1 refuses them. CUGA on dev has 9 samples whose
       only amplicon files are empty (measured 2026-11-07).
+    - AA results that run.json names but that aren't a folder, such as a tarball: AC wouldn't
+      see their amplicons. None of the 27 keep-current archives on prod had one (2026-11-09).
     """
     problems = []
     for sample, paths in sorted(samples.items()):
+        if 'aa_not_a_dir' in paths:
+            problems.append('%s: its AA results, %s, are not a folder'
+                            % (sample, os.path.basename(paths['aa_not_a_dir'])))
         if 'aa_dir' not in paths:
             continue
         top = paths['aa_dir']
@@ -275,70 +208,69 @@ def old_ac_dirs(root):
 
 # ---- staging ----
 
-def _stage_aa(sample, paths, sample_dir):
-    dest = os.path.join(sample_dir, sample + '_AA_results')
-    if 'aa_dir' in paths:
-        shutil.copytree(paths['aa_dir'], dest)
-    elif 'aa_files_dir' in paths:
-        os.makedirs(dest)
-        for name in os.listdir(paths['aa_files_dir']):
-            if name.startswith(sample + '_amplicon') or name == sample + '_summary.txt':
-                shutil.copy(os.path.join(paths['aa_files_dir'], name), os.path.join(dest, name))
-    elif 'aa_tarball' in paths:
-        unpacked = os.path.join(sample_dir, '_untar')
-        extract(paths['aa_tarball'], unpacked)
-        found = None
-        for dirpath, dirnames, _ in os.walk(unpacked):
-            if sample + '_AA_results' in dirnames:
-                found = os.path.join(dirpath, sample + '_AA_results')
-        if not found:
-            found = next((dirpath for dirpath, _, names in os.walk(unpacked)
-                          if any(n.endswith('_graph.txt') for n in names)), None)
-        if not found:
-            raise ProjectError('no AA results inside %s' % paths['aa_tarball'])
-        shutil.move(found, dest)
-        shutil.rmtree(unpacked, ignore_errors=True)
+def read_ac_input(path):
+    """make_input.sh's pairs: [(sample, cycles path, graph path)]."""
+    with open(path) as handle:
+        return [tuple(line.rstrip('\n').split('\t')[:3]) for line in handle if line.strip()]
 
 
-def _stage_other_files(paths, sample_dir):
-    """Everything else in the sample's own directory, such as its pipeline log, finish flag,
-    timing log and metadata, under the same names, so the rebuild doesn't lose them."""
-    home = paths.get('home')
-    if not home:
-        return
-    used = {os.path.realpath(p) for key, p in paths.items() if key != 'home'}
-    for name in os.listdir(home):
-        source = os.path.join(home, name)
-        if os.path.realpath(source) in used:
-            continue
-        dest = os.path.join(sample_dir, name)
-        if os.path.isdir(source):
-            shutil.copytree(source, dest)
-        else:
-            shutil.copy2(source, dest)
+def ac_input_problems(pairs, samples):
+    """How AC's input disagrees with the samples run.json names, checked before AC runs for
+    hours. Empty means AC sees each of the archive's amplicons once.
+
+    - an amplicon more than once, as from a nested copy of a sample's AA results
+    - a sample run.json doesn't name, which AC would classify into a sample the site lacks
+    - a sample with AA graph files that has no pairs: its raw `_cycles.txt` files are missing,
+      as in an archive with only AC's annotated cycles, and every amplicon would become No amp
+    """
+    problems = []
+    graphs = defaultdict(list)
+    for sample, _, graph in pairs:
+        graphs[os.path.basename(graph)].append(graph)
+    repeated = sorted(name for name, paths in graphs.items() if len(paths) > 1)
+    if repeated:
+        problems.append('%d amplicon(s) found more than once, first %s in %s'
+                        % (len(repeated), repeated[0], ' and '.join(graphs[repeated[0]])))
+    named = {sample for sample, _, _ in pairs}
+    unknown = sorted(named - set(samples))
+    if unknown:
+        problems.append('%d sample(s) with AA results that run.json doesn\'t name, first %s'
+                        % (len(unknown), unknown[0]))
+    unpaired = sorted(sample for sample, paths in samples.items()
+                      if sample not in named and 'aa_dir' in paths
+                      and find_files(paths['aa_dir'], '_graph.txt'))
+    if unpaired:
+        problems.append('%d sample(s) with AA graph files but no raw _cycles.txt, first %s'
+                        % (len(unpaired), unpaired[0]))
+    return problems
 
 
-def stage_samples(samples, stage_dir):
-    """One uniform tree per sample, which is both AC's input and the aggregator's."""
-    for sample, paths in samples.items():
-        if os.sep in sample or sample in ('.', '..'):
-            raise ProjectError('run.json has an unusable sample name: %r' % sample)
-        sample_dir = os.path.join(stage_dir, sample)
-        os.makedirs(sample_dir)
-        _stage_aa(sample, paths, sample_dir)
-        _stage_other_files(paths, sample_dir)
-        if paths.get('cnv_calls_bed'):
-            shutil.copy(paths['cnv_calls_bed'], os.path.join(sample_dir, sample + '_CNV_CALLS.bed'))
-        if paths.get('cnvkit_dir'):
-            shutil.copytree(paths['cnvkit_dir'], os.path.join(sample_dir, sample + '_cnvkit_output'))
-        elif paths.get('cnvkit_tarball'):
-            shutil.copy(paths['cnvkit_tarball'], os.path.join(sample_dir, sample + '_cnvkit_output.tar.gz'))
-        for key, suffix in (('cnv_seeds_bed', '_AA_CNV_SEEDS.bed'),
-                            ('sample_meta', '_sample_metadata.json'),
-                            ('run_meta', '_run_metadata.json')):
-            if paths.get(key):
-                shutil.copy(paths[key], os.path.join(sample_dir, sample + suffix))
-    clean_mac_junk(stage_dir)
+# What this tool writes into AC's folder, which isn't AC's output.
+_OWN_FILES = ('ac_console.out',)
+
+
+def swap_ac_output(unpacked, ac_dir, dest):
+    """Write `dest`: the unpacked archive with its AC folder(s) replaced by `ac_dir`, as
+    `results/consolidated_classification/`. Nothing else is changed or left out."""
+    old = [d + os.sep for d in old_ac_dirs(unpacked)]
+    partial = dest + '.partial'
+    with tarfile.open(partial, 'w:gz') as tar:
+        for dirpath, dirnames, names in os.walk(unpacked):
+            dirnames.sort()
+            dirnames[:] = [d for d in dirnames if os.path.join(dirpath, d) + os.sep not in old]
+            for name in sorted(names):
+                path = os.path.join(dirpath, name)
+                if not any(path.startswith(d) for d in old):
+                    tar.add(path, arcname=os.path.relpath(path, unpacked), recursive=False)
+        for dirpath, dirnames, names in os.walk(ac_dir):
+            dirnames.sort()
+            for name in sorted(names):
+                if dirpath == ac_dir and name in _OWN_FILES:
+                    continue
+                path = os.path.join(dirpath, name)
+                tar.add(path, arcname=os.path.join('results', 'consolidated_classification',
+                                                   os.path.relpath(path, ac_dir)), recursive=False)
+    os.replace(partial, dest)
 
 
 # ---- how AC was run ----
@@ -473,88 +405,7 @@ def recover_settings(root, api_reference):
             'notes': notes, 'info': info}
 
 
-# ---- checks on built archives ----
-
-_AMPLICON_PNG = re.compile(r'.+_amplicon\d+\.png$')
-_AMPLICON_FILE = re.compile(r'.+_amplicon\d+(\.png|\.pdf|_graph\.txt|_cycles\.txt)$')
-# These must round-trip unchanged. Classification tables change on purpose, so they aren't here.
-_KEPT_SUFFIXES = ('_CNV_CALLS.bed', '_AA_CNV_SEEDS.bed', '_cnvkit_output.tar.gz', '_summary.txt',
-                  '_sample_metadata.json', '_run_metadata.json')
-
-
-def has_member(tar_path, name):
-    with tarfile.open(tar_path) as tar:
-        return name in tar.getnames()
-
-
-def missing_paths(reference_tar, built_tar):
-    """Files in `reference_tar` that `built_tar` lacks at the same path, apart from AC's own
-    consolidated output, which a rebuild replaces and renames."""
-    def files(path):
-        with tarfile.open(path) as tar:
-            return {m.name for m in tar if m.isfile() and not os.path.basename(m.name).startswith('._')}
-    built = files(built_tar)
-    return sorted(name for name in files(reference_tar)
-                  if '/consolidated_classification/' not in '/' + name and name not in built)
-
-
-def missing_names(reference_tar, built_tar):
-    """Files in `reference_tar` whose name appears fewer times anywhere in `built_tar`, apart
-    from AC's consolidated output. For comparing across an aggregator layout change, which
-    moves files, e.g. `<sample>_AA_results/` to `<sample>_reconstruction_results/`.
-
-    A file is also there as `<name>.gz`: the aggregator gzips CoRAL's `_reconstruct.log`. On
-    2026-11-09 all 24 of prod's CoRAL cell lines logs gunzipped to the original bytes."""
-    def files(path):
-        with tarfile.open(path) as tar:
-            return [m.name for m in tar if m.isfile() and not os.path.basename(m.name).startswith('._')]
-    left = defaultdict(int)
-    for name in files(built_tar):
-        left[os.path.basename(name)] += 1
-    missing = []
-    for name in sorted(files(reference_tar)):
-        if '/consolidated_classification/' in '/' + name:
-            continue
-        for found in (os.path.basename(name), os.path.basename(name) + '.gz'):
-            if left[found]:
-                left[found] -= 1
-                break
-        else:
-            missing.append(name)
-    return missing
-
-
-def _member_names(tar_path):
-    with tarfile.open(tar_path) as tar:
-        return [os.path.basename(name) for name in tar.getnames()
-                if not os.path.basename(name).startswith('._')]
-
-
-def plots_in_archive(tar_path):
-    return {name for name in _member_names(tar_path) if _AMPLICON_PNG.match(name)}
-
-
-def plots_in_tree(root):
-    """Amplicon plots in an unpacked tree, including inside per-sample AA tarballs."""
-    found = set()
-    for dirpath, _, names in os.walk(root):
-        for name in names:
-            if name.startswith('._'):
-                continue
-            if _AMPLICON_PNG.match(name):
-                found.add(name)
-            elif name.endswith('_AA_results.tar.gz'):
-                try:
-                    found |= plots_in_archive(os.path.join(dirpath, name))
-                except tarfile.TarError:
-                    pass
-    return found
-
-
-def kept_content(tar_path):
-    return {name for name in _member_names(tar_path)
-            if name.endswith(_KEPT_SUFFIXES) or _AMPLICON_FILE.match(name)}
-
+# ---- reading built archives ----
 
 def run_json_summary(tar_path):
     """The samples named in an archive's run.json, the counts the site will report for that file

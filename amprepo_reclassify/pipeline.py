@@ -1,4 +1,4 @@
-"""`run`: download, AC, rebuild, check and report, per project and resumable.
+"""`run`: download, AC, swap in AC's output, check and report, per project and resumable.
 
 Each project works in its own directory, keyed by version id, with a state file. A step
 clears its own output before it starts and is marked done only after it succeeds, so a crash
@@ -89,11 +89,10 @@ class ProjectRun:
         self.name = safe_name(entry['name'], entry['id'])
         self.tgz = os.path.join(self.dir, entry['id'] + '.tar.gz')
         self.unpacked = os.path.join(self.dir, 'download')
-        self.stage_dir = os.path.join(self.dir, 'stage')
+        self.input_dir = os.path.join(self.dir, 'ac_input')
+        self.ac_input = os.path.join(self.input_dir, 'AC.input')
         self.ac_dir = os.path.join(self.dir, 'ac_new')
-        self.control_dir = os.path.join(self.dir, 'control')
-        self.build_dir = os.path.join(self.dir, 'build')
-        self.aux_dir = os.path.join(self.dir, 'aux_inputs')
+        self.check_dir = os.path.join(self.dir, 'check')
         local = entry.get('local_archive')
         self.source = 'local %s' % local['sha256'] if local else 'site'
         self.ac_prefix = os.path.join(self.ac_dir, self.name)
@@ -238,52 +237,33 @@ class ProjectRun:
 
     def _unpack(self):
         archive.extract(self.tgz, self.unpacked)
-        archive.clean_mac_junk(self.unpacked)
-
-    def _aggregate(self, inputs, out_name, build_dir):
-        output = os.path.join(build_dir, out_name + '.tar.gz')
-        _run_logged('the aggregator', self.tools.asa_cmd + ['--files'] + inputs + ['-o', out_name],
-                    os.path.join(build_dir, 'aggregator_console.out'),
-                    cwd=build_dir, env=self.tools.env())
-        if not os.path.exists(output):
-            raise ProjectError('the aggregator did not produce %s' % output)
-        subprocess.run(['gzip', '-t', output], check=True)
-        return output
-
-    def _control(self):
-        """Rebuild the original AA and AC without reclassifying. Anything lost here is the
-        original layout defeating the aggregator, not the new AC."""
-        built = self._aggregate([archive.results_root(self.unpacked)], self.name + '_control', self.control_dir)
-        dropped = archive.plots_in_tree(self.unpacked) - archive.plots_in_archive(built)
-        self.state['validation']['control_dropped'] = sorted(dropped)
 
     def _reference(self, settings):
         """A project list's override, then what AC used last time, which falls back to the site."""
         return self.entry.get('ref_override') or settings['ref']
 
+    def _list_input(self, samples):
+        """AC's own make_input.sh on the archive's samples, checked against run.json before AC
+        runs for hours."""
+        _run_logged('make_input.sh', self.tools.make_input_cmd + [
+                        archive.samples_root(self.unpacked), os.path.join(self.input_dir, 'AC')],
+                    os.path.join(self.input_dir, 'make_input.out'), env=self.tools.env())
+        problems = archive.ac_input_problems(archive.read_ac_input(self.ac_input), samples)
+        if problems:
+            raise ProjectError('AC\'s input doesn\'t match the samples run.json names, so nothing '
+                               'was run: %s' % '; '.join(problems))
+
     def _classify(self, samples, settings, flags):
         ref = self._reference(settings)
         if not ref:
             raise ProjectError('no reference for AC. Add a ref column to the project list.')
-        # Checked before AC because AC takes hours on a large project and only fails at the end.
-        repeated = archive.repeated_names(self.stage_dir, '_graph.txt')
-        if repeated:
-            raise ProjectError('%d AA graph file(s) are staged more than once, first %s. AC would '
-                               'classify them twice.' % (len(repeated), repeated[0]))
         self.state['ac_options'] = self._ac_options(settings, flags)
-        command = self.tools.ac_cmd + ['--ref', ref, '--AA_results', self.stage_dir + '/',
+        command = self.tools.ac_cmd + ['--ref', ref, '-i', self.ac_input,
                                        '-o', self.ac_prefix, '--verbose_classification',
                                        '--jobs', str(self.machine.jobs),
                                        '--bfb_threads', str(self.machine.bfb_threads)] + flags
         _run_logged('AC', command, os.path.join(self.ac_dir, 'ac_console.out'), env=self.tools.env())
         check_ac_output(self.ac_dir)
-        # AC pairs <amplicon>_graph.txt with raw <amplicon>_cycles.txt. An archive with only
-        # AC's annotated cycles gives an empty AC.input, and every amplicon would become No amp.
-        ac_input = os.path.join(self.ac_dir, 'AC.input')
-        graphs = len(archive.find_files(self.stage_dir, '_graph.txt'))
-        if graphs and (not os.path.exists(ac_input) or os.path.getsize(ac_input) == 0):
-            raise ProjectError('AC.input is empty but %d AA graph files were staged, so raw '
-                               '_cycles.txt files are missing from the archive.' % graphs)
         table = self.ac_prefix + '_result_table.tsv'
         new_calls, _ = report.load_result_table(table)
         classified = {sample for sample, _ in new_calls}
@@ -292,48 +272,39 @@ class ProjectRun:
             report.add_no_amp_rows(table, unseen, ref)
             log('  added no-amplification rows for %d sample(s), first %s' % (len(unseen), unseen[0]))
 
-    def _build(self):
-        inputs = [self.stage_dir, self.ac_dir]
-        # The aggregator recognises an AUX folder only among the subdirectories of an input.
-        shutil.rmtree(self.aux_dir, ignore_errors=True)
-        aux = archive.aux_dirs(self.unpacked)
-        if aux:
-            os.makedirs(self.aux_dir)
-            for index, path in enumerate(aux):
-                shutil.copytree(path, os.path.join(self.aux_dir, '%d' % index, os.path.basename(path)))
-            inputs += [os.path.join(self.aux_dir, '%d' % index) for index in range(len(aux))]
-        built = self._aggregate(inputs, self.name + '_reclass', self.build_dir)
-        validation = self.state['validation']
-        control = os.path.join(self.control_dir, self.name + '_control.tar.gz')
-        # The control is the aggregator's own repack of the input, so anything it has that the
-        # rebuild lacks was lost here. The reclassifier only replaces AC's output.
-        missing = archive.missing_paths(control, built)
-        if missing:
-            raise ProjectError('the rebuilt archive lacks %d file(s) that the input has, first %s'
-                               % (len(missing), missing[0]))
-        validation['final_dropped'] = sorted(archive.kept_content(control) - archive.kept_content(built))
-        manifest = archive.run_json_summary(built)
-        validation['archive_samples'] = len(manifest['samples'])
-        validation['run_json_bytes'] = manifest['bytes']
-        validation['new_content_bytes'] = archive.new_content_bytes(self.tgz, built)
+    def _swap(self):
+        """The site's archive with its AC folder replaced. This is what goes to the site."""
         os.makedirs(self.machine.output_dir, exist_ok=True)
         final = os.path.join(self.machine.output_dir, self.name + '_reclass.tar.gz')
-        shutil.move(built, final)
+        archive.swap_ac_output(self.unpacked, self.ac_dir, final)
+        validation = self.state['validation']
         validation['archive'] = final
         validation['archive_bytes'] = os.path.getsize(final)
+
+    def _check(self):
+        """Aggregate the new archive here as the site will when it takes it in, so a failure
+        shows here rather than as a failed version on the site. The result isn't sent, but
+        the upload compares what the site stores with it."""
+        validation = self.state['validation']
+        output = os.path.join(self.check_dir, self.name + '.tar.gz')
+        _run_logged('the aggregator', self.tools.asa_cmd + ['--files', validation['archive'],
+                                                            '-o', self.name],
+                    os.path.join(self.check_dir, 'aggregator_console.out'),
+                    cwd=self.check_dir, env=self.tools.env())
+        if not os.path.exists(output):
+            raise ProjectError('the aggregator did not produce %s' % output)
+        subprocess.run(['gzip', '-t', output], check=True)
+        manifest = archive.run_json_summary(output)
+        validation['checked'] = output
+        validation['archive_samples'] = len(manifest['samples'])
+        validation['run_json_bytes'] = manifest['bytes']
+        validation['new_content_bytes'] = archive.new_content_bytes(self.tgz, output)
 
     def _report(self, samples, settings, flags):
         new_calls, new_version = report.load_result_table(self.ac_prefix + '_result_table.tsv')
         old_calls = report.load_old_calls(archive.old_ac_dirs(self.unpacked))
-        validation = self.state['validation']
-        # Here and not in the build, so a change to this check reaches projects already built.
-        # By name, not path: the aggregator's layout has changed between versions, and moving a
-        # file isn't losing it. Only meaningful when the input already has a run.json layout.
-        control = os.path.join(self.control_dir, self.name + '_control.tar.gz')
-        validation['repack_dropped'] = (archive.missing_names(self.tgz, control)
-                                        if archive.has_member(self.tgz, 'results/run.json') else [])
         result = dict(
-            validation, name=self.entry['name'], id=self.entry['id'],
+            self.state['validation'], name=self.entry['name'], id=self.entry['id'],
             url=self.site.project_url(self.entry['id']),
             ref=self._reference(settings), site_ref=self.entry.get('ac_ref'),
             # The API's version, because an archive without an AC log only has an older one.
@@ -369,9 +340,10 @@ class ProjectRun:
             raise ProjectError('the archive was not downloaded before this job started')
         self._step('download', self._download)
         self._step('unpack', self._unpack, self.unpacked)
+        archive.samples_root(self.unpacked)
         samples = archive.discover_samples(self.unpacked)
         if not samples:
-            raise ProjectError('no AA results found in the archive')
+            raise ProjectError('run.json names no samples with AA results or a CNV BED')
         problems = archive.structure_problems(samples)
         if problems:
             where = 'the local archive' if self.entry.get('local_archive') else 'the archive on the site'
@@ -383,10 +355,10 @@ class ProjectRun:
             ' '.join(flags) or '(no other flags)'))
         for note in settings['notes'] + settings['info']:
             log('    note: %s' % note)
-        self._step('control', self._control, self.control_dir)
-        self._step('stage', lambda: archive.stage_samples(samples, self.stage_dir), self.stage_dir)
+        self._step('input', lambda: self._list_input(samples), self.input_dir)
         self._step('classify', lambda: self._classify(samples, settings, flags), self.ac_dir)
-        self._step('build', self._build, self.build_dir)
+        self._step('swap', self._swap)
+        self._step('check', self._check, self.check_dir)
         self._step('report', lambda: self._report(samples, settings, flags))
         self._save_state()
 

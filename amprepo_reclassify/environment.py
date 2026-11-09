@@ -44,6 +44,8 @@ class Tools:
     ac_cmd: list
     asa_cmd: list
     description: str
+    # AC's own make_input.sh, which lists the graph and cycles pairs AC would classify.
+    make_input_cmd: list = None
     path_prefix: str = ''
     # The AC tree's commit and each tracked file's sha256, so a node without git can show it has
     # the same code.
@@ -176,6 +178,8 @@ def describe(found):
 def _tools(machine, found):
     prefix = machine.tool_prefix()
     return Tools(ac_cmd=prefix + [machine.python, machine.ac_script],
+                 make_input_cmd=prefix + ['bash', os.path.join(machine.ac_src, 'ampclasslib',
+                                                               'make_input.sh')],
                  asa_cmd=prefix + [machine.python, '-I', '-m', 'AmpliconSuiteAggregator'],
                  description=describe(found),
                  path_prefix='' if machine.conda_env else os.path.dirname(machine.python),
