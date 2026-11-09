@@ -348,11 +348,11 @@ def stage_samples(samples, stage_dir):
 AC_FLAGS_VALUED = ('--min_flow', '--min_size', '--decomposition_strictness', '--filter_pval',
                    '--exclude_bed')
 AC_FLAGS_BOOL = ('--filter_similar', '--add_chr_tag', '--no_LC_filter', '--force',
-                 '--no_bfbarchitect', '--report_complexity')
+                 '--no_bfbarchitect')
 # Options that AC 2.0.1 already has on: it declares `--report_complexity` with default=True and
-# "[Deprecated - on by default]". Still carried, so the AC command matches the original, but a
-# project that has one isn't using a non-default setting, and two logs differing only in one
-# didn't run AC differently.
+# "[Deprecated - on by default]". Recognised but not carried: passing one changes nothing, and
+# a later AC that removes a deprecated option would refuse the command. Two logs differing only
+# in one didn't run AC differently.
 AC_FLAGS_DEFAULT_ON = ('--report_complexity',)
 # Options that describe the machine or this tool's own run, not the classification. `--config`
 # is reported separately, because its values aren't in the log.
@@ -374,6 +374,8 @@ def _parse_ac_command(command):
     for i, token in enumerate(tokens):
         if token == '--ref' and i + 1 < len(tokens):
             ref = tokens[i + 1]
+        elif token in AC_FLAGS_DEFAULT_ON:
+            continue
         elif token in AC_FLAGS_BOOL:
             flags.append(token)
         elif token in AC_FLAGS_VALUED and i + 1 < len(tokens):

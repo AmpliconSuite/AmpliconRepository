@@ -46,13 +46,16 @@ def _run_logged(label, command, path, cwd=None, env=None):
 
 
 def _matching_lines(ac_dir, pattern):
-    hits = []
+    """Each matching line once: AC's log and its console output carry the same lines."""
+    hits = {}
     for dirpath, _, names in os.walk(ac_dir):
-        for name in names:
+        for name in sorted(names):
             if name.endswith(('.log', '.out')):
                 with open(os.path.join(dirpath, name), errors='replace') as handle:
-                    hits += ['%s: %s' % (name, line.strip()) for line in handle if pattern.search(line)]
-    return hits
+                    for line in handle:
+                        if pattern.search(line):
+                            hits.setdefault(line.strip(), '%s: %s' % (name, line.strip()))
+    return list(hits.values())
 
 
 def check_ac_output(ac_dir):

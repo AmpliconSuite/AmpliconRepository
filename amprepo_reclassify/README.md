@@ -165,7 +165,7 @@ Under "Notes" it lists what the review should see but that holds nothing back:
 - where AC's settings came from, when that wasn't an AC log: run metadata, which can be older
   than the results, or AC's defaults, with the site's reference
 - non-default AC flags carried over from the original run. Flags AC already has on by default,
-  such as `--report_complexity` in AC 2.0.1, aren't listed.
+  such as `--report_complexity` in AC 2.0.1, aren't carried or listed.
 - samples that had no CNV BED in the site's archive to begin with
 
 When a new version of this tool changes these checks, `run` reports each built project again from
