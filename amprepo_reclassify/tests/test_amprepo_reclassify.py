@@ -19,7 +19,6 @@ import threading
 import pytest
 
 from amprepo_reclassify import archive, environment, pins, pipeline, plan, report, slurm, upload
-from amprepo_reclassify.archive import ProjectError
 from amprepo_reclassify.machine import Machine
 from amprepo_reclassify.site_api import Refused, Site, SiteError, USER_AGENT
 
@@ -31,55 +30,58 @@ ID_OLD = 'c' * 24
 STUB_AC = textwrap.dedent('''
     import argparse, os, sys
     p = argparse.ArgumentParser()
-    p.add_argument('--ref'); p.add_argument('--AA_results'); p.add_argument('-o')
+    p.add_argument('--ref'); p.add_argument('-i'); p.add_argument('-o')
     args, _ = p.parse_known_args()
     with open(os.environ['STUB_CALLS'], 'a') as f:
         f.write(' '.join(sys.argv[1:]) + '\\n')
     print(os.environ.get('STUB_AC_SAYS', 'classifying'))
     if os.environ.get('STUB_AC_EXIT'):
         sys.exit(int(os.environ['STUB_AC_EXIT']))
-    out = os.path.dirname(args.o)
-    open(os.path.join(out, 'AC.input'), 'w').write(os.environ.get('STUB_AC_INPUT', 'S1 graph cycles\\n'))
+    assert open(args.i).read(), 'the stub expects AC.input to have pairs'
     with open(args.o + '_result_table.tsv', 'w') as f:
         f.write('Sample name\\tAA amplicon number\\tFeature ID\\tClassification\\tAC version\\tOncogenes\\n')
         f.write('S1\\t1\\tS1_amplicon1_ecDNA_1\\tecDNA\\t2.0.1\\t[]\\n')
     open(args.o + '_amplicon_classification_profiles.tsv', 'w').write('header\\n')
 ''')
 
+STUB_MAKE_INPUT = '''#!/usr/bin/env bash
+# Like AC's make_input.sh: each raw cycles file with its graph, found under the search paths.
+out="${@: -1}"; : > "$out.input"; : > "${out}_summary_map.txt"
+for ((i=1; i<$#; i++)); do
+  find "${!i}" -type f -name '*_cycles.txt' ! -name '*annotated_cycles*' ! -name '._*' | sort |
+  while read -r cycles; do
+    graph="${cycles%_cycles.txt}_graph.txt"
+    sample=$(basename "$cycles" _cycles.txt | sed 's/_amplicon[0-9]*$//')
+    [ -f "$graph" ] && printf '%s\\t%s\\t%s\\n' "$sample" "$cycles" "$graph" >> "$out.input"
+  done
+done
+'''
+
 STUB_AGGREGATOR = textwrap.dedent('''
-    import argparse, json, os, tarfile
+    import argparse, io, json, os, tarfile, tempfile
     p = argparse.ArgumentParser()
     p.add_argument('--files', nargs='+'); p.add_argument('-o')
     args = p.parse_args()
-    drop = (args.o.endswith('_reclass') and os.environ.get('STUB_ASA_DROP')) or '\\0'
     samples = set()
-    # Like the real one: AC output goes to consolidated_classification/, a folder with an
-    # AUX_DIR file goes whole to other_files/, and everything else is kept.
-    with tarfile.open(args.o + '.tar.gz', 'w:gz') as tar:
-        for root in args.files:
-            for dirpath, dirnames, names in os.walk(root):
-                for d in list(dirnames):
-                    if os.path.exists(os.path.join(dirpath, d, 'AUX_DIR')):
-                        tar.add(os.path.join(dirpath, d), arcname='results/other_files/' + d)
-                        dirnames.remove(d)
-                for name in names:
-                    if name == 'run.json' or name.startswith(drop):
-                        continue
-                    if name.endswith('_CNV_CALLS.bed'):
-                        samples.add(name.split('_CNV_CALLS')[0])
-                    path = os.path.join(dirpath, name)
-                    if 'consolidated_classification' in dirpath or os.path.basename(root) == 'ac_new':
-                        arcname = 'results/consolidated_classification/' + name
-                    elif os.path.basename(root) == 'results':
-                        arcname = 'results/' + os.path.relpath(path, root)
-                    else:  # the stage: one directory per sample
-                        arcname = 'results/samples/' + os.path.relpath(path, root)
-                    tar.add(path, arcname=arcname)
+    # Like the real one on an aggregated archive: every file stays where it is, and run.json
+    # is written again from what is there.
+    with tarfile.open(args.o + '.tar.gz', 'w:gz') as out, tempfile.TemporaryDirectory() as tmp:
+        for source in args.files:
+            with tarfile.open(source) as tar:
+                tar.extractall(tmp, filter='data')
+        for dirpath, _, names in os.walk(tmp):
+            for name in sorted(names):
+                if name == 'run.json':
+                    continue
+                if name.endswith('_CNV_CALLS.bed'):
+                    samples.add(name.split('_CNV_CALLS')[0])
+                path = os.path.join(dirpath, name)
+                out.add(path, arcname=os.path.relpath(path, tmp))
         data = json.dumps({'runs': {'r': [{'Sample name': s} for s in sorted(samples)]}}).encode()
         info = tarfile.TarInfo('results/run.json'); info.size = len(data)
-        import io
-        tar.addfile(info, io.BytesIO(data))
+        out.addfile(info, io.BytesIO(data))
 ''')
+
 
 
 def _add(tar, name, text=''):
@@ -150,8 +152,10 @@ class FakeSite:
 def workspace(tmp_path, monkeypatch):
     """A machine, stub tools and a one-project plan."""
     stub_ac, stub_asa = tmp_path / 'stub_ac.py', tmp_path / 'stub_asa.py'
+    stub_make_input = tmp_path / 'make_input.sh'
     stub_ac.write_text(STUB_AC)
     stub_asa.write_text(STUB_AGGREGATOR)
+    stub_make_input.write_text(STUB_MAKE_INPUT)
     calls = tmp_path / 'ac_calls.txt'
     calls.write_text('')
     monkeypatch.setenv('STUB_CALLS', str(calls))
@@ -160,6 +164,7 @@ def workspace(tmp_path, monkeypatch):
         machine = Machine(workdir=str(tmp_path / 'work'), jobs=2, bfb_threads=1)
         tools = environment.Tools(ac_cmd=[sys.executable, str(stub_ac)],
                                   asa_cmd=[sys.executable, str(stub_asa)],
+                                  make_input_cmd=['bash', str(stub_make_input)],
                                   description='stub tools 1')
         site = FakeSite(make_archive(str(tmp_path / 'source.tar.gz')))
         ac_calls = calls
@@ -192,8 +197,8 @@ def test_a_project_runs_end_to_end(workspace):
     assert result['calls']['ecdna_old'] == 0 and result['calls']['ecdna_new'] == 1
     assert result['calls']['amplicon_changes'] == [['S1', '1', 'Linear', 'ecDNA']]
     assert result['expected_samples'] == result['archive_samples'] == 2
-    assert result['final_dropped'] == [] and result['control_dropped'] == []
     assert os.path.exists(result['archive']) and os.path.exists(result['report'])
+    assert os.path.exists(result['checked'])
     with open(result['report']) as handle:
         text = handle.read()
     assert '`2.0.0` on the site, `2.0.1` here' in text
@@ -227,7 +232,7 @@ def test_a_crash_repeats_only_the_step_it_was_in(workspace, monkeypatch):
     assert failures == 1
     state = workspace.state()
     assert 'AC exited with 3' in state['failed']
-    assert state['done'] == ['download', 'unpack', 'control', 'stage']
+    assert state['done'] == ['download', 'unpack', 'input']
 
     monkeypatch.delenv('STUB_AC_EXIT')
     _, failures = workspace.run()
@@ -239,7 +244,7 @@ def test_a_crash_repeats_only_the_step_it_was_in(workspace, monkeypatch):
 
 def test_new_tools_restart_a_project_but_keep_its_download(workspace):
     workspace.run()
-    changed = environment.Tools(workspace.tools.ac_cmd, workspace.tools.asa_cmd, 'stub tools 2')
+    changed = dataclasses.replace(workspace.tools, description='stub tools 2')
     workspace.run(tools=changed)
     assert workspace.ac_calls.read_text().count('--ref') == 2
     assert workspace.site.downloads == 1
@@ -331,23 +336,76 @@ def test_an_empty_aa_file_stops_the_project_before_any_work(workspace, tmp_path)
     assert workspace.ac_calls.read_text() == ''
 
 
-def test_empty_ac_input_is_a_failure_not_all_no_amp(workspace, monkeypatch):
-    monkeypatch.setenv('STUB_AC_INPUT', '')
+def _three_samples(**s3):
+    """make_archive's run.json with a third sample, S3, that has AA results."""
+    runs = json.loads(json.dumps({'runs': {'run': [
+        {'Sample name': 'S1', 'Reconstruction directory': 'samples/S1/S1_AA_results',
+         'CNV BED file': 'samples/S1/S1_CNV_CALLS.bed'},
+        {'Sample name': 'S2', 'Reconstruction directory': 'Not Provided',
+         'CNV BED file': 'samples/S2/S2_CNV_CALLS.bed'}]}}))
+    runs['runs']['run'].append(dict({'Sample name': 'S3',
+                                     'Reconstruction directory': 'samples/S3/S3_AA_results'}, **s3))
+    return runs
+
+
+def test_a_sample_with_only_annotated_cycles_stops_before_ac(workspace, tmp_path):
+    aa = 'results/samples/S3/S3_AA_results/'
+    workspace.site = FakeSite(make_archive(str(tmp_path / 'annotated.tar.gz'), manifest=_three_samples(),
+                                           extra=[(aa + 'S3_amplicon1_graph.txt', 'g'),
+                                                  (aa + 'S3_amplicon1_annotated_cycles.txt', 'c')]))
     _, failures = workspace.run()
     assert failures == 1
-    assert 'AC.input is empty' in workspace.state()['failed']
+    failed = workspace.state()['failed']
+    assert '1 sample(s) with AA graph files but no raw _cycles.txt, first S3' in failed
+    assert workspace.ac_calls.read_text() == ''
 
 
-def test_a_rebuild_that_loses_input_files_stops_the_project(workspace, monkeypatch):
-    monkeypatch.setenv('STUB_ASA_DROP', 'S2')
+def test_aa_results_run_json_does_not_name_stop_before_ac(workspace, tmp_path):
+    aa = 'results/samples/S9/S9_AA_results/'
+    workspace.site = FakeSite(make_archive(str(tmp_path / 'unnamed.tar.gz'), extra=[
+        (aa + 'S9_amplicon1_graph.txt', 'g'), (aa + 'S9_amplicon1_cycles.txt', 'c')]))
     _, failures = workspace.run()
     assert failures == 1
-    state = workspace.state()
-    assert 'the rebuilt archive lacks 1 file(s) that the input has, first results/samples/S2/S2_CNV_CALLS.bed' in state['failed']
-    assert state['result'] is None
+    assert "1 sample(s) with AA results that run.json doesn't name, first S9" in workspace.state()['failed']
+    assert workspace.ac_calls.read_text() == ''
 
 
-def test_other_sample_files_and_aux_folders_survive_the_rebuild(workspace, tmp_path):
+def test_aa_results_that_are_not_a_folder_stop_before_ac(workspace, tmp_path):
+    workspace.site = FakeSite(make_archive(
+        str(tmp_path / 'tarball.tar.gz'),
+        manifest=_three_samples(**{'Reconstruction directory': 'samples/S3/S3_AA_results.tar.gz'}),
+        extra=[('results/samples/S3/S3_AA_results.tar.gz', 'packed')]))
+    _, failures = workspace.run()
+    assert failures == 1
+    assert 'S3: its AA results, S3_AA_results.tar.gz, are not a folder' in workspace.state()['failed']
+
+
+def test_an_archive_in_an_older_layout_is_refused(workspace, tmp_path):
+    path = str(tmp_path / 'old_layout.tar.gz')
+    with tarfile.open(path, 'w:gz') as tar:
+        _add(tar, 'results/AA_outputs/project/S1_AA_results/S1_amplicon1_graph.txt', 'g')
+    workspace.site = FakeSite(path)
+    _, failures = workspace.run()
+    assert failures == 1
+    assert 'no results/run.json' in workspace.state()['failed']
+
+
+def test_the_new_archive_is_the_sites_with_only_the_ac_folder_replaced(workspace):
+    workspace.run()
+    result = workspace.state()['result']
+
+    def contents(path):
+        with tarfile.open(path) as tar:
+            return {m.name: tar.extractfile(m).read() for m in tar if m.isfile()}
+    before, after = contents(workspace.site.source), contents(result['archive'])
+    ac = 'results/consolidated_classification/'
+    assert {n: d for n, d in before.items() if not n.startswith(ac)} == \
+        {n: d for n, d in after.items() if not n.startswith(ac)}
+    assert sorted(n for n in after if n.startswith(ac)) == [
+        ac + 'Project_A_amplicon_classification_profiles.tsv', ac + 'Project_A_result_table.tsv']
+
+
+def test_other_sample_files_and_aux_folders_are_sent_as_they_were(workspace, tmp_path):
     workspace.site = FakeSite(make_archive(str(tmp_path / 'more.tar.gz'), extra=[
         ('results/samples/S1/S1.log', 'pipeline log'),
         ('results/samples/S1/S1_finish_flag.txt', 'All stages completed'),
@@ -418,14 +476,14 @@ def test_a_project_reported_by_older_checks_is_reported_again_without_a_rebuild(
     workspace.run()
     state = workspace.state()
     state['result']['report_version'] = 1
-    state['result']['repack_dropped'] = ['stale']
+    state['result']['from_older_checks'] = True
     pipeline.save_state(workspace.machine, ID_A, state)
     _, failures = workspace.run()
     assert failures == 0
     assert workspace.ac_calls.read_text().count('--ref') == 1, 'AC did not run again'
     assert workspace.site.downloads == 1
     result = workspace.state()['result']
-    assert result['report_version'] == pipeline.REPORT_VERSION and result['repack_dropped'] == []
+    assert result['report_version'] == pipeline.REPORT_VERSION and 'from_older_checks' not in result
 
 
 def test_an_upload_in_progress_keeps_its_report(workspace):
@@ -487,12 +545,6 @@ def test_run_json_path_cannot_leave_the_archive(tmp_path):
     manifest = {'runs': {'r': [{'Sample name': 'S1', 'Reconstruction directory': '../../secret'}]}}
     samples = archive.discover_from_runjson(_unpack(tmp_path, manifest=manifest))
     assert 'S1' not in samples
-
-
-def test_a_sample_name_cannot_leave_the_stage_directory(tmp_path):
-    with pytest.raises(ProjectError, match='unusable sample name'):
-        archive.stage_samples({'../outside': {}}, str(tmp_path))
-    assert not (tmp_path.parent / 'outside').exists()
 
 
 def test_extract_refuses_a_path_outside_the_destination(tmp_path):
@@ -636,30 +688,6 @@ def test_every_feature_of_an_amplicon_is_counted(tmp_path):
     # Row order within an amplicon is not a change.
     assert calls['amplicon_changes'] == [['S2', '1', 'BFB + ecDNA', 'BFB']]
     assert calls['ecdna_lost'] == ['S2']
-
-
-def test_a_moved_file_is_not_a_dropped_one(tmp_path):
-    old, new = str(tmp_path / 'old.tar.gz'), str(tmp_path / 'new.tar.gz')
-    with tarfile.open(old, 'w:gz') as tar:
-        _add(tar, 'results/samples/S1/S1_AA_results/S1_amplicon1_graph.txt', 'g')
-        _add(tar, 'results/samples/S1/S1_AA_results/S1_summary.txt', 's')
-        _add(tar, 'results/samples/S1/S1_AA_results/S1.log', 'l')
-        _add(tar, 'results/consolidated_classification/old_result_table.tsv', 't')
-    with tarfile.open(new, 'w:gz') as tar:
-        _add(tar, 'results/samples/S1/S1_reconstruction_results/S1_amplicon1_graph.txt', 'g')
-        _add(tar, 'results/samples/S1/S1_reconstruction_results/S1_summary.txt', 's')
-    assert archive.missing_names(old, new) == ['results/samples/S1/S1_AA_results/S1.log']
-
-
-def test_a_file_the_aggregator_gzipped_is_not_a_dropped_one(tmp_path):
-    old, new = str(tmp_path / 'old.tar.gz'), str(tmp_path / 'new.tar.gz')
-    with tarfile.open(old, 'w:gz') as tar:
-        _add(tar, 'results/samples/S1/S1_reconstruction_results/S1_reconstruct.log', 'log')
-        _add(tar, 'results/samples/S2/S2_reconstruction_results/S2_reconstruct.log', 'log')
-    with tarfile.open(new, 'w:gz') as tar:
-        _add(tar, 'results/samples/S1/S1_reconstruction_results/S1_reconstruct.log.gz', 'gz')
-    assert archive.missing_names(old, new) == [
-        'results/samples/S2/S2_reconstruction_results/S2_reconstruct.log']
 
 
 def test_new_content_counts_only_files_the_old_archive_lacks(tmp_path):
@@ -1094,7 +1122,7 @@ def built(workspace, monkeypatch):
         plan = dict(target, target_ac=pins.AC_VERSION)
         machine = workspace.machine
         state = staticmethod(workspace.state)
-        site = UploadSite(*_counts_of(workspace.state()['result']['archive']))
+        site = UploadSite(*_counts_of(workspace.state()['result']['checked']))
 
         @classmethod
         def summarise(cls):
@@ -1124,6 +1152,7 @@ def built(workspace, monkeypatch):
 def test_an_upload_sends_each_project_and_records_it(built):
     assert built.send() == 2
     assert [(s['id'], s['expected'], s['dry_run']) for s in built.site.sent] == [(ID_A, ID_A, False), (ID_B, ID_B, False)]
+    assert built.site.sent[0]['archive'] == built.state()['result']['archive']
     assert built.site.prepared == ['new-' + ID_A, 'new-' + ID_B]
     first = built.records()[0]
     assert (first['replaced'], first['new_version']) == (ID_A, 'new-' + ID_A)
@@ -1374,6 +1403,8 @@ def test_the_project_list_reads_a_sheet_relative_to_itself(tmp_path):
 def test_a_dry_run_changes_nothing_and_reports_what_would_be_stored(built):
     assert upload.run_dry_runs(built.plan, built.machine, built.site) == 0
     assert all(s['dry_run'] for s in built.site.sent) and len(built.site.sent) == 2
+    # The site's dry run reads run.json as sent, so it gets the archive aggregated here.
+    assert built.site.sent[0]['archive'] == built.state()['result']['checked']
     assert 'upload' not in built.state() and built.records() == []
     text = open(os.path.join(built.machine.output_dir, upload.DRY_RUN_FILE)).read()
     assert 'Project A' in text and 'Nothing flagged.' in text
@@ -1570,6 +1601,7 @@ def _ac_checkout(path):
     (path / 'ampclasslib' / '_version.py').write_text(
         '__ampliconclassifier_version__ = "%s"\n' % pins.AC_VERSION)
     (path / 'amplicon_classifier.py').write_text(STUB_AC)
+    (path / 'ampclasslib' / 'make_input.sh').write_text(STUB_MAKE_INPUT)
     (path / 'requirements.txt').write_text('numpy\n')
     _git(path, 'init', '-q')
     _git(path, 'add', '.')
@@ -1744,7 +1776,7 @@ def test_a_queued_job_is_never_restarted_under_it(cluster, monkeypatch):
         json.dump({'jobs': [{'id': '77'}]}, handle)
     pipeline.save_state(cluster.machine, ID_A, {
         'id': ID_A, 'tools': environment.tools_for(cluster.machine).description, 'source': 'site',
-        'done': ['download', 'unpack', 'control', 'stage', 'classify'], 'validation': {},
+        'done': ['download', 'unpack', 'input', 'classify'], 'validation': {},
         'failed': None, 'result': None})
     answers = iter([{'77'}, set()])
     monkeypatch.setattr(slurm, 'queued', lambda: next(answers))

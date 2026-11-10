@@ -33,7 +33,7 @@ person reviews, then the upload: `upload` refuses while any project in the plan 
 | `setup` | Clones AC at the pinned tag; makes an environment with the pinned tools, or names one; records threading and where projects run | local |
 | `plan` | The dry run: lists each project's latest version, reference, archive size and expected work | local |
 | `preflight` | Checks tools, solver, `$AA_DATA_REPO`, disk, token and site | nothing |
-| `run` | Download, AC, rebuild, validate, report, per project, resumable | local |
+| `run` | Download, check AC's input, AC, swap in AC's output, aggregate as a check, report, per project, resumable | local |
 | `summary` | Combined change summary, record-size check and predicted storage for review | local |
 | `upload --target dev\|prod` | Uploads reviewed archives, smallest first, and verifies each | the site |
 
@@ -96,10 +96,27 @@ different machines, because file sharing matches on exact bytes.
 `--jobs 16 --bfb_threads 2`). `preflight` warns if their product exceeds the machine's
 threads.
 
+**The new archive is the site's, with only its AC folder replaced.** A site archive is
+already aggregated, and the site aggregates whatever it takes in again. So `run` doesn't
+rebuild anything: it replaces `results/consolidated_classification/` with AC's new output
+and leaves every other file as it was. The aggregator writes `run.json` from AC's result
+tables and never reads the old one. On 2026-11-09, for all 20 projects then built, the
+aggregator's output from the swapped archive was identical, file by file and byte by byte,
+to its output from an archive the old tool had rebuilt from parts.
+
+**AC's input is checked before AC runs.** `run` runs AC's own `make_input.sh` on
+`results/samples/` and compares its pairs with the samples `run.json` names: an amplicon
+found twice, a sample `run.json` doesn't name, or a sample with graph files but no raw
+cycles stops the project. Then AC classifies that `AC.input` with `-i`. On all 25 unpacked
+keep-current archives on 2026-11-09 its pairs were the same as the old per-sample staging's.
+
 **The local aggregator comes from PyPI, at the site's version.** The site runs the
-aggregator on every upload, so the site decides how the stored project is packed. The
-local copy is for checks before upload: catching dropped samples, including samples
-without amplicons, and producing the `run.json` that the record-size check reads. `setup`
+aggregator on every upload, so the site decides how the stored project is packed. `run`
+aggregates the new archive once as a check, so a failure shows on this machine rather than
+as a failed version on the site. That output isn't uploaded, but three things use it: the
+sample count and record-size checks read its `run.json`, the site's dry run is sent it
+because the dry run reads `run.json` without aggregating, and the upload compares what the
+site stored with it. `setup`
 installs the version pinned in this repo's `requirements.txt`, which was 8.3.1 on both
 servers and the latest on PyPI on 2026-11-06. A new aggregator goes to PyPI, then prod,
 and reclassifying comes after that, so the two match in practice. `preflight` warns if
@@ -153,8 +170,8 @@ lab script sent a browser's. The token goes only to the site, never to the stora
 site redirects to.
 
 **Some things stop a project; others go to the reviewer.** A failed tool, an empty
-`AC.input` or a solver fallback stops that project. A dropped file, a differing sample
-count or an unexpected reference still produces an archive, and it's flagged in `summary`,
+AC input that doesn't match `run.json` or a solver fallback stops that project. A differing
+sample count or an unexpected reference still produces an archive, and it's flagged in `summary`,
 because a person reviews every update anyway.
 
 **CoRAL results run like AmpliconArchitect's.** CoRAL writes the same `_graph.txt` and
@@ -295,7 +312,8 @@ isn't private.
 - **Resuming.** A full run takes many hours, so per-project state must survive a crash
   without repeating finished work.
 - **Disk.** `preflight` should compare free space with the sum of what `plan` predicts.
-  Work directories hold the download, the unpacked tree and two rebuilt trees.
+  Work directories hold the download, the unpacked tree, AC's output, the new archive and
+  its aggregated check.
 - **Tests.** CI has no Gurobi licence, so the workflow's tests need a small synthetic
   archive and a stubbed AC.
 

@@ -118,8 +118,15 @@ def _wait_for_page(site, version_id):
     return False
 
 
+def aggregated(result):
+    """The new archive as the site's intake makes it. A build by an older version of this tool
+    sent an archive it had aggregated itself."""
+    return result.get('checked') or result['archive']
+
+
 def check_result(status, archive_path, target_ac, dry_run=None):
-    """How what the site stored differs from what was sent. Empty means it matches."""
+    """How what the site stored differs from `archive_path`, the archive aggregated here. Empty
+    means it matches."""
     sent = archive.run_json_summary(archive_path)
     misses = []
     for label, stored, expected in (('samples', status.get('samples'), sent['entries']),
@@ -197,7 +204,7 @@ def upload_one(entry, state, plan, machine, site):
         raise Stop('The new version of %s (%s) exists, but the site has not stored what its page '
                    'needs. Run `upload` again to ask again.' % (entry['name'], job_id))
     status = site.replace_status(job_id)
-    misses = check_result(status, archive_path, plan['target_ac'], state.get('dry_run'))
+    misses = check_result(status, aggregated(state['result']), plan['target_ac'], state.get('dry_run'))
     latest = site.project(job_id)
     if not latest.get('is_latest_version', True):
         misses.append('The API says the new version is not the latest')
@@ -302,7 +309,9 @@ def run_dry_runs(plan, machine, site, only=None):
             log('  skipped: its real upload has started')
             continue
         try:
-            answer = site.replace(entry['id'], state['result']['archive'], entry['id'], dry_run=True,
+            # The site's dry run reads run.json as sent, without aggregating it first, so it
+            # gets the archive as the site's intake will make it: the one aggregated here.
+            answer = site.replace(entry['id'], aggregated(state['result']), entry['id'], dry_run=True,
                                   metadata_path=entry.get('metadata_sheet') or None)
             result = wait_for_job(site, answer['job_id'])
         except SiteError as error:

@@ -158,17 +158,10 @@ def concerns(result, dry_run=None):
         local = result['local_archive']
         found.append('Built from a local archive, not the site\'s: %s (sha256 %s)'
                      % (local['path'], local['sha256'][:12]))
-    if result.get('repack_dropped'):
-        found.append('The aggregator\'s repack of the input dropped %d file(s), first %s'
-                     % (len(result['repack_dropped']), result['repack_dropped'][0]))
     if result.get('site_ref') and result['ref'] != result['site_ref']:
         found.append('AC ran with reference %s, and the site says %s' % (result['ref'], result['site_ref']))
-    for key, label in (('control_dropped', 'The control rebuild dropped plots the original had'),
-                       ('final_dropped', 'The rebuilt archive dropped files')):
-        if result.get(key):
-            found.append('%s: %d, first %s' % (label, len(result[key]), result[key][0]))
     if result['expected_samples'] != result['archive_samples']:
-        found.append('The site has %d samples and the rebuilt archive has %d'
+        found.append('The site has %d samples and the new archive, aggregated here, has %d'
                      % (result['expected_samples'], result['archive_samples']))
     record_fits = ((dry_run or {}).get('record') or {}).get('fits')
     if result['run_json_bytes'] > RECORD_WARNING_BYTES and record_fits is not True:
@@ -179,7 +172,7 @@ def concerns(result, dry_run=None):
 
 def notes(result):
     """What the review should see that stops nothing: where the settings came from, and what
-    the site's archive lacked to begin with. A file the rebuild lost is a concern instead."""
+    the site's archive lacked to begin with."""
     found = list(result['settings'].get('info', []))
     flags = [flag for flag in result['flags'] if flag not in AC_FLAGS_DEFAULT_ON]
     if flags:
@@ -202,7 +195,7 @@ def project_report(result):
              % (' '.join(result['flags']) or 'defaults', result['settings']['source'],
                 result['settings']['settings_ac_version'] or 'of unknown version'),
              *['- Note: %s' % item for item in notes(result)],
-             '- Samples: %d on the site, %d in the rebuilt archive'
+             '- Samples: %d on the site, %d in the new archive, aggregated here'
              % (result['expected_samples'], result['archive_samples']),
              '- Archive: %.1f MB, of which %.1f MB of files aren\'t in the old archive'
              % (result['archive_bytes'] / 1e6, result['new_content_bytes'] / 1e6), '']
