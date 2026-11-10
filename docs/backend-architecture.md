@@ -314,7 +314,6 @@ see who is changing dev or prod. The write tools below refuse without it on dev 
 | `scripts/diagnostics/report_gridfs_orphans.py` | Account for every GridFS file. Read-only, always. |
 | `caper/ownership_survey.py` + `manage.py ownership_survey` | Which project owns each file, and how much is residue. Runs outside a web worker. |
 | `caper/storage_stats.py` + `scripts/maintenance/snapshot_storage.py` | What the databases hold, by status bucket, once a day, with history. |
-| `scripts/diagnostics/check_volume_reclamation.py` | Did deleted storage actually come back? (Measured answer: no — see §9.) |
 | `caper/caper/dump_metadata.py` | Every collection except the payload, for an off-AWS copy. |
 | `caper/url_manifest.py` | Every project URL that resolves today, and to what. |
 
@@ -344,7 +343,6 @@ whose prediction misses is a stop, not a retry.
 
 Still in the repo, because other tools point operators at them:
 `scripts/maintenance/backfill_project_status.py` (the remedy for invariant I1) ·
-`scripts/maintenance/backfill_gridfs_backlinks.py` (`scripts/diagnostics/report_gridfs_orphans.py` points at it) ·
 `scripts/maintenance/recover_deleted_version.py`.
 
 Retired once their campaigns had run on prod, and recoverable from git history at
@@ -352,7 +350,10 @@ Retired once their campaigns had run on prod, and recoverable from git history a
 `repair_head_chain_fields.py` · `repair_promoted_tombstone.py` ·
 `zero_carried_forward_views.py` · `migrate_project_visibility.py` ·
 `restore_sample_csv_metadata.py` · `backfill_gridfs_sha256.py` ·
-`compare_version_history.py` · `rebuild_version_chains.py` (with the chain view it wrote).
+`compare_version_history.py` · `rebuild_version_chains.py` (with the chain view it wrote) ·
+`backfill_gridfs_backlinks.py` (every GridFS row carried a backlink on 2026-11-10) ·
+`check_volume_reclamation.py` (answered: no) · `check_project_flags.py`, `check_project_flags_django.py`,
+`check_flags.sh` · `dedupe_sample_level_copies.py` · `performance_test.py` (all at the repository root at that commit).
 
 One warning about `scripts/maintenance/backfill_project_status.py`, because it is the writer behind
 the only lineage defect still visible on dev: `order_chain()` picks a chain head
@@ -405,7 +406,7 @@ what the older table used to claim:
 | GridFS files, bytes, owned vs residue, backlink coverage | `scripts/diagnostics/report_gridfs_orphans.py --expect-db <db>` |
 | storage by status with trend | Admin ▸ Statistics, or `scripts/maintenance/snapshot_storage.py` |
 | who owns each file | `manage.py ownership_survey` |
-| whether deleted storage came back | `scripts/diagnostics/check_volume_reclamation.py` |
+| whether deleted storage came back | retired: the answer was no (§9); the script is at `90d977f` |
 | S3 objects and which database claims each | `scripts/maintenance/sweep_s3_unreferenced.py` report-only |
 
 If you do record a measurement somewhere — a commit message, an incident note,

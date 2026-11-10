@@ -52,7 +52,6 @@ Writers take the operator lock; the first column says which of them are also on 
 
 | File | What it is | Added | Status |
 |---|---|---|---|
-| `backfill_gridfs_backlinks.py` | Writes `fs.files.metadata` backlinks for files stored before they were written; `report_gridfs_orphans.py` tells operators to run it | 2026-08-29 `4931346` | under review (PR #748: keep as a standing tool, or retire and reword the report) |
 | `backfill_project_status.py` | Corrections to `projects` that the application can no longer read around; the lineage validator (I1) tells operators to run it | 2026-08-27 `2aac02c` | under review (PR #748, same question) |
 | `build_gene_map.py` | Builds the gene-name to NCBI Gene ID table in `caper/gene_map/` | 2026-10-29 `319f0a9` | standing: rerun when AmpliconClassifier's gene GFFs change |
 | `cleanup_failed_upload_residue.py` | Deletes GridFS files a failed ingestion left behind | 2026-09-01 `4448232` | scheduled (weekly, both hosts) |
@@ -72,7 +71,6 @@ Read-only unless the row says otherwise.
 | File | What it is | Added | Status |
 |---|---|---|---|
 | `check_disk.py` | Emails an alert when the host's disk is low (#517) | 2026-03-31 `73e94c9` | scheduled (every 5 minutes, both hosts; output goes to `/dev/null`, so a failure is silent) |
-| `check_volume_reclamation.py` | Answers one question: did DocumentDB give back the storage deleted 2026-08-31 to 09-02? | 2026-09-02 `0e5ed81` | campaign: retire once that question is closed |
 | `report_gridfs_orphans.py` | Accounts for every GridFS file in exactly one bucket; deletes nothing | 2026-08-29 `4931346` | standing |
 | `report_upload_rates.py` | How fast each upload wrote to GridFS, from the backlinks | 2026-10-13 `fa0b4a4` | standing |
 | `smoke_api_genes.py` | Smoke test of gene resolution in the feature API, against a running site | 2026-10-29 `ac3b6d9` | standing |

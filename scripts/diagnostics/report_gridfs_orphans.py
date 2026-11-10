@@ -4,8 +4,9 @@
 Every ``fs.files`` row lands in exactly one bucket, and the buckets sum to the
 collection count. What is owned is computed by walking the project documents,
 not by reading the backlinks, so this reports the same numbers before and after
-``scripts/maintenance/backfill_gridfs_backlinks.py`` has run -- and where both exist it says whether
-they agree.
+the backlink backfill has run -- and where both exist it says whether they agree. (The backfill,
+``backfill_gridfs_backlinks.py``, was retired once every row on dev and prod carried a backlink;
+it is in git history: ``git show 90d977f:backfill_gridfs_backlinks.py``.)
 
 The buckets, and what each means for deletion -- **none of which this script
 acts on**:
@@ -93,7 +94,8 @@ def main(argv=None):
     if result['counts'][RESIDUE_UNLABELLED] and not labelled:
         print('  none written yet, so the whole residue sits in '
               f'{RESIDUE_UNLABELLED}. That is the question not yet asked, not '
-              'a count of orphans: run scripts/maintenance/backfill_gridfs_backlinks.py to split '
+              'a count of orphans: the retired backfill_gridfs_backlinks.py wrote them '
+              '(git show 90d977f:backfill_gridfs_backlinks.py); it would split '
               f'it into {RESIDUE_DOCUMENT_GONE} and {RESIDUE_UNREFERENCED}.')
     else:
         print(f"  of the owned rows: {result['backlink_agrees']:,} agree, "
@@ -101,8 +103,9 @@ def main(argv=None):
               f"{result['backlink_missing']:,} carry none")
         if result['backlink_disagrees'] and not result['shared_rows']:
             print('  a disagreement with nothing shared means the metadata is '
-                  'wrong, never the document: rebuild it with '
-                  'scripts/maintenance/backfill_gridfs_backlinks.py --repair.')
+                  'wrong, never the document: rebuild it with the retired '
+                  'backfill_gridfs_backlinks.py --repair '
+                  '(git show 90d977f:backfill_gridfs_backlinks.py).')
 
     if result['shared_rows']:
         print(f"\n{result['shared_rows']:,} row(s) are named by more than one "

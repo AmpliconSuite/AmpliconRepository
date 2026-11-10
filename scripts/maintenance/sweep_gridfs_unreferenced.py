@@ -163,7 +163,7 @@ def still_unreferenced(fs_files, owned, file_id):
 
     Re-reading the row catches the two things that can change between the survey
     and this moment: the row being deleted by something else, and a backlink
-    appearing because ``backfill_gridfs_backlinks`` or an upload claimed it.
+    appearing because an upload claimed it (or the retired ``backfill_gridfs_backlinks`` did).
 
     There is deliberately no "does a document name it" query here. File ids live
     in nested ``runs.<sample>.<key>`` fields, so no single query can find the

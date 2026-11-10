@@ -379,7 +379,6 @@ def test_admin_pages_show_nothing_for_a_free_or_expired_lock(lock, cols, monkeyp
 
 
 WRITE_TOOLS = [
-    'scripts/maintenance/backfill_gridfs_backlinks.py',
     'scripts/maintenance/backfill_project_status.py',
     'scripts/maintenance/cleanup_failed_upload_residue.py',
     'scripts/maintenance/cleanup_orphaned_projects.py',
