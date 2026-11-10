@@ -10,6 +10,7 @@ import http.server
 import io
 import json
 import os
+import re
 import sys
 import tarfile
 import textwrap
@@ -1675,7 +1676,7 @@ def cluster(workspace, tmp_path, monkeypatch):
     workspace.machine = Machine(
         workdir=str(tmp_path / 'work'), jobs=2, bfb_threads=1, ac_src=str(ac_src),
         python_path=str(bin_dir / 'python'),
-        executor={'kind': 'slurm', 'cpus': 2, 'mem': '1G', 'at_once': 1})
+        executor={'kind': 'slurm', 'cpus': 2, 'mem': '1G'})
     workspace.ac_src = ac_src
     workspace.slurm_calls = lambda: [json.loads(line) for line in slurm_log.read_text().splitlines()] \
         if slurm_log.exists() else []
@@ -1717,6 +1718,29 @@ def test_a_project_runs_as_a_slurm_job(cluster):
     with open(os.path.join(project_dir, slurm.JOB_SCRIPT)) as handle:
         script = handle.read()
     assert os.path.join(cluster.machine.workdir, 'code') in script and PACKAGE_DIR not in script
+
+
+def test_every_project_is_submitted_and_slurm_schedules_them(cluster):
+    entries = [cluster.entry(), cluster.entry(ID_B, 'Project B')]
+    assert _slurm_run(cluster, *entries) == 0
+    calls = [c for c in cluster.slurm_calls() if c[0] == 'sbatch']
+    assert len(calls) == 2
+    assert not any('--dependency=singleton' in c for c in calls)
+    names = {a for c in calls for a in c if a.startswith('--job-name=')}
+    assert names == {'--job-name=%s' % re.sub(r'[^A-Za-z0-9._-]+', '_', e['name']) for e in entries}
+    assert '--job-name=Project_B' in names
+
+
+def test_max_running_puts_jobs_in_lanes_slurm_runs_one_at_a_time(cluster):
+    cluster.machine = dataclasses.replace(cluster.machine,
+                                          executor=dict(cluster.machine.executor, max_running=1))
+    entries = [cluster.entry(), cluster.entry(ID_B, 'Project B')]
+    assert _slurm_run(cluster, *entries) == 0
+    calls = [c for c in cluster.slurm_calls() if c[0] == 'sbatch']
+    # Both are submitted at once; the shared name and singleton make Slurm run one at a time.
+    assert len(calls) == 2
+    assert all('--job-name=amprepo-lane0' in c and '--dependency=singleton' in c for c in calls)
+    assert any('--comment=Project_B' in c for c in calls)
 
 
 def test_a_node_with_different_ac_files_runs_nothing(cluster):

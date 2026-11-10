@@ -51,7 +51,7 @@ def _executor(args):
     if not args.cpus or not args.mem:
         raise SystemExit('--executor slurm needs --cpus and --mem for each project\'s job.')
     return {'kind': SLURM, 'partition': args.partition, 'cpus': args.cpus, 'mem': args.mem,
-            'time': args.time, 'at_once': args.at_once, 'sbatch_args': args.sbatch_arg or [],
+            'time': args.time, 'max_running': args.max_running, 'sbatch_args': args.sbatch_arg or [],
             'job_setup': args.job_setup or []}
 
 
@@ -219,9 +219,9 @@ def build_parser():
     slurm_options.add_argument('--cpus', type=int, help='CPUs per project job (--cpus-per-task)')
     slurm_options.add_argument('--mem', help='memory per project job, for example 24G')
     slurm_options.add_argument('--time', help='time limit per project job, for example 2-00:00:00')
-    slurm_options.add_argument('--at-once', type=int, default=2,
-                               help='most project jobs in the queue at once, for the Gurobi '
-                               'licence (default 2; 0 for no limit)')
+    slurm_options.add_argument('--max-running', type=int,
+                               help='most project jobs running at once, for example to fit a '
+                               'Gurobi licence (default: no limit; Slurm schedules them all)')
     slurm_options.add_argument('--sbatch-arg', action='append',
                                help='another sbatch option, such as --account=X; repeatable')
     slurm_options.add_argument('--job-setup', action='append',
