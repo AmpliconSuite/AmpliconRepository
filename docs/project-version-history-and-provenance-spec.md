@@ -232,6 +232,15 @@ them countable and reviewable instead of invisible.
 
 ## 5 · Design decision: pointers, with a derived chain view
 
+> **Status, 2026-11-10: the derived chain view was built and then retired.** It landed on
+> 2026-08-28 and was built on prod, but no read path ever switched to it, so it was only ever
+> a second copy that the validator's I9 compared against, and it went stale whenever a
+> version changed (a report-only rebuild on prod found 33 of 103 chains stale and 51 chain
+> documents with no members). Its two "authoritative" fields, `canonical_name` and `retired`,
+> were only ever seeded, never read or edited by anything. The rebuild command, the module,
+> and I9 were removed; the project documents remain the only authority, and a chain is derived
+> from their pointers on demand. The text below is kept as the design record.
+
 ### 5.1 What Option A (a `project_version_chains` collection) is genuinely good for
 
 Five things, and they are real:
@@ -1047,6 +1056,15 @@ exposure risk (all queries use `$in` across both forms).
   deletion + promotion, recovery tooling.
 - Add the derived `project_version_chains` view and its rebuild command. Feature
   code reads it; only the rebuild command writes it (§5.3).
+
+> **Status, 2026-11-10: the derived chain view was built and then retired.** It landed on
+> 2026-08-28 and was built on prod, but no read path ever switched to it, so it was only ever
+> a second copy that the validator's I9 compared against, and it went stale whenever a
+> version changed (a report-only rebuild on prod found 33 of 103 chains stale and 51 chain
+> documents with no members). Its two "authoritative" fields, `canonical_name` and `retired`,
+> were only ever seeded, never read or edited by anything. The rebuild command, the module,
+> and I9 were removed; the project documents remain the only authority, and a chain is derived
+> from their pointers on demand. The text below is kept as the design record.
 
 ### Phase 2b — file backlinks
 

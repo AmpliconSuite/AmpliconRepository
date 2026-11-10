@@ -12,7 +12,7 @@ both were traversal bugs -- one of them worth 80,170 files.
 A backlink in ``fs.files.metadata`` turns the whole-database traversal into a
 ``find_one``.
 
-**Authority runs documents -> files, exactly as it does for the chain view.**
+**Authority runs documents -> files, exactly as it does for lineage.**
 A file is retained because a retained document names it. The metadata is an
 index into that fact and never a substitute for it: nothing may decide to delete
 a file because its metadata says it is orphaned. I12 and I13 assert the two

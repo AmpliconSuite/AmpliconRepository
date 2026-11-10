@@ -382,7 +382,7 @@ def test_admin_pages_show_nothing_for_a_free_or_expired_lock(lock, cols, monkeyp
 @pytest.mark.parametrize('tool', [
     'backfill_gridfs_backlinks', 'backfill_project_status', 'cleanup_failed_upload_residue',
     'cleanup_orphaned_projects', 'clear_stale_uploads', 'dedupe_sample_level_copies',
-    'purge-local-db', 'rebuild_version_chains', 'recover_deleted_version',
+    'purge-local-db', 'recover_deleted_version',
     'shutdown_mode', 'sweep_gridfs_unreferenced', 'sweep_s3_unreferenced',
     'caper/caper/management/commands/create_project',
 ])
