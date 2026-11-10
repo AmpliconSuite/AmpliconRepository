@@ -384,7 +384,6 @@ WRITE_TOOLS = [
     'scripts/maintenance/cleanup_failed_upload_residue.py',
     'scripts/maintenance/cleanup_orphaned_projects.py',
     'scripts/maintenance/clear_stale_uploads.py',
-    'scripts/maintenance/dedupe_sample_level_copies.py',
     'scripts/maintenance/purge-local-db.py',
     'scripts/maintenance/recover_deleted_version.py',
     'scripts/maintenance/sweep_gridfs_unreferenced.py',
@@ -407,18 +406,20 @@ def test_no_tool_takes_the_lock_without_being_listed_above():
 
     A script that calls `ops_lock.require` but is missing from it escapes the
     escape-hatch check silently, and a script moved out of the scanned
-    directories would make the check vacuous -- so the set found on disk must
+    directories would make the check vacuous -- so the whole repository outside tests/ is
+    scanned (a writer at the root or in caper/ counts), and the set found on disk must
     equal the list, and must not be empty.
     """
+    skipped = {'.git', '.claude', 'tests', 'node_modules', '__pycache__', 'static', 'staticfiles'}
     found = set()
-    for top in ('scripts', 'caper/caper'):
-        for dirpath, _dirs, files in os.walk(os.path.join(REPO_ROOT, top)):
-            for name in files:
-                if not name.endswith('.py') or name == 'ops_lock.py':
-                    continue
-                path = os.path.join(dirpath, name)
-                with open(path) as handle:
-                    if 'ops_lock.require' in handle.read():
-                        found.add(os.path.relpath(path, REPO_ROOT))
+    for dirpath, dirs, files in os.walk(REPO_ROOT):
+        dirs[:] = [d for d in dirs if d not in skipped and not d.startswith('venv')]
+        for name in files:
+            if not name.endswith('.py') or name == 'ops_lock.py':
+                continue
+            path = os.path.join(dirpath, name)
+            with open(path, errors='replace') as handle:
+                if 'ops_lock.require' in handle.read():
+                    found.add(os.path.relpath(path, REPO_ROOT))
     assert found, 'scanned nothing: the guard has gone vacuous'
     assert found == set(WRITE_TOOLS)

@@ -1,4 +1,4 @@
-"""Tests for caper/dump_metadata.py, the tier-3 off-AWS metadata copy.
+"""Tests for caper/caper/dump_metadata.py, the tier-3 off-AWS metadata copy.
 
 Run against the local MongoDB in a scratch collection namespace, the same way
 the other database-touching tests here do -- no scratch *database*, because

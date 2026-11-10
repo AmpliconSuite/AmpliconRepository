@@ -1,4 +1,4 @@
-"""Tests for caper/shutdown_mode.py, against scratch collections in the configured database."""
+"""Tests for caper/caper/shutdown_mode.py, against scratch collections in the configured database."""
 
 import datetime
 import os

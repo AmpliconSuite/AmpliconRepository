@@ -6,7 +6,7 @@ it protects: the cluster snapshots, and the nightly ``caper.sqlite3`` upload to
 the accounts database, which is in no DocumentDB snapshot at all, and the
 metadata dump, which is every collection except the GridFS payload.
 
-Neither file is built here.  ``caper/backup_sqlite.py`` and ``caper/dump_metadata.py``
+Neither file is built here.  ``caper/caper/backup_sqlite.py`` and ``caper/caper/dump_metadata.py``
 already build them for the nightly job and the six-monthly command, and this
 module calls those same functions.  A second implementation of "what belongs in
 a backup" is the exact failure this repository keeps finding -- a list
@@ -153,7 +153,7 @@ def compare(previous, current):
 def build_sqlite(workdir):
     """The sessionless, gzipped accounts database.  Returns (path, sha256).
 
-    The steps are caper/backup_sqlite.py's own, in its order: snapshot through
+    The steps are caper/caper/backup_sqlite.py's own, in its order: snapshot through
     SQLite's online backup API so nothing locks and the live file is never
     touched, drop the sessions from the copy, then gzip.
     """
@@ -185,7 +185,7 @@ def build_urls(workdir):
 def build_metadata(workdir):
     """Every collection except the payload, as one .tar.gz.  Returns (path, manifest).
 
-    caper/dump_metadata.py writes a directory of gzipped JSON-lines files plus a
+    caper/caper/dump_metadata.py writes a directory of gzipped JSON-lines files plus a
     manifest; a browser wants one file, so the directory is tarred.  The
     per-file hashes in the manifest are over the gzipped members and survive the
     tarring, so ``python -m caper.dump_metadata --verify-only`` still checks this download

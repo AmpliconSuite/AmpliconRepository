@@ -302,7 +302,7 @@ Three consequences worth knowing:
 Four kinds of tool, and the kind matters more than the name. **Nothing in the
 first two columns writes.**
 
-**The operator lock.** `caper/ops_lock.py` holds one lease per database, so people and agents can
+**The operator lock.** `caper/caper/ops_lock.py` holds one lease per database, so people and agents can
 see who is changing dev or prod. The write tools below refuse without it on dev and prod
 (`--no-lock "<reason>"` overrides and is logged). The lock is
 `system_settings/{_id: ops_lock}` and its history is `ops_lock_log`.
@@ -315,9 +315,8 @@ see who is changing dev or prod. The write tools below refuse without it on dev 
 | `caper/ownership_survey.py` + `manage.py ownership_survey` | Which project owns each file, and how much is residue. Runs outside a web worker. |
 | `caper/storage_stats.py` + `scripts/maintenance/snapshot_storage.py` | What the databases hold, by status bucket, once a day, with history. |
 | `scripts/diagnostics/check_volume_reclamation.py` | Did deleted storage actually come back? (Measured answer: no — see §9.) |
-| `caper/dump_metadata.py` | Every collection except the payload, for an off-AWS copy. |
+| `caper/caper/dump_metadata.py` | Every collection except the payload, for an off-AWS copy. |
 | `caper/url_manifest.py` | Every project URL that resolves today, and to what. |
-| `scripts/diagnostics/check_project_flags.py` | The legacy flag pairs, per document. |
 
 ### Validators — assert invariants
 

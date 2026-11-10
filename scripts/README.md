@@ -58,7 +58,6 @@ Writers take the operator lock; the first column says which of them are also on 
 | `cleanup_failed_upload_residue.py` | Deletes GridFS files a failed ingestion left behind | 2026-09-01 `4448232` | scheduled (weekly, both hosts) |
 | `cleanup_orphaned_projects.py` | Deletes projects no code path can reach, with protections | 2026-03-24 `fcef14c` | standing |
 | `clear_stale_uploads.py` | Removes upload placeholders that crashed before becoming projects | 2026-08-27 `48a91ff` | standing |
-| `dedupe_sample_level_copies.py` | Collapses repeat copies of sample-level files stored before v4.4.4 | 2026-10-14 `c741a8e` | campaign: retire once it has run on prod |
 | `download_refs.py` | Fetches the AmpliconArchitect reference builds and checks their md5sums; the only backup of what `refs.ampliconrepository.org` serves | 2026-09-01 `fe64151` | standing |
 | `purge-local-db.py` | Reports and removes local MongoDB/GridFS residue; imports `cleanup_orphaned_projects.py`, so the two stay together | 2023-04-06 `1d89134` | standing (local development). **Known defect, not from the move:** it fails to start from a shell (`AppRegistryNotReady`, since `005e1cc` imported `caper.feature_index` at module top); it only runs under the test suite, where Django is already set up |
 | `recover_deleted_version.py` | Restores a version deleted from a project's history | 2026-04-20 `13bdf24` | standing |
@@ -73,9 +72,6 @@ Read-only unless the row says otherwise.
 | File | What it is | Added | Status |
 |---|---|---|---|
 | `check_disk.py` | Emails an alert when the host's disk is low (#517) | 2026-03-31 `73e94c9` | scheduled (every 5 minutes, both hosts; output goes to `/dev/null`, so a failure is silent) |
-| `check_flags.sh` | Runs `check_project_flags_django.py` through `manage.py shell` | 2025-12-15 `1691a97` | under review (PR #748) |
-| `check_project_flags.py` | Reports the legacy `delete` and `current` flags per project | 2025-12-15 `cdb138a` | under review (PR #748) |
-| `check_project_flags_django.py` | The same report, run through `manage.py shell`; `docs/developer-workflows.md` points at it | 2025-12-15 `cdb138a` | under review (PR #748) |
 | `check_volume_reclamation.py` | Answers one question: did DocumentDB give back the storage deleted 2026-08-31 to 09-02? | 2026-09-02 `0e5ed81` | campaign: retire once that question is closed |
 | `report_gridfs_orphans.py` | Accounts for every GridFS file in exactly one bucket; deletes nothing | 2026-08-29 `4931346` | standing |
 | `report_upload_rates.py` | How fast each upload wrote to GridFS, from the backlinks | 2026-10-13 `fa0b4a4` | standing |
@@ -101,7 +97,6 @@ server that `memory_probe.py` is sampling.
 | File | What it is | Added | Status |
 |---|---|---|---|
 | `local_upload_project.py` | Creates a project on a **local** site exactly as the upload form does | 2026-10-29 `26aa765` | dev |
-| `performance_test.py` | Compares the Django dev server with gunicorn on common endpoints; `pytest.ini` points at it | 2026-01-27 `27c9863` | campaign (the January 2026 gunicorn work): delete when `pytest.ini`'s `performance` marker is retired |
 | `run_django_command.sh` | Runs `manage.py` with `caper/config.sh` sourced; AGENTS.md's entry point | 2026-03-03 `b4d2703` | dev |
 
 ## Modules of the application package
@@ -120,7 +115,8 @@ they live in `caper/caper/`. Run them from the Django project directory.
 
 The `ubuntu` crontab on **each host** runs these four, by path into the checkout (bind-mounted
 at `/srv` in the container). `<env>` is `dev` or `prod`; `<db>` is `caper-dev` or `caper`.
-Times differ per host so the two never run at once; dev's are in the comments. Moving or
+Times differ per host so the two never run at once; the weekly and daily jobs are given once
+per host below, so copying a line onto a host keeps that host's slot. Moving or
 renaming any of the four means editing both crontabs in the same deploy window, because
 nothing else will notice a job that silently stopped (`check_disk.py` writes to `/dev/null`).
 
@@ -129,10 +125,10 @@ nothing else will notice a job that silently stopped (`check_disk.py` writes to 
 5 0 * * *    docker exec -w /srv/caper amplicon-<env> bash -c 'set -a; source /srv/caper/config.sh; set +a; /opt/venv/bin/python -m caper.backup_sqlite --db /srv/caper/caper.sqlite3 --execute' >> /home/ubuntu/backup_sqlite.log 2>&1
 # disk alert, every five minutes, on the host
 */5 * * * *  sh /home/ubuntu/AmpliconRepository-<env>/caper/config.sh && python3 /home/ubuntu/AmpliconRepository-<env>/scripts/diagnostics/check_disk.py > /dev/null 2>&1
-# weekly failed-upload cleanup: dev Sunday 03:30, prod Sunday 04:30
-30 3 * * 0   docker exec -w /srv amplicon-<env> bash -c 'set -a; source /srv/caper/config.sh; set +a; /opt/venv/bin/python /srv/scripts/maintenance/cleanup_failed_upload_residue.py --expect-db <db> --execute --undo-record /srv/logs/failed-upload-cleanup-undo.jsonl' >> /home/ubuntu/failed_upload_cleanup.log 2>&1
-# daily storage snapshot: dev 02:00, prod 02:30
-0 2 * * *    docker exec -w /srv amplicon-<env> bash -c 'set -a; source /srv/caper/config.sh; set +a; /opt/venv/bin/python /srv/scripts/maintenance/snapshot_storage.py --expect-db $DB_NAME' >> /home/ubuntu/storage_snapshot.log 2>&1
+# weekly failed-upload cleanup. Time fields: dev `30 3 * * 0`, prod `30 4 * * 0` (Sunday)
+<dev: 30 3 | prod: 30 4> * * 0   docker exec -w /srv amplicon-<env> bash -c 'set -a; source /srv/caper/config.sh; set +a; /opt/venv/bin/python /srv/scripts/maintenance/cleanup_failed_upload_residue.py --expect-db <db> --execute --undo-record /srv/logs/failed-upload-cleanup-undo.jsonl' >> /home/ubuntu/failed_upload_cleanup.log 2>&1
+# daily storage snapshot. Time fields: dev `0 2 * * *`, prod `30 2 * * *`
+<dev: 0 2 | prod: 30 2> * * *   docker exec -w /srv amplicon-<env> bash -c 'set -a; source /srv/caper/config.sh; set +a; /opt/venv/bin/python /srv/scripts/maintenance/snapshot_storage.py --expect-db $DB_NAME' >> /home/ubuntu/storage_snapshot.log 2>&1
 ```
 
 Prod's root crontab separately runs `/usr/local/bin/wedge-watchdog` every minute, an

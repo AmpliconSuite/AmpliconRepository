@@ -714,7 +714,7 @@ def _check_i19(snap):
     /project/[{"date":...}], and the query the site uses to find a document's
     successors -- ``{'previous_versions.linkid': <id>}`` -- matches nothing, so
     both documents look unreferenced to every caller that asks that way,
-    including the orphan check in scripts/diagnostics/check_project_flags.py.
+    including the orphan check in the retired check_project_flags.py (see git history).
 
     Nothing crashes.  That is why it survived two years.
     """

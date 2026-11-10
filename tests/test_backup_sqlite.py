@@ -1,4 +1,4 @@
-"""Tests for caper/backup_sqlite.py.
+"""Tests for caper/caper/backup_sqlite.py.
 
 These need no MongoDB, no AWS and no Django: the script is deliberately
 runnable when the application cannot start, because that is when a backup

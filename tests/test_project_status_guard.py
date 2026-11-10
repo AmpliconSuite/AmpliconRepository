@@ -75,9 +75,6 @@ BENIGN_READS = [
     (re.compile(r"""\.get\(['"](?:delete|current)['"],\s*['"]NOT SET['"]\)"""),
      "read with a string sentinel default -- formats a flag for display, and a "
      "sentinel that is neither True nor False cannot be mistaken for a decision"),
-    (re.compile(r"""check_flag_value\([^)]*['"](?:delete|current)['"]\)"""),
-     "the display helper in the flag-report scripts; it returns a label, not a "
-     "verdict"),
     (re.compile(r"""['"](?:delete|current)['"]\s*[,)]"""
                 r"""(?![^#]*(?:==|!=|\bis\b|\bnot\b))"""),
      "the flag named as a field, not tested: an index spec, a form's field "
@@ -122,24 +119,7 @@ ALLOWED = {
      "\"{'current': False}\")"):
         "log line quoting the query it is explaining to the operator",
 
-    # -- output formatting, not queries ----------------------------------
-    ('scripts/diagnostics/check_project_flags.py',
-     "print(f\"{'Project Name':<50} {'ID':<26} {'current':<10} {'delete':<10}\")"):
-        "f-string column header",
-    ('scripts/diagnostics/check_project_flags.py',
-     "print(\"      {'$set': {'current': True}}\")"):
-        "printed remediation advice",
-    ('scripts/diagnostics/check_project_flags_django.py',
-     "print(f\"{'Project Name':<50} {'ID':<26} {'current':<10} {'delete':<10}\")"):
-        "f-string column header",
-    ('scripts/diagnostics/check_project_flags_django.py',
-     "print(\"      {'$set': {'current': True}}\")"):
-        "printed remediation advice",
-
     # -- projections and control flow, not filters -----------------------
-    ('scripts/maintenance/dedupe_sample_level_copies.py',
-     "if args.phase in ('rewrite', 'rollback', 'delete') and not args.undo_file:"):
-        "the script's --phase names, not a status field",
     ('scripts/maintenance/backfill_project_status.py',
      "'version_chain_id': 1, 'delete': 1,"):
         "projection, not a filter: the chain builder reads status only to tell "
@@ -387,8 +367,6 @@ def test_status_consumers_import_the_resolver(module):
 @pytest.mark.parametrize('script', [
     'scripts/maintenance/cleanup_orphaned_projects.py',
     'scripts/maintenance/purge-local-db.py',
-    'scripts/diagnostics/check_project_flags.py',
-    'scripts/diagnostics/check_project_flags_django.py',
 ])
 def test_operational_scripts_import_the_resolver(script):
     """The scripts are where both incidents happened.  They read the predicate

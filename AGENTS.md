@@ -143,7 +143,7 @@ local dev server, the dev landing gate (`dev_gate.py`: home page only, never
 authenticates, must not touch MongoDB), AWS SSO for S3 (`aws sso login --profile
 amprepo`), Docker dev, creating a project from the command line
 (`scripts/dev/local_upload_project.py`, not `manage.py create_project`), local MongoDB/GridFS
-cleanup, `scripts/maintenance/recover_deleted_version.py`, and `caper/shutdown_mode.py` during a deploy.
+cleanup, `scripts/maintenance/recover_deleted_version.py`, and `caper/caper/shutdown_mode.py` during a deploy.
 Deploy runbooks are in the
 [wiki](https://github.com/AmpliconSuite/AmpliconRepository/wiki).
 

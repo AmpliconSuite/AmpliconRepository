@@ -109,11 +109,10 @@ source caper/config.sh && python scripts/maintenance/purge-local-db.py --tarfile
 
 The legacy full wipe is now explicit and local-dev-only: `python scripts/maintenance/purge-local-db.py --all-project-data --execute`.
 
-For project flag audits, run:
-```bash
-source caper/config.sh
-(cd caper && python manage.py shell < ../scripts/diagnostics/check_project_flags_django.py)
-```
+For project lineage audits (including orphaned and stranded documents), run
+`python scripts/diagnostics/validate_project_lineage.py --help`; it
+classifies documents through `project_status`, so it does not read the legacy `delete`/`current`
+flags itself.
 
 To restore a version that was deleted from a project's history, use
 `scripts/maintenance/recover_deleted_version.py`; it is dry-run by default and writes only with
@@ -127,7 +126,7 @@ the history table, marked as deleted.
 The deploy runbooks in the
 [wiki](https://github.com/AmpliconSuite/AmpliconRepository/wiki) open by
 enabling shutdown mode and close by disabling it. Without a browser session,
-use `caper/shutdown_mode.py` from the server's checkout, which the container mounts
+use `caper/caper/shutdown_mode.py` from the server's checkout, which the container mounts
 at `/srv`:
 ```bash
 docker exec -w /srv/caper amplicon-dev /opt/venv/bin/python -m caper.shutdown_mode --expect-db caper-dev status

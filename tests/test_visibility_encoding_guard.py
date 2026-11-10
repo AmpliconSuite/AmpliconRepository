@@ -104,10 +104,6 @@ ALLOWED = {
 # Whole files exempt, with the reason. These are the scripts whose subject *is*
 # the raw encoding: normalising it, or reporting what it currently holds.
 EXEMPT_FILES = {
-    'scripts/diagnostics/check_project_flags.py':
-        "A flag report. It prints what the field holds, including 'NOT SET'.",
-    'scripts/diagnostics/check_project_flags_django.py':
-        "Django twin of check_project_flags.py; same reason.",
 }
 
 

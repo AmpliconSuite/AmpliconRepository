@@ -1,8 +1,8 @@
 # Operator Lock (`ops_lock`) — Specification
 
-**Status:** implemented in `caper/ops_lock.py`; §5.1 revised 2026-11-06
+**Status:** implemented in `caper/caper/ops_lock.py`; §5.1 revised 2026-11-06
 **Date:** 2026-10-31
-**Related:** `caper/shutdown_mode.py` (the model this follows), `docs/backend-architecture.md` §7–§8
+**Related:** `caper/caper/shutdown_mode.py` (the model this follows), `docs/backend-architecture.md` §7–§8
 
 ---
 
@@ -108,9 +108,9 @@ exactly the question it answers.
 `agent:<tool>:<id>` for other agents, and `human:<username>` for people. `owner`
 is always a person.
 
-## 5 · The tool: `caper/ops_lock.py`
+## 5 · The tool: `caper/caper/ops_lock.py`
 
-It is a module of the application package, next to `caper/shutdown_mode.py`
+It is a module of the application package, next to `caper/caper/shutdown_mode.py`
 (so it runs as `python -m caper.ops_lock` from the Django project directory, `/srv/caper` in
 the container; it began life as a script at the repo root and moved in the scripts cleanup),
 and uses the same conventions. `--expect-db` is required and aborts before any read if `DB_NAME`
@@ -228,12 +228,12 @@ first tools to get it:
 
 | Tool | Write mode |
 |---|---|
-| `caper/shutdown_mode.py` | `on`, `off` |
+| `caper/caper/shutdown_mode.py` | `on`, `off` |
 | `scripts/maintenance/recover_deleted_version.py` | `--apply` |
 | `scripts/maintenance/sweep_gridfs_unreferenced.py`, `scripts/maintenance/sweep_s3_unreferenced.py` | `--execute` / `--apply` |
 | `scripts/maintenance/cleanup_orphaned_projects.py`, `scripts/maintenance/cleanup_failed_upload_residue.py`, `scripts/maintenance/clear_stale_uploads.py` | non-dry-run |
 | `scripts/maintenance/purge-local-db.py` | `--execute` |
-| `backfill_*.py`, `repair_*.py`, `scripts/maintenance/dedupe_sample_level_copies.py` | `--apply` / `--execute` |
+| `backfill_*.py`, `repair_*.py` | `--apply` / `--execute` |
 | `manage.py create_project` | always (it creates a project) |
 
 `scripts/dev/local_upload_project.py` isn't gated, because it already refuses anything but a
@@ -291,7 +291,7 @@ These changes ship in the same PR as the tool. The rule must not appear in
 
   This is followed by the §3.1 list of what counts as a write.
 - **`docs/backend-architecture.md`**: a row in the §7 toolkit and a line in §8.
-- **`caper/ops_lock.py` docstring**: the full operating notes, as in `caper/shutdown_mode.py`.
+- **`caper/caper/ops_lock.py` docstring**: the full operating notes, as in `caper/caper/shutdown_mode.py`.
 - **Wiki deploy runbooks**: the steps in §8.
 - **Each developer's user-level `CLAUDE.md`** (outside the repo): one line, which
   the README gives and asks agents to suggest. This covers agents started outside a

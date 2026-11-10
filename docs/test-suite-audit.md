@@ -145,10 +145,9 @@ The markers mostly support the documented workflows, with these corrections:
 - The two `test_api.py` add-samples authorization checks now carry only
   `integration`. They still select an existing MongoDB project, by design, but
   reject before aggregation.
-- `performance` is unused, and its description points to the nonexistent
-  `tools/performance_test.py`; the script is actually `performance_test.py` at
-  repository root. Remove the marker declaration and document the standalone
-  script, or correct the path if a future pytest benchmark is planned.
+- `performance` was unused, and its description pointed to a nonexistent
+  `tools/performance_test.py`. The marker and the standalone `performance_test.py`
+  were removed with the scripts cleanup (see git history for the script).
 - `throttled`, `browser`, and the single `skipif` are doing useful work and
   should remain.
 
