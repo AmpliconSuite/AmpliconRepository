@@ -11,6 +11,7 @@ Tests live in `tests/` and are run with `pytest` from the repository root, where
 - `functional`: depends on `loaded_datasets` and usually a local dev server
 - `browser`: Playwright tests against `http://localhost:8000`
 - `performance`: benchmarking only
+- `throttled`: needs real `/api/v1/` rate limiting; opts out of the conftest fixture that disables it
 
 New tests should use the narrowest marker that matches behavior. Use `@pytest.mark.integration` for live-Mongo unit/view behavior, add `@pytest.mark.slow` only when the test runs real aggregation, add `@pytest.mark.functional` when it depends on the shared `loaded_datasets` flow or local server, and add `@pytest.mark.browser` for Playwright.
 
