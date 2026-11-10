@@ -41,7 +41,6 @@ pointing anything at dev or prod.
 |---|---|---|---|
 | `logrotate-ampliconrepo.conf` | Log rotation, copied to `/etc/logrotate.d/` by hand on each host | 2026-08-18 `1d60b88` | deploy |
 | `start-server.sh` | `docker run` for the app container: memory cap, restart policy, environment | 2023-02-09 `cde9eb3` | deploy |
-| `stop-server.sh` | Host-side wrapper: runs `caper/stop-server.sh` in the container, then stops it. Dev's own `stop-and-start-repo.sh` calls the in-container script directly | 2023-02-09 `cde9eb3` | deploy |
 | `start-neo4j-container.sh` | Starts the Neo4j container with its conf and data directories | 2025-03-17 `2bee4ef` | deploy |
 | `stop-neo4j-container.sh` | Stops it | 2025-03-17 `2bee4ef` | deploy |
 | `sync_static_to_s3.sh` | Pushes `caper/static/` to `s3://amprepobucket/<env>/static/` | 2025-04-02 `8fe9b5a` | deploy |
@@ -138,6 +137,15 @@ nothing else will notice a job that silently stopped (`check_disk.py` writes to 
 
 Prod's root crontab separately runs `/usr/local/bin/wedge-watchdog` every minute, an
 installed copy of `deploy/wedge-watchdog.sh`, so repository moves do not affect it.
+
+## `caper/stop-server.sh`, the one stop script
+
+The only stop script is the one inside the container's tree, `caper/stop-server.sh`: it waits
+up to 30 minutes for background tasks, then stops the server process. It is not under
+`scripts/` because dev's `/home/ubuntu/stop-and-start-repo.sh`, which lives on the host and
+not in this repository, runs it by path (`docker exec -t amplicon-dev /srv/caper/stop-server.sh`).
+Moving it means editing that host script. A second, host-side wrapper used to sit at the root
+and only ran this one before `docker stop`; it was removed rather than moved.
 
 ## What stays at the repository root, and why
 

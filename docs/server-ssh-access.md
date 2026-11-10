@@ -163,7 +163,7 @@ redirections are interpreted locally.
 | Checkout | `/home/ubuntu/AmpliconRepository-dev` | `/home/ubuntu/AmpliconRepository-prod` |
 | Build checkout | — | `/home/ubuntu/ampRepo_for_docker_build/AmpliconRepository` |
 | Container | `amplicon-dev` | `amplicon-prod` |
-| Restart | `./stop-and-start-repo.sh` | `/home/ubuntu/stop-and-start-repo.sh` (or `./scripts/deploy/stop-server.sh` then `./scripts/deploy/start-server.sh`) |
+| Restart | `./stop-and-start-repo.sh` | `/home/ubuntu/stop-and-start-repo.sh` (or the two stop commands in the README's "How to stop the server", then `./scripts/deploy/start-server.sh`) |
 | Tracks | a branch | a release tag |
 
 The checkout is bind-mounted into the container, so a source-only change needs

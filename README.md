@@ -1151,8 +1151,9 @@ To rotate immediately rather than waiting for the timer, `sudo logrotate -f /etc
 > `cd /home/ubuntu/caper/`
 - Check to see if the Docker container is running
 > `docker ps` (look for a container called amplicon)
-- If it is running, run the stop script 
-> `./scripts/deploy/stop-server.sh`
+- If it is running, stop it. The first command waits (up to 30 minutes) for running imports and edits to finish, so no work is lost; the second stops the container:
+> `docker exec -t amplicon-<env> bash /srv/caper/stop-server.sh`
+> `docker stop amplicon-<env>`
 
 ## 3. How to update the server
 
