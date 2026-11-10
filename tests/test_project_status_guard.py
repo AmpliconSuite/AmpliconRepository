@@ -380,8 +380,6 @@ def test_status_consumers_import_the_resolver(module):
 @pytest.mark.parametrize('script', [
     'cleanup_orphaned_projects.py',
     'purge-local-db.py',
-    'restore_sample_csv_metadata.py',
-    'migrate_project_visibility.py',
     'check_project_flags.py',
     'check_project_flags_django.py',
 ])

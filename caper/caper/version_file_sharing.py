@@ -29,8 +29,8 @@ versions name carry either the document's underscore spelling of the field
 the metadata would have matched none of them.
 
 The hash is recorded in ``metadata.sha256`` when a file is stored.
-``backfill_gridfs_sha256.py`` adds it to files stored before; a file without one
-is never matched.
+A one-time backfill (since retired) added it to files stored before; a file
+without one is never matched.
 
 **Provenance stays the writer's.** ``metadata.project_id`` keeps naming the
 version that stored the bytes. A version that reuses the file is added to

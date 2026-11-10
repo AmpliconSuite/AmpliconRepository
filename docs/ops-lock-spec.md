@@ -231,12 +231,11 @@ first tools to get it:
 | `sweep_gridfs_unreferenced.py`, `sweep_s3_unreferenced.py` | `--execute` / `--apply` |
 | `cleanup_orphaned_projects.py`, `cleanup_failed_upload_residue.py`, `clear_stale_uploads.py` | non-dry-run |
 | `purge-local-db.py` | `--execute` |
-| `backfill_*.py`, `repair_*.py`, `rebuild_version_chains.py`, `dedupe_sample_level_copies.py`, `zero_carried_forward_views.py` | `--apply` / `--execute` |
+| `backfill_*.py`, `repair_*.py`, `rebuild_version_chains.py`, `dedupe_sample_level_copies.py` | `--apply` / `--execute` |
 | `manage.py create_project` | always (it creates a project) |
 
 `local_upload_project.py` isn't gated, because it already refuses anything but a
-local site. Neither are `restore_sample_csv_metadata.py` and
-`migrate_project_visibility.py` yet. `sweep_s3_unreferenced.py` has no database
+local site. `sweep_s3_unreferenced.py` has no database
 connection of its own, so it checks the lock of the environment it runs in.
 
 "Shared" means the database is named `caper` or `caper-dev` and its host isn't

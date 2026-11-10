@@ -442,7 +442,7 @@ def admin_version_details(request):
         details = []
         comment_char = "#"
         sep = "="
-        with open("version.txt", 'r') as version_file:
+        with open(os.path.join(settings.BASE_DIR, "version.txt"), 'r') as version_file:
             for line in version_file:
                 l = line.strip()
                 if l and not l.startswith(comment_char):

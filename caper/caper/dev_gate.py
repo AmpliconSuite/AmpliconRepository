@@ -22,8 +22,8 @@ repository, and to stop crawlers indexing it.
 
 * **The home page, and nothing else.**  Site owner's call 2026-09-03: someone
   who requests a page *behind* the home page reaches it.  That is the rarer
-  arrival, and letting it through is what keeps the REST API, the Google and
-  Globus callbacks and `weekly-report.py` working with no exemption list to
+  arrival, and letting it through is what keeps the REST API and the Google and
+  Globus callbacks working with no exemption list to
   maintain -- the part of a whole-site gate that would have needed the most
   machinery and broken the most flows.
 

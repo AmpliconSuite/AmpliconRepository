@@ -320,7 +320,6 @@ see who is changing dev or prod. The write tools below refuse without it on dev 
 | `caper/ownership_survey.py` + `manage.py ownership_survey` | Which project owns each file, and how much is residue. Runs outside a web worker. |
 | `caper/storage_stats.py` + `snapshot_storage.py` | What the databases hold, by status bucket, once a day, with history. |
 | `check_volume_reclamation.py` | Did deleted storage actually come back? (Measured answer: no — see §9.) |
-| `compare_version_history.py` | Diff the two version-history readers over every project. |
 | `dump_metadata.py` | Every collection except the payload, for an off-AWS copy. |
 | `caper/url_manifest.py` | Every project URL that resolves today, and to what. |
 | `check_project_flags.py` | The legacy flag pairs, per document. |
@@ -349,12 +348,18 @@ whose prediction misses is a stop, not a retry.
 
 ### Backfills and repairs — one-time, and they write
 
-`backfill_project_status.py` · `backfill_gridfs_backlinks.py` ·
-`backfill_create_events.py` · `backfill_audit_chain_ids.py` ·
-`rebuild_version_chains.py` · `repair_head_chain_fields.py` ·
-`repair_promoted_tombstone.py` · `recover_deleted_version.py` ·
+Still in the repo, because other tools point operators at them:
+`backfill_project_status.py` (the remedy for invariant I1) ·
+`backfill_gridfs_backlinks.py` (`report_gridfs_orphans.py` points at it) ·
+`rebuild_version_chains.py` (the only writer of the `project_version_chains` view,
+which invariant I9 checks) · `recover_deleted_version.py`.
+
+Retired once their campaigns had run on prod, and recoverable from git history at
+`90d977f`: `backfill_create_events.py` · `backfill_audit_chain_ids.py` ·
+`repair_head_chain_fields.py` · `repair_promoted_tombstone.py` ·
 `zero_carried_forward_views.py` · `migrate_project_visibility.py` ·
-`restore_sample_csv_metadata.py`
+`restore_sample_csv_metadata.py` · `backfill_gridfs_sha256.py` ·
+`compare_version_history.py`.
 
 One warning about `backfill_project_status.py`, because it is the writer behind
 the only lineage defect still visible on dev: `order_chain()` picks a chain head

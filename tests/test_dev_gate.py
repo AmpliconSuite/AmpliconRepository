@@ -178,7 +178,7 @@ def test_a_deep_link_is_deliberately_not_gated(path, request_factory, middleware
 
     Someone who requests a page behind the home page reaches it.  That is the
     rarer arrival and the one worth less friction, and leaving these paths
-    alone is what keeps the API, the OAuth callbacks and weekly-report.py
+    alone is what keeps the API and the OAuth callbacks
     working with no exemption list to maintain.
     """
     mw, state = middleware

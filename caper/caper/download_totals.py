@@ -157,7 +157,7 @@ def chain_totals_for(collection, projects):
 #: version was seeded with its predecessor's count, so the two overlapped by an
 #: amount nobody recorded and summing them tripled the answer. Versions written
 #: from that date start at zero, and the numbers already on older versions are
-#: zeroed once by zero_carried_forward_views.py -- their contribution is
+#: zeroed once by a one-time reconciliation (since retired) -- their contribution is
 #: already inside the head's carried-forward total, which stays where it is.
 INT_COUNTERS = ('views',)
 

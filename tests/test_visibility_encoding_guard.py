@@ -104,8 +104,6 @@ ALLOWED = {
 # Whole files exempt, with the reason. These are the scripts whose subject *is*
 # the raw encoding: normalising it, or reporting what it currently holds.
 EXEMPT_FILES = {
-    'migrate_project_visibility.py':
-        "The boolean-to-string migration. Reading the raw value is its job.",
     'check_project_flags.py':
         "A flag report. It prints what the field holds, including 'NOT SET'.",
     'check_project_flags_django.py':

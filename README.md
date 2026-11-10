@@ -572,8 +572,8 @@ Two things it deliberately does **not** do:
 
 - **It gates the home page only.** A link to a project, a sample, the REST API
   or an OAuth callback still works without the passphrase. That is the rarer
-  arrival, and leaving it alone is what keeps API clients, the Google and Globus
-  login flows and `caper/weekly-report.py` working with no exemption list.
+  arrival, and leaving it alone is what keeps API clients and the Google and
+  Globus login flows working with no exemption list.
 - **It does not log you in.** Passing the gate sets one cookie
   (`amprepo_dev_access`, seven days) and leaves `request.user` anonymous, so
   anonymous-visitor behaviour stays testable on dev. Logging out of

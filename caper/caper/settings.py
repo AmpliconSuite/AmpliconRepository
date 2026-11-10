@@ -757,7 +757,10 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 50000
 ###########################
 
 SERVER_VERSION = "unversioned"
-with open("version.txt", 'r') as version_file:
+# Anchored to this file, not the working directory: tests run from the repo root,
+# the containers from /srv/caper, and both must read caper/version.txt (the file
+# the release workflow rewrites).
+with open(os.path.join(BASE_DIR, "version.txt"), 'r') as version_file:
     comment_char = "#"
     sep = "="
     for line in version_file:
