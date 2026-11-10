@@ -20,7 +20,7 @@ this file is the setup.**
 source caper/config.sh && cd caper && python manage.py <command>
 
 # Or use the helper script from project root
-./run_django_command.sh <command>
+./scripts/dev/run_django_command.sh <command>
 ```
 
 Never commit `caper/config.sh` or `caper/.env` to version control.
@@ -29,15 +29,19 @@ Never commit `caper/config.sh` or `caper/.env` to version control.
 
 ## Critical: The Operator Lock Before Any Write to Dev or Prod
 
-**Before any write to dev or prod**, run `ops_lock.py --expect-db <db> status`. Wrap the
-work in `ops_lock.py --expect-db <db> run --holder H --owner O --reason "..." -- <command>`,
+**Before any write to dev or prod**, run `python -m caper.ops_lock --expect-db <db> status`. Wrap the
+work in `python -m caper.ops_lock --expect-db <db> run --holder H --owner O --reason "..." -- <command>`,
 or `acquire` it and `release` it when done. Use `acquire` for a deploy, because a restart kills
-`run` inside the container. If the lock is held, report the holder and
+`run` inside the container.
+
+`ops_lock` and `shutdown_mode` are modules of the application package, so run them from the
+Django project directory: `cd caper` locally, or on a server
+`docker exec -w /srv/caper amplicon-<env> /opt/venv/bin/python -m caper.ops_lock ...`. If the lock is held, report the holder and
 reason to your user and use `wait`. Do not `break` it or work around it. On prod, each of
 these is still a write that needs its own explicit ask.
 
 What counts as a write: the `--apply` or `--execute` mode of a maintenance script, `manage.py`
-commands that write, deploys, container and Neo4j restarts, `shutdown_mode.py on/off`,
+commands that write, deploys, container and Neo4j restarts, `python -m caper.shutdown_mode on/off`,
 migrations and backfills, and test runs or manual testing on dev that create, edit or delete
 projects. Reads, reports and dry runs don't need it, and neither does your own local database.
 
@@ -138,8 +142,8 @@ Procedures are in [docs/developer-workflows.md](docs/developer-workflows.md):
 local dev server, the dev landing gate (`dev_gate.py`: home page only, never
 authenticates, must not touch MongoDB), AWS SSO for S3 (`aws sso login --profile
 amprepo`), Docker dev, creating a project from the command line
-(`local_upload_project.py`, not `manage.py create_project`), local MongoDB/GridFS
-cleanup, `recover_deleted_version.py`, and `shutdown_mode.py` during a deploy.
+(`scripts/dev/local_upload_project.py`, not `manage.py create_project`), local MongoDB/GridFS
+cleanup, `scripts/maintenance/recover_deleted_version.py`, and `caper/shutdown_mode.py` during a deploy.
 Deploy runbooks are in the
 [wiki](https://github.com/AmpliconSuite/AmpliconRepository/wiki).
 

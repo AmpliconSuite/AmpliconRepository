@@ -4,7 +4,7 @@ creation and project edit pages.
 
 Included rather than shipped as a static .js file on purpose: static assets are
 served from S3 in dev/prod (settings.USE_S3) and are only published by a manual
-`sync_static_to_s3.sh` run, so a new static file 404s until someone remembers to
+`scripts/deploy/sync_static_to_s3.sh` run, so a new static file 404s until someone remembers to
 sync it. A template include is deployed with the code.
 
 Depends on SheetJS, which both host pages already load. SheetJS parses CSV and

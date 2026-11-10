@@ -5207,7 +5207,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
 
         gfs_end_time = time.time()
         # Files, MiB and s/MiB, so a change in write speed shows up as a number
-        # (report_upload_rates.py reads the same figures from fs.files
+        # (scripts/diagnostics/report_upload_rates.py reads the same figures from fs.files
         # for every past upload).
         gfs_seconds = gfs_end_time - gfs_start_time
         mib_written = bytes_written / 2**20
@@ -5739,7 +5739,7 @@ def _process_and_aggregate_files(file_fps, temp_proj_id, project_data_path, temp
         # to write DETACHED because it builds transitions *into* a status, and
         # nothing should deliberately move a document into "meaning lost". This
         # is the other job: recording what a document has *become*, which is what
-        # status_after() is for and what backfill_project_status.py already does.
+        # status_after() is for and what scripts/maintenance/backfill_project_status.py already does.
         # Leaving it unwritten kept the 'LIVE' from the placeholder insert, so
         # every failed edit stored a status that lied and I2 counted it.
         #

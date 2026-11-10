@@ -1257,7 +1257,7 @@ def _deleted_version_entries_for_project(project, members=None):
         cursor = collection_handle.find(
             # Was a hand-written copy of STATUS_QUERIES[TOMBSTONE].  The grep
             # guard only looks for 'delete' and 'current' literals, so it walked
-            # past this one; validate_project_lineage.py's I18 found it.
+            # past this one; scripts/diagnostics/validate_project_lineage.py's I18 found it.
             combine(STATUS_QUERIES[TOMBSTONE],
                     redirect_to_project={'$in': project_ids}),
             {field: 1 for field in projection_fields},
@@ -1368,7 +1368,7 @@ def previous_versions(project):
         return from_pointers
     logging.warning(
         'lineage: project %s has no version_chain_id, so its history cannot be '
-        'read. Run backfill_project_status.py; invariant I1 lists these.',
+        'read. Run scripts/maintenance/backfill_project_status.py; invariant I1 lists these.',
         project.get('_id'))
     return [], None
 

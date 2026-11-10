@@ -89,7 +89,7 @@ def test_the_metadata_download_verifies_against_its_own_manifest(
     # The reason the manifest ships inside the archive: what the browser
     # received can be checked with the same command that checks the
     # six-monthly dump, without trusting this test's own reimplementation.
-    import dump_metadata
+    from caper import dump_metadata
     assert dump_metadata.verify(str(root)) == []
     assert 'fs.chunks.jsonl.gz' not in {p.name for p in root.iterdir()}, \
         'the payload must never be in a metadata dump'

@@ -10,7 +10,7 @@
     }
   },
   "generated": "2026-10-29",
-  "generator": "build_gene_map.py",
+  "generator": "scripts/maintenance/build_gene_map.py",
   "genes_in_universe": 23214,
   "name_rows": 93549,
   "resolution": {

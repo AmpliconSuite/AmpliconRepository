@@ -70,7 +70,7 @@ with `docker ps`.
 
 **Why `mongo:4` and not something newer.** The dev and prod servers do not run
 MongoDB — they run an Amazon DocumentDB cluster, which implements the MongoDB API at
-the 4.0/5.0 feature level (see the version check in `verify_indexes.py`). Pinning
+the 4.0/5.0 feature level (see the version check in `scripts/diagnostics/verify_indexes.py`). Pinning
 `mongo:4` locally, as `docker-compose-dev.yml` and `.github/workflows/tests.yml` both
 do, keeps you from writing code against server features DocumentDB does not have.
 Local, compose, and CI are deliberately on the same tag; none of them is DocumentDB,
@@ -141,31 +141,31 @@ Whichever option you choose, everything downstream — Compass, the test suite, 
 Periodically, local development uploads and test projects can make MongoDB's
 GridFS storage very large. Start with read-only reports:
 
-> `source caper/config.sh && python purge-local-db.py --gridfs-usage-by-type --limit 25`
+> `source caper/config.sh && python scripts/maintenance/purge-local-db.py --gridfs-usage-by-type --limit 25`
 
-> `source caper/config.sh && python purge-local-db.py --gridfs-usage-by-project --limit 25`
+> `source caper/config.sh && python scripts/maintenance/purge-local-db.py --gridfs-usage-by-project --limit 25`
 
-> `source caper/config.sh && python purge-local-db.py --tarfile-report --limit 25`
+> `source caper/config.sh && python scripts/maintenance/purge-local-db.py --tarfile-report --limit 25`
 
 The recommended cleanup is two-stage. First remove unreachable project
 documents and the GridFS/S3/tmp files attached to those documents:
 
-> `source caper/config.sh && cd caper && python ../cleanup_orphaned_projects.py --dry-run`
+> `source caper/config.sh && cd caper && python ../scripts/maintenance/cleanup_orphaned_projects.py --dry-run`
 
-> `source caper/config.sh && cd caper && python ../cleanup_orphaned_projects.py`
+> `source caper/config.sh && cd caper && python ../scripts/maintenance/cleanup_orphaned_projects.py`
 
 Then remove remaining GridFS blobs that are not referenced by reachable project
 documents:
 
-> `source caper/config.sh && python purge-local-db.py --smart-gridfs`
+> `source caper/config.sh && python scripts/maintenance/purge-local-db.py --smart-gridfs`
 
-> `source caper/config.sh && python purge-local-db.py --smart-gridfs --execute`
+> `source caper/config.sh && python scripts/maintenance/purge-local-db.py --smart-gridfs --execute`
 
-`purge-local-db.py` is dry-run by default; destructive actions require
+`scripts/maintenance/purge-local-db.py` is dry-run by default; destructive actions require
 `--execute`. A full local project/GridFS wipe is still available, but must be
 requested explicitly:
 
-> `source caper/config.sh && python purge-local-db.py --all-project-data --execute`
+> `source caper/config.sh && python scripts/maintenance/purge-local-db.py --all-project-data --execute`
 
 MongoDB/WiredTiger may reuse freed space internally instead of immediately
 shrinking `~/data/db`. To return space to the OS after a large cleanup, use a
@@ -250,7 +250,7 @@ application bug rather than a missing file. `runserver --insecure` does not fix 
 because the problem is the finders, not `DEBUG`.
 
 Reading static from S3 needs **no credentials** — `amprepobucket` is publicly readable. You
-only need an SSO login (step 5a) to *write* to it via `sync_static_to_s3.sh`, which is also
+only need an SSO login (step 5a) to *write* to it via `scripts/deploy/sync_static_to_s3.sh`, which is also
 the reason a newly added file under `caper/static/` will 404 until it is synced. Prefer
 putting new page assets in a template under `caper/templates/` so they deploy with the code.
 
@@ -262,7 +262,7 @@ putting new page assets in a template under `caper/templates/` so they deploy wi
 With both S3 variables set to `FALSE` as above, **you do not need the AWS CLI at all** —
 project payloads go to your local GridFS and static files are served by Django. Set them
 to `TRUE` and install the CLI only when you want to exercise the S3 code paths (uploads,
-downloads, `sync_static_to_s3.sh`).
+downloads, `scripts/deploy/sync_static_to_s3.sh`).
 
 ### Install the AWS CLI v2
 
@@ -541,7 +541,7 @@ Dev and prod share one database cluster, and anyone changing them should take th
 So add this line to your user-level agent instructions (for Claude Code, `~/.claude/CLAUDE.md`):
 
 ```
-For AmpliconRepository work, including on its dev and prod servers: take the operator lock with `ops_lock.py` before any write to them. The rule is in that repo's AGENTS.md: https://github.com/AmpliconSuite/AmpliconRepository/blob/main/AGENTS.md
+For AmpliconRepository work, including on its dev and prod servers: take the operator lock with `python -m caper.ops_lock` (from `caper/`) before any write to them. The rule is in that repo's AGENTS.md: https://github.com/AmpliconSuite/AmpliconRepository/blob/main/AGENTS.md
 ```
 
 `CLAUDE.md` is gitignored here, so each clone has its own or none. Claude Code doesn't load `AGENTS.md` by default if a clone has a `CLAUDE.md` or `CLAUDE.local.md`. If yours does, put `@AGENTS.md` in it.
@@ -733,7 +733,7 @@ is the only way to exercise the code against DocumentDB rather than a local
 MongoDB, and it is what issue #582 was about. Three things differ from a laptop
 run.
 
-**1. The environment has to be sourced inside the exec.** `start-server.sh` passes
+**1. The environment has to be sourced inside the exec.** `scripts/deploy/start-server.sh` passes
 an explicit `--env` list that omits several variables `settings.py` requires, so a
 plain `docker exec ... pytest` dies at import with `KeyError: 'RECAPTCHA_PRIVATE_KEY'`.
 Source `config.sh` in the same shell, and use the virtualenv interpreter — the
@@ -1101,30 +1101,30 @@ Neo4j runs as a Docker container. Run the start script from the running-server c
 
 ```bash
 cd /home/ubuntu/AmpliconRepository-prod   # or AmpliconRepository-dev
-./start-neo4j-container.sh
+./scripts/deploy/start-neo4j-container.sh
 ```
 
 Neo4j data and configuration are persisted in `neo4j/data/` and `neo4j/conf/` under the checkout root. To stop Neo4j:
 
 ```bash
-./stop-neo4j-container.sh
+./scripts/deploy/stop-neo4j-container.sh
 ```
 
 ### viii. Start the application server
 
 ```bash
 cd /home/ubuntu/AmpliconRepository-prod   # or AmpliconRepository-dev
-./start-server.sh
+./scripts/deploy/start-server.sh
 ```
 
 This launches a gunicorn container named `amplicon-${AMPLICON_ENV}` with the source checkout mounted at `/srv/`. Confirm it is running with `docker ps`. Logs are written to the `logs/` directory in the checkout root.
 
 ### ix. Install log rotation
 
-Nothing rotates the application logs by default, and they do not stop growing: before this was installed, prod had accumulated a 1.7 GB `gunicorn_access.log` and a 1.3 GB `stdout.txt`. Copy `logrotate-ampliconrepo.conf` from the repository into place:
+Nothing rotates the application logs by default, and they do not stop growing: before this was installed, prod had accumulated a 1.7 GB `gunicorn_access.log` and a 1.3 GB `stdout.txt`. Copy `scripts/deploy/logrotate-ampliconrepo.conf` from the repository into place:
 
 ```bash
-sudo cp logrotate-ampliconrepo.conf /etc/logrotate.d/ampliconrepo
+sudo cp scripts/deploy/logrotate-ampliconrepo.conf /etc/logrotate.d/ampliconrepo
 sudo chown root:root /etc/logrotate.d/ampliconrepo
 sudo chmod 644 /etc/logrotate.d/ampliconrepo
 sudo logrotate -d /etc/logrotate.d/ampliconrepo    # dry run; parses and reports, changes nothing
@@ -1142,7 +1142,7 @@ To rotate immediately rather than waiting for the timer, `sudo logrotate -f /etc
 - Check to see if the Docker container is running
 > `docker ps` (look for a container called amplicon)
 - If it is not running, run the start script 
-> `./start-server.sh`
+> `./scripts/deploy/start-server.sh`
 
 ## 2. How to stop the server
 - SSH into the EC2 instance (called `ampliconrepo-ubuntu-20.04`)
@@ -1152,7 +1152,7 @@ To rotate immediately rather than waiting for the timer, `sudo logrotate -f /etc
 - Check to see if the Docker container is running
 > `docker ps` (look for a container called amplicon)
 - If it is running, run the stop script 
-> `./stop-server.sh`
+> `./scripts/deploy/stop-server.sh`
 
 ## 3. How to update the server
 
@@ -1188,7 +1188,7 @@ To rotate immediately rather than waiting for the timer, `sudo logrotate -f /etc
 > `source caper/config.sh`
 > `docker stop amplicon-${AMPLICON_ENV}`
 > `docker rm amplicon-${AMPLICON_ENV}`
-> `./start-server.sh`
+> `./scripts/deploy/start-server.sh`
 - Verify the running container was recreated from the expected image and, when dependencies changed, verify the installed package version:
 > `docker ps --filter name=amplicon-${AMPLICON_ENV}`
 > `docker exec amplicon-${AMPLICON_ENV} bash -lc 'source /opt/venv/bin/activate && python -c "import AmpliconSuiteAggregator as a; print(a.__version__)"'`

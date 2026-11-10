@@ -64,7 +64,7 @@ saved the runs that name it.
 | `version_purge` (and the resume at worker start) | Asks again before each batch, because a version made since may have reused one of the files. If the check cannot be read, the purge stops with the rest still pending |
 | `admin_permanent_delete_project` (and account deletion) | Passes the answer as `protected_file_ids`. If the check cannot be read, nothing is deleted |
 | Upload failure (`discard_unrecorded_gridfs_files`, `upload_cleanup`) | Unchanged. Both take only files the failed upload *wrote*. A reused file names an earlier writer, and its id never enters `uploaded_file_ids` |
-| `cleanup_failed_upload_residue.py`, `sweep_gridfs_unreferenced.py`, `cleanup_orphaned_projects.py` | Unchanged. Each walks every document before deleting, so a file any survivor names is kept |
+| `scripts/maintenance/cleanup_failed_upload_residue.py`, `scripts/maintenance/sweep_gridfs_unreferenced.py`, `scripts/maintenance/cleanup_orphaned_projects.py` | Unchanged. Each walks every document before deleting, so a file any survivor names is kept |
 
 When the check fails, every path keeps the files. A leaked file can be found and
 collected later; a lost one cannot be recovered.

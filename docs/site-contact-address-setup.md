@@ -5,7 +5,7 @@
 The Privacy page needs a contact address for privacy questions, account
 corrections, and account-deletion requests. The obvious candidate was
 `dev@ampliconrepository.org` — it is on the site's own domain and already appears
-in the repository as the default `EMAIL_FROM` in `check_disk.py`.
+in the repository as the default `EMAIL_FROM` in `scripts/diagnostics/check_disk.py`.
 
 It cannot receive mail today. As of August 2026:
 

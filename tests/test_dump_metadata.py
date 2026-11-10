@@ -1,4 +1,4 @@
-"""Tests for dump_metadata.py, the tier-3 off-AWS metadata copy.
+"""Tests for caper/dump_metadata.py, the tier-3 off-AWS metadata copy.
 
 Run against the local MongoDB in a scratch collection namespace, the same way
 the other database-touching tests here do -- no scratch *database*, because
@@ -17,9 +17,9 @@ import pytest
 from bson import ObjectId, json_util
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
+CAPER_DIR = os.path.join(REPO_ROOT, 'caper')
 
-import dump_metadata  # noqa: E402
+from caper import dump_metadata  # noqa: E402
 
 
 @pytest.fixture
@@ -155,9 +155,9 @@ def test_it_refuses_a_database_it_was_not_pointed_at():
     target = os.path.join(os.environ.get('CLAUDE_JOB_DIR', '/tmp'),
                           'should-not-exist-%s' % uuid.uuid4().hex[:8])
     out = subprocess.run(
-        [sys.executable, os.path.join(REPO_ROOT, 'dump_metadata.py'),
+        [sys.executable, '-m', 'caper.dump_metadata',
          '--expect-db', 'definitely-not-this-one', '--out', target],
-        capture_output=True, text=True)
+        capture_output=True, text=True, cwd=CAPER_DIR)
     assert out.returncode == 2, out.stdout
     assert '--expect-db says' in out.stdout
     # And it must not have written anything before deciding.
@@ -172,7 +172,7 @@ def test_expect_db_selects_nothing():
     read whatever it was told to read and then confirm that it had. The real
     target comes from DB_NAME; --expect-db only says whether that was intended.
     """
-    source = open(os.path.join(REPO_ROOT, 'dump_metadata.py')).read()
+    source = open(os.path.join(REPO_ROOT, 'caper', 'caper', 'dump_metadata.py')).read()
     body = source[source.index('def main('):]
     assert 'client[configured]' in body
     assert 'client[args.expect_db' not in body
@@ -181,7 +181,7 @@ def test_expect_db_selects_nothing():
 @pytest.mark.integration
 def test_there_is_no_write_path():
     """Read-only is a property of the file, so it is checked as one."""
-    source = open(os.path.join(REPO_ROOT, 'dump_metadata.py')).read()
+    source = open(os.path.join(REPO_ROOT, 'caper', 'caper', 'dump_metadata.py')).read()
     for forbidden in ('insert_one', 'insert_many', 'update_one', 'update_many',
                       'delete_one', 'delete_many', 'drop(', 'replace_one'):
         assert forbidden not in source, (

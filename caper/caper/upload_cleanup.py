@@ -11,7 +11,7 @@ that way, all written inside a 90-second window.
 inside the aggregation thread runs the failure path, and that is what calls
 this. A worker that is killed -- the daily 07:12 restart, an OOM, a deploy --
 runs no failure path at all, and nothing in this process can help there. The
-weekly ``cleanup_failed_upload_residue.py`` sweep is the backstop for that
+weekly ``scripts/maintenance/cleanup_failed_upload_residue.py`` sweep is the backstop for that
 case, and it is the right architecture for it rather than a gap: the only
 thing that can collect after a crash is something that runs later. What this
 changes is the window for the case it does cover, from up to a week down to

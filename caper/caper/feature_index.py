@@ -71,7 +71,7 @@ the corpus holds both, so one gene reaches users under two names --
 
 Since schema 7 the fence has a gate: every row also carries ``gene_ids``,
 NCBI Gene IDs from a committed map of AC's gene names per build
-(``gene_ids.py``, built by ``build_gene_map.py``).  The map is built from
+(``gene_ids.py``, built by ``scripts/maintenance/build_gene_map.py``).  The map is built from
 fixed sources on a schedule rather than maintained by hand, which was the
 objection to an alias map here before: C17orf37 in an hg19 row and MIEN1 in an
 hg38 row are both 84299.  ``genes`` is kept as it was, so a name the map

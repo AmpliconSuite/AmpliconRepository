@@ -46,7 +46,7 @@ Re-measure once the read-amplification fix is in production:
 2. If `get_one_sample` is now a small fraction of total page time, threads will
    not help much — cache the generated plots instead.
 3. If DB wait still dominates, load-test locally before touching production.
-   `performance_test.py` exists in the repo; otherwise drive a local gunicorn
+   `scripts/dev/performance_test.py` exists in the repo; otherwise drive a local gunicorn
    with `hey`/`locust` at rising concurrency and compare `sync` x9 against
    `gthread` on p50/p95 and throughput.
 

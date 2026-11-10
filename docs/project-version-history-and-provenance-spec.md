@@ -38,7 +38,7 @@ deleted, or detached — and how it got that way.
 
 ### 2.1 The incident that prompted this
 
-`cleanup_orphaned_projects.py` classified **84 of 345** production project
+`scripts/maintenance/cleanup_orphaned_projects.py` classified **84 of 345** production project
 documents as orphaned and deletable. Verified against the application's own
 `get_one_project()`:
 
@@ -60,7 +60,7 @@ Two people, two files, same error.
 
 ### 2.2 The near-miss in the other direction
 
-`purge-local-db.py` kept a parallel hand-written GridFS key set. It had drifted
+`scripts/maintenance/purge-local-db.py` kept a parallel hand-written GridFS key set. It had drifted
 8 keys behind the application. That set decides which files count as
 *referenced*, so the drift did not leak storage — it made live files look like
 garbage:
@@ -889,7 +889,7 @@ project downloads and 2,898 of its 114,310 sample downloads.
 | `sample_downloads` | **chain** | Same. |
 | `alias` / `alias_name` | **chain** | A URL identity. It names the project, not an aggregation run. `alias` is the form field and `alias_name` the stored one; the two spellings are a separate cleanup. |
 | `sample_name_remap_enabled` | **version** | Re-derived from the upload form at each re-aggregation; it describes how *that* version's samples were ingested. |
-| `owner` | **neither** | Placeholder scaffolding: set at insert, `$unset` when the real project replaces it. It must not exist on a finished project, which is what `clear_stale_uploads.py` uses to find crashed uploads. |
+| `owner` | **neither** | Placeholder scaffolding: set at insert, `$unset` when the real project replaces it. It must not exist on a finished project, which is what `scripts/maintenance/clear_stale_uploads.py` uses to find crashed uploads. |
 | `original_project_name` | **neither** | Same. |
 
 Chain-level here means *displayed as the chain's value*, not that the per-version
@@ -1162,7 +1162,7 @@ measurement only.
   snapshot immediately before any Phase 1 or Phase 2 run against prod.
 - Every migration step is idempotent and re-runnable.
 - Every migration step is **report-only by default**; mutation requires
-  `--execute` (the pattern now used in `cleanup_orphaned_projects.py`).
+  `--execute` (the pattern now used in `scripts/maintenance/cleanup_orphaned_projects.py`).
 - Capture a digest of `(_id, status, is_latest, version_ordinal,
   previous_version_id, next_version_id)` for every document before and after,
   and diff it. A migration that changes a document it did not intend to touch

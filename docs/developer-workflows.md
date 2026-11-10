@@ -65,7 +65,7 @@ docker compose -f docker-compose-dev.yml down
 
 ```bash
 set -a; source caper/config.sh; set +a
-LOCAL_SITE_PASSWORD=... python local_upload_project.py --user <username> \
+LOCAL_SITE_PASSWORD=... python scripts/dev/local_upload_project.py --user <username> \
     --name "My project" --description "..." --visibility public \
     [--metadata samples.csv] results.tar.gz
 ```
@@ -89,34 +89,34 @@ Prefer the safe two-stage cleanup before any full local purge:
 source caper/config.sh
 
 # 1. Remove unreachable project docs and their attached GridFS/S3/tmp files.
-(cd caper && python ../cleanup_orphaned_projects.py --dry-run)
-(cd caper && python ../cleanup_orphaned_projects.py)
+(cd caper && python ../scripts/maintenance/cleanup_orphaned_projects.py --dry-run)
+(cd caper && python ../scripts/maintenance/cleanup_orphaned_projects.py)
 
 # 2. Remove remaining GridFS blobs not referenced by reachable projects.
-python purge-local-db.py --smart-gridfs
-python purge-local-db.py --smart-gridfs --execute
+python scripts/maintenance/purge-local-db.py --smart-gridfs
+python scripts/maintenance/purge-local-db.py --smart-gridfs --execute
 ```
 
 Useful read-only reports:
 
 ```bash
-source caper/config.sh && python purge-local-db.py --gridfs-usage-by-type --limit 25
-source caper/config.sh && python purge-local-db.py --gridfs-usage-by-project --limit 25
-source caper/config.sh && python purge-local-db.py --tarfile-report --limit 25
+source caper/config.sh && python scripts/maintenance/purge-local-db.py --gridfs-usage-by-type --limit 25
+source caper/config.sh && python scripts/maintenance/purge-local-db.py --gridfs-usage-by-project --limit 25
+source caper/config.sh && python scripts/maintenance/purge-local-db.py --tarfile-report --limit 25
 ```
 
-`cleanup_orphaned_projects.py` protects all reachable projects, previous versions, soft-deleted current projects, and redirect tombstones before deleting orphan project documents plus their GridFS/S3/tmp payloads. `purge-local-db.py` is dry-run by default; destructive operations require `--execute`. Its default `--reference-scope reachable` is conservative, and `--reference-strategy recursive` protects any ObjectId-like value in reachable project documents. Use `--reference-strategy app-fields` only when you intentionally want a more aggressive GridFS cleanup based on known GridFS fields.
+`scripts/maintenance/cleanup_orphaned_projects.py` protects all reachable projects, previous versions, soft-deleted current projects, and redirect tombstones before deleting orphan project documents plus their GridFS/S3/tmp payloads. `scripts/maintenance/purge-local-db.py` is dry-run by default; destructive operations require `--execute`. Its default `--reference-scope reachable` is conservative, and `--reference-strategy recursive` protects any ObjectId-like value in reachable project documents. Use `--reference-strategy app-fields` only when you intentionally want a more aggressive GridFS cleanup based on known GridFS fields.
 
-The legacy full wipe is now explicit and local-dev-only: `python purge-local-db.py --all-project-data --execute`.
+The legacy full wipe is now explicit and local-dev-only: `python scripts/maintenance/purge-local-db.py --all-project-data --execute`.
 
 For project flag audits, run:
 ```bash
 source caper/config.sh
-(cd caper && python manage.py shell < ../check_project_flags_django.py)
+(cd caper && python manage.py shell < ../scripts/diagnostics/check_project_flags_django.py)
 ```
 
 To restore a version that was deleted from a project's history, use
-`recover_deleted_version.py`; it is dry-run by default and writes only with
+`scripts/maintenance/recover_deleted_version.py`; it is dry-run by default and writes only with
 `--apply`. It **refuses** a version whose `payload_purged` flag is set: deletion
 purges the GridFS payload, so clearing the markers would leave a version that
 resolves by URL and has no data behind it. Such a version is already visible in
@@ -127,13 +127,13 @@ the history table, marked as deleted.
 The deploy runbooks in the
 [wiki](https://github.com/AmpliconSuite/AmpliconRepository/wiki) open by
 enabling shutdown mode and close by disabling it. Without a browser session,
-use `shutdown_mode.py` from the server's checkout, which the container mounts
+use `caper/shutdown_mode.py` from the server's checkout, which the container mounts
 at `/srv`:
 ```bash
-docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev status
-docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev on     # refuses while tasks run
-docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev wait   # blocks until none run
-docker exec -w /srv amplicon-dev /opt/venv/bin/python shutdown_mode.py --expect-db caper-dev off
+docker exec -w /srv/caper amplicon-dev /opt/venv/bin/python -m caper.shutdown_mode --expect-db caper-dev status
+docker exec -w /srv/caper amplicon-dev /opt/venv/bin/python -m caper.shutdown_mode --expect-db caper-dev on     # refuses while tasks run
+docker exec -w /srv/caper amplicon-dev /opt/venv/bin/python -m caper.shutdown_mode --expect-db caper-dev wait   # blocks until none run
+docker exec -w /srv/caper amplicon-dev /opt/venv/bin/python -m caper.shutdown_mode --expect-db caper-dev off
 ```
 On prod the container is `amplicon-prod` and the database `caper`; `on` and
 `off` there are prod writes. Its docstring explains why "no running tasks" means

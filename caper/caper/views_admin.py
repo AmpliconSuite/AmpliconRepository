@@ -1652,7 +1652,7 @@ def data_qc(request):
             # pre-April 2024 encoding -- a JSON string, with no linkid key --
             # matches nothing, and a document that is genuinely part of a chain
             # gets reported here as an orphan. That is the same blind spot as
-            # check_project_flags.py:195.
+            # scripts/diagnostics/check_project_flags.py:195.
             members = lineage.chain_members(collection_handle, project,
                                             lineage.POINTER_PROJECTION)
             if members is not None:

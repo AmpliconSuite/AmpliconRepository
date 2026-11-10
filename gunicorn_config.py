@@ -48,7 +48,7 @@ accesslog = "/srv/logs/gunicorn_access.log"
 errorlog = "/srv/logs/gunicorn_error.log"
 loglevel = os.getenv("GUNICORN_LOG_LEVEL", "info")
 # %(p)s is the worker pid.  It is here so that a request can be attributed to
-# the worker that served it: memory_probe.py samples memory per worker, and
+# the worker that served it: scripts/memory_auditing/memory_probe.py samples memory per worker, and
 # without the pid on each request line there is no way to say which requests a
 # worker was serving while it grew.  Appended rather than inserted, so anything
 # reading the existing fields by position still works.
