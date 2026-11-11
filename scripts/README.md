@@ -123,8 +123,10 @@ nothing else will notice a job that silently stopped (`check_disk.py` writes to 
 5 0 * * *    docker exec -w /srv/caper amplicon-<env> bash -c 'set -a; source /srv/caper/config.sh; set +a; /opt/venv/bin/python -m caper.backup_sqlite --db /srv/caper/caper.sqlite3 --execute' >> /home/ubuntu/backup_sqlite.log 2>&1
 # disk alert, every five minutes, on the host
 */5 * * * *  sh /home/ubuntu/AmpliconRepository-<env>/caper/config.sh && python3 /home/ubuntu/AmpliconRepository-<env>/scripts/diagnostics/check_disk.py > /dev/null 2>&1
-# weekly failed-upload cleanup. Time fields: dev `30 3 * * 0`, prod `30 4 * * 0` (Sunday)
-<dev: 30 3 | prod: 30 4> * * 0   docker exec -w /srv amplicon-<env> bash -c 'set -a; source /srv/caper/config.sh; set +a; /opt/venv/bin/python /srv/scripts/maintenance/cleanup_failed_upload_residue.py --expect-db <db> --execute --undo-record /srv/logs/failed-upload-cleanup-undo.jsonl' >> /home/ubuntu/failed_upload_cleanup.log 2>&1
+# weekly failed-upload cleanup. Time fields: dev `30 3 * * 0`, prod `30 4 * * 0` (Sunday).
+# It deletes, so it runs under `ops_lock run`: if someone holds the lock, that week is skipped
+# and the log says who held it. Without the wrapper every run is REFUSED.
+<dev: 30 3 | prod: 30 4> * * 0   docker exec -w /srv/caper amplicon-<env> bash -c 'set -a; source /srv/caper/config.sh; set +a; /opt/venv/bin/python -m caper.ops_lock --expect-db <db> run --holder agent:cron:weekly-cleanup --owner jluebeck --reason "weekly failed-upload cleanup (cron)" -- /opt/venv/bin/python /srv/scripts/maintenance/cleanup_failed_upload_residue.py --expect-db <db> --execute --undo-record /srv/logs/failed-upload-cleanup-undo.jsonl' >> /home/ubuntu/failed_upload_cleanup.log 2>&1
 # daily storage snapshot. Time fields: dev `0 2 * * *`, prod `30 2 * * *`
 <dev: 0 2 | prod: 30 2> * * *   docker exec -w /srv amplicon-<env> bash -c 'set -a; source /srv/caper/config.sh; set +a; /opt/venv/bin/python /srv/scripts/maintenance/snapshot_storage.py --expect-db $DB_NAME' >> /home/ubuntu/storage_snapshot.log 2>&1
 ```
