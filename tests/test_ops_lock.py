@@ -3,6 +3,7 @@
 import datetime
 import multiprocessing
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -410,6 +411,11 @@ def test_no_tool_takes_the_lock_without_being_listed_above():
     equal the list, and must not be empty.
     """
     skipped = {'.git', '.claude', 'tests', 'node_modules', '__pycache__', 'static', 'staticfiles'}
+    # Both spellings of require() and require_for_environment():
+    # `ops_lock.require...(...)`, and imported by name
+    # (`from caper.ops_lock import require`, parenthesised or not).
+    takes_lock = re.compile(r'ops_lock\.require'
+                            r'|from\s+[\w.]*ops_lock\s+import\s*\(?[\w\s,]*\brequire')
     found = set()
     for dirpath, dirs, files in os.walk(REPO_ROOT):
         dirs[:] = [d for d in dirs if d not in skipped and not d.startswith('venv')]
@@ -418,7 +424,7 @@ def test_no_tool_takes_the_lock_without_being_listed_above():
                 continue
             path = os.path.join(dirpath, name)
             with open(path, errors='replace') as handle:
-                if 'ops_lock.require' in handle.read():
+                if takes_lock.search(handle.read()):
                     found.add(os.path.relpath(path, REPO_ROOT))
     assert found, 'scanned nothing: the guard has gone vacuous'
     assert found == set(WRITE_TOOLS)
