@@ -29,8 +29,6 @@ import sys
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 import validate_project_lineage as validator                    # noqa: E402
 from awkward_states import (                                    # noqa: E402

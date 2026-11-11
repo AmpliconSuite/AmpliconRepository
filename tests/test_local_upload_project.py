@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'local_upload_project.py'
+SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'dev' / 'local_upload_project.py'
 spec = importlib.util.spec_from_file_location('local_upload_project', SCRIPT)
 local_upload_project = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(local_upload_project)

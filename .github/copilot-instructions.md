@@ -46,9 +46,9 @@ source caper/config.sh && cd caper && python manage.py migrate
 A helper script is provided that automatically sources the config file:
 
 ```bash
-./run_django_command.sh migrate
-./run_django_command.sh createsuperuser
-./run_django_command.sh runserver
+./scripts/dev/run_django_command.sh migrate
+./scripts/dev/run_django_command.sh createsuperuser
+./scripts/dev/run_django_command.sh runserver
 ```
 
 ### When Writing Scripts

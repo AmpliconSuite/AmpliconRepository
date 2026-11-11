@@ -3,6 +3,7 @@
 import datetime
 import multiprocessing
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -14,8 +15,7 @@ import pytest
 from django.test import RequestFactory
 from pymongo import MongoClient
 
-import ops_lock
-from caper import context_processor
+from caper import context_processor, ops_lock
 
 pytestmark = pytest.mark.integration
 
@@ -235,7 +235,7 @@ def test_run_passes_sigterm_to_the_command_and_releases(cols, tmp_path):
     script = textwrap.dedent('''
         import os, sys
         from pymongo import MongoClient
-        import ops_lock
+        from caper import ops_lock
         db = MongoClient(os.environ['DB_URI_SECRET'])[os.environ['DB_NAME']]
         lock = ops_lock.OpsLock(db[sys.argv[1]], db[sys.argv[2]])
         class Args:
@@ -244,7 +244,7 @@ def test_run_passes_sigterm_to_the_command_and_releases(cols, tmp_path):
         sys.exit(ops_lock.cmd_run(lock, Args, [sys.executable, '-c', child, sys.argv[3]]))
     ''')
     process = subprocess.Popen([sys.executable, '-c', script, cols[0].name, cols[1].name, str(ready)],
-                               cwd=REPO_ROOT, stdout=subprocess.DEVNULL)
+                               cwd=os.path.join(REPO_ROOT, 'caper'), stdout=subprocess.DEVNULL)
     deadline = time.time() + 30
     while not ready.exists():
         assert time.time() < deadline, 'the command never started'
@@ -379,15 +379,52 @@ def test_admin_pages_show_nothing_for_a_free_or_expired_lock(lock, cols, monkeyp
     assert _notice('/admin-stats/', _Staff(), monkeypatch, cols[0]) == {}
 
 
-@pytest.mark.parametrize('tool', [
-    'backfill_gridfs_backlinks', 'backfill_project_status', 'cleanup_failed_upload_residue',
-    'cleanup_orphaned_projects', 'clear_stale_uploads', 'dedupe_sample_level_copies',
-    'purge-local-db', 'recover_deleted_version',
-    'shutdown_mode', 'sweep_gridfs_unreferenced', 'sweep_s3_unreferenced',
-    'caper/caper/management/commands/create_project',
-])
+WRITE_TOOLS = [
+    'scripts/maintenance/backfill_project_status.py',
+    'scripts/maintenance/cleanup_failed_upload_residue.py',
+    'scripts/maintenance/cleanup_orphaned_projects.py',
+    'scripts/maintenance/clear_stale_uploads.py',
+    'scripts/maintenance/purge-local-db.py',
+    'scripts/maintenance/recover_deleted_version.py',
+    'scripts/maintenance/sweep_gridfs_unreferenced.py',
+    'scripts/maintenance/sweep_s3_unreferenced.py',
+    'caper/caper/shutdown_mode.py',
+    'caper/caper/management/commands/create_project.py',
+]
+
+
+@pytest.mark.parametrize('tool', WRITE_TOOLS)
 def test_every_write_tool_checks_the_lock_and_offers_the_escape_hatch(tool):
-    with open(os.path.join(REPO_ROOT, tool + '.py')) as handle:
+    with open(os.path.join(REPO_ROOT, tool)) as handle:
         source = handle.read()
     assert 'ops_lock.require' in source
     assert 'add_no_lock_argument' in source
+
+
+def test_no_tool_takes_the_lock_without_being_listed_above():
+    """The list above is only a guard while it is complete.
+
+    A script that calls `ops_lock.require` but is missing from it escapes the
+    escape-hatch check silently, and a script moved out of the scanned
+    directories would make the check vacuous -- so the whole repository outside tests/ is
+    scanned (a writer at the root or in caper/ counts), and the set found on disk must
+    equal the list, and must not be empty.
+    """
+    skipped = {'.git', '.claude', 'tests', 'node_modules', '__pycache__', 'static', 'staticfiles'}
+    # Both spellings of require() and require_for_environment():
+    # `ops_lock.require...(...)`, and imported by name
+    # (`from caper.ops_lock import require`, parenthesised or not).
+    takes_lock = re.compile(r'ops_lock\.require'
+                            r'|from\s+[\w.]*ops_lock\s+import\s*\(?[\w\s,]*\brequire')
+    found = set()
+    for dirpath, dirs, files in os.walk(REPO_ROOT):
+        dirs[:] = [d for d in dirs if d not in skipped and not d.startswith('venv')]
+        for name in files:
+            if not name.endswith('.py') or name == 'ops_lock.py':
+                continue
+            path = os.path.join(dirpath, name)
+            with open(path, errors='replace') as handle:
+                if takes_lock.search(handle.read()):
+                    found.add(os.path.relpath(path, REPO_ROOT))
+    assert found, 'scanned nothing: the guard has gone vacuous'
+    assert found == set(WRITE_TOOLS)

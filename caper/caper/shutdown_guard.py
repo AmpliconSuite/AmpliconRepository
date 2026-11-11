@@ -2,7 +2,7 @@
 Refuse new uploads while shutdown mode is on.
 
 Shutdown mode (`system_settings/{_id: system_flags}.shutdown_pending`, toggled
-from /admin-prepare-shutdown/ or shutdown_mode.py) is how a deploy stops new
+from /admin-prepare-shutdown/ or caper/caper/shutdown_mode.py) is how a deploy stops new
 background work before the restart that would kill it.  Until this middleware
 it reached only the templates: the banner greys out the create and edit links,
 and nothing refused the request itself.  Measured on dev 2026-11-02 with the

@@ -1,4 +1,4 @@
-"""Tests for shutdown_mode.py, against scratch collections in the configured database."""
+"""Tests for caper/caper/shutdown_mode.py, against scratch collections in the configured database."""
 
 import datetime
 import os
@@ -7,7 +7,7 @@ import uuid
 import pytest
 from pymongo import MongoClient
 
-import shutdown_mode
+from caper import shutdown_mode
 from caper.context_processor import get_shutdown_pending
 
 

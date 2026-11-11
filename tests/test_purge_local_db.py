@@ -4,7 +4,7 @@ import importlib.util
 from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / 'purge-local-db.py'
+MODULE_PATH = Path(__file__).resolve().parents[1] / 'scripts' / 'maintenance' / 'purge-local-db.py'
 SPEC = importlib.util.spec_from_file_location('purge_local_db', MODULE_PATH)
 purge_local_db = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(purge_local_db)

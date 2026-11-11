@@ -42,7 +42,7 @@ Four sets, because two were never enough:
 ``TRANSIENT``
     Upload scaffolding. Set when a placeholder document is inserted and
     ``$unset`` when the finished project replaces it. A completed project must
-    not carry these at all, and ``clear_stale_uploads.py`` finds crashed uploads
+    not carry these at all, and ``scripts/maintenance/clear_stale_uploads.py`` finds crashed uploads
     by looking for documents that still do.
 
 ## What the levels were measured against

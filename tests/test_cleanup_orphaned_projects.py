@@ -15,7 +15,7 @@ from cleanup_orphaned_projects import (
 @pytest.fixture(autouse=True)
 def _operator_lock_is_not_under_test(monkeypatch):
     """These run main() against stand-in databases, which require() can't read."""
-    monkeypatch.setattr('ops_lock.require', lambda *args, **kwargs: None)
+    monkeypatch.setattr('caper.ops_lock.require', lambda *args, **kwargs: None)
 
 
 class FakeCollection:

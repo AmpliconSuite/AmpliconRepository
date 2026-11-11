@@ -325,7 +325,7 @@ def predecessor_chain(collection, previous_versions):
                 document would read its history from a chain of one and render
                 a project with no history, while the array it inherited names
                 every version it has.  Leaving it unpointered keeps the pair on
-                the array path together, and ``backfill_project_status.py`` is
+                the array path together, and ``scripts/maintenance/backfill_project_status.py`` is
                 what gives such a chain pointers.
 
     Measured 2026-08-27: 0 documents on prod are unpointered, 26 on dev, so on

@@ -130,7 +130,7 @@ def test_globus_login_url_still_resolves():
 # ---------------------------------------------------------------------------
 
 def test_logrotate_keeps_about_three_months():
-    config = (REPO_ROOT / 'logrotate-ampliconrepo.conf').read_text()
+    config = (REPO_ROOT / 'scripts' / 'deploy' / 'logrotate-ampliconrepo.conf').read_text()
 
     assert re.search(r'^\s*weekly\s*$', config, re.MULTILINE)
     assert re.search(r'^\s*rotate 12\s*$', config, re.MULTILINE)

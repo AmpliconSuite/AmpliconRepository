@@ -1,6 +1,6 @@
 """AmpliconClassifier gene names -> NCBI Gene IDs, from the committed gene map.
 
-The map (``caper/gene_map/``) is built by ``build_gene_map.py`` from the data
+The map (``caper/gene_map/``) is built by ``scripts/maintenance/build_gene_map.py`` from the data
 repo's gene GFFs, UCSC refLink and NCBI gene_info/gene_history; that script's
 docstring explains the resolution order and the measurements behind it.  This
 module only reads it.

@@ -15,9 +15,7 @@ from django.http import QueryDict
 from caper.views import create_project
 from caper.utils import collection_handle, normalize_visibility_field
 
-# ops_lock.py sits at the repo root, and manage.py runs from caper/.
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), *['..'] * 4)))
-import ops_lock  # noqa: E402
+from caper import ops_lock
 
 
 class Command(BaseCommand):

@@ -86,15 +86,15 @@ ALLOWED = {
      'canonical_value, )'):
         "A field path in a change record, not a read.",
 
-    ('backfill_project_status.py',
+    ('scripts/maintenance/backfill_project_status.py',
      "stored = doc.get('private')"):
         "plan_visibility is the pass that rewrites the legacy booleans; "
         "seeing the raw value is the whole point of it.",
-    ('backfill_project_status.py',
+    ('scripts/maintenance/backfill_project_status.py',
      "plan.append((doc, doc.get('private'), wanted, head))"):
         "plan_chain_visibility keeps the stored value as-is for the undo record "
         "and the write precondition; the comparison beside it is normalised.",
-    ('backfill_project_status.py',
+    ('scripts/maintenance/backfill_project_status.py',
      "if projects.count_documents(combine({'private': head.get('private')}, "
      "_id=head['_id'])) != 1:"):
         "A precondition that the head still holds exactly the stored value the "
@@ -104,10 +104,6 @@ ALLOWED = {
 # Whole files exempt, with the reason. These are the scripts whose subject *is*
 # the raw encoding: normalising it, or reporting what it currently holds.
 EXEMPT_FILES = {
-    'check_project_flags.py':
-        "A flag report. It prints what the field holds, including 'NOT SET'.",
-    'check_project_flags_django.py':
-        "Django twin of check_project_flags.py; same reason.",
 }
 
 
@@ -137,17 +133,24 @@ def _logical_lines(text):
 
 
 def _tracked_root_scripts():
-    """Root-level ``.py`` files git knows about.
+    """Tracked ``.py`` files at the repo root or under ``scripts/``.
 
     ``os.listdir`` here found whatever was lying in the checkout: on the dev
     server that was a measurement script copied in that morning, and this guard
-    duly reported it. An untracked file at the repo root is somebody's scratch
-    copy, not the codebase.
+    duly reported it. An untracked file is somebody's scratch copy, not the
+    codebase.
+
+    The scripts moved from the root into ``scripts/`` once, and a scan that
+    still looked only at the root would have gone on passing while reading
+    nothing -- so the helper refuses to return a suspiciously short list.
     """
     from conftest import tracked_python_files
 
-    return [name for name in tracked_python_files(REPO_ROOT)
-            if os.sep not in name]
+    found = [name for name in tracked_python_files(REPO_ROOT)
+             if os.sep not in name or name.startswith('scripts' + os.sep)]
+    assert sum(name.startswith('scripts' + os.sep) for name in found) >= 20, (
+        'this guard found almost no scripts to read; has scripts/ moved?')
+    return found
 
 
 def _python_sources():

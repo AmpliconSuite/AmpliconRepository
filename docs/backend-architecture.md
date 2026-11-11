@@ -251,7 +251,7 @@ ever ask for again.
 upload of 2026-08-14 left 2,695 files inside a 90-second window.
 `upload_cleanup.py` closes the case where an exception runs the failure path;
 a worker that is *killed* runs no failure path at all, and the weekly
-`cleanup_failed_upload_residue.py` sweep is the backstop for that. That split is
+`scripts/maintenance/cleanup_failed_upload_residue.py` sweep is the backstop for that. That split is
 the right architecture rather than a gap: only something that runs later can
 collect after a crash.
 
@@ -302,7 +302,7 @@ Three consequences worth knowing:
 Four kinds of tool, and the kind matters more than the name. **Nothing in the
 first two columns writes.**
 
-**The operator lock.** `ops_lock.py` holds one lease per database, so people and agents can
+**The operator lock.** `caper/caper/ops_lock.py` holds one lease per database, so people and agents can
 see who is changing dev or prod. The write tools below refuse without it on dev and prod
 (`--no-lock "<reason>"` overrides and is logged). The lock is
 `system_settings/{_id: ops_lock}` and its history is `ops_lock_log`.
@@ -311,32 +311,30 @@ see who is changing dev or prod. The write tools below refuse without it on dev 
 
 | tool | the question it answers |
 |---|---|
-| `report_gridfs_orphans.py` | Account for every GridFS file. Read-only, always. |
+| `scripts/diagnostics/report_gridfs_orphans.py` | Account for every GridFS file. Read-only, always. |
 | `caper/ownership_survey.py` + `manage.py ownership_survey` | Which project owns each file, and how much is residue. Runs outside a web worker. |
-| `caper/storage_stats.py` + `snapshot_storage.py` | What the databases hold, by status bucket, once a day, with history. |
-| `check_volume_reclamation.py` | Did deleted storage actually come back? (Measured answer: no — see §9.) |
-| `dump_metadata.py` | Every collection except the payload, for an off-AWS copy. |
+| `caper/storage_stats.py` + `scripts/maintenance/snapshot_storage.py` | What the databases hold, by status bucket, once a day, with history. |
+| `caper/caper/dump_metadata.py` | Every collection except the payload, for an off-AWS copy. |
 | `caper/url_manifest.py` | Every project URL that resolves today, and to what. |
-| `check_project_flags.py` | The legacy flag pairs, per document. |
 
 ### Validators — assert invariants
 
 | tool | the question it answers |
 |---|---|
-| `validate_project_lineage.py` | The version-history invariants (ids are stable names, not a sequence). I7 catches a LIVE document listed in another's history; I11 catches array/pointer disagreement; I12–I14 need GridFS and are skipped under `--skip-gridfs`. |
+| `scripts/diagnostics/validate_project_lineage.py` | The version-history invariants (ids are stable names, not a sequence). I7 catches a LIVE document listed in another's history; I11 catches array/pointer disagreement; I12–I14 need GridFS and are skipped under `--skip-gridfs`. |
 | `caper/schema_validate.py` | JSON-schema validation of project documents. |
-| `verify_indexes.py` | The indexes the query plans assume. |
+| `scripts/diagnostics/verify_indexes.py` | The indexes the query plans assume. |
 
 ### Sweepers — these delete. Report-only by default.
 
 | tool | scope | the guard that makes it safe |
 |---|---|---|
-| `sweep_gridfs_unreferenced.py` | GridFS files no document references | acts on a reviewed snapshot, not a fresh count |
-| `sweep_s3_unreferenced.py` | S3 objects no document in **any** database references | `--require-databases` refuses to run without an id set per database; objects are listed *before* ids are read, so a project created in between counts as referenced |
-| `cleanup_failed_upload_residue.py` | files a failed ingestion left behind | selects by metadata only within the narrow window where that is sound |
-| `clear_stale_uploads.py` | upload placeholders that crashed before becoming projects | finds them by owner, never by date |
-| `cleanup_orphaned_projects.py` | documents no resolver can reach | protection rules derived from `project_status`, not re-typed |
-| `purge-local-db.py` | **local development databases only** | GridFS key list imported from the application |
+| `scripts/maintenance/sweep_gridfs_unreferenced.py` | GridFS files no document references | acts on a reviewed snapshot, not a fresh count |
+| `scripts/maintenance/sweep_s3_unreferenced.py` | S3 objects no document in **any** database references | `--require-databases` refuses to run without an id set per database; objects are listed *before* ids are read, so a project created in between counts as referenced |
+| `scripts/maintenance/cleanup_failed_upload_residue.py` | files a failed ingestion left behind | selects by metadata only within the narrow window where that is sound |
+| `scripts/maintenance/clear_stale_uploads.py` | upload placeholders that crashed before becoming projects | finds them by owner, never by date |
+| `scripts/maintenance/cleanup_orphaned_projects.py` | documents no resolver can reach | protection rules derived from `project_status`, not re-typed |
+| `scripts/maintenance/purge-local-db.py` | **local development databases only** | GridFS key list imported from the application |
 
 Every sweeper stages with `--limit N` and writes an undo record. A staged run
 whose prediction misses is a stop, not a retry.
@@ -344,18 +342,20 @@ whose prediction misses is a stop, not a retry.
 ### Backfills and repairs — one-time, and they write
 
 Still in the repo, because other tools point operators at them:
-`backfill_project_status.py` (the remedy for invariant I1) ·
-`backfill_gridfs_backlinks.py` (`report_gridfs_orphans.py` points at it) ·
-`recover_deleted_version.py`.
+`scripts/maintenance/backfill_project_status.py` (the remedy for invariant I1) ·
+`scripts/maintenance/recover_deleted_version.py`.
 
 Retired once their campaigns had run on prod, and recoverable from git history at
 `90d977f`: `backfill_create_events.py` · `backfill_audit_chain_ids.py` ·
 `repair_head_chain_fields.py` · `repair_promoted_tombstone.py` ·
 `zero_carried_forward_views.py` · `migrate_project_visibility.py` ·
 `restore_sample_csv_metadata.py` · `backfill_gridfs_sha256.py` ·
-`compare_version_history.py` · `rebuild_version_chains.py` (with the chain view it wrote).
+`compare_version_history.py` · `rebuild_version_chains.py` (with the chain view it wrote) ·
+`backfill_gridfs_backlinks.py` (every GridFS row carried a backlink on 2026-11-10) ·
+`check_volume_reclamation.py` (answered: no) · `check_project_flags.py`, `check_project_flags_django.py`,
+`check_flags.sh` · `dedupe_sample_level_copies.py` · `performance_test.py` (all at the repository root at that commit).
 
-One warning about `backfill_project_status.py`, because it is the writer behind
+One warning about `scripts/maintenance/backfill_project_status.py`, because it is the writer behind
 the only lineage defect still visible on dev: `order_chain()` picks a chain head
 as "the member no other document's history names", and consults
 `classify() == LIVE` **only** when more than one member qualifies. A chain where
@@ -402,12 +402,12 @@ what the older table used to claim:
 
 | To learn | Run |
 |---|---|
-| documents per status, chains, unpointered documents | `validate_project_lineage.py --expect-db <db>` |
-| GridFS files, bytes, owned vs residue, backlink coverage | `report_gridfs_orphans.py --expect-db <db>` |
-| storage by status with trend | Admin ▸ Statistics, or `snapshot_storage.py` |
+| documents per status, chains, unpointered documents | `scripts/diagnostics/validate_project_lineage.py --expect-db <db>` |
+| GridFS files, bytes, owned vs residue, backlink coverage | `scripts/diagnostics/report_gridfs_orphans.py --expect-db <db>` |
+| storage by status with trend | Admin ▸ Statistics, or `scripts/maintenance/snapshot_storage.py` |
 | who owns each file | `manage.py ownership_survey` |
-| whether deleted storage came back | `check_volume_reclamation.py` |
-| S3 objects and which database claims each | `sweep_s3_unreferenced.py` report-only |
+| whether deleted storage came back | retired: the answer was no (§9); the script is at `90d977f` |
+| S3 objects and which database claims each | `scripts/maintenance/sweep_s3_unreferenced.py` report-only |
 
 If you do record a measurement somewhere — a commit message, an incident note,
 a wiki page — **date it and name its scope**. "935 private against 2 live,

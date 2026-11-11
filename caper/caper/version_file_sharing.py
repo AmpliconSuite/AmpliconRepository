@@ -48,8 +48,8 @@ names an earlier version there.
     pending list, and ``version_purge`` again before each batch it deletes;
   * ``admin_permanent_delete_project``, which the account deletion also uses.
 
-The standalone sweeps (``cleanup_failed_upload_residue.py``,
-``sweep_gridfs_unreferenced.py``, ``cleanup_orphaned_projects.py``) were
+The standalone sweeps (``scripts/maintenance/cleanup_failed_upload_residue.py``,
+``scripts/maintenance/sweep_gridfs_unreferenced.py``, ``scripts/maintenance/cleanup_orphaned_projects.py``) were
 already safe. Each builds its protected set by walking every document, so a
 file one survivor names is kept however many others also named it.
 """

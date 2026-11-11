@@ -75,9 +75,6 @@ BENIGN_READS = [
     (re.compile(r"""\.get\(['"](?:delete|current)['"],\s*['"]NOT SET['"]\)"""),
      "read with a string sentinel default -- formats a flag for display, and a "
      "sentinel that is neither True nor False cannot be mistaken for a decision"),
-    (re.compile(r"""check_flag_value\([^)]*['"](?:delete|current)['"]\)"""),
-     "the display helper in the flag-report scripts; it returns a label, not a "
-     "verdict"),
     (re.compile(r"""['"](?:delete|current)['"]\s*[,)]"""
                 r"""(?![^#]*(?:==|!=|\bis\b|\bnot\b))"""),
      "the flag named as a field, not tested: an index spec, a form's field "
@@ -112,64 +109,47 @@ ALLOWED = {
      "# Query pattern: {'delete': False, 'current': True, 'private': "
      "{'$in': ['private', 'hidden_public']}, 'project_members': <user>}"):
         "comment recording the query shape an index serves",
-    ('cleanup_orphaned_projects.py',
+    ('scripts/maintenance/cleanup_orphaned_projects.py',
      "because {'current': False} does not match a missing field.  One routine"):
         "module docstring explaining the field-absence trap",
-    ('cleanup_orphaned_projects.py',
+    ('scripts/maintenance/cleanup_orphaned_projects.py',
      "`{'current': False}` does not match a document with no 'current' field, so"):
         "docstring explaining the field-absence trap",
-    ('cleanup_orphaned_projects.py',
+    ('scripts/maintenance/cleanup_orphaned_projects.py',
      "\"{'current': False}\")"):
         "log line quoting the query it is explaining to the operator",
 
-    # -- output formatting, not queries ----------------------------------
-    ('check_project_flags.py',
-     "print(f\"{'Project Name':<50} {'ID':<26} {'current':<10} {'delete':<10}\")"):
-        "f-string column header",
-    ('check_project_flags.py',
-     "print(\"      {'$set': {'current': True}}\")"):
-        "printed remediation advice",
-    ('check_project_flags_django.py',
-     "print(f\"{'Project Name':<50} {'ID':<26} {'current':<10} {'delete':<10}\")"):
-        "f-string column header",
-    ('check_project_flags_django.py',
-     "print(\"      {'$set': {'current': True}}\")"):
-        "printed remediation advice",
-
     # -- projections and control flow, not filters -----------------------
-    ('dedupe_sample_level_copies.py',
-     "if args.phase in ('rewrite', 'rollback', 'delete') and not args.undo_file:"):
-        "the script's --phase names, not a status field",
-    ('backfill_project_status.py',
+    ('scripts/maintenance/backfill_project_status.py',
      "'version_chain_id': 1, 'delete': 1,"):
         "projection, not a filter: the chain builder reads status only to tell "
         "a chain's head from a stranded intermediate",
-    ('backfill_project_status.py',
+    ('scripts/maintenance/backfill_project_status.py',
      "'current': 1, 'status': 1, 'date': 1}):"):
         "the rest of that projection",
-    ('backfill_project_status.py',
+    ('scripts/maintenance/backfill_project_status.py',
      "'date': 1, 'linkid': 1, 'delete': 1,"):
         "projection: the history pass reads status only to recognise a "
         "tombstone, which is surfaced to readers by a different path",
-    ('backfill_project_status.py',
+    ('scripts/maintenance/backfill_project_status.py',
      "'current': 1, 'status': 1}):"):
         "the rest of that projection",
-    ('purge-local-db.py',
+    ('scripts/maintenance/purge-local-db.py',
      "if scope == 'current':"):
         "string comparison on a --reference-scope argument named 'current'",
-    ('purge-local-db.py',
+    ('scripts/maintenance/purge-local-db.py',
      "choices=['reachable', 'active', 'current', 'not-deleted', 'all'],"):
         "argparse choices for --reference-scope.  Named here rather than left "
         "to the field-name shape because the neighbouring choice 'not-deleted' "
         "contains the word 'not', which trips that shape's comparison lookahead",
-    ('purge-local-db.py',
+    ('scripts/maintenance/purge-local-db.py',
      "for project in projects.find({}, {'_id': 1, 'project_name': 1, "
      "'current': 1, 'delete': 1, 'tarfile': 1}):"):
         "projection listing fields to fetch, not a filter",
     (os.path.join('caper', 'caper', 'views_admin.py'),
      "if action == 'delete':"):
         "string comparison on a form action named 'delete'",
-    ('backfill_project_status.py',
+    ('scripts/maintenance/backfill_project_status.py',
      "{'project_name': 1, 'delete': 1, 'current': 1,"):
         "projection listing fields to fetch, not a filter.  The filter itself "
         "is MISSING_CURRENT_QUERY, named in project_status.py",
@@ -184,10 +164,10 @@ ALLOWED = {
     # one they should have had, so it necessarily names that key.  It does not
     # decide the value: that comes from status_flags(target), and which target
     # applies is decided by classify() and the lineage reader.
-    ('backfill_project_status.py',
+    ('scripts/maintenance/backfill_project_status.py',
      "{'$set': {'current': value}})"):
         "the backfill's write; the value comes from status_flags(target)",
-    ('backfill_project_status.py',
+    ('scripts/maintenance/backfill_project_status.py',
      "record(rollback, doc['_id'], '$unset', {'current': ''})"):
         "the undo record for that write -- removes the field again, restoring "
         "the absence, so it encodes no belief about what the flag should be",
@@ -229,17 +209,24 @@ ALLOWED = {
 
 
 def _tracked_root_scripts():
-    """Root-level ``.py`` files git knows about.
+    """Tracked ``.py`` files at the repo root or under ``scripts/``.
 
     ``os.listdir`` here found whatever was lying in the checkout: on the dev
     server that was a measurement script copied in that morning, and this guard
-    duly reported it. An untracked file at the repo root is somebody's scratch
-    copy, not the codebase.
+    duly reported it. An untracked file is somebody's scratch copy, not the
+    codebase.
+
+    The scripts moved from the root into ``scripts/`` once, and a scan that
+    still looked only at the root would have gone on passing while reading
+    nothing -- so the helper refuses to return a suspiciously short list.
     """
     from conftest import tracked_python_files
 
-    return [name for name in tracked_python_files(REPO_ROOT)
-            if os.sep not in name]
+    found = [name for name in tracked_python_files(REPO_ROOT)
+             if os.sep not in name or name.startswith('scripts' + os.sep)]
+    assert sum(name.startswith('scripts' + os.sep) for name in found) >= 20, (
+        'this guard found almost no scripts to read; has scripts/ moved?')
+    return found
 
 
 def _scanned_files():
@@ -378,10 +365,8 @@ def test_status_consumers_import_the_resolver(module):
 
 
 @pytest.mark.parametrize('script', [
-    'cleanup_orphaned_projects.py',
-    'purge-local-db.py',
-    'check_project_flags.py',
-    'check_project_flags_django.py',
+    'scripts/maintenance/cleanup_orphaned_projects.py',
+    'scripts/maintenance/purge-local-db.py',
 ])
 def test_operational_scripts_import_the_resolver(script):
     """The scripts are where both incidents happened.  They read the predicate

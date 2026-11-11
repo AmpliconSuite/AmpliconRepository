@@ -163,7 +163,7 @@ redirections are interpreted locally.
 | Checkout | `/home/ubuntu/AmpliconRepository-dev` | `/home/ubuntu/AmpliconRepository-prod` |
 | Build checkout | — | `/home/ubuntu/ampRepo_for_docker_build/AmpliconRepository` |
 | Container | `amplicon-dev` | `amplicon-prod` |
-| Restart | `./stop-and-start-repo.sh` | `/home/ubuntu/stop-and-start-repo.sh` (or `./stop-server.sh` then `./start-server.sh`) |
+| Restart | `./stop-and-start-repo.sh` | `/home/ubuntu/stop-and-start-repo.sh` (or the two stop commands in the README's "How to stop the server", then `./scripts/deploy/start-server.sh`) |
 | Tracks | a branch | a release tag |
 
 The checkout is bind-mounted into the container, so a source-only change needs
@@ -179,7 +179,7 @@ on 2026-09-03 alongside release `v4.1.0_090326`, dev at 15:53 UTC and prod at
 16:38 UTC, each with a note in the crontab and a `crontab.bak-<stamp>` beside
 it. Re-enable either by deleting one `#`.
 
-**Closed out 2026-09-14.** Eleven days of `memory_probe.py` on both hosts,
+**Closed out 2026-09-14.** Eleven days of `scripts/memory_auditing/memory_probe.py` on both hosts,
 sampling every gunicorn process once a minute, found nothing for the restart
 to hold off. The load-bearing window is prod's longest container generation,
 110.7 h from 2026-09-09 03:35 to 09-13 18:20 UTC (ended by a deploy): the
@@ -195,7 +195,7 @@ than a day says nothing either way.
 
 The restart lines stay in both crontabs, commented, with that verdict written
 beside them. The probe crons are removed and the two CSV series are archived
-off-AWS and md5-verified against the hosts. `memory_probe.py`
+off-AWS and md5-verified against the hosts. `scripts/memory_auditing/memory_probe.py`
 stays in the repo as the tool for the next memory question — shrinking the
 instance, or checking a release's floor; its header says how to run it. GitHub
 issue #629 holds the same numbers.
@@ -372,7 +372,7 @@ for the OS and page cache. Live at that moment: prod app 2.19 GiB, prod neo4j
 actually been OOM-killed holds the smaller allowance, and on prod the larger
 one is using an eighth of its share. Do not simply raise the app's number —
 the caps are what stop one container taking the host down, and the total is
-already committed. Collect a neo4j series with `memory_probe.py` (it samples
+already committed. Collect a neo4j series with `scripts/memory_auditing/memory_probe.py` (it samples
 any process) and re-measure the split per host; dev and prod differ sharply
 enough that the right number is unlikely to be the same on both.
 
@@ -389,10 +389,10 @@ ever reached for bulk shared memory, and the symptom would look like a puzzling
 I/O error rather than an out-of-memory one. (On a laptop `/tmp` is often tmpfs
 — it is a 30 GB one on the maintainer's — so a harness writing multi-GB scratch
 there charges it to memory and corrupts the measurement. Point `TMPDIR` at real
-disk when running `leak_repro.py --scenario aggregate` locally.)
+disk when running `scripts/memory_auditing/leak_repro.py --scenario aggregate` locally.)
 
 **Where the peak comes from.** Measured locally with
-`leak_repro.py --scenario graph --peak`, which samples in a background thread
+`scripts/memory_auditing/leak_repro.py --scenario graph --peak`, which samples in a background thread
 during the call rather than after it, on a 2,095-sample project:
 
 | Stage | USS | Change |
@@ -421,10 +421,10 @@ re-aggregating the 1.7 GB / ~2000-sample PCAWG archive three times in one
 process cost +69, +28 and +13 MiB — a decaying curve, 88 s per run. The
 aggregator streams to disk and is frugal.
 
-**Tooling.** `memory_probe.py` samples per-worker RSS/PSS/USS plus the cgroup
+**Tooling.** `scripts/memory_auditing/memory_probe.py` samples per-worker RSS/PSS/USS plus the cgroup
 total, one row per process per sample, and is restart-proof (`--once` from
-cron, appending to a bind-mounted CSV); `memory_probe.py --report` reads the
-series back. `leak_repro.py` drives one suspect operation in a loop and
+cron, appending to a bind-mounted CSV); `scripts/memory_auditing/memory_probe.py --report` reads the
+series back. `scripts/memory_auditing/leak_repro.py` drives one suspect operation in a loop and
 separates a leak from allocator retention. Both landed 2026-09-02, replacing
 `memory_monitor.py`, `diagnose_memory.py`, `memory_tracker.py`,
 `memory_profiler.py` and `install_profiling_tools.sh` — a stalled earlier

@@ -1,4 +1,4 @@
-"""Tests for backup_sqlite.py.
+"""Tests for caper/caper/backup_sqlite.py.
 
 These need no MongoDB, no AWS and no Django: the script is deliberately
 runnable when the application cannot start, because that is when a backup
@@ -19,9 +19,9 @@ import sys
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
+CAPER_DIR = os.path.join(REPO_ROOT, 'caper')
 
-import backup_sqlite  # noqa: E402
+from caper import backup_sqlite  # noqa: E402
 
 
 def _make_db(path, sessions=5, users=3):
@@ -146,15 +146,15 @@ def test_reports_by_default_and_refuses_to_guess_the_environment(tmp_path):
     env.pop('AMPLICON_ENV', None)
 
     out = subprocess.run(
-        [sys.executable, os.path.join(REPO_ROOT, 'backup_sqlite.py'), '--db', src],
-        capture_output=True, text=True, env=env)
+        [sys.executable, '-m', 'caper.backup_sqlite', '--db', src],
+        capture_output=True, text=True, cwd=CAPER_DIR, env=env)
     assert out.returncode == 2
     assert 'Refusing to guess' in out.stdout
 
     out = subprocess.run(
-        [sys.executable, os.path.join(REPO_ROOT, 'backup_sqlite.py'),
+        [sys.executable, '-m', 'caper.backup_sqlite',
          '--db', src, '--env', 'dev'],
-        capture_output=True, text=True, env=env)
+        capture_output=True, text=True, cwd=CAPER_DIR, env=env)
     assert out.returncode == 0
     assert 'REPORT ONLY' in out.stdout
     assert 'dev/sqlite/' in out.stdout
@@ -166,9 +166,9 @@ def test_the_environment_names_the_prefix(tmp_path):
     src = _make_db(str(tmp_path / 'live.sqlite3'))
     for env_name in ('dev', 'prod'):
         out = subprocess.run(
-            [sys.executable, os.path.join(REPO_ROOT, 'backup_sqlite.py'),
+            [sys.executable, '-m', 'caper.backup_sqlite',
              '--db', src, '--env', env_name],
-            capture_output=True, text=True)
+            capture_output=True, text=True, cwd=CAPER_DIR)
         assert '%s/sqlite/' % env_name in out.stdout
         other = 'prod' if env_name == 'dev' else 'dev'
         assert '%s/sqlite/' % other not in out.stdout
@@ -184,10 +184,10 @@ def test_end_to_end_local_backup_is_restorable(tmp_path):
     src = _make_db(str(tmp_path / 'live.sqlite3'), sessions=50, users=7)
     keep = str(tmp_path / 'out')
     out = subprocess.run(
-        [sys.executable, os.path.join(REPO_ROOT, 'backup_sqlite.py'),
+        [sys.executable, '-m', 'caper.backup_sqlite',
          '--db', src, '--env', 'dev', '--execute', '--no-upload',
          '--keep-local', keep],
-        capture_output=True, text=True)
+        capture_output=True, text=True, cwd=CAPER_DIR)
     assert out.returncode == 0, out.stdout + out.stderr
 
     produced = [os.path.join(keep, n) for n in os.listdir(keep)]

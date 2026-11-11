@@ -1,8 +1,8 @@
 # Operator Lock (`ops_lock`) — Specification
 
-**Status:** implemented in `ops_lock.py`; §5.1 revised 2026-11-06
+**Status:** implemented in `caper/caper/ops_lock.py`; §5.1 revised 2026-11-06
 **Date:** 2026-10-31
-**Related:** `shutdown_mode.py` (the model this follows), `docs/backend-architecture.md` §7–§8
+**Related:** `caper/caper/shutdown_mode.py` (the model this follows), `docs/backend-architecture.md` §7–§8
 
 ---
 
@@ -58,7 +58,7 @@ identity into a child process, not the lock itself.
 
 - Any write to a **shared** environment's MongoDB, GridFS or S3: the `--apply` or
   `--execute` mode of any script in §6, and `manage.py` commands that write.
-- Deploys, container restarts, Neo4j restarts, and `shutdown_mode.py on/off`.
+- Deploys, container restarts, Neo4j restarts, and `python -m caper.shutdown_mode on/off`.
 - Migrations and backfills.
 - Test runs or manual testing against dev that create, edit or delete projects.
 
@@ -108,21 +108,23 @@ exactly the question it answers.
 `agent:<tool>:<id>` for other agents, and `human:<username>` for people. `owner`
 is always a person.
 
-## 5 · The tool: `ops_lock.py`
+## 5 · The tool: `caper/caper/ops_lock.py`
 
-It goes at the repo root, next to `shutdown_mode.py`, and uses the same
-conventions. `--expect-db` is required and aborts before any read if `DB_NAME`
+It is a module of the application package, next to `caper/caper/shutdown_mode.py`
+(so it runs as `python -m caper.ops_lock` from the Django project directory, `/srv/caper` in
+the container; it began life as a script at the repo root and moved in the scripts cleanup),
+and uses the same conventions. `--expect-db` is required and aborts before any read if `DB_NAME`
 differs. It reads and writes the primary. It uses the same exit codes: 0 done,
 1 refused or timed out, 2 usage.
 
 ```
-ops_lock.py --expect-db caper-dev status
-ops_lock.py --expect-db caper-dev acquire --holder H --owner O --reason "..." [--ttl 1h]
-ops_lock.py --expect-db caper-dev renew   --holder H [--ttl 1h]
-ops_lock.py --expect-db caper-dev release --holder H
-ops_lock.py --expect-db caper-dev wait    [--timeout 1800] [--interval 30]
-ops_lock.py --expect-db caper-dev run     --holder H --owner O --reason "..." [--ttl 1h] -- <command...>
-ops_lock.py --expect-db caper-dev break   --reason "..."
+python -m caper.ops_lock --expect-db caper-dev status
+python -m caper.ops_lock --expect-db caper-dev acquire --holder H --owner O --reason "..." [--ttl 1h]
+python -m caper.ops_lock --expect-db caper-dev renew   --holder H [--ttl 1h]
+python -m caper.ops_lock --expect-db caper-dev release --holder H
+python -m caper.ops_lock --expect-db caper-dev wait    [--timeout 1800] [--interval 30]
+python -m caper.ops_lock --expect-db caper-dev run     --holder H --owner O --reason "..." [--ttl 1h] -- <command...>
+python -m caper.ops_lock --expect-db caper-dev break   --reason "..."
 ```
 
 `--holder` defaults to `$OPS_LOCK_HOLDER` when set.
@@ -226,16 +228,16 @@ first tools to get it:
 
 | Tool | Write mode |
 |---|---|
-| `shutdown_mode.py` | `on`, `off` |
-| `recover_deleted_version.py` | `--apply` |
-| `sweep_gridfs_unreferenced.py`, `sweep_s3_unreferenced.py` | `--execute` / `--apply` |
-| `cleanup_orphaned_projects.py`, `cleanup_failed_upload_residue.py`, `clear_stale_uploads.py` | non-dry-run |
-| `purge-local-db.py` | `--execute` |
-| `backfill_*.py`, `repair_*.py`, `dedupe_sample_level_copies.py` | `--apply` / `--execute` |
+| `caper/caper/shutdown_mode.py` | `on`, `off` |
+| `scripts/maintenance/recover_deleted_version.py` | `--apply` |
+| `scripts/maintenance/sweep_gridfs_unreferenced.py`, `scripts/maintenance/sweep_s3_unreferenced.py` | `--execute` / `--apply` |
+| `scripts/maintenance/cleanup_orphaned_projects.py`, `scripts/maintenance/cleanup_failed_upload_residue.py`, `scripts/maintenance/clear_stale_uploads.py` | non-dry-run |
+| `scripts/maintenance/purge-local-db.py` | `--execute` |
+| `backfill_*.py`, `repair_*.py` | `--apply` / `--execute` |
 | `manage.py create_project` | always (it creates a project) |
 
-`local_upload_project.py` isn't gated, because it already refuses anything but a
-local site. `sweep_s3_unreferenced.py` has no database
+`scripts/dev/local_upload_project.py` isn't gated, because it already refuses anything but a
+local site. `scripts/maintenance/sweep_s3_unreferenced.py` has no database
 connection of its own, so it checks the lock of the environment it runs in.
 
 "Shared" means the database is named `caper` or `caper-dev` and its host isn't
@@ -266,11 +268,11 @@ They are separate mechanisms that compose:
 
 The deploy runbooks in the wiki become:
 
-1. `ops_lock.py acquire` (not `run --`, which a restart would kill inside the container)
-2. `shutdown_mode.py wait`, then `on`
+1. `python -m caper.ops_lock acquire` (not `run --`, which a restart would kill inside the container)
+2. `python -m caper.shutdown_mode wait`, then `on`
 3. deploy
-4. `shutdown_mode.py off`
-5. `ops_lock.py release`
+4. `python -m caper.shutdown_mode off`
+5. `python -m caper.ops_lock release`
 
 **Restores.** A database restore or wipe also replaces `system_settings`, and the
 lock document with it. Anyone restoring dev or prod re-acquires the lock
@@ -282,14 +284,14 @@ These changes ship in the same PR as the tool. The rule must not appear in
 `AGENTS.md` before the tool exists.
 
 - **`AGENTS.md`**: a short section near the top, next to the `config.sh` warning:
-  > **Before any write to dev or prod**, run `ops_lock.py --expect-db <db> status`.
-  > Wrap the work in `ops_lock.py run -- …`, or `acquire` it and `release` it when
+  > **Before any write to dev or prod**, run `python -m caper.ops_lock --expect-db <db> status`.
+  > Wrap the work in `python -m caper.ops_lock run -- …`, or `acquire` it and `release` it when
   > done. If the lock is held, report the holder and reason to your user and use
   > `wait`. Do not `break` it or work around it.
 
   This is followed by the §3.1 list of what counts as a write.
 - **`docs/backend-architecture.md`**: a row in the §7 toolkit and a line in §8.
-- **`ops_lock.py` docstring**: the full operating notes, as in `shutdown_mode.py`.
+- **`caper/caper/ops_lock.py` docstring**: the full operating notes, as in `caper/caper/shutdown_mode.py`.
 - **Wiki deploy runbooks**: the steps in §8.
 - **Each developer's user-level `CLAUDE.md`** (outside the repo): one line, which
   the README gives and asks agents to suggest. This covers agents started outside a

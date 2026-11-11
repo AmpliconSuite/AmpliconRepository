@@ -7,12 +7,12 @@ asking it in 21 distinct query shapes, and both production incidents it
 records were the same failure: **a predicate that lives in the application was
 re-derived somewhere else, and drifted.**
 
-  * ``cleanup_orphaned_projects.py`` classified 84 of 345 production documents
+  * ``scripts/maintenance/cleanup_orphaned_projects.py`` classified 84 of 345 production documents
     as orphaned.  14 of them resolved by URL at that moment and 77 still held a
     GridFS payload.  The script's protection rules covered ``delete=False`` and
     ``delete=True AND current=True`` but not ``delete=True AND current=False``,
     which ``get_one_project()`` falls back to twice.
-  * ``purge-local-db.py`` kept a hand-written GridFS key set that had drifted
+  * ``scripts/maintenance/purge-local-db.py`` kept a hand-written GridFS key set that had drifted
     8 keys behind the application, which made 80,170 live files look like
     garbage.
 
@@ -115,7 +115,7 @@ _STATUS_FLAGS = {
 
 # What makes a document a tombstone.  Both markers are required, matching the
 # definition of a tombstone -- version removed from history, payload purged --
-# and the protection rule already in cleanup_orphaned_projects.py.
+# and the protection rule already in scripts/maintenance/cleanup_orphaned_projects.py.
 #
 # 'redirect_to_project' is deliberately NOT required: transitions T7 and T8
 # produce a tombstone with nowhere to redirect to, and demanding the field
@@ -304,7 +304,7 @@ on dev when measured on 2026-08-27.  It is not a dead era -- one was deleted in
 ``{'current': False}`` does not match a document with no ``current`` field, so
 these are ``DETACHED``: invisible to ``STATUS_QUERIES[SOFT_DELETED]`` and
 therefore to the admin restore page, and missed by ``HEAD_VERSION_QUERY``.
-Used by ``backfill_project_status.py`` to find them; nothing in the application
+Used by ``scripts/maintenance/backfill_project_status.py`` to find them; nothing in the application
 should need it, and its population should only ever shrink."""
 
 OPENABLE_WITH_PAYLOAD_QUERY = {'$or': [dict(NOT_DELETED_QUERY),
