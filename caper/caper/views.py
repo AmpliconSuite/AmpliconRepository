@@ -3203,8 +3203,8 @@ def log_project_audit_event(user, project_uuid, project_name, is_new_version,
             'sample_count': sample_count,
             # Ties the event to a lineage rather than to one document, so it
             # survives that document being deleted. Every event written before
-            # 2026-08-30 lacks it; backfill_audit_chain_ids.py adds it to the
-            # ones whose project still exists.
+            # 2026-08-30 lacks it, apart from those a one-time backfill (since
+            # retired) could resolve from a project that still existed.
             'version_chain_id': _audit_chain_id(project_uuid),
         }
         audit_log_handle.insert_one(audit_entry)

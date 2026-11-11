@@ -380,12 +380,10 @@ def test_admin_pages_show_nothing_for_a_free_or_expired_lock(lock, cols, monkeyp
 
 
 @pytest.mark.parametrize('tool', [
-    'backfill_audit_chain_ids', 'backfill_create_events', 'backfill_gridfs_backlinks',
-    'backfill_gridfs_sha256', 'backfill_project_status', 'cleanup_failed_upload_residue',
+    'backfill_gridfs_backlinks', 'backfill_project_status', 'cleanup_failed_upload_residue',
     'cleanup_orphaned_projects', 'clear_stale_uploads', 'dedupe_sample_level_copies',
-    'purge-local-db', 'rebuild_version_chains', 'recover_deleted_version',
-    'repair_head_chain_fields', 'repair_promoted_tombstone', 'shutdown_mode',
-    'sweep_gridfs_unreferenced', 'sweep_s3_unreferenced', 'zero_carried_forward_views',
+    'purge-local-db', 'recover_deleted_version',
+    'shutdown_mode', 'sweep_gridfs_unreferenced', 'sweep_s3_unreferenced',
     'caper/caper/management/commands/create_project',
 ])
 def test_every_write_tool_checks_the_lock_and_offers_the_escape_hatch(tool):

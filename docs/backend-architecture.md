@@ -40,7 +40,6 @@ flowchart TD
         M1["projects — every version of every project"]
         M2["fs.files / fs.chunks — the GridFS payload"]
         M3["project_audit_log — provenance"]
-        M4["project_version_chains — derived chain view"]
         M5["storage_statistics / site_statistics — daily snapshots"]
         M6["gridfs_ownership_reports — survey results"]
     end
@@ -61,7 +60,6 @@ flowchart TD
 
     M1 -.->|names its files| M2
     M2 -.->|backlink names its document| M1
-    M1 ==>|rebuilt from| M4
 ```
 
 Two properties of this picture are load-bearing and are asserted by tests:
@@ -75,10 +73,11 @@ metadata says it is unowned. See `gridfs_backlinks.py` and
 `gridfs_ownership.py`, which compute the same answer by deliberately different
 routes so that their agreement means something.
 
-**`project_version_chains` is a materialised view.** Feature code reads it; only
-the rebuild writes it; the documents always win. A `source_digest` makes
-staleness a one-string comparison rather than a field-by-field diff. See
-`version_chains.py`.
+**There is no chain collection.** A version chain is derived from the project
+documents' lineage pointers on demand; the documents are the only authority. A
+`project_version_chains` view was built in August 2026 and retired in November
+because nothing ever read it (see the status note in
+`project-version-history-and-provenance-spec.md`).
 
 The two databases — `caper` (prod) and `caper-dev` (dev) — **share one cluster**.
 Anything that connects must assert which one it opened. The dev application
@@ -181,10 +180,6 @@ flowchart LR
     V2 -->|next_version_id| V3
     V3 -->|previous_version_id| V2
     V2 -->|previous_version_id| V1
-    CV["project_version_chains<br/>(derived, source_digest)"]
-    V3 -.-> CV
-    V2 -.-> CV
-    V1 -.-> CV
 ```
 
 **Pointers are structure, `is_latest` is position, status is state.** Those three
@@ -320,7 +315,6 @@ see who is changing dev or prod. The write tools below refuse without it on dev 
 | `caper/ownership_survey.py` + `manage.py ownership_survey` | Which project owns each file, and how much is residue. Runs outside a web worker. |
 | `caper/storage_stats.py` + `snapshot_storage.py` | What the databases hold, by status bucket, once a day, with history. |
 | `check_volume_reclamation.py` | Did deleted storage actually come back? (Measured answer: no — see §9.) |
-| `compare_version_history.py` | Diff the two version-history readers over every project. |
 | `dump_metadata.py` | Every collection except the payload, for an off-AWS copy. |
 | `caper/url_manifest.py` | Every project URL that resolves today, and to what. |
 | `check_project_flags.py` | The legacy flag pairs, per document. |
@@ -329,7 +323,7 @@ see who is changing dev or prod. The write tools below refuse without it on dev 
 
 | tool | the question it answers |
 |---|---|
-| `validate_project_lineage.py` | 21 invariants over version history. I7 catches a LIVE document listed in another's history; I9 catches a stale chain view; I11 catches array/pointer disagreement; I12–I14 need GridFS and are skipped under `--skip-gridfs`. |
+| `validate_project_lineage.py` | The version-history invariants (ids are stable names, not a sequence). I7 catches a LIVE document listed in another's history; I11 catches array/pointer disagreement; I12–I14 need GridFS and are skipped under `--skip-gridfs`. |
 | `caper/schema_validate.py` | JSON-schema validation of project documents. |
 | `verify_indexes.py` | The indexes the query plans assume. |
 
@@ -349,12 +343,17 @@ whose prediction misses is a stop, not a retry.
 
 ### Backfills and repairs — one-time, and they write
 
-`backfill_project_status.py` · `backfill_gridfs_backlinks.py` ·
-`backfill_create_events.py` · `backfill_audit_chain_ids.py` ·
-`rebuild_version_chains.py` · `repair_head_chain_fields.py` ·
-`repair_promoted_tombstone.py` · `recover_deleted_version.py` ·
+Still in the repo, because other tools point operators at them:
+`backfill_project_status.py` (the remedy for invariant I1) ·
+`backfill_gridfs_backlinks.py` (`report_gridfs_orphans.py` points at it) ·
+`recover_deleted_version.py`.
+
+Retired once their campaigns had run on prod, and recoverable from git history at
+`90d977f`: `backfill_create_events.py` · `backfill_audit_chain_ids.py` ·
+`repair_head_chain_fields.py` · `repair_promoted_tombstone.py` ·
 `zero_carried_forward_views.py` · `migrate_project_visibility.py` ·
-`restore_sample_csv_metadata.py`
+`restore_sample_csv_metadata.py` · `backfill_gridfs_sha256.py` ·
+`compare_version_history.py` · `rebuild_version_chains.py` (with the chain view it wrote).
 
 One warning about `backfill_project_status.py`, because it is the writer behind
 the only lineage defect still visible on dev: `order_chain()` picks a chain head

@@ -28,8 +28,8 @@ left nothing behind to reconstruct it from: who ran it, which path ran, and what
 the project looked like beforehand are all gone. A fabricated event is worse
 than a gap, because a gap is honest.
 
-Creations are a different case and *are* backfilled, by
-``backfill_create_events.py``: a project document still carries the date it was
+Creations are a different case and *were* backfilled, by a one-time script
+since retired: a project document still carries the date it was
 written and the person who ran the aggregation, so the event is read off the
 document rather than invented. Those events are flagged ``backfilled`` and the
 admin history badges them as reconstructed -- which is the line between the two

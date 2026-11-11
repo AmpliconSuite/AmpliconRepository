@@ -2,7 +2,9 @@
 """
 What has to be true about project version history, checked against a database.
 
-Nineteen invariants, each reported as ok, FAIL or SKIP with the reason.
+Each invariant is reported as ok, FAIL or SKIP with the reason. Invariant ids are
+stable names, not a sequence: I9 (the derived chain view's digest) was retired with
+the view on 2026-11-10 and its id is not reused.
 
 Declaring the ones that cannot run is the point.  A validator that quietly
 implements the checkable invariants and prints "all checks passed" is the same
@@ -118,10 +120,9 @@ class Snapshot:
     238 MB on prod -- in memory to read a few booleans.
     """
 
-    def __init__(self, collection, fs_files, skip_gridfs=False, chain_view=None):
+    def __init__(self, collection, fs_files, skip_gridfs=False):
         self.collection = collection
         self.fs_files = fs_files
-        self.chain_view = chain_view
 
         self.documents = list(collection.find({}, {field: 0 for field in _HEAVY_FIELDS}))
         self.by_id = {doc['_id']: doc for doc in self.documents}
@@ -502,9 +503,7 @@ def _check_i15(snap):
     "Never stored" is the checkable half, and it is the half that matters: an
     emptiness flag on a document is a second opinion about a thing that already
     has an answer, and it goes stale the first time a version is restored.  The
-    derivation itself has nothing to disagree with yet -- when the derived
-    ``project_version_chains`` view lands in Phase 2 it will, and I9 is where
-    that comparison belongs.
+    derivation itself has nothing to disagree with: there is no second copy.
 
     The derived population is printed by --report so it is countable rather
     than merely asserted.
@@ -520,20 +519,6 @@ def _check_i15(snap):
                 'I15', doc['_id'], doc.get('project_name'),
                 f'stores chain emptiness rather than deriving it: '
                 f'{", ".join(stored)}'))
-
-    # The chain view is the obvious place for someone to cache this, and it is
-    # the one place where it would look reasonable -- the chain is exactly the
-    # scope the property belongs to. It still must not be stored: the view is
-    # rebuilt from documents, so a cached emptiness would be correct only until
-    # a version was restored between rebuilds.
-    if snap.chain_view is not None:
-        for doc in snap.chain_view.find({}, {key: 1 for key in _STORED_EMPTINESS_KEYS}):
-            stored = [key for key in _STORED_EMPTINESS_KEYS if key in doc]
-            if stored:
-                findings.append(Finding(
-                    'I15', doc['_id'], None,
-                    f'the chain view stores emptiness rather than deriving it '
-                    f'from its members: {", ".join(stored)}'))
     return findings
 
 
@@ -601,62 +586,6 @@ def _check_i20(snap):
                 f'{len(survivors)} version(s) survive it, the newest being '
                 f'{survivors[-1]["_id"]} (ordinal '
                 f'{survivors[-1].get("version_ordinal")})'))
-    return findings
-
-
-def _check_i9(snap):
-    """The derived chain view's source_digest matches the documents it came from.
-
-    Unavailable until something writes the view.  Measured, not assumed: the
-    collection is counted rather than declared missing, so the day the rebuild
-    command lands this stops skipping on its own and says what it now needs.
-    """
-    if snap.chain_view is None or snap.chain_view.count_documents({}) == 0:
-        raise Unavailable(
-            'a derived project_version_chains collection. There are 0 chain '
-            'documents in this database, so there is no second copy to compare '
-            'the documents against yet.')
-
-    from caper.version_chains import head_of, order_members, source_digest
-
-    findings = []
-    chains = snap.chains()
-    stored = {doc['_id']: doc for doc in snap.chain_view.find(
-        {}, {'source_digest': 1, 'head_project_id': 1})}
-
-    for chain_id, members in sorted(chains.items(), key=lambda kv: str(kv[0])):
-        view = stored.get(chain_id)
-        if view is None:
-            findings.append(Finding(
-                'I9', chain_id, snap.name(members[0]['_id']) if members else None,
-                f'chain {chain_id} has {len(members)} member document(s) but no '
-                f'chain document; the view has not been rebuilt since it was '
-                f'created'))
-            continue
-        expected = source_digest(members)
-        if view.get('source_digest') != expected:
-            findings.append(Finding(
-                'I9', chain_id, snap.name(members[0]['_id']) if members else None,
-                f'chain {chain_id} digest {str(view.get("source_digest"))[:12]}… '
-                f'but the documents digest {expected[:12]}… -- the view is stale '
-                f'and the documents win; rebuild it'))
-            continue
-        # The digest covers (id, ordinal, status). The head is the one derived
-        # field it does not cover, and it is the field feature code reads most,
-        # so it is compared directly rather than trusted.
-        head = head_of(order_members(members))
-        expected_head = head['_id'] if head is not None else None
-        if view.get('head_project_id') != expected_head:
-            findings.append(Finding(
-                'I9', chain_id, snap.name(members[0]['_id']) if members else None,
-                f'chain {chain_id} names head {view.get("head_project_id")} but '
-                f'the documents say {expected_head}'))
-
-    for chain_id in sorted(set(stored) - set(chains), key=str):
-        findings.append(Finding(
-            'I9', chain_id, None,
-            f'chain document {chain_id} has no member documents left; the view '
-            f'outlived the chain it describes'))
     return findings
 
 
@@ -1117,8 +1046,6 @@ INVARIANTS = (
                     'member', check=_check_i7),
     Invariant('I8', 'payload purged implies TOMBSTONE and no GridFS ids remain',
               check=_check_i8),
-    Invariant('I9', 'Chain document source_digest matches its members',
-              check=_check_i9),
     Invariant('I10', 'get_one_project() resolves every LIVE and every SUPERSEDED '
                      'document by _id', check=_check_i10),
     Invariant('I11', 'previous_versions[] matches the lineage derived from pointers',
@@ -1134,12 +1061,9 @@ INVARIANTS = (
                       'is reported by I13, which reads the backlink'),
     Invariant('I15', 'A chain is EMPTY iff every member is a TOMBSTONE',
               check=_check_i15,
-              partial='the "never stored" half, now covering the chain view as '
-                      'well as the documents. The derived half has nothing to '
-                      'compare against by design -- the view deliberately does '
-                      'not store emptiness, so there is no second opinion to '
-                      'disagree with; that the view matches its members at all '
-                      'is I9'),
+              partial='the "never stored" half only. Emptiness is derived '
+                      'from the members, so there is no second copy to disagree '
+                      'with'),
     Invariant('I16', 'Every chain has exactly one is_latest member',
               check=_check_i16),
     Invariant('I17', 'Every chain-level field survives the emptying of a chain',
@@ -1314,8 +1238,7 @@ def main(argv=None):
 
     out(f'target: {label}')
     snap = Snapshot(database['projects'], database['fs.files'],
-                    skip_gridfs=args.skip_gridfs,
-                    chain_view=database['project_version_chains'])
+                    skip_gridfs=args.skip_gridfs)
     out(f'{len(snap.documents)} documents, '
         f'{sum(len(v) for v in snap.gridfs_ids.values())} GridFS references')
     if args.skip_gridfs:

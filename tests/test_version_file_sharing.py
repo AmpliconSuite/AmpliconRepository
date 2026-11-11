@@ -7,16 +7,12 @@ delete_project_version: the safety property here is about what the database
 ends up holding, and a fake would only agree with itself.
 """
 
-import hashlib
 import json
-import os
 import tarfile
 
-import gridfs
 import pytest
 from bson.objectid import ObjectId
 
-import backfill_gridfs_sha256 as backfill
 import caper.views as views
 from caper import lineage, utils, version_purge
 from caper.gridfs_backlinks import iter_backlinks
@@ -342,7 +338,7 @@ def test_a_delete_page_for_a_version_with_a_survivor_is_not_overstated(versions)
     assert promised['bytes'] == _length(_ids(v1) - _ids(v2))
 
 
-# --- Files stored before uploads recorded a hash (backfill_gridfs_sha256.py) ---
+# --- Files stored before uploads recorded a hash ---
 
 def _as_stored_before_the_hash(doc, form):
     """Make *doc*'s rows look like prod's files stored before #718.
@@ -369,32 +365,6 @@ def _as_stored_before_the_hash(doc, form):
                              '$unset': {f'metadata.{SHA256}': ''}})
 
 
-def _backfill(tmp_path, *args):
-    undo = tmp_path / 'undo.txt'
-    assert backfill.main(['--expect-db', os.environ['DB_NAME'], '--expect-host', 'local',
-                          '--undo', str(undo), *args]) == 0
-    return undo.read_text().split() if undo.exists() else []
-
-
-def _hashable(doc):
-    return backfill.files_in_scope(doc)
-
-
-@pytest.mark.parametrize('form', ['august backfill', 'uploads since'])
-def test_files_stored_before_the_hash_are_shared_after_the_backfill(versions, tmp_path, form):
-    v1 = versions()
-    _as_stored_before_the_hash(v1, form)
-    _backfill(tmp_path, '--execute', '--project', str(v1['_id']))
-
-    v2 = versions()
-
-    before, after = _slots(v1), _slots(v2)
-    shared = {slot for slot, file_id in before.items() if file_id in _hashable(v1)}
-    assert shared and all(after[slot] == before[slot] for slot in shared)
-    # Directory tarballs are out of the backfill's scope, so are stored again.
-    assert all(after[slot] != before[slot] for slot in set(before) - shared)
-
-
 def test_an_aggregator_6_field_is_shared_under_its_7_0_name(versions):
     """'AA PNG file' became 'Graph PNG file'; the bytes did not change."""
     v1 = versions()
@@ -405,7 +375,7 @@ def test_an_aggregator_6_field_is_shared_under_its_7_0_name(versions):
             assert _slots(v2)[(sample, n, 'Graph_PNG_file')] == file_id
 
 
-def test_without_the_backfill_nothing_is_shared(versions):
+def test_files_with_no_recorded_hash_are_not_shared(versions):
     v1 = versions()
     _as_stored_before_the_hash(v1, 'august backfill')
 
@@ -421,54 +391,3 @@ def test_removing_a_sample_still_shares_the_ones_after_it(versions):
 
     s2 = {slot: file_id for slot, file_id in _slots(v1).items() if slot[0] == 'S2'}
     assert s2 and _slots(v2) == s2
-
-
-def test_the_backfill_hashes_the_current_versions_files_and_records_each(versions, tmp_path):
-    v1 = versions()
-    v2 = versions(changed={'S2'})
-    for doc in (v1, v2):
-        _as_stored_before_the_hash(doc, 'august backfill')
-    fs_files = utils.db_handle_primary['fs.files']
-    only_v1 = _ids(v1) - _ids(v2)
-    projects = ['--project', str(v1['_id']), '--project', str(v2['_id'])]
-
-    assert _backfill(tmp_path, *projects) == [], 'report-only must write nothing'
-    assert not fs_files.count_documents({'_id': {'$in': list(_ids(v1) | _ids(v2))},
-                                         f'metadata.{SHA256}': {'$exists': True}})
-
-    written = _backfill(tmp_path, '--execute', *projects)
-
-    assert set(written) == {str(i) for i in _hashable(v2)}, 'only the current version is in scope'
-    assert _hashable(v2) < _ids(v2), 'the directory tarballs are not'
-    stored = gridfs.GridFS(utils.db_handle_primary)
-    for row in _rows(_hashable(v2)).values():
-        assert row['metadata'][SHA256] == hashlib.sha256(stored.get(row['_id']).read()).hexdigest()
-    assert not any(SHA256 in row['metadata'] for row in _rows(only_v1).values())
-
-    assert _backfill(tmp_path, '--execute', *projects) == written, 'a second run writes nothing'
-
-    _backfill(tmp_path, '--execute', '--rollback', str(tmp_path / 'undo.txt'))
-    assert not any(SHA256 in row['metadata'] for row in _rows(_hashable(v2)).values())
-
-
-def test_a_file_that_does_not_read_back_whole_is_not_hashed(versions, tmp_path):
-    v1 = versions()
-    _as_stored_before_the_hash(v1, 'august backfill')
-    broken = next(iter(_hashable(v1)))
-    utils.db_handle_primary['fs.chunks'].delete_many({'files_id': broken})
-
-    written = _backfill(tmp_path, '--execute', '--project', str(v1['_id']))
-
-    assert str(broken) not in written
-    assert set(written) == {str(i) for i in _hashable(v1) - {broken}}
-    assert SHA256 not in _rows({broken})[broken]['metadata']
-
-
-def test_archives_and_directories_are_out_of_the_backfills_scope():
-    archive, directory, sample_file = ObjectId(), ObjectId(), ObjectId()
-    doc = {'tarfile': archive,
-           'runs': {'sample_1': [{'Sample_name': 'S1', 'CNV_BED_file': sample_file,
-                                  'Reconstruction_directory': directory,
-                                  'AA_directory': directory}]}}
-
-    assert backfill.files_in_scope(doc) == {sample_file}

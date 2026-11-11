@@ -14,7 +14,7 @@ previous version's. Now a version reuses those files instead.
 | --- | --- |
 | Scope | One version chain. A version reuses files only from the version it was made from, its immediate predecessor |
 | Match | Same SHA-256, length and GridFS filename, in the same sample and field. The sample and field are read from the predecessor document, not the file's metadata |
-| Files written before this change | Carry no hash until `backfill_gridfs_sha256.py` adds one; a file without a hash is never matched |
+| Files written before this change | Carry no hash unless a one-time backfill added one (`backfill_gridfs_sha256.py`, retired after it had run on prod; git history at `90d977f`); a file without a hash is never matched |
 | Project archive (`tarfile`) | Stays per version, as decided on #624. Its contents are never identical between versions anyway (`run.json` embeds paths) |
 | Backlink `metadata.project_id` | Still names the version that **wrote** the file |
 | Who else names it | `metadata.reused_by`, a list written **before** the reusing document names the file |
@@ -95,7 +95,8 @@ Two things close that window:
 
 ## Files stored before the hash
 
-`backfill_gridfs_sha256.py` records the hash on the files the current versions
+A one-time backfill (`backfill_gridfs_sha256.py`, retired after it had run on prod;
+git history at `90d977f`) recorded the hash on the files the current versions
 name, since only a current version is ever a predecessor. It leaves out the
 project archives and the directory tarballs, which can never match: before #712
 the site packed directories with the time of packing in the gzip header.

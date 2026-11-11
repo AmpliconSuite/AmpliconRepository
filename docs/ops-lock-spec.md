@@ -87,7 +87,7 @@ One document in the existing `system_settings` collection, next to
   _id:         'ops_lock',
   holder:      'claude:session_01C3qw3iHstcUVXJpdbAAx2n',  // or 'human:jluebeck'
   owner:       'jluebeck',            // the person accountable for the holder
-  reason:      'testing rebuild_version_chains --apply on dev',
+  reason:      'testing dedupe_sample_level_copies --execute on dev',
   host:        'ip-10-0-1-23 / amplicon-dev',
   acquired_at: ISODate,
   renewed_at:  ISODate,
@@ -231,12 +231,11 @@ first tools to get it:
 | `sweep_gridfs_unreferenced.py`, `sweep_s3_unreferenced.py` | `--execute` / `--apply` |
 | `cleanup_orphaned_projects.py`, `cleanup_failed_upload_residue.py`, `clear_stale_uploads.py` | non-dry-run |
 | `purge-local-db.py` | `--execute` |
-| `backfill_*.py`, `repair_*.py`, `rebuild_version_chains.py`, `dedupe_sample_level_copies.py`, `zero_carried_forward_views.py` | `--apply` / `--execute` |
+| `backfill_*.py`, `repair_*.py`, `dedupe_sample_level_copies.py` | `--apply` / `--execute` |
 | `manage.py create_project` | always (it creates a project) |
 
 `local_upload_project.py` isn't gated, because it already refuses anything but a
-local site. Neither are `restore_sample_csv_metadata.py` and
-`migrate_project_visibility.py` yet. `sweep_s3_unreferenced.py` has no database
+local site. `sweep_s3_unreferenced.py` has no database
 connection of its own, so it checks the lock of the environment it runs in.
 
 "Shared" means the database is named `caper` or `caper-dev` and its host isn't
@@ -246,7 +245,7 @@ local, because the local docker database is also named `caper-dev`.
 
 - **Admin pages** show one line in the header when the lock is held: *"dev
   operator lock held by claude:session_… (jluebeck) since 14:02, expires 16:02:
-  testing rebuild_version_chains"*. It costs one indexed `find_one` and appears
+  testing dedupe_sample_level_copies"*. It costs one indexed `find_one` and appears
   only on admin pages.
 - **Public pages show nothing.** Users are not affected by operator coordination.
   Shutdown mode exists for when they need to be.
