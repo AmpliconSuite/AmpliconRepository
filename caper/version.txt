@@ -1,4 +1,4 @@
-Version= v4.11.0_110826
+Version= v4.12.0_111226
 Creator= jluebeck
-Date= Sun Nov  8 17:57:42 UTC 2026
-CommitID=7a06cdea5c3327aed5eef2add3067f2f92c24e65
+Date= Thu Nov 12 23:09:13 UTC 2026
+CommitID=1e6dc314043949e31d43ed5aea11cef41461c288
