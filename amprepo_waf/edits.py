@@ -66,3 +66,49 @@ def automated_client_hint(web_acl, bot_control_defaults):
                 present[name]['ActionToUse'] = {'Block': {'CustomResponse': dict(HINT_RESPONSE)}}
             continue
         overrides.append({'Name': name, 'ActionToUse': {'Block': {'CustomResponse': dict(HINT_RESPONSE)}}})
+
+
+# -- let Google's verified user-triggered fetcher in (2026-11-13) ---------------------------
+
+BOT_LABEL = 'awswaf:managed:aws:bot-control:bot:'
+GOOGLE_FETCHER_RULE = 'BlockMiscBotsExceptGoogleFetcher'
+
+
+def _label(suffix):
+    return {'LabelMatchStatement': {'Scope': 'LABEL', 'Key': BOT_LABEL + suffix}}
+
+
+@edit('allow-verified-google-fetcher',
+      'Google\'s user-triggered fetcher (what Gemini and other Google products send when a '
+      'person asks about a page) is verified by AWS but blocked by Bot Control\'s '
+      'CategoryMiscellaneous: 18 blocks in the 30 days to 2026-11-13. Set that sub-rule to '
+      'Count and add a rule after Bot Control that blocks the same category again, with the '
+      'hint, except requests labelled both google_user_triggered_fetcher and '
+      'user_triggered:verified. The same shape as CategoryAI / BlockUnverifiedAI.')
+def allow_verified_google_fetcher(web_acl, bot_control_defaults):
+    statement = bot_control_statement(web_acl)
+    overrides = statement.setdefault('RuleActionOverrides', [])
+    present = [o for o in overrides if o['Name'] == 'CategoryMiscellaneous']
+    if present:
+        present[0]['ActionToUse'] = {'Count': {}}     # in place, so the diff stays small
+    else:
+        overrides.append({'Name': 'CategoryMiscellaneous', 'ActionToUse': {'Count': {}}})
+
+    rules = web_acl['Rules']
+    existing = rules_by_name(web_acl).get(GOOGLE_FETCHER_RULE)
+    priority = existing['Priority'] if existing else max(r['Priority'] for r in rules) + 1
+    rule = {
+        'Name': GOOGLE_FETCHER_RULE,
+        'Priority': priority,
+        'Statement': {'AndStatement': {'Statements': [
+            _label('category:miscellaneous'),
+            {'NotStatement': {'Statement': {'AndStatement': {'Statements': [
+                _label('name:google_user_triggered_fetcher'),
+                _label('user_triggered:verified'),
+            ]}}}},
+        ]}},
+        'Action': {'Block': {'CustomResponse': dict(HINT_RESPONSE)}},
+        'VisibilityConfig': {'SampledRequestsEnabled': True, 'CloudWatchMetricsEnabled': True,
+                             'MetricName': GOOGLE_FETCHER_RULE},
+    }
+    rules[:] = [r for r in rules if r['Name'] != GOOGLE_FETCHER_RULE] + [rule]

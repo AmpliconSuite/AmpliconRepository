@@ -41,6 +41,13 @@ ORDER = [
 # it is set to Count and BlockUnverifiedAI blocks only the unverified ones (2026-09-15).
 REQUIRED_OVERRIDES = {'CategoryAI': 'Count'}
 
+# A Bot Control category set to Count lets every bot in it through, so each one needs a rule
+# of ours, evaluated after Bot Control, that blocks it again except for the bots we chose.
+REBLOCK_RULES = {
+    'CategoryAI': 'BlockUnverifiedAI',
+    'CategoryMiscellaneous': 'BlockMiscBotsExceptGoogleFetcher',
+}
+
 # Fields get-web-acl returns that describe the ACL but cannot be sent back.
 READ_ONLY_FIELDS = {
     'ARN', 'Capacity', 'LabelNamespace', 'ManagedByFirewallManager',
@@ -119,6 +126,15 @@ def check(web_acl, bot_control_defaults=None):
         for name, action in REQUIRED_OVERRIDES.items():
             if action not in overrides.get(name, {}):
                 problems.append(f'Bot Control override {name} -> {action} is gone')
+        bot_priority = by_name[BOT_CONTROL]['Priority']
+        for name, action in sorted(overrides.items()):
+            if 'Count' not in action or not name.startswith('Category'):
+                continue
+            reblock = by_name.get(REBLOCK_RULES.get(name, ''))
+            if reblock is None or reblock['Priority'] <= bot_priority or 'Block' not in reblock.get('Action', {}):
+                problems.append(f'{name} is set to Count with no blocking rule after Bot Control '
+                                f'(expected {REBLOCK_RULES.get(name, "one listed in REBLOCK_RULES")}); '
+                                'every bot in that category would get through')
         if bot_control_defaults is not None:
             for name, action in sorted(overrides.items()):
                 if name not in bot_control_defaults:

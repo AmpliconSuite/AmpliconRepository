@@ -10,7 +10,7 @@ ACCEPTED = {'Name', 'Scope', 'Id', 'DefaultAction', 'Description', 'Rules', 'Vis
             'ChallengeConfig', 'TokenDomains', 'AssociationConfig', 'OnSourceDDoSProtectionConfig',
             'ApplicationConfig', 'MonetizationConfig'}
 
-DEFAULTS = {'CategoryAI': 'Block', 'CategoryHttpLibrary': 'Block', 'CategorySearchEngine': 'Block',
+DEFAULTS = {'CategoryAI': 'Block', 'CategoryHttpLibrary': 'Block', 'CategoryMiscellaneous': 'Block', 'CategorySearchEngine': 'Block',
             'SignalNonBrowserUserAgent': 'Block', 'SignalKnownBotDataCenter': 'Block',
             'TGT_VolumetricSession': 'Captcha', 'TGT_TokenReuseIp': 'Count'}
 

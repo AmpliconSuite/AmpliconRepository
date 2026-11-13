@@ -40,7 +40,7 @@ def test_hint_edit_keeps_blocking_and_leaves_other_overrides(acl):
     assert overrides['CategoryAI'] == {'Count': {}}
     hinted = {n for n, a in overrides.items()
               if a.get('Block', {}).get('CustomResponse', {}).get('CustomResponseBodyKey') == HINT_KEY}
-    assert hinted == {'CategoryHttpLibrary', 'CategorySearchEngine', 'SignalNonBrowserUserAgent',
+    assert hinted == {'CategoryHttpLibrary', 'CategoryMiscellaneous', 'CategorySearchEngine', 'SignalNonBrowserUserAgent',
                       'SignalKnownBotDataCenter'}   # Block by default, not TGT_, not already Count
     unverified = A.rules_by_name(after)['BlockUnverifiedAI']['Action']
     assert unverified['Block']['CustomResponse'] == {'ResponseCode': 403, 'CustomResponseBodyKey': HINT_KEY}
@@ -122,3 +122,30 @@ def test_agents_md_sends_waf_changes_through_this_tool():
     with open(os.path.join(REPO, 'AGENTS.md'), encoding='utf-8') as handle:
         text = handle.read()
     assert 'python -m amprepo_waf' in text
+
+
+def test_google_fetcher_edit_counts_and_reblocks_the_category(acl):
+    edit = EDITS['allow-verified-google-fetcher'][0]
+    after = _apply(acl)          # the hint is already on the live ACL
+    edit(after, DEFAULTS)
+    assert A.check(after, DEFAULTS) == []
+    once = copy.deepcopy(after)
+    edit(after, DEFAULTS)
+    assert after == once         # idempotent
+    overrides = {o['Name']: o['ActionToUse'] for o in A.bot_control_statement(after)['RuleActionOverrides']}
+    assert overrides['CategoryMiscellaneous'] == {'Count': {}}
+    rule = A.rules_by_name(after)['BlockMiscBotsExceptGoogleFetcher']
+    assert rule['Priority'] > A.rules_by_name(after)[A.BOT_CONTROL]['Priority']
+    assert rule['Action']['Block']['CustomResponse']['CustomResponseBodyKey'] == HINT_KEY
+    keys = {n['LabelMatchStatement']['Key'] for n in A._walk(rule) if 'LabelMatchStatement' in n}
+    assert keys == {'awswaf:managed:aws:bot-control:bot:category:miscellaneous',
+                    'awswaf:managed:aws:bot-control:bot:name:google_user_triggered_fetcher',
+                    'awswaf:managed:aws:bot-control:bot:user_triggered:verified'}
+
+
+def test_counting_a_category_without_a_reblock_rule_is_refused(acl):
+    A.bot_control_statement(acl)['RuleActionOverrides'].append(
+        {'Name': 'CategoryMiscellaneous', 'ActionToUse': {'Count': {}}})
+    assert any('CategoryMiscellaneous is set to Count' in p for p in A.check(acl))
+    acl['Rules'] = [r for r in acl['Rules'] if r['Name'] != 'BlockUnverifiedAI']
+    assert any('CategoryAI is set to Count' in p for p in A.check(acl))
