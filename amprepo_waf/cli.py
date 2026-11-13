@@ -72,7 +72,13 @@ def change(aws, label, transform, args, out=print):
     _write(record, 'meta.json', {'change': label, 'started_utc': stamp,
                                  'lock_held_by': args.lock_held_by, 'no_lock': args.no_lock})
 
-    aws.update_web_acl(params)
+    try:
+        aws.update_web_acl(params)
+    except AwsError as error:
+        _write(record, 'FAILED.txt', f'{error}\n')
+        out(f'{label}: the update was refused: {error}\nRun `show` to confirm the live ACL; '
+            f'the record is in {record}')
+        return 1
     after, _ = aws.get_web_acl()
     _write(record, 'after.json', {'WebACL': after})
     if acl.comparable(after, accepted) != acl.comparable(proposed, accepted):

@@ -60,7 +60,15 @@ def test_update_input_carries_every_field_forward(acl):
     assert params['OnSourceDDoSProtectionConfig'] == acl['OnSourceDDoSProtectionConfig']
     assert params['Rules'] == acl['Rules']   # match strings stay base64, byte for byte
     assert not set(params) & A.READ_ONLY_FIELDS
-    assert set(acl) - A.READ_ONLY_FIELDS <= set(params)
+    assert set(acl) - A.READ_ONLY_FIELDS - {'Description'} <= set(params)   # "" is left out
+
+
+def test_an_empty_description_is_left_out(acl):
+    """get-web-acl returns "" and update-web-acl rejects it: the first live --apply hit this."""
+    assert acl['Description'] == ''
+    assert 'Description' not in A.update_input(acl, 'tok', ACCEPTED)
+    acl['Description'] = 'front door'
+    assert A.update_input(acl, 'tok', ACCEPTED)['Description'] == 'front door'
 
 
 def test_a_field_aws_adds_later_stops_the_update(acl):

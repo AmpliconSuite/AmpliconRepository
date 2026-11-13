@@ -147,6 +147,10 @@ def update_input(web_acl, lock_token, accepted_fields):
             'sending an update: it would be dropped.')
     params = {key: copy.deepcopy(value) for key, value in web_acl.items()
               if key in accepted_fields}
+    # get-web-acl reports a missing description as "", which update-web-acl rejects
+    # (minimum length 1). Leaving it out keeps it missing. Seen on the live ACL 2026-11-13.
+    if params.get('Description') == '':
+        del params['Description']
     params['Scope'] = SCOPE
     params['LockToken'] = lock_token
     return params
@@ -155,7 +159,8 @@ def update_input(web_acl, lock_token, accepted_fields):
 def comparable(web_acl, accepted_fields):
     """The parts of an ACL an update sets, for comparing intended with live."""
     return {key: value for key, value in web_acl.items()
-            if key in accepted_fields and key not in ('Scope', 'LockToken')}
+            if key in accepted_fields and key not in ('Scope', 'LockToken')
+            and not (key == 'Description' and value == '')}
 
 
 def _readable(web_acl):
