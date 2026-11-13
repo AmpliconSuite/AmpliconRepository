@@ -52,6 +52,20 @@ the site don't need it, and users are kept out by shutdown mode. See
 
 ---
 
+## Critical: WAF Changes Go Through `python -m amprepo_waf`
+
+One AWS WAF web ACL, `Amplicon_WAF` (us-east-1), sits in front of **both** the prod and dev
+load balancers, so every change to it is a production change and none can be tried on dev
+first. Change it only with `python -m amprepo_waf edit <name>`, where each change is a named
+function in `amprepo_waf/edits.py`. Never hand-run `aws wafv2 update-web-acl`: it replaces
+the whole ACL, and a field left out is deleted. The tool carries every field forward, refuses
+a result that breaks the rule order or a response body a rule still uses, and keeps an undo
+record. Applying (`--apply`) is a prod write: it needs its own explicit ask and prod's operator
+lock. Reading (`show`, `check`, `probe`, a dry-run `edit`) needs neither. See
+[amprepo_waf/README.md](amprepo_waf/README.md).
+
+---
+
 ## Architecture Overview
 
 ### Dual-Database Design (key non-obvious detail)

@@ -80,3 +80,8 @@ jobs:
         # The reclassifier's own tests, kept apart from the site's: no Django, no database.
         run: |
           python -m pytest amprepo_reclassify -v
+
+      - name: Run amprepo_waf tests
+        # The WAF tool's own tests: no Django, no database, no AWS.
+        run: |
+          python -m pytest amprepo_waf -v
