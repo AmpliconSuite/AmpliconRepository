@@ -10,6 +10,69 @@
     .wait-cursor * {
         cursor: wait !important;
     }
+
+    /* Project header (design G). Colours are Bootstrap 4's own. */
+    .project-header { margin-bottom: 18px; }
+    .ph-titlebar { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+        padding-bottom: 10px; }
+    .ph-title { min-width: 0; }
+    .ph-eyebrow { font-size: 0.78rem; color: #6c757d; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 2px; }
+    .ph-title h2 { font-size: 2rem; font-weight: 500; margin: 0; line-height: 1.15; overflow-wrap: anywhere; }
+    .ph-title h2 .badge { font-size: 0.8rem; vertical-align: middle; }
+    .ph-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding-bottom: 4px; }
+    .ph-act { position: relative; display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; line-height: 1.6;
+        border: 1px solid #dee2e6; border-radius: 0.2rem; padding: 2px 9px; color: #212529; background: #fff; cursor: pointer; }
+    .ph-act:hover, .ph-act:focus-visible, .ph-act[aria-expanded="true"] { border-color: #007bff; color: #007bff;
+        text-decoration: none; outline: none; }
+    .ph-act .ph-q { color: #6c757d; font-size: 0.85em; }
+    .ph-count { background: #f1f3f5; color: #212529; border-radius: 999px; padding: 0 7px; font-size: 0.75rem;
+        font-variant-numeric: tabular-nums; }
+    .ph-members { position: relative; }
+    .ph-pop { position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; min-width: 220px; max-width: calc(100vw - 32px);
+        background: #fff; color: #212529; border: 1px solid #dee2e6; border-radius: 4px;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15); padding: 10px 12px; font-size: 0.85rem; text-align: left; }
+    .ph-pop-head { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: #6c757d; margin-bottom: 4px; }
+    .ph-pop ul { margin: 0; padding: 0; list-style: none; max-height: 16rem; overflow-y: auto; }
+    .ph-pop li { padding: 1px 0; overflow-wrap: anywhere; }
+    .ph-pop .ph-none { color: #6c757d; }
+    .ph-sub { border-top: 1px solid #dee2e6; margin-top: 8px; padding-top: 8px; }
+    .ph-sub label { display: flex; gap: 6px; align-items: center; margin: 0; cursor: pointer; user-select: none; }
+    .ph-sub #subscription-message { margin-top: 4px; }
+
+    .ph-body { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 36px; align-items: start; }
+    .ph-body-empty { grid-template-columns: minmax(0, 1fr); }
+    .ph-main { min-width: 0; }
+    .ph-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 0; margin: 0 0 12px;
+        color: #6c757d; font-size: 0.86rem; font-variant-numeric: tabular-nums; }
+    .ph-meta .ph-dot { margin: 0 7px; opacity: 0.6; }
+    .ph-meta abbr { text-decoration: none; border-bottom: 1px dotted #adb5bd; cursor: help; }
+    .ph-ref { display: inline-flex; align-items: center; font-size: 0.85rem; font-weight: 600; letter-spacing: 0.02em;
+        padding: 2px 11px; border-radius: 999px; background: #007bff; color: #fff; white-space: nowrap; line-height: 1.4;
+        margin-right: 10px; }
+    .ph-version[title] { cursor: help; }
+    .ph-desc { font-size: 1rem; line-height: 1.6; color: #343a40; margin: 0 0 2px; max-width: 78ch; overflow-wrap: anywhere; }
+    .ph-desc.ph-clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .ph-more { border: 0; background: none; padding: 0; color: #007bff; font-size: 0.88rem; cursor: pointer; }
+    .ph-more:hover { text-decoration: underline; }
+    .ph-kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 18px; row-gap: 5px;
+        margin: 12px 0 0; font-size: 0.92rem; }
+    .ph-kv dt { color: #6c757d; font-weight: 400; }
+    .ph-kv dd { margin: 0; overflow-wrap: anywhere; }
+    .ph-copy { color: #6c757d; margin-left: 6px; cursor: pointer; }
+    .ph-copy:hover, .ph-copy:focus-visible { color: #007bff; }
+    .ph-copied { color: #6c757d; font-size: 0.8rem; margin-left: 6px; }
+
+    .ph-dlcol { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+    .ph-dlcol .btn { font-size: 0.8rem; white-space: nowrap; cursor: pointer; }
+    .ph-dlcol .btn-primary { color: #fff; }
+    .ph-dlfoot { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; font-size: 0.75rem; color: #6c757d;
+        margin-top: 10px; font-variant-numeric: tabular-nums; }
+
+    @media (max-width: 767.98px) {
+        .ph-body { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+        .ph-dlcol { flex-direction: row; flex-wrap: wrap; }
+        .ph-dlfoot { align-items: flex-start; }
+    }
 </style>
 <script>
     $(document).ready( function () {
@@ -837,60 +900,72 @@
     document.addEventListener('DOMContentLoaded', formatDates);
     document.addEventListener('DOMContentLoaded', formatCompactDates);
 
-    // Description truncation and toggle
+    // The description is served whole and clamped to two lines by CSS, so a
+    // client that runs no scripts still gets all of it. "Show more" appears
+    // only when the clamp actually hides something.
     document.addEventListener('DOMContentLoaded', function() {
-        const fullDescription = "{{ project.description|escapejs }}";
-        const descriptionContainer = document.getElementById('description-container');
-        const descriptionShort = document.getElementById('description-short');
-        const descriptionFull = document.getElementById('description-full');
-        const descriptionToggle = document.getElementById('description-toggle');
-        
-        if (!fullDescription || fullDescription.trim() === '') {
+        const description = document.getElementById('project-description');
+        const toggle = document.getElementById('description-toggle');
+        if (!description || !toggle) {
             return;
         }
-        
-        const maxLength = 70;
-        
-        // If description is 70 characters or less, display it normally
-        if (fullDescription.length <= maxLength) {
-            descriptionShort.textContent = fullDescription;
-            descriptionFull.style.display = 'none';
-            descriptionToggle.style.display = 'none';
-        } else {
-            // Description is longer than 70 characters, truncate at word boundary
-            let truncated = fullDescription.substring(0, maxLength);
-            
-            // Find the last space before position 70 to avoid cutting words
-            const lastSpace = truncated.lastIndexOf(' ');
-            if (lastSpace > 0) {
-                truncated = truncated.substring(0, lastSpace);
-            }
-            
-            // Set the truncated text
-            descriptionShort.textContent = truncated + '... ';
-            descriptionToggle.textContent = '(more)';
-            descriptionToggle.style.display = 'inline';
-            descriptionFull.style.display = 'none';
+        if (description.scrollHeight > description.clientHeight + 1) {
+            toggle.hidden = false;
         }
     });
-    
+
     function toggleDescription() {
-        const descriptionShort = document.getElementById('description-short');
-        const descriptionFull = document.getElementById('description-full');
-        const descriptionToggle = document.getElementById('description-toggle');
-        
-        if (descriptionFull.style.display === 'none') {
-            // Expand
-            descriptionShort.style.display = 'none';
-            descriptionFull.style.display = 'inline';
-            descriptionToggle.textContent = ' (less)';
-        } else {
-            // Collapse
-            descriptionShort.style.display = 'inline';
-            descriptionFull.style.display = 'none';
-            descriptionToggle.textContent = '(more)';
-        }
+        const description = document.getElementById('project-description');
+        const toggle = document.getElementById('description-toggle');
+        const expanding = description.classList.contains('ph-clamped');
+        description.classList.toggle('ph-clamped', !expanding);
+        toggle.textContent = expanding ? 'Show less' : 'Show more';
+        toggle.setAttribute('aria-expanded', expanding ? 'true' : 'false');
     }
+
+    // Members panel in the title bar: opens on click (a hover-only panel is
+    // unreachable on a touch screen), closes on a click outside or Escape.
+    function toggleMembersPanel(open) {
+        const panel = document.getElementById('members-panel');
+        const button = document.getElementById('members-button');
+        if (!panel || !button) {
+            return;
+        }
+        if (open === undefined) {
+            open = panel.hidden;
+        }
+        panel.hidden = !open;
+        button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    document.addEventListener('click', function(event) {
+        const wrapper = document.getElementById('project-members');
+        if (wrapper && !wrapper.contains(event.target)) {
+            toggleMembersPanel(false);
+        }
+    });
+
+    document.addEventListener('keydown', function(event) {
+        const panel = document.getElementById('members-panel');
+        if (event.key === 'Escape' && panel && !panel.hidden) {
+            toggleMembersPanel(false);
+            document.getElementById('members-button').focus();
+        }
+    });
+
+    // "v8" in the facts line carries the version's date on hover.
+    document.addEventListener('DOMContentLoaded', function() {
+        const version = document.querySelector('.ph-version');
+        if (!version || !version.dataset.date) {
+            return;
+        }
+        const parsed = Date.parse(version.dataset.date);
+        if (isNaN(parsed)) {
+            return;
+        }
+        version.title = 'Updated ' + new Date(parsed).toLocaleDateString('en-US',
+            {month: 'short', day: 'numeric', year: 'numeric'});
+    });
 
     // Downloads are behind a one-time human-verification check.  A fetch()
     // follows that redirect transparently and reports ok, so a caller that
@@ -1105,16 +1180,39 @@
 {% endif %}
 
 <div class="container row" style="margin:auto; padding:0px; padding-top: 20px;">
-    <div class="col-md-7">
-        <h2>Project: <span style="font-weight: 200">{{ project.project_name }}</span>
-        {% if "CoRAL" in project.Reconstruction_tools %}
-            <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>
-        {% endif %}
+    {% comment %}
+    Project header (design G, chosen 2026-11-14). The title runs the full
+    width with the project actions at its right end: "Edit project" and
+    "Uploader key" for editors, then Members, which every visitor sees and
+    which keeps the same place whether or not the editor actions are there.
+    Below it, one muted line of facts led by the reference build, the
+    description clamped to two lines, and the details. The download buttons
+    start level with the facts line rather than beside the title.
 
-        {% if not viewing_old_project %}
-            {% if project.current_user_may_edit  %}
-            <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit Project"><i class="fas fa-edit" style="font-size: 24px"></i></a>
-             <a href="javascript:void(0);" onclick="$('#projectInfoModal').modal('show');" data-toggle="tooltip" title="Upload Project"><i class="fas fa-key" style="font-size: 24px; margin-left: 10px;"></i></a>
+    Everything a reader needs from the header is in the HTML as served --
+    sample count, reference build, version, tool versions, full description --
+    so a client that does not run scripts (an AI agent's fetcher) reads the
+    same facts a browser shows.
+    {% endcomment %}
+    <div class="col-12 project-header">
+        <div class="ph-titlebar">
+            <div class="ph-title">
+                <div class="ph-eyebrow">Project{% if visibility_display != 'Public' %} &middot; {{ visibility_display }}{% endif %}</div>
+                <h2>{{ project.project_name }}
+                {% if "CoRAL" in project.Reconstruction_tools %}
+                    <span class="badge badge-info" title="Reconstructed with the long-read CoRAL workflow">CoRAL</span>
+                {% endif %}
+                </h2>
+            </div>
+            <div class="ph-acts">
+            {% if not viewing_old_project %}
+                {% if project.current_user_may_edit %}
+                <a class="ph-act" href="{% url 'edit_project_page' project_name=project.linkid %}"><i class="fas fa-edit" aria-hidden="true"></i> Edit project</a>
+                <button type="button" class="ph-act" onclick="$('#projectInfoModal').modal('show');"
+                        data-toggle="tooltip" data-placement="bottom"
+                        title="The project ID and key for AmpliconSuite-pipeline. Give them to a run and its samples are added to this project automatically.">
+                    <i class="fas fa-key" aria-hidden="true"></i> Uploader key <i class="far fa-question-circle ph-q" aria-hidden="true"></i>
+                </button>
            <div class="modal fade" id="projectInfoModal" tabindex="-1" role="dialog" aria-labelledby="projectInfoModalLabel" aria-hidden="true">
              <div class="modal-dialog" role="document" style="max-width: 550px;">
                <div class="modal-content">
@@ -1185,93 +1283,28 @@
              return cookieValue;
            }
            </script>
-        {%  endif %}</h2>
-        {% elif old_version_may_edit %}
-            <a href="{% url 'edit_project_page' project_name=project.linkid %}" data-toggle="tooltip" title="Edit this version's description and tool versions"><i class="fas fa-edit" style="font-size: 24px"></i></a></h2>
-        {% else %}</h2>
-        {% endif %}
-
-        <br>
-        <h5>Description: <span id="description-container" style="font-weight: 200">
-            <span id="description-short"></span>
-            <span id="description-full" style="display: none;">{{ project.description }}</span>
-            <a href="javascript:void(0);" id="description-toggle" style="font-style: italic; display: none;" onclick="toggleDescription()"></a>
-        </span></h5>
-        {% include 'includes/project_publication_line.html' %}
-        {% if not is_empty_project %}
-        <h5>Reference build: <span style="font-weight: 200">{{ reference_genome }}</span></h5>
-        {% endif %}
-        {% if project.alias_name %}
-            <h5>Project Link: <a id='aliaslink' href="">ampliconrepository.org/project/{{project.alias_name}}  </a><i class="fas fa-link chain-icon" style = 'cursor:pointer;'onclick="copyToClipboard()"></i></h5>
-            <p id="message"></p>
-        {% endif %}
-            
-        
-    </div>
-
-    {% if not is_empty_project %}
-    <!-- Info column: visibility, project members, subscription, views/downloads -->
-    <div class="col-md-3" style="text-align:left;">
-        {% if visibility_display != 'Public' %}<div style="margin-bottom: 8px;">Visibility: <b>{{ visibility_display }}</b></div>{% endif %}
-        <div id="project-members-accordion" style="margin-bottom: 15px; ">
-            <style>
-                .members-toggle:not(.expanded)::before,
-                .members-toggle-empty:not(.expanded)::before {
-                    content: "";
-                    display: inline-block;
-                    border-style: solid;
-                    border-width: 0.4em 0 0.4em 0.4em;
-                    border-color: transparent transparent transparent #000;
-                    margin-right: 0.5em;
-                    transform: rotate(0deg);
-                    vertical-align: middle;
-                }
-
-                .members-toggle.expanded::before,
-                .members-toggle-empty.expanded::before {
-                    content: "";
-                    display: inline-block;
-                    border-style: solid;
-                    border-width: 0.4em 0 0.4em 0.4em;
-                    border-color: transparent transparent transparent #000;
-                    margin-right: 0.5em;
-                    transform: rotate(90deg);
-                    vertical-align: middle;
-                }
-            </style>
-            <div style="display: inline-block; text-align: left;">
-                <span class="members-toggle" onclick="toggleMembers()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
-            </div>
-            <div id="members-list" style="display: none; margin-top: 8px; text-align: left;">
-                {{ project.project_members|join:", " }}
-            </div>
-        </div>
-        <script>
-        function toggleMembers() {
-            var list = document.getElementById('members-list');
-            var toggle = document.querySelector('.members-toggle');
-            
-            if (list.style.display === 'none') {
-                list.style.display = 'block';
-                toggle.classList.add('expanded');
-            } else {
-                list.style.display = 'none';
-                toggle.classList.remove('expanded');
-            }
-        }
-        </script>
-
-       
-        {% if user.is_authenticated and not is_project_member %}
-        <div style="margin-top: 10px; border-radius: 5px;">
-            <div style="display: inline-block; text-align: left;">
-            <label style="cursor: pointer; user-select: none;">
-                <input type="checkbox" id="subscription-checkbox" style="margin-right: 5px;">
-                <span id="subscription-label">Subscribe to project updates</span>
-            </label>
-            <div id="subscription-message" style="margin-top: 5px; "></div>
-            </div>
-        </div>
+                {% endif %}
+            {% elif old_version_may_edit %}
+                <a class="ph-act" href="{% url 'edit_project_page' project_name=project.linkid %}"
+                   data-toggle="tooltip" data-placement="bottom" title="Edit this version's description and tool versions"><i class="fas fa-edit" aria-hidden="true"></i> Edit this version</a>
+            {% endif %}
+                <div class="ph-members" id="project-members">
+                    <button type="button" class="ph-act" id="members-button" aria-expanded="false" aria-controls="members-panel" onclick="toggleMembersPanel()">
+                        <i class="fas fa-users" aria-hidden="true"></i> Members <span class="ph-count">{{ project.project_members|length }}</span>
+                    </button>
+                    <div class="ph-pop" id="members-panel" hidden>
+                        <div class="ph-pop-head">Project members</div>
+                        <ul>
+                            {% for member in project.project_members %}<li>{{ member }}</li>{% empty %}<li class="ph-none">None listed</li>{% endfor %}
+                        </ul>
+                        {% if user.is_authenticated and not is_project_member %}
+                        <div class="ph-sub">
+                            <label>
+                                <input type="checkbox" id="subscription-checkbox">
+                                <span id="subscription-label">Subscribe to project updates</span>
+                            </label>
+                            <div id="subscription-message"></div>
+                        </div>
         <script>
         $(document).ready(function() {
             // Check current subscription status on page load
@@ -1336,72 +1369,98 @@
             }, 3000);
         }
         </script>
-        {% endif %}
-          <div id="project_statistics" style="text-align:left;"><div style="display: inline-block; text-align: left;">Total views: {{ views }} | Total downloads: <span id='downloads'>{{downloads}}</span></div></div>
-       
-    </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
 
-    <!-- Downloads column: Download Project, Download Summary, Download Metadata -->
-    <div class="col-md-2" style="text-align:right;">
-        <style>
-            .dl-btn-label { font-size: 0.8rem; }
-            @media (max-width: 900px) {
-                .dl-btn-label { font-size: 0.7rem; }
-                .dl-btn-download { display: none; }
-            }
-            @media (max-width: 700px) {
-                .dl-btn-label { display: none; }
-            }
-        </style>
-        {% comment %}
-        Each button says what the file actually is.  Three buttons labelled
-        "Download X" do not tell a first-time visitor which one they want, and
-        the largest of them is a multi-gigabyte archive on the big projects --
-        the wrong guess is expensive for the reader and for the server.  Text
-        taken from a real archive (GBM39, fetched 2026-09-12), not from the
-        button labels.
-        {% endcomment %}
-        <div style="display: inline-flex; flex-direction: column; gap: 10px; align-items: stretch;">
-            <a class="btn btn-primary btn-sm" style="color: white; white-space: nowrap; font-size: 0.8rem;"
-               data-toggle="tooltip"
-               title="Everything, as a .tar.gz: the aggregated results table, plus each sample's amplicon reconstructions (cycles, graphs, PDF/PNG), classifier tables, copy-number calls and metadata. Large projects run to several GB."
-               aria-label="Download the whole project as a .tar.gz archive: aggregated results table, each sample's amplicon reconstructions, classifier tables, copy-number calls and metadata."
-               onclick="downloadAndReload();">
-                <i class="fas fa-download"></i><span class="dl-btn-label"><span class="dl-btn-download"> Download</span> Project</span>
-            </a>
-            <a class="btn btn-primary btn-sm" style="color: white; cursor: pointer; white-space: nowrap; font-size: 0.8rem;"
-               data-toggle="tooltip"
-               title="Just the table on this page, as a CSV: one row per amplicon, with its classification, genes and location. No sequence data or figures."
-               aria-label="Download the summary table shown on this page as a CSV: one row per amplicon with its classification, genes and location."
-               onclick="downloadSummaryTable();">
-                <i class="fas fa-download"></i><span class="dl-btn-label"><span class="dl-btn-download"> Download</span> Summary</span>
-            </a>
-            <a class="btn btn-primary btn-sm" style="color: white; cursor: pointer; white-space: nowrap; font-size: 0.8rem;"
-               data-toggle="tooltip"
-               title="Just the sample annotations, as a TSV: one row per sample, with whatever the submitter recorded — sample type, tissue, cancer type and any extra columns."
-               aria-label="Download the sample annotations as a TSV: one row per sample with the metadata the submitter recorded."
-               onclick="downloadMetadata();">
-                <i class="fas fa-download"></i><span class="dl-btn-label"><span class="dl-btn-download"> Download</span> Metadata</span>
-            </a>
-            {% if metadata_summary.available %}
-            <a class="btn btn-outline-primary btn-sm" id="metadata-summary-btn"
-               style="cursor: pointer; white-space: nowrap; font-size: 0.8rem;"
-               onclick="showMetadataSummary();">
-                <i class="fas fa-chart-pie"></i><span class="dl-btn-label"> Metadata Summary</span>
-            </a>
+        <div class="ph-body{% if is_empty_project %} ph-body-empty{% endif %}">
+            <div class="ph-main">
+                <div class="ph-meta">
+                    {% if not is_empty_project %}<span class="ph-ref" data-toggle="tooltip" title="Reference genome build">{{ reference_genome }}</span>{% endif %}
+                    <span>{{ sample_count }} sample{{ sample_count|pluralize }}</span>
+                    <span class="ph-dot" aria-hidden="true">&middot;</span><span class="ph-version" data-date="{{ project.date|default:'' }}">v{{ version_number }}{% if viewing_old_project %} of {{ version_count }}{% endif %}</span>
+                    {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
+                        {% if project.AA_version and project.AA_version != "NA" %}<span class="ph-dot" aria-hidden="true">&middot;</span><span><abbr title="AmpliconArchitect">AA</abbr>&nbsp;{{ project.AA_version }}</span>{% endif %}
+                    {% endif %}
+                    {% if "CoRAL" in project.Reconstruction_tools %}
+                        {% if project.CoRAL_version and project.CoRAL_version != "NA" %}<span class="ph-dot" aria-hidden="true">&middot;</span><span><abbr title="CoRAL">CoRAL</abbr>&nbsp;{{ project.CoRAL_version }}</span>{% endif %}
+                    {% endif %}
+                    {% if project.AC_version and project.AC_version != "NA" %}<span class="ph-dot" aria-hidden="true">&middot;</span><span><abbr title="AmpliconClassifier">AC</abbr>&nbsp;{{ project.AC_version }}</span>{% endif %}
+                    {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
+                        {% if project.ASP_version and project.ASP_version != "NA" %}<span class="ph-dot" aria-hidden="true">&middot;</span><span><abbr title="AmpliconSuite-pipeline">ASP</abbr>&nbsp;{{ project.ASP_version }}</span>{% endif %}
+                    {% endif %}
+                </div>
+                {% if project.description %}
+                <p class="ph-desc ph-clamped" id="project-description">{{ project.description }}</p>
+                <button type="button" class="ph-more" id="description-toggle" aria-controls="project-description" aria-expanded="false" hidden onclick="toggleDescription()">Show more</button>
+                {% endif %}
+                <dl class="ph-kv">
+                    {% include 'includes/project_publication_line.html' %}
+                    {% if project.alias_name %}
+                    <dt>Project link</dt>
+                    <dd><a id="aliaslink" href="">ampliconrepository.org/project/{{ project.alias_name }}</a><i class="fas fa-link ph-copy" role="button" tabindex="0" title="Copy link" aria-label="Copy project link" onclick="copyToClipboard()" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); copyToClipboard(); }"></i> <span id="message" class="ph-copied"></span></dd>
+                    {% endif %}
+                </dl>
+            </div>
+
+            {% if not is_empty_project %}
+            <aside class="ph-downloads">
+                {% comment %}
+                Each button says what the file actually is.  Three buttons labelled
+                "Download X" do not tell a first-time visitor which one they want, and
+                the largest of them is a multi-gigabyte archive on the big projects --
+                the wrong guess is expensive for the reader and for the server.  Text
+                taken from a real archive (GBM39, fetched 2026-09-12), not from the
+                button labels.
+                {% endcomment %}
+                <div class="ph-dlcol">
+                    <a class="btn btn-primary btn-sm"
+                       data-toggle="tooltip"
+                       title="Everything, as a .tar.gz: the aggregated results table, plus each sample's amplicon reconstructions (cycles, graphs, PDF/PNG), classifier tables, copy-number calls and metadata. Large projects run to several GB."
+                       aria-label="Download the whole project as a .tar.gz archive: aggregated results table, each sample's amplicon reconstructions, classifier tables, copy-number calls and metadata."
+                       onclick="downloadAndReload();">
+                        <i class="fas fa-download" aria-hidden="true"></i> Download Project
+                    </a>
+                    <a class="btn btn-primary btn-sm"
+                       data-toggle="tooltip"
+                       title="Just the table on this page, as a CSV: one row per amplicon, with its classification, genes and location. No sequence data or figures."
+                       aria-label="Download the summary table shown on this page as a CSV: one row per amplicon with its classification, genes and location."
+                       onclick="downloadSummaryTable();">
+                        <i class="fas fa-download" aria-hidden="true"></i> Download Summary
+                    </a>
+                    <a class="btn btn-primary btn-sm"
+                       data-toggle="tooltip"
+                       title="Just the sample annotations, as a TSV: one row per sample, with whatever the submitter recorded — sample type, tissue, cancer type and any extra columns."
+                       aria-label="Download the sample annotations as a TSV: one row per sample with the metadata the submitter recorded."
+                       onclick="downloadMetadata();">
+                        <i class="fas fa-download" aria-hidden="true"></i> Download Metadata
+                    </a>
+                    {% if metadata_summary.available %}
+                    <a class="btn btn-outline-primary btn-sm" id="metadata-summary-btn"
+                       onclick="showMetadataSummary();">
+                        <i class="fas fa-chart-pie" aria-hidden="true"></i> Metadata Summary
+                    </a>
+                    {% endif %}
+                </div>
+                {% comment %}
+                A hover tooltip is undiscoverable on a touch screen and gone the
+                moment you look away, so the full file-by-file description is one
+                click away as well.
+                {% endcomment %}
+                <div class="ph-dlfoot" id="project_statistics">
+                    <a href="https://docs.ampliconrepository.org/en/latest/project-structure/" target="_blank" rel="noopener">
+                        <i class="far fa-question-circle" aria-hidden="true"></i> What's in a download?
+                    </a>
+                    <span>Total downloads: <span id="downloads">{{ downloads }}</span></span>
+                    <span>Total views: {{ views }}</span>
+                </div>
+            </aside>
             {% endif %}
-            {% comment %}
-            A hover tooltip is undiscoverable on a touch screen and gone the
-            moment you look away, so the full file-by-file description is one
-            click away as well.
-            {% endcomment %}
-            <a class="dl-btn-label" style="font-size: 0.75rem;"
-               href="https://docs.ampliconrepository.org/en/latest/project-structure/"
-               target="_blank" rel="noopener">
-                <i class="far fa-question-circle" aria-hidden="true"></i> What's in a download?
-            </a>
         </div>
     </div>
+    {% if not is_empty_project %}
     
 {% comment %}
    plotly.js once for both figures below, which use include_plotlyjs=False
@@ -1435,32 +1494,6 @@ page was this container switching on after everything below it had been laid out
     </div>
 </div>
     {% else %}
-        <div class="col-md-3">
-        {% if visibility_display != 'Public' %}Visibility: <b>{{ visibility_display }}</b>{% endif %}
-        <div id="project-members-accordion-empty" style="margin-bottom: 15px;">
-            <div>
-                <span class="members-toggle-empty" onclick="toggleMembersEmpty()" style="cursor: pointer; font-weight: bold; user-select: none;">Project Members</span>
-            </div>
-            <div id="members-list-empty" style="display: none; margin-top: 8px;">
-                {{ project.project_members|join:", " }}
-            </div>
-        </div>
-        <script>
-        function toggleMembersEmpty() {
-            var list = document.getElementById('members-list-empty');
-            var toggle = document.querySelector('.members-toggle-empty');
-            
-            if (list.style.display === 'none') {
-                list.style.display = 'block';
-                toggle.classList.add('expanded');
-            } else {
-                list.style.display = 'none';
-                toggle.classList.remove('expanded');
-            }
-        }
-        </script>
-
-        </div>
         <div class="col-md-12 text-center" style="margin-top: 50px; margin-bottom: 50px;">
             <h4 style="color: #666;">No samples in project</h4>
         </div>
