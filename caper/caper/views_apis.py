@@ -152,6 +152,9 @@ class FileUploadView(APIView):
             project['project_name'] = actual_proj_name
         logging.info('the project is here: ')
         new_id = collection_handle.insert_one(project)
+        # A chain of one, as the site's create paths make; without it every
+        # later version is left off the chain too (#750).
+        lineage.link_new_version(collection_handle, new_id.inserted_id, None)
         # Index-only.  The project is LIVE and therefore indexable from here;
         # extract_project_files fills in runs on another thread and reindexes
         # when it does.  Without this the project is indexable-but-unindexed for
