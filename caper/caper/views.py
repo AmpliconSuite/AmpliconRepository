@@ -1236,14 +1236,6 @@ def project_page(request, project_name, message=''):
     version_number, version_count, _ = _version_fields(project, active_prev_versions)
     version_count = max(version_count, version_number)
 
-    # The header's "Last updated" row, rendered here rather than by script so a
-    # client that runs none still gets it. The stored value is get_date()'s
-    # ISO string; anything unparseable leaves the row out.
-    try:
-        version_date = datetime.datetime.fromisoformat(str(project.get('date', ''))).strftime('%b %-d, %Y')
-    except ValueError:
-        version_date = None
-
     return render(request, "pages/project.html", {
         'project': project,
         'metadata_summary': metadata_summary,
@@ -1255,7 +1247,6 @@ def project_page(request, project_name, message=''):
         'sample_count': len(samples),
         'version_number': version_number,
         'version_count': version_count,
-        'version_date': version_date,
         'stackedbar_graph': stacked_bar_plot,
         'summarybar': pc_fig,
         'prev_versions': prev_versions,
