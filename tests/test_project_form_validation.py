@@ -143,6 +143,83 @@ def test_create_empty_requires_the_license(
             _cleanup_project(mongo_collection, str(doc['_id']))
 
 
+# Issue #750: create_empty_project inserted a LIVE document and never put it in
+# a version chain. predecessor_chain() refuses to extend a predecessor with no
+# version_chain_id, so every version added to it later was left off the chain
+# too, and validate_project_lineage.py reported each one under I1.
+STATUS_AND_CHAIN_FIELDS = ('status', 'current', 'delete',
+                           'version_chain_id', 'version_ordinal', 'is_latest')
+
+
+def _create_empty(request_factory, user, name):
+    from caper.views import create_empty_project
+    request = _with_messages(request_factory.post('/create-empty-project/', data={
+        'project_name': name, 'description': 'd', 'alias': '',
+        'publication_link': '', 'project_members': '', 'accept_license': 'on'}))
+    request.user = user
+    response = create_empty_project(request)
+    assert response.status_code == 302
+    return ObjectId(response.url.rstrip('/').split('/')[-1])
+
+
+def test_create_empty_puts_the_project_in_a_chain_of_one(
+        request_factory, test_user, mongo_collection):
+    name = f'EmptyChain-{ObjectId()}'
+    try:
+        doc_id = _create_empty(request_factory, test_user, name)
+        doc = mongo_collection.find_one({'_id': doc_id})
+        missing = [f for f in STATUS_AND_CHAIN_FIELDS if f not in doc]
+        assert not missing, f'empty project lacks {missing}'
+        assert doc['version_chain_id'] == doc_id
+        assert doc['version_ordinal'] == 1
+        assert doc['is_latest'] is True
+    finally:
+        for doc in mongo_collection.find({'project_name': name}, {'_id': 1}):
+            _cleanup_project(mongo_collection, str(doc['_id']))
+
+
+@pytest.mark.slow
+def test_files_added_to_an_empty_project_join_its_chain(
+        request_factory, test_user, mongo_collection, no_s3):
+    from conftest import DATASET_SMALL_TAR, _poll_until_finished, POLL_TIMEOUT
+    from caper.views import edit_project_page
+    name = f'EmptyChainAdd-{ObjectId()}'
+    created = []
+    try:
+        empty_id = _create_empty(request_factory, test_user, name)
+        created.append(empty_id)
+
+        # The edit page forces "replace" on an empty project, so send that.
+        with open(DATASET_SMALL_TAR, 'rb') as fh:
+            request = _with_messages(request_factory.post(
+                f'/project/{empty_id}/edit', format='multipart', data={
+                    'project_name': name, 'description': 'd', 'private': 'private',
+                    'publication_link': '', 'project_members': '', 'alias': '',
+                    'project_mode': 'replace', 'remap_sample_names': 'false',
+                    'accept_license': 'on', 'document': fh}))
+            request.user = test_user
+            response = edit_project_page(request, project_name=str(empty_id))
+        assert response.status_code == 302
+        new_id = ObjectId(response.url.rstrip('/').split('/')[-1])
+        assert new_id != empty_id
+        created.append(new_id)
+
+        new = _poll_until_finished(mongo_collection, str(new_id))
+        assert new is not None, f'timed out waiting for aggregation ({POLL_TIMEOUT}s)'
+        assert not new.get('aggregation_failed'), new.get('error_message')
+        assert new['version_chain_id'] == empty_id
+        assert new['version_ordinal'] == 2
+        assert new['previous_version_id'] == empty_id
+        assert new['is_latest'] is True
+
+        old = mongo_collection.find_one({'_id': empty_id})
+        assert old['next_version_id'] == new_id
+        assert old['is_latest'] is False
+    finally:
+        for doc_id in reversed(created):
+            _cleanup_project(mongo_collection, str(doc_id))
+
+
 # The pages submit with XMLHttpRequest. XHR would follow a redirect itself, so
 # the view hands back the URL as JSON; an invalid form is still the 400 page,
 # whose errors the script shows in place.

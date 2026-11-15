@@ -5523,6 +5523,10 @@ def create_empty_project(request):
             {'_id': ObjectId(project_id)},
             {"$set": {'linkid': project_id}}
         )
+        # A chain of one, as the other create paths make. Without it every
+        # version added later is left off the chain too: predecessor_chain()
+        # refuses to extend a predecessor that has no version_chain_id (#750).
+        lineage.link_new_version(collection_handle, ObjectId(project_id), None)
         # An empty project is a real LIVE project that happens to hold no runs.
         # It contributes no feature rows but must still be counted as indexed,
         # or index_coverage() reads the site as permanently behind.
