@@ -73,7 +73,10 @@
     .ph-stats .ph-dot { margin: 0 7px; opacity: 0.6; }
 
     .ph-dlcol { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
-    .ph-dlcol .btn { font-size: 0.875rem; white-space: nowrap; cursor: pointer; }
+    /* Left-aligned with a fixed-width icon, so the icons and the first letters
+       line up down the column (centred, each label's width moved both). */
+    .ph-dlcol .btn { font-size: 0.875rem; white-space: nowrap; cursor: pointer; text-align: left; }
+    .ph-dlcol .btn > i { width: 1.25em; text-align: center; }
     .ph-dlcol .btn-primary { color: #fff; }
     .ph-dlfoot { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; font-size: 0.85rem; color: #6c757d;
         margin-top: 10px; font-variant-numeric: tabular-nums; }
