@@ -73,10 +73,21 @@
     .ph-stats .ph-dot { margin: 0 7px; opacity: 0.6; }
 
     .ph-dlcol { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
-    /* Left-aligned with a fixed-width icon, so the icons and the first letters
-       line up down the column (centred, each label's width moved both). */
-    .ph-dlcol .btn { font-size: 0.875rem; white-space: nowrap; cursor: pointer; text-align: left; }
-    .ph-dlcol .btn > i { width: 1.25em; text-align: center; }
+    .ph-dlcol .btn { font-size: 0.875rem; white-space: nowrap; cursor: pointer; }
+    .ph-dlcol .ph-btn-in > i { width: 1.25em; text-align: center; }
+    /* Centred content put each icon and first letter wherever its label's width
+       left them; left-aligned content piled the spare width on the right.  So the
+       column is a three-track grid and every button spans it as a subgrid: the
+       middle track is as wide as the longest label, every label starts at its
+       left edge, and the two outer tracks split the rest evenly.  Browsers
+       without subgrid keep the plain centred buttons. */
+    @supports (grid-template-columns: subgrid) {
+        @media (min-width: 768px) {
+            .ph-dlcol { display: grid; grid-template-columns: 1fr max-content 1fr; column-gap: 0; }
+            .ph-dlcol .btn { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
+            .ph-dlcol .ph-btn-in { grid-column: 2; text-align: left; }
+        }
+    }
     .ph-dlcol .btn-primary { color: #fff; }
     .ph-dlfoot { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; font-size: 0.85rem; color: #6c757d;
         margin-top: 10px; font-variant-numeric: tabular-nums; }
@@ -1450,26 +1461,26 @@
                        title="Everything, as a .tar.gz: the aggregated results table, plus each sample's amplicon reconstructions (cycles, graphs, PDF/PNG), classifier tables, copy-number calls and metadata. Large projects run to several GB."
                        aria-label="Download the whole project as a .tar.gz archive: aggregated results table, each sample's amplicon reconstructions, classifier tables, copy-number calls and metadata."
                        onclick="downloadAndReload();">
-                        <i class="fas fa-download" aria-hidden="true"></i> Download Project
+                        <span class="ph-btn-in"><i class="fas fa-download" aria-hidden="true"></i> Download Project</span>
                     </a>
                     <a class="btn btn-primary btn-sm"
                        data-toggle="tooltip"
                        title="Just the table on this page, as a CSV: one row per amplicon, with its classification, genes and location. No sequence data or figures."
                        aria-label="Download the summary table shown on this page as a CSV: one row per amplicon with its classification, genes and location."
                        onclick="downloadSummaryTable();">
-                        <i class="fas fa-download" aria-hidden="true"></i> Download Summary
+                        <span class="ph-btn-in"><i class="fas fa-download" aria-hidden="true"></i> Download Summary</span>
                     </a>
                     <a class="btn btn-primary btn-sm"
                        data-toggle="tooltip"
                        title="Just the sample annotations, as a TSV: one row per sample, with whatever the submitter recorded — sample type, tissue, cancer type and any extra columns."
                        aria-label="Download the sample annotations as a TSV: one row per sample with the metadata the submitter recorded."
                        onclick="downloadMetadata();">
-                        <i class="fas fa-download" aria-hidden="true"></i> Download Metadata
+                        <span class="ph-btn-in"><i class="fas fa-download" aria-hidden="true"></i> Download Metadata</span>
                     </a>
                     {% if metadata_summary.available %}
                     <a class="btn btn-outline-primary btn-sm" id="metadata-summary-btn"
                        onclick="showMetadataSummary();">
-                        <i class="fas fa-chart-pie" aria-hidden="true"></i> Metadata Summary
+                        <span class="ph-btn-in"><i class="fas fa-chart-pie" aria-hidden="true"></i> Metadata Summary</span>
                     </a>
                     {% endif %}
                 </div>
