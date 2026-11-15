@@ -77,6 +77,7 @@ from .views_apis import (
     ProjectSampleDetailView, FeatureSamplesView,
     ProjectDownloadView, ProjectBatchDownloadView, ApiTokenView,
     ApiSchemaView, FeatureSearchView, FeatureFacetsView, ApiIndexView,
+    _version_fields,
 )
 
 # from django.views.generic import TemplateView
@@ -1228,6 +1229,13 @@ def project_page(request, project_name, message=''):
 
     may_tag_publication_versions = bool(getattr(getattr(request, 'user', None), 'is_staff', False))
 
+    # "v8", or "v3 of 8" on an old version, in the header's facts line. Same
+    # numbering as the API's version / version_count. The chain is the history
+    # minus the tombstones of deleted versions; an ordinal can still exceed it
+    # when a version in the middle was deleted, hence the max().
+    version_number, version_count, _ = _version_fields(project, active_prev_versions)
+    version_count = max(version_count, version_number)
+
     return render(request, "pages/project.html", {
         'project': project,
         'metadata_summary': metadata_summary,
@@ -1235,6 +1243,10 @@ def project_page(request, project_name, message=''):
         'sample_table_rows': sample_table_rows(sample_data, samples),
         'gene_filter_universe': filter_universe(reference_genome, samples),
         'reference_genome': reference_genome,
+        # Counted from the runs, as the home page's project table does.
+        'sample_count': len(samples),
+        'version_number': version_number,
+        'version_count': version_count,
         'stackedbar_graph': stacked_bar_plot,
         'summarybar': pc_fig,
         'prev_versions': prev_versions,

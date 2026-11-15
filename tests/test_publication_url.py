@@ -151,4 +151,4 @@ def test_project_page_keeps_free_text_it_cannot_resolve():
 
 def test_project_page_omits_the_line_when_nothing_is_stored():
     """A label with nothing after it is not information."""
-    assert 'Publication link' not in _publication_line('')
+    assert 'Publication' not in _publication_line('')

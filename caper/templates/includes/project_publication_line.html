@@ -10,8 +10,10 @@ shown: for a stored URL nothing changes, and for a PMID you get the PubMed
 address instead of eight digits.  Anything it cannot resolve without guessing
 falls back to the old rendering, so free text like "Nature 2023, PMID 12345678"
 still shows, with any URL inside it still linked.
+
+Rendered as a <dt>/<dd> pair inside the project header's details list.
 {% endcomment %}{% with pub_url=project.publication_link|publication_url %}{% if pub_url %}
-<h5>Publication link: <span style="font-weight: 200"><a href="{{ pub_url }}" target="_blank" rel="noopener noreferrer">{{ pub_url }}</a></span></h5>
+<dt>Publication</dt><dd><a href="{{ pub_url }}" target="_blank" rel="noopener noreferrer">{{ pub_url }}</a></dd>
 {% elif project.publication_link %}
-<h5>Publication link: <span style="font-weight: 200">{{ project.publication_link|escape|replace_urls|safe }}</span></h5>
+<dt>Publication</dt><dd>{{ project.publication_link|escape|replace_urls|safe }}</dd>
 {% endif %}{% endwith %}
