@@ -52,6 +52,8 @@
         color: #6c757d; font-size: 0.92rem; font-variant-numeric: tabular-nums; }
     .ph-meta .ph-dot { margin: 0 7px; opacity: 0.6; }
     .ph-meta .ph-members { display: inline-flex; }
+    .ph-meta .ph-version { color: inherit; border-bottom: 1px dotted #adb5bd; }
+    .ph-meta .ph-version:hover, .ph-meta .ph-version:focus-visible { color: #007bff; border-bottom-color: #007bff; text-decoration: none; }
     .ph-meta abbr { text-decoration: none; border-bottom: 1px dotted #adb5bd; cursor: help; }
     .ph-ref { display: inline-flex; align-items: center; font-size: 0.9rem; font-weight: 600; letter-spacing: 0.02em;
         padding: 2px 11px; border-radius: 999px; background: #007bff; color: #fff; white-space: nowrap; line-height: 1.4;
@@ -67,6 +69,8 @@
     .ph-copy { color: #6c757d; margin-left: 6px; cursor: pointer; }
     .ph-copy:hover, .ph-copy:focus-visible { color: #007bff; }
     .ph-copied { color: #6c757d; font-size: 0.8rem; margin-left: 6px; }
+    .ph-stats { margin-top: 12px; font-size: 0.82rem; color: #6c757d; font-variant-numeric: tabular-nums; }
+    .ph-stats .ph-dot { margin: 0 7px; opacity: 0.6; }
 
     .ph-dlcol { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
     .ph-dlcol .btn { font-size: 0.875rem; white-space: nowrap; cursor: pointer; }
@@ -74,10 +78,10 @@
     .ph-dlfoot { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; font-size: 0.85rem; color: #6c757d;
         margin-top: 10px; font-variant-numeric: tabular-nums; }
 
-    .ph-dlfoot .ph-whatsin-stacked { display: none; }
+    .ph-dlfoot { display: none; }
     @media (max-width: 767.98px) {
         .ph-titlebar .ph-whatsin { display: none; }
-        .ph-dlfoot .ph-whatsin-stacked { display: inline; }
+        .ph-dlfoot { display: flex; }
         .ph-body { grid-template-columns: minmax(0, 1fr); gap: 20px; }
         .ph-dlcol { flex-direction: row; flex-wrap: wrap; }
         .ph-titlebar { grid-template-columns: minmax(0, 1fr); }
@@ -828,6 +832,13 @@
         // everything below it down the page.
 
     } );
+    // The version number in the header opens the Project History panel and
+    // scrolls to it. Without scripts the link still jumps to the panel's heading.
+    function showProjectHistory() {
+        $('#collapsePrevVersions').collapse('show');
+        document.getElementById('headingPrevVersions').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return false;
+    }
     function show_div() {
         var x = document.getElementById("prev_versions_table");
         if (x.style.display === "none") {
@@ -1179,7 +1190,7 @@
 </div>
 {% endif %}
 
-<div class="container row" style="margin:auto; padding:0px; padding-top: 20px;">
+<div class="container row" style="margin:auto; padding:0px; padding-top: 8px;">
     {% comment %}
     Project header (design G, chosen 2026-11-14, revised the same day). The
     title bar has the same two columns as the body: the "Project" label and the
@@ -1187,9 +1198,10 @@
     "What's in a download?" in the right one, directly over the download
     buttons. Below the title, one muted line of facts led by the reference
     build and ending with the members, the description clamped to two lines,
-    and the details (publication, link). The download column holds the buttons
-    with the download and view totals under them. When the columns stack on a
-    narrow screen, the link moves under the buttons instead.
+    the details (publication, link) and the download and view totals. The
+    download column holds only the buttons, keeping the text column the taller
+    of the two. When the columns stack on a narrow screen, the link moves
+    under the buttons instead.
 
     Everything a reader needs from the header is in the HTML as served --
     sample count, reference build, version, tool versions, full description --
@@ -1305,7 +1317,7 @@
                 <div class="ph-meta">
                     {% if not is_empty_project %}<span class="ph-ref" data-toggle="tooltip" title="Reference genome build">{{ reference_genome }}</span>{% endif %}
                     <span>{{ sample_count }} sample{{ sample_count|pluralize }}</span>
-                    <span class="ph-dot" aria-hidden="true">&middot;</span><span class="ph-version">v{{ version_number }}{% if viewing_old_project %} of {{ version_count }}{% endif %}</span>
+                    <span class="ph-dot" aria-hidden="true">&middot;</span><a class="ph-version" href="#headingPrevVersions" title="Project history" onclick="return showProjectHistory();">v{{ version_number }}{% if viewing_old_project %} of {{ version_count }}{% endif %}</a>
                     {% if not project.Reconstruction_tools or "AmpliconArchitect" in project.Reconstruction_tools %}
                         {% if project.AA_version and project.AA_version != "NA" %}<span class="ph-dot" aria-hidden="true">&middot;</span><span><abbr title="AmpliconArchitect">AA</abbr>&nbsp;{{ project.AA_version }}</span>{% endif %}
                     {% endif %}
@@ -1412,6 +1424,11 @@
                     <dd><a id="aliaslink" href="">ampliconrepository.org/project/{{ project.alias_name }}</a><i class="fas fa-link ph-copy" role="button" tabindex="0" title="Copy link" aria-label="Copy project link" onclick="copyToClipboard()" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); copyToClipboard(); }"></i> <span id="message" class="ph-copied"></span></dd>
                     {% endif %}
                 </dl>
+                {% if not is_empty_project %}
+                <div class="ph-stats" id="project_statistics">
+                    <span>Total downloads: <span id="downloads">{{ downloads }}</span></span><span class="ph-dot" aria-hidden="true">&middot;</span><span>Total views: {{ views }}</span>
+                </div>
+                {% endif %}
             </div>
 
             {% if not is_empty_project %}
@@ -1458,12 +1475,10 @@
                 moment you look away, so the full file-by-file description is one
                 click away as well.
                 {% endcomment %}
-                <div class="ph-dlfoot" id="project_statistics">
-                    <a class="ph-whatsin-stacked" href="https://docs.ampliconrepository.org/en/latest/project-structure/" target="_blank" rel="noopener">
+                <div class="ph-dlfoot">
+                    <a href="https://docs.ampliconrepository.org/en/latest/project-structure/" target="_blank" rel="noopener">
                         <i class="far fa-question-circle" aria-hidden="true"></i> What's in a download?
                     </a>
-                    <span>Total downloads: <span id="downloads">{{ downloads }}</span></span>
-                    <span>Total views: {{ views }}</span>
                 </div>
             </aside>
             {% endif %}
