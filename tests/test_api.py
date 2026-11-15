@@ -153,6 +153,74 @@ def test_upload_api_accepts_tar_file(mongo_collection):
         _cleanup_project(mongo_collection, str(new_id))
 
 
+def _upload_via_api(mongo_collection, project_name):
+    """POST DATASET_SMALL_TAR to /upload_api/ and return the finished document.
+
+    The view answers 201 before api_helper has inserted anything, so the new
+    document is found by its (unique) name and then waited on until the
+    extraction thread marks it FINISHED? or failed.
+    """
+    from rest_framework.test import APIRequestFactory
+    from caper.views_apis import FileUploadView
+
+    with open(DATASET_SMALL_TAR, 'rb') as fh:
+        request = APIRequestFactory().post('/upload_api/', format='multipart', data={
+            'project_name': project_name, 'description': 'legacy upload_api test',
+            'private': 'private', 'publication_link': '',
+            'project_members': 'pytest_test_user', 'alias': '',
+            'remap_sample_names': 'false', 'accept_license': 'on', 'file': fh})
+        response = FileUploadView.as_view()(request)
+    assert response.status_code == 201, getattr(response, 'data', '')
+
+    deadline = time.time() + 60
+    doc = None
+    while doc is None and time.time() < deadline:
+        doc = mongo_collection.find_one({'project_name': project_name}, {'_id': 1})
+        if doc is None:
+            time.sleep(0.25)
+    assert doc is not None, 'api_helper never inserted a project'
+    finished = _poll_until_finished(mongo_collection, str(doc['_id']))
+    assert finished is not None, 'extraction never finished'
+    return finished
+
+
+@pytest.fixture
+def api_project_name(mongo_collection):
+    from bson import ObjectId
+    name = f'APILegacyUpload-{ObjectId()}'
+    yield name
+    for doc in mongo_collection.find({'project_name': name}, {'_id': 1}):
+        _cleanup_project(mongo_collection, str(doc['_id']))
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_upload_api_builds_a_working_project(mongo_collection, api_project_name):
+    """The route is not exercised by the site's own pages, so nothing else in
+    the suite says whether what it builds is a usable project."""
+    doc = _upload_via_api(mongo_collection, api_project_name)
+    assert not doc.get('aggregation_failed'), doc.get('error_message')
+    assert doc['FINISHED?'] is True
+    assert doc['status'] == LIVE
+    assert doc['runs'], 'the project has no samples'
+    assert doc['project_members'] == ['pytest_test_user']
+    assert doc.get('tarfile'), 'no archive stored for the project'
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_upload_api_puts_the_project_in_a_chain_of_one(mongo_collection, api_project_name):
+    """The same hazard as #750: a LIVE document inserted with no
+    version_chain_id leaves every later version off the chain too."""
+    doc = _upload_via_api(mongo_collection, api_project_name)
+    missing = [f for f in ('version_chain_id', 'version_ordinal', 'is_latest')
+               if f not in doc]
+    assert not missing, f'upload_api project lacks {missing}'
+    assert doc['version_chain_id'] == doc['_id']
+    assert doc['version_ordinal'] == 1
+    assert doc['is_latest'] is True
+
+
 # ---------------------------------------------------------------------------
 # Add samples to project API
 # ---------------------------------------------------------------------------
