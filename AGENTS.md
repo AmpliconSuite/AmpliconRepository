@@ -66,6 +66,81 @@ lock. Reading (`show`, `check`, `probe`, a dry-run `edit`) needs neither. See
 
 ---
 
+## Working Rules
+
+### Writing to production
+
+Prod and dev share one DocumentDB cluster (databases `caper` and `caper-dev`). Anything that
+connects should assert the database name, and never print `DB_URI_SECRET`. A local MongoDB may
+also be called `caper-dev`, so the name alone doesn't say which server you are talking to.
+Read-only measurement of prod is fine.
+
+**Every write to prod is a separate, explicit ask** to the human driving the session; approval
+for one write is not approval for the next. When a write is approved:
+
+1. **Capture a state probe first**, covering what the write should change and what it must
+   leave alone. Diff two runs of it rather than reading one.
+2. **Write the predicted numbers down before running**: which counts move, by how much, and
+   which must not move.
+3. **Stage it.** Run a few documents first (`scripts/maintenance/backfill_project_status.py
+   --limit N` is the model), diff the probe, then do the rest. A staged run that misses its
+   prediction is a stop, not a retry.
+4. **Keep the undo record** that write scripts produce, somewhere durable and not in the repo.
+   It can show exactly which paths and clients get through.
+
+### Deploy order
+
+Local, then dev, then check in with the human driving the session, then prod. Read the wiki
+runbook page before you start: "Deploying unreleased code to dev" for a branch, "Creating a new
+release for AmpRepo" for a tag. Dev can take a deploy at any time; batch what goes to prod.
+
+### Establishing that a claim is true
+
+Most defects here are a list or predicate kept in two places, so divergences turn up
+constantly, and a divergence is easy to mistake for a fault.
+
+- **Name the measurement that would falsify the claim, and run it before the claim goes into a
+  code comment, a commit message, a report or a memory file.** An orphan count, a drift count, a
+  document count, a query for the value. If no such command exists, say the claim is unverified
+  in the same breath.
+- **"The code permits X" is not "the data shows X."** A stale key list or an unguarded path is
+  a hazard until something is measured on the other side. Report it as a hazard.
+- **Trace a field to its writer, and remember earlier versions wrote it too.** The field's name
+  and today's code don't tell you what old documents hold. `git log -S <field>` finds writers
+  you didn't know about.
+- **Date every measurement and name its scope** ("measured on prod, 2026-08-27"). Don't cite a
+  working document by section number in code; state the fact instead.
+- **Report times in your user's local time zone**, not UTC, and name the zone ("14:55 PST").
+  Servers, logs and AWS report UTC, so convert before you write it down.
+- Ask the load-bearing question ("are there orphaned files?") before the adjacent one ("do the
+  key lists match?").
+
+### Hazards that are easy to walk into
+
+- **Starting Django is not a read.** `manage.py shell`, a script that calls `django.setup()`, and
+  every server start run `CaperConfig.ready()` (`caper/caper/apps.py`), which creates indexes,
+  rebuilds the site statistics when the stored snapshot is stale, sweeps orphaned temp
+  directories (it skips those of tasks recorded as running), and, when `S3_STATIC_FILES` is
+  `TRUE`, runs `aws s3 sync` of `caper/static/` into the environment's static prefix (it adds and
+  overwrites, and never deletes). On dev and prod use the raw-pymongo modules
+  (`ops_lock`, `shutdown_mode`) or export `S3_STATIC_FILES=FALSE`, and treat the rest as a write.
+- **In the containers, `python` is not on the PATH.** Use `/opt/venv/bin/python`.
+- **Don't `pkill -f "<pattern>"`, and write `pgrep -f "runserv[e]r"` rather than
+  `pgrep -f "runserver"`.** The pattern matches the calling shell's own command line and kills
+  or finds the caller.
+- **A delete gets its own command and description.** Never tack one onto another command, and
+  never silence its output.
+- **Old project versions are load-bearing.** They back published results. Never propose
+  deleting them to save space.
+
+### This repository is public
+
+So are the docs repository and the wiki. Don't put account IDs, credentials, internal
+measurements that reveal what the WAF lets through, or anything about individual users into
+them. Keep internal notes, undo records and handoff documents in a private location.
+
+---
+
 ## Architecture Overview
 
 ### Dual-Database Design (key non-obvious detail)
