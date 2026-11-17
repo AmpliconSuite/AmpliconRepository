@@ -272,7 +272,7 @@ def _predict_files(project, runs, results_dir):
 
             key = 'Reconstruction directory' if 'Reconstruction directory' in feature else 'AA directory'
             path = feature.get(key)
-            # A sample with no amplicons has no reconstruction directory (#744).
+            # No AA results for the sample in the upload: "Not Provided" (#744).
             if not_a_file(path) or (sample, key, path) in seen:
                 continue
             seen.add((sample, key, path))

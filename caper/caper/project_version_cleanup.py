@@ -44,7 +44,8 @@ DIRECTORY_FILE_KEYS = (
 PROJECT_FILE_KEYS = ('tarfile',)
 
 # What the aggregator writes in place of a path for an artifact the run did not
-# produce, e.g. the reconstruction directory of a sample with no amplicons.
+# produce, e.g. the reconstruction directory of a sample whose upload holds
+# no AA results.
 # Ingest stores nothing for these, and the replace dry run predicts nothing.
 NOT_A_FILE = frozenset({'Not Provided', 'not provided', '', None})
 

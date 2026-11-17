@@ -45,7 +45,7 @@ def _feature(sample, n, aggregator_7_names=False):
 
 
 def _cnv_only_feature(sample, aggregator_7_names=False):
-    """A sample with no amplicons, so no AA run: the aggregator's one row for it."""
+    """A sample whose upload has no AA results: the aggregator's one placeholder row for it."""
     feature = dict(_feature(sample, 1, aggregator_7_names),
                    **{'Feature ID': f'{sample}_NA', 'Classification': 'No amp/Invalid'})
     for key in ('Feature BED file', 'AA PNG file', 'Graph PNG file', 'Reconstruction directory'):

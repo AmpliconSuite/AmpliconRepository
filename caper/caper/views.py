@@ -5187,9 +5187,10 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                                     continue
                         cache_key = (sample, directory_key, path_var)
                         if not_a_file(path_var):
-                            # A sample with no amplicons has no AA run, so the
-                            # aggregator writes "Not Provided" here.  Opening it
-                            # as a path logged a spurious warning (#744).
+                            # The aggregator writes "Not Provided" when the upload
+                            # holds no AA results for the sample (no valid
+                            # *_summary.txt).  Opening that as a path logged a
+                            # spurious warning (#744).
                             id_var = 'Not Provided'
                         elif cache_key in stored_ids:
                             id_var = stored_ids[cache_key]

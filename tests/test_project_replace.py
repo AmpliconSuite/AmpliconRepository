@@ -244,7 +244,7 @@ def test_a_missing_file_is_reported(versions, tmp_path):  # noqa: F811
 
 
 def test_a_cnv_only_sample_has_nothing_missing(versions, tmp_path, caplog):  # noqa: F811
-    """#744: a sample with no AA run has 'Not Provided' as its reconstruction directory."""
+    """#744: a sample without AA results has 'Not Provided' as its reconstruction directory."""
     first = versions()
     report = project_replace.predict(first, _build_tar(tmp_path, cnv_only=('S2',)), None,
                                      str(tmp_path / 'unpacked'))
