@@ -44,9 +44,20 @@ def _feature(sample, n, aggregator_7_names=False):
     return feature
 
 
-def _build_tar(where, changed=(), samples=SAMPLES, aggregator_7_names=False):
+def _cnv_only_feature(sample, aggregator_7_names=False):
+    """A sample with no amplicons, so no AA run: the aggregator's one row for it."""
+    feature = dict(_feature(sample, 1, aggregator_7_names),
+                   **{'Feature ID': f'{sample}_NA', 'Classification': 'No amp/Invalid'})
+    for key in ('Feature BED file', 'AA PNG file', 'Graph PNG file', 'Reconstruction directory'):
+        if key in feature:
+            feature[key] = 'Not Provided'
+    return feature
+
+
+def _build_tar(where, changed=(), samples=SAMPLES, aggregator_7_names=False, cnv_only=()):
     """Two samples of two features. Every file of a *changed* sample differs.
 
+    A *cnv_only* sample has one feature and no reconstruction directory.
     Runs are keyed by position, as the aggregator keys them: removing a sample
     renumbers the ones after it.
     """
@@ -54,10 +65,16 @@ def _build_tar(where, changed=(), samples=SAMPLES, aggregator_7_names=False):
     runs = {}
     for position, sample in enumerate(samples, 1):
         tag = 'changed' if sample in changed else 'same'
-        features = runs[f'sample_{position}'] = [_feature(sample, n, aggregator_7_names) for n in (1, 2)]
-        for path in {p for f in features for k, p in f.items() if k.endswith(('file', 'JSON'))}:
+        if sample in cnv_only:
+            features = runs[f'sample_{position}'] = [_cnv_only_feature(sample, aggregator_7_names)]
+        else:
+            features = runs[f'sample_{position}'] = [_feature(sample, n, aggregator_7_names) for n in (1, 2)]
+        for path in {p for f in features for k, p in f.items()
+                     if k.endswith(('file', 'JSON')) and p != 'Not Provided'}:
             (src / path).parent.mkdir(parents=True, exist_ok=True)
             (src / path).write_text(f'{path} {tag}\n')
+        if sample in cnv_only:
+            continue
         recon = src / sample / 'reconstruction'
         recon.mkdir(exist_ok=True)
         (recon / 'amplicon1_graph.txt').write_text(f'graph {tag}\n')
@@ -84,7 +101,7 @@ def versions(tmp_path, monkeypatch, test_user):
     projects = utils.collection_handle_primary
     made = []
 
-    def make(changed=(), samples=SAMPLES, aggregator_7_names=False):
+    def make(changed=(), samples=SAMPLES, aggregator_7_names=False, cnv_only=()):
         previous = [{'date': d['date'], 'linkid': str(d['_id'])} for d in made]
         doc = {'project_name': 'pytest version sharing', 'description': 'pytest',
                'private': 'private', 'project_members': [test_user.username],
@@ -96,7 +113,8 @@ def versions(tmp_path, monkeypatch, test_user):
         lineage.link_new_version(projects, new_id, previous)
         where = tmp_path / str(new_id)
         (where / 'dest').mkdir(parents=True)
-        views.extract_project_files(tarfile, _build_tar(where, changed, samples, aggregator_7_names), str(where / 'dest'),
+        views.extract_project_files(tarfile, _build_tar(where, changed, samples, aggregator_7_names, cnv_only),
+                                    str(where / 'dest'),
                                     str(new_id), None, None, [])
         made.append(projects.find_one({'_id': new_id}))
         return made[-1]

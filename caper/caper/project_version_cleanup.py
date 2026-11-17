@@ -43,6 +43,16 @@ DIRECTORY_FILE_KEYS = (
 # Project-level keys.
 PROJECT_FILE_KEYS = ('tarfile',)
 
+# What the aggregator writes in place of a path for an artifact the run did not
+# produce, e.g. the reconstruction directory of a sample with no amplicons.
+# Ingest stores nothing for these, and the replace dry run predicts nothing.
+NOT_A_FILE = frozenset({'Not Provided', 'not provided', '', None})
+
+
+def not_a_file(value):
+    """True if *value* is a placeholder rather than a path or a GridFS id."""
+    return isinstance(value, (str, type(None))) and value in NOT_A_FILE
+
 
 def _with_underscore_variants(keys):
     """Documents are stored with spaces in keys replaced by underscores in some
