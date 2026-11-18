@@ -702,6 +702,19 @@ def user_stats_download(request):
     return response
 
 
+@user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
+def admin_cnvkit_audit(request):
+    """Live projects with samples that have no CNVkit results, by visibility.
+
+    Computed on every load (a few seconds on prod) and never stored, so there
+    is no snapshot to go stale. Read-only: the page has no controls.
+    """
+    from .cnvkit_audit import build_report
+
+    report = build_report(collection_handle)
+    return render(request, 'pages/admin_cnvkit_audit.html', report)
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Backups an administrator can take off AWS
 # ─────────────────────────────────────────────────────────────────────
