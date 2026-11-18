@@ -36,7 +36,7 @@ from .extra_metadata import get_extra_metadata_from_project
 from .gridfs_backlinks import iter_backlinks
 from .project_record_size import LIMIT_BYTES, size_of_new_version
 from .project_status import LIVE, STATUS_FLAG_FIELDS, classify
-from .project_version_cleanup import FEATURE_FILE_KEYS
+from .project_version_cleanup import FEATURE_FILE_KEYS, not_a_file
 from .tar_safety import safe_extractall
 from .tar_utils import pack_directory_targz
 from .utils import (collection_handle_primary, db_handle_primary, get_one_project_sans_runs,
@@ -47,10 +47,6 @@ RUNNING, FINISHED, FAILED = 'running', 'finished', 'failed'
 _RESULT_FILE = 'dry_run.json'
 _MISSING_SHOWN = 20
 _ARCHIVE_KEY = 'tarfile'
-
-# What the aggregator writes for an artifact a run didn't produce. Ingest treats these as
-# nothing to store.
-_NOT_A_FILE = ('Not Provided', 'not provided', '', None)
 
 _HEAD_PROJECTION = dict(lineage.POINTER_PROJECTION, **{field: 1 for field in STATUS_FLAG_FIELDS})
 
@@ -263,7 +259,7 @@ def _predict_files(project, runs, results_dir):
             sample_name = feature.get('Sample name') or sample
             for key in FEATURE_FILE_KEYS:
                 path = feature.get(key)
-                if key not in feature or (isinstance(path, (str, type(None))) and path in _NOT_A_FILE):
+                if not_a_file(path):
                     continue
                 if (sample, key, path) in seen:
                     continue
@@ -276,7 +272,8 @@ def _predict_files(project, runs, results_dir):
 
             key = 'Reconstruction directory' if 'Reconstruction directory' in feature else 'AA directory'
             path = feature.get(key)
-            if path is None or (sample, key, path) in seen:
+            # No AA results for the sample in the upload: "Not Provided" (#744).
+            if not_a_file(path) or (sample, key, path) in seen:
                 continue
             seen.add((sample, key, path))
             full_path = os.path.join(results_dir, path)

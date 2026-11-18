@@ -136,9 +136,11 @@ from .project_status import (
 from . import deleted_projects, download_totals, lineage, project_fields, provenance, publication_versions
 from .project_version_cleanup import (
     FEATURE_FILE_KEYS,
+    NOT_A_FILE,
     build_deleted_version_tombstone,
     discard_unrecorded_gridfs_files,
     iter_gridfs_file_ids,
+    not_a_file,
     retarget_deleted_version_tombstones,
 )
 
@@ -2975,7 +2977,7 @@ def feature_page(request, project_name, sample_name, feature_name):
     })
 
 
-_MISSING_FILE_SENTINELS = {'Not Provided', 'not provided', '', None}
+_MISSING_FILE_SENTINELS = NOT_A_FILE
 
 
 @download_gate
@@ -5100,7 +5102,7 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                         # the run did not produce, e.g. cycles images when only
                         # the cycles text was generated.  Opening that as a
                         # path failed and logged a warning for every feature.
-                        if isinstance(feature[k], (str, type(None))) and feature[k] in _MISSING_FILE_SENTINELS:
+                        if not_a_file(feature[k]):
                             feature[k] = "Not Provided"
                             continue
                         id_var = "Not Provided"
@@ -5184,7 +5186,13 @@ def extract_project_files(tarfile, file_location, project_data_path, project_id,
                                 except OSError:
                                     continue
                         cache_key = (sample, directory_key, path_var)
-                        if cache_key in stored_ids:
+                        if not_a_file(path_var):
+                            # The aggregator writes "Not Provided" when the upload
+                            # holds no AA results for the sample (no valid
+                            # *_summary.txt).  Opening that as a path logged a
+                            # spurious warning (#744).
+                            id_var = 'Not Provided'
+                        elif cache_key in stored_ids:
                             id_var = stored_ids[cache_key]
                         elif os.path.isdir(full_path):
                             dir_name = os.path.basename(path_var.rstrip('/'))

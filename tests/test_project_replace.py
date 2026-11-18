@@ -10,6 +10,7 @@ The slow tests run a real aggregation and aren't in CI's selection.
 
 import io
 import json
+import logging
 import os
 import tarfile
 import time
@@ -240,6 +241,22 @@ def test_a_missing_file_is_reported(versions, tmp_path):  # noqa: F811
     report = project_replace.predict(first, archive, None, str(tmp_path / 'unpacked'))
     assert report['files']['missing'] == 1
     assert 'S1' in report['files']['missing_examples'][0]
+
+
+def test_a_cnv_only_sample_has_nothing_missing(versions, tmp_path, caplog):  # noqa: F811
+    """#744: a sample without AA results has 'Not Provided' as its reconstruction directory."""
+    first = versions()
+    report = project_replace.predict(first, _build_tar(tmp_path, cnv_only=('S2',)), None,
+                                     str(tmp_path / 'unpacked'))
+    with caplog.at_level(logging.WARNING):
+        second = versions(cnv_only=('S2',))
+    assert report['files']['missing'] == 0, report['files']['missing_examples']
+    stored = project_replace._stored_files(second)
+    for key in ('shared', 'shared_bytes', 'new', 'new_bytes'):
+        assert report['files'][key] == stored[key], key
+    assert not [r.getMessage() for r in caplog.records if 'GridFS upload failed' in r.getMessage()]
+    [cnv_only] = second['runs']['sample_2']
+    assert cnv_only['Reconstruction_directory'] == cnv_only['AA_directory'] == 'Not Provided'
 
 
 def test_a_dry_run_through_the_route_writes_nothing(versions, tmp_path, admin, monkeypatch):  # noqa: F811
