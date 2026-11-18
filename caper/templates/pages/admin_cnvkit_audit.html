@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+
+{% load mezzanine_tags %}
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        $('#cnvkitProjectsTable').DataTable({
+            pageLength: 50,
+            order: [[3, 'desc']],
+            language: {searchPlaceholder: "Search projects, visibility"}
+        });
+    });
+</script>
+{% endblock %}
+
+{% block meta_title %}CNVkit Coverage{% endblock %}
+
+{% block extra_css %}
+<style>
+    .cnvkit-summary td, .cnvkit-summary th { text-align: right; white-space: nowrap; }
+    .cnvkit-summary td:first-child, .cnvkit-summary th:first-child { text-align: left; }
+    .cnvkit-summary tr.cnvkit-total { font-weight: bold; border-top: 2px solid #dee2e6; }
+    .cnvkit-summary .cnvkit-group { text-align: center; border-left: 2px solid #dee2e6; }
+    .cnvkit-summary .cnvkit-first { border-left: 2px solid #dee2e6; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 style="padding-top: 50px">CNVkit Coverage</h1>
+        <p class="text-muted" style="max-width:80ch">
+            Live projects whose samples are missing CNVkit results, by visibility. Two things
+            are counted, because they pick out different samples. <strong>No CNVkit
+            directory</strong>: the upload had no CNVkit output for the sample, for example
+            because a CNV BED was supplied to AmpliconSuite-pipeline instead.
+            <strong>No CNV BED</strong>: the sample has no CNV calls file, so its sample plot
+            has no CNV track. Computed from the database on every load; nothing is stored.
+        </p>
+
+        <table class="table table-sm cnvkit-summary" style="width:auto">
+            <thead>
+                <tr>
+                    <th rowspan="2" style="vertical-align:bottom">Visibility</th>
+                    <th rowspan="2" style="vertical-align:bottom">Projects</th>
+                    <th rowspan="2" style="vertical-align:bottom">Samples</th>
+                    <th colspan="3" class="cnvkit-group">No CNVkit directory</th>
+                    <th colspan="3" class="cnvkit-group">No CNV BED</th>
+                    <th rowspan="2" class="cnvkit-first" style="vertical-align:bottom">Samples<br>missing both</th>
+                </tr>
+                <tr>
+                    <th class="cnvkit-first">Projects with any</th>
+                    <th>Projects with all</th>
+                    <th>Samples</th>
+                    <th class="cnvkit-first">Projects with any</th>
+                    <th>Projects with all</th>
+                    <th>Samples</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr{% if row.key == 'total' %} class="cnvkit-total"{% endif %}>
+                    <td>{{ row.label }}</td>
+                    <td>{{ row.projects }}</td>
+                    <td>{{ row.samples }}</td>
+                    <td class="cnvkit-first">{{ row.cnvkit_dir_projects }}</td>
+                    <td>{{ row.cnvkit_dir_all_projects }}</td>
+                    <td>{{ row.cnvkit_dir_samples }}</td>
+                    <td class="cnvkit-first">{{ row.cnv_bed_projects }}</td>
+                    <td>{{ row.cnv_bed_all_projects }}</td>
+                    <td>{{ row.cnv_bed_samples }}</td>
+                    <td class="cnvkit-first">{{ row.neither_samples }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p class="text-muted small">
+            "Projects with any" counts projects where at least one sample is missing the file;
+            "projects with all" counts those where every sample is. A sample with no feature
+            rows is not counted. Old versions of a project are not included.
+        </p>
+
+        <hr>
+        <h3>Projects with missing results ({{ projects|length }})</h3>
+        {% if projects %}
+        <table id="cnvkitProjectsTable" class="table table-sm" style="width:100%">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Visibility</th>
+                    <th>Samples</th>
+                    <th>No CNVkit directory</th>
+                    <th>No CNV BED</th>
+                    <th>Missing both</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for project in projects %}
+                <tr>
+                    <td><a href="{% url 'project_page' project_name=project.linkid %}">{{ project.project_name }}</a></td>
+                    <td>{{ project.visibility_display }}</td>
+                    <td>{{ project.samples }}</td>
+                    <td>{{ project.missing_cnvkit_dir }}</td>
+                    <td>{{ project.missing_cnv_bed }}</td>
+                    <td>{{ project.missing_both }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>Every sample of every live project has both.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
