@@ -67,7 +67,7 @@ from .views_admin import (
     admin_file_ownership,
     admin_backups,
     admin_backup_download,
-    admin_cnvkit_audit,
+    admin_cnv_coverage,
 )
 
 # Import API views from separate module
