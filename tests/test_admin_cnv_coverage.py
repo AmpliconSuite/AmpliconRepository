@@ -1,4 +1,4 @@
-"""The CNVkit coverage audit on the admin menu.
+"""The CNV coverage audit on the admin menu.
 
 ``summarize`` is tested on hand-built documents; the pipeline is tested against
 a scratch collection in the real MongoDB, because what it has to get right is
@@ -9,7 +9,7 @@ rows -- a pure-Python test of summarize() would say nothing about that.
 import pytest
 from bson import ObjectId
 
-from caper import cnvkit_audit, views
+from caper import cnv_coverage, views
 from caper.project_status import LIVE, SUPERSEDED, status_flags
 
 
@@ -59,7 +59,7 @@ def _documents():
 @pytest.fixture
 def scratch_collection():
     from caper.utils import db_handle_primary
-    name = 'test_cnvkit_audit_scratch'
+    name = 'test_cnv_coverage_scratch'
     coll = db_handle_primary[name]
     coll.drop()
     coll.insert_many(_documents())
@@ -72,7 +72,7 @@ def _rows_by_key(report):
 
 
 def test_the_breakdown_by_visibility(scratch_collection):
-    report = cnvkit_audit.build_report(scratch_collection)
+    report = cnv_coverage.build_report(scratch_collection)
     rows = _rows_by_key(report)
 
     pub = rows['public']
@@ -105,7 +105,7 @@ def test_the_breakdown_by_visibility(scratch_collection):
 
 
 def test_the_project_list_names_only_affected_projects(scratch_collection):
-    report = cnvkit_audit.build_report(scratch_collection)
+    report = cnv_coverage.build_report(scratch_collection)
     names = [p['project_name'] for p in report['projects']]
     assert sorted(names) == ['priv-disagree', 'pub-mixed', 'unlisted-bare']
     by_name = {p['project_name']: p for p in report['projects']}
@@ -120,24 +120,24 @@ def test_the_project_list_names_only_affected_projects(scratch_collection):
     ('NA', False), (ObjectId(), True), ('samples/a/a_cnvkit_output.tar.gz', True),
 ])
 def test_what_counts_as_present(value, present):
-    assert cnvkit_audit._present(value) is present
+    assert cnv_coverage._present(value) is present
 
 
 def test_the_page_is_staff_only(request_factory, non_member_user):
-    request = request_factory.get('/admin-cnvkit-audit/', HTTP_HOST='localhost')
+    request = request_factory.get('/admin-cnv-coverage/', HTTP_HOST='localhost')
     request.user = non_member_user
-    response = views.admin_cnvkit_audit(request)
+    response = views.admin_cnv_coverage(request)
     assert response.status_code in (301, 302)
     assert '/notfound/' in response['Location']
 
 
 def test_the_page_renders_for_staff(request_factory, admin_user):
-    request = request_factory.get('/admin-cnvkit-audit/', HTTP_HOST='localhost')
+    request = request_factory.get('/admin-cnv-coverage/', HTTP_HOST='localhost')
     request.user = admin_user
-    response = views.admin_cnvkit_audit(request)
+    response = views.admin_cnv_coverage(request)
     assert response.status_code == 200
     body = response.content.decode()
-    assert 'CNVkit Coverage' in body
+    assert 'CNV Coverage' in body
     assert 'Public, unlisted' in body
     assert 'All live projects' in body
 
@@ -146,4 +146,4 @@ def test_the_admin_menu_links_the_page():
     from pathlib import Path
     header = (Path(__file__).parents[1] / 'caper' / 'templates' / 'includes' /
               'header.html').read_text()
-    assert 'href="/admin-cnvkit-audit/"' in header
+    assert 'href="/admin-cnv-coverage/"' in header
