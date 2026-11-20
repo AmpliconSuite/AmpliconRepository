@@ -122,6 +122,22 @@
         max-width: 200px; /* Adjust this value as needed */
     }
 
+    /* `word-wrap: break-word` does not lower a table column's minimum width,
+       so one long unbroken Feature ID or sample name set the whole table's
+       floor (~955 px with short names) and the table scrolled sideways even
+       on a wide screen. `anywhere` lets the identifier cells (links and the
+       Feature ID <code>) break instead. Plain-text cells keep whole words, and
+       so do headers. style.css gives <code> `break-word`, which would
+       otherwise override the inherited value. */
+    .table td > a,
+    .table td > code {
+        overflow-wrap: anywhere;
+    }
+
+    .table td > code {
+        white-space: normal;
+    }
+
     /* Make sure these styles don't interfere with our custom rendering */
     .gene-content.expanded {
         white-space: normal !important;

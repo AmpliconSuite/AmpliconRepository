@@ -250,8 +250,8 @@
                 infoFiltered: " (filtered from _MAX_)",
                 zeroRecords: "No samples match the filter",
                 paginate: {
-                    previous: "← Prev",
-                    next: "Next →"
+                    previous: "Prev",
+                    next: "Next"
                 }
             }
         });
@@ -1801,6 +1801,29 @@ paged.
         color: #1f66d0 !important;
         font-weight: 600;
     }
+
+    /* The chevrons are drawn here, not in the language strings: a text glyph
+       sits on the baseline and reads small and low beside the capital letters,
+       so the button is a flex row that centres the glyph on the label and the
+       glyph is set larger than the label. */
+    #samples-table-foot .paginate_button.previous,
+    #samples-table-foot .paginate_button.next {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    #samples-table-foot .paginate_button.previous::before,
+    #samples-table-foot .paginate_button.next::after {
+        font-size: 17px;
+        font-weight: 400;
+        line-height: 1;
+        position: relative;
+        top: -1px;
+    }
+
+    #samples-table-foot .paginate_button.previous::before { content: "\2039"; }
+    #samples-table-foot .paginate_button.next::after { content: "\203A"; }
 
     #samples-table-foot .paginate_button.previous:hover,
     #samples-table-foot .paginate_button.next:hover {
