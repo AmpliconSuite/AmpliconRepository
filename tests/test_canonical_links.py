@@ -145,12 +145,12 @@ def test_project_and_sample_urls_point_at_the_head():
         f'https://example.org/project/{chain.head}/sample/S%201'
 
 
-@prod_like
-@pytest.mark.integration
-def test_project_page_context_carries_the_heads_canonical(monkeypatch, request_factory):
-    """Through the view, with the same stand-ins test_project_feature_count
-    uses: the page rendered for an old linkid names the head, not itself."""
+def _project_page_context(monkeypatch, request_factory, user=None, **project_fields):
+    """Call views.project_page for the oldest version of a _Chain with the
+    stand-ins test_project_feature_count uses, and return (context, chain, old).
+    The viewer is anonymous unless a user is given."""
     import pandas as pd
+    from django.contrib.auth.models import AnonymousUser
     from caper import views
 
     chain = _Chain()
@@ -161,6 +161,7 @@ def test_project_page_context_carries_the_heads_canonical(monkeypatch, request_f
         'delete': True, 'current': False, 'FINISHED?': True, 'project_members': [],
         'runs': {'sample_1': [{'Sample_name': 'sample-a', 'Oncogenes': [],
                                'Classification': 'ecDNA', 'Feature_ID': 'f1'}]},
+        **project_fields,
     }
     monkeypatch.setattr(views, 'get_one_project', lambda _id: project)
     monkeypatch.setattr(views, 'validate_project', lambda value, _name: value)
@@ -175,11 +176,41 @@ def test_project_page_context_carries_the_heads_canonical(monkeypatch, request_f
     monkeypatch.setattr(views, 'render', lambda _r, _t, context: context)
     request = request_factory.get(f'/project/{old["_id"]}')
     request._messages = SimpleNamespace(add=lambda *a, **k: None)
+    request.user = user or AnonymousUser()
+    return views.project_page(request, str(old['_id'])), chain, old
 
-    context = views.project_page(request, str(old['_id']))
+
+@prod_like
+@pytest.mark.integration
+def test_project_page_context_carries_the_heads_canonical(monkeypatch, request_factory):
+    """Through the view: the page rendered for an old linkid names the head,
+    not itself."""
+    context, chain, old = _project_page_context(monkeypatch, request_factory)
 
     assert context['CANONICAL_URL'] == f'https://example.org/project/{chain.head}'
     assert context['proj_id'] == str(old['_id']), 'the page itself still renders the old version'
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('private, citable', [
+    ('public', True),
+    ('hidden_public', True),    # the one authors share with reviewers
+    ('private', False),         # the link sends a reader to a login page
+    (True, False),              # legacy boolean encoding, still on prod
+    (False, True),
+])
+def test_version_url_is_offered_for_citation_only_where_a_reader_can_open_it(
+        monkeypatch, request_factory, private, citable):
+    """#745: the project page offers the version URL to cite for public and
+    hidden_public projects, and not for a private one."""
+    # A private project is only rendered for a member, so the viewer is one.
+    member = SimpleNamespace(is_authenticated=True, is_staff=False, is_superuser=False,
+                             username='author', email='author@example.org')
+    context, _chain, _old = _project_page_context(
+        monkeypatch, request_factory, user=member, private=private,
+        project_members=['author@example.org'])
+
+    assert context['version_url_citable'] is citable
 
 
 # ---------------------------------------------------------------------------

@@ -1265,6 +1265,10 @@ def project_page(request, project_name, message=''):
         'admin_viewing_private': admin_viewing_private,
         'proj_id': project_name,
         'viewing_old_project': viewing_old_project,
+        # A version URL is only worth citing where a reader can open it: public
+        # and hidden_public (the one shared with reviewers).  A private project's
+        # link sends them to a login page.
+        'version_url_citable': (not is_project_private(visibility)) or is_project_hidden_public(visibility),
         'old_version_may_edit': old_version_may_edit,
         'has_outdated_ac': has_outdated_ac,  # Strong warning: pre-v2 AmpliconClassifier results
         'ac_version_unidentified': ac_version_unidentified,  # Soft warning: AC version unknown
