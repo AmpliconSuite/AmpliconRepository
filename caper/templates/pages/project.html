@@ -69,6 +69,23 @@
     .ph-copy { color: #6c757d; margin-left: 6px; cursor: pointer; }
     .ph-copy:hover, .ph-copy:focus-visible { color: #007bff; }
     .ph-copied { color: #6c757d; font-size: 0.8rem; margin-left: 6px; }
+    /* "Citing" opens a small explanation of the version link.  A visible word, not a bare
+       icon, so it says what it explains; it opens on hover, keyboard focus and tap. */
+    .ph-tip { position: relative; display: inline-block; }
+    .ph-how { all: unset; box-sizing: border-box; cursor: pointer; margin-left: 12px; font-size: 0.9rem; color: #007bff;
+        border-bottom: 1px dotted #007bff; line-height: 1.3; }
+    .ph-how:hover, .ph-tip.open > .ph-how { border-bottom-style: solid; }
+    .ph-how:focus-visible { outline: 2px solid #007bff; outline-offset: 2px; border-radius: 2px; }
+    .ph-tip-box { position: absolute; z-index: 20; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: 330px; max-width: 72vw;
+        background: #212529; color: #fff; font-size: 0.84rem; line-height: 1.4; padding: 8px 11px; border-radius: 5px; text-align: left;
+        opacity: 0; visibility: hidden; transition: opacity .12s; pointer-events: none; overflow-wrap: normal; }
+    .ph-tip-box::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -5px; border: 5px solid transparent; border-top-color: #212529; }
+    .ph-tip-box b { display: block; font-weight: 600; margin-bottom: 3px; }
+    .ph-tip-box span { display: block; }
+    .ph-tip-box span + span { margin-top: 5px; }
+    .ph-tip:hover .ph-tip-box, .ph-tip:focus-within .ph-tip-box, .ph-tip.open .ph-tip-box { opacity: 1; visibility: visible; }
+    @media (max-width: 560px) { .ph-tip-box { left: auto; right: -40px; transform: none; } .ph-tip-box::after { left: auto; right: 44px; } }
+    @media (prefers-reduced-motion: reduce) { .ph-tip-box { transition: none; } }
     .ph-stats { margin-top: 12px; font-size: 0.82rem; color: #6c757d; font-variant-numeric: tabular-nums; }
     .ph-stats .ph-dot { margin: 0 7px; opacity: 0.6; }
 
@@ -1139,6 +1156,50 @@
         selection.removeAllRanges();
     }
 
+    // Copy a version link (its text is in data-copy) and say so in the span after the icon.
+    function copyCiteUrl(el) {
+        var text = el.getAttribute('data-copy');
+        var msg = el.nextElementSibling;
+        function done(ok) {
+            if (!msg) { return; }
+            msg.textContent = ok ? 'Copied' : 'Press Ctrl+C to copy';
+            setTimeout(function () { msg.textContent = ''; }, 3000);
+        }
+        function fallback() {
+            var ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (err) {}
+            document.body.removeChild(ta);
+            done(ok);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () { done(true); }, fallback);
+        } else {
+            fallback();
+        }
+    }
+
+    // The "Citing" explanation opens on hover and focus through CSS; a tap or click pins it
+    // open, and a click elsewhere or Escape closes it.
+    document.addEventListener('click', function (e) {
+        var tip = e.target.closest ? e.target.closest('.ph-tip') : null;
+        document.querySelectorAll('.ph-tip.open').forEach(function (t) {
+            if (t !== tip) { t.classList.remove('open'); t.querySelector('.ph-how').setAttribute('aria-expanded', 'false'); }
+        });
+        if (tip && e.target.closest('.ph-how')) {
+            var open = tip.classList.toggle('open');
+            tip.querySelector('.ph-how').setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') { return; }
+        document.querySelectorAll('.ph-tip.open').forEach(function (t) {
+            t.classList.remove('open'); t.querySelector('.ph-how').setAttribute('aria-expanded', 'false');
+        });
+    });
+
     // Global CSRF helper — must be available to all users (not just editors)
     function getCookie(name) {
         let cookieValue = null;
@@ -1436,6 +1497,11 @@
                     {% if project.alias_name %}
                     <dt>Project link</dt>
                     <dd><a id="aliaslink" href="">ampliconrepository.org/project/{{ project.alias_name }}</a><i class="fas fa-link ph-copy" role="button" tabindex="0" title="Copy link" aria-label="Copy project link" onclick="copyToClipboard()" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); copyToClipboard(); }"></i> <span id="message" class="ph-copied"></span></dd>
+                    {% endif %}
+                    {% if version_url_citable %}
+                    {# The alias moves to the newest version on upload, so an older version, or a project with no alias, has only this link: it is shown once, as the project link. #}
+                    <dt>{% if project.alias_name %}Version permalink{% else %}Project link{% endif %}</dt>
+                    <dd><a href="/project/{{ project.linkid }}">ampliconrepository.org/project/{{ project.linkid }}</a><i class="fas fa-link ph-copy" role="button" tabindex="0" title="Copy link to this version" aria-label="Copy link to this version" data-copy="https://ampliconrepository.org/project/{{ project.linkid }}" onclick="copyCiteUrl(this)" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); copyCiteUrl(this); }"></i><span class="ph-copied" role="status" aria-live="polite"></span><span class="ph-tip"><button type="button" class="ph-how" aria-describedby="cite-tip" aria-expanded="false">Citing</button><span class="ph-tip-box" role="tooltip" id="cite-tip"><b>Link to this version</b><span>This URL always opens {% if viewing_old_project %}v{{ version_number }} of {{ version_count }}, an older version of this project{% else %}v{{ version_number }} of this project, even after newer versions are uploaded{% endif %}.</span>{% if project.alias_name %}<span>The project link above follows the latest version, so it changes when a new one is uploaded.</span>{% endif %}<span>To cite exactly these results, include this URL in your manuscript's Data Availability statement.</span><span>Private projects are not accessible to the general public, so keep this project Public or Hidden Public for readers to open the link.</span></span></span></dd>
                     {% endif %}
                 </dl>
                 {% if not is_empty_project %}
@@ -2067,7 +2133,7 @@ paged.
                             <tr>
                                 <td class="date-compact">{{ version.date }}</td>
                                 <td scope="row">Project ID:
-                                    <a href="/project/{{ version.linkid }}">{{ version.linkid }}</a>
+                                    <a href="/project/{{ version.linkid }}">{{ version.linkid }}</a>{% if version_url_citable and not version.version_deleted_from_history %}<i class="fas fa-link ph-copy" role="button" tabindex="0" title="Copy link to this version" aria-label="Copy link to this version" data-copy="https://ampliconrepository.org/project/{{ version.linkid }}" onclick="copyCiteUrl(this)" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); copyCiteUrl(this); }"></i><span class="ph-copied" role="status" aria-live="polite"></span>{% endif %}
                                     {% if version.linkid == proj_id %}
                                         <strong>(Currently viewing)</strong>
                                     {% endif %}
@@ -2268,7 +2334,7 @@ paged.
     <form class="modal-content" id="publicationTagForm">
       <div class="modal-header">
         <h5 class="modal-title" id="publicationTagModalLabel">Tag publication version</h5>
-        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        <button type="button" class="close" data-dismiss="modal" data-bs-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
       </div>
       <div class="modal-body">
         <div class="form-group">
@@ -2291,7 +2357,7 @@ paged.
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-secondary" data-dismiss="modal" data-bs-dismiss="modal">Cancel</button>
         <button type="submit" class="btn btn-primary">Tag version</button>
       </div>
     </form>
