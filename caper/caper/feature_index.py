@@ -94,6 +94,7 @@ from .utils import (
 )
 from .search import METADATA_COLUMN_FOR_KEY
 from .sample_metadata_rows import with_metadata_on_every_row
+from .sample_suggestions import sample_name_groups
 from .visibility import (
     PUBLIC_QUERY_VALUES,
     RESTRICTED_QUERY_VALUES,
@@ -797,10 +798,7 @@ DERIVED_COLLECTIONS = (
 # unmeasured quietly.  The values are what the check calls its findings.
 DERIVED_DRIFT_CHECKS = {
     FEATURE_INDEX_COLLECTION: 'missing / stale / orphaned',
-    # Written by the same index_project call as the rows, from the same
-    # ``runs``, under the same manifest digest -- so the digest check covers
-    # it for exactly the reason it covers the rows.
-    SAMPLE_INDEX_COLLECTION: 'missing / stale / orphaned',
+    SAMPLE_INDEX_COLLECTION: 'sample_pages_changed / stray',
     FEATURE_INDEX_MANIFEST_COLLECTION: 'missing / stale / orphaned',
     GENE_CATALOG_COLLECTION: 'genes_missing / genes_extra / genes_changed',
     SEARCH_NAMES_COLLECTION: 'names_missing / names_extra',
@@ -1020,10 +1018,17 @@ def feature_index_drift():
     command and is not called on a request path -- ``index_coverage()`` is the
     cheap per-request half and deliberately does not do this.
     """
-    live_digests = {
-        project['_id']: project_digest(project)
-        for project in collection_handle_primary.find(indexable_projects_query(), INDEX_SOURCE_PROJECTION)
-    }
+    live_digests = {}
+    expected_names = {}
+    for project in collection_handle_primary.find(indexable_projects_query(), INDEX_SOURCE_PROJECTION):
+        pid = project['_id']
+        live_digests[pid] = project_digest(project)
+        expected_names[pid] = {row['sample_name'] for row in sample_documents_for_project(project)
+                               if row['feature_count']}
+    stored_names = {row['_id']: set(row['names'])
+                    for row in sample_name_groups(sample_index_handle, SCHEMA_VERSION, {})}
+    changed_pages = sorted((pid for pid in expected_names.keys() | stored_names.keys()
+                            if expected_names.get(pid, set()) != stored_names.get(pid, set())), key=str)
     indexed = {entry['project_id']: entry.get('digest') for entry in manifest_handle.find({})}
 
     missing = sorted((pid for pid in live_digests if pid not in indexed), key=str)
@@ -1038,6 +1043,7 @@ def feature_index_drift():
         'stale': stale,
         'orphaned': orphaned,
         'indexable': len(live_digests),
+        'sample_pages_changed': changed_pages,
         'indexed': len(indexed),
         **search_name_drift(),
         **gene_catalog_drift(),
@@ -1357,7 +1363,7 @@ def metadata_coverage_by_project():
     return coverage
 
 
-def index_access_filter(user):
+def index_access_filter(user, *, visibility_field='visibility'):
     """The rows ``user`` is allowed to see, as a query fragment.
 
     This is the access-control boundary of the new search path, so it is
@@ -1373,7 +1379,7 @@ def index_access_filter(user):
     restricted here, not public: they are unlisted, and unlisted means a
     non-member does not get them from a search.
     """
-    public = {'visibility': {'$in': PUBLIC_QUERY_VALUES}}
+    public = {visibility_field: {'$in': PUBLIC_QUERY_VALUES}}
     if not getattr(user, 'is_authenticated', False):
         return public
 
@@ -1384,7 +1390,7 @@ def index_access_filter(user):
 
     return {'$or': [
         public,
-        {'visibility': {'$in': RESTRICTED_QUERY_VALUES},
+        {visibility_field: {'$in': RESTRICTED_QUERY_VALUES},
          'project_members': {'$in': identities}},
     ]}
 

@@ -331,3 +331,97 @@ def test_unindexing_leaves_no_project_keyed_row(mongo_collection, test_user):
     unindex_project(document['_id'])
     for handle in feature_index._PROJECT_KEYED_COLLECTIONS():
         assert handle.count_documents({'project_id': document['_id']}) == 0, handle.name
+
+
+def test_sample_suggestion_matching():
+    from caper.sample_suggestions import match_rank, normalize_name
+
+    def matches(query, name):
+        return match_rank(normalize_name(query), name) is not None
+
+    for query in ('HCC827', 'hcc_827', 'HCC-827'):
+        assert matches(query, 'HCC 827')
+    for query in ('NCI-H1792', 'NCIH1792', 'H1792'):
+        for name in ('NCI-H1792', 'NCIH1792', 'H1792'):
+            assert matches(query, name)
+        assert not matches('B1792', query)
+    assert matches('TE6', 'TE-6')
+    assert matches('TE5', 'TE5_OESOPHAGUS')
+    assert matches('NCI-H1693', 'NCIH1693_LUNG')
+    for short in ('1', 'S1', 'tumor', 'ICGCMB1'):
+        assert not matches(short + '01', short)
+
+
+@pytest.mark.integration
+def test_sample_suggestion_endpoint_uses_live_membership_and_versions(
+        mongo_collection, test_user, non_member_user, request_factory, monkeypatch):
+    from django.contrib.auth.models import AnonymousUser
+    from django.urls import resolve
+
+    monkeypatch.setattr(non_member_user, 'pk', 123456, raising=False)
+    monkeypatch.setattr(test_user, 'pk', 123457, raising=False)
+    name = 'pytest-HCC827'
+    runs = {'a': [_feature(name, 'first')], 'b': [_feature(name, 'second')]}
+    projects = []
+
+    def add_project(label):
+        project = _project_doc(label, runs, test_user.username)
+        project['_id'] = mongo_collection.insert_one(project).inserted_id
+        projects.append(project['_id'])
+        index_project(project)
+        return project['_id']
+
+    def lookup(user, term='pytest_hcc827'):
+        request = request_factory.get('/api/sample-suggest/', {'q': term})
+        request.user = user
+        response = resolve(request.path).func(request)
+        assert response.status_code == 200
+        assert 'no-store' in response['Cache-Control']
+        return [(r['project_name'], r['sample_name'], r['url'])
+                for r in response.data['suggestions']]
+
+    try:
+        a, b = add_project('pytest A'), add_project('pytest B')
+        anonymous = AnonymousUser()
+        row_a = ('pytest A', name, f'/project/{a}/sample/{name}')
+        row_b = ('pytest B', name, f'/project/{b}/sample/{name}')
+        assert lookup(anonymous) == [row_a, row_b]
+        for vis, member in [('hidden_public', test_user.email), ('private', test_user.username)]:
+            mongo_collection.update_one({'_id': a}, {'$set': {'private': vis, 'project_members': [member]}})
+            assert lookup(anonymous) == lookup(non_member_user) == [row_b]
+            assert lookup(test_user) == [row_a, row_b]
+        mongo_collection.update_one({'_id': a}, {'$set': {'project_members': []}})
+        assert lookup(test_user) == [row_b]
+        mongo_collection.update_one({'_id': a}, {'$set': {'private': 'public'}})
+        assert lookup(anonymous) == [row_a, row_b]
+        from caper.project_status import SUPERSEDED, status_flags
+        mongo_collection.update_one({'_id': a}, {'$set': status_flags(SUPERSEDED)})
+        assert lookup(anonymous) == [row_b]
+        unindex_project(a)
+        assert lookup(anonymous) == [row_b]
+        new = add_project('pytest A')
+        assert lookup(anonymous) == [('pytest A', name, f'/project/{new}/sample/{name}'), row_b]
+        # An exact match sorts ahead of the derivatives even in a capped list.
+        runs.update({f'run-{i}': [_feature(f'{name}_{i}', f'feature-{i}')] for i in range(12)})
+        add_project('pytest C')
+        hits = lookup(anonymous)
+        assert len(hits) == 10
+        assert [row[1] for row in hits[:3]] == [name] * 3
+        assert lookup(anonymous, 'HC') == []
+        assert lookup(anonymous, 'x' * 129) == []
+    finally:
+        for pid in projects:
+            unindex_project(pid)
+            mongo_collection.delete_one({'_id': pid})
+
+
+@pytest.mark.integration
+def test_sample_page_name_drift_detects_a_missing_destination(indexed_project):
+    pid = indexed_project['_id']
+
+    def drift():
+        return feature_index.feature_index_drift()['sample_pages_changed']
+
+    assert pid not in drift()
+    sample_index_handle.delete_one({'project_id': pid, 'run_key': 'run_01'})
+    assert pid in drift()

@@ -7,6 +7,7 @@ from django.views.i18n import set_language
 import mezzanine
 from mezzanine.conf import settings
 from . import account_views, views
+from .views_apis import SampleSuggestView
 from .sitemaps import HttpsDisplayableSitemap
 from django.contrib.sitemaps.views import sitemap as sitemap_view
 from django.conf.urls.static import static
@@ -180,6 +181,7 @@ urlpatterns += [
     path('ec3d/<str:sample_name>/', views.ec3d_visualization, name='ec3d_visualization'),
     path('url-timing-test/', views.url_timing_test, name='url_timing_test'),
     path('api/username-autocomplete/', views.username_autocomplete, name='username_autocomplete'),
+    path('api/sample-suggest/', SampleSuggestView.as_view(), name='sample_suggest'),
     path('api/gene-suggest/', views.gene_suggest, name='gene_suggest'),
     path('api/gene-resolve/', views.gene_resolve, name='gene_resolve'),
 
