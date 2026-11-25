@@ -65,8 +65,10 @@ const SearchAutocomplete = (function () {
         input.setAttribute('aria-autocomplete', 'list');
         input.setAttribute('aria-controls', list.id);
 
-        let items = [], selected = -1, timer = null, sequence = 0;
-
+        let items = [], selected = -1, timer = null;
+        // close() starts a new session; replies belong to the one they were
+        // requested in. Within a session, sample text has only been added to.
+        let session = 0, requested = 0, shown = 0;
         let sampleKey = '', sampleStarted = 0;
 
         function sampleKeyOf(text) {
@@ -83,7 +85,11 @@ const SearchAutocomplete = (function () {
         function close() {
             sampleKey = '';
             clearTimeout(timer);
-            sequence++;
+            session++;
+            hide();
+        }
+
+        function hide() {
             list.hidden = true;
             input.removeAttribute('aria-activedescendant');
             items = [];
@@ -93,6 +99,7 @@ const SearchAutocomplete = (function () {
 
         function highlight(index) {
             selected = index;
+            input.removeAttribute('aria-activedescendant');
             Array.prototype.forEach.call(list.children, function (li, i) {
                 li.setAttribute('aria-selected', i === index ? 'true' : 'false');
                 if (i === index) {
@@ -143,6 +150,24 @@ const SearchAutocomplete = (function () {
             highlight(-1);
         }
 
+        function stillMatching(suggestions, key) {
+            return suggestions.filter(entry => sampleKeyOf(entry.sample_name).includes(key));
+        }
+
+        // A reply that lands after the next keystroke still holds names for the
+        // longer text; dropping it left nothing to show until typing stopped.
+        function reply(mine, number, suggestions) {
+            if (mine !== session || number < shown) { return; }
+            if (number < requested) {
+                suggestions = stillMatching(suggestions, sampleKey);
+                if (!suggestions.length) { return; }
+            }
+            shown = number;
+            const chosen = items[selected];
+            render(suggestions);
+            if (chosen && chosen.url) { highlight(items.findIndex(entry => entry.url === chosen.url)); }
+        }
+
         function geneLabel(s) {
             const builds = s.matched_builds ? ' (' + s.matched_builds.map(escapeHtml).join(', ') + ')' : '';
             const matched = s.matched ? ' &middot; ' + escapeHtml(s.matched_label) + ' ' + escapeHtml(s.matched) + builds : '';
@@ -166,18 +191,18 @@ const SearchAutocomplete = (function () {
             if (continuing && sampleKey === key) { return; }
             // Keep visible prefix matches while the server ranks all candidates.
             // A longer query can bring in a sample outside the previous top ten.
-            const retained = continuing && key.startsWith(sampleKey)
-                ? items.filter(entry => sampleKeyOf(entry.sample_name).startsWith(key)) : [];
-            close();
+            const extending = continuing && key.startsWith(sampleKey);
+            const retained = extending ? stillMatching(items, key) : [];
+            if (extending) { clearTimeout(timer); hide(); } else { close(); }
             sampleKey = key;
             sampleStarted = performance.now();
             if (retained.length) { render(retained); }
-            const mine = sequence;
+            const mine = session, number = ++requested;
             timer = setTimeout(function () {
                 fetch((sample ? sampleUrl : geneUrl) + '?q=' + encodeURIComponent(term), {headers: {'X-Requested-With': 'XMLHttpRequest'}})
                     .then(function (response) { return response.ok ? response.json() : {suggestions: []}; })
-                    .then(function (data) { if (mine === sequence) { render(data.suggestions || []); } })
-                    .catch(function () { if (mine === sequence) { close(); } });
+                    .then(function (data) { reply(mine, number, data.suggestions || []); })
+                    .catch(function () { if (mine === session && number === requested) { close(); } });
             }, 120);
         });
 

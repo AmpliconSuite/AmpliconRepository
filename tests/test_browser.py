@@ -336,6 +336,87 @@ def test_selecting_a_sample_suggestion_opens_its_project_sample(page, advanced):
 
 
 @pytest.mark.browser
+def test_a_sample_reply_that_lands_after_the_next_key_is_shown(page):
+    """
+    Someone typing faster than the lookup answers still sees matches. The reply
+    to an earlier, shorter text shows the names that fit the text now in the
+    box; it never replaces a newer reply, and it does not reopen a closed list.
+    """
+    replies = {
+        'HCC8': ['HCC827', 'HCC813', 'NCI-HCC82'],
+        'HCC82': ['HCC827', 'HCC828', 'X-HCC82'],
+    }
+    held = {}
+    page.route('**/api/sample-suggest/**', lambda route: held.update({route.request.url.split('q=')[1]: route}))
+
+    def answer(term):
+        held.pop(term).fulfill(json={'suggestions': [
+            {'sample_name': n, 'project_name': 'P', 'url': '/project/x/sample/' + n, 'visibility': 'public'}
+            for n in replies[term]]})
+
+    def wait_for_request(term):
+        for _ in range(50):
+            if term in held:
+                return
+            page.wait_for_timeout(100)
+        raise AssertionError(f'no request for {term}')
+
+    def shown():
+        page.wait_for_timeout(200)
+        return page.locator('.gene-ac-list:not([hidden]) .gene-ac-symbol').all_inner_texts()
+
+    page.goto('/')
+    page.locator('label[for="home-scope-metadata_sample_name"]').click()
+    query = page.locator('#home-query')
+    query.fill('HCC8')
+    wait_for_request('HCC8')
+    query.fill('HCC82')
+    wait_for_request('HCC82')
+    answer('HCC8')
+    assert shown() == ['HCC827', 'NCI-HCC82']     # HCC813 does not fit HCC82
+    query.press('ArrowDown')
+    answer('HCC82')
+    assert shown() == ['HCC827', 'HCC828', 'X-HCC82']
+    selected = page.locator('.gene-ac-item[aria-selected="true"] .gene-ac-symbol')
+    assert selected.all_inner_texts() == ['HCC827']  # kept when the fuller answer landed
+
+    # A selected name the fuller answer lacks is let go of, for a screen reader too.
+    page.wait_for_timeout(2100)
+    query.fill('HCC8')
+    wait_for_request('HCC8')
+    query.fill('HCC82')
+    wait_for_request('HCC82')
+    answer('HCC8')
+    assert shown()[1] == 'NCI-HCC82'
+    query.press('ArrowDown')
+    query.press('ArrowDown')
+    assert query.get_attribute('aria-activedescendant')
+    answer('HCC82')
+    assert shown() == replies['HCC82']
+    assert not selected.all_inner_texts()
+    assert query.get_attribute('aria-activedescendant') is None
+
+    # An older reply after a newer one changes nothing.
+    page.wait_for_timeout(2100)
+    query.fill('HCC8')
+    wait_for_request('HCC8')
+    query.fill('HCC82')
+    wait_for_request('HCC82')
+    answer('HCC82')
+    assert shown() == replies['HCC82']
+    answer('HCC8')
+    assert shown() == replies['HCC82']
+
+    # Neither does one that lands after the list was closed.
+    page.wait_for_timeout(2100)
+    query.fill('HCC8')
+    wait_for_request('HCC8')
+    query.press('Escape')
+    answer('HCC8')
+    assert shown() == []
+
+
+@pytest.mark.browser
 def test_the_advanced_search_modal_suggests_genes(page):
     """The header's search modal carries the same autocomplete, drawn above it."""
     page.goto('/')

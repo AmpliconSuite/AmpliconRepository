@@ -974,6 +974,9 @@ def reindex_from_source(project_id, source=None):
             else:
                 written = index_project(project)
         except Exception:
+            # A writer whose lease lapsed may have removed rows its successor
+            # had finished writing, under a digest that calls them current.
+            manifest_handle.update_one({'project_id': project_id}, {'$set': {'digest': None}})
             writer_handle.update_one({'_id': project_id, 'owner': owner}, {'$set': {'owner': None}})
             raise
         if writer_handle.delete_one({'_id': project_id, 'owner': owner,
@@ -999,6 +1002,9 @@ def unindex_project(project_id):
     search_names rows from 9 deleted projects (measured read-only that day),
     each one a name a search could still offer that led nowhere.
     """
+    # Cleared first, as in index_project: a failure part way must not leave a
+    # digest that calls the missing rows current.
+    manifest_handle.update_one({'project_id': project_id}, {'$set': {'digest': None}})
     removed = feature_index_handle.delete_many({'project_id': project_id}).deleted_count
     sample_index_handle.delete_many({'project_id': project_id})
     search_names_handle.delete_many({'project_id': project_id})

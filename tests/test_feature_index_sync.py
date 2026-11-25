@@ -280,6 +280,48 @@ def test_a_write_that_fails_part_way_reads_as_stale(overlap_project, monkeypatch
     assert overlap_project not in feature_index_drift()['stale']
 
 
+def test_a_lapsed_writer_that_fails_marks_its_successors_rows_stale(overlap_project, monkeypatch):
+    """It deletes the rows its successor wrote, then fails before it can repeat."""
+    from caper import feature_index, project_events
+
+    real = feature_index.add_search_names
+    reentered = []
+
+    def successor_finishes_then_fail(rows):
+        if reentered:
+            return real(rows)
+        reentered.append(True)
+        feature_index.writer_handle.update_one(
+            {'_id': overlap_project}, {'$set': {'lease_until': datetime.datetime(2000, 1, 1)}})
+        project_events.reindex_project(overlap_project)
+        feature_index.sample_index_handle.delete_many({'project_id': overlap_project})
+        raise RuntimeError('lost connection')
+
+    import datetime
+    with monkeypatch.context() as patch:
+        patch.setattr(feature_index, 'add_search_names', successor_finishes_then_fail)
+        assert project_events.reindex_project(overlap_project) is None
+    assert overlap_project in feature_index_drift()['stale']
+    project_events.reindex_project(overlap_project)
+    assert overlap_project not in feature_index_drift()['stale']
+
+
+def test_an_unindex_that_fails_part_way_leaves_no_current_digest(overlap_project, monkeypatch):
+    from caper import feature_index, project_events
+
+    project_events.reindex_project(overlap_project)
+
+    class _Fails:
+        def delete_many(self, query):
+            raise RuntimeError('lost connection')
+
+    with monkeypatch.context() as patch:
+        patch.setattr(feature_index, 'search_names_handle', _Fails())
+        with pytest.raises(RuntimeError):
+            feature_index.unindex_project(overlap_project)
+    assert overlap_project in feature_index_drift()['stale']
+
+
 @pytest.fixture
 def scratch_index(monkeypatch):
     """Every collection a rebuild touches, replaced by empty ones: a rebuild's
