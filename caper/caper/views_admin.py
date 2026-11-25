@@ -1051,9 +1051,35 @@ def admin_permanent_delete_project(project_id, project, project_name):
     if error_message:
         error_message = error_message + " Other project artifacts successfully deleted. Please refer to the application log files for details. "
     else:
-        error_message = f"Project {project_name} deleted."
+        error_message = _deleted_message(project_name)
 
     return error_message
+
+
+def _deleted_message(project_name):
+    """What admin_permanent_delete_project() returns when all of it worked."""
+    return f"Project {project_name} deleted."
+
+
+def _purge_record(project_id, project_name, message):
+    """The outcome and error_message the audit log keeps for a permanent delete.
+
+    Asked of the database, because the message is never empty: a delete that
+    worked returns one too. A project that is gone was removed even if something
+    beside it went wrong, so whatever the message adds to a plain success is kept.
+    The primary is read because a replica may not have seen the delete yet.
+    """
+    try:
+        gone = collection_handle_primary.find_one(
+            {'_id': ObjectId(str(project_id))}, {'_id': 1}) is None
+        outcome = 'removed' if gone else 'failed'
+    except Exception:
+        # The delete has run by now; not being able to check must not break it.
+        logging.exception('Could not check whether project %s was removed', project_id)
+        outcome = 'unknown'
+    plain = message == _deleted_message(project_name)
+    return {'outcome': outcome,
+            'error_message': str(message) if message and not plain else None}
 
 
 @user_passes_test(lambda u: u.is_staff, login_url="/notfound/")
@@ -1433,8 +1459,7 @@ def delete_selected_projects(project_ids, time_budget=BULK_DELETE_TIME_BUDGET,
                 unattempted = len(project_ids) - index - 1
                 break
             provenance.confirm(audit_log_handle, purge_event,
-                               outcome='failed' if outcome else 'removed',
-                               error_message=str(outcome) if outcome else None)
+                               **_purge_record(project_id, name, outcome))
             deleted += 1
 
     message = f"Permanently deleted {deleted} of {len(project_ids)} selected project(s)."
@@ -1521,12 +1546,14 @@ def admin_delete_project(request):
                     error_message = permanently_delete_with_history(
                         project_id, project, project_name,
                         confirm_project_name=request.POST.get('confirm_project_name'))
+                purged = _purge_record(project_id, project_name, error_message)
             except publication_versions.PublicationVersionProtected as protected:
                 # 'Problem' colours the banner as a warning; see below.
                 error_message = (f"Problem deleting project {project_name}: it holds a version "
                                  f"used in a publication, and the project name typed did not "
                                  f"match. Nothing was deleted.")
                 logging.warning(str(protected))
+                purged = {'outcome': 'refused', 'error_message': str(protected)}
             except Exception:
                 logging.exception(f"Permanent delete failed for project {project_id} ({project_name}).")
                 # 'Problem' is the word the page's script looks for to colour
@@ -1534,9 +1561,8 @@ def admin_delete_project(request):
                 error_message = (f"Problem deleting project {project_name}. It is still listed "
                                  f"as deleted and keeps its files; please refer to the "
                                  f"application log files.")
-            provenance.confirm(audit_log_handle, purge_event,
-                               outcome='failed' if error_message else 'removed',
-                               error_message=error_message or None)
+                purged = {'outcome': 'failed', 'error_message': error_message}
+            provenance.confirm(audit_log_handle, purge_event, **purged)
 
     deleted_projects = list(collection_handle.find(STATUS_QUERIES[SOFT_DELETED]))
     for proj in deleted_projects:

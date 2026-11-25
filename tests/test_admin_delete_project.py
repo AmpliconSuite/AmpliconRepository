@@ -28,12 +28,13 @@ ADMIN_URL = '/admin-delete-project/'
 @pytest.fixture
 def projects(request):
     """Soft-deleted project documents, removed again whatever the test does."""
-    from caper.utils import collection_handle_primary
+    from caper.utils import audit_log_handle, collection_handle_primary
 
     marker = f'admindelproj-{uuid.uuid4().hex[:12]}'
 
     def _cleanup():
         collection_handle_primary.delete_many({'project_name': {'$regex': f'^{marker}'}})
+        audit_log_handle.delete_many({'project_name': {'$regex': f'^{marker}'}})
     request.addfinalizer(_cleanup)
 
     def make(suffix='', *, previous_versions=None, delete=True, **extra):
@@ -383,42 +384,167 @@ def test_the_bulk_action_does_not_go_through_the_single_project_form(
     assert project_id in deletions
 
 
-def test_the_bulk_delete_writes_a_provenance_event(projects, deletions):
-    """The path that does the deleting was the one not recording it.
-
-    Measured on prod 2026-09-02: 71 projects had been permanently deleted and
-    the audit log held 5 permanent_delete events, all of them from the
-    single-project button. Phase 3 exists because deletion used to write
-    nothing at all; this button was still in that state, and afterwards there
-    is no document left to ask what happened.
-    """
+def _purge_events(project_id):
     from caper import provenance
     from caper.utils import audit_log_handle
+    return list(audit_log_handle.find(
+        {'event_type': provenance.PERMANENT_DELETE, 'project_uuid': str(project_id)}))
+
+
+@pytest.fixture
+def s3(monkeypatch):
+    """A stand-in for S3 alone; set s3.error to make its delete fail.
+
+    Everything else about the delete is real. A stand-in for the delete itself
+    is what hid the audit log calling every success a failure (#773): it
+    returned an empty message, which the real one never does.
+    """
+    from django.conf import settings
+    from caper import views_admin
+
+    class _S3:
+        error = None
+
+        def client(self, name):
+            return self
+
+        def delete_object(self, **kwargs):
+            if self.error:
+                raise self.error
+
+    fake = _S3()
+    for name, value in (('S3_DOWNLOADS_BUCKET', 'no-such-bucket'),
+                        ('S3_DOWNLOADS_BUCKET_PATH', 'test/'),
+                        ('AWS_PROFILE_NAME', 'no-such-profile')):
+        monkeypatch.setattr(settings, name, value, raising=False)
+    monkeypatch.setattr(views_admin.boto3, 'Session', lambda **kwargs: fake)
+    return fake
+
+
+@pytest.fixture(params=['single', 'bulk'])
+def delete_button(request, request_factory, admin_user, projects):
+    """Press one of the page's two delete buttons for a project."""
+    def press(project_id):
+        if request.param == 'bulk':
+            data = {'action': 'delete-selected', 'project_ids': [str(project_id)]}
+        else:
+            name = projects.collection.find_one({'_id': project_id})['project_name']
+            data = {'action': 'delete', 'delete': 'on', 'project_id': str(project_id),
+                    'project_name': name}
+        response = _post(request_factory, admin_user, data)
+        assert response.status_code == 200
+        return response
+    return press
+
+
+def test_a_delete_is_recorded_once_as_removed(projects, s3, delete_button, admin_user):
+    project_id = projects('-gone')
+
+    delete_button(project_id)
+
+    assert projects.collection.find_one({'_id': project_id}) is None
+    event, = _purge_events(project_id)
+    assert event['outcome'] == 'removed'
+    assert event['error_message'] is None
+    assert event['completed'] is True
+    assert event['user_email'] == (admin_user.email or admin_user.username)
+
+
+def test_a_bulk_delete_records_an_event_for_each_project(projects, s3):
     from caper.views_admin import delete_selected_projects
+    ids = [projects(f'-prov-{n}') for n in range(2)]
 
-    class _User:
-        username = 'bulk-delete-tester'
-        email = 'bulk@example.com'
-        is_staff = True
+    delete_selected_projects([str(i) for i in ids])
 
-    ids = [str(projects(f'-prov-{n}')) for n in range(2)]
-    before = audit_log_handle.count_documents(
-        {'event_type': provenance.PERMANENT_DELETE})
+    assert [[e['outcome'] for e in _purge_events(i)] for i in ids] == [['removed'], ['removed']]
 
-    delete_selected_projects(ids, user=_User())
 
-    after = audit_log_handle.count_documents(
-        {'event_type': provenance.PERMANENT_DELETE})
-    assert after - before == 2, 'one event per project deleted'
+def test_a_problem_beside_the_delete_is_removed_and_keeps_its_message(
+        projects, s3, delete_button):
+    s3.error = RuntimeError('S3 is unhappy')
+    project_id = projects('-tarless')
 
-    for project_id in ids:
-        event = audit_log_handle.find_one(
-            {'event_type': provenance.PERMANENT_DELETE,
-             'project_uuid': project_id},
-            sort=[('_id', -1)])
-        assert event is not None, f'no event for {project_id}'
-        assert event.get('outcome') == 'removed'
-        assert event.get('user_email') == 'bulk@example.com'
+    delete_button(project_id)
+
+    event, = _purge_events(project_id)
+    assert event['outcome'] == 'removed'
+    assert 'Problem deleting tar file from S3' in event['error_message']
+
+
+def test_a_skipped_history_entry_is_kept_in_the_record(projects, s3, delete_button):
+    missing = uuid.uuid4().hex[:24]
+    project_id = projects('-dangling', previous_versions=[{'linkid': missing}])
+
+    delete_button(project_id)
+
+    event, = _purge_events(project_id)
+    assert event['outcome'] == 'removed'
+    assert missing in event['error_message']
+
+
+def test_a_document_that_did_not_go_is_recorded_as_failed(
+        projects, s3, delete_button, monkeypatch):
+    """admin_permanent_delete_project() returns a message here, not an exception."""
+    from caper import views_admin
+
+    class _Refusing:
+        def __getattr__(self, name):
+            return getattr(projects.collection, name)
+
+        def delete_one(self, *args, **kwargs):
+            raise RuntimeError('Mongo is unhappy')
+
+    monkeypatch.setattr(views_admin, 'collection_handle', _Refusing())
+    project_id = projects('-stuck')
+
+    delete_button(project_id)
+
+    event, = _purge_events(project_id)
+    assert event['outcome'] == 'failed'
+    assert 'Problem deleting Project document' in event['error_message']
+
+
+def test_a_delete_that_ran_out_of_time_is_recorded_as_failed(
+        projects, s3, delete_button, monkeypatch):
+    from types import SimpleNamespace
+    from caper import views_admin
+    monkeypatch.setattr(views_admin, 'delete_payload_within_deadline',
+                        lambda *a, **kw: SimpleNamespace(deleted=1, remaining=['x']))
+    project_id = projects('-partial')
+
+    delete_button(project_id)
+
+    assert projects.collection.find_one({'_id': project_id}) is not None
+    event, = _purge_events(project_id)
+    assert event['outcome'] == 'failed'
+    assert views_admin.PARTIAL_DELETE_MARKER in event['error_message']
+
+
+def test_a_refused_delete_is_recorded_as_refused(projects, s3, delete_button):
+    from caper.publication_versions import FIELD
+    project_id = projects('-tagged', **{FIELD: {'publication': 'Test 2026'}})
+
+    delete_button(project_id)
+
+    assert projects.collection.find_one({'_id': project_id}) is not None
+    event, = _purge_events(project_id)
+    assert event['outcome'] == 'refused'
+    assert event['error_message']
+
+
+def test_an_unreadable_database_does_not_break_the_page_or_guess(
+        projects, s3, monkeypatch):
+    """The record is evidence, never authority: not being able to check says so."""
+    from caper import views_admin
+
+    class _Unreadable:
+        def find_one(self, *args, **kwargs):
+            raise RuntimeError('no primary')
+
+    monkeypatch.setattr(views_admin, 'collection_handle_primary', _Unreadable())
+
+    assert views_admin._purge_record(str(projects('-x')), 'x', 'Project x deleted.') == {
+        'outcome': 'unknown', 'error_message': None}
 
 
 # ---------------------------------------------------------------------------
