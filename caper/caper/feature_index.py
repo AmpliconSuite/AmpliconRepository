@@ -81,8 +81,13 @@ cannot resolve is still found by its spelling.
 import datetime
 import hashlib
 import json
+import logging
+import time
+import uuid
 
 from django.core.cache import cache
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from .classifications import is_no_amplicon
 from .gene_ids import gene_id_of, gene_ids_of, gene_map_version, resolve_gene_term, universe_of
@@ -94,6 +99,7 @@ from .utils import (
 )
 from .search import METADATA_COLUMN_FOR_KEY
 from .sample_metadata_rows import with_metadata_on_every_row
+from .sample_suggestions import sample_name_groups
 from .visibility import (
     PUBLIC_QUERY_VALUES,
     RESTRICTED_QUERY_VALUES,
@@ -770,6 +776,18 @@ INDEX_SOURCE_PROJECTION = {
 FEATURE_INDEX_MANIFEST_COLLECTION = 'feature_index_manifest'
 manifest_handle = get_collection_handle(db_handle_primary, FEATURE_INDEX_MANIFEST_COLLECTION)
 
+# Who is writing a project's rows right now. Present only while somebody is, or
+# after a writer failed; it is coordination, not derived data, so it is not in
+# DERIVED_COLLECTIONS and losing it loses nothing.
+writer_handle = get_collection_handle(db_handle_primary, 'feature_index_writers')
+
+# Longer than the slowest single project takes to write. A holder that outlives
+# it is taken over, and repeats its work when it notices.
+WRITER_LEASE_SECONDS = 120
+# How long a hook waits for another writer before leaving the change to it.
+WRITER_WAIT_SECONDS = 20
+WRITER_POLL_SECONDS = 0.1
+
 
 # Every collection this module owns. Exported so that anything which wipes the
 # project documents can wipe what was derived from them by importing this
@@ -797,10 +815,7 @@ DERIVED_COLLECTIONS = (
 # unmeasured quietly.  The values are what the check calls its findings.
 DERIVED_DRIFT_CHECKS = {
     FEATURE_INDEX_COLLECTION: 'missing / stale / orphaned',
-    # Written by the same index_project call as the rows, from the same
-    # ``runs``, under the same manifest digest -- so the digest check covers
-    # it for exactly the reason it covers the rows.
-    SAMPLE_INDEX_COLLECTION: 'missing / stale / orphaned',
+    SAMPLE_INDEX_COLLECTION: 'sample_pages_changed / stray',
     FEATURE_INDEX_MANIFEST_COLLECTION: 'missing / stale / orphaned',
     GENE_CATALOG_COLLECTION: 'genes_missing / genes_extra / genes_changed',
     SEARCH_NAMES_COLLECTION: 'names_missing / names_extra',
@@ -871,6 +886,10 @@ def index_project(project):
     project_id = project.get('_id')
     rows = feature_rows_for_project(project)
     samples = sample_documents_for_project(project)
+    # Until the last write below, the rows are not the ones the digest describes.
+    # Without this a failure part way leaves the old digest matching the
+    # document, and the drift check calls the missing rows current.
+    manifest_handle.update_one({'project_id': project_id}, {'$set': {'digest': None}})
     feature_index_handle.delete_many({'project_id': project_id})
     sample_index_handle.delete_many({'project_id': project_id})
     if rows:
@@ -896,6 +915,86 @@ def index_project(project):
     return len(rows)
 
 
+def _claim_writer(project_id, owner):
+    """The writer document if ``owner`` now holds it, else None."""
+    now = datetime.datetime.utcnow()
+    return writer_handle.find_one_and_update(
+        {'_id': project_id, '$or': [{'owner': None}, {'lease_until': {'$lt': now}}]},
+        {'$set': {'owner': owner,
+                  'lease_until': now + datetime.timedelta(seconds=WRITER_LEASE_SECONDS)}},
+        return_document=ReturnDocument.AFTER)
+
+
+def _wait_for_writer(project_id, owner):
+    """Hold the project's writer document, or None if its work is already done or left to the holder."""
+    deadline = time.monotonic() + WRITER_WAIT_SECONDS
+    while True:
+        held = _claim_writer(project_id, owner)
+        if held is not None:
+            return held
+        if writer_handle.find_one({'_id': project_id}, {'_id': 1}) is None:
+            return None      # the holder saw this request, indexed for it, and finished
+        if time.monotonic() >= deadline:
+            logging.warning('feature index: %s is being written; its writer will repeat', project_id)
+            return None
+        time.sleep(WRITER_POLL_SECONDS)
+
+
+def reindex_from_source(project_id, source=None):
+    """Index a project from its current document, one writer at a time.
+
+    The source is read after the writer document is held, so a later writer
+    reads a later document. Every caller first counts its request; the holder
+    reruns until nothing was requested since its last read. Without that a
+    slow writer that had read a project before an edit could replace the rows
+    the edit's own reindex wrote (#746, reproduced locally 2026-11-24).
+
+    Returns what index_project returned, 0 if the project was removed from the
+    index, and None if the work was left to, or done by, another writer.
+    """
+    source = collection_handle_primary if source is None else source
+    owner = uuid.uuid4().hex
+    for attempt in range(2):
+        try:
+            writer_handle.update_one({'_id': project_id}, {'$inc': {'requested': 1}}, upsert=True)
+            break
+        except DuplicateKeyError:      # two upserts of the first request
+            if attempt:
+                raise
+    written = None
+    held = _wait_for_writer(project_id, owner)
+    while held is not None:
+        try:
+            query = dict(indexable_projects_query())
+            query['_id'] = project_id
+            project = source.find_one(query, INDEX_SOURCE_PROJECTION)
+            if project is None:
+                unindex_project(project_id)
+                written = 0
+            else:
+                written = index_project(project)
+        except Exception:
+            # A writer whose lease lapsed may have removed rows its successor
+            # had finished writing, under a digest that calls them current.
+            manifest_handle.update_one({'project_id': project_id}, {'$set': {'digest': None}})
+            writer_handle.update_one({'_id': project_id, 'owner': owner}, {'$set': {'owner': None}})
+            raise
+        if writer_handle.delete_one({'_id': project_id, 'owner': owner,
+                                     'requested': held['requested']}).deleted_count:
+            return written
+        # Either another request arrived, so go round again, or the lease lapsed
+        # and someone took over. Their rows may then be interleaved with the
+        # ones just written here, so ask for another pass and wait in line.
+        held = writer_handle.find_one_and_update(
+            {'_id': project_id, 'owner': owner},
+            {'$set': {'lease_until': datetime.datetime.utcnow()
+                      + datetime.timedelta(seconds=WRITER_LEASE_SECONDS)}},
+            return_document=ReturnDocument.AFTER)
+        if held is None:
+            return reindex_from_source(project_id, source)
+    return written
+
+
 def unindex_project(project_id):
     """Drop one project's rows, its names and its manifest entry.  Returns rows removed.
 
@@ -903,6 +1002,9 @@ def unindex_project(project_id):
     search_names rows from 9 deleted projects (measured read-only that day),
     each one a name a search could still offer that led nowhere.
     """
+    # Cleared first, as in index_project: a failure part way must not leave a
+    # digest that calls the missing rows current.
+    manifest_handle.update_one({'project_id': project_id}, {'$set': {'digest': None}})
     removed = feature_index_handle.delete_many({'project_id': project_id}).deleted_count
     sample_index_handle.delete_many({'project_id': project_id})
     search_names_handle.delete_many({'project_id': project_id})
@@ -928,10 +1030,18 @@ def stray_rows():
 
 
 def remove_stray_rows(indexed_project_ids):
-    """Delete project-keyed derived rows of any project not in ``indexed_project_ids``."""
+    """Reindex every project with derived rows that is not in ``indexed_project_ids``.
+
+    Asked rather than deleted: one of them may be a project being written for
+    the first time right now, whose manifest entry comes last. Returns the ids.
+    """
     keep = list(indexed_project_ids)
-    return {handle.name: handle.delete_many({'project_id': {'$nin': keep}}).deleted_count
-            for handle in _PROJECT_KEYED_COLLECTIONS()}
+    stray = set()
+    for handle in _PROJECT_KEYED_COLLECTIONS():
+        stray.update(handle.distinct('project_id', {'project_id': {'$nin': keep}}))
+    for project_id in stray:
+        reindex_from_source(project_id)
+    return stray
 
 
 def rebuild_feature_index(limit=None, progress=None):
@@ -945,14 +1055,15 @@ def rebuild_feature_index(limit=None, progress=None):
     ``limit`` exists so a rebuild can be staged on a handful of projects and
     the result diffed before the rest is run.
     """
-    cursor = collection_handle_primary.find(indexable_projects_query(), INDEX_SOURCE_PROJECTION)
+    cursor = collection_handle_primary.find(indexable_projects_query(), {'project_name': 1})
     if limit:
         cursor = cursor.limit(limit)
 
     projects_seen = set()
     rows_written = 0
     for project in cursor:
-        rows_written += index_project(project)
+        # Not the cursor's own copy: a hook may have written this project since.
+        rows_written += reindex_from_source(project['_id']) or 0
         projects_seen.add(project['_id'])
         if progress:
             progress(project.get('project_name'), len(projects_seen), rows_written)
@@ -964,7 +1075,9 @@ def rebuild_feature_index(limit=None, progress=None):
         # all look stale.
         for stale in list(manifest_handle.find({'project_id': {'$nin': list(projects_seen)}},
                                                {'project_id': 1})):
-            unindex_project(stale['project_id'])
+            # Asked rather than removed: a project created during this rebuild
+            # is not in projects_seen either, and it is not stale.
+            reindex_from_source(stale['project_id'])
         # Rows of projects with no manifest entry at all: written around
         # index_project, so nothing above can see them.  On dev 2026-10-29 that
         # was 13 feature rows, 17 sample rows and 14 names left by an
@@ -1020,10 +1133,17 @@ def feature_index_drift():
     command and is not called on a request path -- ``index_coverage()`` is the
     cheap per-request half and deliberately does not do this.
     """
-    live_digests = {
-        project['_id']: project_digest(project)
-        for project in collection_handle_primary.find(indexable_projects_query(), INDEX_SOURCE_PROJECTION)
-    }
+    live_digests = {}
+    expected_names = {}
+    for project in collection_handle_primary.find(indexable_projects_query(), INDEX_SOURCE_PROJECTION):
+        pid = project['_id']
+        live_digests[pid] = project_digest(project)
+        expected_names[pid] = {row['sample_name'] for row in sample_documents_for_project(project)
+                               if row['feature_count']}
+    stored_names = {row['_id']: set(row['names'])
+                    for row in sample_name_groups(sample_index_handle, SCHEMA_VERSION, {})}
+    changed_pages = sorted((pid for pid in expected_names.keys() | stored_names.keys()
+                            if expected_names.get(pid, set()) != stored_names.get(pid, set())), key=str)
     indexed = {entry['project_id']: entry.get('digest') for entry in manifest_handle.find({})}
 
     missing = sorted((pid for pid in live_digests if pid not in indexed), key=str)
@@ -1038,6 +1158,7 @@ def feature_index_drift():
         'stale': stale,
         'orphaned': orphaned,
         'indexable': len(live_digests),
+        'sample_pages_changed': changed_pages,
         'indexed': len(indexed),
         **search_name_drift(),
         **gene_catalog_drift(),
@@ -1357,7 +1478,7 @@ def metadata_coverage_by_project():
     return coverage
 
 
-def index_access_filter(user):
+def index_access_filter(user, *, visibility_field='visibility'):
     """The rows ``user`` is allowed to see, as a query fragment.
 
     This is the access-control boundary of the new search path, so it is
@@ -1373,7 +1494,7 @@ def index_access_filter(user):
     restricted here, not public: they are unlisted, and unlisted means a
     non-member does not get them from a search.
     """
-    public = {'visibility': {'$in': PUBLIC_QUERY_VALUES}}
+    public = {visibility_field: {'$in': PUBLIC_QUERY_VALUES}}
     if not getattr(user, 'is_authenticated', False):
         return public
 
@@ -1384,7 +1505,7 @@ def index_access_filter(user):
 
     return {'$or': [
         public,
-        {'visibility': {'$in': RESTRICTED_QUERY_VALUES},
+        {visibility_field: {'$in': RESTRICTED_QUERY_VALUES},
          'project_members': {'$in': identities}},
     ]}
 

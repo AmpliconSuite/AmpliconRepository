@@ -53,6 +53,7 @@ class Command(BaseCommand):
             ('missing ', 'missing', 'search under-reports these'),
             ('stale   ', 'stale', 'search reports an older truth for these'),
             ('orphaned', 'orphaned', 'search over-reports these'),
+            ('sample pages', 'sample_pages_changed', 'sample suggestion names differ from live runs'),
         ):
             ids = drift[key]
             self.stdout.write(f"  {label} {len(ids):>5}   {meaning}")
@@ -132,7 +133,7 @@ class Command(BaseCommand):
         # reported as the hazard it is rather than upgraded to an incident.
         # Stray rows can too: a search serves them as results.
         if (drift['missing'] or drift['stale'] or drift['orphaned'] or drift['names_missing']
-                or any(drift.get('stray', {}).values())):
+                or drift['sample_pages_changed'] or any(drift.get('stray', {}).values())):
             self.stdout.write(self.style.WARNING(
                 'index is not current; rebuild with: manage.py rebuild_feature_index'))
         elif genes:

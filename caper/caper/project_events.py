@@ -71,8 +71,6 @@ def reindex_project(project_id):
         return None
 
     try:
-        query = dict(feature_index.indexable_projects_query())
-        query['_id'] = object_id
         # PRIMARY, not the default handle.  The cluster URI ends
         # readPreference=secondaryPreferred, and this function runs
         # immediately after the write that triggered it -- so the default
@@ -81,15 +79,7 @@ def reindex_project(project_id):
         # manifest written 2 to 4 seconds after its document, each missing
         # exactly the content that write had added.  Two of them were a
         # metadata sheet whose cancer types then could not be filtered on.
-        project = collection_handle_primary.find_one(
-            query, feature_index.INDEX_SOURCE_PROJECTION)
-        if project is None:
-            feature_index.unindex_project(object_id)
-            return 0
-        # find_one with a projection drops _id from neither, but index_project
-        # reads it, so make sure it is the ObjectId and not a string.
-        project['_id'] = object_id
-        return feature_index.index_project(project)
+        return feature_index.reindex_from_source(object_id, collection_handle_primary)
     except Exception:
         # Deliberately broad. The standing drift check is what turns this into
         # a fault someone can see; failing the caller instead would turn a

@@ -4,6 +4,7 @@ import re
 from pymongo import MongoClient
 from .utils import *
 from .project_status import LIVE, status_query
+from .sample_suggestions import MIN_QUERY, MAX_QUERY, match_rank, normalize_name
 from .sample_metadata_rows import with_metadata_on_every_row
 
 
@@ -178,14 +179,16 @@ def wildcard_to_regex(pattern):
 
 
 def _text_field_filter(series, pattern):
-    """
-    Filter a name field -- sample name, project name.
-
-    Kept as a distinct name from _substring_field_filter even though the two now
-    behave identically: they were split when name fields matched exactly, and
-    the call sites still read better for saying which kind of field they mean.
-    """
-    return _field_filter(series, pattern, SUBSTRING)
+    """Keep literal substring results and include autocomplete matches for plain sample names."""
+    literal = _field_filter(series, pattern, SUBSTRING)
+    if not pattern or len(pattern) > MAX_QUERY or any(ch in pattern for ch in '"*&|'):
+        return literal
+    query = normalize_name(pattern)
+    if len(query) < MIN_QUERY:
+        return literal
+    matches = [name for name in series[~literal].dropna().unique()
+               if isinstance(name, str) and match_rank(query, name) is not None]
+    return literal | series.isin(matches)
 
 
 def _substring_field_filter(series, pattern):

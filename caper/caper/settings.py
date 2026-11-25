@@ -312,6 +312,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_CLASSES': [],  # opt-in per view via throttle_scope
     'DEFAULT_THROTTLE_RATES': {
         # Read endpoints returning metadata.
+        'sample_suggest': '120/min',
         'api_read': '60/min',
         'api_read_auth': '180/min',
         # Archive downloads: heavier per request, and the endpoint crawlers

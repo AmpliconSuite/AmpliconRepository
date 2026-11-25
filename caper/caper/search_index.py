@@ -49,7 +49,7 @@ from .feature_index import (
     search_names_handle,
 )
 from .gene_ids import query_terms
-from .search import _field_filter, tokenize_query, wildcard_to_regex
+from .search import _field_filter, _text_field_filter, tokenize_query, wildcard_to_regex
 from .utils import collection_handle, prepare_project_linkid
 from .visibility import PUBLIC_QUERY_VALUES, format_visibility_for_display
 
@@ -199,7 +199,7 @@ def _resolve_names(kind, pattern, strip=True):
     series = pd.Series(names, dtype=object)
     if strip:
         series = series.str.strip()
-    mask = _field_filter(series, pattern)
+    mask = _text_field_filter(series, pattern) if kind == 'sample' else _field_filter(series, pattern)
     return [name for name, keep in zip(names, mask) if keep]
 
 

@@ -336,3 +336,14 @@ class TestConfiguration:
                 assert f'{scope}_auth' in rates, (
                     f'{name}: {scope} has no _auth rate, so a token would not '
                     f'raise the limit and there is no reason to authenticate')
+
+
+@override_settings(REST_FRAMEWORK=_rates(sample_suggest='1/min'))
+def test_sample_suggestions_throttle_repeated_requests():
+    from caper.views_apis import SampleSuggestView
+    view = SampleSuggestView.as_view()
+    request = APIRequestFactory()
+    assert view(request.get('/api/sample-suggest/', {'q': 'a'})).status_code == 200
+    response = view(request.get('/api/sample-suggest/', {'q': 'b'}))
+    assert response.status_code == 429
+    assert int(response['Retry-After']) > 0

@@ -331,3 +331,191 @@ def test_unindexing_leaves_no_project_keyed_row(mongo_collection, test_user):
     unindex_project(document['_id'])
     for handle in feature_index._PROJECT_KEYED_COLLECTIONS():
         assert handle.count_documents({'project_id': document['_id']}) == 0, handle.name
+
+
+def test_sample_suggestion_matching():
+    from caper.sample_suggestions import match_rank, normalize_name
+
+    def matches(query, name):
+        return match_rank(normalize_name(query), name) is not None
+
+    for query in ('HCC827', 'hcc_827', 'HCC-827'):
+        assert matches(query, 'HCC 827')
+    for query in ('NCI-H1792', 'NCIH1792', 'H1792'):
+        for name in ('NCI-H1792', 'NCIH1792', 'H1792'):
+            assert matches(query, name)
+        assert not matches('B1792', query)
+    assert matches('TE6', 'TE-6')
+    assert matches('TE5', 'TE5_OESOPHAGUS')
+    assert matches('NCI-H1693', 'NCIH1693_LUNG')
+    for short in ('1', 'S1', 'tumor', 'ICGCMB1'):
+        assert not matches(short + '01', short)
+
+
+@pytest.mark.integration
+def test_sample_suggestion_endpoint_uses_live_membership_and_versions(
+        mongo_collection, test_user, non_member_user, request_factory, monkeypatch):
+    from django.contrib.auth.models import AnonymousUser
+    from django.urls import resolve
+
+    monkeypatch.setattr(non_member_user, 'pk', 123456, raising=False)
+    monkeypatch.setattr(test_user, 'pk', 123457, raising=False)
+    name = 'pytest-HCC827'
+    runs = {'a': [_feature(name, 'first')], 'b': [_feature(name, 'second')]}
+    projects = []
+
+    def add_project(label):
+        project = _project_doc(label, runs, test_user.username)
+        project['_id'] = mongo_collection.insert_one(project).inserted_id
+        projects.append(project['_id'])
+        index_project(project)
+        return project['_id']
+
+    def lookup(user, term='pytest_hcc827'):
+        request = request_factory.get('/api/sample-suggest/', {'q': term})
+        request.user = user
+        response = resolve(request.path).func(request)
+        assert response.status_code == 200
+        assert 'no-store' in response['Cache-Control']
+        return [(r['project_name'], r['sample_name'], r['url'])
+                for r in response.data['suggestions']]
+
+    try:
+        a, b = add_project('pytest A'), add_project('pytest B')
+        anonymous = AnonymousUser()
+        row_a = ('pytest A', name, f'/project/{a}/sample/{name}')
+        row_b = ('pytest B', name, f'/project/{b}/sample/{name}')
+        assert lookup(anonymous) == [row_a, row_b]
+        # A new spelling still ranks all eligible names, using the same name list
+        # across keystrokes. Live access is checked again below.
+        from unittest.mock import patch
+        with patch('caper.sample_suggestions.sample_name_groups', side_effect=AssertionError('rescanned names')):
+            assert lookup(anonymous, 'pytest-hcc82') == [row_a, row_b]
+        for vis, member in [('hidden_public', test_user.email), ('private', test_user.username)]:
+            mongo_collection.update_one({'_id': a}, {'$set': {'private': vis, 'project_members': [member]}})
+            assert lookup(anonymous) == lookup(non_member_user) == [row_b]
+            assert lookup(test_user) == [row_a, row_b]
+        mongo_collection.update_one({'_id': a}, {'$set': {'project_members': []}})
+        assert lookup(test_user) == [row_b]
+        mongo_collection.update_one({'_id': a}, {'$set': {'private': 'public'}})
+        assert lookup(anonymous) == [row_a, row_b]
+        from caper.project_status import SUPERSEDED, status_flags
+        mongo_collection.update_one({'_id': a}, {'$set': status_flags(SUPERSEDED)})
+        assert lookup(anonymous) == [row_b]
+        unindex_project(a)
+        assert lookup(anonymous) == [row_b]
+        new = add_project('pytest A')
+        assert lookup(anonymous) == [('pytest A', name, f'/project/{new}/sample/{name}'), row_b]
+        # An exact match sorts ahead of the derivatives even in a capped list.
+        runs.update({f'run-{i}': [_feature(f'{name}_{i}', f'feature-{i}')] for i in range(12)})
+        add_project('pytest C')
+        hits = lookup(anonymous)
+        assert len(hits) == 10
+        assert [row[1] for row in hits[:3]] == [name] * 3
+        assert lookup(anonymous, 'HC') == []
+        assert lookup(anonymous, 'x' * 129) == []
+    finally:
+        for pid in projects:
+            unindex_project(pid)
+            mongo_collection.delete_one({'_id': pid})
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('at', ['rows deleted', 'names about to be read'])
+def test_a_lookup_during_a_reindex_is_not_reused(mongo_collection, test_user, monkeypatch, at):
+    """A list read while rows are deleted and not yet rewritten must not outlive the reindex."""
+    from caper import sample_suggestions
+
+    project = _project_doc('pytest reindex lookup', {'a': [_feature('pytest-RDX1', 'first')]},
+                           test_user.username)
+    project['_id'] = mongo_collection.insert_one(project).inserted_id
+
+    def lookup(term):
+        return [row['sample_name'] for row in sample_suggestions.suggest_samples(
+            term, mongo_collection, sample_index_handle, feature_index.manifest_handle,
+            {'_id': project['_id']}, feature_index.SCHEMA_VERSION)]
+
+    try:
+        index_project(project)
+        assert lookup('pytest-RDX') == ['pytest-RDX1']
+        # A finished reindex shows at once, with no list left to expire.
+        project['runs'] = {'a': [_feature('pytest-RDX2', 'first')]}
+        index_project(project)
+        assert lookup('pytest-RDX') == ['pytest-RDX2']
+
+        during = []
+        if at == 'rows deleted':
+            real = feature_index.add_search_names
+            monkeypatch.setattr(feature_index, 'add_search_names',
+                                lambda rows: (during.append(lookup('pytest-RDX')), real(rows)))
+            index_project(project)
+        else:
+            # The lookup has read the manifest; the reindex starts before it reads the names.
+            index_project(project)
+            real_groups = sample_suggestions.sample_name_groups
+
+            def start_reindex_then_read(*args):
+                feature_index.manifest_handle.update_one(
+                    {'project_id': project['_id']}, {'$set': {'digest': None}})
+                sample_index_handle.delete_many({'project_id': project['_id']})
+                return list(real_groups(*args))
+
+            with monkeypatch.context() as patched:
+                patched.setattr(sample_suggestions, 'sample_name_groups', start_reindex_then_read)
+                during.append(lookup('pytest-RDX'))
+            index_project(project)
+        assert during == [[]]
+        assert lookup('pytest-RDX') == ['pytest-RDX2']
+    finally:
+        unindex_project(project['_id'])
+        mongo_collection.delete_one({'_id': project['_id']})
+
+
+@pytest.mark.integration
+def test_an_edit_rereads_only_its_own_project(mongo_collection, test_user, monkeypatch):
+    from caper import sample_suggestions
+
+    projects = []
+    for label in ('A', 'B'):
+        project = _project_doc(f'pytest reread {label}', {'a': [_feature(f'pytest-RRD{label}', 'first')]},
+                               test_user.username)
+        project['_id'] = mongo_collection.insert_one(project).inserted_id
+        projects.append(project)
+    read = []
+    real_groups = sample_suggestions.sample_name_groups
+
+    def counted(handle, version, query):
+        read.append(query['project_id']['$in'])
+        return real_groups(handle, version, query)
+
+    monkeypatch.setattr(sample_suggestions, 'sample_name_groups', counted)
+
+    def lookup():
+        return [row['sample_name'] for row in sample_suggestions.suggest_samples(
+            'pytest-RRD', mongo_collection, sample_index_handle, feature_index.manifest_handle,
+            {'_id': {'$in': [p['_id'] for p in projects]}}, feature_index.SCHEMA_VERSION)]
+
+    try:
+        for project in projects:
+            index_project(project)
+        assert lookup() == lookup() == ['pytest-RRDA', 'pytest-RRDB']
+        assert len(read) == 1 and len(read[0]) == 2
+        index_project(projects[0])
+        assert lookup() == ['pytest-RRDA', 'pytest-RRDB']
+        assert read[1:] == [[projects[0]['_id']]]
+    finally:
+        for project in projects:
+            unindex_project(project['_id'])
+            mongo_collection.delete_one({'_id': project['_id']})
+
+
+@pytest.mark.integration
+def test_sample_page_name_drift_detects_a_missing_destination(indexed_project):
+    pid = indexed_project['_id']
+
+    def drift():
+        return feature_index.feature_index_drift()['sample_pages_changed']
+
+    assert pid not in drift()
+    sample_index_handle.delete_one({'project_id': pid, 'run_key': 'run_01'})
+    assert pid in drift()

@@ -36,6 +36,7 @@ from .forms import RunForm
 from .classifications import _CANONICAL_CLASSIFICATION, _canonical_classifications
 from . import api_features
 from . import feature_index
+from .sample_suggestions import suggest_samples
 from .request_url import absolute_base, absolute_url
 from .api_errors import API_V1_PREFIX
 from .utils import (
@@ -366,6 +367,7 @@ class ProjectFileAddView(APIView):
 from bson.objectid import ObjectId
 from django.http import StreamingHttpResponse, HttpResponseRedirect
 from rest_framework.authentication import TokenAuthentication, SessionAuthentication
+from rest_framework.renderers import JSONRenderer
 from rest_framework.exceptions import AuthenticationFailed
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from drf_spectacular.renderers import OpenApiJsonRenderer
@@ -785,6 +787,24 @@ def _sample_to_dict(sample, run_name):
             continue
         d[k] = _json_safe(v)
     return d
+
+
+class SampleSuggestView(APIView):
+    """Autocomplete for the Samples search field in a browser session."""
+    authentication_classes = [SessionAuthentication]
+    permission_classes = []
+    throttle_classes = [ApiScopedRateThrottle]
+    throttle_scope = 'sample_suggest'
+    renderer_classes = [JSONRenderer]
+    schema = None  # Browser-session endpoint outside the v1 API.
+
+    def get(self, request):
+        results = suggest_samples(
+            request.query_params.get('q', ''), feature_index.collection_handle_primary,
+            feature_index.sample_index_handle, feature_index.manifest_handle,
+            feature_index.index_access_filter(request.user, visibility_field='private'),
+            feature_index.SCHEMA_VERSION)
+        return Response({'suggestions': results}, headers={'Cache-Control': 'private, no-store'})
 
 
 # ── GET /api/v1/projects/ ────────────────────────────────────────────────────
