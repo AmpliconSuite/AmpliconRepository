@@ -371,14 +371,17 @@ def test_sample_suggestion_endpoint_uses_live_membership_and_versions(
         index_project(project)
         return project['_id']
 
-    def lookup(user, term='pytest_hcc827'):
+    def reply(user, term='pytest_hcc827'):
         request = request_factory.get('/api/sample-suggest/', {'q': term})
         request.user = user
         response = resolve(request.path).func(request)
         assert response.status_code == 200
         assert 'no-store' in response['Cache-Control']
+        return response.data
+
+    def lookup(user, term='pytest_hcc827'):
         return [(r['project_name'], r['sample_name'], r['url'])
-                for r in response.data['suggestions']]
+                for r in reply(user, term)['suggestions']]
 
     try:
         a, b = add_project('pytest A'), add_project('pytest B')
@@ -395,6 +398,7 @@ def test_sample_suggestion_endpoint_uses_live_membership_and_versions(
             mongo_collection.update_one({'_id': a}, {'$set': {'private': vis, 'project_members': [member]}})
             assert lookup(anonymous) == lookup(non_member_user) == [row_b]
             assert lookup(test_user) == [row_a, row_b]
+            assert [r['visibility'] for r in reply(test_user)['suggestions']] == [vis, 'public']
         mongo_collection.update_one({'_id': a}, {'$set': {'project_members': []}})
         assert lookup(test_user) == [row_b]
         mongo_collection.update_one({'_id': a}, {'$set': {'private': 'public'}})
@@ -408,10 +412,18 @@ def test_sample_suggestion_endpoint_uses_live_membership_and_versions(
         assert lookup(anonymous) == [('pytest A', name, f'/project/{new}/sample/{name}'), row_b]
         # An exact match sorts ahead of the derivatives even in a capped list.
         runs.update({f'run-{i}': [_feature(f'{name}_{i}', f'feature-{i}')] for i in range(12)})
-        add_project('pytest C')
+        c = add_project('pytest C')
         hits = lookup(anonymous)
         assert len(hits) == 10
         assert [row[1] for row in hits[:3]] == [name] * 3
+        # A, B and 13 names in C matched; the count says so only to those who may see C.
+        assert reply(anonymous)['more'] == 5
+        mongo_collection.update_one({'_id': c}, {'$set': {'private': 'private',
+                                                            'project_members': [test_user.username]}})
+        assert reply(anonymous)['more'] == reply(non_member_user)['more'] == 0
+        assert len(lookup(anonymous)) == 2
+        assert reply(test_user)['more'] == 5
+        assert reply(anonymous, 'HC')['more'] == reply(anonymous, 'x' * 129)['more'] == 0
         assert lookup(anonymous, 'HC') == []
         assert lookup(anonymous, 'x' * 129) == []
     finally:
@@ -433,7 +445,7 @@ def test_a_lookup_during_a_reindex_is_not_reused(mongo_collection, test_user, mo
     def lookup(term):
         return [row['sample_name'] for row in sample_suggestions.suggest_samples(
             term, mongo_collection, sample_index_handle, feature_index.manifest_handle,
-            {'_id': project['_id']}, feature_index.SCHEMA_VERSION)]
+            {'_id': project['_id']}, feature_index.SCHEMA_VERSION)[0]]
 
     try:
         index_project(project)
@@ -493,7 +505,7 @@ def test_an_edit_rereads_only_its_own_project(mongo_collection, test_user, monke
     def lookup():
         return [row['sample_name'] for row in sample_suggestions.suggest_samples(
             'pytest-RRD', mongo_collection, sample_index_handle, feature_index.manifest_handle,
-            {'_id': {'$in': [p['_id'] for p in projects]}}, feature_index.SCHEMA_VERSION)]
+            {'_id': {'$in': [p['_id'] for p in projects]}}, feature_index.SCHEMA_VERSION)[0]]
 
     try:
         for project in projects:

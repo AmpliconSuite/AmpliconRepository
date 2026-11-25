@@ -3,7 +3,9 @@ Gene and sample autocomplete for a search box, and the gene chips of the Advance
 form. header.html includes this once on every page and sets up each search
 form's gene box (the header's Advanced modal, and the results page's own copy
 of that form); other boxes call
-SearchAutocomplete.attach(input). Sample choices open the sample page in the named project.
+SearchAutocomplete.attach(input). Sample choices open the sample page in the named project;
+one that is not public says so, and when more names matched than are listed, a last
+entry gives the number and runs the search.
 
 It completes the term being typed -- the text after the last & or | -- from
 /api/gene-suggest/, which starts suggesting at 3 characters and before that
@@ -24,6 +26,11 @@ follow. Gene search has no wildcards; a term holding * gets no suggestions.
     .gene-ac-full { color: #444; }
     .gene-ac-meta { color: #666; font-size: 12px; }
     .gene-ac-withdrawn { color: #8a4b00; }
+    .gene-ac-visibility { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 3px;
+        background: #f0f1f3; color: #4a4d52; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .gene-ac-more { position: sticky; bottom: -4px; background: #fff; border-top: 1px solid #e1e7ee;
+        color: #2b5c94; font-size: 13px; }
+    .gene-ac-item { scroll-margin-bottom: 34px; }   /* keep a highlighted entry clear of the last one */
     .gene-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; height: auto; min-height: 38px; cursor: text; }
     .gene-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 8px; border-radius: 12px;
         background: #e8f0fb; border: 1px solid #b8cbe4; font-size: 0.9em; font-weight: 600; }
@@ -65,7 +72,7 @@ const SearchAutocomplete = (function () {
         input.setAttribute('aria-autocomplete', 'list');
         input.setAttribute('aria-controls', list.id);
 
-        let items = [], selected = -1, timer = null;
+        let items = [], more = 0, selected = -1, timer = null;
         // close() starts a new session; replies belong to the one they were
         // requested in. Within a session, sample text has only been added to.
         let session = 0, requested = 0, shown = 0;
@@ -93,6 +100,7 @@ const SearchAutocomplete = (function () {
             list.hidden = true;
             input.removeAttribute('aria-activedescendant');
             items = [];
+            more = 0;
             selected = -1;
             input.setAttribute('aria-expanded', 'false');
         }
@@ -111,6 +119,11 @@ const SearchAutocomplete = (function () {
 
         function choose(index) {
             const entry = items[index];
+            if (!entry && index === items.length && more) {
+                close();
+                input.form.requestSubmit();
+                return;
+            }
             if (!entry) { return; }
             if (input.name === 'metadata_sample_name') {
                 close();
@@ -125,25 +138,31 @@ const SearchAutocomplete = (function () {
             if (input.form) { input.form.requestSubmit(); } else { input.focus(); }
         }
 
-        function render(suggestions) {
+        function addEntry(html, className, i) {
+            const li = document.createElement('li');
+            li.className = className;
+            li.setAttribute('role', 'option');
+            li.id = list.id + '-' + i;
+            li.innerHTML = html;
+            // A click arrives after the input's blur has closed the list.
+            li.addEventListener('mousedown', function (event) { event.preventDefault(); choose(i); });
+            list.appendChild(li);
+        }
+
+        // *extra* is how many more names matched the text in the box, when known.
+        function render(suggestions, extra) {
             items = suggestions;
+            // The search reads & | " as operators, so it would not list the same names.
+            more = extra > 0 && input.form && !/[&|"]/.test(input.value) ? extra : 0;
             list.innerHTML = '';
             if (!suggestions.length) { close(); return; }
             suggestions.forEach(function (s, i) {
-                const li = document.createElement('li');
-                li.className = 'gene-ac-item';
-                li.setAttribute('role', 'option');
-                li.id = list.id + '-' + i;
-                if (input.name === 'metadata_sample_name') {
-                    li.innerHTML = '<span class="gene-ac-symbol">' + escapeHtml(s.sample_name) + '</span>'
-                        + '<div class="gene-ac-meta">' + escapeHtml(s.project_name) + '</div>';
-                } else {
-                    li.innerHTML = geneLabel(s);
-                }
-                // A click arrives after the input's blur has closed the list.
-                li.addEventListener('mousedown', function (event) { event.preventDefault(); choose(i); });
-                list.appendChild(li);
+                addEntry(input.name === 'metadata_sample_name' ? sampleLabel(s) : geneLabel(s), 'gene-ac-item', i);
             });
+            if (more) {
+                addEntry(more.toLocaleString('en-US') + ' more. Search for the full list',
+                    'gene-ac-item gene-ac-more', items.length);
+            }
             place();
             list.hidden = false;
             input.setAttribute('aria-expanded', 'true');
@@ -156,16 +175,29 @@ const SearchAutocomplete = (function () {
 
         // A reply that lands after the next keystroke still holds names for the
         // longer text; dropping it left nothing to show until typing stopped.
-        function reply(mine, number, suggestions) {
+        function reply(mine, number, suggestions, extra) {
             if (mine !== session || number < shown) { return; }
             if (number < requested) {
+                extra = 0;   // counted for the shorter text
                 suggestions = stillMatching(suggestions, sampleKey);
                 if (!suggestions.length) { return; }
             }
             shown = number;
             const chosen = items[selected];
-            render(suggestions);
+            render(suggestions, extra);
             if (chosen && chosen.url) { highlight(items.findIndex(entry => entry.url === chosen.url)); }
+        }
+
+        const restricted = {
+            'private': ['Private', 'Visible only to project members'],
+            'hidden_public': ['Hidden Public', 'Not listed publicly; anyone with the link can view it'],
+        };
+
+        function sampleLabel(s) {
+            const tag = restricted[s.visibility];
+            return '<span class="gene-ac-symbol">' + escapeHtml(s.sample_name) + '</span>'
+                + (tag ? '<span class="gene-ac-visibility" title="' + tag[1] + '">' + tag[0] + '</span>' : '')
+                + '<div class="gene-ac-meta">' + escapeHtml(s.project_name) + '</div>';
         }
 
         function geneLabel(s) {
@@ -196,12 +228,12 @@ const SearchAutocomplete = (function () {
             if (extending) { clearTimeout(timer); hide(); } else { close(); }
             sampleKey = key;
             sampleStarted = performance.now();
-            if (retained.length) { render(retained); }
+            if (retained.length) { render(retained, 0); }
             const mine = session, number = ++requested;
             timer = setTimeout(function () {
                 fetch((sample ? sampleUrl : geneUrl) + '?q=' + encodeURIComponent(term), {headers: {'X-Requested-With': 'XMLHttpRequest'}})
                     .then(function (response) { return response.ok ? response.json() : {suggestions: []}; })
-                    .then(function (data) { reply(mine, number, data.suggestions || []); })
+                    .then(function (data) { reply(mine, number, data.suggestions || [], data.more || 0); })
                     .catch(function () { if (mine === session && number === requested) { close(); } });
             }, 120);
         });
@@ -213,7 +245,7 @@ const SearchAutocomplete = (function () {
             }
             if (event.key === 'ArrowDown') {
                 event.preventDefault();
-                highlight(Math.min(selected + 1, items.length - 1));
+                highlight(Math.min(selected + 1, list.children.length - 1));
             } else if (event.key === 'ArrowUp') {
                 event.preventDefault();
                 highlight(Math.max(selected - 1, 0));

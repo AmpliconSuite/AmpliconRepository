@@ -799,12 +799,13 @@ class SampleSuggestView(APIView):
     schema = None  # Browser-session endpoint outside the v1 API.
 
     def get(self, request):
-        results = suggest_samples(
+        results, more = suggest_samples(
             request.query_params.get('q', ''), feature_index.collection_handle_primary,
             feature_index.sample_index_handle, feature_index.manifest_handle,
             feature_index.index_access_filter(request.user, visibility_field='private'),
             feature_index.SCHEMA_VERSION)
-        return Response({'suggestions': results}, headers={'Cache-Control': 'private, no-store'})
+        return Response({'suggestions': results, 'more': more},
+                        headers={'Cache-Control': 'private, no-store'})
 
 
 # ── GET /api/v1/projects/ ────────────────────────────────────────────────────

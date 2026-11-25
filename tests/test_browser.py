@@ -352,7 +352,7 @@ def test_a_sample_reply_that_lands_after_the_next_key_is_shown(page):
     def answer(term):
         held.pop(term).fulfill(json={'suggestions': [
             {'sample_name': n, 'project_name': 'P', 'url': '/project/x/sample/' + n, 'visibility': 'public'}
-            for n in replies[term]]})
+            for n in replies[term]], 'more': 3 if term == 'HCC8' else 0})
 
     def wait_for_request(term):
         for _ in range(50):
@@ -374,6 +374,7 @@ def test_a_sample_reply_that_lands_after_the_next_key_is_shown(page):
     wait_for_request('HCC82')
     answer('HCC8')
     assert shown() == ['HCC827', 'NCI-HCC82']     # HCC813 does not fit HCC82
+    assert not page.locator('.gene-ac-more').is_visible()   # 3 more was for HCC8
     query.press('ArrowDown')
     answer('HCC82')
     assert shown() == ['HCC827', 'HCC828', 'X-HCC82']
@@ -414,6 +415,61 @@ def test_a_sample_reply_that_lands_after_the_next_key_is_shown(page):
     query.press('Escape')
     answer('HCC8')
     assert shown() == []
+
+
+@pytest.mark.browser
+def test_sample_suggestions_tag_visibility_and_count_the_rest(page):
+    """Names that are not public say so, and the last entry runs the search for the rest."""
+    def entry(i, visibility):
+        return {'sample_name': f'HMF-{i}', 'project_name': 'P', 'url': f'/project/x/sample/HMF-{i}',
+                'visibility': visibility}
+
+    seen = ['public', 'private', 'hidden_public'] + ['public'] * 7
+    held = {}
+
+    def route_reply(route):
+        term = route.request.url.split('q=')[1]
+        if term == 'HMF-1':
+            held[term] = route
+            return
+        route.fulfill(json={'suggestions': [entry(i, v) for i, v in enumerate(seen)], 'more': 4160})
+
+    page.route('**/api/sample-suggest/**', route_reply)
+    page.goto('/')
+    page.locator('label[for="home-scope-metadata_sample_name"]').click()
+    query = page.locator('#home-query')
+    query.fill('HMF')
+    last = page.locator('.gene-ac-list:not([hidden]) .gene-ac-more')
+    last.wait_for(timeout=5_000)
+    assert last.inner_text() == '4,160 more. Search for the full list'
+    assert page.locator('.gene-ac-visibility').all_inner_texts() == ['Private', 'Hidden Public']
+    # In view without scrolling, though ten entries are taller than the list.
+    box, foot = page.locator('.gene-ac-list:not([hidden])').bounding_box(), last.bounding_box()
+    assert foot['y'] + foot['height'] <= box['y'] + box['height'] + 1
+
+    # The count was for HMF; it is not shown against a longer text.
+    query.fill('HMF-1')
+    page.wait_for_timeout(300)
+    assert 'HMF-1' in held
+    assert page.locator('.gene-ac-list:not([hidden]) .gene-ac-symbol').all_inner_texts() == ['HMF-1']
+    assert not last.is_visible()
+    held.pop('HMF-1').fulfill(json={'suggestions': [entry(1, 'private')], 'more': 0})
+    page.wait_for_timeout(200)
+    assert not last.is_visible()
+
+    # An operator means something else to the search, so the rest is not offered.
+    query.fill('HMF&MYC')
+    page.locator('.gene-ac-list:not([hidden]) .gene-ac-symbol').first.wait_for(timeout=5_000)
+    assert not last.is_visible()
+
+    query.fill('HMF')
+    last.wait_for(timeout=5_000)
+    for _ in range(12):                # ten names, the last entry, and no further
+        query.press('ArrowDown')
+    assert last.get_attribute('aria-selected') == 'true'
+    assert query.get_attribute('aria-activedescendant') == last.get_attribute('id')
+    query.press('Enter')
+    page.wait_for_url('**/search_results/**')
 
 
 @pytest.mark.browser

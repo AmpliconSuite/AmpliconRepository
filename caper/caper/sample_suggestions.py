@@ -100,19 +100,23 @@ def sample_names(sample_index, manifest, schema_version, projects):
 
 
 def suggest_samples(text, projects_collection, sample_index, manifest, access, schema_version):
-    """All collections use primary reads. Access is the projects visibility predicate."""
+    """``(suggestions, how many more matched)``, best matches first.
+
+    All collections use primary reads. Access is the projects visibility
+    predicate, and the count covers only projects it lets through.
+    """
     if len(text) > MAX_QUERY:
-        return []
+        return [], 0
     query = normalize_name(text)
     if len(query) < MIN_QUERY:
-        return []
+        return [], 0
 
     # Membership and visibility can change even if the subsequent reindex fails.
     projects = {p['_id']: p for p in projects_collection.find(
         status_query(LIVE, access),
         {'project_name': 1, 'private': 1})}
     if not projects:
-        return []
+        return [], 0
 
     matches = []
     for project_id, names in sample_names(sample_index, manifest, schema_version, projects).items():
@@ -122,9 +126,10 @@ def suggest_samples(text, projects_collection, sample_index, manifest, access, s
             if rank is not None:
                 matches.append((rank, len(name), name.casefold(), name, project['project_name'],
                                 project_id))
-    return [
+    suggestions = [
         {'sample_name': name, 'project_name': project_name,
          'visibility': normalize_visibility_field(projects[project_id].get('private')),
          'url': reverse('sample_page', args=[str(project_id), name])}
         for _, _, _, name, project_name, project_id in sorted(matches)[:RESULT_LIMIT]
     ]
+    return suggestions, len(matches) - len(suggestions)
