@@ -67,6 +67,12 @@ const SearchAutocomplete = (function () {
 
         let items = [], selected = -1, timer = null, sequence = 0;
 
+        let sampleKey = '', sampleStarted = 0;
+
+        function sampleKeyOf(text) {
+            return text.toLowerCase().replace(/[\s_./-]+/g, '');
+        }
+
         function place() {
             const box = input.getBoundingClientRect();
             list.style.left = (box.left + window.scrollX) + 'px';
@@ -75,6 +81,7 @@ const SearchAutocomplete = (function () {
         }
 
         function close() {
+            sampleKey = '';
             clearTimeout(timer);
             sequence++;
             list.hidden = true;
@@ -147,20 +154,31 @@ const SearchAutocomplete = (function () {
         }
 
         input.addEventListener('input', function (event) {
-            close();
-            if (event.isComposing) { return; }
             const sample = input.name === 'metadata_sample_name';
-            if (!sample && input.name !== 'genequery') { return; }
             const term = sample ? input.value.trim() : currentTerm(input.value).term;
-            if (!term || term.includes('*')) { return; }
-            if (sample && (term.replace(/[\s_./-]+/g, '').length < 3 || term.length > 128)) { return; }
+            const key = sample ? sampleKeyOf(term) : '';
+            if (event.isComposing || (!sample && input.name !== 'genequery') || !term || term.includes('*')
+                    || (sample && (key.length < 3 || term.length > 128))) {
+                close();
+                return;
+            }
+            const continuing = sample && sampleKey && performance.now() - sampleStarted < 2000;
+            if (continuing && sampleKey === key) { return; }
+            // Keep visible prefix matches while the server ranks all candidates.
+            // A longer query can bring in a sample outside the previous top ten.
+            const retained = continuing && key.startsWith(sampleKey)
+                ? items.filter(entry => sampleKeyOf(entry.sample_name).startsWith(key)) : [];
+            close();
+            sampleKey = key;
+            sampleStarted = performance.now();
+            if (retained.length) { render(retained); }
             const mine = sequence;
             timer = setTimeout(function () {
                 fetch((sample ? sampleUrl : geneUrl) + '?q=' + encodeURIComponent(term), {headers: {'X-Requested-With': 'XMLHttpRequest'}})
                     .then(function (response) { return response.ok ? response.json() : {suggestions: []}; })
                     .then(function (data) { if (mine === sequence) { render(data.suggestions || []); } })
                     .catch(function () { if (mine === sequence) { close(); } });
-            }, sample ? 250 : 120);
+            }, 120);
         });
 
         input.addEventListener('keydown', function (event) {

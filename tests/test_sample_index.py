@@ -386,6 +386,11 @@ def test_sample_suggestion_endpoint_uses_live_membership_and_versions(
         row_a = ('pytest A', name, f'/project/{a}/sample/{name}')
         row_b = ('pytest B', name, f'/project/{b}/sample/{name}')
         assert lookup(anonymous) == [row_a, row_b]
+        # A new spelling still ranks all eligible names, using the same short-lived
+        # name list across keystrokes. Live access is checked again below.
+        from unittest.mock import patch
+        with patch('caper.sample_suggestions.sample_name_groups', side_effect=AssertionError('rescanned names')):
+            assert lookup(anonymous, 'pytest-hcc82') == [row_a, row_b]
         for vis, member in [('hidden_public', test_user.email), ('private', test_user.username)]:
             mongo_collection.update_one({'_id': a}, {'$set': {'private': vis, 'project_members': [member]}})
             assert lookup(anonymous) == lookup(non_member_user) == [row_b]

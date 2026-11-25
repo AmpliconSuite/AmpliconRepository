@@ -209,6 +209,26 @@ def test_a_name_query_that_matches_nothing_returns_none_not_an_empty_filter():
         search_index._resolve_names = original
 
 
+@pytest.mark.parametrize('term,expected', [
+    ('NCI-H1693', ['NCIH1693_LUNG', 'H1693']),
+    ('"NCI-H1693"', []), ('NCI-H*', []), ('169', ['NCIH1693_LUNG', 'H1693', 'H1694']),
+])
+def test_submitted_sample_names_on_both_search_paths(monkeypatch, term, expected):
+    import pandas as pd
+    from caper import search, search_index
+
+    names = ['NCIH1693_LUNG', 'H1693', 'H1694']
+
+    class Names:
+        def find(self, predicate, projection):
+            return [{'name': name} for name in names]
+
+    monkeypatch.setattr(search_index, 'search_names_handle', Names())
+    assert search_index._resolve_names('sample', term) == expected
+    series = pd.Series(names)
+    assert list(series[search._text_field_filter(series, term)]) == expected
+
+
 def test_access_filter_is_always_part_of_the_query():
     """The visibility clause is not optional and not the caller's to remember."""
     access = {'visibility': {'$in': [False, 'public']}}

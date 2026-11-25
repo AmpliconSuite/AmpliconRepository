@@ -1,6 +1,10 @@
 """Current sample-page names that a visitor may discover from search."""
 import re
+from hashlib import sha256
 
+from bson import BSON
+
+from django.core.cache import cache
 from django.urls import reverse
 
 from .project_status import LIVE, status_query
@@ -10,15 +14,17 @@ SEPARATORS = re.compile(r'[\s_./-]+')
 MIN_QUERY = 3
 MAX_QUERY = 128
 RESULT_LIMIT = 10
+NAME_CACHE_SECONDS = 15
 
 
 def normalize_name(value):
     return SEPARATORS.sub('', value.casefold())
 
 
-def match_rank(query, name):
+def match_rank(query, name, key=None):
     """Rank a normalized query against an as-written name. Lower is better."""
-    key = normalize_name(name)
+    if key is None:
+        key = normalize_name(name)
     if key == query:
         return 0
     if key.startswith(query):
@@ -55,6 +61,22 @@ def sample_name_groups(sample_index, schema_version, query):
     ])
 
 
+def cached_sample_names(sample_index, schema_version, projects):
+    """Share names across keystrokes and workers for the exact set of eligible project IDs."""
+    project_ids = sorted(projects, key=str)
+    digest = sha256(BSON.encode({'ids': project_ids})).hexdigest()
+    cache_key = f'sample-name-keys-v1:{sample_index.full_name}:{schema_version}:{digest}'
+    groups = cache.get(cache_key)
+    if groups is None:
+        groups = []
+        for row in sample_name_groups(sample_index, schema_version, {'project_id': {'$in': project_ids}}):
+            names = [(name, normalize_name(name)) for name in row['names']
+                     if isinstance(name, str) and name and '/' not in name and name not in ('.', '..')]
+            groups.append((row['_id'], names))
+        cache.set(cache_key, groups, NAME_CACHE_SECONDS)
+    return groups
+
+
 def suggest_samples(text, projects_collection, sample_index, access, schema_version):
     """Both collections use primary reads. Access is the projects visibility predicate."""
     if len(text) > MAX_QUERY:
@@ -70,15 +92,12 @@ def suggest_samples(text, projects_collection, sample_index, access, schema_vers
     if not projects:
         return []
 
-    groups = sample_name_groups(sample_index, schema_version, {'project_id': {'$in': list(projects)}})
+    groups = cached_sample_names(sample_index, schema_version, projects)
     matches = []
-    for group in groups:
-        project_id = group['_id']
+    for project_id, names in groups:
         project = projects[project_id]
-        for name in group['names']:
-            if not name or '/' in name or name in ('.', '..'):
-                continue
-            rank = match_rank(query, name)
+        for name, key in names:
+            rank = match_rank(query, name, key)
             if rank is not None:
                 matches.append((rank, len(name), name.casefold(), name, project['project_name'],
                                 project_id))

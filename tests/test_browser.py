@@ -309,10 +309,24 @@ def test_selecting_a_sample_suggestion_opens_its_project_sample(page, advanced):
     else:
         page.locator('label[for="home-scope-metadata_sample_name"]').click()
         query = page.locator('#home-query')
-    query.fill('NCI-H1693')
+    broad = {'sample_name': name, 'project_name': 'CCLE', 'url': destination, 'visibility': 'public'}
+    page.route('**/api/sample-suggest/?q=NCI-H169', lambda route: route.fulfill(
+        json={'suggestions': [broad, dict(broad, sample_name='NCIH1694_LUNG')]}))
+    query.fill('NCI-H169')
     option = page.get_by_role('option').filter(has_text=name)
     option.wait_for(timeout=5_000)
+    with page.expect_response(lambda response: response.url.endswith('/api/sample-suggest/?q=NCI-H1693')):
+        query.fill('NCI-H1693')
+        assert option.is_visible()
+        assert not page.get_by_role('option').filter(has_text='NCIH1694_LUNG').is_visible()
     assert 'CCLE' in option.inner_text()
+    # Separator-only edits keep the visible answer and make no extra request.
+    requests = []
+    page.on('request', lambda req: requests.append(req.url) if '/api/sample-suggest/' in req.url else None)
+    query.fill('NCI-H-1693')
+    assert option.is_visible()
+    page.wait_for_timeout(300)
+    assert not requests
     if advanced:
         option.click()
     else:
