@@ -60,6 +60,14 @@ def _flags(collection, project_id):
     }
 
 
+def _indexed(project_id):
+    """How many rows search holds for one project, and its samples' pages."""
+    from caper import feature_index
+    return tuple(handle.count_documents({'project_id': ObjectId(project_id)})
+                 for handle in (feature_index.feature_index_handle,
+                                feature_index.sample_index_handle))
+
+
 def _lineage_of(state):
     """The part of a document T4 must not touch."""
     return {key: state[key] for key in
@@ -125,6 +133,8 @@ def test_soft_delete_and_restore_leave_the_chain_exactly_as_they_found_it(
             f"re-aggregation failed: {doc.get('error_message') if doc else 'timed out'}"
 
         before_head = _flags(mongo_collection, second)
+        indexed_before = _indexed(second)
+        assert indexed_before[0], 'the project is not indexed to begin with'
         before_prior = _flags(mongo_collection, first)
 
         assert before_head['classified'] == 'LIVE'
@@ -173,6 +183,11 @@ def test_soft_delete_and_restore_leave_the_chain_exactly_as_they_found_it(
             'restore did not put the head back exactly as it was'
         assert restored_prior == before_prior, \
             'restore reached a document that was not its target'
+        assert _indexed(second) == indexed_before, \
+            'restore did not put the project back in the search index'
+
+        # Uncount it, as the cleanup below does not go through the views.
+        project_delete(delete_request, project_name=second)
 
     finally:
         for project_id in created:
