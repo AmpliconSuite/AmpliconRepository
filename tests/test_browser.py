@@ -293,6 +293,35 @@ def test_choosing_a_gene_suggestion_searches_for_it(page):
 
 
 @pytest.mark.browser
+@pytest.mark.parametrize('advanced', [False, True], ids=['home', 'advanced'])
+def test_selecting_a_sample_suggestion_opens_its_project_sample(page, advanced):
+    # Stub the lookup so this exercises the browser independently of the local corpus.
+    name = 'NCIH1693_LUNG'
+    destination = '/project/0123456789abcdef01234567/sample/' + name
+    page.route('**/api/sample-suggest/?q=NCI-H1693', lambda route: route.fulfill(
+        json={'suggestions': [{'sample_name': name, 'project_name': 'CCLE',
+                               'url': destination, 'visibility': 'public'}]}))
+    page.route('**' + destination, lambda route: route.fulfill(body='Sample page'))
+    page.goto('/')
+    if advanced:
+        page.click('#home-advanced')
+        query = page.locator('#searchModal input[name="metadata_sample_name"]')
+    else:
+        page.locator('label[for="home-scope-metadata_sample_name"]').click()
+        query = page.locator('#home-query')
+    query.fill('NCI-H1693')
+    option = page.get_by_role('option').filter(has_text=name)
+    option.wait_for(timeout=5_000)
+    assert 'CCLE' in option.inner_text()
+    if advanced:
+        option.click()
+    else:
+        query.press('ArrowDown')
+        query.press('Enter')
+    page.wait_for_url('**' + destination)
+
+
+@pytest.mark.browser
 def test_the_advanced_search_modal_suggests_genes(page):
     """The header's search modal carries the same autocomplete, drawn above it."""
     page.goto('/')

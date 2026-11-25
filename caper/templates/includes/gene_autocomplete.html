@@ -1,9 +1,9 @@
 {% comment %}
-Gene autocomplete for a search box, and the gene chips of the Advanced search
+Gene and sample autocomplete for a search box, and the gene chips of the Advanced search
 form. header.html includes this once on every page and sets up each search
 form's gene box (the header's Advanced modal, and the results page's own copy
 of that form); other boxes call
-GeneAutocomplete.attach(input, {active: function () { return true; }}).
+SearchAutocomplete.attach(input). Sample choices open the sample page in the named project.
 
 It completes the term being typed -- the text after the last & or | -- from
 /api/gene-suggest/, which starts suggesting at 3 characters and before that
@@ -36,8 +36,9 @@ follow. Gene search has no wildcards; a term holding * gets no suggestions.
     .gene-scope { margin: 2px 0 0 1.2em; }
 </style>
 <script>
-const GeneAutocomplete = (function () {
-    const URL = "{% url 'gene_suggest' %}";
+const SearchAutocomplete = (function () {
+    const geneUrl = "{% url 'gene_suggest' %}";
+    const sampleUrl = "{% url 'sample_suggest' %}";
 
     function escapeHtml(text) {
         return String(text).replace(/[&<>"']/g, function (c) {
@@ -52,13 +53,14 @@ const GeneAutocomplete = (function () {
     }
 
     function attach(input, options) {
-        const active = (options && options.active) || function () { return true; };
         const list = document.createElement('ul');
         list.className = 'gene-ac-list';
         list.id = (input.id || 'gene') + '-suggestions';
         list.setAttribute('role', 'listbox');
         list.hidden = true;
         document.body.appendChild(list);
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-expanded', 'false');
         input.setAttribute('autocomplete', 'off');
         input.setAttribute('aria-autocomplete', 'list');
         input.setAttribute('aria-controls', list.id);
@@ -73,7 +75,10 @@ const GeneAutocomplete = (function () {
         }
 
         function close() {
+            clearTimeout(timer);
+            sequence++;
             list.hidden = true;
+            input.removeAttribute('aria-activedescendant');
             items = [];
             selected = -1;
             input.setAttribute('aria-expanded', 'false');
@@ -83,13 +88,21 @@ const GeneAutocomplete = (function () {
             selected = index;
             Array.prototype.forEach.call(list.children, function (li, i) {
                 li.setAttribute('aria-selected', i === index ? 'true' : 'false');
-                if (i === index) { li.scrollIntoView({block: 'nearest'}); }
+                if (i === index) {
+                    input.setAttribute('aria-activedescendant', li.id);
+                    li.scrollIntoView({block: 'nearest'});
+                }
             });
         }
 
         function choose(index) {
             const entry = items[index];
             if (!entry) { return; }
+            if (input.name === 'metadata_sample_name') {
+                close();
+                window.location.assign(entry.url);
+                return;
+            }
             if (options && options.onChoose) { close(); options.onChoose(entry); return; }
             const parts = currentTerm(input.value);
             input.value = parts.prefix + entry.symbol;
@@ -106,14 +119,14 @@ const GeneAutocomplete = (function () {
                 const li = document.createElement('li');
                 li.className = 'gene-ac-item';
                 li.setAttribute('role', 'option');
-                const builds = s.matched_builds ? ' (' + s.matched_builds.map(escapeHtml).join(', ') + ')' : '';
-                const matched = s.matched ? ' &middot; ' + escapeHtml(s.matched_label) + ' ' + escapeHtml(s.matched) + builds : '';
-                const only = s.annotated_in && s.annotated_in.length === 1 ? ' &middot; ' + escapeHtml(s.annotated_in[0]) + ' only' : '';
-                const withdrawn = s.status === 'withdrawn' ? ' <span class="gene-ac-withdrawn">withdrawn from NCBI Gene</span>' : '';
-                li.innerHTML = '<span class="gene-ac-symbol">' + escapeHtml(s.symbol) + '</span> '
-                    + '<span class="gene-ac-full">' + escapeHtml(s.full_name || '') + '</span>'
-                    + '<div class="gene-ac-meta">NCBI Gene ' + escapeHtml(s.gene_id) + matched + only + withdrawn + '</div>';
-                // mousedown, not click: a click arrives after the input's blur has closed the list.
+                li.id = list.id + '-' + i;
+                if (input.name === 'metadata_sample_name') {
+                    li.innerHTML = '<span class="gene-ac-symbol">' + escapeHtml(s.sample_name) + '</span>'
+                        + '<div class="gene-ac-meta">' + escapeHtml(s.project_name) + '</div>';
+                } else {
+                    li.innerHTML = geneLabel(s);
+                }
+                // A click arrives after the input's blur has closed the list.
                 li.addEventListener('mousedown', function (event) { event.preventDefault(); choose(i); });
                 list.appendChild(li);
             });
@@ -123,21 +136,38 @@ const GeneAutocomplete = (function () {
             highlight(-1);
         }
 
-        input.addEventListener('input', function () {
-            clearTimeout(timer);
-            const term = currentTerm(input.value).term;
-            if (!active() || !term || term.indexOf('*') >= 0) { close(); return; }
+        function geneLabel(s) {
+            const builds = s.matched_builds ? ' (' + s.matched_builds.map(escapeHtml).join(', ') + ')' : '';
+            const matched = s.matched ? ' &middot; ' + escapeHtml(s.matched_label) + ' ' + escapeHtml(s.matched) + builds : '';
+            const only = s.annotated_in && s.annotated_in.length === 1 ? ' &middot; ' + escapeHtml(s.annotated_in[0]) + ' only' : '';
+            const withdrawn = s.status === 'withdrawn' ? ' <span class="gene-ac-withdrawn">withdrawn from NCBI Gene</span>' : '';
+            return '<span class="gene-ac-symbol">' + escapeHtml(s.symbol) + '</span> '
+                + '<span class="gene-ac-full">' + escapeHtml(s.full_name || '') + '</span>'
+                + '<div class="gene-ac-meta">NCBI Gene ' + escapeHtml(s.gene_id) + matched + only + withdrawn + '</div>';
+        }
+
+        input.addEventListener('input', function (event) {
+            close();
+            if (event.isComposing) { return; }
+            const sample = input.name === 'metadata_sample_name';
+            if (!sample && input.name !== 'genequery') { return; }
+            const term = sample ? input.value.trim() : currentTerm(input.value).term;
+            if (!term || term.includes('*')) { return; }
+            if (sample && (term.replace(/[\s_./-]+/g, '').length < 3 || term.length > 128)) { return; }
+            const mine = sequence;
             timer = setTimeout(function () {
-                const mine = ++sequence;
-                fetch(URL + '?q=' + encodeURIComponent(term), {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+                fetch((sample ? sampleUrl : geneUrl) + '?q=' + encodeURIComponent(term), {headers: {'X-Requested-With': 'XMLHttpRequest'}})
                     .then(function (response) { return response.ok ? response.json() : {suggestions: []}; })
                     .then(function (data) { if (mine === sequence) { render(data.suggestions || []); } })
-                    .catch(function () { close(); });
-            }, 120);
+                    .catch(function () { if (mine === sequence) { close(); } });
+            }, sample ? 250 : 120);
         });
 
         input.addEventListener('keydown', function (event) {
-            if (list.hidden) { return; }
+            if (list.hidden) {
+                if (event.key === 'Escape') { close(); }
+                return;
+            }
             if (event.key === 'ArrowDown') {
                 event.preventDefault();
                 highlight(Math.min(selected + 1, items.length - 1));
@@ -242,7 +272,7 @@ const GeneChips = (function () {
         });
         form.addEventListener('submit', takeTyped);
 
-        GeneAutocomplete.attach(input, {onChoose: function (entry) {
+        SearchAutocomplete.attach(input, {onChoose: function (entry) {
             add(entry.symbol, entry.symbol + (entry.full_name ? ', ' + entry.full_name : '') + ' (NCBI Gene ' + entry.gene_id + ')');
             input.value = '';
             refresh();
@@ -256,11 +286,13 @@ const GeneChips = (function () {
 
 document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('form#searchForm').forEach(function (form) {
+        const sample = form.querySelector('input[name="metadata_sample_name"]');
+        if (sample) { SearchAutocomplete.attach(sample); }
         if (form.querySelector('[data-gene-chips]')) {
             GeneChips.setup(form);
         } else {
             const input = form.querySelector('input[name="genequery"]');
-            if (input) { GeneAutocomplete.attach(input); }
+            if (input) { SearchAutocomplete.attach(input); }
         }
     });
 });
