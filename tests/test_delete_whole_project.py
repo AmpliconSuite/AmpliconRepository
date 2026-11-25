@@ -52,9 +52,10 @@ def site_admin():
 @pytest.fixture(autouse=True)
 def uncounted(monkeypatch):
     """The fixture projects were never counted into site_statistics or the
-    index, so a delete must not uncount them from either."""
-    from caper import views
+    index, so a delete must not uncount them from either, nor a restore count them."""
+    from caper import views, views_admin
     monkeypatch.setattr(views, 'project_removed', lambda project, visibility: None)
+    monkeypatch.setattr(views_admin, 'project_changed', lambda project, visibility: None)
 
 
 @pytest.fixture
@@ -146,6 +147,70 @@ def test_restoring_the_project_reopens_every_version(make_chain, owner, site_adm
     row = deleted_urls_handle.find_one({'_id': ObjectId(old)})
     assert row['restored_at'] is not None
     assert row['history'][-1]['event'] == 'restored'
+
+
+@pytest.fixture
+def counted(uncounted, monkeypatch):
+    """The real lifecycle events, and what they leave: (index rows, sample page
+    rows, projects counted, samples counted) for one project's visibility."""
+    from caper import feature_index, project_events, views, views_admin
+    from caper.site_stats import BUCKET_PREFIXES, get_latest_site_statistics
+    monkeypatch.setattr(views, 'project_removed', project_events.project_removed)
+    monkeypatch.setattr(views_admin, 'project_changed', project_events.project_changed)
+
+    def state(head, visibility='public'):
+        stats, bucket = get_latest_site_statistics(), BUCKET_PREFIXES[visibility]
+        return (feature_index.feature_index_handle.count_documents({'project_id': ObjectId(head)}),
+                feature_index.sample_index_handle.count_documents({'project_id': ObjectId(head)}),
+                stats[f'{bucket}_proj_count'], stats[f'{bucket}_sample_count'])
+    return state
+
+
+@pytest.mark.parametrize('visibility', ['public', 'private', 'hidden_public'])
+def test_restoring_a_project_returns_it_to_search_and_the_counts(
+        make_chain, owner, site_admin, mongo_collection, counted, visibility):
+    """Until 2026-11-24 a restore left it out of both. One project missing from
+    the index also makes index_is_usable() False, which puts every search on
+    the slow path and answers the feature API with 503."""
+    from caper import feature_index, project_events
+    old, head, name = make_chain(visibility)
+    projects, samples = counted(head, visibility)[2:]
+    project_events.project_changed(mongo_collection.find_one({'_id': ObjectId(head)}), visibility)
+    live = (1, 1, projects + 1, samples + 1)
+    assert counted(head, visibility) == live
+    # What search asks before it uses the index: is every indexable project there?
+    missing = lambda: {k: v for k, v in feature_index.index_coverage().items() if k != 'outdated'}
+    coverage = missing()
+
+    _signed_in(owner).post(f'/project/{head}/delete')
+    assert counted(head, visibility) == (0, 0, projects, samples)
+
+    form = {'project_name': name, 'project_id': head, 'delete': '', 'action': 'un-delete'}
+    try:
+        _signed_in(site_admin).post('/admin-delete-project/', form)
+        assert counted(head, visibility) == live
+        assert missing() == coverage
+        # A second click changes nothing: not the counts, not the record.
+        again = _signed_in(site_admin).post('/admin-delete-project/', form)
+        assert again.status_code == 200
+        assert 'Nothing was changed' in again.content.decode()
+        assert counted(head, visibility) == live
+        from caper.utils import audit_log_handle
+        assert audit_log_handle.count_documents(
+            {'project_uuid': head, 'event_type': 'restore_project'}) == 1
+    finally:
+        _signed_in(owner).post(f'/project/{head}/delete')    # uncount it again
+    assert counted(head, visibility) == (0, 0, projects, samples)
+
+
+def test_restoring_an_older_version_does_not_count_it(
+        make_chain, site_admin, mongo_collection, counted):
+    """The page lists only soft-deleted heads; a posted id can be any version."""
+    old, head, name = make_chain()
+    before = counted(old)
+    _signed_in(site_admin).post('/admin-delete-project/', {
+        'project_name': name, 'project_id': old, 'delete': '', 'action': 'un-delete'})
+    assert counted(old) == before
 
 
 def test_a_private_project_is_not_named_to_a_stranger(make_chain, owner, site_admin):
