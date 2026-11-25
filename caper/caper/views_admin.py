@@ -55,7 +55,9 @@ from .project_version_cleanup import (
 from .version_file_sharing import still_needed_here
 from . import publication_versions
 from .background_tasks import get_background_task_status
+from .project_events import project_changed
 from .project_status import (
+    DELETE_FLAG_QUERY,
     DETACHED,
     LIVE,
     SOFT_DELETED,
@@ -1472,10 +1474,15 @@ def admin_delete_project(request):
         logging.debug(" FORM = " + str(form_dict))
         action = form_dict['action']
 
-        if action == 'un-delete':
+        if action == 'un-delete' and get_one_deleted_project(project_id) is None:
+            # A second click, or a page open since before someone else restored it.
+            error_message = f"Project {project_name} is not deleted. Nothing was changed."
+
+        elif action == 'un-delete':
             # remove the delete flag, this project goes back
             project = get_one_deleted_project(project_id)
-            query = {'_id': ObjectId(project_id)}
+            # Still deleted: two restores at once must not both count it.
+            query = {'_id': ObjectId(project_id), **DELETE_FLAG_QUERY}
             # Clears the delete flag and nothing else, which is what makes
             # this the reverse of a soft delete: the document keeps whatever
             # 'current' it had.  Only SOFT_DELETED documents are listed below,
@@ -1486,11 +1493,15 @@ def admin_delete_project(request):
                 project, intended={'status': intended_status})
             new_val = {"$set": {'delete': status_flags(LIVE)['delete'],
                                 'status': intended_status}}
-            collection_handle.update_one(query, new_val)
+            restored = collection_handle.update_one(query, new_val).modified_count
             provenance.confirm(audit_log_handle, restore_event)
             # Its URLs work again, older versions' included.
             deleted_urls.record_project_restored(
                 deleted_urls_handle, project['_id'], request.user)
+            # The soft delete uncounted it and took it out of the index.
+            if restored and intended_status == LIVE:
+                project_changed(
+                    project, normalize_visibility_field(project.get('private', 'private')))
             error_message = f"Project {project_name} restored."
 
         elif deleteit and (action == 'delete'):
@@ -1717,7 +1728,6 @@ def make_project_current(request, project_id):
     
     if request.method == "POST":
         from bson.objectid import ObjectId
-        from .project_events import project_changed
         from .utils import normalize_visibility_field
 
         try:

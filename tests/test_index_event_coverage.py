@@ -35,6 +35,7 @@ is why this test exists and the guard is not enough on its own.
 
 import ast
 import os
+import re
 
 
 CAPER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -53,6 +54,20 @@ EVENT_NAMES = {
 # The modules that define the index and the events cannot be required to call
 # the events; everything else that writes projects can.
 EXEMPT_MODULES = {'feature_index.py', 'project_events.py'}
+
+
+# Writes that change an indexed field and fire no event.  Both were invisible
+# to this test until it read variables (2026-11-24).  Measured that day: 30 of
+# 89 projects on prod and 7 of 54 on dev had a digest taken before the project's
+# sample_data was stored, so --check calls them stale, and every one had rows
+# identical to freshly built ones.  Not proof for a project with a sample that
+# has no features, whose metadata columns come from sample_data.
+KNOWN_UNHOOKED = {
+    ('utils.py', 'validate_project'):
+        'respells runs keys with underscores; the builder reads both spellings',
+    ('views.py', 'store_page_fields'):
+        'stores sample_data, normally at the first page view after indexing',
+}
 
 
 def _indexed_fields():
@@ -98,15 +113,24 @@ def _project_writes():
                     and func.value.id == 'collection_handle'
                     and func.attr in WRITE_METHODS):
                 continue
-            call_text = ast.unparse(node)
+            enclosing = _enclosing_function(tree, node.lineno)
+            # The arguments, and what any of them that is a variable was set to:
+            # the admin un-delete passed its $set as new_val, so until
+            # 2026-11-24 nothing here saw which fields it wrote.
+            call_text = ast.unparse(node) + ''.join(
+                ast.unparse(assigned.value)
+                for assigned in ast.walk(enclosing or tree)
+                if isinstance(assigned, ast.Assign)
+                and {t.id for t in assigned.targets if isinstance(t, ast.Name)}
+                & {a.id for a in ast.walk(node) if isinstance(a, ast.Name)})
+            # The whole name or a path below it: 'private' is not 'privateKey'.
             touched = sorted(f for f in fields
-                             if f"'{f}" in call_text or f'"{f}' in call_text)
+                             if re.search(rf"['\"]{f}['\".]", call_text))
             # An insert or a replace writes the whole document, so it touches
             # every indexed field whether or not it names one.
             whole_document = func.attr in ('insert_one', 'replace_one')
             if not touched and not whole_document:
                 continue
-            enclosing = _enclosing_function(tree, node.lineno)
             body = ast.unparse(enclosing) if enclosing else ''
             fired = sorted(e for e in EVENT_NAMES if e + '(' in body)
             found.append((filename, node.lineno,
@@ -126,6 +150,9 @@ def test_the_audit_still_finds_the_writes():
 
 def test_every_indexed_write_fires_a_lifecycle_event():
     unhooked = [w for w in _project_writes() if not w[-1]]
+    known = {(w[0], w[2]) for w in unhooked} & set(KNOWN_UNHOOKED)
+    assert known == set(KNOWN_UNHOOKED), 'remove the entries that no longer apply'
+    unhooked = [w for w in unhooked if (w[0], w[2]) not in KNOWN_UNHOOKED]
     assert not unhooked, (
         'These writes change a field the feature index is built from, but the '
         'function making the write never calls project_events, so the index '
